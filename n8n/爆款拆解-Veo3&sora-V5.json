@@ -1,0 +1,796 @@
+{
+  "name": "爆款拆解-Veo3&sora-V5",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "teardown",
+        "options": {}
+      },
+      "id": "2603b3a9-680a-484d-91b2-f7c7ce6cd529",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2112,
+        160
+      ],
+      "webhookId": "69ecc859-f764-4628-83b0-279c9890cfad"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"app_id\": \"{{ $json.body.app_id }}\",\n  \"app_secret\": \"{{ $json.body.app_secret }}\"\n}",
+        "options": {}
+      },
+      "id": "c906864b-dc32-4156-a439-f5812dbb4d91",
+      "name": "Auth:getAccessToken auth1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1888,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "bitable",
+        "operation": "bitable:parseUrl",
+        "url": "={{ $('Webhook').item.json.body.table_link }}"
+      },
+      "id": "80598b0f-dd41-4ff1-adfe-a8646be2621c",
+      "name": "获取任务表信息",
+      "type": "n8n-nodes-feishu-lite.feishuNode",
+      "typeVersion": 1,
+      "position": [
+        -1664,
+        160
+      ],
+      "credentials": {
+        "feishuCredentialsApi": {
+          "id": "btdmK3iP1r3sO21a",
+          "name": "Feishu account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id={{ $('Webhook').item.json.body.workflow_id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1440,
+        160
+      ],
+      "id": "72ffab88-8718-48e5-abce-9f9ca94849b7",
+      "name": "查询工作流积分"
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/api/balance/check?required=100&api_key={{ $('Webhook').item.json.body.api_key }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "required",
+              "value": "={{ $json.data.credit_cost }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1216,
+        160
+      ],
+      "id": "623f740c-9267-4162-8ede-877e39010b08",
+      "name": "验证api-key",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok }}",
+                    "rightValue": "false",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    },
+                    "id": "84e547e5-80ae-4340-a3e9-b76f32d20e0c"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "apikey_invalid"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "1f0f0883-abf7-4c55-8068-85568446efd2",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === false }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "insufficient_points"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "94a60a62-da20-469a-ac15-4867f6a63449",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === true }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pass"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -992,
+        144
+      ],
+      "id": "59b2eadf-718e-4d8c-9733-c4c3105fb1c9",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('获取任务表信息').first().json.app_token }}/tables/{{ $('获取任务表信息').first().json.table_id }}/records/{{ $('Webhook').item.json.body.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Auth:getAccessToken auth1').item.json.app_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"fields\":{\"状态\":\"正在拆解爆款\"}}",
+        "options": {}
+      },
+      "id": "a46c9b2d-7c10-43cd-8a6b-5bad2780b63f",
+      "name": "更新进度-拆解中",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -768,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * 解析 Gemini generateContent 的返回\n * 输入：上一节点 HTTP 返回的完整 JSON（就是你贴的那种）\n * 输出：analysis（已解析对象） + errors（如果解析失败）\n */\n\nfunction getText(root) {\n  // 兼容：root 可能是数组，也可能是对象\n  const r = Array.isArray(root) ? root[0] : root;\n  return r?.candidates?.[0]?.content?.parts?.[0]?.text || \"\";\n}\n\nfunction tryParseJsonWithFixes(text) {\n  const errs = [];\n\n  // 1) 先尝试直接 parse\n  try {\n    return { obj: JSON.parse(text), fixedText: text, errs };\n  } catch (e) {\n    errs.push(\"direct JSON.parse failed: \" + e.message);\n  }\n\n  // 2) 常见修复：把 time_range 没有引号的情况补上\n  //    例如: \"time_range\":上手效果展示\"\n  let fixed = text.replace(\n    /(\"time_range\"\\s*:\\s*)([^\"\\s][^,\\n}]*)/g,\n    (m, p1, p2) => {\n      // p2 可能是中文且末尾可能带引号，统一去掉外层引号后再加\n      const cleaned = String(p2).trim().replace(/^\"+|\"+$/g, \"\");\n      return `${p1}\"${cleaned}\"`;\n    }\n  );\n\n  // 3) 再试一次\n  try {\n    return { obj: JSON.parse(fixed), fixedText: fixed, errs };\n  } catch (e) {\n    errs.push(\"fixed JSON.parse failed: \" + e.message);\n  }\n\n  return { obj: null, fixedText: fixed, errs };\n}\n\nconst items = $input.all();\nconst out = [];\n\nfor (const item of items) {\n  const root = item.json;\n  const text = getText(root);\n\n  if (!text) {\n    out.push({\n      json: {\n        ...item.json,\n        analysis: null,\n        parse_ok: false,\n        errors: [\"No candidates[0].content.parts[0].text found\"]\n      }\n    });\n    continue;\n  }\n\n  const { obj, fixedText, errs } = tryParseJsonWithFixes(text);\n\n  out.push({\n    json: {\n      ...item.json,\n      parse_ok: !!obj,\n      analysis: obj,          // ✅ 你真正要用的结构化结果\n      _raw_text: text,        // 原始 text\n      _fixed_text: fixedText, // 修复后的 text（方便排查）\n      errors: obj ? [] : errs\n    }\n  });\n}\n\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        352
+      ],
+      "id": "733c54ee-fc6b-437f-8ced-7346669817c9",
+      "name": "解析结构数据"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('获取任务表信息').item.json.app_token }}/tables/{{ $('获取任务表信息').item.json.table_id }}/records/{{ $('Webhook').item.json.body.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Auth:getAccessToken auth1').first().json.app_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"fields\":{\"拆解进度\":\"api-key错误\"}}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -768,
+        -32
+      ],
+      "id": "b2a00fa5-be8b-4c68-9229-f9745ba3769a",
+      "name": "提醒-key错误"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('获取任务表信息').item.json.app_token }}/tables/{{ $('获取任务表信息').item.json.table_id }}/records/{{ $('Webhook').item.json.body.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Auth:getAccessToken auth1').first().json.app_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"fields\":{\"拆解进度\":\"积分不足\"}}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -768,
+        160
+      ],
+      "id": "d8af7531-852b-4972-b34f-ee2a3baaed0d",
+      "name": "提醒-积分不足"
+    },
+    {
+      "parameters": {
+        "url": "https://open.feishu.cn/open-apis/drive/v1/medias/batch_get_tmp_download_url",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "file_tokens",
+              "value": "={{ $json.data.record.fields['参考爆款视频'][0].file_token }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Auth:getAccessToken auth1').item.json.app_access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -320,
+        352
+      ],
+      "id": "0b522d2f-4469-45fc-85d6-5e3697982a87",
+      "name": "获取参考视频链接"
+    },
+    {
+      "parameters": {
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('获取任务表信息').item.json.app_token }}/tables/{{ $('获取任务表信息').item.json.table_id }}/records/{{ $('Webhook').item.json.body.record_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Auth:getAccessToken auth1').item.json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -544,
+        352
+      ],
+      "id": "1d0c97a6-e6c6-4618-b890-833b9afd238e",
+      "name": "读取记录"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.body.data.tmp_download_urls[0].tmp_download_url }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -96,
+        352
+      ],
+      "id": "5a15157a-3a0d-45fa-987a-397e206f58d2",
+      "name": "下载视频"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('获取任务表信息').first().json.app_token }}/tables/{{ $('获取任务表信息').first().json.table_id }}/records/{{ $('Webhook').item.json.body.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Auth:getAccessToken auth1').item.json.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ \n  {\n    \"fields\": {\n      \"爆款提示词总结\": $json.candidates[0].content.parts[0].text,\n      \"状态\": \"已完成\"\n    }\n  } \n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        800,
+        352
+      ],
+      "id": "d08143fd-145a-4937-8f72-22c3d5dbb8e2",
+      "name": "更新状态"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://yunwu.ai/v1beta/models/gemini-2.5-pro:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.gemini_body }}",
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        352,
+        352
+      ],
+      "id": "412a91e0-8d9f-45dd-891f-1d9c3a7fc709",
+      "name": "分析Agent-视频理解",
+      "retryOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mMIH382GnJoMSu4L",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * n8n Code 节点：把下载好的视频（二进制）喂给 Yunwu Gemini generateContent\n * 输出：{ gemini_body }\n *\n * 依赖：\n * - 上一节点把视频存到 binary（常见 key: \"data\" 或 \"video\"）\n * - HTTP Request 节点 jsonBody 用 ={{ $json.gemini_body }}\n */\n\nfunction pickBinaryKey(bin) {\n  if (!bin || typeof bin !== \"object\") return \"\";\n  if (bin.video) return \"video\";\n  if (bin.data) return \"data\";\n  const keys = Object.keys(bin);\n  return keys.length ? keys[0] : \"\";\n}\n\nfunction ensureBase64FromBinary(itemIndex, binaryKey) {\n  const bin = $input.all()[itemIndex].binary?.[binaryKey];\n  if (!bin) throw new Error(`Binary key \"${binaryKey}\" not found`);\n\n  // 情况 A：binary 自带 base64 data（最省事）\n  if (bin.data && typeof bin.data === \"string\" && bin.data.length > 50) {\n    return bin.data; // 已经是 base64\n  }\n\n  // 情况 B：binary 可能是 filesystem 模式，没有 data，需要 helper 读 buffer\n  // this.helpers 在 Code 节点可用（n8n 官方方式）\n  // 注意：这里返回的是 base64 字符串\n  return null;\n}\n\n// 你的提示词原文：尽量原样保留（直接粘进来）\nconst systemText = `# Role\n你是一位精通**视频逆向工程**与**商业叙事逻辑拆解**的专家。你的核心能力是透过像素表象，提取视频的“爆款基因”。\n你需要像手术刀一样精准地拆解输入的视频文件，将其转化为**「极细颗粒度视觉参数」**与**「通用叙事逻辑骨架」**相结合的结构化数据。\n\n# Goal\n输出一份标准的 JSON 格式分析报告。这份报告将作为“母版”，指导下游 AI（Node 2）在保留原视频运镜、节奏和情绪逻辑的前提下，填入全新的产品生成新视频。\n\n# Core Skills & Analysis Dimensions\n### 1. 视觉全维度解析 (Visual Precision) - 物理层\n你必须按照以下标准对每个分镜进行“像素级”还原：\n* **时序拆分**：按动作转折拆分分镜，时间标注精确到 **0.5秒**。\n* **镜头语言**：准确识别镜头类型（特写/中景/全景）、焦距感（广角/长焦）、运镜轨迹（推拉摇移跟）及速度（如“0.8秒快速推近”）。\n* **主体微动作**：分析核心主体（人物/动物）的起始动作、进行中状态和结束动作。重点描述**物理互动**（如“指尖下压海绵1cm展示回弹”）。\n* **环境与光影**：识别光位（侧逆光/顶光）、光质（柔/硬）、色调氛围以及必要的特效（粒子/模糊）。\n* **抗干扰**：自动过滤水印、UI图标等无关元素。\n\n### 2. 逻辑抽象化 (Logic Abstraction) - 逻辑层\n你必须识别视频中的“变量”与“不变量”，为 Node 2 提供迁移指南：\n* **变量标记**：在描述中，将具体的产品本体标记为 \\`[HERO_PRODUCT]\\`，将具体的使用者标记为 \\`[USER/MODEL]\\`。\n* **叙事意图**：分析该镜头的商业目的（是 Hook？是痛点展示？还是信任背书？）。\n* **通用指令**：将具体画面翻译为“导演指令”。例如，不要只说“拉扯内衣”，要说“通过高强度的物理互动（拉扯/挤压）来可视化展示 [HERO_PRODUCT] 的材质耐用性”。\n\n# Output Format (JSON Schema)\n请严格遵守以下 JSON 结构输出，不要包含任何 Markdown 代码块以外的闲聊：\n\n\\`\\`\\`json\n{\n  \"meta\": {\n    \"art_style\": \"全局艺术风格 (e.g., 极简主义/日系糖水片/赛博朋克)\",\n    \"render_quality\": \"渲染质量 (e.g., 4K, 电影级光影, 高帧率)\",\n    \"mood_atmosphere\": \"核心情绪氛围 (e.g., 治愈, 紧张, 高级感)\",\n    \"total_duration\": \"视频总时长\"\n  },\n  \"scene_breakdown\": [\n    {\n      \"id\": 1,\n      \"time_range\": \"00:00 - 00:XX\",\n      \"visual_specs\": {\n        \"camera\": \"镜头信息：类型 + 运镜 + 速度 (e.g., 24mm广角，低角度缓慢前推)\",\n        \"subject_action\": \"主体动作：外观 + 微动作细节 (e.g., [USER]侧卧，手指轻轻抚摸 [HERO_PRODUCT] 边缘)\",\n        \"lighting_environment\": \"环境细节：场景 + 光影 + 特效 (e.g., 晨光透过白纱帘，丁达尔效应)\",\n        \"auxiliary_elements\": \"辅助元素 (e.g., 纯文本标题浮现，无水印)\"\n      },\n      \"abstract_logic\": {\n        \"narrative_role\": \"叙事功能 (e.g., 黄金3秒钩子 / 痛点场景复现)\",\n        \"universal_instruction\": \"给Node 2的通用生成指令。必须包含 [HERO_PRODUCT] 变量。 (e.g., 特写展示产品的物理质感，通过光影变化强调其高级材质。)\"\n      }\n    }\n  ]\n}\n\\`\\`\\`\n`;\n\n// ====== 主逻辑：逐 item 处理（支持批量） ======\nconst items = $input.all();\nconst out = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i];\n  const bin = item.binary || {};\n  const binaryKey = pickBinaryKey(bin);\n  if (!binaryKey) {\n    throw new Error(\"No binary data found. Make sure the download node outputs binary (e.g., data/video).\");\n  }\n\n  const mimeType = bin[binaryKey]?.mimeType || \"video/mp4\";\n\n  // 先尝试直接拿 base64\n  let base64 = ensureBase64FromBinary(i, binaryKey);\n\n  // 如果没有 data，则用 helper 读 buffer 再转 base64\n  if (!base64) {\n    if (!this?.helpers?.getBinaryDataBuffer) {\n      throw new Error(\n        `Binary has no .data and this.helpers.getBinaryDataBuffer is unavailable. ` +\n        `Please ensure binary includes base64 data, or switch binaryDataMode to \"default\".`\n      );\n    }\n    const buf = await this.helpers.getBinaryDataBuffer(i, binaryKey);\n    base64 = buf.toString(\"base64\");\n  }\n\n  const gemini_body = {\n    systemInstruction: {\n      parts: [{ text: systemText }]\n    },\n    contents: [\n      {\n        role: \"user\",\n        parts: [\n          {\n            inlineData: {\n              mimeType,\n              data: base64\n            }\n          }\n        ]\n      }\n    ],\n    generationConfig: {\n      responseMimeType: \"application/json\"\n    }\n  };\n\n  out.push({\n    json: {\n      ...item.json,\n      gemini_body,\n      _debug_binary: {\n        binaryKey,\n        mimeType,\n        base64_length: base64.length\n      }\n    }\n  });\n}\n\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        128,
+        352
+      ],
+      "id": "9619b777-9842-4ff5-a06a-62e6c3c2602e",
+      "name": "组装请求"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://47.107.158.233:8080/api/credits/deduct",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "={{ $('Webhook').item.json.body.api_key }}"
+            },
+            {
+              "name": "amount",
+              "value": "={{ $('查询工作流积分').item.json.data.credit_cost }}"
+            },
+            {
+              "name": "reason",
+              "value": "={{ $('查询工作流积分').item.json.data.workflow_name }}"
+            },
+            {
+              "name": "workflow_id",
+              "value": "={{ $('查询工作流积分').item.json.data.workflow_id }}"
+            },
+            {
+              "name": "workflow_name",
+              "value": "={{ $('查询工作流积分').item.json.data.workflow_name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "876afb25-433c-47d9-9d7f-1c40e693051d",
+      "name": "扣除积分",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1024,
+        352
+      ]
+    }
+  ],
+  "pinData": {
+    "分析Agent-视频理解": [
+      {
+        "json": {
+          "candidates": [
+            {
+              "content": {
+                "role": "model",
+                "parts": [
+                  {
+                    "text": "{\n  \"meta\": {\n    \"art_style\": \"现代简约产品展示\",\n    \"render_quality\": \"高清, 专业布光\",\n    \"mood_atmosphere\": \"专业, 优雅, 高级感\",\n    \"total_duration\": \"48s\"\n  },\n  \"scene_breakdown\": [\n    {\n      \"id\": 1,\n      \"time_range\": \"00:00 - 00:10.5\",\n      \"visual_specs\": {\n        \"camera\": \"中近景, 视线水平, 固定镜头\",\n        \"subject_action\": \"[USER/MODEL]佩戴眼镜，面向镜头进行讲解。她用拇指和食指捏住[HERO_PRODUCT]，在00:02时，缓慢地将其向前推向镜头，并轻微转动以展示产品初步外观。\",\n        \"lighting_environment\": \"明亮的柔光，来自正前方，背景为纯白墙面，环境简洁干净。\",\n        \"auxiliary_elements\": \"无\"\n      },\n      \"abstract_logic\": {\n        \"narrative_role\": \"开场钩子与产品引入\",\n        \"universal_instruction\": \"使用一个中近景镜头，让[USER/MODEL]直接与观众互动。指令其手持[HERO_PRODUCT]，在讲解的同时，缓慢将产品推向镜头，完成一个从人到产品的视觉引导，作为开场介绍。\"\n      }\n    },\n    {\n      \"id\": 2,\n      \"time_range\": \"00:10.5 - 00:14.5\",\n      \"visual_specs\": {\n        \"camera\": \"微距特写, 固定镜头\",\n        \"subject_action\": \"[USER/MODEL]的手稳定地捏着[HERO_PRODUCT]的戒臂，完整展示了产品的主石和镶嵌设计。手指轻微调整角度，让光线照射到钻石上，展现其火彩。\",\n        \"lighting_environment\": \"纯白背景，顶部有明亮且均匀的漫射光，最大化地突显[HERO_PRODUCT]的宝石光泽和细节。\",\n        \"auxiliary_elements\": \"无\"\n      },\n      \"abstract_logic\": {\n        \"narrative_role\": \"产品核心设计展示\",\n        \"universal_instruction\": \"在纯净背景下，使用微距镜头静态展示[HERO_PRODUCT]的核心正面外观。通过专业布光，突出其最关键的卖点，如宝石的闪耀度或材质的特殊纹理。\"\n      }\n    },\n    {\n      \"id\": 3,\n      \"time_range\": \"00:14.5 - 00:27.5\",\n      \"visual_specs\": {\n        \"camera\": \"微距特写, 固定镜头\",\n        \"subject_action\": \"[USER/MODEL]的手指缓慢、平滑地将[HERO_PRODUCT]进行360度旋转。依次展示了产品的侧面轮廓、戒臂的扭臂设计、隐秘的围镶（hidden halo）以及抬高的镶嵌结构。\",\n        \"lighting_environment\": \"与上一场景相同的纯白背景和专业顶光，确保旋转过程中产品的每个结构细节都清晰可见。\",\n        \"auxiliary_elements\": \"无\"\n      },\n      \"abstract_logic\": {\n        \"narrative_role\": \"产品细节与工艺讲解\",\n        \"universal_instruction\": \"通过一个平稳的360度旋转微距镜头，全方位展示[HERO_PRODUCT]的结构和工艺细节。旋转速度需配合画外音的讲解节奏，让观众能清晰地看到每一个被提及的设计特点。\"\n      }\n    },\n    {\n      \"id\": 4,\n      \"time_range\":上手效果展示\",\n      \"visual_specs\": {\n        \"camera\": \"俯拍特写, 固定镜头\",\n        \"subject_action\": \"[HERO_PRODUCT]被佩戴在[USER/MODEL]的食指上，手部平放在白色背景上，展示了产品在实际佩戴场景中的尺寸比例和整体外观。\",\n        \"lighting_environment\": \"纯白背景，均匀的柔光，确保佩戴效果清晰、无干扰。\",\n        \"auxiliary_elements\": \"无\"\n      },\n      \"abstract_logic\": {\n        \"narrative_role\": \"使用场景可视化\",\n        \"universal_instruction\": \"展示[HERO_PRODUCT]在目标场景下的使用状态（例如，戴在手上）。这个镜头旨在帮助消费者具象化产品效果，并直观了解其尺寸与比例。\"\n      }\n    },\n    {\n      \"id\": 5,\n      \"time_range\": \"00:31.5 - 00:39.0\",\n      \"visual_specs\": {\n        \"camera\": \"微距特写, 固定镜头\",\n        \"subject_action\": \"重复场景3的动作，[USER/MODEL]的手指再次缓慢旋转[HERO_PRODUCT]，重新强调了其侧面高镶的设计，以配合画外音讲解其功能性优点。\",\n        \"lighting_environment\": \"纯白背景，专业顶光。\",\n        \"auxiliary_elements\": \"无\"\n      },\n      \"abstract_logic\": {\n        \"narrative_role\": \"核心卖点强化\",\n        \"universal_instruction\": \"复用或重拍多角度旋转镜头，以配合旁白，对[HERO_PRODUCT]最核心的功能或设计优点进行视觉上的再强调，加深观众印象。\"\n      }\n    },\n    {\n      \"id\": 6,\n      \"time_range\": \"00:39.0 - 00:48.0\",\n      \"visual_specs\": {\n        \"camera\": \"俯拍特写, 固定镜头\",\n        \"subject_action\": \"[HERO_PRODUCT]再次被佩戴在[USER/MODEL]的手指上。手部进行了轻微的上下倾斜和移动，使钻石能够捕捉光线，动态地展示其闪耀效果。视频最后定格在一个清晰的佩戴图上。\",\n        \"lighting_environment\": \"纯白背景，光线被设置为能在产品移动时产生动态的闪光效果。\",\n        \"auxiliary_elements\": \"无\"\n      },\n      \"abstract_logic\": {\n        \"narrative_role\": \"最终效果展示与结尾\",\n        \"universal_instruction\": \"以一个动态的佩戴展示作为结尾，通过轻微移动[HERO_PRODUCT]，利用光线变化充分展示其美感。最后以一个完美的静态“英雄”镜头结束，给观众留下深刻的美好印象。\"\n      }\n    }\n  ]\n}"
+                  }
+                ]
+              },
+              "finishReason": "STOP",
+              "index": 0,
+              "safetyRatings": null
+            }
+          ],
+          "promptFeedback": {
+            "safetyRatings": null
+          },
+          "usageMetadata": {
+            "promptTokenCount": 15692,
+            "candidatesTokenCount": 1522,
+            "totalTokenCount": 19260,
+            "thoughtsTokenCount": 2046,
+            "promptTokensDetails": [
+              {
+                "modality": "TEXT",
+                "tokenCount": 968
+              },
+              {
+                "modality": "VIDEO",
+                "tokenCount": 13150
+              },
+              {
+                "modality": "AUDIO",
+                "tokenCount": 1574
+              }
+            ]
+          },
+          "modelVersion": "gemini-2.5-pro",
+          "responseId": "YlyIafu7PLnwqtsPx5S86Q8"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ],
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "hooks.flowonn.com",
+            "x-real-ip": "123.58.10.239",
+            "x-forwarded-for": "123.58.10.239",
+            "x-forwarded-proto": "https",
+            "connection": "close",
+            "content-length": "359",
+            "user-agent": "Go-http-client/1.1",
+            "content-type": "application/json",
+            "x-base-automation-ua": "automation/1.0.0",
+            "x-tt-env": "prod",
+            "x-tt-logid": "02177114473020000000000000000000000ffffa075cd7deea364",
+            "accept-encoding": "gzip"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "record_id": "recvbhAiXlOK8O",
+            "workflow_id": "flow_teardown",
+            "table_link": "https://icnihzenib3m.feishu.cn/base/LGQ0bv4E8aMPCFsUv17c35s8nUd?table=tblGveI47E94Ywao&view=vew3HXRwTo",
+            "app_id": "cli_a84fa88ac9a6d00c",
+            "app_secret": "2n4R5DDvAqQoE8D3U2Maie5KMeSrzFHL",
+            "app_token": "LGQ0bv4E8aMPCFsUv17c35s8nUd",
+            "api_key": "sk_S-XJvpVKGGwnac1AlEFs3avCWZpqdOGaMMW27Y8iSPY"
+          },
+          "webhookUrl": "http://localhost:5678/webhook/teardown",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Auth:getAccessToken auth1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth:getAccessToken auth1": {
+      "main": [
+        [
+          {
+            "node": "获取任务表信息",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "获取任务表信息": {
+      "main": [
+        [
+          {
+            "node": "查询工作流积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "查询工作流积分": {
+      "main": [
+        [
+          {
+            "node": "验证api-key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "验证api-key": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "提醒-key错误",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "提醒-积分不足",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "更新进度-拆解中",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "更新进度-拆解中": {
+      "main": [
+        [
+          {
+            "node": "读取记录",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析结构数据": {
+      "main": [
+        [
+          {
+            "node": "更新状态",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "获取参考视频链接": {
+      "main": [
+        [
+          {
+            "node": "下载视频",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读取记录": {
+      "main": [
+        [
+          {
+            "node": "获取参考视频链接",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "下载视频": {
+      "main": [
+        [
+          {
+            "node": "组装请求",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "更新状态": {
+      "main": [
+        [
+          {
+            "node": "扣除积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "分析Agent-视频理解": {
+      "main": [
+        [
+          {
+            "node": "解析结构数据",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装请求": {
+      "main": [
+        [
+          {
+            "node": "分析Agent-视频理解",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "5a36063e-fa13-426f-8c5f-ac7995c703fb",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
+  },
+  "id": "OU8uSuZQGeUDTCHL",
+  "tags": []
+}

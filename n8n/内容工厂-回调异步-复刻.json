@@ -1,0 +1,915 @@
+{
+  "name": "内容工厂-回调异步-复刻",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// n8n Webhook 一般输入是 { headers, params, query, body, ... }\nconst root = $json || {};\n\n// 1) 拿到 body（回调内容）\nconst body = (root.body && typeof root.body === 'object') ? root.body : root;\n\n// 2) 新格式：body.context；旧格式：root.query（callbackUrl 参数）\nconst query = (root.query && typeof root.query === 'object') ? root.query : {};\nconst context = (body.context && typeof body.context === 'object') ? body.context : {};\n\n// ---------- 统一取字段 ----------\nconst status = String(body.status ?? body.data?.status ?? '').toLowerCase();\n// 新格式成功：status=success 或 data.status=completed\nconst ok =\n  status === 'success' ||\n  status === 'completed' ||\n  status === 'succeeded' ||\n  String(body.data?.status ?? '').toLowerCase() === 'completed' ||\n  String(body.data?.status ?? '').toLowerCase() === 'success';\n\n// taskId：新格式 task_id / data.id；旧格式 data.taskId\nconst taskId =\n  body.task_id ||\n  body.taskId ||\n  body.data?.id ||\n  body.data?.taskId ||\n  null;\n\n// resultUrl：新格式 video_url / data.video_url；旧格式 resultJson 里 resultUrls[0]\nlet resultUrl =\n  body.video_url ||\n  body.data?.video_url ||\n  body.data?.result_url ||\n  null;\n\nif (!resultUrl && body.data && typeof body.data.resultJson === 'string') {\n  try {\n    const parsed = JSON.parse(body.data.resultJson);\n    if (Array.isArray(parsed.resultUrls) && parsed.resultUrls[0]) {\n      resultUrl = parsed.resultUrls[0];\n    }\n  } catch (e) {}\n}\n\n// msg / failMsg：尽量把失败原因找出来\nconst failMsg =\n  body.failMsg ||\n  body.data?.failMsg ||\n  body.error?.message ||\n  body.error_message ||\n  body.message ||\n  body.msg ||\n  '';\n\nconst msg = ok ? 'success' : (failMsg || 'failed');\n\n// 3) 上下文：优先新格式 context，其次 query（兼容老逻辑）\nconst pick = (a, b) => (a != null && String(a).trim() !== '' ? a : b);\n\nreturn {\n  json: {\n    // 保持你原有 IF 的判断方式：codeStr === \"200\" 即成功\n    code: ok ? 200 : 500,\n    codeStr: ok ? '200' : '500',\n    msg,\n\n    status: body.status ?? body.data?.status ?? null,\n    taskId,\n    resultUrl,\n    failMsg,\n\n    // 源记录（父表）\n    record_id: pick(context.record_id, query.record_id),\n    app_token: pick(context.app_token, query.app_token),\n    table_id: pick(context.table_id, query.table_id),\n\n    // 目标表（子表，可选）\n    out_app_token: pick(context.out_app_token, query.out_app_token),\n    out_table_id: pick(context.out_table_id, query.out_table_id),\n\n    tenant_access_token: pick(context.tenant_access_token, query.tenant_access_token),\n    api_key: pick(context.api_key, query.api_key),\n    workflow_id_for_credits: pick(context.workflow_id_for_credits, query.workflow_id_for_credits),\n\n    // 方便排查\n    debug_raw_keys: Object.keys(body || {}),\n  }\n};\n"
+      },
+      "name": "解析回调+上下文",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1744,
+        176
+      ],
+      "id": "0ce84cc1-70fa-4fc9-af85-e437fa4f0aa4"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "success",
+              "leftValue": "={{ $('解析回调+上下文').item.json.codeStr }}",
+              "rightValue": "200",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "是否生成成功",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1296,
+        176
+      ],
+      "id": "113e5f95-e6ab-45d2-950f-4ce3d0712d03"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('解析回调+上下文').item.json.resultUrl }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "video_data"
+            }
+          }
+        }
+      },
+      "name": "下载视频",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -864,
+        0
+      ],
+      "id": "d32d8136-6e38-49c9-ae50-3cf87cbcc9b3"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 准备上传 OSS 的参数，所有上下文都用当前 $json\nconst item = $input.item;\nconst base = item.json;\n\nreturn {\n  json: {\n    taskId: base.taskId,\n    record_id: base.record_id,\n    app_token: base.app_token,\n    table_id: base.table_id,\n    tenant_access_token: base.tenant_access_token,\n    api_key: base.api_key,\n    workflow_id_for_credits: base.workflow_id_for_credits,\n    fileName: `keling_video_${base.taskId}.mp4`\n  },\n  // 把 HTTP 节点下载的二进制视频透传出去\n  binary: item.binary\n};\n"
+      },
+      "name": "准备上传参数",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        0
+      ],
+      "id": "70033801-749d-469b-8630-458cb14adf75"
+    },
+    {
+      "parameters": {
+        "bucket": "flowonn",
+        "pathname": "/n8n_data",
+        "name": "=data"
+      },
+      "name": "OSSClient",
+      "type": "n8n-nodes-oss.OSSClient",
+      "typeVersion": 1,
+      "position": [
+        480,
+        0
+      ],
+      "id": "85b657d4-bf8e-4dc3-977e-ca32cba98e1f",
+      "credentials": {
+        "OSSClientApi": {
+          "id": "MPvkbfHzbiJJqg7q",
+          "name": "OSSClient account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// OSSClient 节点输出里，name 就是对象 key，例如：n8n_data/2025-12-14/xxx.mp4\nconst keyRaw = $json.name || $json.objectKey || '';\nconst key = String(keyRaw).replace(/^\\/+/, ''); // 防御：避免出现 //\n\n// 你的自定义域名（已绑定 bucket）\nconst cdnHost = 'https://oss.flowonn.com';\n\nconst publicUrl = `${cdnHost}/${encodeURI(key)}`;\n\nreturn {\n  json: {\n    publicUrl,\n    record_id: $json.record_id,\n    app_token: $json.app_token,\n    table_id: $json.table_id,\n    tenant_access_token: $json.tenant_access_token,\n    api_key: $json.api_key,\n    workflow_id_for_credits: $json.workflow_id_for_credits,\n  }\n};\n"
+      },
+      "name": "网址转换",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        704,
+        0
+      ],
+      "id": "ef0ffaae-dd2a-48ab-84b7-4f2ea8eebe98"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('解析回调+上下文').item.json.app_token }}/tables/{{ $('解析回调+上下文').item.json.table_id }}/records/{{ $('解析回调+上下文').item.json.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('解析回调+上下文').item.json.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"fields\": {\n    \"任务进度\": \"{{ $json.error.message }}\"\n  }\n}",
+        "options": {}
+      },
+      "name": "更新记录-失败",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        336
+      ],
+      "id": "7bad04e4-c8dd-4935-b88f-49bb35f276a3"
+    },
+    {
+      "parameters": {
+        "jsCode": "return {\n  json: {\n    code: 200,\n    msg: 'success'\n  }\n};"
+      },
+      "name": "返回成功响应",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1824,
+        288
+      ],
+      "id": "f215ef19-4936-4352-bfe8-40a9f5227931"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('解析回调+上下文').item.json.app_token }}/tables/{{ $('解析回调+上下文').item.json.table_id }}/records/{{ $('解析回调+上下文').item.json.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('解析回调+上下文').item.json.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"fields\": {\n    \"任务进度\": \"已完成\"\n  }\n}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "9e4b3457-6e4a-4e9d-a7c6-c512f786c022",
+      "name": "更新记录-成功",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://47.107.158.233:8080/api/credits/deduct",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "={{ $('解析回调+上下文').item.json.api_key }}"
+            },
+            {
+              "name": "amount",
+              "value": "={{ $json.data.credit_cost }}"
+            },
+            {
+              "name": "reason",
+              "value": "keling_video"
+            },
+            {
+              "name": "workflow_id",
+              "value": "={{ $json.data.workflow_id }}"
+            },
+            {
+              "name": "workflow_name",
+              "value": "={{ $json.data.workflow_name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "403e4ed4-c18e-47da-8bf4-25bef3709352",
+      "name": "扣除积分",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2048,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id={{ $('解析回调+上下文').item.json.workflow_id_for_credits }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1824,
+        -144
+      ],
+      "id": "e697aab2-e15e-41c8-b267-79013a8a5a91",
+      "name": "查询工作流积分-子流程"
+    },
+    {
+      "parameters": {
+        "jsCode": "return await (async () => {\n  const items = $input.all();\n  if (!items.length) throw new Error('没有输入数据');\n\n  const output = [];\n\n  for (let i = 0; i < items.length; i++) {\n    const item = items[i];\n    const binary = item.binary || {};\n    const keys = Object.keys(binary);\n    if (!keys.length) throw new Error(`第 ${i} 条 item 没有任何 binary 数据`);\n\n    const key = keys[0];\n    const binData = binary[key];\n    if (!binData) throw new Error(`第 ${i} 条 item 的 ${key} 不存在`);\n\n    const fileName = binData.fileName || `nano_result_${Date.now()}_${i}.jpg`;\n\n    // ✅ 关键：从 n8n 拿到真实文件 buffer（兼容 /tmp 落盘模式）\n    let buffer;\n    try {\n      buffer = await this.helpers.getBinaryDataBuffer(i, key);\n    } catch (e) {\n      // 兜底：如果确实是 base64 内容（非落盘模式），再用 base64 解\n      const raw = binData.data;\n      if (!raw) throw new Error(`第 ${i} 条 item 的 ${key} 没有 data，且 getBinaryDataBuffer 失败：${e.message}`);\n      const b64 = String(raw).replace(/^data:.*;base64,/, '');\n      buffer = Buffer.from(b64, 'base64');\n    }\n\n    output.push({\n      json: {\n        fileName,\n        fileSize: buffer.length, // ✅ 真实字节数\n        binaryKey: key,\n      },\n      binary: {\n        [key]: {\n          ...binData,\n          fileName,\n        },\n      },\n    });\n  }\n\n  return output;\n})();\n"
+      },
+      "id": "0a6a26c1-bbdf-42c0-bfe3-f95671fec65c",
+      "name": "生成文件信息",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://open.feishu.cn/open-apis/drive/v1/medias/upload_all",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('解析回调+上下文').first().json.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "file_name",
+              "value": "={{ $('生成文件信息').item.json.fileName }}"
+            },
+            {
+              "name": "parent_type",
+              "value": "bitable_file"
+            },
+            {
+              "name": "parent_node",
+              "value": "={{ $('解析回调+上下文').first().json.out_app_token }}"
+            },
+            {
+              "name": "size",
+              "value": "={{ $('生成文件信息').item.json.fileSize }}"
+            }
+          ]
+        },
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 3
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "e42c2b57-e7a1-4420-a900-2203b7777038",
+      "name": "上传素材到云空间",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        -192
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * 解析飞书 drive/v1/medias/upload_all 返回（允许失败）\n * - 成功：输出 file_token\n * - 失败：file_token = null，但给出 feishu_upload_ok=false + error 信息\n */\nconst input = $input.first()?.json || {};\n\n// fullResponse: true 时会有 statusCode/body\nconst statusCode = input.statusCode ?? input.status ?? null;\nconst resp = (input.body && typeof input.body === 'object') ? input.body : input;\n\n// 飞书常见：{ code, msg, data, error }\nconst apiCode = resp?.code;\nconst apiMsg = resp?.msg || resp?.message || input.errorDescription || input.errorMessage || '';\nconst data = resp?.data || {};\n\n// 尝试取 file_token\nconst file_token =\n  data.file_token ||\n  data.fileToken ||\n  resp?.file_token ||\n  resp?.fileToken ||\n  null;\n\nconst okByToken = !!file_token;\nconst okByHttp = (statusCode == null) ? false : (Number(statusCode) >= 200 && Number(statusCode) < 300);\n\n// ✅ 只要拿到 file_token 就算成功（最稳）\nconst feishu_upload_ok = okByToken && (okByHttp || true);\n\n// 透传上下文（从当前 json 里拿）\nconst passthroughKeys = [\n  'publicUrl',\n  'taskId',\n  'record_id',\n  'app_token',\n  'table_id',\n  'out_app_token',\n  'out_table_id',\n  'tenant_access_token',\n  'api_key',\n  'workflow_id_for_credits',\n];\n\nconst passthrough = {};\nfor (const k of passthroughKeys) passthrough[k] = input[k];\n\n// 错误细节（quota exceeded 时 resp.error.log_id 有用）\nconst log_id = resp?.error?.log_id || resp?.error?.logId || null;\n\nreturn {\n  json: {\n    ...passthrough,\n    feishu_upload_ok,\n    file_token,               // 成功有值，失败为 null\n    feishu_error_code: okByToken ? null : (apiCode ?? statusCode ?? null),\n    feishu_error_msg: okByToken ? '' : apiMsg,\n    feishu_log_id: okByToken ? null : log_id,\n  },\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        704,
+        -192
+      ],
+      "id": "8a2b618e-d7dc-4b37-a3aa-86a3c362ebdd",
+      "name": "解析"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        928,
+        -96
+      ],
+      "id": "928285fa-4de8-46ff-9ee3-a0da6b153abc",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $json.ff_inPath }}",
+        "dataPropertyName": "video_data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        -416,
+        0
+      ],
+      "id": "452204f2-4e56-4eee-bdbd-4da11f2369b7",
+      "name": "落盘输入视频"
+    },
+    {
+      "parameters": {
+        "command": "=ffmpeg -y -i \"{{$json.ff_inPath}}\" \\\n-vf \"trim=start=1,setpts=PTS-STARTPTS\" \\\n-af \"atrim=start=1,asetpts=PTS-STARTPTS\" \\\n-c:v libx264 -crf 20 -preset veryfast \\\n-c:a aac -b:a 128k \\\n-movflags +faststart \\\n\"{{$json.ff_outPath}}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -192,
+        0
+      ],
+      "id": "741de756-0e35-40b8-aca3-d77fd347d905",
+      "name": "FFmpeg 去首帧"
+    },
+    {
+      "parameters": {
+        "jsCode": "const taskId = $json.taskId || `t${Date.now()}`;\nreturn {\n  json: {\n    ...$json,\n    taskId,\n    ff_inPath: `/tmp/${taskId}.mp4`,\n    ff_outPath: `/tmp/${taskId}_drop1.mp4`,\n    ff_outFileName: `keling_video_${taskId}_drop1.mp4`,\n  },\n  binary: $binary,\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -640,
+        0
+      ],
+      "id": "66b05a3c-076f-40c2-acef-5fc1aff9efc6",
+      "name": "生成FFmpeg路径"
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $('生成FFmpeg路径').item.json.ff_outPath }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        32,
+        0
+      ],
+      "id": "68d2fa7c-a680-4409-9d32-c44dd488088e",
+      "name": "读回处理后视频"
+    },
+    {
+      "parameters": {
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $json.app_token }}/tables/{{ $json.table_id }}/records/{{ $json.record_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('解析回调+上下文').item.json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1520,
+        176
+      ],
+      "id": "88b4e0bc-2be9-4657-81c3-5c0260d612c1",
+      "name": "读取记录"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('解析回调+上下文').item.json.out_app_token }}/tables/{{ $('解析回调+上下文').item.json.out_table_id }}/records",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('解析回调+上下文').item.json.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1376,
+        -96
+      ],
+      "id": "cb82b435-86e6-4ec4-a5b9-d96aed2f4d84",
+      "name": "生成结果写入飞书"
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * n8n Code 节点：整理飞书 bitable PUT 的参数（url + headers + body）\n * - publicUrl 必填（OSS 兜底）\n * - file_token 可选（飞书云空间失败时为空也能跑完）\n * 输出：\n * {\n *   url: \"...\",\n *   headers: {...},\n *   body: {...}   // 给 HTTP Request 节点 JSON Body 用 ={{ $json.body }}\n * }\n */\n\nfunction pickText(v) {\n  if (v == null) return '';\n  if (typeof v === 'string') return v;\n  if (Array.isArray(v)) {\n    const first = v[0];\n    if (first == null) return '';\n    if (typeof first === 'string') return first;\n    if (typeof first === 'object') return first.text ?? first.value ?? first.link ?? first.url ?? '';\n    return String(first);\n  }\n  if (typeof v === 'object') return v.text ?? v.value ?? v.link ?? v.url ?? '';\n  return String(v);\n}\n\nfunction must(v, name) {\n  const s = pickText(v).trim();\n  if (!s) throw new Error(`${name} 为空`);\n  return s;\n}\n\n// 可选值：空就返回 null（不抛错）\nfunction opt(v) {\n  const s = pickText(v).trim();\n  return s ? s : null;\n}\n\nreturn $input.all().map((item) => {\n  const j = item.json || {};\n\n  // ====== 1) 上下文（优先当前 item，其次解析回调节点）======\n  const ctx = (() => {\n    try {\n      return $('解析回调+上下文').item.json || {};\n    } catch (e) {\n      return {};\n    }\n  })();\n\n  const record_id = must(j.record_id ?? ctx.record_id, 'record_id');\n  const app_token = must(j.app_token ?? ctx.app_token, 'app_token');\n  const table_id  = must(j.table_id  ?? ctx.table_id,  'table_id');\n  const tenant_access_token = must(j.tenant_access_token ?? ctx.tenant_access_token, 'tenant_access_token');\n\n  // ====== 2) 你要写回的字段 ======\n\n  // 先从本 item / ctx 里找（兼容不同字段名）\n  let promptText =\n    j.data?.record?.fields?.['视频提示词'] ??\n    j.data?.record?.fields?.['提示词'] ??\n    j.data?.record?.fields?.['脚本'] ??\n    j['视频提示词'] ??\n    j['提示词'] ??\n    j['脚本'] ??\n    ctx.data?.record?.fields?.['视频提示词'] ??\n    ctx.data?.record?.fields?.['提示词'] ??\n    ctx.data?.record?.fields?.['脚本'] ??\n    ctx['视频提示词'] ??\n    ctx['提示词'] ??\n    ctx['脚本'] ??\n    j.prompt ??\n    null;\n\n  // ✅ 关键兜底：优先从「读取记录」取 视频提示词，再退到 脚本\n  if (!pickText(promptText).trim()) {\n    try {\n      promptText = $('读取记录').first().json.data.record.fields['视频提示词'];\n    } catch (e) {}\n  }\n  if (!pickText(promptText).trim()) {\n    try {\n      promptText = $('读取记录').first().json.data.record.fields['脚本'];\n    } catch (e) {}\n  }\n\n  promptText = pickText(promptText);\n\n  // 链接：优先当前 item，其次网址转换节点\n  let publicUrl = j.publicUrl ?? j.public_url ?? j.url ?? ctx.publicUrl ?? null;\n\n  if (!publicUrl) {\n    try {\n      publicUrl = $('网址转换').first().json.publicUrl;\n    } catch (e) {}\n  }\n\n  publicUrl = must(publicUrl, 'publicUrl');\n\n  // ====== 3) 组装飞书 PUT 参数 ======\n  const url =\n    `https://open.feishu.cn/open-apis/bitable/v1/apps/${encodeURIComponent(app_token)}` +\n    `/tables/${encodeURIComponent(table_id)}/records/${encodeURIComponent(record_id)}` +\n    `?user_id_type=open_id`;\n\n  const headers = {\n    Authorization: `Bearer ${tenant_access_token}`,\n    'Content-Type': 'application/json; charset=utf-8',\n  };\n\n  // 基础 fields：永远写 link + 文本字段\n  const fields = {\n    \"复刻ID\": record_id,\n    \"生产类型\": \"爆款视频复刻\",\n\n    // ✅ 兼容：你表里如果叫“提示词”或“视频提示词”，都能写到\n    \"提示词\": promptText,\n\n    \"AI生成结果\": {\n      link: publicUrl,\n      text: \"下载视频\",\n    },\n  };\n\n  // file_token（可选：飞书云空间失败时可能为空）\n  const file_token = opt(j.file_token ?? j.fileToken ?? ctx.file_token);\n\n  // ✅ 只有拿到 file_token 才写附件字段，避免飞书字段校验报错\n  if (file_token) {\n    fields[\"AI视频\"] = [{ file_token }];\n  }\n\n  const body = { fields };\n\n  return { json: { url, headers, body } };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1152,
+        -96
+      ],
+      "id": "6782dbcb-e945-4db2-9896-d29e0a87e675",
+      "name": "整理参数"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// 安全删除：只允许删 /tmp 下的 mp4，避免误删\nfunction safeTmpMp4(p, name) {\n  if (!p) return null;\n  if (typeof p !== 'string') throw new Error(`${name} 不是字符串`);\n  if (!p.startsWith('/tmp/')) throw new Error(`${name} 非 /tmp 路径，拒绝删除：${p}`);\n  if (!p.endsWith('.mp4')) throw new Error(`${name} 非 mp4，拒绝删除：${p}`);\n  if (p.includes('..')) throw new Error(`${name} 包含 ..，拒绝删除：${p}`);\n  return p;\n}\n\nconst inPath = safeTmpMp4($json.ff_inPath, 'ff_inPath');\nconst outPath = safeTmpMp4($json.ff_outPath, 'ff_outPath');\n\nconst paths = [inPath, outPath].filter(Boolean);\n\n// 做好引号转义\nconst quoted = paths.map(p => `\"${p.replace(/\"/g, '\\\\\"')}\"`).join(' ');\n\n// rm -f 即使不存在也不报错；|| true 防止影响主链路\nconst cleanup_cmd = paths.length\n  ? `rm -f ${quoted} || true`\n  : `echo \"no tmp files to delete\"`;\n\nreturn {\n  json: {\n    ...$json,\n    cleanup_cmd,\n    cleanup_paths: paths,\n  },\n  // 透传二进制，别把视频 binary 弄丢\n  binary: $binary,\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        192
+      ],
+      "id": "b1a1b089-2633-4b92-9043-6c7ba9dad5a6",
+      "name": "清理/tmp临时视频"
+    },
+    {
+      "parameters": {
+        "command": "={{ $json.cleanup_cmd }}"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        480,
+        192
+      ],
+      "id": "8bf23248-7f83-49f4-af80-c08e51a8a2eb",
+      "name": "删除/tmp文件"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sora_copy_callbackV4",
+        "options": {}
+      },
+      "name": "sora2回调入口",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1968,
+        176
+      ],
+      "id": "b29c91ad-883d-4f76-a313-ad1755c86b15",
+      "webhookId": "89d81cbb-1677-4ef8-bb9a-ba81ed6246b3"
+    },
+    {
+      "parameters": {
+        "url": "=https://yunwu.ai/v1/video/query?id={{ $('解析回调+上下文').item.json.taskId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        272,
+        400
+      ],
+      "id": "bad9693d-1430-4b3f-a144-34a7e69d7493",
+      "name": "提交sora2请求",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000,
+      "alwaysOutputData": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mMIH382GnJoMSu4L",
+          "name": "Header Auth account"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "sora2回调入口": [
+      {
+        "json": {
+          "headers": {
+            "host": "hooks.flowonn.com",
+            "x-real-ip": "47.107.158.233",
+            "x-forwarded-for": "47.107.158.233",
+            "x-forwarded-proto": "https",
+            "connection": "close",
+            "content-length": "471",
+            "accept": "*/*",
+            "accept-encoding": "gzip, deflate",
+            "user-agent": "python-httpx/0.28.1",
+            "content-type": "application/json"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "status": "error",
+            "task_id": "video_6481ef4f-ea45-43f4-adc9-807b8c341a9d",
+            "message": "Veo Task Failed: failed",
+            "context": {
+              "record_id": "recvbtC4SIBTcX",
+              "app_token": "OGzoboCfQaLG5WsXWZbc38vanjj",
+              "table_id": "tblnWSf30HhVi26Z",
+              "tenant_access_token": "t-g1042hhVGT2IIQGD7DZQNHTOZ6MUXSS4H3VNRJZV",
+              "api_key": "sk_yRf_8MVxiK0sVqTG6JRnpCutZFtjKGMpz-IAIgLTT3c",
+              "workflow_id_for_credits": "flow_farm_copy",
+              "out_app_token": "OGzoboCfQaLG5WsXWZbc38vanjj",
+              "out_table_id": "tblIUphxckhsYVX5"
+            }
+          },
+          "webhookUrl": "http://localhost:5678/webhook/sora_copy_callbackV4",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "解析回调+上下文": {
+      "main": [
+        [
+          {
+            "node": "读取记录",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "是否生成成功": {
+      "main": [
+        [
+          {
+            "node": "下载视频",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "提交sora2请求",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "下载视频": {
+      "main": [
+        [
+          {
+            "node": "生成FFmpeg路径",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "准备上传参数": {
+      "main": [
+        [
+          {
+            "node": "OSSClient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OSSClient": {
+      "main": [
+        [
+          {
+            "node": "网址转换",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "网址转换": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "更新记录-失败": {
+      "main": [
+        [
+          {
+            "node": "返回成功响应",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "更新记录-成功": {
+      "main": [
+        [
+          {
+            "node": "返回成功响应",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "查询工作流积分-子流程",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "查询工作流积分-子流程": {
+      "main": [
+        [
+          {
+            "node": "扣除积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "生成文件信息": {
+      "main": [
+        [
+          {
+            "node": "上传素材到云空间",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "上传素材到云空间": {
+      "main": [
+        [
+          {
+            "node": "解析",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "整理参数",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "落盘输入视频": {
+      "main": [
+        [
+          {
+            "node": "FFmpeg 去首帧",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "生成FFmpeg路径": {
+      "main": [
+        [
+          {
+            "node": "落盘输入视频",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FFmpeg 去首帧": {
+      "main": [
+        [
+          {
+            "node": "读回处理后视频",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读回处理后视频": {
+      "main": [
+        [
+          {
+            "node": "生成文件信息",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "准备上传参数",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "清理/tmp临时视频",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读取记录": {
+      "main": [
+        [
+          {
+            "node": "是否生成成功",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "整理参数": {
+      "main": [
+        [
+          {
+            "node": "生成结果写入飞书",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "生成结果写入飞书": {
+      "main": [
+        [
+          {
+            "node": "更新记录-成功",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "清理/tmp临时视频": {
+      "main": [
+        [
+          {
+            "node": "删除/tmp文件",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "删除/tmp文件": {
+      "main": [
+        []
+      ]
+    },
+    "sora2回调入口": {
+      "main": [
+        [
+          {
+            "node": "解析回调+上下文",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提交sora2请求": {
+      "main": [
+        [
+          {
+            "node": "更新记录-失败",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "9264a171-f2c2-49c6-8977-42a6b90a951d",
+  "meta": {
+    "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
+  },
+  "id": "180EXEeL1PnlJeUH",
+  "tags": []
+}

@@ -1,0 +1,104 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql" // Changed from sqlite to postgresql
+}
+
+model Product {
+  id            String   @id @default(cuid())
+  name          String
+  description   String
+  sellingPoints String   @map("selling_points") // JSON string of full product DNA (from n8n)
+  sellingPointsText String? @map("selling_points_text") // Plain text summary
+  images        String   // JSON string of image URLs array
+  analysisResult String? // JSON string of full analysis result (Backup/Legacy)
+  replications  Replication[]
+  storyboardTasks StoryboardTask[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Script {
+  id        String   @id @default(cuid())
+  title     String
+  videoUrl  String
+  breakdown String   // JSON string of script breakdown
+  replications Replication[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Character {
+  id        String   @id @default(cuid())
+  name      String
+  avatar    String   // URL of the character image
+  voiceId   String?  // Optional voice ID
+  storyboardTasks StoryboardTask[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Replication {
+  id        String   @id @default(cuid())
+  status    String
+  result    String   // JSON string of result data
+  type      String   @default("FULL") // FULL, SELLING_POINTS, SCRIPT
+
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id])
+  
+  scriptId  String?
+  script    Script?  @relation(fields: [scriptId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model StoryboardTask {
+  id          String   @id @default(cuid())
+  status      String   @default("ANALYZING") // ANALYZING, SCENE_CONFIRMATION, GENERATING, COMPLETED, FAILED
+  
+  videoUrl    String?   // The uploaded viral video
+  coverImage  String?  // Thumbnail of the video
+  
+  productId   String?
+  product     Product? @relation(fields: [productId], references: [id])
+  
+  characterId String?
+  character   Character? @relation(fields: [characterId], references: [id])
+
+  // Scene reference for confirmation
+  sceneImage  String?
+  scenePrompt String?
+
+  segments    StoryboardSegment[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model StoryboardSegment {
+  id          String   @id @default(cuid())
+  order       Int
+  duration    Float    @default(8.0)
+  
+  imagePrompt String?
+  videoPrompt String?
+  
+  generatedImage String?
+  generatedVideo String?
+  
+  status      String   @default("PENDING") // PENDING, GENERATING, COMPLETED, FAILED
+
+  taskId      String
+  task        StoryboardTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
