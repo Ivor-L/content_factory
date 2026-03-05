@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import { createStoryboardTask } from '../actions/storyboard';
+import { createStoryboardTask } from '@/app/actions/storyboard';
 
 interface HomeContentProps {
   recentVideos: any[];

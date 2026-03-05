@@ -36,7 +36,7 @@ export function Sidebar() {
   };
 
   const navigation = [
-    { name: t.sidebar.home, href: '/', icon: Home },
+    { name: t.sidebar.home, href: '/dashboard', icon: Home },
     { name: t.sidebar.scripts, href: '/scripts', icon: Zap },
     { name: t.sidebar.storyboardGen, href: '/storyboard-gen', icon: LayoutGrid },
     { name: t.storyboard.title, href: '/storyboard', icon: Clapperboard },
