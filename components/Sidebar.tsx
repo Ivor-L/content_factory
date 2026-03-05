@@ -202,6 +202,17 @@ export function Sidebar() {
                 )}>
                     <div className="py-1">
                         <Link 
+                            href="/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => setIsUserMenuOpen(false)}
+                            className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                        >
+                            <Home size={16} />
+                            {t.sidebar?.home || 'Home'}
+                        </Link>
+
+                        <Link 
                             href="/settings"
                             onClick={() => setIsUserMenuOpen(false)}
                             className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"

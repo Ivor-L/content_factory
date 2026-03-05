@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { PlusCircle, PlayCircle, Eye, ShoppingBag, ChevronDown, Zap, Layers } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { ScriptForm } from "@/components/ScriptForm";
-import ReplicationForm from "@/app/replication/ReplicationForm";
+import ReplicationForm from "@/app/(main)/replication/ReplicationForm";
 import { useRouter } from "next/navigation";
 import { toast } from "react-hot-toast";
 import { deleteScript } from "./actions";

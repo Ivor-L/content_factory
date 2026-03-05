@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createScript } from "../app/scripts/actions";
+import { createScript } from "@/app/(main)/scripts/actions";
 import { useLanguage } from '@/contexts/LanguageContext';
 
 import { toast } from "react-hot-toast";

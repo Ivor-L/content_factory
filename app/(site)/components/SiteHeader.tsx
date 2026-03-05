@@ -63,6 +63,8 @@ export function SiteHeader({ lang, setLang }: SiteHeaderProps) {
           
           <Link 
             href="/dashboard"
+            target="_blank"
+            rel="noopener noreferrer"
             className="px-5 py-2.5 bg-black dark:bg-white text-white dark:text-black text-sm font-bold rounded-full hover:scale-105 transition-transform"
           >
             {t.dashboard}
@@ -89,6 +91,8 @@ export function SiteHeader({ lang, setLang }: SiteHeaderProps) {
             </button>
             <Link 
               href="/dashboard"
+              target="_blank"
+              rel="noopener noreferrer"
               className="px-8 py-4 bg-black dark:bg-white text-white dark:text-black text-lg font-bold rounded-full"
             >
               {t.dashboard}

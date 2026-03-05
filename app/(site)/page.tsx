@@ -32,7 +32,7 @@ export default function SiteHome() {
         <Hero lang={lang} />
         <Features lang={lang} />
         <Showcase lang={lang} />
-        {/* <Pricing lang={lang} /> */}
+        <Pricing lang={lang} />
       </main>
 
       <SiteFooter lang={lang} />

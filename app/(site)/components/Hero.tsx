@@ -42,6 +42,8 @@ export function Hero({ lang }: HeroProps) {
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 animate-in fade-in slide-in-from-bottom-6 duration-700 delay-300">
           <Link 
             href="/dashboard"
+            target="_blank"
+            rel="noopener noreferrer"
             className="w-full sm:w-auto px-8 py-4 bg-black dark:bg-white text-white dark:text-black rounded-full font-bold text-lg hover:scale-105 transition-transform shadow-xl shadow-black/10 dark:shadow-white/5 flex items-center justify-center gap-2"
           >
             {t.cta}

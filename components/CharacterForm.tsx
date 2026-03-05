@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createCharacter } from '../app/characters/actions';
+import { createCharacter } from "@/app/(main)/characters/actions";
 import { useLanguage } from '@/contexts/LanguageContext';
 import { toast } from 'react-hot-toast';
 
