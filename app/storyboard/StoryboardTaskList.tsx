@@ -52,7 +52,7 @@ export function StoryboardTaskList({ initialTasks, products = [], characters = [
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{t.storyboard.title}</h1>
         <Link
           href="/"
-          className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-bold rounded-lg shadow-sm text-black bg-brand-yellow hover:bg-yellow-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-yellow transition-colors uppercase tracking-wide"
+          className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-bold rounded-lg shadow-sm text-white dark:text-black bg-black dark:bg-white hover:bg-gray-900 dark:hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black dark:focus:ring-white transition-colors uppercase tracking-wide"
         >
           {t.common.create}
         </Link>

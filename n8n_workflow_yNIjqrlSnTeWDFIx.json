@@ -1,0 +1,98 @@
+
+{
+  "name": "Product DNA Analysis (Connected)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "yNIjqrlSnTeWDFIx",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        460,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE \"Product\"\nSET \n  \"selling_points\" = $1,\n  \"selling_points_text\" = $2\nWHERE \"id\" = $3",
+        "additionalFields": {
+          "queryParams": "={{ JSON.stringify({ marketing_profile: { core_selling_points: [{ description: 'High Quality (AI Generated)' }, { description: 'Great Value (AI Generated)' }] } }) }},\n{{ 'This is a simulated AI analysis description for ' + $json.body.name }},\n{{ $json.body.product_id }}"
+        }
+      },
+      "id": "update-postgres",
+      "name": "Update Product DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [
+        900,
+        340
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Postgres connection"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"marketing_profile\": {\n    \"core_selling_points\": [\n      { \"description\": \"High Quality (AI Generated)\" },\n      { \"description\": \"Great Value (AI Generated)\" }\n    ]\n  },\n  \"visual_description\": \"This is a simulated AI analysis description for \" + $json.body.name\n}",
+        "options": {}
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Instructions\n1. Import this workflow.\n2. Configure the **Postgres** node with these credentials:\n   - Host: `47.107.158.233`\n   - Port: `5431`\n   - Database: `postgres`\n   - User: `postgres`\n   - Password: `BfuRuWJYA1I_GeAjo3qpSA`\n3. Activate the workflow.\n4. Your Next.js app is already configured to call this URL.",
+        "height": 272,
+        "width": 396
+      },
+      "id": "instruction-note",
+      "name": "Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        460,
+        100
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Update Product DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Product DB": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

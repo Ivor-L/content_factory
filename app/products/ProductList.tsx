@@ -64,7 +64,7 @@ export function ProductList({ initialProducts }: ProductListProps) {
             setEditingProduct(null);
             setIsModalOpen(true);
           }}
-          className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-bold rounded-lg shadow-sm text-black bg-brand-yellow hover:bg-yellow-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-yellow transition-colors uppercase tracking-wide"
+          className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-bold rounded-lg shadow-sm text-white dark:text-black bg-black dark:bg-white hover:bg-gray-900 dark:hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black dark:focus:ring-white transition-colors uppercase tracking-wide"
         >
           {t.products.newProduct}
         </button>
@@ -120,7 +120,7 @@ export function ProductList({ initialProducts }: ProductListProps) {
                     {product.description || 'No description available'}
                   </p>
                   <div className="mt-4 flex items-center justify-between text-xs text-gray-400 dark:text-gray-500">
-                    <span>{new Date(product.createdAt).toLocaleDateString()}</span>
+                    <span suppressHydrationWarning>{new Date(product.createdAt).toLocaleDateString()}</span>
                     <div className="flex items-center gap-2">
                         <button
                             onClick={(e) => handleEdit(e, product)}

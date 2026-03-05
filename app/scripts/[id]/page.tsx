@@ -68,7 +68,7 @@ export default async function ScriptDetailPage({ params }: ScriptDetailPageProps
         <div className="lg:col-span-8 h-full overflow-y-auto pr-2 custom-scrollbar">
             <div className="space-y-6">
                 <div className="flex items-center gap-3 mb-2">
-                    <div className="h-8 w-1 bg-brand-yellow rounded-full"></div>
+                    <div className="h-8 w-1 bg-black dark:bg-white rounded-full"></div>
                     <h2 className="text-2xl font-bold text-gray-900">Script Breakdown</h2>
                 </div>
                 

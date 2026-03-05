@@ -45,7 +45,7 @@ export function StoryboardTaskDetail({ initialTask }: StoryboardTaskDetailProps)
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'ANALYZING': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
-      case 'SCENE_CONFIRMATION': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300';
+      case 'SCENE_CONFIRMATION': return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300';
       case 'GENERATING': return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300';
       case 'COMPLETED': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300';
       case 'FAILED': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
@@ -99,7 +99,7 @@ export function StoryboardTaskDetail({ initialTask }: StoryboardTaskDetailProps)
         
         <div className="flex items-center gap-3">
             {task.status === 'COMPLETED' && (
-                <button className="px-4 py-2 bg-brand-yellow text-black rounded-lg font-bold hover:bg-yellow-400 transition-colors shadow-sm">
+                <button className="px-4 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg font-bold hover:bg-gray-900 dark:hover:bg-gray-100 transition-colors shadow-sm">
                     {t.storyboard.download} Video
                 </button>
             )}
@@ -154,7 +154,7 @@ export function StoryboardTaskDetail({ initialTask }: StoryboardTaskDetailProps)
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 border-b border-gray-100 dark:border-gray-700 pb-2 flex justify-between items-center">
                     {t.storyboard.sceneRef}
                     {task.status === 'SCENE_CONFIRMATION' && (
-                        <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">Action Required</span>
+                        <span className="text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded">Action Required</span>
                     )}
                 </h3>
                 
@@ -183,7 +183,7 @@ export function StoryboardTaskDetail({ initialTask }: StoryboardTaskDetailProps)
                         <button 
                             onClick={handleConfirmScene}
                             disabled={loading}
-                            className="flex-1 bg-brand-yellow text-black font-bold py-2 rounded-lg hover:bg-yellow-400 transition-colors disabled:opacity-50"
+                            className="flex-1 bg-black dark:bg-white text-white dark:text-black font-bold py-2 rounded-lg hover:bg-gray-900 dark:hover:bg-gray-100 transition-colors disabled:opacity-50"
                         >
                             {loading ? 'Processing...' : t.storyboard.confirmScene}
                         </button>

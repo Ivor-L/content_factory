@@ -1,14 +1,16 @@
+
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     await prisma.character.delete({
       where: {
-        id: params.id,
+        id,
       },
     });
 
@@ -20,15 +22,16 @@ export async function DELETE(
 
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const body = await request.json();
     const { name, avatar, voiceId } = body;
 
     const character = await prisma.character.update({
       where: {
-        id: params.id,
+        id,
       },
       data: {
         name,

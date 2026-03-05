@@ -22,7 +22,7 @@ export async function POST(request: Request) {
             images: images || [],
             productId,
             apiKey,
-            workflowId: 'flow_product_dna'
+            workflowId: 'yNIjqrlSnTeWDFIx'
         });
         
         // Since n8n updates the DB asynchronously, we might just return the "triggered" status

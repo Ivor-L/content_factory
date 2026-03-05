@@ -72,6 +72,12 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
   };
 
   const uploadFile = async (file: File) => {
+    // Client-side validation: Max 50MB
+    if (file.size > 50 * 1024 * 1024) {
+        toast.error('File size too large (Max 50MB)');
+        return;
+    }
+
     setUploadingImage(true);
     try {
       const formData = new FormData();
@@ -82,13 +88,16 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
         body: formData,
       });
 
-      if (!res.ok) throw new Error('Upload failed');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Upload failed');
+      }
 
       const data = await res.json();
       setImages([...images, data.url]);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error uploading file:', error);
-      toast.error('Failed to upload image');
+      toast.error(error.message || 'Failed to upload image');
     } finally {
       setUploadingImage(false);
     }
@@ -184,7 +193,7 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
       await createProduct(formData);
       
       toast.dismiss(); // Dismiss any previous toasts
-      toast.success('Product saved successfully!', {
+      toast.success(t.products.savedSuccess, {
         duration: 2000,
         icon: '✅',
         style: {
@@ -203,7 +212,7 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
 
     } catch (error) {
       console.error(error);
-      toast.error('Failed to analyze and save product');
+      toast.error(t.products.analysisFailed);
       setAnalysisStatus('failed');
     } finally {
       setAnalyzing(false);
@@ -219,7 +228,7 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
         <input
           type="text"
           required
-          className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-yellow focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="e.g. Wireless Headphones"
@@ -230,7 +239,7 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
       <div>
         <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">{t.products.sellingPoints}</label>
         <textarea
-            className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 h-32 focus:ring-2 focus:ring-brand-yellow focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 h-32 focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             value={sellingPoints.join('\n')}
             onChange={(e) => setSellingPoints(e.target.value.split('\n'))}
             placeholder={t.products.sellingPoints + "..."}
@@ -248,7 +257,7 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
             <div className="flex items-center justify-center w-full">
                 <label 
                     className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
-                        dragActive ? 'border-brand-yellow bg-yellow-50 dark:bg-yellow-900/10' : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700'
+                        dragActive ? 'border-black dark:border-white bg-gray-50 dark:bg-gray-800' : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}
                     onDragEnter={handleDrag}
                     onDragLeave={handleDrag}
@@ -283,12 +292,12 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
         {images.length > 0 && (
             <div className="grid grid-cols-4 gap-4">
             {images.map((img, i) => (
-                <div key={i} className="relative group border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden aspect-square shadow-sm">
-                <img src={img} alt={`Product ${i}`} className="w-full h-full object-cover" />
+                <div key={i} className="relative group border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-gray-50 dark:bg-gray-900 shadow-sm flex items-center justify-center p-2" style={{ height: '150px' }}>
+                <img src={img} alt={`Product ${i}`} className="w-full h-full object-contain" />
                 <button
                     type="button"
                     onClick={() => handleRemoveImage(i)}
-                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-red-600"
                 >
                     &times;
                 </button>
@@ -312,7 +321,7 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
         <button
           type="submit"
           disabled={loading || analyzing}
-          className="w-full px-6 py-3 bg-brand-yellow text-black rounded-lg font-bold hover:bg-yellow-400 disabled:opacity-50 transition-colors shadow-sm uppercase tracking-wide flex items-center justify-center gap-2"
+          className="w-full px-6 py-3 bg-black text-white dark:bg-white dark:text-black rounded-lg font-bold hover:bg-gray-900 dark:hover:bg-gray-100 disabled:opacity-50 transition-colors shadow-sm uppercase tracking-wide flex items-center justify-center gap-2"
         >
           {analyzing ? (
             <>
@@ -320,7 +329,7 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              {t.common.loading}
+              {t.common.analyzing}
             </>
           ) : (
             <>

@@ -166,7 +166,7 @@ export function CharacterForm({ onSuccess, initialData }: CharacterFormProps) {
         <input
           type="text"
           required
-          className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-yellow focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t.characters.name}
@@ -182,7 +182,7 @@ export function CharacterForm({ onSuccess, initialData }: CharacterFormProps) {
             <div className="flex items-center justify-center w-full">
                 <label 
                     className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
-                        dragActive ? 'border-brand-yellow bg-yellow-50 dark:bg-yellow-900/10' : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700'
+                        dragActive ? 'border-black dark:border-white bg-gray-50 dark:bg-gray-800' : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}
                     onDragEnter={handleDrag}
                     onDragLeave={handleDrag}
@@ -267,7 +267,7 @@ export function CharacterForm({ onSuccess, initialData }: CharacterFormProps) {
             </div>
         ) : (
             <div className="relative flex items-center p-3 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800">
-                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-brand-yellow/20 flex items-center justify-center text-brand-yellow mr-3">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-black/10 dark:bg-white/10 flex items-center justify-center text-black dark:text-white mr-3">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
                     </svg>
@@ -296,7 +296,7 @@ export function CharacterForm({ onSuccess, initialData }: CharacterFormProps) {
         <button
           type="submit"
           disabled={loading}
-          className="w-full px-6 py-3 bg-brand-yellow text-black rounded-lg font-bold hover:bg-yellow-400 disabled:opacity-50 transition-colors shadow-sm uppercase tracking-wide flex items-center justify-center gap-2"
+          className="w-full px-6 py-3 bg-black text-white dark:bg-white dark:text-black rounded-lg font-bold hover:bg-gray-900 dark:hover:bg-gray-100 disabled:opacity-50 transition-colors shadow-sm uppercase tracking-wide flex items-center justify-center gap-2"
         >
           {loading ? t.common.loading : t.common.save}
         </button>

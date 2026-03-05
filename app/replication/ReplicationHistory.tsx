@@ -32,8 +32,8 @@ export default function ReplicationHistory({ initialHistory }: ReplicationHistor
       id: "mock-1",
       type: "replication",
       status: "completed",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: "2024-03-02T10:00:00.000Z",
+      updatedAt: "2024-03-02T10:05:00.000Z",
       product: { name: "Wireless Earbuds Pro" },
       script: { title: "Unboxing & Review Script" },
       videoThumbnail: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&q=80",
@@ -42,8 +42,8 @@ export default function ReplicationHistory({ initialHistory }: ReplicationHistor
       id: "mock-2",
       type: "replication",
       status: "processing",
-      createdAt: new Date(Date.now() - 3600000).toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: "2024-03-02T09:00:00.000Z",
+      updatedAt: "2024-03-02T09:01:00.000Z",
       product: { name: "Smart Watch Series 5" },
       script: { title: "Feature Highlight: Health Tracking" },
     },
@@ -51,8 +51,8 @@ export default function ReplicationHistory({ initialHistory }: ReplicationHistor
       id: "mock-3",
       type: "replication",
       status: "failed",
-      createdAt: new Date(Date.now() - 86400000).toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: "2024-03-01T10:00:00.000Z",
+      updatedAt: "2024-03-01T10:05:00.000Z",
       product: { name: "Portable Coffee Maker" },
       script: { title: "Morning Routine Vlog" },
       videoThumbnail: "https://images.unsplash.com/photo-1517649763962-0c623066013b?w=800&q=80",
@@ -61,8 +61,8 @@ export default function ReplicationHistory({ initialHistory }: ReplicationHistor
       id: "mock-4",
       type: "replication",
       status: "completed",
-      createdAt: new Date(Date.now() - 172800000).toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: "2024-02-29T10:00:00.000Z",
+      updatedAt: "2024-02-29T10:30:00.000Z",
       product: { name: "Yoga Mat Eco" },
       script: { title: "Home Workout Essentials" },
       videoThumbnail: "https://images.unsplash.com/photo-1599447421405-0e32096d3033?w=800&q=80",
@@ -169,7 +169,7 @@ export default function ReplicationHistory({ initialHistory }: ReplicationHistor
                             key={item.id}
                             className={cn(
                                 "group relative bg-white dark:bg-gray-800 border rounded-xl overflow-hidden transition-all hover:shadow-md cursor-pointer",
-                                isSelected ? "border-brand-yellow ring-1 ring-brand-yellow" : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600",
+                                isSelected ? "border-black dark:border-white ring-1 ring-black dark:ring-white" : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600",
                                 viewMode === 'list' ? "flex items-center p-4 h-24" : "flex flex-col"
                             )}
                             onClick={() => toggleSelection(item.id)}
@@ -178,7 +178,7 @@ export default function ReplicationHistory({ initialHistory }: ReplicationHistor
                             <div className="absolute top-3 left-3 z-10">
                                 <div className={cn(
                                     "w-5 h-5 rounded border flex items-center justify-center transition-colors bg-white dark:bg-gray-800",
-                                    isSelected ? "bg-brand-yellow border-brand-yellow text-black" : "border-gray-300 dark:border-gray-600 opacity-0 group-hover:opacity-100"
+                                    isSelected ? "bg-black dark:bg-white border-black dark:border-white text-white dark:text-black" : "border-gray-300 dark:border-gray-600 opacity-0 group-hover:opacity-100"
                                 )}>
                                     {isSelected && <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
                                 </div>
@@ -191,7 +191,7 @@ export default function ReplicationHistory({ initialHistory }: ReplicationHistor
                             )}>
                                 {isPending ? (
                                     <div className="flex flex-col items-center text-gray-400 dark:text-gray-500">
-                                        <Loader2 size={24} className="animate-spin mb-2 text-brand-yellow" />
+                                        <Loader2 size={24} className="animate-spin mb-2 text-black dark:text-white" />
                                         <span className="text-xs font-medium">{t.replication.generating}</span>
                                     </div>
                                 ) : (
@@ -219,7 +219,7 @@ export default function ReplicationHistory({ initialHistory }: ReplicationHistor
                                         "text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide shrink-0",
                                         item.status === 'completed' ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" :
                                         item.status === 'failed' ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
-                                        "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                                        "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
                                     )}>
                                         {item.status}
                                     </span>
@@ -229,7 +229,7 @@ export default function ReplicationHistory({ initialHistory }: ReplicationHistor
                                 </p>
                                 
                                 <div className="flex items-center justify-between text-xs text-gray-400 dark:text-gray-500">
-                                    <span>{new Date(item.createdAt).toLocaleDateString()}</span>
+                                    <span suppressHydrationWarning>{new Date(item.createdAt).toLocaleDateString()}</span>
                                     {/* Action Buttons (Visible on hover) */}
                                     <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button 

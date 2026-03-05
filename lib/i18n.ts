@@ -6,15 +6,20 @@ export const translations = {
       scripts: "Viral Replication",
       replication: "My Videos",
       myVideos: "My Videos",
+      storyboard: "Storyboard",
+      storyboardGen: "Storyboard Video",
+      digitalHuman: "Digital Human",
       sellingPoints: "Selling Points",
       generateScript: "Generate Script",
       settings: "API Keys",
       upgrade: "Upgrade Pro",
       upgradeText: "Unlock advanced AI analysis and unlimited generation.",
-      upgradeBtn: "Upgrade Now"
+      upgradeBtn: "Upgrade Now",
+      assets: "Assets"
     },
     common: {
       loading: "Loading...",
+      analyzing: "Analyzing...",
       save: "Save",
       cancel: "Cancel",
       delete: "Delete",
@@ -62,7 +67,20 @@ export const translations = {
       selectInfluencer: "Select Influencer",
       uploadTip: "Upload a viral video to start replication",
       pleaseSelectProduct: "Please select a product",
-      pleaseUploadVideo: "Please upload a video or enter a link"
+      pleaseUploadVideo: "Please upload a video or enter a link",
+      quickAccess: {
+        unlimitedCanvas: "Unlimited Canvas",
+        inspirationWithoutLimits: "Inspiration Without Limits",
+        imageGeneration: "Image Generation",
+        batchImageGen: "One-Click Batch Generation",
+        videoGeneration: "Video Generation",
+        batchVideoGen: "Batch Video Generation",
+        batchVideoSubtitle: "One-Click Concurrent Generation",
+        digitalHuman: "Digital Human",
+        digitalHumanSubtitle: "High-Fidelity Lip-Sync",
+        storyboardVideo: "Storyboard Video",
+        storyboardSubtitle: "High Consistency Video"
+      }
     },
     products: {
       title: "Product Library",
@@ -76,7 +94,15 @@ export const translations = {
       analyze: "Analyze & Save",
       upload: "Upload Image",
       dragDrop: "Drag & drop or click to upload",
-      remove: "Remove"
+      remove: "Remove",
+      savedSuccess: "Product saved successfully!",
+      analysisFailed: "Failed to analyze and save product",
+      backToList: "Back to Products",
+      noDescription: "No description provided.",
+      analysisResult: "Analysis Result (For Workflow)",
+      productId: "Product ID",
+      created: "Created",
+      noImage: "No Image Available"
     },
     characters: {
       title: "Character Library",
@@ -222,7 +248,20 @@ export const translations = {
       keyframe: "Keyframe",
       video: "Video",
       created: "Created",
-      id: "ID"
+      id: "ID",
+      guide: "Guide",
+      guideStep1: "Upload a reference image and write your script.",
+      guideStep2: "AI generates a 9-grid storyboard visualization.",
+      guideStep3: "Click breakdown to generate individual scenes in Storyboard Management.",
+      guideStep4: "Get your final video!",
+      lipSync: "Lip Sync",
+      lipSyncDesc: "Uses original audio to drive the mouth movements of the avatar. The voice remains unchanged, only the lip shape is synchronized.",
+      voiceClone: "Voice Clone",
+      voiceCloneDesc: "Extracts voice characteristics (timbre) from the reference audio and uses it to speak the text you provide.",
+      digitalHumanNote: "Note: Currently supports generation of videos up to 30s. Longer videos can be generated in segments.",
+      highQualityNote: "High-fidelity digital human video generation takes approximately 20 minutes.",
+      storyboardGen: "Storyboard Gen",
+      digitalHuman: "Digital Human"
     },
     userBlock: {
       title: "User",
@@ -239,15 +278,20 @@ export const translations = {
       scripts: "爆款复刻",
       replication: "我的视频",
       myVideos: "我的视频",
+      storyboard: "分镜管理",
+      storyboardGen: "故事板成片",
+      digitalHuman: "数字人",
       sellingPoints: "生成卖点",
       generateScript: "生成脚本",
       settings: "API 秘钥",
       upgrade: "升级专业版",
       upgradeText: "解锁高级AI分析和无限生成次数。",
-      upgradeBtn: "立即升级"
+      upgradeBtn: "立即升级",
+      assets: "资产库"
     },
     common: {
       loading: "加载中...",
+      analyzing: "正在分析...",
       save: "保存",
       cancel: "取消",
       delete: "删除",
@@ -295,7 +339,20 @@ export const translations = {
       selectInfluencer: "选择达人",
       uploadTip: "上传爆款视频以开始复刻",
       pleaseSelectProduct: "请选择产品",
-      pleaseUploadVideo: "请上传视频或输入链接"
+      pleaseUploadVideo: "请上传视频或输入链接",
+      quickAccess: {
+        unlimitedCanvas: "无限画布",
+        inspirationWithoutLimits: "无限灵感",
+        imageGeneration: "图像生成",
+        batchImageGen: "一键批量生成",
+        videoGeneration: "视频生成",
+        batchVideoGen: "批量视频生成",
+        batchVideoSubtitle: "一键并发生成",
+        digitalHuman: "数字人",
+        digitalHumanSubtitle: "高保真口型同步",
+        storyboardVideo: "故事板视频",
+        storyboardSubtitle: "高一致性视频"
+      }
     },
     products: {
       title: "产品库",
@@ -309,7 +366,15 @@ export const translations = {
       analyze: "分析并保存",
       upload: "上传图片",
       dragDrop: "拖拽或点击上传",
-      remove: "移除"
+      remove: "移除",
+      savedSuccess: "产品保存成功！",
+      analysisFailed: "分析并保存产品失败",
+      backToList: "返回产品库",
+      noDescription: "暂无描述。",
+      analysisResult: "分析结果（用于工作流）",
+      productId: "产品 ID",
+      created: "创建时间",
+      noImage: "暂无图片"
     },
     characters: {
       title: "角色库",
@@ -455,7 +520,20 @@ export const translations = {
       keyframe: "关键帧",
       video: "视频",
       created: "创建时间",
-      id: "ID"
+      id: "ID",
+      guide: "操作指南",
+      guideStep1: "上传参考图片并编写脚本。",
+      guideStep2: "AI 生成九宫格故事板可视化。",
+      guideStep3: "点击拆解以在分镜管理中生成单独的场景。",
+      guideStep4: "获取您的最终视频！",
+      lipSync: "对口型",
+      lipSyncDesc: "使用原始音频驱动头像的嘴部动作。声音保持不变，仅同步嘴型。",
+      voiceClone: "音色克隆",
+      voiceCloneDesc: "从参考音频中提取声音特征（音色），并使用它来朗读您提供的文本。",
+      digitalHumanNote: "注意：目前支持生成最长 30 秒的视频。较长的视频可以分段生成。",
+      highQualityNote: "高原生感数字人视频，生成用时约20分钟左右。",
+      storyboardGen: "故事板成片",
+      digitalHuman: "数字人"
     },
     userBlock: {
       title: "用户",
@@ -472,15 +550,20 @@ export const translations = {
       scripts: "爆款復刻",
       replication: "我的影片",
       myVideos: "我的影片",
+      storyboard: "分鏡管理",
+      storyboardGen: "故事板成片",
+      digitalHuman: "數字人",
       sellingPoints: "生成賣點",
       generateScript: "生成腳本",
       settings: "API 密鑰",
       upgrade: "升級專業版",
       upgradeText: "解鎖高級AI分析和無限生成次數。",
-      upgradeBtn: "立即升級"
+      upgradeBtn: "立即升級",
+      assets: "資產庫"
     },
     common: {
       loading: "加載中...",
+      analyzing: "正在分析...",
       save: "保存",
       cancel: "取消",
       delete: "刪除",
@@ -528,7 +611,20 @@ export const translations = {
       selectInfluencer: "選擇達人",
       uploadTip: "上傳爆款視頻以開始復刻",
       pleaseSelectProduct: "請選擇產品",
-      pleaseUploadVideo: "請上傳視頻或輸入鏈接"
+      pleaseUploadVideo: "請上傳視頻或輸入鏈接",
+      quickAccess: {
+        unlimitedCanvas: "無限畫布",
+        inspirationWithoutLimits: "無限靈感",
+        imageGeneration: "圖像生成",
+        batchImageGen: "一鍵批量生成",
+        videoGeneration: "視頻生成",
+        batchVideoGen: "批量視頻生成",
+        batchVideoSubtitle: "一鍵並發生成",
+        digitalHuman: "數字人",
+        digitalHumanSubtitle: "高保真口型同步",
+        storyboardVideo: "故事板視頻",
+        storyboardSubtitle: "高一致性視頻"
+      }
     },
     products: {
       title: "產品庫",
@@ -542,7 +638,15 @@ export const translations = {
       analyze: "分析並保存",
       upload: "上傳圖片",
       dragDrop: "拖拽或點擊上傳",
-      remove: "移除"
+      remove: "移除",
+      savedSuccess: "產品保存成功！",
+      analysisFailed: "分析並保存產品失敗",
+      backToList: "返回產品庫",
+      noDescription: "暫無描述。",
+      analysisResult: "分析結果（用於工作流）",
+      productId: "產品 ID",
+      created: "創建時間",
+      noImage: "暫無圖片"
     },
     characters: {
       title: "角色庫",
@@ -688,7 +792,20 @@ export const translations = {
       keyframe: "關鍵幀",
       video: "視頻",
       created: "創建時間",
-      id: "ID"
+      id: "ID",
+      guide: "操作指南",
+      guideStep1: "上傳參考圖片並編寫腳本。",
+      guideStep2: "AI 生成九宮格故事板可視化。",
+      guideStep3: "點擊拆解以在分鏡管理中生成單獨的場景。",
+      guideStep4: "獲取您的最終視頻！",
+      lipSync: "對口型",
+      lipSyncDesc: "使用原始音頻驅動頭像的嘴部動作。聲音保持不變，僅同步嘴型。",
+      voiceClone: "音色克隆",
+      voiceCloneDesc: "從參考音頻中提取聲音特徵（音色），並使用它來朗讀您提供的文本。",
+      digitalHumanNote: "注意：目前支持生成最長 30 秒的視頻。較長的視頻可以分段生成。",
+      highQualityNote: "高原生感數字人視頻，生成用時約20分鐘左右。",
+      storyboardGen: "故事板成片",
+      digitalHuman: "數字人"
     },
     userBlock: {
       title: "用戶",

@@ -12,7 +12,7 @@ interface ScriptFormProps {
   initialData?: {
     id: string;
     title: string;
-    videoUrl: string;
+    videoUrl: string | null;
     // description isn't in script schema top level anymore, stored in breakdown JSON, but we can pass it if extracted
   };
 }
@@ -23,16 +23,13 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const [uploadMode, setUploadMode] = useState<'url' | 'file'>('url');
+  const [uploadMode, setUploadMode] = useState<'url' | 'file'>(initialData?.videoUrl ? 'url' : 'url');
   const [videoFile, setVideoFile] = useState<File | null>(null);
   
   // State initialization
-  const [title, setTitle] = useState(initialData?.title ?? '');
-  const [videoUrl, setVideoUrl] = useState(initialData?.videoUrl ?? '');
+  const [title, setTitle] = useState(initialData?.title || '');
+  const [videoUrl, setVideoUrl] = useState(initialData?.videoUrl || '');
 
-  // If initialData exists and videoUrl is present, set mode to URL by default
-  // (We don't support file re-population easily without re-upload)
-  
   const [dragActive, setDragActive] = useState(false);
 
 
@@ -88,7 +85,7 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
         }
         if (videoFile) {
              formData.append('videoUrl', URL.createObjectURL(videoFile));
-        } else if (initialData) {
+        } else if (initialData && initialData.videoUrl) {
              formData.append('videoUrl', initialData.videoUrl);
         }
     } else {
@@ -175,7 +172,7 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
             id="title"
             name="title"
             required
-            className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-yellow focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             placeholder="e.g., How to make coffee"
             value={title || ''}
             onChange={(e) => setTitle(e.target.value)}
@@ -191,7 +188,7 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
               onClick={() => setUploadMode('url')}
               className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
                 uploadMode === 'url' 
-                  ? 'bg-black text-white dark:bg-brand-yellow dark:text-black' 
+                  ? 'bg-black text-white dark:bg-white dark:text-black' 
                   : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
               }`}
             >
@@ -202,7 +199,7 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
               onClick={() => setUploadMode('file')}
               className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
                 uploadMode === 'file' 
-                  ? 'bg-black text-white dark:bg-brand-yellow dark:text-black' 
+                  ? 'bg-black text-white dark:bg-white dark:text-black' 
                   : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
               }`}
             >
@@ -216,7 +213,7 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
                 type="url"
                 value={videoUrl || ''}
                 onChange={(e) => setVideoUrl(e.target.value)}
-                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-yellow focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 placeholder="https://www.tiktok.com/@user/video/..."
               />
               <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">{t.scripts.pasteUrl}</p>
@@ -224,7 +221,7 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
           ) : (
             <div 
               className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
-                dragActive ? 'border-brand-yellow bg-yellow-50 dark:bg-yellow-900/10' : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700'
+                dragActive ? 'border-black dark:border-white bg-gray-50 dark:bg-gray-800' : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`}
               onDragEnter={handleDrag}
               onDragLeave={handleDrag}
@@ -273,7 +270,7 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-brand-yellow text-black py-3 rounded-lg hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold shadow-sm uppercase tracking-wide"
+            className="w-full bg-black text-white dark:bg-white dark:text-black py-3 rounded-lg hover:bg-gray-900 dark:hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold shadow-sm uppercase tracking-wide"
           >
             {loading ? t.common.loading : t.scripts.createAnalyze}
           </button>

@@ -111,7 +111,7 @@ export default function ScriptForm({ scripts }: Props) {
 
       <div className="flex items-center justify-between">
         <button
-          className={`bg-brand-yellow hover:bg-yellow-400 text-black font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline ${
+          className={`bg-black dark:bg-white hover:bg-gray-900 dark:hover:bg-gray-100 text-white dark:text-black font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline ${
             loading ? 'opacity-50 cursor-not-allowed' : ''
           }`}
           type="submit"

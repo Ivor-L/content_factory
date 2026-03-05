@@ -96,7 +96,7 @@ function Combobox({
             <div 
                 className={cn(
                     "w-full px-4 py-2 border rounded-lg flex items-center justify-between cursor-pointer bg-white dark:bg-gray-700 transition-all overflow-hidden",
-                    isOpen ? "ring-2 ring-inset ring-brand-yellow border-transparent" : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
+                    isOpen ? "ring-2 ring-inset ring-black dark:ring-white border-transparent" : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
                 )}
                 onClick={() => setIsOpen(!isOpen)}
             >
@@ -160,7 +160,7 @@ function Combobox({
                                     key={opt.id}
                                     className={cn(
                                         "px-3 py-2 text-sm rounded-md cursor-pointer flex items-center justify-between",
-                                        value === opt.id ? "bg-brand-yellow/10 dark:bg-brand-yellow/20 text-brand-black dark:text-brand-yellow font-medium" : "text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                                        value === opt.id ? "bg-black/5 dark:bg-white/10 text-black dark:text-white font-medium" : "text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
                                     )}
                                     onClick={() => {
                                         onChange(opt.id);
@@ -171,7 +171,7 @@ function Combobox({
                                     <div className="flex items-center gap-2 truncate">
                                         {renderOption ? renderOption(opt) : opt.label}
                                     </div>
-                                    {value === opt.id && <Check size={14} className="text-brand-black dark:text-brand-yellow shrink-0 ml-2" />}
+                                    {value === opt.id && <Check size={14} className="text-black dark:text-white shrink-0 ml-2" />}
                                 </div>
                             ))
                         )}
@@ -216,7 +216,7 @@ function CustomSelect({
             <div 
                 className={cn(
                     "w-full px-4 py-2 border rounded-lg flex items-center justify-between cursor-pointer bg-white dark:bg-gray-700 transition-all overflow-hidden",
-                    isOpen ? "ring-2 ring-inset ring-brand-yellow border-transparent" : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
+                    isOpen ? "ring-2 ring-inset ring-black dark:ring-white border-transparent" : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
                 )}
                 onClick={() => setIsOpen(!isOpen)}
             >
@@ -236,7 +236,7 @@ function CustomSelect({
                             key={opt.id}
                             className={cn(
                                 "px-3 py-2 text-sm rounded-md cursor-pointer flex items-center justify-between",
-                                value === opt.id ? "bg-brand-yellow/10 dark:bg-brand-yellow/20 text-brand-black dark:text-brand-yellow font-medium" : "text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                                value === opt.id ? "bg-black/5 dark:bg-white/10 text-black dark:text-white font-medium" : "text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
                             )}
                             onClick={() => {
                                 onChange(opt.id);
@@ -244,7 +244,7 @@ function CustomSelect({
                             }}
                         >
                             {language === 'en' ? opt.en : opt.zh}
-                            {value === opt.id && <Check size={14} className="text-brand-black dark:text-brand-yellow" />}
+                            {value === opt.id && <Check size={14} className="text-black dark:text-white" />}
                         </div>
                     ))}
                 </div>
@@ -530,7 +530,7 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
                                 className={cn(
                                     "text-center py-2 border rounded-lg cursor-pointer transition-all text-sm font-medium",
                                     duration === d 
-                                        ? "bg-black text-white dark:bg-brand-yellow dark:text-black border-black dark:border-brand-yellow" 
+                                        ? "bg-black text-white dark:bg-white dark:text-black border-black dark:border-white" 
                                         : "border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
                                 )}
                             >
@@ -553,7 +553,7 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
                             setQuantity(e.target.value);
                             savePreference('quantity', e.target.value);
                         }}
-                        className="w-full px-4 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-brand-yellow focus:border-transparent outline-none h-[38px]" 
+                        className="w-full px-4 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent outline-none h-[38px]" 
                         required 
                     />
                 </div>
@@ -573,7 +573,7 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
                                 className={cn(
                                     "flex-1 text-center py-2 border rounded-lg cursor-pointer transition-all text-sm font-medium",
                                     duration === d 
-                                        ? "bg-black text-white dark:bg-brand-yellow dark:text-black border-black dark:border-brand-yellow" 
+                                        ? "bg-black text-white dark:bg-white dark:text-black border-black dark:border-white" 
                                         : "border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
                                 )}
                             >
@@ -606,7 +606,7 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-3 bg-brand-yellow text-black font-bold rounded-xl hover:bg-yellow-400 disabled:opacity-50 transition-colors shadow-sm uppercase tracking-wide flex items-center justify-center gap-2"
+          className="w-full py-3 bg-black text-white dark:bg-white dark:text-black font-bold rounded-xl hover:bg-gray-900 dark:hover:bg-gray-100 disabled:opacity-50 transition-colors shadow-sm uppercase tracking-wide flex items-center justify-center gap-2"
         >
           {loading ? (
             <>

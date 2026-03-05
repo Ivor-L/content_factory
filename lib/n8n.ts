@@ -103,7 +103,13 @@ export async function analyzeProduct(productData: ProductData): Promise<Analysis
     if (productData.workflowId) payload.workflow_id = productData.workflowId;
     // Map image url to image_url expected by n8n
     if (productData.images && productData.images.length > 0) {
-        payload.image_url = productData.images[0];
+        let imageUrl = productData.images[0];
+        // FIX: n8n container cannot resolve api.supabase.atomx.top, so we replace it with the public IP
+        // The server is 47.107.158.233
+        if (imageUrl.includes('api.supabase.atomx.top')) {
+            imageUrl = imageUrl.replace('api.supabase.atomx.top', '47.107.158.233');
+        }
+        payload.image_url = imageUrl;
     }
     // Remove internal fields
     delete payload.productId;

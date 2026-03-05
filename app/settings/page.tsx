@@ -47,7 +47,7 @@ export default function SettingsPage() {
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 disabled={!isEditing}
-                className={`w-full border rounded-lg pl-4 pr-12 py-3 focus:ring-2 focus:ring-brand-yellow focus:border-transparent outline-none transition-all ${
+                className={`w-full border rounded-lg pl-4 pr-12 py-3 focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent outline-none transition-all ${
                   isEditing 
                     ? "bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white" 
                     : "bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-800 text-gray-500 dark:text-gray-400 cursor-not-allowed"
@@ -72,7 +72,7 @@ export default function SettingsPage() {
             {isEditing ? (
               <button
                 type="submit"
-                className="flex items-center gap-2 px-6 py-2.5 bg-black dark:bg-brand-yellow text-white dark:text-black font-bold rounded-lg hover:opacity-90 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black shadow-lg shadow-black/20 uppercase tracking-wide text-sm"
+                className="flex items-center gap-2 px-6 py-2.5 bg-black dark:bg-white text-white dark:text-black font-bold rounded-lg hover:opacity-90 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black shadow-lg shadow-black/20 uppercase tracking-wide text-sm"
               >
                 <Check size={16} strokeWidth={3} />
                 {t.settings.save}

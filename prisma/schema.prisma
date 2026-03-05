@@ -8,6 +8,7 @@ generator client {
 
 datasource db {
   provider = "postgresql" // Changed from sqlite to postgresql
+  // URL removed as per Prisma 7 config
 }
 
 model Product {
@@ -38,7 +39,7 @@ model Character {
   id        String   @id @default(cuid())
   name      String
   avatar    String   // URL of the character image
-  voiceId   String?  // Optional voice ID
+  voiceId   String?  // Optional voice ID (stores URL)
   storyboardTasks StoryboardTask[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -83,10 +84,26 @@ model StoryboardTask {
   updatedAt   DateTime @updatedAt
 }
 
+model DigitalHumanVideo {
+  id          String   @id @default(cuid())
+  type        String   // LIP_SYNC, VOICE_CLONE
+  
+  imageUrl    String
+  audioUrl    String
+  scriptContent String? // For Voice Clone
+  
+  resultUrl   String?
+  status      String   @default("GENERATING") // GENERATING, COMPLETED, FAILED
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model StoryboardSegment {
   id          String   @id @default(cuid())
   order       Int
   duration    Float    @default(8.0)
+  description String?  // Scene description
   
   imagePrompt String?
   videoPrompt String?

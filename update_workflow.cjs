@@ -93,6 +93,15 @@ async function main() {
         console.log("'返回前端结果' node already exists, skipping addition");
     }
 
+    // 3. Find and update the Supabase node table name
+    const supabaseNode = workflow.nodes.find(n => n.name === '写回Supabase-products');
+    if (supabaseNode) {
+      console.log('Found Supabase node, updating table name to "Product"...');
+      supabaseNode.parameters.tableId = 'Product'; // Fix case sensitivity
+    } else {
+      console.warn('Supabase node not found!');
+    }
+
     // CLEANUP JSON for PUT
     const allowedKeys = ['name', 'nodes', 'connections', 'settings'];
     const updatePayload = {};

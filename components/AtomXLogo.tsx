@@ -1,25 +1,28 @@
 import React from 'react';
-import Image from 'next/image';
 
 export function AtomXLogo({ 
   className = "", 
-  size = 40
+  size = 40,
+  isCollapsed = false,
+  showText = true
 }: { 
   className?: string, 
   textClassName?: string,
   showText?: boolean,
-  size?: number
+  size?: number,
+  isCollapsed?: boolean
 }) {
+  const src = isCollapsed 
+    ? "/sidebar-collapsed.svg" 
+    : (showText ? "/sidebar-expanded.svg" : "/favicon-whale.svg");
+
   return (
     <div className={`flex items-center ${className}`}>
-      <Image
-        src="/logo.svg"
+      <img
+        src={src}
         alt="AtomX Logo"
-        width={0}
-        height={0}
-        sizes="100vw"
-        style={{ width: 'auto', height: `${size}px` }}
-        priority
+        className={`w-auto h-auto ${!isCollapsed && !showText ? 'rounded-full' : ''}`}
+        style={{ height: `${size}px` }}
       />
     </div>
   );

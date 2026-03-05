@@ -62,7 +62,7 @@ export function VideoCard({ item, onSelect, selected, onClick }: VideoCardProps)
     <div 
       className={cn(
         "group relative bg-white dark:bg-gray-800 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all border border-gray-100 dark:border-gray-700 cursor-pointer flex flex-col h-[400px]",
-        selected ? "ring-2 ring-brand-yellow" : ""
+        selected ? "ring-2 ring-black dark:ring-white" : ""
       )}
       onClick={onClick}
       onMouseEnter={handleMouseEnter}
@@ -130,7 +130,7 @@ export function VideoCard({ item, onSelect, selected, onClick }: VideoCardProps)
                   fill="transparent"
                   strokeDasharray={251.2}
                   strokeDashoffset={251.2 - (251.2 * progress) / 100}
-                  className="text-black dark:text-brand-yellow"
+                  className="text-black dark:text-white"
                   initial={{ strokeDashoffset: 251.2 }}
                   animate={{ strokeDashoffset: 251.2 - (251.2 * progress) / 100 }}
                   transition={{ duration: 0.5 }}
@@ -148,7 +148,7 @@ export function VideoCard({ item, onSelect, selected, onClick }: VideoCardProps)
       <div className="p-4 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700 h-16 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
           <Clock size={14} />
-          <span>{formatDate(item.createdAt)}</span>
+          <span suppressHydrationWarning>{formatDate(item.createdAt)}</span>
         </div>
         <button 
           className="flex items-center gap-1 px-3 py-1.5 rounded-full border border-gray-200 dark:border-gray-600 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
@@ -176,8 +176,8 @@ export function VideoCard({ item, onSelect, selected, onClick }: VideoCardProps)
           <div className={cn(
             "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors",
             selected 
-              ? "bg-brand-yellow border-brand-yellow text-black" 
-              : "bg-white/80 border-gray-300 hover:border-brand-yellow"
+              ? "bg-black border-black text-white dark:bg-white dark:border-white dark:text-black" 
+              : "bg-white/80 border-gray-300 hover:border-black dark:hover:border-white"
           )}>
             {selected && <Check size={14} strokeWidth={3} />}
           </div>

@@ -7,13 +7,16 @@ import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "AtomX",
-  description: "Next.js App Router + TypeScript + Tailwind CSS"
+  description: "Next.js App Router + TypeScript + Tailwind CSS",
+  icons: {
+    icon: "/favicon-whale.svg",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="zh-CN" suppressHydrationWarning>
-      <body className="flex h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-300" suppressHydrationWarning={true}>
+      <body className="flex h-screen bg-[#F6F7F9] dark:bg-black transition-colors duration-300" suppressHydrationWarning={true}>
         <Providers>
           <Sidebar />
           <main className="flex-1 overflow-y-auto p-8 dark:text-gray-100">

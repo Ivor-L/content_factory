@@ -48,7 +48,7 @@ export default function ReplicationDetail({ replication }: ReplicationDetailProp
             <span className="text-gray-500">Status:</span>
             <span className={`ml-2 px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
               ${replication.status === 'completed' ? 'bg-green-100 text-green-800' : 
-                replication.status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 
+                replication.status === 'pending' ? 'bg-gray-100 text-gray-800' : 
                 'bg-red-100 text-red-800'}`}>
               {replication.status}
             </span>

@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 export async function POST(request: Request) {
   try {
@@ -14,30 +13,46 @@ export async function POST(request: Request) {
       );
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
+    const buffer = await file.arrayBuffer();
     
     // Create a unique filename
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const filename = uniqueSuffix + '-' + file.name.replace(/[^a-zA-Z0-9.-]/g, '');
+    // Sanitize filename
+    const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '');
+    const filename = `${uniqueSuffix}-${sanitizedName}`;
     
-    // Ensure the upload directory exists
-    const uploadDir = path.join(process.cwd(), 'public/uploads');
-    try {
-        await mkdir(uploadDir, { recursive: true });
-    } catch (e) {
-        // Ignore if directory exists
+    // Upload to Supabase Storage using Admin client
+    const { data, error } = await supabaseAdmin
+      .storage
+      .from('uploads')
+      .upload(filename, buffer, {
+        contentType: file.type,
+        upsert: false
+      });
+
+    if (error) {
+      console.error('Supabase storage upload error:', error);
+      // Handle specific errors
+      if ((error as any).statusCode === '413' || (error as any).status === 413) {
+          return NextResponse.json(
+            { error: 'File too large for Supabase Storage' },
+            { status: 413 }
+          );
+      }
+      throw error;
     }
-    
-    const filepath = path.join(uploadDir, filename);
-    await writeFile(filepath, buffer);
 
-    const fileUrl = `/uploads/${filename}`;
+    // Get public URL
+    const { data: publicUrlData } = supabaseAdmin
+      .storage
+      .from('uploads')
+      .getPublicUrl(filename);
 
-    return NextResponse.json({ url: fileUrl });
+    return NextResponse.json({ url: publicUrlData.publicUrl });
   } catch (error) {
     console.error('Error uploading file:', error);
     return NextResponse.json(
-      { error: 'Failed to upload file' },
+      { error: 'Failed to upload file to Supabase' },
       { status: 500 }
     );
   }

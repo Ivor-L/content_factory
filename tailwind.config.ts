@@ -12,7 +12,7 @@ const config: Config = {
       colors: {
         brand: {
           black: '#000000',
-          yellow: '#FFD700', // Adjust to match the reference yellow
+          blue: '#1DA1F2',
           gray: {
             50: '#F9FAFB',
             100: '#F3F4F6',

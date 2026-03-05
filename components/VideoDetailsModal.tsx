@@ -97,7 +97,7 @@ export function VideoDetailsModal({ item, onClose }: VideoDetailsModalProps) {
                   <div className="flex items-center gap-2 text-gray-400 text-[10px] uppercase font-bold mb-1">
                     <Calendar size={12} /> {t.replication.createdAt}
                   </div>
-                  <div className="font-bold text-gray-900 dark:text-white text-sm">{createdAt}</div>
+                  <div className="font-bold text-gray-900 dark:text-white text-sm" suppressHydrationWarning>{createdAt}</div>
                 </div>
               </div>
             </div>
