@@ -1,0 +1,242 @@
+{
+  "name": "product-dna-web-fix",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "product_dna_web",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ],
+      "id": "webhook-trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://api.atomx.top/usage/events",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "apiKey",
+              "value": "={{ $json.body.api_key }}"
+            },
+            {
+              "name": "page",
+              "value": "1"
+            },
+            {
+              "name": "size",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Check Credits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        450,
+        300
+      ],
+      "id": "check-credits"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.data.data[0].balanceAfter }}",
+              "operation": "largerEqual",
+              "value2": 20
+            }
+          ]
+        }
+      },
+      "name": "Enough Credits?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ],
+      "id": "check-balance"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "gpt-4o"
+            },
+            {
+              "name": "messages",
+              "value": "=[{\"role\": \"system\", \"content\": \"Analyze the product image and return JSON with sellingPoints (array of strings) and detailedDescription (string).\"}, {\"role\": \"user\", \"content\": [{\"type\": \"text\", \"text\": \"Analyze this product: {{ $node.Webhook.json.body.name }}\"}, {\"type\": \"image_url\", \"image_url\": {\"url\": \"{{ $node.Webhook.json.body.image_url }}\"}}]}]"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "AI Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        850,
+        200
+      ],
+      "id": "ai-analysis"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "Product",
+        "updateKey": "id",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "selling_points": "={{ JSON.stringify($json.choices[0].message.content.sellingPoints) }}",
+            "selling_points_text": "={{ $json.choices[0].message.content.detailedDescription }}",
+            "analysis_result": "={{ JSON.stringify($json) }}"
+          },
+          "matchingColumns": [
+            "id"
+          ]
+        }
+      },
+      "name": "Supabase Update",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        200
+      ],
+      "id": "supabase-update",
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred-id",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.atomx.top/api/credits/deduct",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "={{ $node.Webhook.json.body.api_key }}"
+            },
+            {
+              "name": "amount",
+              "value": 20
+            },
+            {
+              "name": "reason",
+              "value": "product_analysis"
+            },
+            {
+              "name": "workflow_id",
+              "value": "product-dna-web"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Deduct Credits",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1250,
+        200
+      ],
+      "id": "deduct-credits"
+    },
+    {
+      "parameters": {
+        "content": "Insufficient credits",
+        "height": 100,
+        "width": 300
+      },
+      "name": "Error Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        850,
+        400
+      ],
+      "id": "error-note"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Check Credits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Credits": {
+      "main": [
+        [
+          {
+            "node": "Enough Credits?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enough Credits?": {
+      "main": [
+        [
+          {
+            "node": "AI Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Analysis": {
+      "main": [
+        [
+          {
+            "node": "Supabase Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Update": {
+      "main": [
+        [
+          {
+            "node": "Deduct Credits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

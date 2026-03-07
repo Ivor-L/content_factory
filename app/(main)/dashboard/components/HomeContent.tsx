@@ -16,6 +16,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import { createStoryboardTask } from '@/app/actions/storyboard';
+import { createScript } from '@/app/(main)/scripts/actions';
+import { emitCreditsRefresh } from '@/lib/creditsBus';
 
 interface HomeContentProps {
   recentVideos: any[];
@@ -27,6 +29,11 @@ export function HomeContent({ recentVideos, products }: HomeContentProps) {
   const router = useRouter();
   const [mode, setMode] = useState<'one-click' | 'storyboard'>('one-click');
   const [inputValue, setInputValue] = useState('');
+  
+  // Processing State
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processStep, setProcessStep] = useState<string>('idle');
+  const [progress, setProgress] = useState(0);
   
   // Form States
   const [product, setProduct] = useState('');
@@ -128,12 +135,12 @@ export function HomeContent({ recentVideos, products }: HomeContentProps) {
             }
 
             if (influencer) {
-                // Assuming influencer value is ID, but we might need to map it if it's just a mock string
-                // For now let's skip or handle properly if we had real influencer data
+                // Assuming influencer value is ID
                 // formData.append('characterId', influencer);
             }
 
             const result = await createStoryboardTask(formData);
+            emitCreditsRefresh();
             
             toast.dismiss(loadingToast);
             toast.success('Task created! Redirecting...');
@@ -145,9 +152,122 @@ export function HomeContent({ recentVideos, products }: HomeContentProps) {
             toast.error('Failed to create task');
         }
       } else {
-        // One-Click Mode Logic (Existing)
-        console.log('Execute One-Click task', { mode, inputValue, product, country, language, duration, quantity, influencer });
-        toast.success('One-click task started (Mock)');
+        // One-Click Mode Logic (Sequential Flow)
+        setIsProcessing(true);
+        setProcessStep('uploading');
+        setProgress(0);
+        const loadingToast = toast.loading('Starting process...');
+
+        try {
+            // 1. Upload/Get Video URL
+            let videoUrl = inputValue;
+            if (file) {
+                 const uploadData = new FormData();
+                 uploadData.append('file', file);
+                 const res = await fetch('/api/upload', { method: 'POST', body: uploadData });
+                 if (!res.ok) throw new Error('Failed to upload video');
+                 const data = await res.json();
+                 videoUrl = data.url;
+            }
+
+            if (!videoUrl) throw new Error('No video URL provided');
+
+            // 2. Create Script
+            setProcessStep('creating_script');
+            setProgress(5);
+            toast.loading('Creating script...', { id: loadingToast });
+            
+            const scriptFormData = new FormData();
+            scriptFormData.append('title', `Homepage Upload - ${new Date().toLocaleString()}`);
+            scriptFormData.append('videoUrl', videoUrl);
+            scriptFormData.append('description', 'Auto-generated from homepage upload');
+            
+            // Use server action to create script
+            const script = await createScript(scriptFormData);
+            
+            if (!script || !script.id) throw new Error('Failed to create script');
+
+            // 3. Trigger Breakdown
+            setProcessStep('breakdown');
+            setProgress(10);
+            toast.loading('Analyzing video structure (Explosive Dismantling)...', { id: loadingToast });
+            
+            const breakdownRes = await fetch('/api/scripts/breakdown', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ scriptId: script.id })
+            });
+            
+            if (!breakdownRes.ok) throw new Error('Failed to start breakdown');
+
+            // 4. Poll for Completion
+            await new Promise((resolve, reject) => {
+                const interval = setInterval(async () => {
+                    try {
+                        const res = await fetch(`/api/scripts/${script.id}/status`);
+                        if (!res.ok) throw new Error('Failed to check status');
+                        const data = await res.json();
+                        
+                        // Update progress based on status (approximate)
+                        if (data.status === 'queued') setProgress(15);
+                        else if (data.status === 'extracting') setProgress(25);
+                        else if (data.status === 'downloading') setProgress(40);
+                        else if (data.status === 'analyzing') setProgress(60);
+                        else if (data.status === 'parsing') setProgress(80);
+                        
+                        if (data.status === 'completed') {
+                            setProgress(100);
+                            clearInterval(interval);
+                            resolve(data);
+                        } else if (data.status === 'failed') {
+                            clearInterval(interval);
+                            reject(new Error('Analysis failed'));
+                        }
+                    } catch (e) {
+                        clearInterval(interval);
+                        reject(e);
+                    }
+                }, 2000);
+            });
+            
+            // 5. Trigger Replication
+            setProcessStep('replication');
+            setProgress(95);
+            toast.loading('Starting replication process...', { id: loadingToast });
+            
+            const replicationRes = await fetch('/api/replication/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    scriptId: script.id,
+                    productId: product,
+                    targetCountry: country,
+                    targetLanguage: language,
+                    duration: duration,
+                    quantity: quantity.toString()
+                })
+            });
+            
+            if (!replicationRes.ok) throw new Error('Failed to start replication');
+            
+            const replicationData = await replicationRes.json();
+            
+            toast.success('Replication started! Redirecting...', { id: loadingToast });
+            
+            // 6. Redirect
+            if (replicationData.id) {
+                 router.push(`/replication/${replicationData.id}`);
+            } else {
+                 router.push('/replication');
+            }
+
+        } catch (error) {
+            console.error(error);
+            toast.error(error instanceof Error ? error.message : 'Something went wrong', { id: loadingToast });
+            setIsProcessing(false);
+            setProcessStep('idle');
+            setProgress(0);
+        }
       }
     }
   };
@@ -205,6 +325,29 @@ export function HomeContent({ recentVideos, products }: HomeContentProps) {
         {/* Main Interaction Area - Styled like the Reference Image */}
         <div className="bg-white dark:bg-gray-900 rounded-[2rem] p-6 md:p-8 shadow-sm border border-gray-100 dark:border-gray-800 mb-10 relative">
           
+          {/* Processing Overlay */}
+          {isProcessing && (
+              <div className="absolute inset-0 bg-white/80 dark:bg-black/80 backdrop-blur-sm z-50 rounded-[2rem] flex flex-col items-center justify-center animate-in fade-in duration-300">
+                  <div className="w-72 space-y-4 p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700">
+                      <div className="flex items-center justify-between text-sm font-bold text-gray-900 dark:text-white">
+                          <span className="animate-pulse">
+                              {processStep === 'uploading' && 'Uploading Video...'}
+                              {processStep === 'creating_script' && 'Creating Script...'}
+                              {processStep === 'breakdown' && 'Explosive Dismantling...'}
+                              {processStep === 'replication' && 'Starting Replication...'}
+                          </span>
+                          <span>{Math.round(progress)}%</span>
+                      </div>
+                      <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
+                          <div 
+                              className="bg-blue-600 h-full transition-all duration-300 ease-out"
+                              style={{ width: `${progress}%` }}
+                          />
+                      </div>
+                  </div>
+              </div>
+          )}
+
           <div className="flex flex-col md:flex-row gap-6 mb-20">
             {/* Upload Placeholder Box */}
             <label 

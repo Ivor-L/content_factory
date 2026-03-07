@@ -6,6 +6,17 @@ export const dynamic = "force-dynamic";
 export default async function ScriptsPage() {
   const scripts = await prisma.script.findMany({
     orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      title: true,
+      videoUrl: true,
+      createdAt: true,
+      updatedAt: true,
+      status: true,
+      progress: true,
+      error: true,
+      blueprint: true
+    }
   });
 
   const products = await prisma.product.findMany({

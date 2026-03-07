@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createProduct, createDraftProduct } from '@/app/(main)/products/actions';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { emitCreditsRefresh } from '@/lib/creditsBus';
 
 import { toast } from 'react-hot-toast';
 
@@ -74,7 +75,7 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
   const uploadFile = async (file: File) => {
     // Client-side validation: Max 50MB
     if (file.size > 50 * 1024 * 1024) {
-        toast.error('File size too large (Max 50MB)');
+        toast.error(t.common.fileSizeTooLarge);
         return;
     }
 
@@ -117,12 +118,12 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
 
   const handleAnalyzeAndSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name) return alert('Please enter a product name first.');
+    if (!name) return alert(t.products.enterNameError);
     
     // Check API Key
     const apiKey = localStorage.getItem('user_api_key');
     if (!apiKey) {
-        alert('Please configure your API Key in Settings first.');
+        alert(t.settings.apiKeyRequired);
         router.push('/settings');
         return;
     }
@@ -142,8 +143,27 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
           setId(productId);
       }
 
-      // 2. Trigger Analysis
-      const res = await fetch('/api/products/analyze', {
+      // 2. Save Product State as ANALYZING immediately
+      const formData = new FormData();
+      formData.append('id', productId);
+      formData.append('name', name);
+      formData.append('description', description);
+      
+      // Clear previous analysis results to show progress immediately
+      formData.append('sellingPoints', '[]');
+      formData.append('sellingPointsText', '');
+      
+      formData.append('images', JSON.stringify(images));
+      // Mark as ANALYZING
+      formData.append('analysisResult', JSON.stringify({ status: 'ANALYZING' }));
+      formData.append('status', 'PROCESSING');
+      formData.append('progress', '0');
+      
+      await createProduct(formData);
+
+      // 3. Trigger Analysis (Async)
+      // We don't await the result to close the modal, but we trigger it
+      fetch('/api/products/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -153,46 +173,13 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
             description, 
             images 
         }),
-      });
+      }).then(async (res) => {
+        if (!res.ok) console.error('Analysis trigger failed');
+        // If successful, n8n will update the DB eventually
+      }).catch(err => console.error('Analysis trigger error:', err));
       
-      if (!res.ok) throw new Error('Analysis trigger failed');
-      
-      // 3. Handle response
-      const data = await res.json();
-      
-      let newSellingPoints = sellingPoints;
-      let newWorkflowData = workflowData;
-
-      if (data.sellingPoints && data.sellingPoints.length > 0) {
-        // Data returned immediately (Mock case or n8n sync return)
-        newSellingPoints = data.sellingPoints;
-        setSellingPoints(data.sellingPoints);
-        if (data.detailedDescription) setDescription(data.detailedDescription);
-        if (data.workflowData) {
-            newWorkflowData = data.workflowData;
-            setWorkflowData(data.workflowData);
-        }
-        setAnalysisStatus('complete');
-      } else {
-        // Real n8n async case
-        // We use a toast promise or just let the user know
-        setAnalysisStatus('complete'); 
-      }
-
-      // 4. Save Product Final State
-      const formData = new FormData();
-      if (productId) formData.append('id', productId);
-      formData.append('name', name);
-      formData.append('description', description || (data.detailedDescription || ''));
-      formData.append('sellingPoints', JSON.stringify(newSellingPoints));
-      formData.append('images', JSON.stringify(images));
-      if (newWorkflowData) {
-        formData.append('analysisResult', JSON.stringify(newWorkflowData));
-      }
-
-      await createProduct(formData);
-      
-      toast.dismiss(); // Dismiss any previous toasts
+      // 4. Immediate feedback to user
+      toast.dismiss();
       toast.success(t.products.savedSuccess, {
         duration: 2000,
         icon: '✅',
@@ -203,18 +190,16 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
           border: '1px solid #bbf7d0',
         },
       });
+      emitCreditsRefresh();
 
       if (onSuccess) {
-        setTimeout(() => {
-            onSuccess();
-        }, 1000);
+        onSuccess(); // Close immediately
       }
 
     } catch (error) {
       console.error(error);
       toast.error(t.products.analysisFailed);
       setAnalysisStatus('failed');
-    } finally {
       setAnalyzing(false);
       setLoading(false);
     }
@@ -244,7 +229,7 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
             onChange={(e) => setSellingPoints(e.target.value.split('\n'))}
             placeholder={t.products.sellingPoints + "..."}
         />
-        <p className="text-xs text-gray-400 mt-1 dark:text-gray-500">One selling point per line.</p>
+        <p className="text-xs text-gray-400 mt-1 dark:text-gray-500">{t.products.onePerLine}</p>
       </div>
 
       {/* Images */}
@@ -309,7 +294,7 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
 
       {workflowData && (
         <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-          <h3 className="text-sm font-medium text-gray-900 mb-2">Analysis Result (For Workflow)</h3>
+          <h3 className="text-sm font-medium text-gray-900 mb-2">{t.products.analysisResult}</h3>
           <pre className="text-xs text-gray-600 whitespace-pre-wrap bg-white p-3 rounded border border-gray-200 max-h-48 overflow-y-auto font-mono">
             {JSON.stringify(workflowData, null, 2)}
           </pre>

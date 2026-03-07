@@ -17,7 +17,7 @@ export default function UploadPage() {
 
   // ✅ 方案A：浏览器直接调用 n8n webhook（注意 CORS）
   // 你现在 n8n 里看到的是 /webhook/product_dna_web，就填这个
-  const N8N_WEBHOOK_URL = "https://hooks.flowonn.com/webhook/product_dna_web";
+  const N8N_WEBHOOK_URL = "https://hook.atomx.top/webhook/product_dna_web";
 
   const onUpload = async () => {
     try {

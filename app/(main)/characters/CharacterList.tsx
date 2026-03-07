@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Modal } from '@/components/Modal';
+import { ConfirmModal } from '@/components/ConfirmModal';
 import { CharacterForm } from '@/components/CharacterForm';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
@@ -25,6 +26,8 @@ export function CharacterList({ initialCharacters }: CharacterListProps) {
   const router = useRouter();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [characterToDelete, setCharacterToDelete] = useState<string | null>(null);
   const { t } = useLanguage();
 
   const handleCharacterCreated = () => {
@@ -33,12 +36,17 @@ export function CharacterList({ initialCharacters }: CharacterListProps) {
     router.refresh();
   };
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
+  const handleDeleteClick = (e: React.MouseEvent, id: string) => {
     e.preventDefault();
-    if (!confirm(t.common.confirmDelete)) return;
+    setCharacterToDelete(id);
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!characterToDelete) return;
 
     try {
-        await deleteCharacter(id);
+        await deleteCharacter(characterToDelete);
         toast.success(t.common.success);
         router.refresh();
     } catch (error) {
@@ -121,7 +129,7 @@ export function CharacterList({ initialCharacters }: CharacterListProps) {
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 00 2 2h11a2 2 0 00 2-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                       </button>
                       <button
-                          onClick={(e) => handleDelete(e, character.id)}
+                          onClick={(e) => handleDeleteClick(e, character.id)}
                           className="text-gray-400 hover:text-red-600 p-1 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors group-hover:opacity-100"
                           title={t.common.delete}
                       >
@@ -149,6 +157,17 @@ export function CharacterList({ initialCharacters }: CharacterListProps) {
             key={editingCharacter?.id || 'new'}
         />
       </Modal>
+
+      <ConfirmModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+            setIsDeleteModalOpen(false);
+            setCharacterToDelete(null);
+        }}
+        onConfirm={handleConfirmDelete}
+        title={t.common.delete}
+        message={t.common.confirmDelete}
+      />
     </div>
   );
 }

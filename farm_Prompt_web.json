@@ -1,0 +1,67 @@
+{
+  "name": "Replication Prompt V2",
+  "id": "e9Q0InRVbw3mcRzk",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "farm_Prompt_web", "options": {} },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [460, 460]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "schema": "public",
+        "tableId": "scripts",
+        "recordId": "={{ $json.body.script_id }}"
+      },
+      "name": "Get Script",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [680, 460],
+      "credentials": { "supabaseApi": { "id": "supabase-cred-id", "name": "Supabase account" } }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "schema": "public",
+        "tableId": "products",
+        "recordId": "={{ $node.Webhook.json.body.product_id }}"
+      },
+      "name": "Get Product",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [900, 460],
+      "credentials": { "supabaseApi": { "id": "supabase-cred-id", "name": "Supabase account" } }
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "prompt": "Generate a video prompt based on script: {{ $node['Get Script'].json.breakdown }} and product: {{ $node['Get Product'].json.sellingPoints }}"
+      },
+      "name": "LLM",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1120, 460],
+      "credentials": { "openAiApi": { "id": "openai-cred-id", "name": "OpenAI account" } }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { body: { prompt: $json.text, replication_id: $node.Webhook.json.body.replication_id } } }}",
+        "options": {}
+      },
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 460]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Get Script", "type": "main", "index": 0 }]] },
+    "Get Script": { "main": [[{ "node": "Get Product", "type": "main", "index": 0 }]] },
+    "Get Product": { "main": [[{ "node": "LLM", "type": "main", "index": 0 }]] },
+    "LLM": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  }
+}

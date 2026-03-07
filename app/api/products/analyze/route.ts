@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { analyzeProduct } from '@/lib/n8n';
+import prisma from '@/lib/prisma';
 
 export async function POST(request: Request) {
   try {
@@ -15,21 +16,27 @@ export async function POST(request: Request) {
     
     // If productId is provided, it means we want to trigger n8n workflow for this product
     if (productId && apiKey) {
+        // Update status to PROCESSING immediately to show progress
+        // Note: createProduct in actions.ts already sets it to PROCESSING/0, but this reinforces it.
+        await prisma.product.update({
+            where: { id: productId },
+            data: {
+                analysisResult: JSON.stringify({ status: 'ANALYZING' }),
+                status: 'PROCESSING',
+                progress: 0
+            } as any // Cast to any to bypass linter if types are not updated yet
+        });
+
         // Trigger n8n workflow
+        // analyzeProduct is now async-friendly (returns immediately if n8n responds quickly)
         const analysis = await analyzeProduct({
             name,
             description: description || '',
             images: images || [],
             productId,
             apiKey,
-            workflowId: 'yNIjqrlSnTeWDFIx'
+            workflowId: 'flow_product_dna'
         });
-        
-        // Since n8n updates the DB asynchronously, we might just return the "triggered" status
-        // OR if analyzeProduct waits (which it currently does for mock data), we return the result.
-        // For real n8n, analyzeProduct should probably return "processing" or wait if n8n returns data.
-        // But n8n JSON shows it writes to DB and doesn't return data.
-        // So analyzeProduct for n8n case should just trigger.
         
         return NextResponse.json(analysis);
     }

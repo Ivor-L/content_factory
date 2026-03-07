@@ -1,0 +1,12 @@
+{
+  "keyword": "product-dna-web-fix",
+  "workflow_name": "product-dna-web-fix",
+  "workflow_type": "webhook",
+  "response_mode": "lastNode",
+  "business_logic": "修复现有工作流 yNIjqrlSnTeWDFIx：1. 配置积分查询与扣除节点；2. 使用 Supabase 社区节点上传分析结果",
+  "external_services": ["Supabase", "HTTP Request"],
+  "needs_code_node": true,
+  "needs_database": true,
+  "existing_workflow_id": "yNIjqrlSnTeWDFIx",
+  "created_at": "2026-03-06T12:00:00+08:00"
+}

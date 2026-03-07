@@ -1,17 +1,20 @@
 
-'use client';
+import prisma from '@/lib/prisma';
+import { StoryboardGenList } from './StoryboardGenList';
 
-import { StoryboardGenModal } from '@/components/StoryboardGenModal';
-import { useRouter } from 'next/navigation';
+export default async function StoryboardGenPage() {
+  const tasks = await prisma.storyboardTask.findMany({
+    where: {
+      status: {
+        in: ['GENERATING_GRID', 'GRID_COMPLETED']
+      }
+    },
+    orderBy: {
+      createdAt: 'desc',
+    }
+  });
 
-export default function StoryboardGenPage() {
-  const router = useRouter();
-  
-  return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900 p-4">
-        <div className="w-full max-w-6xl bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden h-[85vh]">
-            <StoryboardGenModal onClose={() => router.back()} />
-        </div>
-    </div>
-  );
+  const serializedTasks = JSON.parse(JSON.stringify(tasks));
+
+  return <StoryboardGenList initialTasks={serializedTasks} />;
 }

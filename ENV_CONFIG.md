@@ -51,9 +51,13 @@ Using the SSL-secured domain.
 ### N8N Webhooks
 Endpoints for various automation workflows.
 
-*   **Product Analysis:** `https://hooks.flowonn.com/webhook/product_dna_web`
-*   **Script Breakdown:** `https://hooks.flowonn.com/webhook/script_extract_web`
-*   **Replication/Generation:** `https://hooks.flowonn.com/webhook/Getway_web`
+*   **Product Analysis:** `https://hook.atomx.top/webhook/product_dna_web`
+*   **Script Breakdown:** `https://hook.atomx.top/webhook/script_extract_web`
+*   **Replication/Generation:** `https://hook.atomx.top/webhook/Getway_web`
+
+### Credit System Configuration
+*   **POINTS_API_BASE:** Base URL for the external credit system API.
+    *   Default: `https://api.atomx.top`
 
 ## 3. Running the Application
 

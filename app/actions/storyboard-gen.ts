@@ -12,6 +12,18 @@ export async function generateStoryboardGrid(formData: FormData) {
     throw new Error('Missing required fields');
   }
 
+  // Create initial task
+  const task = await prisma.storyboardTask.create({
+    data: {
+      status: 'GENERATING_GRID',
+      videoUrl: '', 
+      scriptContent: script,
+      referenceImage: imageUrl,
+    }
+  });
+
+  revalidatePath('/storyboard-gen');
+
   // Simulate AI Generation Time (30 seconds)
   // In reality, this would call an N8N webhook which would process asynchronously.
   // For this synchronous simulation:
@@ -21,40 +33,75 @@ export async function generateStoryboardGrid(formData: FormData) {
   // You can replace this with a real AI generation call later
   const gridImageUrl = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=2564&auto=format&fit=crop"; 
 
-  return { gridImageUrl };
+  // Update task with result
+  await prisma.storyboardTask.update({
+    where: { id: task.id },
+    data: {
+      status: 'GRID_COMPLETED',
+      coverImage: gridImageUrl,
+    }
+  });
+
+  revalidatePath('/storyboard-gen');
+
+  return { gridImageUrl, taskId: task.id };
 }
 
 export async function breakdownStoryboardGrid(formData: FormData) {
   const gridImageUrl = formData.get('gridImageUrl') as string;
   const script = formData.get('script') as string;
+  const taskId = formData.get('taskId') as string;
 
-  // 1. Create Storyboard Task
-  const task = await prisma.storyboardTask.create({
-    data: {
-      status: 'SCENE_CONFIRMATION',
-      videoUrl: '', // No source video, it's from script
-      coverImage: gridImageUrl,
-    }
-  });
+  let task;
+
+  if (taskId) {
+    // Update existing task
+    task = await prisma.storyboardTask.update({
+      where: { id: taskId },
+      data: {
+        status: 'SCENE_CONFIRMATION',
+        // Ensure grid image is set if not already (though it should be)
+        coverImage: gridImageUrl || undefined,
+      }
+    });
+  } else {
+    // Fallback: Create new task if no ID provided (legacy behavior)
+    task = await prisma.storyboardTask.create({
+      data: {
+        status: 'SCENE_CONFIRMATION',
+        videoUrl: '', 
+        coverImage: gridImageUrl,
+        scriptContent: script,
+      }
+    });
+  }
 
   // 2. Create 8 Segments (Mock Breakdown)
   // In reality, N8N would analyze the grid and script to generate these
-  const segments = Array.from({ length: 8 }).map((_, i) => ({
-    taskId: task.id,
-    order: i + 1,
-    duration: 3, // Default 3s
-    description: `Scene ${i + 1}: Based on script section...`,
-    imagePrompt: `Cinematic shot of scene ${i + 1}, ${script.slice(0, 20)}...`,
-    videoPrompt: `Camera pans over scene ${i + 1}, high quality, 4k`,
-    status: 'PENDING',
-    // We use the grid image as placeholder for now, or you could slice it
-    generatedImage: gridImageUrl 
-  }));
-
-  await prisma.storyboardSegment.createMany({
-    data: segments as any // Type casting for quick proto
+  // Check if segments already exist to avoid duplicates if re-running
+  const existingSegments = await prisma.storyboardSegment.findMany({
+    where: { taskId: task.id }
   });
 
+  if (existingSegments.length === 0) {
+    const segments = Array.from({ length: 8 }).map((_, i) => ({
+        taskId: task.id,
+        order: i + 1,
+        duration: 3, // Default 3s
+        // description: `Scene ${i + 1}: Based on script section...`,
+        imagePrompt: `Cinematic shot of scene ${i + 1}, ${script ? script.slice(0, 20) : ''}...`,
+        videoPrompt: `Camera pans over scene ${i + 1}, high quality, 4k`,
+        status: 'PENDING',
+        // We use the grid image as placeholder for now, or you could slice it
+        generatedImage: gridImageUrl 
+    }));
+
+    await prisma.storyboardSegment.createMany({
+        data: segments as any // Type casting for quick proto
+    });
+  }
+
   revalidatePath('/storyboard');
+  revalidatePath('/storyboard-gen');
   return { taskId: task.id };
 }

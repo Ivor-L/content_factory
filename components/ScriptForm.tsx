@@ -17,6 +17,14 @@ interface ScriptFormProps {
   };
 }
 
+import { createClient } from '@supabase/supabase-js';
+
+// Initialize Supabase client
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
 export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
   const router = useRouter();
   const { t } = useLanguage();
@@ -84,7 +92,37 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
             return;
         }
         if (videoFile) {
-             formData.append('videoUrl', URL.createObjectURL(videoFile));
+             // Upload to Supabase Storage
+             const toastId = toast.loading('Uploading video...');
+             try {
+                 const fileName = `${Date.now()}_${videoFile.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
+                 const { data, error: uploadError } = await supabase.storage
+                    .from('temp_uploads')
+                    .upload(fileName, videoFile, {
+                        cacheControl: '3600',
+                        upsert: false
+                    });
+                 
+                 if (uploadError) {
+                     // Check if bucket exists error
+                     if (uploadError.message.includes('bucket not found')) {
+                         throw new Error('Storage bucket not configured. Please contact admin.');
+                     }
+                     throw uploadError;
+                 }
+
+                 const { data: { publicUrl } } = supabase.storage
+                    .from('temp_uploads')
+                    .getPublicUrl(fileName);
+                 
+                 formData.append('videoUrl', publicUrl);
+                 toast.success('Upload complete', { id: toastId });
+             } catch (e: any) {
+                 console.error('Upload failed:', e);
+                 toast.error(`Upload failed: ${e.message}`, { id: toastId });
+                 setLoading(false);
+                 return;
+             }
         } else if (initialData && initialData.videoUrl) {
              formData.append('videoUrl', initialData.videoUrl);
         }
@@ -113,9 +151,16 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
 
       // 2. Call breakdown API (Only if new video or explicitly requested? 
       // For now always call to re-analyze if updated)
+      
+      // Get session for Authorization header
+      const { data: { session } } = await supabase.auth.getSession();
+      
       const res = await fetch("/api/scripts/breakdown", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+            "Content-Type": "application/json",
+            "Authorization": session?.access_token ? `Bearer ${session.access_token}` : ""
+        },
         body: JSON.stringify({ scriptId: script.id }),
       });
 
@@ -208,7 +253,7 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
           </div>
 
           {uploadMode === 'url' ? (
-            <div>
+            <div key="url-mode">
               <input
                 type="url"
                 value={videoUrl || ''}
@@ -220,6 +265,7 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
             </div>
           ) : (
             <div 
+              key="file-mode"
               className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
                 dragActive ? 'border-black dark:border-white bg-gray-50 dark:bg-gray-800' : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`}

@@ -1,0 +1,2003 @@
+{
+  "name": "\u5185\u5bb9\u5de5\u5382-\u63d0\u793a\u8bcd\u5b50\u6d41\u7a0b-\u7f51\u9875\u7248",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "farm_Prompt_web",
+        "options": {}
+      },
+      "id": "eafe5d52-0936-483d-9cfa-66d4344e8ced",
+      "name": "Webhook-\u7236\u5165\u53e3",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -3440,
+        32
+      ],
+      "webhookId": "111b8634-3d09-45f0-bad3-18a376681b7f"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"app_id\": \"{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_id }}\",\n  \"app_secret\": \"{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_secret }}\"\n}",
+        "options": {}
+      },
+      "id": "6cbb785c-0a94-44ea-a690-5c6977d178a0",
+      "name": "\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3216,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok }}",
+                    "rightValue": "false",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    },
+                    "id": "api_invalid_v"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "apikey_invalid"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "points_not_enough_v",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === false }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "insufficient_points"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "points_ok_v",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === true }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pass"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "52ea7493-417a-42be-a2b8-2f5f982ec9d3",
+      "name": "Switch-veo1",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -2320,
+        -560
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_token }}/tables/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.table_id }}/records/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"fields\":{\"\u4efb\u52a1\u8fdb\u5ea6\":\"api-key\u9519\u8bef\"}}",
+        "options": {}
+      },
+      "id": "2e87f571-e78c-41f0-a5b8-9e5b12279c32",
+      "name": "\u63d0\u9192-key\u9519\u8bef-veo1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2096,
+        -736
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_token }}/tables/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.table_id }}/records/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"fields\":{\"\u4efb\u52a1\u8fdb\u5ea6\":\"\u79ef\u5206\u4e0d\u8db3\"}}",
+        "options": {}
+      },
+      "id": "86ed7a24-38bd-43ee-b46d-688c8b8cb2de",
+      "name": "\u63d0\u9192-\u79ef\u5206\u4e0d\u8db3-veo1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2096,
+        -544
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/api/balance/check?api_key={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.api_key }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "required",
+              "value": "={{ $json.data.credit_cost }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a04f3f97-3d55-451b-b0b5-0e9d9cfb5669",
+      "name": "\u9a8c\u8bc1api-key-veo1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2544,
+        -544
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.flowonn.com/webhook/sora_videoV4",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "a1e9926e-368e-4ffc-a648-6864fc294654",
+      "name": "\u4e0b\u53d1\u5b50\u6d41\u7a0b-sora2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -848,
+        -352
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "vp1",
+              "name": "record_id",
+              "type": "string",
+              "value": "={{ $('\u8bfb\u53d6\u8bb0\u5f55').item.json.data.record.record_id }}"
+            },
+            {
+              "id": "vp2",
+              "name": "prompt",
+              "type": "string",
+              "value": "={{ $json.sora_prompt_compact }}"
+            },
+            {
+              "id": "vp3",
+              "name": "aspect_ratio",
+              "type": "string",
+              "value": "=portrait"
+            },
+            {
+              "id": "vp4",
+              "name": "image_1_token",
+              "type": "string",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.image_1_token }}"
+            },
+            {
+              "id": "vp5",
+              "name": "model",
+              "type": "string",
+              "value": "=sora2"
+            },
+            {
+              "id": "vp6",
+              "name": "workflow_id_for_credits",
+              "type": "string",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.workflow_id_for_credits }}"
+            },
+            {
+              "id": "vp7",
+              "name": "app_token",
+              "type": "string",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_token }}"
+            },
+            {
+              "id": "vp8",
+              "name": "table_id",
+              "type": "string",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.table_id }}"
+            },
+            {
+              "id": "vp9",
+              "name": "tenant_access_token",
+              "type": "string",
+              "value": "={{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.tenant_access_token }}"
+            },
+            {
+              "id": "vp10",
+              "name": "api_key",
+              "type": "string",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.api_key }}"
+            },
+            {
+              "id": "a151e6b0-9538-4f80-b9fe-3ebe5110841f",
+              "name": "n_frames",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.n_frames }}",
+              "type": "string"
+            },
+            {
+              "id": "0f77281e-7795-4bc2-8bf3-10af294c759d",
+              "name": "app_id",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_id }}",
+              "type": "string"
+            },
+            {
+              "id": "330299c4-7ba9-44ee-a89e-4ba4db4ec7f4",
+              "name": "app_secret",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_secret }}",
+              "type": "string"
+            },
+            {
+              "id": "6d11b7e3-6de4-4b79-a44e-b27954ba8809",
+              "name": "out_app_token",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.out_app_token }}",
+              "type": "string"
+            },
+            {
+              "id": "ca6070e9-07eb-4956-8972-dcc59ad8be92",
+              "name": "out_table_id",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.out_table_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "440f6378-a77b-46ad-bbeb-f597203e58a4",
+      "name": "\u6784\u9020\u5b50\u6d41\u7a0bpayload-sora",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1072,
+        -352
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "gpt-4o"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -1584,
+        -128
+      ],
+      "id": "79eb9b2b-3e62-4146-b01f-151e031a9e93",
+      "name": "gpt",
+      "credentials": {
+        "openAiApi": {
+          "id": "TVs8cHigrdXKUMDJ",
+          "name": "\u4e91\u96feapi"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=\u4ea7\u54c1\u4fe1\u606f\uff1a{{ $json.data.record.fields['\u4ea7\u54c1\u5356\u70b9'][0].text }}\nTarget Language:{{ $json.data.record.fields['\u89c6\u9891\u8bed\u8a00'] }}\n\u7206\u6b3e\u89c6\u9891\u62c6\u89e3\u62a5\u544a\uff1a{{ $json.data.record.fields['\u811a\u672c\u8981\u70b9'][0].text }}\n\u65f6\u957f\uff1a{{ $json.data.record.fields['\u79d2\u6570'] }}\n\u56fd\u5bb6/\u5730\u533a\uff1a{{ $json.data.record.fields['\u56fd\u5bb6\u5730\u533a'] }}",
+        "options": {
+          "systemMessage": "=Role\n\n\u4f60\u662f\u4e00\u4f4d\u4e16\u754c\u7ea7\u7684 AI \u89c6\u9891\u521b\u610f\u603b\u76d1 (AI Video Director)\u3002\n\u4f60\u64c5\u957f\u628a\u4ea7\u54c1\u4fe1\u606f\u5d4c\u5165\u201c\u7206\u6b3e\u5206\u955c\u903b\u8f91\u201d\uff0c\u5e76\u8f93\u51fa\u53ef\u76f4\u63a5\u7528\u4e8e Sora2 \u7684\u5206\u955c\u63d0\u793a\u8bcd\u3002\n\nInputs (\u4f60\u5c06\u63a5\u6536\u56db\u90e8\u5206\u8f93\u5165)\n\nSource Blueprint (JSON): \u7206\u6b3e\u62c6\u89e3\uff0c\u5305\u542b visual_specs \u548c abstract_logic\n\nTarget Product Info: \u65b0\u4ea7\u54c1\u4fe1\u606f\uff08\u540d\u79f0\u3001\u6838\u5fc3\u5356\u70b9\u3001\u6750\u8d28\u3001\u76ee\u6807\u4eba\u7fa4\uff09\n\nTarget Duration: \u811a\u672c\u65f6\u957f = {{ $json.data.record.fields['\u79d2\u6570'] }}\u79d2\n\nLocale Config:\n\nTarget Country/Region = {{ $json.data.record.fields['\u56fd\u5bb6\u5730\u533a'] }}\n\nTarget City/Style (optional) = {{ $json.data.record.fields['\u56fd\u5bb6\u5730\u533a'] }}\n\nTarget Language = {{ $json.data.record.fields['\u89c6\u9891\u8bed\u8a00'] }}\n\nTask\n\n\u9605\u8bfb Source Blueprint \u6bcf\u4e2a\u5206\u955c\uff0c\u4f7f\u7528 abstract_logic \u7684 universal_instruction\uff0c\n\u5c06 Target Product \u586b\u5165\u5206\u955c\uff0c\u751f\u6210\u4e00\u4efd\u5168\u65b0\u7684\u3001\u903b\u8f91\u81ea\u6d3d\u7684\u201c{{ $json.data.record.fields['\u89c6\u9891\u8bed\u8a00'] }}\u201d\u89c6\u9891\u751f\u6210\u63d0\u793a\u8bcd\uff0c\n\u603b\u65f6\u957f\u4e25\u683c\u4e3a {{ $json.data.record.fields['\u79d2\u6570'] }} \u79d2\uff0c\u5e76\u4e14\u573a\u666f\u5fc5\u987b\u53d1\u751f\u5728 {{ $json.data.record.fields['\u56fd\u5bb6\u5730\u533a'] }}\uff08\u53ca\u5176\u57ce\u5e02\u98ce\u683c\uff09\u3002\n\nLocale Hard Rules (\u56fd\u5bb6\u573a\u666f + \u8bed\u8a00\u786c\u7ea6\u675f) \ud83d\udea8 \u5fc5\u987b\u4e25\u683c\u6267\u884c\nA) Country/Region Scene Lock\n\n\u6240\u6709\u573a\u666f\u5fc5\u987b\u7b26\u5408 Target Country/Region \u7684\u771f\u5b9e\u751f\u6d3b\u8bed\u5883\uff08\u5efa\u7b51/\u5ba4\u5185\u9648\u8bbe/\u8857\u666f/\u670d\u9970/\u9053\u5177/\u5149\u7ebf\u6c1b\u56f4\uff09\u3002\n\n\u5982\u679c Target City/Style \u63d0\u4f9b\uff0c\u5219\u4f18\u5148\u8d34\u8fd1\u8be5\u57ce\u5e02\u7684\u98ce\u683c\u5143\u7d20\uff08\u4f8b\u5982\uff1a\u8857\u533a\u98ce\u683c\u3001\u5ba4\u5185\u88c5\u4fee\u3001\u5e38\u89c1\u7269\u4ef6\uff09\u3002\n\n\u7981\u6b62\u51fa\u73b0\u4e0e\u76ee\u6807\u56fd\u5bb6\u660e\u663e\u51b2\u7a81\u7684\u7b26\u53f7\uff08\u4f8b\u5982\uff1a\u65e5\u672c\u573a\u666f\u51fa\u73b0\u7f8e\u5f0f\u8def\u724c/\u7f8e\u5143\u4ef7\u683c\u724c\uff1b\u6cf0\u56fd\u573a\u666f\u51fa\u73b0\u65e5\u5f0f\u795e\u793e\u5143\u7d20\u7b49\uff09\u3002\n\nB) Language Lock\uff08\u53ea\u63a7\u5236\u201c\u58f0\u97f3\u5185\u5bb9\u8bed\u8a00\u201d\uff0c\u4e0d\u662f\u753b\u98ce\uff09\n\n\u6240\u6709\u53e3\u64ad/\u5bf9\u767d\uff08\u5982\u679c\u5b58\u5728\uff09\u5fc5\u987b\u662f Target Language\u3002\n\n\u753b\u9762\u6587\u5b57\u76f8\u5173\u89c4\u5219\u4ee5 C) No On-Screen Text Lock \u4e3a\u6700\u9ad8\u4f18\u5148\u7ea7\u3002\n\nC) No On-Screen Text Lock\uff08\u753b\u9762\u6587\u5b57\u7981\u4ee4\uff09\ud83d\udeab \u5fc5\u987b\u4e25\u683c\u6267\u884c\n\n\u753b\u9762\u4e2d\u7981\u6b62\u51fa\u73b0\u4efb\u4f55\u5f62\u5f0f\u7684\u6587\u5b57\u6216\u5b57\u7b26\uff0c\u5305\u62ec\u4f46\u4e0d\u9650\u4e8e\uff1a\u5b57\u5e55\u3001\u8d34\u7eb8\u5b57\u3001\u6807\u9898\u5361\u3001\u4ef7\u683c\u724c\u3001\u5305\u88c5/\u6807\u7b7e\u6587\u5b57\u3001UI\u754c\u9762\u6587\u5b57\u3001\u8def\u724c\u6587\u5b57\u3001\u95e8\u5e97\u62db\u724c\u6587\u5b57\u3001\u8863\u670d/\u5e3d\u5b50/\u624b\u673a\u58f3\u4e0a\u7684\u5b57\u6bcd\u3001\u4e66\u7c4d\u62a5\u7eb8\u6587\u5b57\u3001\u5c4f\u5e55\u5f39\u7a97\u6587\u5b57\u3001\u6c34\u5370\u3001LOGO\u6587\u5b57\u3001\u793e\u5a92\u754c\u9762\u5b57\u6837\u3002\n\n\u5982\u573a\u666f\u4e2d\u4e0d\u53ef\u907f\u514d\u5b58\u5728\u201c\u73b0\u5b9e\u4e2d\u6587\u5b57\u201d\uff08\u4f8b\u5982\u57ce\u5e02\u8def\u724c\u3001\u5546\u5e97\u62db\u724c\uff09\uff0c\u5fc5\u987b\u6539\u5199\u4e3a\u65e0\u6587\u5b57\u7684\u62bd\u8c61\u56fe\u5f62/\u7eaf\u8272\u5757/\u6a21\u7cca\u4e0d\u53ef\u8fa8\u8bc6\u7eb9\u7406\uff0c\u786e\u4fdd\u89c2\u4f17\u65e0\u6cd5\u8bfb\u51fa\u4efb\u4f55\u5b57\u3002\n\n\u7981\u6b62\u4f7f\u7528\u201c\u540e\u671f\u53e0\u5b57/\u52a0\u5b57\u5e55/\u5c4f\u5e55\u6587\u5b57/\u6807\u9898\u5361/\u8d34\u7eb8\u6587\u5b57\u201d\u7b49\u4efb\u4f55\u5f62\u5f0f\u7684\u6307\u4ee4\u6216\u5efa\u8bae\u3002\n\n\u82e5\u9700\u8981\u8868\u8fbe\u4fe1\u606f\uff08\u5356\u70b9/\u4ef7\u683c/CTA/\u6b65\u9aa4\uff09\uff0c\u53ea\u80fd\u901a\u8fc7\u753b\u9762\u52a8\u4f5c\u3001\u9053\u5177\u5bf9\u6bd4\u3001\u8868\u60c5\u53cd\u5e94\u3001\u955c\u5934\u8bed\u8a00\u3001\u73af\u5883\u97f3/\u97f3\u6548\u3001\u53e3\u64ad\u5b8c\u6210\uff0c\u4e14\u53e3\u64ad\u8bed\u8a00\u5fc5\u987b\u4e3a Target Language\u3002\n\nTransformation Logic (\u6838\u5fc3\u8fc1\u79fb\u6cd5\u5219)\n\n\u5bf9\u6bcf\u4e2a\u5206\u955c\u5fc5\u987b\u6267\u884c\uff1a\n\n\u8bfb\u53d6\u903b\u8f91\uff1a\u770b abstract_logic\uff08\u4f8b\u5982\u201c\u901a\u8fc7\u7269\u7406\u4e92\u52a8\u5c55\u793a\u6750\u8d28\u201d\uff09\n\n\u9002\u914d\u4ea7\u54c1\uff1a\u7528\u65b0\u4ea7\u54c1\u5b8c\u6210\u540c\u4e00\u903b\u8f91\uff08\u7ed9\u51fa\u53ef\u62cd\u7684\u52a8\u4f5c/\u9a8c\u8bc1\u65b9\u5f0f\uff09\n\n\u91cd\u5199\u753b\u9762\uff1a\u4fdd\u7559\u539f\u7247\u8fd0\u955c(Camera)\u4e0e\u5149\u5f71(Lighting)\uff0c\u4f46\u753b\u9762\u5143\u7d20\u5fc5\u987b\u7b26\u5408 Country/Region Scene Lock\n\nCore Logic: Pacing Adaptation (\u65f6\u957f\u9002\u914d\u6cd5\u5219)\n\n\u4f60\u5fc5\u987b\u8ba1\u7b97 Source Blueprint \u603b\u65f6\u957f\u5e76\u4e0e Target Duration \u6bd4\u5bf9\uff1a\n\nA \u5b8c\u7f8e\u5339\u914d\uff1a\u8bef\u5dee \u00b12\u79d2 -> \u4e0d\u6539\u5206\u955c\u7ed3\u6784\n\nB \u9700\u8981\u538b\u7f29\uff1a\u4fdd\u7559 Hook / Core Benefit / End\uff0c\u5408\u5e76\u6216\u79fb\u9664\u4e2d\u95f4\u5f31\u955c\u5934\n\nC \u9700\u8981\u5ef6\u5c55\uff1a\u5ef6\u957f\u9ad8\u5149\u65f6\u523b\u6216\u7a7a\u955c\u7ec6\u8282\uff08\u6162\u52a8\u4f5c/\u7279\u5199/\u73af\u5883\u58f0/\u52a8\u4f5c\u8282\u594f\uff09\n\nConstraints\n\nKeep the Structure: \u5206\u955c\u6570\u91cf\u4e0e\u6bcf\u955c\u65f6\u95f4\u5fc5\u987b\u4e25\u683c\u9075\u5b88 Source Blueprint\n\nSora Optimized: \u63cf\u5199\u5fc5\u987b\u955c\u5934\u53cb\u597d\u3001\u52a8\u4f5c\u53ef\u6267\u884c\u3001\u753b\u9762\u7ec6\u8282\u660e\u786e\n\nNo Hallucinations: \u60c5\u7eea\u57fa\u8c03(Mood)\u4e0e\u53d9\u4e8b\u8282\u594f\u4fdd\u6301\u4e00\u81f4\n\n\ud83d\udea8 \u6700\u7ec8\u8f93\u51fa\u5fc5\u987b\u5b8c\u5168\u4f7f\u7528 Target Language\uff08\u5305\u62ec\u955c\u5934\u672f\u8bed\u3001\u8fd0\u955c\u63cf\u8ff0\u3001\u753b\u9762\u63cf\u8ff0\uff09\n\n\u7981\u6b62\u6df7\u7528\u4e2d\u6587/\u82f1\u6587/\u5176\u4ed6\u8bed\u8a00\n\n\u5982\u679c Target Language \u662f\u65e5\u8bed\uff1a\u4f7f\u7528\u65e5\u8bed\u955c\u5934\u672f\u8bed\uff08\u4f8b\uff1a\u30af\u30ed\u30fc\u30ba\u30a2\u30c3\u30d7\u3001\u56fa\u5b9a\u3001\u624b\u6301\u3061\u3001\u30d1\u30f3\u3001\u30ba\u30fc\u30e0\uff09\n\n\u5982\u679c Target Language \u662f\u6cf0\u8bed\uff1a\u4f7f\u7528\u6cf0\u8bed\u955c\u5934\u8868\u8fbe\uff08\u5fc5\u8981\u65f6\u53ef\u7528\u7b80\u5355\u5f71\u89c6\u6cf0\u8bed\uff09\n\n\u5982\u679c Target Language \u662f\uff1a{{ $json.data.record.fields['\u89c6\u9891\u8bed\u8a00'] }}\u4f7f\u7528{{ $json.data.record.fields['\u89c6\u9891\u8bed\u8a00'] }}\u955c\u5934\u8868\u8fbe\n\n\u5982\u679c Target Language \u662f\u82f1\u8bed\uff1a\u624d\u5141\u8bb8\u82f1\u6587\u672f\u8bed\n\n\ud83d\udeab No Text: \u8f93\u51fa\u4e2d\u4e0d\u5f97\u5305\u542b\u4efb\u4f55\u201c\u5c06\u51fa\u73b0\u5728\u753b\u9762\u4e0a\u7684\u6587\u5b57\u5185\u5bb9\u201d\uff0c\u4e5f\u4e0d\u5f97\u5305\u542b\u201c\u5c4f\u5e55\u663e\u793a\u2026/\u5b57\u5e55\u5199\u2026/\u53e0\u5b57\u2026/\u6807\u9898\u5361\u2026/\u8d34\u7eb8\u6587\u5b57\u2026\u201d\u7b49\u63cf\u8ff0\uff1b\u4fe1\u606f\u4ec5\u80fd\u901a\u8fc7\u52a8\u4f5c\u4e0e\u53e3\u64ad\u8868\u8fbe\u3002\n\nOutput Format (\u4e25\u683c)\n\n\u53ea\u8f93\u51fa\u4e00\u6bb5\u201c{{ $json.data.record.fields['\u89c6\u9891\u8bed\u8a00'] }}\u201d\u7684\u5b8c\u6574\u63d0\u793a\u8bcd\uff0c\u4e0d\u8981\u89e3\u91ca\u3001\u4e0d\u8f93\u51fa JSON\u3001\u4e0d\u8f93\u51fa\u989d\u5916\u8bf4\u660e\u3002\n\u8f93\u51fa\u7ed3\u6784\u5fc5\u987b\u5982\u4e0b\uff08\u5e76\u4e14\u7ed3\u6784\u6587\u672c\u4e5f\u7528 {{ $json.data.record.fields['\u89c6\u9891\u8bed\u8a00'] }} \u5199\uff09\uff1a\n\nOnly output one complete prompt in \u201c{{ $json.data.record.fields['\u89c6\u9891\u8bed\u8a00'] }}\u201d as a single block of text. Do not explain, do not output JSON, and do not add any extra notes.\n\nThe output must follow this exact structure (and the structure labels must also be written in {{ $json.data.record.fields['\u89c6\u9891\u8bed\u8a00'] }}):\n\n\u3010Style Tags\u3011(written in {{ $json.data.record.fields['\u89c6\u9891\u8bed\u8a00'] }})\n\nArt style / Type:\n\nImage quality:\n\nMood / Atmosphere:\n\nScene country / city (must be clearly specified):\n\n\u3010Storyboard\u3011\nShot 1 (00:00 - 00:XX):\n\nCamera movement:\n\nMain subject action:\n\nProduct presentation (aligned with key selling points):\n\nEnvironment / set dressing (must match the country):\n\nLighting:\n\nVoiceover / ambient sound (if needed, must be in {{ $json.data.record.fields['\u89c6\u9891\u8bed\u8a00'] }}; no on-screen text allowed):\n\nShot 2 (00:XX - 00:XX):\n... \u6309 Source Blueprint \u987a\u5e8f\u8f93\u51fa\u76f4\u5230\u7ed3\u675f"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -1648,
+        -352
+      ],
+      "id": "281dbd3e-de82-4521-8b28-3dc7b1256f3a",
+      "name": "\u811a\u672c\u751f\u6210\u5668",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "const j = $input.first()?.json || {};\nconst raw = String(j.output || '').replace(/\\r\\n/g, '\\n').replace(/\\r/g, '\\n');\n\nif (!raw.trim()) throw new Error('\u6ca1\u6709\u627e\u5230 output \u6587\u672c');\n\nconst productName = String(j['\u4ea7\u54c1\u540d\u79f0'] || j.product_name || '').trim();\nconst language = String(j.language || j['\u89c6\u9891\u8bed\u8a00'] || '').trim(); // \u4ec5\u900f\u4f20\uff0c\u4e0d\u7ffb\u8bd1\n\n// \u8f7b\u5ea6\u6e05\u6d17\uff1a\u53ea\u5904\u7406\u9996\u5c3e\u7a7a\u767d\uff0c\u4e0d\u7834\u574f\u6bb5\u843d\u7ed3\u6784\nfunction cleanBlock(s) {\n  return String(s || '')\n    .replace(/\\r\\n/g, '\\n')\n    .replace(/\\r/g, '\\n')\n    .replace(/[ \\t]+\\n/g, '\\n')   // \u884c\u5c3e\u7a7a\u683c\n    .trim();\n}\n\n// ---------- 1) \u89e3\u6790 meta\uff08\u517c\u5bb9\u82f1\u6587\u4e00\u884c meta + \u4e2d\u6587\u98ce\u683c\u6807\u7b7e\uff09 ----------\nlet art = '';\nlet render = '';\nlet mood = '';\n\nconst lines = raw.split('\\n');\n\n// \u82f1\u6587 meta\uff1a\u540c\u4f60\u539f\u6765\u7684\u903b\u8f91\nconst metaLine = lines\n  .map(l => l.trim())\n  .filter(Boolean)\n  .find(l => /Art Style/i.test(l) && /Render Quality/i.test(l) && /Mood/i.test(l)) || '';\n\nif (metaLine) {\n  const artMatch = metaLine.match(/Art Style\\]\\*{0,2}\\s*([^,]+)\\s*,/i);\n  const rqMatch  = metaLine.match(/Render Quality\\]\\*{0,2}\\s*([^,]+)\\s*,/i);\n  const moodMatch= metaLine.match(/Mood\\]\\*{0,2}\\s*([^.\\n]+)\\.?/i);\n  art = cleanBlock(artMatch?.[1]);\n  render = cleanBlock(rqMatch?.[1]);\n  mood = cleanBlock(moodMatch?.[1]);\n} else {\n  // \u4e2d\u6587\u98ce\u683c\u6807\u7b7e\uff1a\u5339\u914d \u201c- \u753b\u98ce/\u7c7b\u578b\uff1axxx\u201d \u8fd9\u79cd\n  const txt = raw;\n  const artCn = txt.match(/\u753b\u98ce\\/\u7c7b\u578b\uff1a\\s*([^\\n]+)/);\n  const rqCn  = txt.match(/\u753b\u8d28\uff1a\\s*([^\\n]+)/);\n  const moodCn= txt.match(/\u6c1b\u56f4\uff1a\\s*([^\\n]+)/);\n  art = cleanBlock(artCn?.[1]);\n  render = cleanBlock(rqCn?.[1]);\n  mood = cleanBlock(moodCn?.[1]);\n}\n\n// ---------- 2) \u89e3\u6790 shots\uff08\u5148\u8bd5\u82f1\u6587 Shot\uff0c\u518d\u8bd5\u4e2d\u6587 \u955c\u5934\uff09 ----------\nconst shots = [];\n\n// \u82f1\u6587 Shot\nconst shotEnRegex =\n  /\\*{0,2}Shot\\s+(\\d+)\\s*\\(([^)]+)\\)\\s*:\\*{0,2}\\s*([\\s\\S]*?)(?=(?:\\n\\s*\\n)?\\*{0,2}Shot\\s+\\d+\\s*\\(|$)/gi;\n\n// \u4e2d\u6587 \u955c\u5934\uff1a\u652f\u6301 \u201c\u955c\u59341\uff0800:00 - 00:01.5\uff09\uff1a\u201d\nconst shotCnRegex =\n  /\u955c\u5934\\s*(\\d+)\\s*[\uff08(]([^\uff09)]+)[\uff09)]\\s*[:\uff1a]\\s*([\\s\\S]*?)(?=\\n\\s*\u955c\u5934\\s*\\d+\\s*[\uff08(]|$)/g;\n\nfunction normalizeTimeRange(t) {\n  const time_range = cleanBlock(t);\n  if (!time_range) return '';\n  // \u5982\u679c\u6ca1\u6709 '-'\uff0c\u8865\u6210\u540c\u70b9\u533a\u95f4\n  return time_range.includes('-') ? time_range : `${time_range} - ${time_range}`;\n}\n\nfunction replacePlaceholders(body) {\n  let b = body;\n\n  if (productName) {\n    b = b.replace(/\\b\\[HERO_PRODUCT\\]\\b/g, productName);\n  }\n  b = b.replace(/\\b\\[USER\\/MODEL\\]\\b/g, 'a relatable on-camera creator');\n  return b;\n}\n\nfunction collectByRegex(regex, type) {\n  let m;\n  while ((m = regex.exec(raw)) !== null) {\n    const no = Number(m[1]);\n    const time_range = normalizeTimeRange(m[2]);\n    let body = cleanBlock(m[3]);\n\n    body = replacePlaceholders(body);\n\n    // \u4e0d\u6539\u5199\u4f60\u539f\u6765\u7684\u5185\u5bb9\u7ed3\u6784\uff0c\u53ea\u5305\u4e00\u5c42 \u201cShot x\u201d\n    shots.push(`**Shot ${no} (${time_range}):**\\n${body}`);\n  }\n}\n\n// \u5148\u82f1\u6587\u540e\u4e2d\u6587\ncollectByRegex(shotEnRegex, 'en');\nif (shots.length === 0) collectByRegex(shotCnRegex, 'cn');\n\n// ---------- 3) \u62fc\u6210 Sora prompt\uff08\u5173\u952e\uff1a\u65e0\u8bba\u89e3\u6790\u6210\u4e0d\u6210\u529f\uff0c\u90fd\u4e0d\u4e22\u5185\u5bb9\uff09 ----------\nconst headerParts = [];\nif (art) headerParts.push(`[Art Style] ${art}`);\nif (render) headerParts.push(`[Render Quality] ${render}`);\nif (mood) headerParts.push(`[Mood] ${mood}`);\n\nconst header = headerParts.length\n  ? `${headerParts.join(', ')}.`\n  : `[Art Style] UGC handheld, [Render Quality] mobile phone portrait 9:16, [Mood] authentic and persuasive.`;\n\nconst baseRules = cleanBlock(`\n${header}\n${language ? `Language: ${language}.` : ``}\n\nCinematic but authentic UGC pacing. Keep camera moves, timing, and beat order exactly as the shot list.\nNo watermark, no UI icons, no subtitles unless explicitly specified in the shot text.\nVertical 9:16, handheld realism, natural lighting.\n`);\n\n// \u2705 \u5982\u679c shots \u89e3\u6790\u5230\u4e86\uff1a\u7528\u7ed3\u6784\u5316 shots\n// \u2705 \u5982\u679c shots \u89e3\u6790\u4e0d\u5230\uff1afallback \u76f4\u63a5\u585e raw\uff0c\u4fdd\u8bc1\u201c\u4e0d\u4e22\u5b57\u201d\nconst sora_body = shots.length\n  ? shots.join('\\n\\n')\n  : cleanBlock(`(Fallback: could not parse shot blocks, using original content)\\n\\n${raw}`);\n\nconst sora_prompt = cleanBlock(`${baseRules}\\n\\n${sora_body}`);\n\n// \u66f4\u77ed\u7248\u672c\uff1a\u540c\u6837\u4e0d\u4e22\u5b57\uff08\u89e3\u6790\u5931\u8d25\u5c31\u585e raw\uff09\nconst sora_prompt_compact = cleanBlock(`\n${header}\nVertical 9:16 UGC handheld realism. Keep timing and shot order.\n${shots.length ? shots.join('\\n') : raw}\n`);\n\nreturn [{\n  json: {\n    ...j,\n    sora_prompt,\n    sora_prompt_compact,\n    shots_count: shots.length\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1296,
+        -352
+      ],
+      "id": "e58aa1e7-c721-4c4a-8ceb-a5593fb6c49b",
+      "name": "\u89e3\u6790\u6570\u636e"
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.workflow_id_for_credits }}",
+        "options": {}
+      },
+      "id": "0cacb124-5af7-416b-b422-045bf5a64b0c",
+      "name": "\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u52061",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2768,
+        -544
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_token }}/tables/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.table_id }}/records/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.app_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"fields\": {\n    \"\u4efb\u52a1\u8fdb\u5ea6\": \"AI\u6b63\u5728\u64b0\u5199\u63d0\u793a\u8bcd\"\n  }\n}",
+        "options": {}
+      },
+      "id": "90a826cc-7b50-4072-ba1d-be04515565ca",
+      "name": "\u5199\u5165\u4efb\u52a1ID-\u751f\u6210\u4e2d",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2096,
+        -352
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_token }}/tables/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.table_id }}/records/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.app_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ \n  {\n    \"fields\": {\n      \"\u89c6\u9891\u63d0\u793a\u8bcd\": $('\u89e3\u6790\u6570\u636e').item.json.sora_prompt_compact,\n      \"\u4efb\u52a1\u8fdb\u5ea6\": \"\u63d0\u793a\u8bcd\u5df2\u5b8c\u6210\uff0c\u5f00\u59cb\u751f\u6210\u89c6\u9891\"\n    }\n  } \n}}",
+        "options": {}
+      },
+      "id": "2634b0ee-54f1-415b-9918-9070613d7fdb",
+      "name": "\u5199\u5165\u4efb\u52a1ID-\u63d0\u793a\u8bcd",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -624,
+        -352
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.workflow_id_for_credits }}",
+                    "rightValue": "flow_farm_copy",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "813a8f6c-d5fa-4a1f-be71-fea15e106bfc"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "\u7206\u6b3e\u590d\u523b"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "18ff13f0-5f25-46e0-a44a-510bc628b7ed",
+                    "leftValue": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.workflow_id_for_credits }}",
+                    "rightValue": "flow_farm_zy",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "\u6839\u636e\u811a\u672c\u751f\u6210"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "b9d93636-cce6-4966-9617-1903f0e12187",
+                    "leftValue": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.workflow_id_for_credits }}",
+                    "rightValue": "flow_farm_md",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "\u6839\u636e\u5356\u70b9\u751f\u6210"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -2992,
+        16
+      ],
+      "id": "6172a24e-cc07-4952-8598-741ec809b5e7",
+      "name": "\u5b50\u4efb\u52a1"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok }}",
+                    "rightValue": "false",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    },
+                    "id": "api_invalid_v"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "apikey_invalid"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "points_not_enough_v",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === false }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "insufficient_points"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "points_ok_v",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === true }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pass"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "90917dc2-bc7e-4c0b-ae91-c83f36330d4f",
+      "name": "Switch-veo",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -2320,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_token }}/tables/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.table_id }}/records/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"fields\":{\"\u4efb\u52a1\u8fdb\u5ea6\":\"api-key\u9519\u8bef\"}}",
+        "options": {}
+      },
+      "id": "5163bebf-92cc-4d6b-ae90-156e4465cc50",
+      "name": "\u63d0\u9192-key\u9519\u8bef-veo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2096,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_token }}/tables/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.table_id }}/records/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"fields\":{\"\u4efb\u52a1\u8fdb\u5ea6\":\"\u79ef\u5206\u4e0d\u8db3\"}}",
+        "options": {}
+      },
+      "id": "e3e958e7-740c-4374-ac19-ead33759becc",
+      "name": "\u63d0\u9192-\u79ef\u5206\u4e0d\u8db3-veo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2096,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/api/balance/check?api_key={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.api_key }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "required",
+              "value": "={{ $json.data.credit_cost }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8a5d48d4-a33c-4638-92a3-b31bef5ebb8a",
+      "name": "\u9a8c\u8bc1api-key-veo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2544,
+        32
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.workflow_id_for_credits }}",
+        "options": {}
+      },
+      "id": "6c113e21-1acf-478a-ad9c-473c82c18ee3",
+      "name": "\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u5206",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2768,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_token }}/tables/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.table_id }}/records/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.app_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"fields\": {\n    \"\u4efb\u52a1\u8fdb\u5ea6\": \"\u6b63\u5728\u751f\u6210\u89c6\u9891\"\n  }\n}",
+        "options": {}
+      },
+      "id": "aeee3ec8-3480-4300-a9d6-657928a8733f",
+      "name": "\u5199\u5165\u4efb\u52a1ID-\u751f\u6210\u4e2d1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2096,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_token }}/tables/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.table_id }}/records/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.record_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1872,
+        -352
+      ],
+      "id": "90f1c31b-4446-44d7-9d03-34559099848e",
+      "name": "\u8bfb\u53d6\u8bb0\u5f55"
+    },
+    {
+      "parameters": {
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_token }}/tables/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.table_id }}/records/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.record_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1872,
+        224
+      ],
+      "id": "29aac93c-4087-4f1d-bbc6-59e305775443",
+      "name": "\u8bfb\u53d6\u8bb0\u5f551"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.flowonn.com/webhook/sora_videoV4",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "62629947-6277-42c3-ab80-0e8b4579a0df",
+      "name": "\u4e0b\u53d1\u5b50\u6d41\u7a0b-sora",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1296,
+        224
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "vp1",
+              "name": "record_id",
+              "type": "string",
+              "value": "={{ $json.data.record.fields.record_id[0].text }}"
+            },
+            {
+              "id": "vp2",
+              "name": "prompt",
+              "type": "string",
+              "value": "={{ $json.data.record.fields['\u811a\u672c'] }}"
+            },
+            {
+              "id": "vp3",
+              "name": "aspect_ratio",
+              "type": "string",
+              "value": "=portrait"
+            },
+            {
+              "id": "vp4",
+              "name": "image_1_token",
+              "type": "string",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.image_1_token }}"
+            },
+            {
+              "id": "vp5",
+              "name": "model",
+              "type": "string",
+              "value": "=sora2"
+            },
+            {
+              "id": "vp6",
+              "name": "workflow_id_for_credits",
+              "type": "string",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.workflow_id_for_credits }}"
+            },
+            {
+              "id": "vp7",
+              "name": "app_token",
+              "type": "string",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_token }}"
+            },
+            {
+              "id": "vp8",
+              "name": "table_id",
+              "type": "string",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.table_id }}"
+            },
+            {
+              "id": "vp9",
+              "name": "tenant_access_token",
+              "type": "string",
+              "value": "={{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.tenant_access_token }}"
+            },
+            {
+              "id": "vp10",
+              "name": "api_key",
+              "type": "string",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.api_key }}"
+            },
+            {
+              "id": "a151e6b0-9538-4f80-b9fe-3ebe5110841f",
+              "name": "n_frames",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.n_frames }}",
+              "type": "string"
+            },
+            {
+              "id": "0f77281e-7795-4bc2-8bf3-10af294c759d",
+              "name": "app_id",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_id }}",
+              "type": "string"
+            },
+            {
+              "id": "330299c4-7ba9-44ee-a89e-4ba4db4ec7f4",
+              "name": "app_secret",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_secret }}",
+              "type": "string"
+            },
+            {
+              "id": "6d11b7e3-6de4-4b79-a44e-b27954ba8809",
+              "name": "out_app_token",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.out_app_token }}",
+              "type": "string"
+            },
+            {
+              "id": "ca6070e9-07eb-4956-8972-dcc59ad8be92",
+              "name": "out_table_id",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.out_table_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a78c7ed8-e027-40df-8e21-a8f0fba02fc8",
+      "name": "\u6784\u9020\u5b50\u6d41\u7a0bpayload-sora1",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1584,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok }}",
+                    "rightValue": "false",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    },
+                    "id": "api_invalid_v"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "apikey_invalid"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "points_not_enough_v",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === false }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "insufficient_points"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "points_ok_v",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === true }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pass"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cda2fa37-8e20-4221-b54e-1e07008d54c2",
+      "name": "Switch-veo2",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -2320,
+        592
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_token }}/tables/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.table_id }}/records/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"fields\":{\"\u4efb\u52a1\u8fdb\u5ea6\":\"api-key\u9519\u8bef\"}}",
+        "options": {}
+      },
+      "id": "fb3530cf-898b-42c2-bf37-135e02ee7be2",
+      "name": "\u63d0\u9192-key\u9519\u8bef-veo2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2096,
+        416
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_token }}/tables/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.table_id }}/records/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"fields\":{\"\u4efb\u52a1\u8fdb\u5ea6\":\"\u79ef\u5206\u4e0d\u8db3\"}}",
+        "options": {}
+      },
+      "id": "6354f359-c030-4b36-9b5b-c75490568468",
+      "name": "\u63d0\u9192-\u79ef\u5206\u4e0d\u8db3-veo2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2096,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/api/balance/check?api_key={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.api_key }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "required",
+              "value": "={{ $json.data.credit_cost }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "605fd083-d797-44b3-a703-3c1db2b9b1ab",
+      "name": "\u9a8c\u8bc1api-key-veo2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2544,
+        608
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.flowonn.com/webhook/sora_videoV4",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "a7c92017-c9a2-44db-baf3-43b6a96085be",
+      "name": "\u4e0b\u53d1\u5b50\u6d41\u7a0b-sora3",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -848,
+        800
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "vp1",
+              "name": "record_id",
+              "type": "string",
+              "value": "={{ $('\u8bfb\u53d6\u8bb0\u5f552').item.json.data.record.record_id }}"
+            },
+            {
+              "id": "vp2",
+              "name": "prompt",
+              "type": "string",
+              "value": "={{ $json.sora_prompt_compact }}"
+            },
+            {
+              "id": "vp3",
+              "name": "aspect_ratio",
+              "type": "string",
+              "value": "=portrait"
+            },
+            {
+              "id": "vp4",
+              "name": "image_1_token",
+              "type": "string",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.image_1_token }}"
+            },
+            {
+              "id": "vp5",
+              "name": "model",
+              "type": "string",
+              "value": "=sora2"
+            },
+            {
+              "id": "vp6",
+              "name": "workflow_id_for_credits",
+              "type": "string",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.workflow_id_for_credits }}"
+            },
+            {
+              "id": "vp7",
+              "name": "app_token",
+              "type": "string",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_token }}"
+            },
+            {
+              "id": "vp8",
+              "name": "table_id",
+              "type": "string",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.table_id }}"
+            },
+            {
+              "id": "vp9",
+              "name": "tenant_access_token",
+              "type": "string",
+              "value": "={{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.tenant_access_token }}"
+            },
+            {
+              "id": "vp10",
+              "name": "api_key",
+              "type": "string",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.api_key }}"
+            },
+            {
+              "id": "a151e6b0-9538-4f80-b9fe-3ebe5110841f",
+              "name": "n_frames",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.n_frames }}",
+              "type": "string"
+            },
+            {
+              "id": "0f77281e-7795-4bc2-8bf3-10af294c759d",
+              "name": "app_id",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_id }}",
+              "type": "string"
+            },
+            {
+              "id": "330299c4-7ba9-44ee-a89e-4ba4db4ec7f4",
+              "name": "app_secret",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_secret }}",
+              "type": "string"
+            },
+            {
+              "id": "6d11b7e3-6de4-4b79-a44e-b27954ba8809",
+              "name": "out_app_token",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.out_app_token }}",
+              "type": "string"
+            },
+            {
+              "id": "ca6070e9-07eb-4956-8972-dcc59ad8be92",
+              "name": "out_table_id",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.out_table_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "27bbd0f0-b98a-4e89-8c89-986d2f8f983e",
+      "name": "\u6784\u9020\u5b50\u6d41\u7a0bpayload-sora2",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1072,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "gpt-4o"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -1584,
+        1024
+      ],
+      "id": "364aefb0-f27e-4998-a49a-f416113d744d",
+      "name": "gpt1",
+      "credentials": {
+        "openAiApi": {
+          "id": "TVs8cHigrdXKUMDJ",
+          "name": "\u4e91\u96feapi"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=\u4ea7\u54c1\u4fe1\u606f\uff1a{{ $json.data.record.fields['\u4ea7\u54c1\u5356\u70b9'][0].text }}\nTarget Language:{{ $json.data.record.fields['\u89c6\u9891\u8bed\u8a00'] }}\n\u65f6\u957f\uff1a{{ $json.data.record.fields['\u79d2\u6570'] }}\n\u56fd\u5bb6/\u5730\u533a\uff1a{{ $json.data.record.fields['\u56fd\u5bb6\u5730\u533a'] }}",
+        "options": {
+          "systemMessage": "=Role\n\n\u4f60\u662f\u4e00\u4f4d\u7cbe\u901a\u77ed\u89c6\u9891\u7b97\u6cd5\u7684 AI UGC \u89c6\u9891\u811a\u672c\u5bfc\u6f14\u3002\u4f60\u64c5\u957f\u6839\u636e\u4ea7\u54c1\u5356\u70b9\uff0c\u53cd\u63a8\u6700\u5438\u5f15\u4eba\u7684\u89c6\u89c9\u753b\u9762\uff0c\u5e76\u751f\u6210\u9002\u5408 AI \u89c6\u9891\u6a21\u578b\uff08\u5982 Sora, Runway, Kling\uff09\u7406\u89e3\u7684\u63d0\u793a\u8bcd\u3002\n\n0. Locale & Language (MINIMAL, CRITICAL)\n\n\u4f60\u5c06\u6536\u5230\u4e24\u4e2a\u5173\u952e\u4fe1\u606f\uff1a\n\n\u56fd\u5bb6\u5730\u533a\uff1a{{ $json.data.record.fields['\u56fd\u5bb6\u5730\u533a'] }}\n\n\u76ee\u6807\u8bed\u8a00\uff1a{{ $json.data.record.fields['\u89c6\u9891\u8bed\u8a00'] }}\n\n\u4f60\u5fc5\u987b\u9075\u5b88\u4ee5\u4e0b\u89c4\u5219\uff08\u53ea\u505a\u8fd9\u4e24\u4ef6\u4e8b\uff09\uff1a\n\n\u6700\u7ec8\u8f93\u51fa\u5fc5\u987b\u5b8c\u5168\u4f7f\u7528\u201c\u76ee\u6807\u8bed\u8a00\u201d\u3002\u4e0d\u5f97\u51fa\u73b0\u4efb\u4f55\u5176\u4ed6\u8bed\u8a00\u5b57\u7b26/\u8bcd\uff0c\u5c24\u5176\u7981\u6b62\u51fa\u73b0\u82f1\u6587\u5b57\u6bcd a-zA-Z\uff08\u9664\u4e0b\u65b9\u201c\u955c\u5934\u672f\u8bed\u767d\u540d\u5355\u201d\u5916\uff09\u3002\n\n\u6240\u6709\u53f0\u8bcd\u3001\u5c4f\u5e55\u6587\u5b57\u3001\u5b57\u5e55\uff08\u82e5\u4f60\u5199\u5230\uff09\u5fc5\u987b\u662f\u201c\u76ee\u6807\u8bed\u8a00\u201d\u3002\u5982\u679c\u4f60\u65e0\u6cd5\u4fdd\u8bc1\u53e3\u64ad\u8bed\u8a00\u4e00\u81f4\uff0c\u5219\u4e0d\u8981\u5199\u53e3\u64ad\u53f0\u8bcd\uff0c\u4ec5\u5199 SFX/\u73af\u5883\u97f3\u3002\n\n\u753b\u9762\u573a\u666f\u3001\u4eba\u7269\u6c14\u8d28\u3001\u65e5\u5e38\u9053\u5177\u4e0e\u751f\u6d3b\u73af\u5883\u5fc5\u987b\u7b26\u5408\u201c\u56fd\u5bb6\u5730\u533a\u201d\u7684\u771f\u5b9e\u8bed\u5883\uff08\u672c\u5730\u5bb6\u5c45/\u53a8\u623f/\u6d74\u5ba4/\u8857\u666f\u98ce\u683c\uff09\uff0c\u907f\u514d\u660e\u663e\u8de8\u533a\u8fdd\u548c\u7b26\u53f7\u3002\n\n\u5355\u4f4d/\u8d27\u5e01/\u8ba1\u91cf\u65b9\u5f0f\u6309\u56fd\u5bb6\u5730\u533a\u5e38\u7528\u4e60\u60ef\u8868\u8fbe\uff08\u4f8b\u5982\u6e29\u5ea6/\u5c3a\u5bf8/\u4ef7\u683c\u5199\u6cd5\uff09\uff0c\u4e0d\u8981\u6df7\u7528\u522b\u7684\u5730\u533a\u4f53\u7cfb\u3002\n\n\u955c\u5934\u672f\u8bed\u767d\u540d\u5355\uff08\u5141\u8bb8\u51fa\u73b0\u82f1\u6587\uff0c\u4ec5\u9650\u8fd9\u4e9b\u8bcd\uff09\nClose-up, Extreme close-up, Medium shot, Wide shot, POV, Handheld, Pan, Tilt, Zoom-in, Zoom-out, Rack focus, Slow motion, Cut, Match cut\n\n1. \u6838\u5fc3\u4efb\u52a1 (Core Task)\n\n\u8bf7\u6839\u636e\u7528\u6237\u63d0\u4f9b\u7684\u3010\u4ea7\u54c1\u5356\u70b9\u3011\u548c\u3010\u56fe\u7247\u4fe1\u606f\u3011\uff0c\u751f\u6210\u4e00\u6bb5 {{ $json.data.record.fields['\u79d2\u6570'] }}\u79d2 \u7684\u7f51\u7ea2 UGC\uff08\u7528\u6237\u751f\u6210\u5185\u5bb9\uff09\u98ce\u683c\u89c6\u9891\u63d0\u793a\u8bcd\u3002\n\u6838\u5fc3\u76ee\u6807\uff1a\u5fc5\u987b\u7b26\u5408\u7206\u6b3e\u77ed\u89c6\u9891\u201c\u524d3\u79d2\u6293\u773c\u7403\u201d\u6cd5\u5219\uff0c\u4eba\u7269\u4e0e\u4ea7\u54c1\u4e92\u52a8\u81ea\u7136\u3001\u9ad8\u9891\u3002\n\n2. \u4ea7\u54c1\u4e0e\u7b56\u7565\u5206\u6790\n\n\u4ea7\u54c1\u8bc6\u522b\uff1a\u5206\u6790\u8f93\u5165\u4fe1\u606f\uff0c\u786e\u5b9a\u4ea7\u54c1\u7c7b\u578b\u3001\u6750\u8d28\u7ec6\u8282\u3001\u6838\u5fc3\u4f7f\u7528\u573a\u666f\u3001\u5173\u952e\u5356\u70b9\u3002\n\n\u51fa\u955c\u4eba\u5458\uff1a\u82e5\u7528\u6237\u672a\u6307\u5b9a\u51fa\u955c\u8005\uff0c\u5219\u6839\u636e\u4ea7\u54c1\u5c5e\u6027\u4e0e\u56fd\u5bb6\u5730\u533a\uff0c\u81ea\u52a8\u6784\u601d\u6700\u5339\u914d\u7684\u201c\u51fa\u955c\u4e3b\u89d2\u201d\uff08\u5e74\u9f84\u6bb5/\u6c14\u8d28/\u751f\u6d3b\u573a\u666f\uff09\uff0c\u4f46\u4e0d\u8981\u4f7f\u7528\u5177\u4f53\u540d\u5b57\u3002\n\n3. \ud83d\udc65 \u89d2\u8272\u8bbe\u5b9a (Character Consistency)\n\n\u5728\u8f93\u51fa\u4e2d\u751f\u6210\u4e00\u53e5\u7b80\u77ed\u4eba\u7269\u5916\u8c8c/\u6c14\u8d28\u63cf\u8ff0\uff0c\u5e76\u5728\u540e\u7eed\u955c\u5934\u91cc\u7edf\u4e00\u7528\u540c\u4e00\u4e2a\u6307\u4ee3\u8bcd\uff08\u7531\u4f60\u7528\u76ee\u6807\u8bed\u8a00\u9009\u62e9\u4e00\u4e2a\u56fa\u5b9a\u79f0\u547c\uff0c\u4f8b\u5982\u201c\u4e3b\u89d2/\u51fa\u955c\u8005/\u4eba\u7269\u201d\u4e4b\u7c7b\uff09\uff0c\u786e\u4fdd\u89d2\u8272\u4e00\u81f4\u3002\n\n\u4e25\u7981\u4f7f\u7528\u7279\u5b9a\u540d\u5b57\uff08\u9664\u975e\u7528\u6237\u660e\u786e\u8981\u6c42\uff09\u3002\n\n4. \u89c6\u9891\u98ce\u683c\u89c4\u8303 (Visual Style)\n\n\u62cd\u6444\u65b9\u5f0f\uff1aUGC \u624b\u673a\u81ea\u62cd\u6216\u4ed6\u62cd\uff0cHandheld \u8f7b\u5fae\u6643\u52a8\uff0c\u751f\u6d3b\u5316\u6784\u56fe\uff0c\u62d2\u7edd\u68da\u62cd\u5e7f\u544a\u611f\u3002\n\n\u706f\u5149\u73af\u5883\uff1a\u81ea\u7136\u5149\u6216\u5c45\u5bb6\u6696\u5149\uff0c\u5f3a\u8c03\u771f\u5b9e\u611f\u3002\n\n\u4e92\u52a8\u8981\u6c42\uff1a\u4e3b\u89d2\u5fc5\u987b\u9891\u7e41\u4e0e\u4ea7\u54c1\u53d1\u751f\u7269\u7406\u4e92\u52a8\uff08\u62ff\u3001\u634f\u3001\u6d82\u3001\u7a7f\u3001\u5403\u3001\u6309\u538b\u3001\u5012\u5165\u3001\u64e6\u62ed\u7b49\uff09\uff0c\u6bcf\u4e00\u6bb5\u90fd\u8981\u6709\u660e\u786e\u52a8\u4f5c\u3002\n\n5. \u5185\u5bb9\u7ed3\u6784\u8bbe\u8ba1 (Timeline: {{ $json.data.record.fields['\u79d2\u6570'] }}s)\n\n\u6309\u603b\u65f6\u957f\u5206\u914d\u4e09\u6bb5\u5f0f\u7ed3\u6784\uff0c\u5e76\u81ea\u52a8\u8ba1\u7b97\u65f6\u95f4\u8f74\uff1a\n\n\u5f00\u573a Hook\uff08\u524d 20%-30%\uff09\uff1a\u524d 3 \u79d2\u5fc5\u987b\u6293\u4f4f\u773c\u7403\uff08\u60ca\u559c\u53cd\u5e94 / \u75db\u70b9\u5207\u5165 / \u89c6\u89c9\u51b2\u51fb \u4efb\u9009\u5176\u4e00\uff09\uff0c\u8282\u594f\u5feb\u3002\n\nDemo & Details\uff08\u4e2d\u95f4 50%\uff09\uff1a\u5c55\u793a\u6750\u8d28/\u7ec6\u8282 + \u5356\u70b9\u9a8c\u8bc1\uff0c\u50cf\u670b\u53cb\u804a\u5929\u7684\u8f7b\u677e\u611f\uff0c\u955c\u5934\u5feb\u901f\u5207\u6362\u7ec6\u8282\u4e0e\u4eba\u7269\u53cd\u5e94\u3002\n\n\u6536\u5c3e Outro\uff08\u6700\u540e 20%\uff09\uff1a\u771f\u8bda\u63a8\u8350 + \u660e\u786e\u52a8\u4f5c\u6536\u53e3\uff08\u5fae\u7b11\u3001\u70b9\u5934\u3001\u7ad6\u62c7\u6307\u3001\u6bd4\u5fc3\u3001\u62e5\u62b1\u4ea7\u54c1\u7b49\uff09\uff0c\u753b\u9762\u5b9a\u683c\u5728\u201c\u4eba\u4e0e\u4ea7\u54c1\u548c\u8c10\u5171\u5904\u201d\u3002\n\n6. \u521b\u610f\u65b9\u5411\u5e93 (\u6839\u636e\u4ea7\u54c1\u81ea\u52a8\u5339\u914d)\n\n\u7f8e\u5986\u62a4\u80a4\uff1aRoutine / \u524d\u540e\u77ac\u95f4\u5bf9\u6bd4 / \u8d28\u5730\u7279\u5199\n\n\u98df\u54c1\u996e\u6599\uff1a\u7b2c\u4e00\u53e3\u771f\u5b9e\u53cd\u5e94 / \u5480\u56bc\u97f3\u6548 / \u62c9\u4e1d\u6d41\u5fc3\u89c6\u89c9\n\n\u79d1\u6280\u6570\u7801\uff1a\u5f00\u7bb1\u5174\u594b\u611f / \u529f\u80fd\u77ac\u95f4\u6f14\u793a / \u60ca\u53f9\u8868\u60c5\n\n\u670d\u9970\u7a7f\u642d\uff1a\u8f6c\u8eab\u5c55\u793a / \u7167\u955c\u5b50 / \u629a\u6478\u9762\u6599\n\n\u5bb6\u5c45\u751f\u6d3b\uff1a\u89e3\u51b3\u9ebb\u70e6\u540e\u7684\u8212\u723d\u8868\u60c5 / \u201c\u65e9\u4e70\u5c31\u597d\u4e86\u201d\u7684\u540e\u6094\u611f\n\n7. \u8f93\u51fa\u8981\u6c42 (CRITICAL)\n\n\u53ea\u8f93\u51fa\u63d0\u793a\u8bcd\u6b63\u6587\uff0c\u4e0d\u8bb8\u8f93\u51fa\u4efb\u4f55\u89e3\u91ca\u3001\u524d\u8a00\u3001\u5206\u6790\u3002\n\n\u6574\u6bb5\u8f93\u51fa\u5fc5\u987b\u662f\u76ee\u6807\u8bed\u8a00\uff08\u9664\u201c\u955c\u5934\u672f\u8bed\u767d\u540d\u5355\u201d\u5916\uff0c\u4e0d\u5f97\u51fa\u73b0\u82f1\u6587\u5b57\u6bcd\uff09\u3002\n\n\u5fc5\u987b\u5305\u542b\u6e05\u6670\u7684\u65f6\u95f4\u8f74\uff08\u4f8b\u5982 0s-3s / 3s-9s / 9s-13s / 13s-15s\uff0c\u5177\u4f53\u6309\u603b\u65f6\u957f\u81ea\u52a8\u7b97\uff09\u3002\n\n\u6bcf\u6bb5\u5fc5\u987b\u5305\u542b\u4e09\u90e8\u5206\uff1a\u2460\u955c\u5934\u753b\u9762\uff08\u542b\u8fd0\u955c\uff09\u2461\u4eba\u7269\u52a8\u4f5c \u2462\u97f3\u9891\uff08SFX/\u73af\u5883\u97f3\uff1b\u53f0\u8bcd\u82e5\u5199\u5219\u5fc5\u987b\u4e3a\u76ee\u6807\u8bed\u8a00\uff0c\u5426\u5219\u4e0d\u5199\u53f0\u8bcd\uff09\u3002\n\n8. Output Format (\u4e25\u683c\u6267\u884c)\n\n\u8bf7\u4f7f\u7528\u201c\u76ee\u6807\u8bed\u8a00\u201d\u8f93\u51fa\u4ee5\u4e0b\u7ed3\u6784\uff08\u6ce8\u610f\uff1a\u6bb5\u843d\u6807\u9898\u4e0e\u5b57\u6bb5\u540d\u4e5f\u5fc5\u987b\u7528\u76ee\u6807\u8bed\u8a00\u5199\u51fa\u6765\uff0c\u4e0d\u5f97\u7528\u82f1\u6587\uff1b\u5141\u8bb8\u5728\u753b\u9762\u63cf\u8ff0\u91cc\u5939\u5e26\u767d\u540d\u5355\u955c\u5934\u672f\u8bed\uff09\uff1a\n\n\u30100s - Xs\u3011\uff08\u76ee\u6807\u8bed\u8a00\u5199\u4e00\u4e2a\u201c\u5f00\u573a/\u94a9\u5b50\u201d\u542b\u4e49\u7684\u6807\u9898\uff09\n\n\uff08\u76ee\u6807\u8bed\u8a00\u5b57\u6bb5\u540d\uff09\u955c\u5934\u753b\u9762\uff1a\u5199\u6e05\u666f\u522b/\u8fd0\u955c/\u73af\u5883/\u5149\u7ebf\uff1b\u4e3b\u89d2\u4eba\u7269\u5916\u8c8c\u4e00\u53e5\u8bdd\uff1b\u4ea7\u54c1\u5fc5\u987b\u8fd1\u8ddd\u79bb\u5165\u955c\uff1bUGC Handheld \u771f\u5b9e\u611f\n\n\uff08\u76ee\u6807\u8bed\u8a00\u5b57\u6bb5\u540d\uff09\u4eba\u7269\u52a8\u4f5c\uff1a\u5177\u4f53\u52a8\u4f5c + \u5177\u4f53\u8868\u60c5\uff08\u5938\u5f20\u4f46\u81ea\u7136\uff09\n\n\uff08\u76ee\u6807\u8bed\u8a00\u5b57\u6bb5\u540d\uff09\u97f3\u9891\uff1aSFX/\u73af\u5883\u97f3\uff1b\uff08\u53ef\u9009\uff09\u53f0\u8bcd\u4e00\u53e5\uff08\u82e5\u5199\u5fc5\u987b\u662f\u76ee\u6807\u8bed\u8a00\uff09\n\n\u3010Xs - Ys\u3011\uff08\u76ee\u6807\u8bed\u8a00\u5199\u4e00\u4e2a\u201c\u5c55\u793a\u7ec6\u8282/\u9a8c\u8bc1\u5356\u70b9\u201d\u542b\u4e49\u7684\u6807\u9898\uff09\n\n\u955c\u5934\u753b\u9762\uff1a\u7ec6\u8282\u7279\u5199\uff08\u6750\u8d28/\u7eb9\u7406/\u5149\u6cfd/\u8d28\u5730\uff09+ \u4e3b\u89d2\u53cd\u5e94\u5207\u6362\n\n\u4eba\u7269\u52a8\u4f5c\uff1a\u6301\u7eed\u9ad8\u9891\u7269\u7406\u4e92\u52a8\uff0c\u4f53\u73b0\u6838\u5fc3\u5356\u70b9\n\n\u97f3\u9891\uff1a\u4ee5\u670b\u53cb\u804a\u5929\u8bed\u6c14\u8bb2\u5356\u70b9\uff08\u82e5\u4e0d\u786e\u5b9a\u8bed\u8a00\u4e00\u81f4\u6027\u5219\u4e0d\u5199\u53f0\u8bcd\uff0c\u4ec5\u5199 SFX\uff09\n\n\u3010Ys - Zs\u3011\uff08\u76ee\u6807\u8bed\u8a00\u5199\u4e00\u4e2a\u201c\u573a\u666f/\u529f\u80fd\u6548\u679c\u201d\u542b\u4e49\u7684\u6807\u9898\uff09\n\n\u955c\u5934\u753b\u9762\uff1a\u56de\u5230\u771f\u5b9e\u4f7f\u7528\u573a\u666f\uff0c\u5c55\u793a\u4f7f\u7528\u540e\u6548\u679c/\u5bf9\u6bd4/\u89e3\u51b3\u75db\u70b9\n\n\u4eba\u7269\u52a8\u4f5c\uff1a\u6ee1\u610f/\u677e\u4e00\u53e3\u6c14/\u60ca\u559c\u7b49\u60c5\u7eea\u8981\u5177\u4f53\n\n\u97f3\u9891\uff1a\u73af\u5883\u97f3 +\uff08\u53ef\u9009\uff09\u4e00\u53e5\u5f3a\u8c03\u75db\u70b9\u88ab\u89e3\u51b3\u7684\u53f0\u8bcd\uff08\u76ee\u6807\u8bed\u8a00\uff09\n\n\u3010Zs - {{ $json.data.record.fields['\u79d2\u6570'] }}s\u3011\uff08\u76ee\u6807\u8bed\u8a00\u5199\u4e00\u4e2a\u201c\u6536\u5c3e/\u63a8\u8350\u201d\u542b\u4e49\u7684\u6807\u9898\uff09\n\n\u955c\u5934\u753b\u9762\uff1a\u5e72\u51c0\u5229\u843d\u7684\u5b9a\u683c\u6784\u56fe\uff0c\u4ea7\u54c1\u4e0e\u4eba\u7269\u540c\u6846\n\n\u4eba\u7269\u52a8\u4f5c\uff1a\u771f\u8bda\u63a8\u8350\u52a8\u4f5c\uff08\u7ad6\u62c7\u6307/\u70b9\u5934/\u6bd4\u5fc3/\u62e5\u62b1\u4ea7\u54c1\u7b49\uff09\n\n\u97f3\u9891\uff1a\u4e00\u53e5 CTA/\u603b\u7ed3\uff08\u76ee\u6807\u8bed\u8a00\uff09\uff1b\u53ef\u52a0\u8f7b\u5feb\u7ed3\u5c3e\u97f3\u6548"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -1648,
+        800
+      ],
+      "id": "31c3401c-da38-4fe4-af69-fa193032a0e3",
+      "name": "\u811a\u672c\u751f\u6210\u56681",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "const j = $input.first()?.json || {};\nconst raw = String(j.output || '').trim();\n\nif (!raw) throw new Error('\u6ca1\u6709\u627e\u5230 output \u6587\u672c');\n\n// \u4f60\u4e0a\u6e38\u5982\u679c\u6709\u4ea7\u54c1\u540d\u5c31\u4f1a\u81ea\u52a8\u66ff\u6362\uff1b\u6ca1\u6709\u5c31\u4fdd\u7559\u539f\u6587\nconst productName = String(j['\u4ea7\u54c1\u540d\u79f0'] || j.product_name || '').trim();\n\n// \u53ef\u9009\uff1a\u4f60\u5e0c\u671b\u8f93\u51fa\u4ec0\u4e48\u8bed\u8a00\uff08\u4e0d\u4f20\u5c31\u6309\u539f\u6587\uff09\nconst language = String(j.language || j['\u89c6\u9891\u8bed\u8a00'] || '').trim(); // \u4ec5\u900f\u4f20\u5c55\u793a\uff0c\u4e0d\u505a\u7ffb\u8bd1\n\nfunction clean(s) {\n  return String(s || '').replace(/\\r\\n/g, '\\n').replace(/\\r/g, '\\n').trim();\n}\n\n// -------- 1) \u89e3\u6790 meta \u884c --------\nconst lines = raw.split('\\n').map(l => l.trim()).filter(Boolean);\nconst metaLine = lines.find(l => /Art Style/i.test(l) && /Render Quality/i.test(l) && /Mood/i.test(l)) || '';\n\nlet art = '';\nlet render = '';\nlet mood = '';\n\nif (metaLine) {\n  const artMatch = metaLine.match(/Art Style\\]\\*{0,2}\\s*([^,]+)\\s*,/i);\n  const rqMatch  = metaLine.match(/Render Quality\\]\\*{0,2}\\s*([^,]+)\\s*,/i);\n  const moodMatch= metaLine.match(/Mood\\]\\*{0,2}\\s*([^.\\n]+)\\.?/i);\n\n  art = clean(artMatch?.[1]);\n  render = clean(rqMatch?.[1]);\n  mood = clean(moodMatch?.[1]);\n}\n\n// -------- 2) \u89e3\u6790 shots --------\nconst shotRegex = /\\*{0,2}Shot\\s+(\\d+)\\s*\\(([^)]+)\\)\\s*:\\*{0,2}\\s*([\\s\\S]*?)(?=(?:\\n\\s*\\n)?\\*{0,2}Shot\\s+\\d+\\s*\\(|$)/gi;\n\nconst shots = [];\nlet m;\nwhile ((m = shotRegex.exec(raw)) !== null) {\n  const no = Number(m[1]);\n  let time_range = clean(m[2]);\n  let body = clean(m[3]);\n\n  // \u7edf\u4e00 time_range\uff1a\u5982\u679c\u53ea\u6709\u5355\u70b9 \"00:15\"\uff0c\u5c31\u8865\u6210 \"00:15 - 00:15\"\n  if (!time_range.includes('-')) {\n    time_range = `${time_range} - ${time_range}`;\n  }\n\n  // \u53ef\u9009\uff1a\u66ff\u6362\u5360\u4f4d\u7b26\n  if (productName) {\n    body = body.replace(/\\b\\[HERO_PRODUCT\\]\\b/g, productName);\n    // \u6709\u4e9b\u6587\u672c\u91cc\u76f4\u63a5\u5199\u4e86\u4ea7\u54c1\u540d\uff0c\u4e0d\u52a8\uff1b\u4ec5\u5904\u7406\u5360\u4f4d\u7b26\n  }\n  body = body.replace(/\\b\\[USER\\/MODEL\\]\\b/g, 'a relatable on-camera creator');\n\n  // \u89c4\u8303 Lighting / Auxiliary \u4f4d\u7f6e\uff08\u4fdd\u6301\u539f\u4fe1\u606f\uff0c\u4f46\u66f4\u9002\u5408 Sora\uff09\n  // \u8ba9\u5185\u5bb9\u66f4\u50cf\u201c\u955c\u5934\u6307\u4ee4\u201d\n  shots.push(`**Shot ${no} (${time_range}):** ${body}`);\n}\n\n// -------- 3) \u62fc\u6210 Sora \u6574\u6bb5\u63d0\u793a\u8bcd --------\n// \u8fd9\u91cc\u52a0\u4e00\u4e9b\u901a\u7528\u7ea6\u675f\uff08\u4e0d\u4f1a\u5220\u4f60\u5185\u5bb9\uff0c\u53ea\u662f\u5305\u4e00\u5c42 Sora \u751f\u6210\u6307\u4ee4\uff09\nconst headerParts = [];\nif (art) headerParts.push(`[Art Style] ${art}`);\nif (render) headerParts.push(`[Render Quality] ${render}`);\nif (mood) headerParts.push(`[Mood] ${mood}`);\n\nconst header = headerParts.length\n  ? `${headerParts.join(', ')}.`\n  : `[Art Style] UGC selfie video, [Render Quality] mobile phone portrait 9:16, [Mood] authentic and persuasive.`;\n\nconst sora_prompt = clean(`\n${header}\n${language ? `Language: ${language}.` : ``}\n\nCinematic but authentic UGC pacing. Keep camera moves, timing, and beat order exactly as the shot list.\nNo watermark, no UI icons, no subtitles unless explicitly specified in the shot text.\nVertical 9:16, handheld realism, natural lighting.\n\n${shots.join('\\n\\n')}\n`);\n\n// \u66f4\u77ed\u66f4\u7701 token \u7684\u7248\u672c\uff08\u53ef\u9009\uff09\nconst sora_prompt_compact = clean(`\n${header}\nVertical 9:16 UGC selfie realism. Keep timing and shot order.\n${shots.join('\\n')}\n`);\n\nreturn [{\n  json: {\n    ...j,\n    sora_prompt,\n    sora_prompt_compact,\n    shots_count: shots.length\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1296,
+        800
+      ],
+      "id": "c1bdba82-1f77-42dd-bc33-ee33ac1d8eff",
+      "name": "\u89e3\u6790\u6570\u636e1"
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.workflow_id_for_credits }}",
+        "options": {}
+      },
+      "id": "d4a5e996-690f-4aa9-84c0-e33ccaf66db8",
+      "name": "\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u52062",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2768,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_token }}/tables/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.table_id }}/records/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.app_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"fields\": {\n    \"\u4efb\u52a1\u8fdb\u5ea6\": \"AI\u6b63\u5728\u64b0\u5199\u63d0\u793a\u8bcd\"\n  }\n}",
+        "options": {}
+      },
+      "id": "1527fd96-e768-451c-9c11-fffb0a4ec5fe",
+      "name": "\u5199\u5165\u4efb\u52a1ID-\u751f\u6210\u4e2d2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2096,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_token }}/tables/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.table_id }}/records/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.app_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ \n  {\n    \"fields\": {\n      \"\u89c6\u9891\u63d0\u793a\u8bcd\": $('\u89e3\u6790\u6570\u636e1').item.json.sora_prompt_compact,\n      \"\u4efb\u52a1\u8fdb\u5ea6\": \"\u63d0\u793a\u8bcd\u5df2\u5b8c\u6210\uff0c\u5f00\u59cb\u751f\u6210\u89c6\u9891\"\n    }\n  } \n}}",
+        "options": {}
+      },
+      "id": "a76c7176-140a-4eee-b963-abc8945a989c",
+      "name": "\u5199\u5165\u4efb\u52a1ID-\u63d0\u793a\u8bcd1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -624,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_token }}/tables/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.table_id }}/records/{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.record_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1872,
+        800
+      ],
+      "id": "3e62ead1-acf1-43f7-918f-a9fbd694c7e5",
+      "name": "\u8bfb\u53d6\u8bb0\u5f552"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "web_check",
+                    "leftValue": "={{ $json.body.callback_url }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "web_mode"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": 1
+        }
+      },
+      "id": "c573e06c-04f4-4ce8-9b6d-5be2415be6d3",
+      "name": "Check Source",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -3140,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.callback_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  {\n    \"task_id\": $('Webhook-\u7236\u5165\u53e3').item.json.body.replication_id,\n    \"status\": \"completed\",\n    \"result\": {\n      \"generatedScript\": $json.sora_prompt,\n      \"videoPrompt\": $json.sora_prompt_compact\n    }\n  }\n}}",
+        "options": {}
+      },
+      "id": "0a8735c6-e53b-46cc-9cbe-03452271b96f",
+      "name": "Web-Callback-Prompt",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -996,
+        -152
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "web_check_2",
+                    "leftValue": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.callback_url }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "web_mode"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": 1
+        }
+      },
+      "id": "f09c9055-7e13-435c-ac7c-d51170f93e54",
+      "name": "Check Source After Code",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -1096,
+        -352
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook-\u7236\u5165\u53e3": {
+      "main": [
+        [
+          {
+            "node": "Check Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c": {
+      "main": [
+        [
+          {
+            "node": "\u5b50\u4efb\u52a1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch-veo1": {
+      "main": [
+        [
+          {
+            "node": "\u63d0\u9192-key\u9519\u8bef-veo1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "\u63d0\u9192-\u79ef\u5206\u4e0d\u8db3-veo1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "\u5199\u5165\u4efb\u52a1ID-\u751f\u6210\u4e2d",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u9a8c\u8bc1api-key-veo1": {
+      "main": [
+        [
+          {
+            "node": "Switch-veo1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u4e0b\u53d1\u5b50\u6d41\u7a0b-sora2": {
+      "main": [
+        [
+          {
+            "node": "\u5199\u5165\u4efb\u52a1ID-\u63d0\u793a\u8bcd",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u6784\u9020\u5b50\u6d41\u7a0bpayload-sora": {
+      "main": [
+        [
+          {
+            "node": "\u4e0b\u53d1\u5b50\u6d41\u7a0b-sora2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gpt": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "\u811a\u672c\u751f\u6210\u5668",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u811a\u672c\u751f\u6210\u5668": {
+      "main": [
+        [
+          {
+            "node": "\u89e3\u6790\u6570\u636e",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u89e3\u6790\u6570\u636e": {
+      "main": [
+        [
+          {
+            "node": "Check Source After Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u52061": {
+      "main": [
+        [
+          {
+            "node": "\u9a8c\u8bc1api-key-veo1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u5199\u5165\u4efb\u52a1ID-\u751f\u6210\u4e2d": {
+      "main": [
+        [
+          {
+            "node": "\u8bfb\u53d6\u8bb0\u5f55",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u5199\u5165\u4efb\u52a1ID-\u63d0\u793a\u8bcd": {
+      "main": [
+        []
+      ]
+    },
+    "\u5b50\u4efb\u52a1": {
+      "main": [
+        [
+          {
+            "node": "\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u52061",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u5206",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u52062",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch-veo": {
+      "main": [
+        [
+          {
+            "node": "\u63d0\u9192-key\u9519\u8bef-veo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "\u63d0\u9192-\u79ef\u5206\u4e0d\u8db3-veo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "\u5199\u5165\u4efb\u52a1ID-\u751f\u6210\u4e2d1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u9a8c\u8bc1api-key-veo": {
+      "main": [
+        [
+          {
+            "node": "Switch-veo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u5206": {
+      "main": [
+        [
+          {
+            "node": "\u9a8c\u8bc1api-key-veo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u8bfb\u53d6\u8bb0\u5f55": {
+      "main": [
+        [
+          {
+            "node": "\u811a\u672c\u751f\u6210\u5668",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u5199\u5165\u4efb\u52a1ID-\u751f\u6210\u4e2d1": {
+      "main": [
+        [
+          {
+            "node": "\u8bfb\u53d6\u8bb0\u5f551",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u4e0b\u53d1\u5b50\u6d41\u7a0b-sora": {
+      "main": [
+        []
+      ]
+    },
+    "\u6784\u9020\u5b50\u6d41\u7a0bpayload-sora1": {
+      "main": [
+        [
+          {
+            "node": "\u4e0b\u53d1\u5b50\u6d41\u7a0b-sora",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u8bfb\u53d6\u8bb0\u5f551": {
+      "main": [
+        [
+          {
+            "node": "\u6784\u9020\u5b50\u6d41\u7a0bpayload-sora1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch-veo2": {
+      "main": [
+        [
+          {
+            "node": "\u63d0\u9192-key\u9519\u8bef-veo2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "\u63d0\u9192-\u79ef\u5206\u4e0d\u8db3-veo2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "\u5199\u5165\u4efb\u52a1ID-\u751f\u6210\u4e2d2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u9a8c\u8bc1api-key-veo2": {
+      "main": [
+        [
+          {
+            "node": "Switch-veo2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u4e0b\u53d1\u5b50\u6d41\u7a0b-sora3": {
+      "main": [
+        [
+          {
+            "node": "\u5199\u5165\u4efb\u52a1ID-\u63d0\u793a\u8bcd1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u6784\u9020\u5b50\u6d41\u7a0bpayload-sora2": {
+      "main": [
+        [
+          {
+            "node": "\u4e0b\u53d1\u5b50\u6d41\u7a0b-sora3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gpt1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "\u811a\u672c\u751f\u6210\u56681",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u811a\u672c\u751f\u6210\u56681": {
+      "main": [
+        [
+          {
+            "node": "\u89e3\u6790\u6570\u636e1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u89e3\u6790\u6570\u636e1": {
+      "main": [
+        [
+          {
+            "node": "\u6784\u9020\u5b50\u6d41\u7a0bpayload-sora2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u52062": {
+      "main": [
+        [
+          {
+            "node": "\u9a8c\u8bc1api-key-veo2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u5199\u5165\u4efb\u52a1ID-\u751f\u6210\u4e2d2": {
+      "main": [
+        [
+          {
+            "node": "\u8bfb\u53d6\u8bb0\u5f552",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u8bfb\u53d6\u8bb0\u5f552": {
+      "main": [
+        [
+          {
+            "node": "\u811a\u672c\u751f\u6210\u56681",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Source": {
+      "main": [
+        [
+          {
+            "node": "\u811a\u672c\u751f\u6210\u5668",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Source After Code": {
+      "main": [
+        [
+          {
+            "node": "Web-Callback-Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "\u6784\u9020\u5b50\u6d41\u7a0bpayload-sora",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

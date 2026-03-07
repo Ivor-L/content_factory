@@ -9,10 +9,21 @@ export const siteContent = {
     },
     hero: {
       title: "Turn Viral Videos Into Your Own with AI",
-      subtitle: "Clone top-performing TikTok & Instagram ads in minutes. Swap products, avatars, and scripts while keeping the viral structure.",
-      cta: "Start Creating Free",
-      secondaryCta: "View Demo",
-      trustedBy: "Trusted by 500+ e-commerce brands"
+      subtitle: "For TikTok dropshipping, small businesses, and local stores.",
+      features: [
+        "Clone viral TikTok UGC in minutes",
+        "Swap people, products, or scenes with your own",
+        "Generate hyper-realistic AI avatar videos instantly",
+        "Videos from ¥0.9 each (150x cheaper than hiring creators)",
+        "One account, access to world's top AI models continuously updated"
+      ],
+      inputPlaceholder: "Paste TikTok URL...",
+      analyzeBtn: "Analyze",
+      joinBtn: "Join",
+      viralLabel: "VIRAL VIDEO",
+      cloneLabel: "CLONE RESULT",
+      trustedBy: "Trusted by 500+ e-commerce brands",
+      poweredBy: "Powered by Top AI Models"
     },
     features: {
       title: "Powerful AI Tools for Dropshippers",
@@ -50,33 +61,68 @@ export const siteContent = {
       }
     },
     pricing: {
-      title: "Simple Pricing",
-      subtitle: "Start for free, upgrade as you scale.",
+      title: "Simple Annual Pricing",
+      subtitle: "Choose the plan that fits your scale. All plans include full access to AI tools.",
       plans: [
         {
-          name: "Lite",
-          price: "$29",
-          period: "/mo",
-          features: ["1,930 Credits", "AI Agent Access", "Standard Speed", "No Watermark"]
-        },
-        {
-          name: "Basic",
-          price: "$59",
-          period: "/mo",
-          features: ["3,930 Credits", "Priority Queue", "HD Downloads", "Commercial License"],
-          popular: true
+          name: "Standard",
+          price: "¥198",
+          period: "/year",
+          features: [
+            "5 Concurrent Tasks",
+            "19,800 Credits",
+            "~99 Sora2 Videos/Year",
+            "~49 Veo3 Videos/Year",
+            "~6 Mins Avatar Video"
+          ]
         },
         {
           name: "Pro",
-          price: "$99",
-          period: "/mo",
-          features: ["6,600 Credits", "API Access", "4K Rendering", "Dedicated Support"]
+          price: "¥1,980",
+          period: "/year",
+          features: [
+            "10 Concurrent Tasks",
+            "277,200 Credits (~30% off)",
+            "~1,386 Sora2 Videos/Year",
+            "~693 Veo3 Videos/Year",
+            "~92 Mins Avatar Video"
+          ]
+        },
+        {
+          name: "Studio",
+          price: "¥4,980",
+          period: "/year",
+          features: [
+            "20 Concurrent Tasks",
+            "1,095,600 Credits (~55% off)",
+            "~5,478 Sora2 Videos/Year",
+            "~2,739 Veo3 Videos/Year",
+            "~365 Mins Avatar Video"
+          ],
+          popular: true
+        },
+        {
+          name: "Enterprise",
+          price: "¥6,980",
+          period: "/year",
+          features: [
+            "50 Concurrent Tasks",
+            "1,814,800 Credits (~62% off)",
+            "~9,074 Sora2 Videos/Year",
+            "~4,537 Veo3 Videos/Year",
+            "~605 Mins Avatar Video"
+          ]
         }
       ],
-      cta: "Choose Plan"
+      cta: "Choose Plan",
+      notes: {
+        concurrency: "Concurrency: Number of tasks running simultaneously. Excess tasks queue automatically.",
+        credits: "Cost Reference: Sora2 (15s) = 200 credits | Veo3 (4 scenes) = 400 credits | Avatar (30s) = 1,500 credits"
+      }
     },
     footer: {
-      copyright: "© 2026 AtomX Inc. All rights reserved.",
+      copyright: "© 2026 PolyWhale Tech. All rights reserved.",
+      about: "PolyWhale Tech is a comprehensive service company focused on AI content marketing. Based in Shenzhen with a 50+ professional team, we provide AI video services, corporate training, and proprietary AI tools. Trusted by top brands like Meoky and Jackery.",
       links: ["Terms", "Privacy", "Contact"]
     }
   },
@@ -90,10 +136,21 @@ export const siteContent = {
     },
     hero: {
       title: "AI 赋能，将爆款视频转化为你的销量",
-      subtitle: "几分钟内复刻 TikTok 和 Instagram 上的爆款广告。一键替换产品、数字人和脚本，完美保留爆款结构。",
-      cta: "免费开始创作",
-      secondaryCta: "查看演示",
-      trustedBy: "超过 500+ 电商团队信赖"
+      subtitle: "专为 TikTok 跨境电商、中小企业和本地商家打造。",
+      features: [
+        "几分钟内复刻 TikTok 爆款 UGC 视频",
+        "一键替换视频中的人物、产品或场景",
+        "一键生成真实感极强的数字人口播视频",
+        "成本低至 ¥0.9/条视频 (比雇佣 UGC 创作者便宜 150 倍)",
+        "模型持续更新，一个账号体验全球顶尖模型"
+      ],
+      inputPlaceholder: "粘贴 TikTok 视频链接...",
+      analyzeBtn: "开始分析",
+      joinBtn: "加入社群",
+      viralLabel: "爆款原视频",
+      cloneLabel: "克隆效果",
+      trustedBy: "超过 500+ 电商团队信赖",
+      poweredBy: "由顶级 AI 模型驱动"
     },
     features: {
       title: "为跨境电商打造的 AI 军火库",
@@ -131,33 +188,68 @@ export const siteContent = {
       }
     },
     pricing: {
-      title: "透明定价",
-      subtitle: "免费开始，随业务增长灵活升级。",
+      title: "年费套餐",
+      subtitle: "根据您的业务规模选择合适的方案，释放 AI 生产力。",
       plans: [
         {
-          name: "Lite 入门版",
-          price: "$29",
-          period: "/月",
-          features: ["1,930 积分", "AI 助手访问", "标准生成速度", "无水印"]
+          name: "Standard 普通版",
+          price: "¥198",
+          period: "/年",
+          features: [
+            "5 并发任务数",
+            "19,800 积分",
+            "年产约 99 条 Sora2",
+            "年产约 49 条 Veo3",
+            "约 6.6 分钟数字人视频"
+          ]
         },
         {
-          name: "Basic 基础版",
-          price: "$59",
-          period: "/月",
-          features: ["3,930 积分", "优先生成队列", "HD 高清下载", "商业授权"],
+          name: "Pro 年费版",
+          price: "¥1,980",
+          period: "/年",
+          features: [
+            "10 并发任务数",
+            "277,200 积分 (约7折)",
+            "年产约 1,386 条 Sora2",
+            "年产约 693 条 Veo3",
+            "约 92 分钟数字人视频"
+          ]
+        },
+        {
+          name: "Studio 工作室版",
+          price: "¥4,980",
+          period: "/年",
+          features: [
+            "20 并发任务数",
+            "1,095,600 积分 (约4.5折)",
+            "年产约 5,478 条 Sora2",
+            "年产约 2,739 条 Veo3",
+            "约 365 分钟数字人视频"
+          ],
           popular: true
         },
         {
-          name: "Pro 专业版",
-          price: "$99",
-          period: "/月",
-          features: ["6,600 积分", "API 访问权限", "4K 超清渲染", "专属客服支持"]
+          name: "Enterprise 企业版",
+          price: "¥6,980",
+          period: "/年",
+          features: [
+            "50 并发任务数",
+            "1,814,800 积分 (约3.8折)",
+            "年产约 9,074 条 Sora2",
+            "年产约 4,537 条 Veo3",
+            "约 605 分钟数字人视频"
+          ]
         }
       ],
-      cta: "选择方案"
+      cta: "选择方案",
+      notes: {
+        concurrency: "并发说明：并发 = 同时可运行的生成任务数。超出并发的任务会自动排队，不影响已提交任务。",
+        credits: "计费示例：1 条 Sora2 (15秒) = 200 积分 | 1 条 Veo3 成片 (4分镜) = 400 积分 | 数字人 (30秒) = 1,500 积分"
+      }
     },
     footer: {
-      copyright: "© 2026 AtomX Inc. All rights reserved.",
+      copyright: "© 2026 聚鲸科技 (PolyWhale Tech). All rights reserved.",
+      about: "聚鲸科技专注于 AI 内容营销，总部位于深圳，拥有 50+ 人专业团队。我们提供 AI 视频带货、企业内训及自研工具服务，已助力 Meoky、Jackery 等品牌实现内容规模化生产与增长。",
       links: ["服务条款", "隐私政策", "联系我们"]
     }
   }

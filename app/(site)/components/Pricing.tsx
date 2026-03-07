@@ -22,7 +22,7 @@ export function Pricing({ lang }: PricingProps) {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 max-w-7xl mx-auto">
           {t.plans.map((plan, idx) => (
             <div 
               key={idx}
@@ -48,11 +48,11 @@ export function Pricing({ lang }: PricingProps) {
 
               <div className="flex-1 space-y-4 mb-8">
                 {plan.features.map((feature, i) => (
-                  <div key={i} className="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
-                    <div className="w-5 h-5 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0">
+                  <div key={i} className="flex items-start gap-3 text-sm text-gray-600 dark:text-gray-300">
+                    <div className="w-5 h-5 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0 mt-0.5">
                       <Check size={12} className="text-green-600 dark:text-green-400" />
                     </div>
-                    {feature}
+                    <span>{feature}</span>
                   </div>
                 ))}
               </div>

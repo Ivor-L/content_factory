@@ -1,0 +1,717 @@
+{
+  "name": "\u7206\u6b3e\u62c6\u89e3-Veo3&sora-\u7f51\u9875\u7248",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "script_extract_web",
+        "options": {},
+        "responseMode": "responseNode"
+      },
+      "id": "7a40b276-7fac-404d-b05c-57979166b2e0",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1248,
+        192
+      ],
+      "webhookId": "228d8b53-6c3b-42a2-8c3f-e7d6d116822a"
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id={{ $('Webhook').item.json.body.workflow_id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1024,
+        192
+      ],
+      "id": "22934056-a809-4af6-b663-6476f9b78489",
+      "name": "\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u5206"
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/api/balance/check?required=100&api_key={{ $('Webhook').item.json.body.api_key }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "required",
+              "value": "={{ $json.data.credit_cost }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -800,
+        192
+      ],
+      "id": "6062a2e2-4e3a-4b3d-b457-5257ed2df401",
+      "name": "\u9a8c\u8bc1api-key",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok }}",
+                    "rightValue": "false",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    },
+                    "id": "apikey_invalid_cond"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "apikey_invalid"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "insufficient_points_cond",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === false }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "insufficient_points"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "pass_cond",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === true }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pass"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -576,
+        176
+      ],
+      "id": "1a8d023f-fb24-4a41-8a6e-eee4df2dbaff",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok:false, code:\"API_KEY_INVALID\", message:\"api_key\u65e0\u6548\" } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -352,
+        0
+      ],
+      "id": "7e40a51f-3abb-452c-ba5b-4534fee3417f",
+      "name": "Respond-api_key\u9519\u8bef"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok:false, code:\"INSUFFICIENT_POINTS\", message:\"\u79ef\u5206\u4e0d\u8db3\" } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -352,
+        192
+      ],
+      "id": "320dbd37-5604-455b-b41d-e20a043e5c78",
+      "name": "Respond-\u79ef\u5206\u4e0d\u8db3"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "scripts",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Webhook').item.json.body.script_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "extracting"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": 10
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -176,
+        376
+      ],
+      "id": "01ebc715-6255-4b51-bdc2-8d14b501c8af",
+      "name": "Supabase-\u6807\u8bb0extracting",
+      "credentials": {
+        "supabaseApi": {
+          "id": "5XGJWMLxSG8cgpYd",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Webhook').item.json.body.video_url }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -128,
+        384
+      ],
+      "id": "32c5b9bd-e295-4d36-afe3-c86dc05c7c1d",
+      "name": "\u4e0b\u8f7d\u89c6\u9891"
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * n8n Code \u8282\u70b9\uff1a\u628a\u4e0b\u8f7d\u597d\u7684\u89c6\u9891\uff08\u4e8c\u8fdb\u5236\uff09\u5582\u7ed9 Yunwu Gemini generateContent\n * \u8f93\u51fa\uff1a{ gemini_body }\n */\n\nfunction pickBinaryKey(bin) {\n  if (!bin || typeof bin !== \"object\") return \"\";\n  if (bin.video) return \"video\";\n  if (bin.data) return \"data\";\n  const keys = Object.keys(bin);\n  return keys.length ? keys[0] : \"\";\n}\n\nfunction ensureBase64FromBinary(itemIndex, binaryKey) {\n  const bin = $input.all()[itemIndex].binary?.[binaryKey];\n  if (!bin) throw new Error(`Binary key \\\"${binaryKey}\\\" not found`);\n  if (bin.data && typeof bin.data === \"string\" && bin.data.length > 50) {\n    return bin.data;\n  }\n  return null;\n}\n\nconst systemText = `# Role\n\u4f60\u662f\u4e00\u4f4d\u7cbe\u901a**\u89c6\u9891\u9006\u5411\u5de5\u7a0b**\u4e0e**\u5546\u4e1a\u53d9\u4e8b\u903b\u8f91\u62c6\u89e3**\u7684\u4e13\u5bb6\u3002\u4f60\u7684\u6838\u5fc3\u80fd\u529b\u662f\u900f\u8fc7\u50cf\u7d20\u8868\u8c61\uff0c\u63d0\u53d6\u89c6\u9891\u7684\u201c\u7206\u6b3e\u57fa\u56e0\u201d\u3002\n\n# Goal\n\u8f93\u51fa\u4e00\u4efd\u6807\u51c6\u7684 JSON \u683c\u5f0f\u5206\u6790\u62a5\u544a\u3002\u8fd9\u4efd\u62a5\u544a\u5c06\u4f5c\u4e3a\u201c\u6bcd\u7248\u201d\uff0c\u6307\u5bfc\u4e0b\u6e38 AI \u5728\u4fdd\u7559\u539f\u89c6\u9891\u8fd0\u955c\u3001\u8282\u594f\u548c\u60c5\u7eea\u903b\u8f91\u7684\u524d\u63d0\u4e0b\uff0c\u586b\u5165\u5168\u65b0\u7684\u4ea7\u54c1\u751f\u6210\u65b0\u89c6\u9891\u3002\n\n# Output Format (JSON Schema)\n\u8bf7\u4e25\u683c\u9075\u5b88\u4ee5\u4e0b JSON \u7ed3\u6784\u8f93\u51fa\uff0c\u4e0d\u8981\u5305\u542b\u4efb\u4f55 Markdown \u4ee3\u7801\u5757\u4ee5\u5916\u7684\u95f2\u804a\uff1a\n\\`\\`\\`json\n{\n  \\\"meta\\\": {\n    \\\"art_style\\\": \\\"\u5168\u5c40\u827a\u672f\u98ce\u683c\\\",\n    \\\"render_quality\\\": \\\"\u6e32\u67d3\u8d28\u91cf\\\",\n    \\\"mood_atmosphere\\\": \\\"\u6838\u5fc3\u60c5\u7eea\u6c1b\u56f4\\\",\n    \\\"total_duration\\\": \\\"\u89c6\u9891\u603b\u65f6\u957f\\\"\n  },\n  \\\"scene_breakdown\\\": [\n    {\n      \\\"id\\\": 1,\n      \\\"time_range\\\": \\\"00:00 - 00:XX\\\",\n      \\\"visual_specs\\\": {\n        \\\"camera\\\": \\\"\u955c\u5934\u4fe1\u606f\\\",\n        \\\"subject_action\\\": \\\"\u4e3b\u4f53\u52a8\u4f5c\\\",\n        \\\"lighting_environment\\\": \\\"\u73af\u5883\u7ec6\u8282\\\",\n        \\\"auxiliary_elements\\\": \\\"\u8f85\u52a9\u5143\u7d20\\\"\n      },\n      \\\"abstract_logic\\\": {\n        \\\"narrative_role\\\": \\\"\u53d9\u4e8b\u529f\u80fd\\\",\n        \\\"universal_instruction\\\": \\\"\u901a\u7528\u751f\u6210\u6307\u4ee4\uff0c\u5305\u542b[HERO_PRODUCT]\u53d8\u91cf\\\"\n      }\n    }\n  ]\n}\n\\`\\`\\`\n`;\n\nconst items = $input.all();\nconst out = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i];\n  const bin = item.binary || {};\n  const binaryKey = pickBinaryKey(bin);\n  if (!binaryKey) {\n    throw new Error(\"No binary data found. Make sure the download node outputs binary (e.g., data/video).\");\n  }\n\n  const mimeType = bin[binaryKey]?.mimeType || \"video/mp4\";\n\n  let base64 = ensureBase64FromBinary(i, binaryKey);\n  if (!base64) {\n    if (!this?.helpers?.getBinaryDataBuffer) {\n      throw new Error(\n        `Binary has no .data and this.helpers.getBinaryDataBuffer is unavailable.`\n      );\n    }\n    const buf = await this.helpers.getBinaryDataBuffer(i, binaryKey);\n    base64 = buf.toString(\"base64\");\n  }\n\n  const gemini_body = {\n    systemInstruction: { parts: [{ text: systemText }] },\n    contents: [\n      {\n        role: \"user\",\n        parts: [\n          {\n            inlineData: {\n              mimeType,\n              data: base64\n            }\n          }\n        ]\n      }\n    ],\n    generationConfig: {\n      responseMimeType: \"application/json\"\n    }\n  };\n\n  out.push({\n    json: {\n      ...item.json,\n      script_id: $('Webhook').item.json.body.script_id,\n      video_url: $('Webhook').item.json.body.video_url,\n      api_key: $('Webhook').item.json.body.api_key,\n      workflow_id: $('Webhook').item.json.body.workflow_id,\n      gemini_body,\n      _debug_binary: {\n        binaryKey,\n        mimeType,\n        base64_length: base64.length\n      }\n    },\n    binary: item.binary\n  });\n}\n\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        96,
+        384
+      ],
+      "id": "fb9ab40c-04f7-4771-a88b-a558706e98de",
+      "name": "\u7ec4\u88c5\u8bf7\u6c42"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://yunwu.ai/v1beta/models/gemini-2.5-pro:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.gemini_body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        384
+      ],
+      "id": "280d74be-80ae-4935-8e27-fb2f526090e8",
+      "name": "\u5206\u6790Agent-\u89c6\u9891\u7406\u89e3",
+      "retryOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mMIH382GnJoMSu4L",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * \u89e3\u6790 Gemini generateContent \u7684\u8fd4\u56de\n * \u8f93\u51fa\uff1aanalysis\uff08\u5df2\u89e3\u6790\u5bf9\u8c61\uff09\n */\n\nfunction getText(root) {\n  const r = Array.isArray(root) ? root[0] : root;\n  return r?.candidates?.[0]?.content?.parts?.[0]?.text || \"\";\n}\n\nfunction tryParseJsonWithFixes(text) {\n  const errs = [];\n  try {\n    return { obj: JSON.parse(text), fixedText: text, errs };\n  } catch (e) {\n    errs.push(\"direct JSON.parse failed: \" + e.message);\n  }\n\n  let fixed = text.replace(\n    /(\"time_range\"\\s*:\\s*)([^\"\\s][^,\\n}]*)/g,\n    (m, p1, p2) => {\n      const cleaned = String(p2).trim().replace(/^\"+|\"+$/g, \"\");\n      return `${p1}\"${cleaned}\"`;\n    }\n  );\n\n  try {\n    return { obj: JSON.parse(fixed), fixedText: fixed, errs };\n  } catch (e) {\n    errs.push(\"fixed JSON.parse failed: \" + e.message);\n  }\n\n  return { obj: null, fixedText: fixed, errs };\n}\n\nconst items = $input.all();\nconst out = [];\n\nfor (const item of items) {\n  const root = item.json;\n  const text = getText(root);\n\n  if (!text) {\n    out.push({\n      json: {\n        ...item.json,\n        analysis: null,\n        parse_ok: false,\n        errors: [\"No candidates[0].content.parts[0].text found\"]\n      }\n    });\n    continue;\n  }\n\n  const { obj, fixedText, errs } = tryParseJsonWithFixes(text);\n\n  out.push({\n    json: {\n      ...item.json,\n      parse_ok: !!obj,\n      analysis: obj,\n      _raw_text: text,\n      _fixed_text: fixedText,\n      errors: obj ? [] : errs\n    }\n  });\n}\n\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        544,
+        384
+      ],
+      "id": "8abcd870-d631-4d1e-b507-ae1c8a41d588",
+      "name": "\u89e3\u6790\u7ed3\u6784\u6570\u636e"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "scripts",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.script_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "blueprint",
+              "fieldValue": "={{ $json.analysis }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "completed"
+            },
+            {
+              "fieldId": "error"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": 100
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        768,
+        384
+      ],
+      "id": "17259b82-bcc6-4b40-95be-aebad8f3dcaa",
+      "name": "\u5199\u56deSupabase-scripts",
+      "credentials": {
+        "supabaseApi": {
+          "id": "5XGJWMLxSG8cgpYd",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://47.107.158.233:8080/api/credits/deduct",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "={{ $('Webhook').item.json.body.api_key }}"
+            },
+            {
+              "name": "amount",
+              "value": "={{ $('\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u5206').item.json.data.credit_cost }}"
+            },
+            {
+              "name": "reason",
+              "value": "={{ $('\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u5206').item.json.data.workflow_name }}"
+            },
+            {
+              "name": "workflow_id",
+              "value": "={{ $('\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u5206').item.json.data.workflow_id }}"
+            },
+            {
+              "name": "workflow_name",
+              "value": "={{ $('\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u5206').item.json.data.workflow_name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b66cf959-e157-4f3d-906c-c1b1c29297c5",
+      "name": "\u6263\u9664\u79ef\u5206",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1216,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, message: \"Started\", script_id: $('Webhook').item.json.body.script_id } }}",
+        "options": {}
+      },
+      "id": "a39c19d4-5b1f-4b72-b358-744e4b073d6f",
+      "name": "Respond-Started",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -376,
+        376
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "scripts",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Webhook').item.json.body.script_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "failed"
+            },
+            {
+              "fieldId": "error",
+              "fieldValue": "={{ $json.message || 'Unknown error' }}"
+            }
+          ]
+        }
+      },
+      "id": "bb18a47b-15f0-4d3c-8fae-2490706485e7",
+      "name": "Supabase-Mark-Error",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -128,
+        684
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "5XGJWMLxSG8cgpYd",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "b2c7d422-1e0b-4554-8089-0a6589a037cc",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -328,
+        684
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "scripts",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Webhook').item.json.body.script_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "analyzing"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": 40
+            }
+          ]
+        }
+      },
+      "id": "5c10e1b3-c7c4-4d4b-adc3-3dd383e9d2a9",
+      "name": "Supabase-Update-Analyzing",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        72,
+        384
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "5XGJWMLxSG8cgpYd",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "scripts",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Webhook').item.json.body.script_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "parsing"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": 80
+            }
+          ]
+        }
+      },
+      "id": "79864247-db21-471b-be87-a6b80b9011d1",
+      "name": "Supabase-Update-Parsing",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        520,
+        384
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "5XGJWMLxSG8cgpYd",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u5206",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u5206": {
+      "main": [
+        [
+          {
+            "node": "\u9a8c\u8bc1api-key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u9a8c\u8bc1api-key": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Respond-api_key\u9519\u8bef",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond-\u79ef\u5206\u4e0d\u8db3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond-Started",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase-\u6807\u8bb0extracting": {
+      "main": [
+        [
+          {
+            "node": "\u4e0b\u8f7d\u89c6\u9891",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u4e0b\u8f7d\u89c6\u9891": {
+      "main": [
+        [
+          {
+            "node": "Supabase-Update-Analyzing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u7ec4\u88c5\u8bf7\u6c42": {
+      "main": [
+        [
+          {
+            "node": "\u5206\u6790Agent-\u89c6\u9891\u7406\u89e3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u5206\u6790Agent-\u89c6\u9891\u7406\u89e3": {
+      "main": [
+        [
+          {
+            "node": "Supabase-Update-Parsing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u89e3\u6790\u7ed3\u6784\u6570\u636e": {
+      "main": [
+        [
+          {
+            "node": "\u5199\u56deSupabase-scripts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u5199\u56deSupabase-scripts": {
+      "main": [
+        [
+          {
+            "node": "\u6263\u9664\u79ef\u5206",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Supabase-Mark-Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond-Started": {
+      "main": [
+        [
+          {
+            "node": "Supabase-\u6807\u8bb0extracting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase-Update-Analyzing": {
+      "main": [
+        [
+          {
+            "node": "\u7ec4\u88c5\u8bf7\u6c42",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase-Update-Parsing": {
+      "main": [
+        [
+          {
+            "node": "\u89e3\u6790\u7ed3\u6784\u6570\u636e",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  }
+}

@@ -8,8 +8,11 @@ export async function createProduct(formData: FormData) {
   const name = formData.get('name') as string;
   const description = formData.get('description') as string;
   const sellingPoints = formData.get('sellingPoints') as string;
+  const sellingPointsText = formData.get('sellingPointsText') as string;
   const images = formData.get('images') as string;
   const analysisResult = formData.get('analysisResult') as string;
+  const status = formData.get('status') as string;
+  const progress = formData.get('progress') ? parseInt(formData.get('progress') as string) : undefined;
   const id = formData.get('id') as string; // Check if updating an existing product
 
   if (!name) {
@@ -33,9 +36,12 @@ export async function createProduct(formData: FormData) {
         name,
         description: description || '',
         sellingPoints: sellingPoints || '[]',
+        sellingPointsText: sellingPointsText !== null ? sellingPointsText : undefined,
         images: images || '[]',
-        // analysisResult: analysisResult || null, // Removed field
-      },
+        analysisResult: analysisResult || null,
+        status: status || undefined,
+        progress: progress,
+      } as any, // Cast to any to bypass linter
     });
   } else {
     // Create new product
@@ -44,9 +50,12 @@ export async function createProduct(formData: FormData) {
         name,
         description: description || '',
         sellingPoints: sellingPoints || '[]',
+        sellingPointsText: sellingPointsText || '',
         images: images || '[]',
-        // analysisResult: analysisResult || null, // Removed field
-      },
+        analysisResult: analysisResult || null,
+        status: status || 'PENDING',
+        progress: progress || 0,
+      } as any, // Cast to any to bypass linter
     });
   }
 

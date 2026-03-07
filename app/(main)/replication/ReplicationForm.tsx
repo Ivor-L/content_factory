@@ -10,12 +10,13 @@ import { Modal } from "@/components/Modal";
 import { ProductForm } from "@/components/ProductForm";
 import { ScriptForm } from "@/components/ScriptForm";
 import { createStoryboardTask } from "@/app/actions/storyboard";
+import { emitCreditsRefresh } from "@/lib/creditsBus";
 
 import { CharacterForm } from "@/components/CharacterForm";
 
 interface ReplicationFormProps {
   products: { id: string; name: string; images?: string }[];
-  scripts: { id: string; title: string; videoUrl?: string | null }[];
+  scripts: { id: string; title: string; videoUrl?: string | null; blueprint?: string | null }[];
   characters?: { id: string; name: string; avatar: string }[];
   preselectedScriptId?: string;
   mode?: 'one-click' | 'storyboard';
@@ -318,8 +319,11 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
     const prefix = `replication_${mode}_`;
     localStorage.setItem(`${prefix}${key}`, value);
   };
-
   
+  // Parse blueprint if available
+  const currentScript = scripts.find(s => s.id === selectedScript);
+  const analysisData = currentScript?.blueprint ? JSON.parse(currentScript.blueprint) : null;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedProduct || !selectedScript) {
@@ -367,6 +371,7 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
         }
         
         const result = await createStoryboardTask(formData);
+        emitCreditsRefresh();
         toast.success("Storyboard task created! Redirecting...", { icon: "🚀" });
         router.push(`/storyboard/${result.taskId}`);
 
@@ -387,6 +392,7 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
 
         if (!response.ok) throw new Error("Failed");
 
+        emitCreditsRefresh();
         toast.success("Replication task started!", { icon: "🚀" });
         router.refresh();
       }
@@ -454,6 +460,9 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
             />
           </div>
           )}
+
+          {/* Analysis Result Display */}
+          {/* Removed Analysis Result from here as it is now in a separate tab in the Modal */}
 
           {/* Character Selection - Conditional based on Mode */}
           {mode === 'storyboard' && (

@@ -1,0 +1,883 @@
+{
+  "name": "\u7236\u5de5\u4f5c\u6d41-\u89c6\u9891\u751f\u6210\u8c03\u5ea6-\u7f51\u9875\u7248",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "d5713a0a-5576-4471-b723-1d3e409ffa3e",
+      "name": "\u5faa\u73af\u5904\u7406",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -2064,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "body.data.items",
+        "options": {}
+      },
+      "id": "4a9b9b53-5d68-49b4-8431-225953ca76de",
+      "name": "\u62c6\u5206\u8bb0\u5f55",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        -2288,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('\u83b7\u53d6\u91c7\u96c6\u9875\u4fe1\u606f').item.json.app_token }}/tables/{{ $('\u83b7\u53d6\u91c7\u96c6\u9875\u4fe1\u606f').item.json.table_id }}/records/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"filter\": {\n    \"conditions\": [\n      {\n        \"field_name\": \"\u4efb\u52a1\u8fdb\u5ea6\",\n        \"operator\": \"is\",\n        \"value\": [\"\u5f85\u751f\u6210\"]\n      }\n    ],\n    \"conjunction\": \"and\"\n  }\n}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "2c9b6033-13d7-4933-9e37-4f39333df51e",
+      "name": "\u67e5\u8be2\u98de\u4e66\u8bb0\u5f55-\u5f85\u751f\u6210",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2512,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "bitable",
+        "operation": "bitable:parseUrl",
+        "url": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.table_link }}"
+      },
+      "id": "5eb37000-ffc0-4a65-bb7c-d88ffab311ed",
+      "name": "\u83b7\u53d6\u91c7\u96c6\u9875\u4fe1\u606f",
+      "type": "n8n-nodes-feishu-lite.feishuNode",
+      "typeVersion": 1,
+      "position": [
+        -2960,
+        240
+      ],
+      "credentials": {
+        "feishuCredentialsApi": {
+          "id": "btdmK3iP1r3sO21a",
+          "name": "Feishu account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"app_id\": \"{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_id }}\",\n  \"app_secret\": \"{{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_secret }}\"\n}",
+        "options": {}
+      },
+      "id": "5484bc17-aec2-4ab9-a618-4d0c5761c229",
+      "name": "\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3184,
+        240
+      ]
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "name": "Replace Me",
+      "typeVersion": 1,
+      "position": [
+        -496,
+        336
+      ],
+      "id": "26c4fcc9-31be-4289-b4e6-e9469f0c1e03"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok }}",
+                    "rightValue": "false",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    },
+                    "id": "api_invalid_v"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "apikey_invalid"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "points_not_enough_v",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === false }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "insufficient_points"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "points_ok_v",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === true }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pass"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ea17f363-4043-41e7-a1e5-01f722e1c5d3",
+      "name": "Switch-veo1",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -1392,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('\u83b7\u53d6\u91c7\u96c6\u9875\u4fe1\u606f').item.json.app_token }}/tables/{{ $('\u83b7\u53d6\u91c7\u96c6\u9875\u4fe1\u606f').item.json.table_id }}/records/{{ $('\u5faa\u73af\u5904\u7406').item.json.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"fields\":{\"\u89c6\u9891\u751f\u6210\u8fdb\u5ea6\":\"api-key\u9519\u8bef\"}}",
+        "options": {}
+      },
+      "id": "3544e89b-3117-4e8d-9765-c5e9aa791ce4",
+      "name": "\u63d0\u9192-key\u9519\u8bef-veo1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1168,
+        -128
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('\u83b7\u53d6\u91c7\u96c6\u9875\u4fe1\u606f').item.json.app_token }}/tables/{{ $('\u83b7\u53d6\u91c7\u96c6\u9875\u4fe1\u606f').item.json.table_id }}/records/{{ $('\u5faa\u73af\u5904\u7406').item.json.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"fields\":{\"\u89c6\u9891\u751f\u6210\u8fdb\u5ea6\":\"\u79ef\u5206\u4e0d\u8db3\"}}",
+        "options": {}
+      },
+      "id": "c0eab9c9-4b7d-429c-8faa-71622f5d9474",
+      "name": "\u63d0\u9192-\u79ef\u5206\u4e0d\u8db3-veo1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1168,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/api/balance/check?api_key={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.api_key }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "required",
+              "value": "={{ $json.data.credit_cost }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c2d4476d-f43b-44a8-8a8f-5ee7f830ffda",
+      "name": "\u9a8c\u8bc1api-key-veo1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1616,
+        64
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.flowonn.com/webhook/farm_Prompt",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "130ee65e-ec3a-4f49-b29c-32c4b922e6d1",
+      "name": "\u4e0b\u53d1\u5b50\u6d41\u7a0b-sora2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -720,
+        256
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "vp1",
+              "name": "record_id",
+              "type": "string",
+              "value": "={{ $('\u5faa\u73af\u5904\u7406').item.json.record_id }}"
+            },
+            {
+              "id": "vp3",
+              "name": "aspect_ratio",
+              "type": "string",
+              "value": "=portrait"
+            },
+            {
+              "id": "vp4",
+              "name": "image_1_token",
+              "type": "string",
+              "value": "={{ $('\u5faa\u73af\u5904\u7406').item.json.fields['\u4ea7\u54c1\u56fe\u7247'].value[0].file_token }}"
+            },
+            {
+              "id": "vp5",
+              "name": "model",
+              "type": "string",
+              "value": "=sora2"
+            },
+            {
+              "id": "vp6",
+              "name": "workflow_id_for_credits",
+              "type": "string",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.workflow_id }}"
+            },
+            {
+              "id": "vp7",
+              "name": "app_token",
+              "type": "string",
+              "value": "={{ $('\u83b7\u53d6\u91c7\u96c6\u9875\u4fe1\u606f').item.json.app_token }}"
+            },
+            {
+              "id": "vp8",
+              "name": "table_id",
+              "type": "string",
+              "value": "={{ $('\u83b7\u53d6\u91c7\u96c6\u9875\u4fe1\u606f').item.json.table_id }}"
+            },
+            {
+              "id": "vp9",
+              "name": "tenant_access_token",
+              "type": "string",
+              "value": "={{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.tenant_access_token }}"
+            },
+            {
+              "id": "vp10",
+              "name": "api_key",
+              "type": "string",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.api_key }}"
+            },
+            {
+              "id": "a151e6b0-9538-4f80-b9fe-3ebe5110841f",
+              "name": "n_frames",
+              "value": "={{ $('\u5faa\u73af\u5904\u7406').item.json.fields['\u79d2\u6570'] }}",
+              "type": "string"
+            },
+            {
+              "id": "0f77281e-7795-4bc2-8bf3-10af294c759d",
+              "name": "app_id",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_id }}",
+              "type": "string"
+            },
+            {
+              "id": "330299c4-7ba9-44ee-a89e-4ba4db4ec7f4",
+              "name": "app_secret",
+              "value": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.app_secret }}",
+              "type": "string"
+            },
+            {
+              "id": "6d11b7e3-6de4-4b79-a44e-b27954ba8809",
+              "name": "out_app_token",
+              "value": "={{ $('\u83b7\u53d6\u7ed3\u679c\u9875\u4fe1\u606f').item.json.app_token }}",
+              "type": "string"
+            },
+            {
+              "id": "ca6070e9-07eb-4956-8972-dcc59ad8be92",
+              "name": "out_table_id",
+              "value": "={{ $('\u83b7\u53d6\u7ed3\u679c\u9875\u4fe1\u606f').item.json.table_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a392afc6-6f5b-448f-b706-9670b5d1627a",
+      "name": "\u6784\u9020\u5b50\u6d41\u7a0bpayload-sora",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -944,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.workflow_id }}",
+        "options": {}
+      },
+      "id": "7afe31c5-38f8-40fb-8cc2-4d0236019b0c",
+      "name": "\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u52061",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1840,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "bitable",
+        "operation": "bitable:parseUrl",
+        "url": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.table_link2 }}"
+      },
+      "id": "aaf191af-9b33-4143-b27f-0a9b71012486",
+      "name": "\u83b7\u53d6\u7ed3\u679c\u9875\u4fe1\u606f",
+      "type": "n8n-nodes-feishu-lite.feishuNode",
+      "typeVersion": 1,
+      "position": [
+        -2736,
+        240
+      ],
+      "credentials": {
+        "feishuCredentialsApi": {
+          "id": "btdmK3iP1r3sO21a",
+          "name": "Feishu account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('\u83b7\u53d6\u91c7\u96c6\u9875\u4fe1\u606f').item.json.app_token }}/tables/{{ $('\u83b7\u53d6\u91c7\u96c6\u9875\u4fe1\u606f').item.json.table_id }}/records/{{ $('\u5faa\u73af\u5904\u7406').item.json.fields.record_id.value[0].text }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c').item.json.app_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"fields\": {\n    \"\u4efb\u52a1\u8fdb\u5ea6\": \"\u751f\u4ea7\u4e2d\"\n  }\n}",
+        "options": {}
+      },
+      "id": "d9038193-43d3-461c-924e-7a5793490105",
+      "name": "\u5199\u5165\u4efb\u52a1ID-\u751f\u6210\u4e2d",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1168,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "Getway_web",
+        "options": {}
+      },
+      "id": "d71ed586-b076-495a-9467-1d5c6a6fb4f4",
+      "name": "Webhook-\u7236\u5165\u53e3",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -3408,
+        240
+      ],
+      "webhookId": "52cc1378-3604-4c37-ac4b-70c26f530df3"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "web_check",
+                    "leftValue": "={{ $json.body.product_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "web_mode"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": 1
+        }
+      },
+      "id": "8bb355fa-1e00-463e-a9e4-ab01ddf48d32",
+      "name": "Check Source",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -3108,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.workflow_id }}",
+        "options": {}
+      },
+      "id": "3bb00c48-6511-4783-b18f-ffc707a29621",
+      "name": "Web-Credits-Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2808,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/api/balance/check?api_key={{ $('Webhook-\u7236\u5165\u53e3').item.json.body.api_key }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "required",
+              "value": "={{ $json.data.credit_cost }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3e10dc3b-3206-44c8-9ef5-b01985a0cf77",
+      "name": "Web-Auth-Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2508,
+        140
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "auth_pass",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === true }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pass"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "0c614822-5a32-4981-b002-fbaf5408ff1c",
+      "name": "Web-Auth-Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -2208,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.flowonn.com/webhook/farm_Prompt",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body }}",
+        "options": {}
+      },
+      "id": "5b98137e-8546-4d06-a731-e6dbd6ee75bc",
+      "name": "Web-Call-Subworkflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1908,
+        140
+      ]
+    }
+  ],
+  "connections": {
+    "\u5faa\u73af\u5904\u7406": {
+      "main": [
+        [],
+        [
+          {
+            "node": "\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u52061",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u62c6\u5206\u8bb0\u5f55": {
+      "main": [
+        [
+          {
+            "node": "\u5faa\u73af\u5904\u7406",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u67e5\u8be2\u98de\u4e66\u8bb0\u5f55-\u5f85\u751f\u6210": {
+      "main": [
+        [
+          {
+            "node": "\u62c6\u5206\u8bb0\u5f55",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u83b7\u53d6\u91c7\u96c6\u9875\u4fe1\u606f": {
+      "main": [
+        [
+          {
+            "node": "\u83b7\u53d6\u7ed3\u679c\u9875\u4fe1\u606f",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c": {
+      "main": [
+        [
+          {
+            "node": "\u83b7\u53d6\u91c7\u96c6\u9875\u4fe1\u606f",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Replace Me": {
+      "main": [
+        [
+          {
+            "node": "\u5faa\u73af\u5904\u7406",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch-veo1": {
+      "main": [
+        [
+          {
+            "node": "\u63d0\u9192-key\u9519\u8bef-veo1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "\u63d0\u9192-\u79ef\u5206\u4e0d\u8db3-veo1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "\u5199\u5165\u4efb\u52a1ID-\u751f\u6210\u4e2d",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u9a8c\u8bc1api-key-veo1": {
+      "main": [
+        [
+          {
+            "node": "Switch-veo1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u4e0b\u53d1\u5b50\u6d41\u7a0b-sora2": {
+      "main": [
+        [
+          {
+            "node": "Replace Me",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u6784\u9020\u5b50\u6d41\u7a0bpayload-sora": {
+      "main": [
+        [
+          {
+            "node": "\u4e0b\u53d1\u5b50\u6d41\u7a0b-sora2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u52061": {
+      "main": [
+        [
+          {
+            "node": "\u9a8c\u8bc1api-key-veo1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u83b7\u53d6\u7ed3\u679c\u9875\u4fe1\u606f": {
+      "main": [
+        [
+          {
+            "node": "\u67e5\u8be2\u98de\u4e66\u8bb0\u5f55-\u5f85\u751f\u6210",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "\u5199\u5165\u4efb\u52a1ID-\u751f\u6210\u4e2d": {
+      "main": [
+        [
+          {
+            "node": "\u6784\u9020\u5b50\u6d41\u7a0bpayload-sora",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook-\u7236\u5165\u53e3": {
+      "main": [
+        [
+          {
+            "node": "Check Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Source": {
+      "main": [
+        [
+          {
+            "node": "Web-Credits-Check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "\u83b7\u53d6\u8bbf\u95ee\u4ee4\u724c",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Web-Credits-Check": {
+      "main": [
+        [
+          {
+            "node": "Web-Auth-Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Web-Auth-Check": {
+      "main": [
+        [
+          {
+            "node": "Web-Auth-Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Web-Auth-Switch": {
+      "main": [
+        [
+          {
+            "node": "Web-Call-Subworkflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

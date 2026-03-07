@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
-  title: string;
+  title: React.ReactNode;
   children: React.ReactNode;
   maxWidth?: string;
 }
@@ -40,7 +40,7 @@ export function Modal({ isOpen, onClose, title, children, maxWidth = "max-w-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 shrink-0">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white">{title}</h2>
+          <div className="text-xl font-bold text-gray-900 dark:text-white flex-1 flex items-center gap-4">{title}</div>
           <button
             onClick={onClose}
             className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"

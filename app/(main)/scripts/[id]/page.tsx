@@ -9,6 +9,8 @@ interface ScriptDetailPageProps {
   params: Promise<{ id: string }>;
 }
 
+import ScriptStatusPoller from "./ScriptStatusPoller";
+
 export default async function ScriptDetailPage({ params }: ScriptDetailPageProps) {
   const { id } = await params;
   
@@ -117,13 +119,7 @@ export default async function ScriptDetailPage({ params }: ScriptDetailPageProps
                     </div>
                 </div>
                 ) : (
-                    <div className="flex flex-col items-center justify-center py-20 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 text-gray-500">
-                        <div className="animate-pulse flex flex-col items-center">
-                            <span className="text-4xl mb-4">🔮</span>
-                            <p className="font-medium">Analysis pending...</p>
-                            <p className="text-sm mt-2 opacity-70">AI is processing your video script.</p>
-                        </div>
-                    </div>
+                    <ScriptStatusPoller scriptId={script.id} initialStatus={script.status} />
                 )}
             </div>
         </div>

@@ -17,6 +17,11 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
   const { t } = useLanguage();
   const router = useRouter();
   
+  // Helper to safely access nested keys
+  const getText = (key: keyof typeof t.storyboard.genList, defaultText: string) => {
+    return t.storyboard.genList?.[key] || defaultText;
+  };
+  
   // Steps: 'input' -> 'generating' -> 'result' -> 'breaking-down'
   const [step, setStep] = useState<'input' | 'generating' | 'result' | 'breaking-down'>('input');
   
@@ -27,6 +32,7 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
   
   // Mock Result
   const [gridResultUrl, setGridResultUrl] = useState('');
+  const [taskId, setTaskId] = useState<string | null>(null);
   
   // Timer
   const [progress, setProgress] = useState(0);
@@ -57,15 +63,15 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
       setImageUrl(data.url);
       setImageFile(file);
     } catch (error) {
-      toast.error('Failed to upload image');
+      toast.error(getText('uploadFailed', 'Failed to upload image'));
     } finally {
       setUploading(false);
     }
   };
 
   const handleGenerate = async () => {
-    if (!imageUrl) return toast.error('Please upload an image');
-    if (!script) return toast.error('Please write a script');
+    if (!imageUrl) return toast.error(getText('pleaseUploadImage', 'Please upload an image'));
+    if (!script) return toast.error(getText('pleaseWriteScript', 'Please write a script'));
 
     setStep('generating');
     setProgress(0);
@@ -78,10 +84,11 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
       const result = await generateStoryboardGrid(formData);
       
       setGridResultUrl(result.gridImageUrl);
+      setTaskId(result.taskId);
       setStep('result');
     } catch (error) {
       console.error(error);
-      toast.error('Generation failed');
+      toast.error(getText('generationFailed', 'Generation failed'));
       setStep('input');
     }
   };
@@ -92,15 +99,16 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
       const formData = new FormData();
       formData.append('gridImageUrl', gridResultUrl);
       formData.append('script', script);
+      if (taskId) formData.append('taskId', taskId);
       
       const result = await breakdownStoryboardGrid(formData);
       
-      toast.success('Breakdown complete!');
+      toast.success(getText('breakdownComplete', 'Breakdown complete!'));
       router.push(`/storyboard/${result.taskId}`);
       onClose();
     } catch (error) {
       console.error(error);
-      toast.error('Breakdown failed');
+      toast.error(getText('breakdownFailed', 'Breakdown failed'));
       setStep('result');
     }
   };
@@ -113,7 +121,7 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
         <div className="flex items-center justify-between p-6 border-b dark:border-gray-700">
             <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
             <LayoutGrid className="text-black dark:text-white" />
-            {t.storyboard.storyboardGen}
+            {getText('title', t.storyboard.storyboardGen || "Storyboard Gen")}
             </h2>
             <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 md:hidden">
             <X size={20} />
@@ -161,7 +169,7 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
                     value={script}
                     onChange={(e) => setScript(e.target.value)}
                     placeholder={t.generation.enterContent}
-                    className="w-full h-32 p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-brand-yellow outline-none resize-none"
+                    className="w-full h-32 p-3 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 focus:outline-none focus:shadow-outline resize-none"
                 />
                 </div>
             </div>
@@ -223,7 +231,7 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
             <button
                 onClick={handleGenerate}
                 disabled={!imageUrl || !script || uploading}
-                className="w-full py-3 bg-black dark:bg-white text-white dark:text-black font-bold rounded-lg hover:bg-gray-900 dark:hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="w-full py-3 bg-black dark:bg-white text-white dark:text-black font-bold rounded hover:bg-gray-900 dark:hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
                 <Film size={20} />
                 {t.storyboard.generate}
@@ -232,10 +240,10 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
             {step === 'result' && (
             <button
                 onClick={handleBreakdown}
-                className="w-full py-3 bg-black dark:bg-white text-white dark:text-black font-bold rounded-lg hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors flex items-center justify-center gap-2"
+                className="w-full py-3 bg-black dark:bg-white text-white dark:text-black font-bold rounded hover:bg-gray-800 dark:hover:bg-gray-200 transition-colors flex items-center justify-center gap-2"
             >
                 <LayoutGrid size={20} />
-                {t.storyboard.step3}
+                {getText('breakdown', t.storyboard.step3)}
             </button>
             )}
         </div>

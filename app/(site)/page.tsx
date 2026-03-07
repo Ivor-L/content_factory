@@ -5,6 +5,7 @@ import { SiteHeader } from './components/SiteHeader';
 import { Hero } from './components/Hero';
 import { Features } from './components/Features';
 import { Showcase } from './components/Showcase';
+import { ModelTicker } from './components/ModelTicker';
 import { Pricing } from './components/Pricing';
 import { SiteFooter } from './components/SiteFooter';
 
@@ -32,6 +33,7 @@ export default function SiteHome() {
         <Hero lang={lang} />
         <Features lang={lang} />
         <Showcase lang={lang} />
+        <ModelTicker lang={lang} />
         <Pricing lang={lang} />
       </main>
 

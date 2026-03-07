@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { VideoCard } from "@/components/VideoCard";
 import { VideoDetailsModal } from "@/components/VideoDetailsModal";
@@ -10,34 +11,62 @@ import { Clapperboard, Video, ArrowLeftRight, Download, AlertTriangle, LayoutGri
 import { StoryboardGenModal } from "@/components/StoryboardGenModal";
 import { DigitalHumanModal } from "@/components/DigitalHumanModal";
 
+import { deleteVideos } from "@/app/actions/video";
+import { toast } from "react-hot-toast";
+import { useRouter } from "next/navigation";
+
 interface ReplicationContentProps {
   history: any[];
+  digitalHumanVideos?: any[];
 }
 
-export default function ReplicationContent({ history }: ReplicationContentProps) {
+export default function ReplicationContent({ history, digitalHumanVideos = [] }: ReplicationContentProps) {
   const { t } = useLanguage();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [activeFilter, setActiveFilter] = useState('ALL');
   const [selectedVideo, setSelectedVideo] = useState<any | null>(null);
+  
+  const filters = [
+    { id: 'ALL', label: t.replication.allAds, icon: Clapperboard },
+    { id: 'FULL', label: t.replication.viralClone, icon: null },
+    { id: 'STORYBOARD_GEN', label: 'Storyboard Gen', icon: LayoutGrid },
+    { id: 'DIGITAL_HUMAN', label: t.storyboard.digitalHuman, icon: User },
+  ];
+
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showBanner, setShowBanner] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // New Modals
   const [isStoryboardGenOpen, setIsStoryboardGenOpen] = useState(false);
   const [isDigitalHumanOpen, setIsDigitalHumanOpen] = useState(false);
 
-  const filters = [
-    { id: 'ALL', label: t.replication.allAds, icon: Clapperboard },
-    { id: 'FULL', label: t.replication.viralClone, icon: null },
-    { id: 'STORYBOARD_GEN', label: 'Storyboard Gen', icon: LayoutGrid },
-    { id: 'DIGITAL_HUMAN', label: 'Digital Human', icon: User },
-    { id: 'CHARACTER', label: t.replication.character, icon: Video },
-    { id: 'MOTION_SWAP', label: t.replication.motionSwap, icon: ArrowLeftRight },
-  ];
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab && filters.some(f => f.id === tab)) {
+      setActiveFilter(tab);
+    }
+  }, [searchParams]);
 
-  const filteredHistory = activeFilter === 'ALL' 
-    ? history 
-    : history.filter(item => item.type === activeFilter);
+  // Map Digital Human videos to match VideoCard expectation
+  const mappedDigitalHumanVideos = digitalHumanVideos.map(v => ({
+    ...v,
+    result: { videoUrl: v.resultUrl }
+  }));
+
+  // Merge all videos for "ALL" view
+  const allVideos = [...history, ...mappedDigitalHumanVideos].sort((a, b) => 
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+
+  const filteredHistory = activeFilter === 'DIGITAL_HUMAN'
+    ? mappedDigitalHumanVideos
+    : activeFilter === 'ALL' 
+      ? allVideos
+      : history.filter(item => item.type === activeFilter);
+
 
   const handleSelect = (id: string) => {
     const newSelected = new Set(selectedIds);
@@ -56,6 +85,27 @@ export default function ReplicationContent({ history }: ReplicationContentProps)
     alert(`Downloading ${selectedIds.size} videos...`);
   };
 
+  const handleDelete = async (ids: string[]) => {
+    if (!confirm(t.common.confirmDelete)) return;
+    
+    setIsDeleting(true);
+    try {
+      const res = await deleteVideos(ids);
+      if (res.success) {
+        toast.success(t.common.success);
+        setSelectedIds(new Set());
+        router.refresh();
+      } else {
+        toast.error(t.common.error);
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error(t.common.error);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 font-sans h-full flex flex-col">
       <div className="flex justify-between items-center mb-8">
@@ -67,13 +117,14 @@ export default function ReplicationContent({ history }: ReplicationContentProps)
         {/* Filters */}
         <div className="flex flex-wrap gap-3">
           {filters.map((filter) => {
-            if (filter.id === 'DIGITAL_HUMAN') return null; // Skip Digital Human in filters, it's a separate button or navigation item
             return (
             <button
               key={filter.id}
               onClick={() => {
                  if (filter.id === 'STORYBOARD_GEN') {
                      setIsStoryboardGenOpen(true);
+                 } else if (filter.id === 'DIGITAL_HUMAN') {
+                     setActiveFilter(filter.id);
                  } else {
                      setActiveFilter(filter.id);
                  }
@@ -93,6 +144,15 @@ export default function ReplicationContent({ history }: ReplicationContentProps)
         </div>
 
         <div className="flex items-center gap-3">
+            {/* Batch Delete */}
+            <button
+            onClick={() => handleDelete(Array.from(selectedIds))}
+            disabled={selectedIds.size === 0 || isDeleting}
+            className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+            {isDeleting ? t.common.loading : t.replication.batchDelete}
+            </button>
+
             {/* Batch Actions */}
             <button
             onClick={handleBatchDownload}

@@ -1,0 +1,90 @@
+{
+  "name": "Replication Main V2",
+  "id": "25AIBTnvyRmfnljB",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "Getway_web", "options": {} },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [460, 460]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "schema": "public",
+        "tableId": "replications",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "product_id", "fieldValue": "={{ $json.body.product_id }}" },
+            { "fieldId": "script_id", "fieldValue": "={{ $json.body.script_id }}" },
+            { "fieldId": "status", "fieldValue": "processing" }
+          ]
+        }
+      },
+      "name": "Supabase Create",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [680, 460],
+      "credentials": { "supabaseApi": { "id": "supabase-cred-id", "name": "Supabase account" } }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { id: $node['Supabase Create'].json.id, status: 'processing' } }}",
+        "options": {}
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 460]
+    },
+    {
+      "parameters": {
+        "values": {
+          "json": {
+            "body": {
+              "replication_id": "={{ $node['Supabase Create'].json.id }}",
+              "script_id": "={{ $node['Supabase Create'].json.script_id }}",
+              "product_id": "={{ $node['Supabase Create'].json.product_id }}"
+            }
+          }
+        },
+        "options": {}
+      },
+      "name": "Prepare Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [1120, 460]
+    },
+    {
+      "parameters": {
+        "workflowId": "e9Q0InRVbw3mcRzk",
+        "mode": "each",
+        "options": {}
+      },
+      "name": "Prompt Gen",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1340, 460]
+    },
+    {
+      "parameters": {
+        "workflowId": "vvc2rzlS2PF4F2Tn",
+        "mode": "each",
+        "options": {}
+      },
+      "name": "Video Gen",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [1560, 460]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Supabase Create", "type": "main", "index": 0 }]] },
+    "Supabase Create": { "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]] },
+    "Respond to Webhook": { "main": [[{ "node": "Prepare Data", "type": "main", "index": 0 }]] },
+    "Prepare Data": { "main": [[{ "node": "Prompt Gen", "type": "main", "index": 0 }]] },
+    "Prompt Gen": { "main": [[{ "node": "Video Gen", "type": "main", "index": 0 }]] }
+  }
+}

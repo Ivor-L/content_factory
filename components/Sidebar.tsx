@@ -2,7 +2,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { Home, Package, FileText, Repeat, Sparkles, Video, Settings, Sun, Moon, Languages, Clapperboard, Key, Users, History, ChevronUp, Activity, Zap, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, LayoutGrid, User } from 'lucide-react';
+import { Home, Package, FileText, Repeat, Sparkles, Video, Settings, Sun, Moon, Languages, Clapperboard, Key, Users, History, ChevronUp, Activity, Zap, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, LayoutGrid, User, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -11,7 +11,27 @@ import { AtomXLogo } from './AtomXLogo';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+import { toast } from 'react-hot-toast';
+import { onCreditsRefresh } from '@/lib/creditsBus';
+
+function SolidZapIcon({ size = 14, className }: { size?: number; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      className={className}
+      aria-hidden="true"
+    >
+      <path fill="currentColor" d="M13 2v8h7L11 22v-8H4L13 2z" />
+    </svg>
+  );
+}
+
 export function Sidebar() {
+  const router = useRouter();
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
   const { language, setLanguage, t } = useLanguage();
@@ -19,20 +39,91 @@ export function Sidebar() {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+  
+  // Credits State
+  const [credits, setCredits] = useState<number | null>(null);
+  const [loadingCredits, setLoadingCredits] = useState(false);
+
+  const creditsDisplay = loadingCredits ? '…' : (credits !== null ? credits.toLocaleString() : '-');
 
   useEffect(() => {
     setMounted(true);
-    // Check local storage for collapsed state preference
     const storedCollapsed = localStorage.getItem('sidebar-collapsed');
     if (storedCollapsed) {
       setIsCollapsed(storedCollapsed === 'true');
     }
+    fetchCredits();
+
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        setCredits(null);
+        return;
+      }
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        fetchCredits();
+      }
+    });
+
+    const off = onCreditsRefresh(() => {
+      fetchCredits();
+    });
+
+    return () => {
+      data.subscription.unsubscribe();
+      off();
+    };
   }, []);
+
+  const fetchCredits = async () => {
+    try {
+      setLoadingCredits(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        setCredits(null);
+        return;
+      }
+
+      const res = await fetch('/api/integration/credits', {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        cache: 'no-store'
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (typeof data.balance === 'number') {
+          setCredits(data.balance);
+        }
+      } else if (res.status === 401) {
+        setCredits(null);
+      }
+    } catch (error) {
+      console.error('Failed to fetch credits:', error);
+    } finally {
+      setLoadingCredits(false);
+    }
+  };
 
   const toggleSidebar = () => {
     const newState = !isCollapsed;
     setIsCollapsed(newState);
     localStorage.setItem('sidebar-collapsed', String(newState));
+  };
+
+  const handleSignOut = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      
+      toast.success('Signed out successfully');
+      router.push('/login');
+      router.refresh();
+    } catch (error) {
+      console.error('Error signing out:', error);
+      toast.error('Failed to sign out');
+    }
   };
 
   const navigation = [
@@ -209,7 +300,7 @@ export function Sidebar() {
                             className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                         >
                             <Home size={16} />
-                            {t.sidebar?.home || 'Home'}
+                            {t.userBlock?.website || 'Official Website'}
                         </Link>
 
                         <Link 
@@ -252,6 +343,16 @@ export function Sidebar() {
                             <History size={16} />
                             {t.userBlock?.usage || 'Usage History'}
                         </Link>
+
+                        <div className="h-px bg-gray-100 dark:bg-gray-700 my-1 mx-2" />
+
+                        <button
+                            onClick={handleSignOut}
+                            className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                        >
+                            <LogOut size={16} />
+                            {(t as any).userBlock?.signOut || 'Sign Out'}
+                        </button>
                     </div>
                 </div>
             </>
@@ -264,9 +365,23 @@ export function Sidebar() {
               isCollapsed ? "justify-center" : ""
             )}
         >
-            <div className="w-10 h-10 rounded-full bg-black dark:bg-white flex items-center justify-center text-white dark:text-black font-bold text-lg shrink-0">
+            {isCollapsed ? (
+              <div className="flex flex-col items-center gap-1">
+                <div className="w-10 h-10 rounded-full bg-black dark:bg-white flex items-center justify-center text-white dark:text-black font-bold text-lg shrink-0">
+                  A
+                </div>
+                <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#1F1F1F] text-white border border-white/10 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.25)]">
+                  <SolidZapIcon size={12} className="text-[#FFC107]" />
+                  <span className="text-[10px] font-semibold tabular-nums">
+                    {creditsDisplay}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-black dark:bg-white flex items-center justify-center text-white dark:text-black font-bold text-lg shrink-0">
                 A
-            </div>
+              </div>
+            )}
             
             {!isCollapsed && (
               <>
@@ -274,9 +389,12 @@ export function Sidebar() {
                     <p className="text-sm font-bold text-gray-900 dark:text-white truncate">
                         AtomX {(t as any).userBlock?.title || 'User'}
                     </p>
-                    <p className="text-xs text-gray-500 flex items-center gap-1">
-                        {(t as any).common?.credits || 'Credits'} <span className="text-black dark:text-white font-bold">195</span>
-                    </p>
+                    <div className="mt-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#1F1F1F] text-white border border-white/10 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.25)]">
+                      <SolidZapIcon size={14} className="text-[#FFC107]" />
+                      <span className="text-xs font-semibold tabular-nums">
+                        {creditsDisplay}
+                      </span>
+                    </div>
                 </div>
                 <ChevronUp size={16} className={`text-gray-400 transition-transform duration-200 ${isUserMenuOpen ? 'rotate-180' : ''}`} />
               </>

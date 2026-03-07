@@ -6,6 +6,7 @@ import { LayoutGrid, List, Trash2, Download, RefreshCw, PlayCircle, Loader2 } fr
 import { cn } from "@/lib/utils";
 import { toast } from "react-hot-toast";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { ConfirmModal } from "@/components/ConfirmModal";
 
 interface ReplicationHistoryItem {
   id: string;
@@ -72,6 +73,7 @@ export default function ReplicationHistory({ initialHistory }: ReplicationHistor
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
   const [history, setHistory] = useState(initialHistory.length > 0 ? initialHistory : MOCK_HISTORY);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   // Mock function to handle selection
   const toggleSelection = (id: string) => {
@@ -81,10 +83,12 @@ export default function ReplicationHistory({ initialHistory }: ReplicationHistor
   };
 
   // Mock bulk actions
-  const handleDelete = async () => {
+  const handleDeleteClick = () => {
     if (selectedItems.length === 0) return;
-    if (!confirm(`Delete ${selectedItems.length} items?`)) return;
-    
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
     // In real app: call API
     setHistory(prev => prev.filter(item => !selectedItems.includes(item.id)));
     setSelectedItems([]);
@@ -119,7 +123,7 @@ export default function ReplicationHistory({ initialHistory }: ReplicationHistor
                     <button onClick={handleDownload} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-300" title={t.replication.download}>
                         <Download size={16} />
                     </button>
-                    <button onClick={handleDelete} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/30 rounded text-red-500 dark:text-red-400" title={t.common.delete}>
+                    <button onClick={handleDeleteClick} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/30 rounded text-red-500 dark:text-red-400" title={t.common.delete}>
                         <Trash2 size={16} />
                     </button>
                 </div>
@@ -261,6 +265,14 @@ export default function ReplicationHistory({ initialHistory }: ReplicationHistor
             </div>
         )}
       </div>
+      
+      <ConfirmModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={handleConfirmDelete}
+        title={t.common.delete}
+        message={`Delete ${selectedItems.length} items?`}
+      />
     </div>
   );
 }

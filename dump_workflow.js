@@ -1,7 +1,7 @@
 
 const N8N_HOST = 'https://n8n.atomx.top';
 const API_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlMWE5MDI4MS04YzZhLTRlYzctYTk4NS0zYTM0NGJhODhiNjYiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzcyMjIwMzE4LCJleHAiOjE3NzQ4MDAwMDB9.UenI5-hkGRuVQbgTpyOHipZpOMR5d3K9j51bTMh_Xvk';
-const WORKFLOW_ID = 'yNIjqrlSnTeWDFIx';
+const WORKFLOW_ID = 'xNY4qhKT2cwXYi0v';
 
 async function dumpWorkflow() {
   try {
@@ -11,8 +11,8 @@ async function dumpWorkflow() {
     });
     const workflow = await wfRes.json();
     
-    console.log('Nodes:', JSON.stringify(workflow.nodes.map(n => ({name: n.name, id: n.id})), null, 2));
-    console.log('Connections:', JSON.stringify(workflow.connections, null, 2));
+    // Output full JSON to stdout for redirection
+    console.log(JSON.stringify(workflow, null, 2));
 
   } catch (error) {
     console.error('Error:', error);

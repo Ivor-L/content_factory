@@ -1,0 +1,6 @@
+- [x] `docs/` directory exists
+- [x] `docs/CREDIT_SYSTEM.md` created with correct API info
+- [x] `docs/DATABASE.md` created with schema info
+- [x] `app/api/integration/credits/route.ts` uses `process.env.POINTS_API_BASE`
+- [x] `ENV_CONFIG.md` updated with new variable
+- [x] `README.md` updated with documentation links

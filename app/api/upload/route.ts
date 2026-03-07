@@ -22,11 +22,12 @@ export async function POST(request: Request) {
     const filename = `${uniqueSuffix}-${sanitizedName}`;
     
     // Upload to Supabase Storage using Admin client
+    // Note: Admin client uses service role key which bypasses RLS
     const { data, error } = await supabaseAdmin
       .storage
       .from('uploads')
       .upload(filename, buffer, {
-        contentType: file.type,
+        contentType: file.type || 'application/octet-stream',
         upsert: false
       });
 

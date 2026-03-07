@@ -1,0 +1,45 @@
+{
+  "name": "Replication Sora V2",
+  "id": "vvc2rzlS2PF4F2Tn",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "sora_web", "options": {} },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [460, 460]
+    },
+    {
+      "parameters": {
+        "url": "https://api.example.com/generate",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "prompt", "value": "={{ $json.body.prompt }}" },
+            { "name": "callback_url", "value": "https://n8n.atomx.top/webhook/sora_web_callback?replicationId={{ $json.body.replication_id }}" }
+          ]
+        }
+      },
+      "name": "Call API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [680, 460]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'submitted' } }}",
+        "options": {}
+      },
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 460]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Call API", "type": "main", "index": 0 }]] },
+    "Call API": { "main": [[{ "node": "Respond", "type": "main", "index": 0 }]] }
+  }
+}

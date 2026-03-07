@@ -26,16 +26,13 @@ export function SiteHeader({ lang, setLang }: SiteHeaderProps) {
   return (
     <header 
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        isScrolled ? 'bg-white/80 dark:bg-black/80 backdrop-blur-md border-b border-gray-100 dark:border-gray-800 py-4' : 'bg-transparent py-6'
+        isScrolled ? 'bg-white/80 dark:bg-black/80 backdrop-blur-md border-b border-gray-100 dark:border-gray-800 py-0.5' : 'bg-transparent py-0.5'
       }`}
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2 z-50">
-          <div className="w-8 h-8 bg-black dark:bg-white rounded-lg flex items-center justify-center text-white dark:text-black font-bold text-xl">
-            A
-          </div>
-          <span className="text-xl font-bold text-gray-900 dark:text-white">AtomX</span>
+        <Link href="/" className="flex items-center z-50">
+          <img src="/logo.svg" alt="AtomX Logo" className="h-20" />
         </Link>
 
         {/* Desktop Nav */}

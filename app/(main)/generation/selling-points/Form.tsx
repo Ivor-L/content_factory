@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { emitCreditsRefresh } from '@/lib/creditsBus';
 
 interface Product {
   id: string;
@@ -63,6 +64,7 @@ export default function SellingPointsForm({ products }: Props) {
       }
 
       const data = await res.json();
+      emitCreditsRefresh();
       router.push(`/replication/${data.id}`);
     } catch (error) {
       console.error('Error generating:', error);

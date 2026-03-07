@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from "react";
-import { PlusCircle, PlayCircle, Eye, ShoppingBag, ChevronDown, Zap, Layers } from "lucide-react";
+import { PlusCircle, PlayCircle, Eye, ShoppingBag, ChevronDown, Zap, Layers, FileJson } from "lucide-react";
 import { Modal } from "@/components/Modal";
+import { ConfirmModal } from '@/components/ConfirmModal';
 import { ScriptForm } from "@/components/ScriptForm";
 import ReplicationForm from "@/app/(main)/replication/ReplicationForm";
 import { useRouter } from "next/navigation";
@@ -12,11 +13,18 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 
+import { ScriptStatusBadge } from "./ScriptStatusBadge";
+import ScriptStatusPoller from "./[id]/ScriptStatusPoller";
+
 interface Script {
   id: string;
   title: string;
   videoUrl: string | null;
   createdAt: string;
+  status?: string;
+  progress?: number;
+  error?: string;
+  blueprint?: string | null;
 }
 
 interface Character {
@@ -103,6 +111,8 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
   const [activeTab, setActiveTab] = useState<'my-templates' | 'viral-templates'>('my-templates');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingScript, setEditingScript] = useState<Script | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [scriptToDelete, setScriptToDelete] = useState<string | null>(null);
   const [selectedReplicationScript, setSelectedReplicationScript] = useState<Script | null>(null);
   const [isReplicationModalOpen, setIsReplicationModalOpen] = useState(false);
 
@@ -113,6 +123,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
   
   // Replication Mode
   const [replicationMode, setReplicationMode] = useState<'one-click' | 'storyboard'>('one-click');
+  const [analysisTab, setAnalysisTab] = useState<'replication' | 'breakdown'>('replication');
 
   const [mounted, setMounted] = useState(false);
 
@@ -142,13 +153,18 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
   const currentRegion = REGIONS.find(r => r.id === selectedRegion);
   const currentCategory = CATEGORIES.find(c => c.id === selectedCategory);
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
+  const handleDeleteClick = (e: React.MouseEvent, id: string) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!confirm(t.common.confirmDelete)) return;
+    setScriptToDelete(id);
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!scriptToDelete) return;
 
     try {
-        await deleteScript(id);
+        await deleteScript(scriptToDelete);
         toast.success(t.common.success, {
             icon: '✅',
             duration: 2000,
@@ -250,6 +266,16 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                 }}
                 className="group relative aspect-[9/16] rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-800 cursor-pointer shadow-sm hover:shadow-lg transition-all duration-300"
             >
+                {/* Status Overlay for Pending Scripts */}
+                {script.status && script.status !== 'completed' && (
+                    <ScriptStatusBadge 
+                        status={script.status} 
+                        progress={script.progress || 0} 
+                        scriptId={script.id}
+                        error={script.error}
+                    />
+                )}
+
                 {/* Background Video/Image */}
                 <div className="absolute inset-0">
                     {script.videoUrl ? (
@@ -294,7 +320,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 00 2 2h11a2 2 0 00 2-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                             </button>
                             <button
-                                onClick={(e) => handleDelete(e, script.id)}
+                                onClick={(e) => handleDeleteClick(e, script.id)}
                                 className="text-gray-300 hover:text-red-400 p-1.5 hover:bg-white/20 rounded-full transition-colors backdrop-blur-sm"
                                 title={t.common.delete}
                             >
@@ -448,60 +474,146 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
         />
       </Modal>
 
+      <ConfirmModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => {
+            setIsDeleteModalOpen(false);
+            setScriptToDelete(null);
+        }}
+        onConfirm={handleConfirmDelete}
+        title={t.common.delete}
+        message={t.common.confirmDelete}
+      />
+
       <Modal
         isOpen={isReplicationModalOpen}
         onClose={() => {
             setIsReplicationModalOpen(false);
             setSelectedReplicationScript(null);
             setReplicationMode('one-click');
+            setAnalysisTab('replication');
         }}
-        title={selectedReplicationScript?.title || t.replication.title}
-        maxWidth="max-w-6xl"
-      >
-        <div className="flex flex-col h-[75vh] relative">
-            {/* Mode Tabs - Top Right Absolute */}
-            <div className="absolute top-0 right-0 z-10">
-                <div className="bg-gray-100 dark:bg-gray-800/50 p-1 rounded-full inline-flex">
+        title={
+            <div className="flex items-center justify-center w-full pr-8 relative">
+                <span className="truncate absolute left-0 max-w-[30%] text-left">{selectedReplicationScript?.title || t.replication.title}</span>
+                
+                {/* Main Function Tabs - Centered */}
+                <div className="bg-gray-100 dark:bg-gray-800/50 p-1 rounded-full inline-flex shrink-0 mx-auto">
                     <button
-                        onClick={() => setReplicationMode('one-click')}
+                        onClick={() => setAnalysisTab('replication')}
                         className={cn(
-                            "px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-2",
-                            replicationMode === 'one-click' 
-                                ? "bg-white dark:bg-gray-700 text-black dark:text-white shadow-sm" 
+                            "px-6 py-1.5 rounded-full text-sm font-bold transition-all flex items-center gap-2 relative z-10",
+                            analysisTab === 'replication' 
+                                ? "text-white" 
                                 : "text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white"
                         )}
                     >
-                        <Zap size={14} />
-                        {(t as any).home?.oneClickMode || 'One-Click Video'}
+                        {analysisTab === 'replication' && (
+                            <motion.div
+                                layoutId="analysis-tab-bg"
+                                className="absolute inset-0 bg-black dark:bg-white rounded-full -z-10 shadow-sm"
+                                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                            />
+                        )}
+                        <Zap size={16} />
+                        爆款复刻
                     </button>
                     <button
-                        onClick={() => setReplicationMode('storyboard')}
+                        onClick={() => setAnalysisTab('breakdown')}
                         className={cn(
-                            "px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-2",
-                            replicationMode === 'storyboard' 
-                                ? "bg-white dark:bg-gray-700 text-black dark:text-white shadow-sm" 
+                            "px-6 py-1.5 rounded-full text-sm font-bold transition-all flex items-center gap-2 relative z-10",
+                            analysisTab === 'breakdown' 
+                                ? "text-white" 
                                 : "text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white"
                         )}
                     >
-                        <Layers size={14} />
-                        {(t as any).home?.storyboardMode || 'Storyboard Control'}
+                        {analysisTab === 'breakdown' && (
+                            <motion.div
+                                layoutId="analysis-tab-bg"
+                                className="absolute inset-0 bg-black dark:bg-white rounded-full -z-10 shadow-sm"
+                                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                            />
+                        )}
+                        <FileJson size={16} />
+                        爆款拆解
                     </button>
                 </div>
             </div>
+        }
+        maxWidth="max-w-6xl"
+      >
+        <div className="flex flex-col h-[75vh] relative">
+            {/* Mode Tabs - Top Right Absolute (Sub-modes only) */}
+            <div className="absolute top-0 right-0 z-10 flex gap-2">
+                {/* Sub-modes for Replication (only show when Replication tab is active AND a script is selected) */}
+                {analysisTab === 'replication' && selectedReplicationScript && (
+                    <div className="bg-gray-100 dark:bg-gray-800/50 p-1 rounded-full inline-flex animate-in fade-in slide-in-from-left-2 duration-300 relative">
+                        <button
+                            onClick={() => setReplicationMode('one-click')}
+                            className={cn(
+                                "px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-2 relative z-10",
+                                replicationMode === 'one-click' 
+                                    ? "text-black dark:text-white" 
+                                    : "text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white"
+                            )}
+                        >
+                            {replicationMode === 'one-click' && (
+                                <motion.div
+                                    layoutId="replication-mode-bg"
+                                    className="absolute inset-0 bg-white dark:bg-gray-700 rounded-full -z-10 shadow-sm"
+                                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                />
+                            )}
+                            <Zap size={14} />
+                            {(t as any).home?.oneClickMode || 'One-Click Video'}
+                        </button>
+                        <button
+                            onClick={() => setReplicationMode('storyboard')}
+                            className={cn(
+                                "px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-2 relative z-10",
+                                replicationMode === 'storyboard' 
+                                    ? "text-black dark:text-white" 
+                                    : "text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white"
+                            )}
+                        >
+                            {replicationMode === 'storyboard' && (
+                                <motion.div
+                                    layoutId="replication-mode-bg"
+                                    className="absolute inset-0 bg-white dark:bg-gray-700 rounded-full -z-10 shadow-sm"
+                                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                />
+                            )}
+                            <Layers size={14} />
+                            {(t as any).home?.storyboardMode || 'Storyboard Control'}
+                        </button>
+                    </div>
+                )}
+            </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 flex-1 min-h-0 pt-12 lg:pt-0">
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 flex-1 min-h-0 lg:pt-0">
                 {/* Left: Video */}
                 <div className="bg-black rounded-xl overflow-hidden flex items-center justify-center relative lg:col-span-3">
                     {selectedReplicationScript?.videoUrl ? (
-                        <video 
-                            src={selectedReplicationScript.videoUrl} 
-                            className="w-full h-full object-contain" 
-                            controls 
-                            autoPlay
-                            muted
-                            loop
-                            playsInline
-                        />
+                        <>
+                            <video 
+                                src={selectedReplicationScript.videoUrl} 
+                                className="w-full h-full object-contain" 
+                                controls 
+                                autoPlay
+                                muted
+                                loop
+                                playsInline
+                            />
+                            {selectedReplicationScript.status && selectedReplicationScript.status !== 'completed' && (
+                                <div className="absolute inset-0 bg-white/90 dark:bg-gray-900/90 z-20 flex flex-col items-center justify-center">
+                                    <ScriptStatusPoller 
+                                        scriptId={selectedReplicationScript.id} 
+                                        initialStatus={selectedReplicationScript.status}
+                                        initialProgress={selectedReplicationScript.progress}
+                                    />
+                                </div>
+                            )}
+                        </>
                     ) : (
                         <div className="text-white text-center">
                             <PlayCircle size={64} className="mx-auto mb-4 opacity-50" />
@@ -510,16 +622,130 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                     )}
                 </div>
                 
-                {/* Right: Replication Form */}
-                <div className="flex flex-col h-full overflow-hidden lg:col-span-2 lg:pt-12">
+                {/* Right: Replication Form or Breakdown Analysis */}
+                <div className={cn(
+                    "flex flex-col h-full overflow-hidden lg:col-span-2",
+                    analysisTab === 'replication' && "pt-12"
+                )}>
                     {selectedReplicationScript && (
-                        <ReplicationForm 
-                            products={products} 
-                            scripts={[selectedReplicationScript]}
-                            characters={characters}
-                            preselectedScriptId={selectedReplicationScript.id}
-                            mode={replicationMode}
-                        />
+                        analysisTab === 'replication' ? (
+                            <ReplicationForm 
+                                products={products} 
+                                scripts={[selectedReplicationScript]}
+                                characters={characters}
+                                preselectedScriptId={selectedReplicationScript.id}
+                                mode={replicationMode}
+                            />
+                        ) : (
+                            <div className="h-full overflow-y-auto pr-2 custom-scrollbar space-y-6">
+                                {/* Analysis Result Content */}
+                                {selectedReplicationScript.blueprint ? (
+                                    (() => {
+                                        try {
+                                            const analysisData = JSON.parse(selectedReplicationScript.blueprint);
+                                            return (
+                                                <div className="space-y-6">
+                                                    {/* Meta Info */}
+                                                    <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
+                                                        <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                                                            <span className="text-xl">🎬</span> 视频元数据
+                                                        </h3>
+                                                        <div className="grid grid-cols-2 gap-4">
+                                                            <div className="space-y-1">
+                                                                <span className="text-xs text-gray-500 uppercase tracking-wider">风格</span>
+                                                                <p className="font-medium text-sm text-gray-800 dark:text-gray-200">{analysisData.meta?.art_style || 'N/A'}</p>
+                                                            </div>
+                                                            <div className="space-y-1">
+                                                                <span className="text-xs text-gray-500 uppercase tracking-wider">情绪</span>
+                                                                <p className="font-medium text-sm text-gray-800 dark:text-gray-200">{analysisData.meta?.mood_atmosphere || 'N/A'}</p>
+                                                            </div>
+                                                            <div className="space-y-1">
+                                                                <span className="text-xs text-gray-500 uppercase tracking-wider">画质</span>
+                                                                <p className="font-medium text-sm text-gray-800 dark:text-gray-200">{analysisData.meta?.render_quality || 'N/A'}</p>
+                                                            </div>
+                                                            <div className="space-y-1">
+                                                                <span className="text-xs text-gray-500 uppercase tracking-wider">时长</span>
+                                                                <p className="font-medium text-sm text-gray-800 dark:text-gray-200">{analysisData.meta?.total_duration || 'N/A'}</p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Scene Breakdown */}
+                                                    <div className="space-y-4">
+                                                        <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2 px-1">
+                                                            <span className="text-xl">✂️</span> 镜头拆解
+                                                            <span className="text-xs font-normal text-gray-500 ml-auto">共 {analysisData.scene_breakdown?.length || 0} 个镜头</span>
+                                                        </h3>
+                                                        
+                                                        {analysisData.scene_breakdown?.map((scene: any, idx: number) => (
+                                                            <div key={idx} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                                                                <div className="bg-gray-50 dark:bg-gray-700/50 px-4 py-2 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
+                                                                    <span className="font-bold text-sm text-gray-700 dark:text-gray-200">镜头 {scene.id}</span>
+                                                                    <span className="text-xs font-mono bg-gray-200 dark:bg-gray-600 px-2 py-0.5 rounded text-gray-600 dark:text-gray-300">{scene.time_range}</span>
+                                                                </div>
+                                                                
+                                                                <div className="p-4 space-y-4">
+                                                                    {/* Visual Specs */}
+                                                                    <div className="space-y-3">
+                                                                        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">视觉呈现</h4>
+                                                                        <div className="grid gap-3 text-sm">
+                                                                            <div className="flex gap-3">
+                                                                                <span className="text-black dark:text-white shrink-0 mt-0.5">🎥</span>
+                                                                                <div>
+                                                                                    <span className="font-medium text-gray-900 dark:text-white block text-xs mb-0.5">运镜</span>
+                                                                                    <p className="text-gray-600 dark:text-gray-300 leading-relaxed">{scene.visual_specs?.camera}</p>
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className="flex gap-3">
+                                                                                <span className="text-black dark:text-white shrink-0 mt-0.5">💃</span>
+                                                                                <div>
+                                                                                    <span className="font-medium text-gray-900 dark:text-white block text-xs mb-0.5">动作</span>
+                                                                                    <p className="text-gray-600 dark:text-gray-300 leading-relaxed">{scene.visual_specs?.subject_action}</p>
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className="flex gap-3">
+                                                                                <span className="text-black dark:text-white shrink-0 mt-0.5">💡</span>
+                                                                                <div>
+                                                                                    <span className="font-medium text-gray-900 dark:text-white block text-xs mb-0.5">光影</span>
+                                                                                    <p className="text-gray-600 dark:text-gray-300 leading-relaxed">{scene.visual_specs?.lighting_environment}</p>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Logic */}
+                                                                    <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
+                                                                        <h4 className="text-xs font-bold text-black dark:text-white uppercase tracking-wider mb-2">核心逻辑</h4>
+                                                                        <p className="text-sm text-gray-700 dark:text-gray-200 mb-2">
+                                                                            <span className="font-bold">功能：</span> {scene.abstract_logic?.narrative_role}
+                                                                        </p>
+                                                                        <p className="text-xs text-gray-500 dark:text-gray-400 italic">
+                                                                            "{scene.abstract_logic?.universal_instruction}"
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            );
+                                        } catch (e) {
+                                            return (
+                                                <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+                                                    <p>Failed to parse analysis result.</p>
+                                                </div>
+                                            );
+                                        }
+                                    })()
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center h-64 text-gray-500 bg-gray-50 dark:bg-gray-800 rounded-xl border border-dashed border-gray-200 dark:border-gray-700">
+                                        <FileJson size={48} className="mb-4 opacity-20" />
+                                        <p>暂无详细分析数据</p>
+                                        <p className="text-xs mt-2">请等待分析完成</p>
+                                    </div>
+                                )}
+                            </div>
+                        )
                     )}
                 </div>
             </div>
