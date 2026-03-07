@@ -8,39 +8,87 @@
 2.  **域名**: `www.atomx.top` 已解析到该 IP
 3.  **代码**: 已推送到 GitHub
 
-## 端口占用分析与处理
+## 端口冲突分析
 
-根据您的检查结果，端口 **3000** (应用)、**80** (HTTP)、**443** (HTTPS) 和 **5433** (数据库) 目前**都被 Docker 容器占用了**。
+根据您的 `docker ps` 结果，我们发现了一个非常重要的信息：**您的服务器上已经运行着一套完整的服务**，包括 Supabase 全家桶、n8n 工作流系统以及其他名为 `sub_*` 的服务。
 
-- **3000, 80, 443**: 这很可能是您**旧版本的应用**或旧的 Nginx 容器在运行。为了部署新版本，我们需要先停止它们。
-- **5433**: 这是数据库，**请不要停止它**，除非您想重置数据库。
+以下是具体的冲突点：
 
-### 解决步骤：清理旧容器
+1.  **3000 端口** (`supabase-studio`)：被 Supabase 的管理后台占用。这意味着**我们不能使用 3000 端口**来部署我们的应用。
+2.  **80/443 端口** (`sub_nginx`)：被一个现有的 Nginx 容器占用，它似乎是整个服务器的入口网关。
+3.  **5433 端口** (`supabase-pooler`)：这是 Supabase 的数据库连接池，我们的应用需要连接它，这是正常的。
 
-**1. 查看正在运行的容器**
+### 解决方案：修改端口并复用 Nginx
 
-```bash
-docker ps --format "table {{.ID}}\t{{.Names}}\t{{.Ports}}"
+为了不破坏现有的服务（特别是 Supabase 和 n8n），我们应该采取**避让策略**：
+
+1.  **修改应用端口**：将我们的应用端口从 `3000` 改为 `3002`（因为 3000 被 Studio 占用，3001 被 `sub_admin` 占用）。
+2.  **接入现有 Nginx**：我们需要修改现有的 `sub_nginx` 配置，让它把 `www.atomx.top` 的流量转发到我们的新端口 `3002`。
+
+## 第一步：修改 Docker Compose 配置
+
+请在本地修改 `docker-compose.yml`，将端口映射改为 `3002:3000`。
+
+```yaml
+    ports:
+      - "3002:3000"  # 宿主机 3002 -> 容器 3000
 ```
 
-找到占用 `0.0.0.0:3000`、`0.0.0.0:80` 和 `0.0.0.0:443` 的容器 ID。
+## 第二步：部署应用
 
-**2. 停止并删除冲突容器**
-
-假设您找到了旧应用的容器 ID（例如 `abc12345`）和旧 Nginx 的容器 ID，请运行：
+登录服务器并部署：
 
 ```bash
-# 停止旧应用 (占用 3000 的)
-docker rm -f <容器ID_或_名称>
-
-# 停止旧 Nginx (占用 80/443 的，如果有)
-# 注意：确认它不是其他重要服务的网关！
-docker rm -f <容器ID_或_名称>
+cd content-factory-web
+git pull origin main
+docker compose down
+docker compose up -d --build
 ```
 
-*提示：如果您之前是使用 `docker-compose` 启动的，进入对应的目录运行 `docker compose down` 是最干净的方法。*
+此时应用将在 `http://localhost:3002` 运行。
 
-## 第一步：登录服务器
+## 第三步：配置网关 (sub_nginx)
+
+这一步比较关键。由于 `80` 和 `443` 被容器 `sub_nginx` (`77694899f7b5`) 接管，我们需要知道这个 Nginx 的配置文件挂载在哪里。
+
+1.  **查找 Nginx 配置位置**：
+    ```bash
+    docker inspect sub_nginx | grep Source
+    ```
+    这会告诉您宿主机上哪个目录挂载到了容器内。
+
+2.  **修改 Nginx 配置**：
+    在找到的配置目录下（通常是 `conf.d` 或 `nginx.conf`），添加一个新的 server 块（或修改现有的）：
+
+    ```nginx
+    server {
+        listen 80;
+        server_name www.atomx.top atomx.top;
+
+        location / {
+            # 注意：由于 Nginx 在容器内，访问宿主机端口需要用 host.docker.internal 或 宿主机IP
+            # 如果 host.docker.internal 不可用，请使用服务器内网 IP 或公网 IP
+            proxy_pass http://172.17.0.1:3002; 
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+    }
+    ```
+    *(注：`172.17.0.1` 通常是 Docker 宿主机的网关 IP)*
+
+3.  **重载 Nginx**：
+    ```bash
+    docker exec sub_nginx nginx -s reload
+    ```
+
+## 备选方案：如果不方便改 sub_nginx
+
+如果 `sub_nginx` 是第三方维护的或者是不可修改的，您可以考虑：
+- **方案 B**: 停止并删除 `sub_nginx`，然后在宿主机上直接安装 Nginx 接管所有流量（但这可能会破坏其他服务的配置）。
+- **方案 C**: 使用非 80/443 端口访问，例如 `http://www.atomx.top:3002`（需要开放安全组）。
+
+**强烈建议尝试第三步的方案，这是最稳妥的。**
+
 
 ```bash
 ssh root@47.107.158.233
