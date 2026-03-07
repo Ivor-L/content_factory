@@ -1,6 +1,9 @@
 # Base image
 FROM node:18-alpine AS base
 
+# Replace apk repositories with Aliyun mirror for faster downloads in China
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
+
 # Install dependencies only when needed
 FROM base AS deps
 # Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine to understand why libc6-compat might be needed.
@@ -10,9 +13,9 @@ WORKDIR /app
 # Install dependencies based on the preferred package manager
 COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* ./
 RUN \
-  if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
-  elif [ -f package-lock.json ]; then npm ci; \
-  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm i --frozen-lockfile; \
+  if [ -f yarn.lock ]; then yarn --frozen-lockfile --registry=https://registry.npmmirror.com; \
+  elif [ -f package-lock.json ]; then npm ci --registry=https://registry.npmmirror.com; \
+  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm i --frozen-lockfile --registry=https://registry.npmmirror.com; \
   else echo "Lockfile not found." && exit 1; fi
 
 # Rebuild the source code only when needed
@@ -48,7 +51,7 @@ RUN adduser --system --uid 1001 nextjs
 
 # Install openssl for Prisma and prisma CLI for migrations
 RUN apk add --no-cache openssl
-RUN npm install -g prisma
+RUN npm install -g prisma --registry=https://registry.npmmirror.com
 
 COPY --from=builder /app/public ./public
 
