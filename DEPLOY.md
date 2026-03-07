@@ -88,20 +88,36 @@ docker compose up -d --build
 - **方案 C**: 使用非 80/443 端口访问，例如 `http://www.atomx.top:3002`（需要开放安全组）。
 
 **强烈建议尝试第三步的方案，这是最稳妥的。**
-
+## 第一步：登录服务器
 
 ```bash
 ssh root@47.107.158.233
 ```
 
-## 第二步：更新代码
+## 第二步：克隆代码 (私有仓库)
 
-进入项目目录（假设在 `/root/content-factory-web`）：
+由于您的仓库是私有的，您需要使用 **GitHub Personal Access Token (PAT)** 来克隆。
 
-```bash
-cd content-factory-web
-git pull origin main
-```
+1.  **生成 Token**:
+    - 访问 [GitHub Settings > Developer settings > Personal access tokens](https://github.com/settings/tokens)
+    - 点击 "Generate new token (classic)"
+    - 勾选 `repo` 权限
+    - 复制生成的 Token (以 `ghp_` 开头)
+
+2.  **在服务器上运行克隆命令**:
+
+    ```bash
+    # 格式: git clone https://<Token>@github.com/用户名/仓库名.git
+    
+    # 请替换下面的 <您的Token>
+    git clone https://<您的Token>@github.com/Ivor-L/content_factory.git content-factory-web
+    ```
+
+3.  **进入目录**:
+
+    ```bash
+    cd content-factory-web
+    ```
 
 ## 第三步：配置环境变量
 
