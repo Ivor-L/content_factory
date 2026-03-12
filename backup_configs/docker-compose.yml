@@ -1,0 +1,23 @@
+version: '3.9'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: content-factory-web
+    restart: always
+    ports:
+      - "3002:3000"
+    env_file:
+      - .env
+
+  # Optional: Add Nginx for SSL/Reverse Proxy if needed
+  # nginx:
+  #   image: nginx:latest
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf
+  #     - ./certs:/etc/nginx/certs

@@ -309,7 +309,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://hooks.flowonn.com/webhook/farm_Prompt",
+        "url": "https://hooks.atomx.top/webhook/farm_Prompt",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ $json }}",
@@ -639,7 +639,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://hooks.flowonn.com/webhook/farm_Prompt",
+        "url": "https://hooks.atomx.top/webhook/farm_Prompt",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ $('Webhook-\u7236\u5165\u53e3').item.json.body }}",

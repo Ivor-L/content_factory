@@ -4,34 +4,31 @@ This document outlines the necessary configuration and setup steps for the Conte
 
 ## 1. Prerequisites
 
-### SSH Tunneling (Required for Database)
-The database is hosted remotely and requires an SSH tunnel to access. This bypasses firewall restrictions and allows secure connection.
+### Direct Supabase Connectivity
+The database is now reachable directly over the public internet—no SSH tunnel is required. Make sure your IP is allow‑listed in Supabase (or that the project’s network policy allows public access) before attempting to connect.
 
-*   **Remote Server:** `47.107.158.233`
-*   **Remote Database Port (Supavisor):** `5431`
-*   **Local Mapped Port:** `54320`
-*   **User:** `root`
+*   **Supabase (Supavisor) Host:** `47.107.158.233`
+*   **Port:** `5433` (public Supavisor pooler)
+*   **Database:** `postgres`
+*   **User:** `postgres.your-tenant-id`
+*   **SSL:** Disabled (connection string explicitly sets `sslmode=disable`)
 
-**Command to start the tunnel:**
-```bash
-ssh -o ServerAliveInterval=60 -L 54320:127.0.0.1:5431 root@47.107.158.233 -N
-```
-*Note: You will need the SSH password for `root@47.107.158.233`.*
+> If you rotate credentials in Supabase, update the `DATABASE_URL`/`DIRECT_URL` values accordingly.
 
 ## 2. Environment Variables (.env / .env.local)
 
 These variables are configured in `.env` and `.env.local`.
 
 ### Database Configuration
-Using the SSH tunnel established above.
+Use the Supabase connection string directly (replace credentials with the ones from your Supabase project if they change).
 
 *   **DATABASE_URL:**
     ```
-    postgresql://postgres.your-tenant-id:Htk4XZETgYriBTd_qbjrjlNE6vEC68Y61XQNFsDT0v5A2NJcLD3CuQ@127.0.0.1:54320/postgres
+    postgresql://postgres.your-tenant-id:Htk4XZETgYriBTd_qbjrjlNE6vEC68Y61XQNFsDT0v5A2NJcLD3CuQ@47.107.158.233:5433/postgres?sslmode=disable
     ```
 *   **DIRECT_URL:**
     ```
-    postgresql://postgres.your-tenant-id:Htk4XZETgYriBTd_qbjrjlNE6vEC68Y61XQNFsDT0v5A2NJcLD3CuQ@127.0.0.1:54320/postgres
+    postgresql://postgres.your-tenant-id:Htk4XZETgYriBTd_qbjrjlNE6vEC68Y61XQNFsDT0v5A2NJcLD3CuQ@47.107.158.233:5433/postgres?sslmode=disable
     ```
 
 ### Supabase API Configuration
@@ -61,7 +58,7 @@ Endpoints for various automation workflows.
 
 ## 3. Running the Application
 
-1.  **Ensure SSH Tunnel is active:** Check if port `54320` is listening or run the SSH command.
+1.  **Confirm outbound connectivity:** Make sure your network can reach `47.107.158.233:5433` (no tunnel required).
 2.  **Start Development Server:**
     ```bash
     npm run dev
@@ -72,8 +69,8 @@ Endpoints for various automation workflows.
 ## 4. Troubleshooting
 
 *   **"Tenant or user not found" / DB Connection Error:**
-    *   Verify SSH tunnel is running.
-    *   Check `.env.local` uses port `54320` and user `postgres.your-tenant-id`.
+    *   Confirm the credentials in `.env.local` match the Supabase project settings.
+    *   Ensure your IP/network is allowed to access `47.107.158.233:5433`.
 *   **"ERR_NAME_NOT_RESOLVED" for `supabase-api.atomx.top`:**
     *   Ensure your DNS can resolve this domain. If on a restricted network, you may need to add a hosts entry or fix DNS settings.
 *   **"Connection Refused" on localhost:3000:**

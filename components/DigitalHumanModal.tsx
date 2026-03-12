@@ -1,13 +1,14 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Upload, X, Loader2, Mic, User, FileText, Check, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'react-hot-toast';
 import { createDigitalHumanVideo } from '@/app/actions/digital-human';
 import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
 
 interface DigitalHumanModalProps {
   onClose: () => void;
@@ -16,6 +17,13 @@ interface DigitalHumanModalProps {
 export function DigitalHumanModal({ onClose }: DigitalHumanModalProps) {
   const { t } = useLanguage();
   const router = useRouter();
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) setUserId(user.id);
+    });
+  }, []);
   
   const [mode, setMode] = useState<'LIP_SYNC' | 'VOICE_CLONE'>('LIP_SYNC');
   const [loading, setLoading] = useState(false);
@@ -155,6 +163,7 @@ export function DigitalHumanModal({ onClose }: DigitalHumanModalProps) {
       formData.append('imageUrl', imageUrl);
       formData.append('audioUrl', audioUrl);
       formData.append('duration', audioDuration.toString());
+      if (userId) formData.append('userId', userId);
       if (mode === 'VOICE_CLONE') {
           formData.append('script', script);
           if (emoAudioUrl) {

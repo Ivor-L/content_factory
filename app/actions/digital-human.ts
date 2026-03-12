@@ -11,9 +11,28 @@ export async function createDigitalHumanVideo(formData: FormData) {
   const emoAudioUrl = formData.get('emoAudioUrl') as string | null;
   const script = formData.get('script') as string | null;
   const duration = formData.get('duration');
+  const userId = formData.get('userId') as string | null;
 
   if (!type || !imageUrl || !audioUrl) {
     throw new Error('Missing required fields');
+  }
+
+  // Look up the user's API key (the webhook requires api_key for credit billing).
+  // Falling back to DEFAULT_USER_API_KEY allows ops to configure a shared key for legacy users.
+  let apiKey: string | null =
+    userId
+      ? (await prisma.profiles.findUnique({
+          where: { id: userId },
+          select: { api_key: true },
+        }))?.api_key ?? null
+      : null;
+  if (!apiKey) {
+    apiKey = process.env.DEFAULT_USER_API_KEY || null;
+  }
+  if (!apiKey) {
+    throw new Error(
+      'No api_key found for this user. Please configure an API key in profiles or set DEFAULT_USER_API_KEY.'
+    );
   }
 
   // Create Record
@@ -24,6 +43,7 @@ export async function createDigitalHumanVideo(formData: FormData) {
       audioUrl,
       scriptContent: script || '',
       status: 'GENERATING',
+      userId: userId, // Save user ID
     }
   });
 
@@ -37,7 +57,8 @@ export async function createDigitalHumanVideo(formData: FormData) {
       type,
       image_url: imageUrl,
       timestamp: new Date().toISOString(),
-      flow: "flow_Digital_Human"
+      flow: "flow_Digital_Human",
+      api_key: apiKey,
     };
 
     const audioDuration = duration ? parseFloat(duration.toString()) : 0;

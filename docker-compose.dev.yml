@@ -1,24 +1,26 @@
 version: '3.9'
 
 services:
-  web-dev:
-    image: node:18-alpine
+  web:
     container_name: content-factory-web-dev
+    image: node:20-alpine
     working_dir: /app
-    # Enable hot reloading by polling (necessary for some Docker environments)
-    environment:
-      - WATCHPACK_POLLING=true
-      - NODE_ENV=development
-      # Use .env file for DATABASE_URL (support switching between SQLite and Postgres)
     ports:
-      # HOST_PORT:CONTAINER_PORT
-      # Default to 3001 to avoid conflict with Supabase Studio (port 3000)
-      - "${APP_PORT:-3001}:3000"
+      - "3000:3000"
     volumes:
-      # Mount the current directory to /app in the container
       - ./:/app
-      # Keep node_modules separate to avoid host/container OS conflicts
-      - /app/node_modules
-      - /app/.next
-    command: sh -c "npm install && npx prisma migrate deploy && npm run dev"
-    restart: always
+    # Install dependencies and start dev server
+    command: sh -c "if [ ! -d node_modules ]; then npm install; fi && npm run dev"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge

@@ -1,6 +1,16 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
+function safeParseJson(payload?: string | null) {
+  if (!payload) return {};
+  try {
+    return JSON.parse(payload);
+  } catch (error) {
+    console.warn("Failed to parse replication.result JSON. Returning empty object.", error);
+    return {};
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -25,17 +35,41 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Replication task not found" }, { status: 404 });
     }
 
-    let updateStatus = "completed";
-    // If status is explicitly provided as failed/error, or if there is an error field
-    if (status === "failed" || status === "error" || body.error) {
-        updateStatus = "failed";
+    let updateStatus = replication.status || "pending";
+    const normalizedStatus = typeof status === "string" ? status.toLowerCase() : "";
+
+    if (normalizedStatus === "failed" || normalizedStatus === "error" || body.error) {
+      updateStatus = "failed";
+    } else if (["completed", "success", "video_completed"].includes(normalizedStatus)) {
+      updateStatus = "completed";
+    } else if (updateStatus !== "completed" && updateStatus !== "failed") {
+      updateStatus = updateStatus === "pending" ? "processing" : updateStatus;
     }
+
+    const existingResult = safeParseJson(replication.result);
+    const normalizedPayload: Record<string, any> = { ...body };
+
+    if (body?.result && typeof body.result === "object") {
+      normalizedPayload.finalResult = body.result;
+      if (!normalizedPayload.videoUrl && body.result.videoUrl) {
+        normalizedPayload.videoUrl = body.result.videoUrl;
+      }
+      if (!normalizedPayload.thumbnailUrl && body.result.thumbnailUrl) {
+        normalizedPayload.thumbnailUrl = body.result.thumbnailUrl;
+      }
+    }
+
+    const mergedResult = {
+      ...existingResult,
+      ...normalizedPayload,
+      lastStage: body.stage || status || existingResult.lastStage || updateStatus,
+    };
 
     await prisma.replication.update({
       where: { id: taskId },
       data: {
         status: updateStatus,
-        result: JSON.stringify(body), // Store full webhook payload
+        result: JSON.stringify(mergedResult),
       },
     });
 

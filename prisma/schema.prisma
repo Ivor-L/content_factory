@@ -428,7 +428,8 @@ model Character {
   voiceId   String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  storyboardTasks StoryboardTask[]
+  storyboardTasks       StoryboardTask[]
+  replicationShotTasks  ReplicationShotTask[]
 
   @@map("characters")
   @@schema("public")
@@ -446,8 +447,9 @@ model Product {
   progress      Int      @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
-  replications  Replication[]
-  storyboardTasks StoryboardTask[]
+  replications         Replication[]
+  storyboardTasks      StoryboardTask[]
+  replicationShotTasks ReplicationShotTask[]
 
   @@map("products")
   @@schema("public")
@@ -480,7 +482,8 @@ model Script {
   error     String?  // New field for error messages
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  replications Replication[]
+  replications         Replication[]
+  replicationShotTasks ReplicationShotTask[]
 
   @@map("scripts")
   @@schema("public")
@@ -533,10 +536,35 @@ model DigitalHumanVideo {
   scriptContent String?
   resultUrl   String?
   status      String   @default("GENERATING")
+  userId      String?  @map("user_id") @db.Uuid
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@map("digital_human_videos")
+  @@schema("public")
+}
+
+model ReplicationShotTask {
+  id                   String   @id @default(cuid())
+  userId               String?  @map("user_id") @db.Uuid
+  scriptId             String
+  productId            String?
+  characterId          String?
+  sceneImageUrl        String?
+  productSceneImageUrl String?
+  shotPrompts          Json?
+  firstFrames          Json?
+  endFrameOptions      Json?
+  videos               Json?
+  finalVideoUrl        String?
+  status               String   @default("PENDING")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  script               Script   @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+  product              Product? @relation(fields: [productId], references: [id])
+  character            Character? @relation(fields: [characterId], references: [id])
+
+  @@map("replication_shot_tasks")
   @@schema("public")
 }
 

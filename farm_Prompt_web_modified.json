@@ -224,7 +224,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://hooks.flowonn.com/webhook/sora_videoV4",
+        "url": "https://hooks.atomx.top/webhook/sora_videoV4",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ $json }}",
@@ -867,7 +867,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://hooks.flowonn.com/webhook/sora_videoV4",
+        "url": "https://hooks.atomx.top/webhook/sora_videoV4",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ $json }}",
@@ -1179,7 +1179,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://hooks.flowonn.com/webhook/sora_videoV4",
+        "url": "https://hooks.atomx.top/webhook/sora_videoV4",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ $json }}",

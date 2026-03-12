@@ -165,11 +165,99 @@ export interface ReplicationOptions {
   callbackUrl?: string;
   userId?: string;
   replicationId?: string;
+  productImageUrl?: string | null;
 }
 
 export interface ReplicationResult {
   generatedScript: string;
   videoPrompt: string;
+}
+
+export async function generateOneClickReplication(
+  product: any,
+  script: any,
+  options: ReplicationOptions
+): Promise<{ success: boolean; message: string }> {
+  // Specific webhook for One-Click mode
+  const webhookUrl = "https://hooks.atomx.top/webhook/farm_Prompt_web";
+
+  try {
+    // 1. Extract Product Info (产品信息)
+    // Try to parse sellingPoints as JSON array, take first item, or use raw string
+    let productInfo = "";
+    if (product.sellingPoints) {
+      try {
+        // Attempt to parse if it looks like JSON
+        if (product.sellingPoints.trim().startsWith('[') || product.sellingPoints.trim().startsWith('{')) {
+             const points = JSON.parse(product.sellingPoints);
+             if (Array.isArray(points) && points.length > 0) {
+                 const first = points[0];
+                 // Check if it's an object with 'text' property or just a string
+                 productInfo = typeof first === 'string' ? first : (first.text || JSON.stringify(first));
+             } else {
+                 productInfo = product.sellingPoints;
+             }
+        } else {
+            productInfo = product.sellingPoints;
+        }
+      } catch (e) {
+        productInfo = product.sellingPoints;
+      }
+    }
+
+    // 2. Extract Breakdown Report (爆款视频拆解报告)
+    // Prefer structured blueprint JSON; fallback to legacy breakdown text
+    let breakdownReport = "";
+    if (script.blueprint) {
+        try {
+            breakdownReport = JSON.parse(script.blueprint);
+        } catch (error) {
+            console.warn("Failed to parse blueprint JSON. Falling back to raw string.", error);
+            breakdownReport = script.blueprint;
+        }
+    } else if (script.breakdown) {
+        breakdownReport = script.breakdown;
+    }
+
+    // Construct the payload with specific Chinese keys as requested
+    const payload = {
+      "产品信息": productInfo,
+      "Target Language": options.targetLanguage,
+      "爆款视频拆解报告": breakdownReport,
+      "时长": options.duration,
+      "国家/地区": options.targetCountry,
+      
+      // Keep some metadata just in case
+      "product_id": product.id,
+      "script_id": script.id,
+      "callback_url": options.callbackUrl,
+      "replication_id": options.replicationId,
+      "user_id": options.userId
+    };
+
+    console.log("Triggering One-Click Replication:", JSON.stringify(payload, null, 2));
+
+    const response = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(`One-Click Webhook failed with status ${response.status}`);
+    }
+
+    // Log response
+    try {
+        const text = await response.text();
+        console.log("One-Click Webhook response:", text);
+    } catch (e) {}
+
+    return { success: true, message: "One-Click Workflow triggered" };
+  } catch (error) {
+    console.error("Error calling One-Click Webhook:", error);
+    throw error;
+  }
 }
 
 export async function generateReplication(
@@ -200,6 +288,11 @@ export async function generateReplication(
       flow: "flow_farm_copy"
     };
 
+    if (options.productImageUrl) {
+      payload.image_url = options.productImageUrl;
+      payload.product_image_url = options.productImageUrl;
+    }
+
     // Remove camelCase versions if you want to be strict, or keep them. 
     // n8n usually prefers snake_case.
     delete (payload as any).targetCountry;
@@ -207,6 +300,7 @@ export async function generateReplication(
     delete (payload as any).apiKey;
     delete (payload as any).callbackUrl;
     delete (payload as any).replicationId;
+    delete (payload as any).productImageUrl;
 
     console.log("Triggering n8n replication workflow:", payload);
 
@@ -311,4 +405,95 @@ export async function generateFromScript(scriptContent: string): Promise<Replica
       videoPrompt: "Error: Could not generate video prompt.",
     };
   }
+}
+
+export interface SceneImageAsset {
+  url?: string | null;
+  base64?: string | null;
+  mimeType?: string | null;
+}
+
+export interface ReplicationSceneTriggerInput {
+  taskId: string;
+  script: {
+    id: string;
+    title: string;
+    breakdown?: string | null;
+    blueprint?: string | null;
+  };
+  product?: {
+    id?: string;
+    name?: string | null;
+    description?: string | null;
+    analysisResult?: string | null;
+  };
+  character: {
+    id: string;
+    name?: string | null;
+  };
+  prompt: string;
+  ratio?: string;
+  apiKey?: string;
+  productImage?: SceneImageAsset;
+  characterImage?: SceneImageAsset;
+}
+
+export async function triggerReplicationSceneGeneration(
+  input: ReplicationSceneTriggerInput
+) {
+  const webhookUrl =
+    process.env.N8N_REPLICATION_SCENE_WEBHOOK?.trim() ||
+    'https://hooks.atomx.top/webhook/zReh7LF4U6UdA10R';
+
+  if (!webhookUrl) {
+    console.warn('No replication scene webhook configured, skipping trigger.');
+    return { skipped: true };
+  }
+
+  const payload: Record<string, unknown> = {
+    task_id: input.taskId,
+    script_id: input.script.id,
+    script_title: input.script.title,
+    script_breakdown: input.script.breakdown,
+    script_blueprint: input.script.blueprint,
+    product_id: input.product?.id,
+    product_name: input.product?.name,
+    product_description: input.product?.description,
+    product_analysis: input.product?.analysisResult,
+    character_id: input.character.id,
+    character_name: input.character.name,
+    prompt: input.prompt,
+    ratio: input.ratio || '9:16',
+    api_key: input.apiKey,
+    product_image_url: input.productImage?.url,
+    product_image_b64: input.productImage?.base64,
+    product_mime_type: input.productImage?.mimeType,
+    person_image_url: input.characterImage?.url,
+    person_image_b64: input.characterImage?.base64,
+    person_mime_type: input.characterImage?.mimeType,
+  };
+
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(
+      `Replication scene workflow failed: ${response.status} ${errorText}`
+    );
+  }
+
+  let data: unknown = null;
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
+
+  return { success: true, data };
 }

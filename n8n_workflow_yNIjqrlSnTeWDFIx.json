@@ -2,142 +2,115 @@
   "nodes": [
     {
       "parameters": {
-        "url": "={{ $('Webhook').item.json.body.image_url }}",
-        "options": {
-          "allowUnauthorizedCerts": true
-        }
+        "respondWith": "json",
+        "responseBody": "{\n  \"status\": \"started\",\n  \"message\": \"Analysis workflow started\"\n}",
+        "options": {}
       },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.3,
+      "id": "8ef859a2-dcdf-437d-8549-ea83cc69796c",
+      "name": "Respond Immediate",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
       "position": [
-        -2320,
-        544
-      ],
-      "id": "f04450fb-16b2-42de-b338-8005e7def44f",
-      "name": "\u4e0b\u8f7d\u56fe\u7247"
+        256,
+        688
+      ]
     },
     {
       "parameters": {
-        "jsCode": "// n8n Code node: build Yunwu Gemini generateContent body for \u4ea7\u54c1\u8425\u9500DNA\n// \u2705 \u6570\u636e\u6765\u6e90\uff1aWebhook\uff08$json.body \u6216 $json\uff09\n// \u2705 \u6709\u56fe\uff1a\u4f18\u5148\u7528\u4e0a\u6e38\u201c\u4e0b\u8f7d\u56fe\u7247\u201d\u7684 binary -> inlineData(base64)\n// \u2705 \u65e0\u56fe\uff1a\u7eaf\u6587\u672c\u4e5f\u80fd\u5206\u6790\uff08\u4e0d throw\uff09\n\n// ---------- helpers ----------\nfunction pickText(v) {\n  if (v == null) return '';\n  if (typeof v === 'string' || typeof v === 'number') return String(v);\n\n  if (Array.isArray(v)) {\n    return v\n      .map(x => {\n        if (x == null) return '';\n        if (typeof x === 'string' || typeof x === 'number') return String(x);\n        if (typeof x === 'object') return String(x.text ?? x.value ?? x.name ?? x.url ?? x.link ?? '');\n        return '';\n      })\n      .filter(Boolean)\n      .join('\\n');\n  }\n\n  if (typeof v === 'object') return String(v.text ?? v.value ?? v.name ?? v.url ?? v.link ?? '');\n  return String(v);\n}\n\nfunction getField(obj, keyCandidates) {\n  for (const k of keyCandidates) {\n    if (obj && Object.prototype.hasOwnProperty.call(obj, k)) return pickText(obj[k]);\n  }\n  return '';\n}\n\nfunction pickBinaryKey(bin) {\n  if (!bin || typeof bin !== 'object') return '';\n  if (bin.image) return 'image';\n  if (bin.data) return 'data';\n  const keys = Object.keys(bin);\n  return keys.length ? keys[0] : '';\n}\n\nasync function getBase64FromBinary(itemIndex, binaryKey) {\n  const bin = $input.all()[itemIndex].binary?.[binaryKey];\n  if (!bin) return { base64: '', mimeType: '' };\n\n  const mimeType = bin.mimeType || 'image/jpeg';\n\n  // \u60c5\u51b5A\uff1abinary \u81ea\u5e26 base64\n  if (bin.data && typeof bin.data === 'string' && bin.data.length > 50) {\n    return { base64: bin.data, mimeType };\n  }\n\n  // \u60c5\u51b5B\uff1afilesystem \u6a21\u5f0f\uff1a\u8bfb buffer\n  if (!this?.helpers?.getBinaryDataBuffer) {\n    return { base64: '', mimeType };\n  }\n  const buf = await this.helpers.getBinaryDataBuffer(itemIndex, binaryKey);\n  return { base64: buf.toString('base64'), mimeType };\n}\n\n// ---------- read webhook body ----------\nconst root = $json || {};\nconst body = (root.body && typeof root.body === 'object') ? root.body : root;\n\n// \u517c\u5bb9\u5b57\u6bb5\u540d\uff08\u4f60\u524d\u7aef\u73b0\u5728\u4f20\u7684\u662f product_name / api_key / workflow_id\uff09\nconst productId   = getField(body, ['product_id', 'productId', 'id']);\nconst imageUrl    = getField(body, ['image_url', 'imageUrl', 'url']);\nconst apiKey      = getField(body, ['api_key', 'apiKey']);\nconst workflowId  = getField(body, ['workflow_id', 'workflowId']);\n\n// \u201c\u4ea7\u54c1\u540d\u79f0/\u5356\u70b9/\u63cf\u8ff0\u201d\u5b57\u6bb5\uff1a\u517c\u5bb9\u4f60\u65e7\u98de\u4e66\u5b57\u6bb5\u540d + \u4f60\u65b0\u524d\u7aef\u5b57\u6bb5\u540d\nconst productName = getField(body, ['product_name','productName','\u4ea7\u54c1\u540d\u79f0', '\u4ea7\u54c1\u540d', '\u5546\u54c1\u540d\u79f0', '\u5546\u54c1\u540d']);\nconst sellingPts  = getField(body, ['selling_points','sellingPoints','\u4ea7\u54c1\u5356\u70b9\uff08\u9009\u586b\uff09', '\u6838\u5fc3\u5356\u70b9', '\u5356\u70b9', '\u4ea7\u54c1\u4eae\u70b9']);\nconst extraDesc   = getField(body, ['extra_desc','extraDesc','\u4ea7\u54c1\u63cf\u8ff0', '\u5546\u54c1\u63cf\u8ff0', '\u8865\u5145\u63cf\u8ff0', '\u63cf\u8ff0']);\n\n// ---------- prompt ----------\nconst PROMPT_TEXT = `# Role\n\u4f60\u662f\u4e00\u4f4d\u8d44\u6df1\u7684**\u7535\u5546\u9009\u54c1\u7ecf\u7406\u4e0e\u8425\u9500\u7b56\u5212\u4e13\u5bb6**\u3002\u64c5\u957f\u901a\u8fc7\u4e00\u5f20\u4ea7\u54c1\u56fe\u7247\uff0c\u53cd\u63a8\u5176\u6838\u5fc3\u5356\u70b9\u3001\u76ee\u6807\u4eba\u7fa4\u548c\u89c6\u89c9\u7279\u5f81\u3002\n\n# Task\n\u5206\u6790\u7528\u6237\u4e0a\u4f20\u7684\u4ea7\u54c1\u56fe\u7247\uff08\u6216\u63cf\u8ff0\uff09\uff0c\u8f93\u51fa\u4e00\u4efd**\u201c\u4ea7\u54c1\u8425\u9500DNA\u62a5\u544a\u201d**\u3002\u8fd9\u4efd\u62a5\u544a\u5c06\u7528\u4e8e\u6307\u5bfc\u540e\u7eed\u7684\u89c6\u9891\u811a\u672c\u751f\u6210\u3002\n\n# Analysis Logic\n1) \u89c6\u89c9\u5916\u89c2\uff1a\u989c\u8272\u3001\u6750\u8d28\u3001\u5f62\u72b6\u3001\u8d28\u611f\uff08\u8ba9\u89c6\u9891\u751f\u6210AI\u77e5\u9053\u201c\u4ea7\u54c1\u957f\u4ec0\u4e48\u6837\u201d\uff09\n2) \u6838\u5fc3\u5356\u70b9\uff1a\u529f\u80fd\u6027\u5356\u70b9 + \u4f53\u9a8c\u6027\u5356\u70b9\uff0c\u5e76\u7ed9\u51fa\u53ef\u89c6\u5316\u8bc1\u660e\u65b9\u5f0f\n3) \u4f7f\u7528\u573a\u666f\u4e0e\u4eba\u7fa4\uff1a\u8c01\u5728\u7528\u3001\u5728\u54ea\u7528\n\n# Output (STRICT JSON ONLY)\n{\n  \"product_name\": \"\u57fa\u4e8e\u56fe\u7247\u63a8\u65ad\u7684\u4ea7\u54c1\u540d\u79f0\",\n  \"visual_description\": \"\u8be6\u7ec6\u89c6\u89c9\u63cf\u8ff0\uff08\u7ed9Sora/\u89c6\u9891\u63d0\u793a\u8bcd\u7528\uff09\",\n  \"marketing_profile\": {\n    \"target_audience_vibe\": \"\u76ee\u6807\u7528\u6237\u5f62\u8c61\",\n    \"ideal_environment\": \"\u6700\u4f73\u573a\u666f\",\n    \"core_selling_points\": [\n      {\n        \"type\": \"Physical\",\n        \"description\": \"\u7269\u7406\u7279\u6027\u5356\u70b9\",\n        \"visual_proof\": \"\u5982\u4f55\u7528\u753b\u9762\u8bc1\u660e\"\n      },\n      {\n        \"type\": \"Emotional\",\n        \"description\": \"\u60c5\u611f/\u4f53\u9a8c\u5356\u70b9\",\n        \"visual_proof\": \"\u5982\u4f55\u7528\u753b\u9762\u8bc1\u660e\"\n      }\n    ]\n  }\n}`;\n\nconst userSupplement = [\n  `\u4ea7\u54c1\u540d\u79f0\uff1a${productName || '\u672a\u63d0\u4f9b'}`,\n  `\u4ea7\u54c1\u5356\u70b9\uff1a${sellingPts || '\u672a\u63d0\u4f9b'}`,\n  `\u4ea7\u54c1\u63cf\u8ff0\uff1a${extraDesc || '\u672a\u63d0\u4f9b'}`,\n].join('\\n');\n\nconst userText = `${PROMPT_TEXT}\\n\\n${userSupplement}\\n\\n\u53ea\u8f93\u51fa JSON\uff0c\u4e0d\u8981 markdown\uff0c\u4e0d\u8981\u591a\u4f59\u6587\u672c\u3002`;\n\n// ---------- build gemini_body (supports batch items) ----------\nconst items = $input.all();\nconst out = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i];\n  const bin = item.binary || {};\n  const binaryKey = pickBinaryKey(bin);\n\n  let imagePart = null;\n  if (binaryKey) {\n    const { base64, mimeType } = await getBase64FromBinary.call(this, i, binaryKey);\n    if (base64) {\n      imagePart = {\n        inlineData: { mimeType, data: base64 }\n      };\n    }\n  }\n\n  const parts = [{ text: userText }];\n  if (imagePart) parts.push(imagePart);\n\n  const gemini_body = {\n    systemInstruction: {\n      parts: [{ text: 'Return STRICT JSON only. No markdown. No extra text.' }]\n    },\n    contents: [\n      { role: 'user', parts }\n    ],\n    generationConfig: {\n      responseMimeType: 'application/json',\n      temperature: 0.2\n    }\n  };\n\n  out.push({\n    json: {\n      ...item.json,\n      // \u628a\u4f60\u540e\u7eed\u8282\u70b9\u9700\u8981\u7684\u5b57\u6bb5\u4e5f\u4e00\u8d77\u900f\u4f20\uff08\u5173\u952e\uff09\n      product_id: productId,\n      image_url: imageUrl,\n      api_key: apiKey,\n      workflow_id: workflowId,\n\n      gemini_body,\n\n      _debug_webhook_fields: {\n        productId: productId || null,\n        imageUrl: imageUrl || null,\n        productName: productName || null,\n        sellingPts: sellingPts || null,\n        apiKey: apiKey ? '***' : null,\n        workflowId: workflowId || null,\n      },\n      _debug_image_attached: !!imagePart\n    },\n    binary: item.binary\n  });\n}\n\nreturn out;"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -2096,
-        544
-      ],
-      "id": "eef356c7-984b-46ca-99e3-02d8676acbd9",
-      "name": "\u7ec4\u88c5\u8bf7\u6c42"
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://yunwu.ai/v1beta/models/gemini-2.5-pro:generateContent",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
+        "operation": "update",
+        "tableId": "products",
+        "filters": {
+          "conditions": [
             {
-              "name": "Content-Type",
-              "value": "application/json"
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Webhook').item.json.body.product_id }}"
             }
           ]
         },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ $json.gemini_body }}",
-        "options": {
-          "response": {
-            "response": {}
-          }
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "PROCESSING"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "10"
+            }
+          ]
         }
       },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "id": "50405968-deee-4ad3-958c-a92ff0e24d30",
+      "name": "Update Progress 10%",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
       "position": [
-        -1872,
-        544
+        256,
+        496
       ],
-      "id": "b2c8adf4-9a34-4e04-b661-a0d681984115",
-      "name": "\u5206\u6790Agent-\u89c6\u9891\u7406\u89e3",
-      "retryOnFail": true,
       "credentials": {
-        "httpHeaderAuth": {
-          "id": "mMIH382GnJoMSu4L",
-          "name": "Header Auth account"
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
         }
       }
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://api.atomx.top/api/credits/deduct",
-        "sendBody": true,
-        "bodyParameters": {
+        "url": "https://api.atomx.top/workflow-credits/query",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "workflow_id",
+              "value": "={{ $node[\"Webhook\"].json.body.workflow_id || \"flow_product_dna\" }}"
+            },
+            {
+              "name": "workflow_name",
+              "value": "={{ $node[\"Webhook\"].json.body.workflow_name || \"产品分析\" }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "查询工作流积分",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        496
+      ],
+      "id": "09258ec8-c405-47d6-ae54-2184029e322f"
+    },
+    {
+      "parameters": {
+        "url": "https://api.atomx.top/api/balance/check",
+        "sendQuery": true,
+        "queryParameters": {
           "parameters": [
             {
               "name": "api_key",
               "value": "={{ $node[\"Webhook\"].json.body.api_key }}"
             },
             {
-              "name": "amount",
-              "value": "={{ $node[\"\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u5206\"].json.data.credit_cost }}"
-            },
-            {
-              "name": "reason",
-              "value": "={{ $node[\"\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u5206\"].json.data.workflow_name }}"
-            },
-            {
-              "name": "workflow_id",
-              "value": "={{ $node[\"\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u5206\"].json.data.workflow_id }}"
-            },
-            {
-              "name": "workflow_name",
-              "value": "={{ $node[\"\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u5206\"].json.data.workflow_name }}"
+              "name": "required",
+              "value": "={{ $node[\"查询工作流积分\"].json.data.credit_cost }}"
             }
           ]
         },
         "options": {}
       },
-      "id": "89756412-a873-4279-a290-13f18178ecb7",
-      "name": "\u6263\u9664\u79ef\u5206",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -1200,
-        448
-      ]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={\n  \"ok\": false,\n  \"error\": \"insufficient_credits\",\n  \"required\": {{ $node[\\\"\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u5206\\\"].json.data.credit_cost }}\n}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [
-        -2320,
-        352
+        704,
+        496
       ],
-      "id": "c1bfc01d-d027-47fa-ab97-1ff5cf247a24",
-      "name": "\u63d0\u9192-\u79ef\u5206\u4e0d\u8db3"
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={\n  \"ok\": false,\n  \"error\": \"api_key_invalid\"\n}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [
-        -2320,
-        160
-      ],
-      "id": "f292b391-181e-4b72-aa14-f55f65aece39",
-      "name": "\u63d0\u9192-key\u9519\u8bef"
+      "id": "0341fa31-436d-40ca-822e-db833a6add0f",
+      "name": "验证api-key",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -225,97 +198,247 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
       "position": [
-        -2544,
-        336
+        928,
+        480
       ],
-      "id": "10f76080-4767-41fe-8f2d-8e09bb094473",
+      "id": "ea4620be-d414-4a57-9830-46803e03e41f",
       "name": "Switch"
     },
     {
       "parameters": {
-        "url": "https://api.atomx.top/api/balance/check",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
+        "respondWith": "json",
+        "responseBody": "={\n  \"ok\": false,\n  \"error\": \"api_key_invalid\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1152,
+        304
+      ],
+      "id": "9fcd6627-f287-489f-a62d-d7471debae34",
+      "name": "提醒-key错误"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"ok\": false,\n  \"error\": \"insufficient_credits\",\n  \"required\": {{ $node[\\\"查询工作流积分\\\"].json.data.credit_cost }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1152,
+        496
+      ],
+      "id": "9923228e-e58d-40d4-85e1-0b3b733e848a",
+      "name": "提醒-积分不足"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "products",
+        "filters": {
+          "conditions": [
             {
-              "name": "api_key",
-              "value": "={{ $node[\"Webhook\"].json.body.api_key }}"
-            },
-            {
-              "name": "required",
-              "value": "={{ $node[\"\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u5206\"].json.data.credit_cost }}"
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Webhook').item.json.body.product_id }}"
             }
           ]
         },
-        "options": {}
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "PROCESSING"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "30"
+            }
+          ]
+        }
+      },
+      "id": "43f36596-fd8a-4e63-ade5-e311c035513a",
+      "name": "Update Progress 30%",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1152,
+        688
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Webhook').item.json.body.image_url }}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
       },
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "typeVersion": 4.3,
       "position": [
-        -2768,
-        352
+        1376,
+        688
       ],
-      "id": "d1eadef8-790a-4d71-8ddf-8635ce2aca5e",
-      "name": "\u9a8c\u8bc1api-key",
-      "alwaysOutputData": true,
+      "id": "ce21889f-10f7-4ce8-8240-4e98a4be68c4",
+      "name": "下载图片",
       "onError": "continueRegularOutput"
     },
     {
       "parameters": {
-        "jsCode": "// \u6e05\u6d17\u5356\u70b9\u6570\u636e\uff1a\u89e3\u6790 Gemini \u8fd4\u56de + \u8865\u56de Webhook \u7684 product_id/api_key/workflow_id\n// \u8f93\u51fa\u7ed9 Supabase\uff1aproduct_id + selling_points(jsonb) + selling_points_text(string)\n\nconst input = $input.first()?.json || {};\n\n// 1) \u89e3\u6790 Gemini \u54cd\u5e94\uff08\u517c\u5bb9 body / data \u662f\u5b57\u7b26\u4e32\u7684\u60c5\u51b5\uff09\nlet resp = input.body ?? input;\n\nif (typeof resp === \"string\") {\n  try { resp = JSON.parse(resp); } catch (e) {}\n}\nif (typeof input.data === \"string\") {\n  try { resp = JSON.parse(input.data); } catch (e) {}\n}\n\n// 2) \u63d0\u53d6 Gemini \u6587\u672c\nconst parts = resp?.candidates?.[0]?.content?.parts;\nif (!Array.isArray(parts) || parts.length === 0) {\n  throw new Error(\"Gemini \u8fd4\u56de\u7f3a\u5c11 candidates[0].content.parts\");\n}\n\nlet text = parts.map(p => p?.text || \"\").join(\"\\n\").trim();\nif (!text) throw new Error(\"Gemini parts.text \u4e3a\u7a7a\");\n\n// \u53bb\u6389 ```json ``` \u5305\u88f9\ntext = text.replace(/^```json\\s*/i, \"\").replace(/^```\\s*/i, \"\");\ntext = text.replace(/\\s*```$/i, \"\").trim();\n\n// 3) JSON.parse \u6210 product_dna\nlet product_dna;\ntry {\n  product_dna = JSON.parse(text);\n} catch (e) {\n  const head = text.slice(0, 300);\n  const tail = text.slice(-300);\n  throw new Error(`product_dna JSON.parse \u5931\u8d25\uff1a${e.message}\\n---HEAD---\\n${head}\\n---TAIL---\\n${tail}`);\n}\n\n// 4) \u2705 \u4ece Webhook \u8282\u70b9\u8865\u56de\u4e0a\u4e0b\u6587\u5b57\u6bb5\uff08\u4e0d\u8981\u6307\u671b\u4e2d\u95f4 HTTP \u8282\u70b9\u4e00\u76f4\u4fdd\u7559\uff09\nconst wh = $(\"Webhook\").first().json || {};\nconst whBody = (wh.body && typeof wh.body === \"object\") ? wh.body : wh;\n\nconst product_id = whBody.product_id ?? null;\nconst api_key = whBody.api_key ?? null;\nconst workflow_id = whBody.workflow_id ?? null;\n\n// 5) \u7ed9 Supabase \u7684\u5199\u56de\u5b57\u6bb5\nconst selling_points = product_dna; // jsonb\n\nfunction safe(s) {\n  return String(s ?? \"\").trim();\n}\n\nconst name = safe(product_dna?.product_name);\nconst visual = safe(product_dna?.visual_description);\n\nconst mp = product_dna?.marketing_profile || {};\nconst audience = safe(mp?.target_audience_vibe);\nconst env = safe(mp?.ideal_environment);\n\nconst points = Array.isArray(mp?.core_selling_points) ? mp.core_selling_points : [];\n\n// \u751f\u6210 Markdown \u62a5\u544a\nlet md = \"\";\nif (name) md += `# ${name}\\n\\n`;\nif (visual) md += `## \u89c6\u89c9\u63cf\u8ff0\\n${visual}\\n\\n`;\n\nif (audience) md += `**\u76ee\u6807\u53d7\u4f17**: ${audience}\\n`;\nif (env) md += `**\u9002\u7528\u573a\u666f**: ${env}\\n\\n`;\n\nif (points.length > 0) {\n  md += `## \u6838\u5fc3\u5356\u70b9\\n`;\n  points.forEach(p => {\n    const type = safe(p.type || '\u5356\u70b9');\n    const desc = safe(p.description);\n    const proof = safe(p.visual_proof);\n    \n    md += `- **${type}**: ${desc}\\n`;\n    if (proof) md += `  > *\u753b\u9762*: ${proof}\\n`;\n  });\n  md += `\\n`;\n}\n\n// 6) \u8f93\u51fa\nreturn {\n  json: {\n    id: product_id, \n    product_id,\n    api_key,\n    workflow_id,\n    \n    // \u6570\u636e\u8f7d\u8377\n    selling_points,\n    selling_points_text: md || visual, // \u4f18\u5148\u7528 Markdown\n    \n    // \u539f\u59cb\u54cd\u5e94\u5907\u4efd\n    gemini_raw: resp\n  }\n};"
+        "jsCode": "// n8n Code node: build Yunwu Gemini generateContent body for 产品营销DNA\n// ✅ 数据来源：优先直接从 Webhook 读取业务字段，避免被“下载图片”节点覆盖\n// ✅ 有图：优先读取上游“下载图片”的 binary -> inlineData(base64)\n// ✅ 无图 / 下载失败：纯文本也能分析（不 throw）\n\nfunction pickText(v) {\n  if (v == null) return '';\n  if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return String(v);\n\n  if (Array.isArray(v)) {\n    return v\n      .map(x => {\n        if (x == null) return '';\n        if (typeof x === 'string' || typeof x === 'number' || typeof x === 'boolean') return String(x);\n        if (typeof x === 'object') return String(x.text ?? x.value ?? x.name ?? x.url ?? x.link ?? '');\n        return '';\n      })\n      .filter(Boolean)\n      .join('\\n');\n  }\n\n  if (typeof v === 'object') return String(v.text ?? v.value ?? v.name ?? v.url ?? v.link ?? '');\n  return String(v);\n}\n\nfunction getField(obj, keyCandidates) {\n  for (const k of keyCandidates) {\n    if (obj && Object.prototype.hasOwnProperty.call(obj, k)) return pickText(obj[k]);\n  }\n  return '';\n}\n\nfunction pickBinaryKey(bin) {\n  if (!bin || typeof bin !== 'object') return '';\n  if (bin.image) return 'image';\n  if (bin.data) return 'data';\n  const keys = Object.keys(bin);\n  return keys.length ? keys[0] : '';\n}\n\nasync function getBase64FromBinary(itemIndex, binaryKey) {\n  const item = $input.all()[itemIndex];\n  const bin = item.binary?.[binaryKey];\n  if (!bin) return { base64: '', mimeType: '' };\n\n  const mimeType = bin.mimeType || 'image/jpeg';\n\n  if (bin.data && typeof bin.data === 'string' && bin.data.length > 50) {\n    return { base64: bin.data, mimeType };\n  }\n\n  if (!this?.helpers?.getBinaryDataBuffer) {\n    return { base64: '', mimeType };\n  }\n\n  const buf = await this.helpers.getBinaryDataBuffer(itemIndex, binaryKey);\n  return { base64: buf.toString('base64'), mimeType };\n}\n\nconst wh = $('Webhook').first().json || {};\nconst body = (wh.body && typeof wh.body === 'object') ? wh.body : wh;\n\nconst productId = getField(body, ['product_id', 'productId', 'id']);\nconst imageUrl = getField(body, ['image_url', 'imageUrl', 'url']);\nconst apiKey = getField(body, ['api_key', 'apiKey']);\nconst workflowId = getField(body, ['workflow_id', 'workflowId']);\nconst workflowName = getField(body, ['workflow_name', 'workflowName']);\n\nconst productName = getField(body, [\n  'product_name', 'productName', 'name',\n  '产品名称', '产品名', '商品名称', '商品名'\n]);\n\nconst sellingPts = getField(body, [\n  'selling_points', 'sellingPoints',\n  '产品卖点（选填）', '核心卖点', '卖点', '产品亮点'\n]);\n\nconst extraDesc = getField(body, [\n  'extra_desc', 'extraDesc', 'description',\n  '产品描述', '商品描述', '补充描述', '描述'\n]);\n\nconst PROMPT_TEXT = `# Role\n你是一位资深的**电商选品经理与营销策划专家**。擅长通过一张产品图片，反推其核心卖点、目标人群和视觉特征。\n\n# Task\n分析用户上传的产品图片（或描述），输出一份**“产品营销DNA报告”**。这份报告将用于指导后续的视频脚本生成。\n\n# Analysis Logic\n1) 视觉外观：颜色、材质、形状、质感（让视频生成AI知道“产品长什么样”）\n2) 核心卖点：功能性卖点 + 体验性卖点，并给出可视化证明方式\n3) 使用场景与人群：谁在用、在哪用\n\n# Output (STRICT JSON ONLY)\n{\n  \"product_name\": \"基于图片推断的产品名称\",\n  \"visual_description\": \"详细视觉描述（给Sora/视频提示词用）\",\n  \"marketing_profile\": {\n    \"target_audience_vibe\": \"目标用户形象\",\n    \"ideal_environment\": \"最佳场景\",\n    \"core_selling_points\": [\n      {\n        \"type\": \"Physical\",\n        \"description\": \"物理特性卖点\",\n        \"visual_proof\": \"如何用画面证明\"\n      },\n      {\n        \"type\": \"Emotional\",\n        \"description\": \"情感/体验卖点\",\n        \"visual_proof\": \"如何用画面证明\"\n      }\n    ]\n  }\n}`;\n\nconst userSupplement = [\n  `产品名称：${productName || '未提供'}`,\n  `产品卖点：${sellingPts || '未提供'}`,\n  `产品描述：${extraDesc || '未提供'}`\n].join('\\n');\n\nconst userText = `${PROMPT_TEXT}\\n\\n${userSupplement}\\n\\n只输出 JSON，不要 markdown，不要多余文本。`;\n\nconst items = $input.all();\nconst out = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i];\n  const bin = item.binary || {};\n  const binaryKey = pickBinaryKey(bin);\n\n  let imagePart = null;\n  if (binaryKey) {\n    try {\n      const { base64, mimeType } = await getBase64FromBinary.call(this, i, binaryKey);\n      if (base64) {\n        imagePart = {\n          inlineData: {\n            mimeType,\n            data: base64\n          }\n        };\n      }\n    } catch (e) {\n      // 下载失败 / binary 读取失败时，继续纯文本分析\n    }\n  }\n\n  const parts = [{ text: userText }];\n  if (imagePart) parts.push(imagePart);\n\n  const gemini_body = {\n    systemInstruction: {\n      parts: [{ text: 'Return STRICT JSON only. No markdown. No extra text.' }]\n    },\n    contents: [\n      {\n        role: 'user',\n        parts\n      }\n    ],\n    generationConfig: {\n      responseMimeType: 'application/json',\n      temperature: 0.2\n    }\n  };\n\n  out.push({\n    json: {\n      ...item.json,\n      product_id: productId || null,\n      id: productId || null,\n      image_url: imageUrl || null,\n      api_key: apiKey || null,\n      workflow_id: workflowId || null,\n      workflow_name: workflowName || null,\n      gemini_body,\n      _debug_webhook_fields: {\n        productId: productId || null,\n        imageUrl: imageUrl || null,\n        productName: productName || null,\n        sellingPts: sellingPts || null,\n        extraDesc: extraDesc || null,\n        apiKey: apiKey ? '***' : null,\n        workflowId: workflowId || null,\n        workflowName: workflowName || null\n      },\n      _debug_image_attached: !!imagePart\n    },\n    binary: item.binary\n  });\n}\n\nreturn out;"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -1648,
-        544
+        1600,
+        688
       ],
-      "id": "948beafe-9b5e-42c8-82ac-d5a75b809a07",
-      "name": "\u6e05\u6d17\u5356\u70b9\u6570\u636e"
+      "id": "e50f23d7-6676-47a8-b207-d9ebd4e1f611",
+      "name": "组装请求"
     },
     {
       "parameters": {
-        "httpMethod": "POST",
-        "path": "yNIjqrlSnTeWDFIx",
-        "responseMode": "responseNode",
-        "options": {}
-      },
-      "id": "e03f5c22-4f6d-4c49-b461-fd0a4b3cc955",
-      "name": "Webhook",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [
-        -3216,
-        352
-      ],
-      "webhookId": "4a61315d-782c-46be-b9a0-125ff3834f7b"
-    },
-    {
-      "parameters": {
-        "url": "https://api.atomx.top/workflow-credits/query",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
+        "operation": "update",
+        "tableId": "products",
+        "filters": {
+          "conditions": [
             {
-              "name": "workflow_id",
-              "value": "={{ $node[\"Webhook\"].json.body.workflow_id || \"flow_product_dna\" }}"
-            },
-            {
-              "name": "workflow_name",
-              "value": "={{ $node[\"Webhook\"].json.body.workflow_name || \"\u4ea7\u54c1\u5206\u6790\" }}"
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Webhook').item.json.body.product_id }}"
             }
           ]
         },
-        "options": {}
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "PROCESSING"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "50"
+            }
+          ]
+        }
       },
-      "name": "\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u5206",
+      "id": "cad28f47-820c-4c6c-bd23-4be7ccea6213",
+      "name": "Update Progress 50%",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1824,
+        688
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://yunwu.ai/v1beta/models/gemini-2.5-pro:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('组装请求').item.json.gemini_body }}",
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -2992,
-        352
+        2048,
+        688
       ],
-      "id": "e110ea96-e100-4e93-b6d7-2347a9c291ea"
+      "id": "a3fb085b-6e4e-4fe7-8220-e6dd6230b1b3",
+      "name": "分析Agent-视频理解",
+      "retryOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mMIH382GnJoMSu4L",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 清洗卖点数据：解析 Gemini 返回 + 补回 Webhook 的 product_id/api_key/workflow_id\n// 输出给 Supabase：product_id + selling_points(jsonb) + selling_points_text(string)\n\nconst input = $input.first()?.json || {};\n\nlet resp = input.body ?? input;\n\nif (typeof resp === 'string') {\n  try { resp = JSON.parse(resp); } catch (e) {}\n}\nif (typeof input.data === 'string') {\n  try { resp = JSON.parse(input.data); } catch (e) {}\n}\n\nconst parts = resp?.candidates?.[0]?.content?.parts;\nif (!Array.isArray(parts) || parts.length === 0) {\n  throw new Error('Gemini 返回缺少 candidates[0].content.parts');\n}\n\nlet text = parts.map(p => p?.text || '').join('\\n').trim();\nif (!text) throw new Error('Gemini parts.text 为空');\n\ntext = text.replace(/^```json\\s*/i, '').replace(/^```\\s*/i, '');\ntext = text.replace(/\\s*```$/i, '').trim();\n\nlet product_dna;\ntry {\n  product_dna = JSON.parse(text);\n} catch (e) {\n  const head = text.slice(0, 300);\n  const tail = text.slice(-300);\n  throw new Error(`product_dna JSON.parse 失败：${e.message}\\n---HEAD---\\n${head}\\n---TAIL---\\n${tail}`);\n}\n\nconst wh = $('Webhook').first().json || {};\nconst whBody = (wh.body && typeof wh.body === 'object') ? wh.body : wh;\n\nconst product_id = whBody.product_id ?? null;\nconst api_key = whBody.api_key ?? null;\nconst workflow_id = whBody.workflow_id ?? null;\n\nconst selling_points = product_dna;\n\nfunction safe(s) {\n  return String(s ?? '').trim();\n}\n\nconst name = safe(product_dna?.product_name);\nconst visual = safe(product_dna?.visual_description);\n\nconst mp = product_dna?.marketing_profile || {};\nconst audience = safe(mp?.target_audience_vibe);\nconst env = safe(mp?.ideal_environment);\n\nconst points = Array.isArray(mp?.core_selling_points) ? mp.core_selling_points : [];\nconst top = points.slice(0, 6).map((p, i) => {\n  const type = safe(p?.type) || 'Point';\n  const desc = safe(p?.description);\n  const proof = safe(p?.visual_proof);\n  return `- ${i + 1}.【${type}】${desc}${proof ? `（画面证明：${proof}）` : ''}`;\n}).join('\\n');\n\nconst selling_points_text = [\n  `产品名称：${name || '（未识别）'}`,\n  audience ? `目标人群：${audience}` : '',\n  env ? `核心场景：${env}` : '',\n  top ? `核心卖点：\\n${top}` : '核心卖点：（无）',\n  visual ? `视觉描述：${visual}` : ''\n].filter(Boolean).join('\\n');\n\nconst usage = resp?.usageMetadata ?? resp?.usage ?? {};\n\nreturn [{\n  json: {\n    ...input,\n    product_id,\n    id: product_id,\n    api_key,\n    workflow_id,\n    product_dna,\n    usage,\n    selling_points,\n    selling_points_text\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2272,
+        688
+      ],
+      "id": "481fcdc9-e6a6-4866-bfef-639ad7a32916",
+      "name": "清洗卖点数据"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "products",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Webhook').item.json.body.product_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "PROCESSING"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "80"
+            }
+          ]
+        }
+      },
+      "id": "f7d35252-29fe-4427-a2a8-50abf28b1722",
+      "name": "Update Progress 80%",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2496,
+        688
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
     },
     {
       "parameters": {
@@ -334,11 +457,11 @@
           "fieldValues": [
             {
               "fieldId": "selling_points",
-              "fieldValue": "={{ $json.selling_points }}"
+              "fieldValue": "={{ $('清洗卖点数据').item.json.candidates[0].content.parts[0].text }}"
             },
             {
               "fieldId": "selling_points_text",
-              "fieldValue": "={{ $json.selling_points_text }}"
+              "fieldValue": "={{ $('清洗卖点数据').item.json.selling_points_text }}"
             },
             {
               "fieldId": "status",
@@ -355,10 +478,10 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        -1424,
-        448
+        2720,
+        688
       ],
-      "id": "6bda8999-fe10-4b8b-b812-e9fcc23106f9",
+      "id": "1b213ff4-039e-4841-8de0-ca2df721601c",
       "credentials": {
         "supabaseApi": {
           "id": "51Y43Q3CDfFRAjNI",
@@ -368,220 +491,90 @@
     },
     {
       "parameters": {
-        "respondWith": "json",
-        "responseBody": "{\n  \"status\": \"started\",\n  \"message\": \"Analysis workflow started\"\n}",
+        "method": "POST",
+        "url": "https://api.atomx.top/api/credits/deduct",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "={{ $node[\"Webhook\"].json.body.api_key }}"
+            },
+            {
+              "name": "amount",
+              "value": "={{ $node[\"查询工作流积分\"].json.data.credit_cost }}"
+            },
+            {
+              "name": "reason",
+              "value": "={{ $node[\"查询工作流积分\"].json.data.workflow_name }}"
+            },
+            {
+              "name": "workflow_id",
+              "value": "={{ $node[\"查询工作流积分\"].json.data.workflow_id }}"
+            },
+            {
+              "name": "workflow_name",
+              "value": "={{ $node[\"查询工作流积分\"].json.data.workflow_name }}"
+            }
+          ]
+        },
         "options": {}
       },
-      "id": "respond-immediate-new",
-      "name": "Respond Immediate",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
+      "id": "b3905561-fd82-4f0b-8a19-a04d9a933953",
+      "name": "扣除积分",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
-        -2916,
-        552
+        2944,
+        688
       ]
     },
     {
       "parameters": {
-        "operation": "update",
-        "tableId": "products",
-        "filters": {
-          "conditions": [
-            {
-              "keyName": "id",
-              "condition": "eq",
-              "keyValue": "={{ $('Webhook').item.json.body.product_id }}"
-            }
-          ]
-        },
-        "fieldsUi": {
-          "fieldValues": [
-            {
-              "fieldId": "status",
-              "fieldValue": "PROCESSING"
-            },
-            {
-              "fieldId": "progress",
-              "fieldValue": 10
-            },
-            {
-              "fieldId": "selling_points",
-              "fieldValue": "={{ [] }}"
-            },
-            {
-              "fieldId": "selling_points_text",
-              "fieldValue": ""
-            }
-          ]
-        }
+        "httpMethod": "POST",
+        "path": "product_dna_web",
+        "responseMode": "responseNode",
+        "options": {}
       },
-      "id": "update-10",
-      "name": "Update Progress 10%",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
+      "id": "5f2525fc-44e4-4d56-a767-86c91b5fe721",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
       "position": [
-        -2916,
-        352
+        48,
+        576
       ],
-      "credentials": {
-        "supabaseApi": {
-          "id": "51Y43Q3CDfFRAjNI",
-          "name": "Supabase account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "update",
-        "tableId": "products",
-        "filters": {
-          "conditions": [
-            {
-              "keyName": "id",
-              "condition": "eq",
-              "keyValue": "={{ $('Webhook').item.json.body.product_id }}"
-            }
-          ]
-        },
-        "fieldsUi": {
-          "fieldValues": [
-            {
-              "fieldId": "status",
-              "fieldValue": "PROCESSING"
-            },
-            {
-              "fieldId": "progress",
-              "fieldValue": 30
-            }
-          ]
-        }
-      },
-      "id": "update-30",
-      "name": "Update Progress 30%",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [
-        -2520,
-        544
-      ],
-      "credentials": {
-        "supabaseApi": {
-          "id": "51Y43Q3CDfFRAjNI",
-          "name": "Supabase account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "update",
-        "tableId": "products",
-        "filters": {
-          "conditions": [
-            {
-              "keyName": "id",
-              "condition": "eq",
-              "keyValue": "={{ $('Webhook').item.json.body.product_id }}"
-            }
-          ]
-        },
-        "fieldsUi": {
-          "fieldValues": [
-            {
-              "fieldId": "status",
-              "fieldValue": "PROCESSING"
-            },
-            {
-              "fieldId": "progress",
-              "fieldValue": 50
-            }
-          ]
-        }
-      },
-      "id": "update-50",
-      "name": "Update Progress 50%",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [
-        -2072,
-        544
-      ],
-      "credentials": {
-        "supabaseApi": {
-          "id": "51Y43Q3CDfFRAjNI",
-          "name": "Supabase account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "update",
-        "tableId": "products",
-        "filters": {
-          "conditions": [
-            {
-              "keyName": "id",
-              "condition": "eq",
-              "keyValue": "={{ $('Webhook').item.json.body.product_id }}"
-            }
-          ]
-        },
-        "fieldsUi": {
-          "fieldValues": [
-            {
-              "fieldId": "status",
-              "fieldValue": "PROCESSING"
-            },
-            {
-              "fieldId": "progress",
-              "fieldValue": 80
-            }
-          ]
-        }
-      },
-      "id": "update-80",
-      "name": "Update Progress 80%",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [
-        -1624,
-        448
-      ],
-      "credentials": {
-        "supabaseApi": {
-          "id": "51Y43Q3CDfFRAjNI",
-          "name": "Supabase account"
-        }
-      }
+      "webhookId": "4a61315d-782c-46be-b9a0-125ff3834f7b"
     }
   ],
   "connections": {
-    "\u4e0b\u8f7d\u56fe\u7247": {
+    "Update Progress 10%": {
       "main": [
         [
           {
-            "node": "\u7ec4\u88c5\u8bf7\u6c42",
+            "node": "查询工作流积分",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "\u7ec4\u88c5\u8bf7\u6c42": {
+    "查询工作流积分": {
       "main": [
         [
           {
-            "node": "Update Progress 50%",
+            "node": "验证api-key",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "\u5206\u6790Agent-\u89c6\u9891\u7406\u89e3": {
+    "验证api-key": {
       "main": [
         [
           {
-            "node": "\u6e05\u6d17\u5356\u70b9\u6570\u636e",
+            "node": "Switch",
             "type": "main",
             "index": 0
           }
@@ -592,14 +585,14 @@
       "main": [
         [
           {
-            "node": "\u63d0\u9192-key\u9519\u8bef",
+            "node": "提醒-key错误",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "\u63d0\u9192-\u79ef\u5206\u4e0d\u8db3",
+            "node": "提醒-积分不足",
             "type": "main",
             "index": 0
           }
@@ -613,82 +606,33 @@
         ]
       ]
     },
-    "\u9a8c\u8bc1api-key": {
-      "main": [
-        [
-          {
-            "node": "Switch",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "\u6e05\u6d17\u5356\u70b9\u6570\u636e": {
-      "main": [
-        [
-          {
-            "node": "Update Progress 80%",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Webhook": {
-      "main": [
-        [
-          {
-            "node": "Respond Immediate",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Update Progress 10%",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u5206": {
-      "main": [
-        [
-          {
-            "node": "\u9a8c\u8bc1api-key",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Supabase Update": {
-      "main": [
-        [
-          {
-            "node": "\u6263\u9664\u79ef\u5206",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Update Progress 10%": {
-      "main": [
-        [
-          {
-            "node": "\u67e5\u8be2\u5de5\u4f5c\u6d41\u79ef\u5206",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Update Progress 30%": {
       "main": [
         [
           {
-            "node": "\u4e0b\u8f7d\u56fe\u7247",
+            "node": "下载图片",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "下载图片": {
+      "main": [
+        [
+          {
+            "node": "组装请求",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装请求": {
+      "main": [
+        [
+          {
+            "node": "Update Progress 50%",
             "type": "main",
             "index": 0
           }
@@ -699,7 +643,29 @@
       "main": [
         [
           {
-            "node": "\u5206\u6790Agent-\u89c6\u9891\u7406\u89e3",
+            "node": "分析Agent-视频理解",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "分析Agent-视频理解": {
+      "main": [
+        [
+          {
+            "node": "清洗卖点数据",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "清洗卖点数据": {
+      "main": [
+        [
+          {
+            "node": "Update Progress 80%",
             "type": "main",
             "index": 0
           }
@@ -716,92 +682,37 @@
           }
         ]
       ]
+    },
+    "Supabase Update": {
+      "main": [
+        [
+          {
+            "node": "扣除积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Update Progress 10%",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Respond Immediate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "pinData": {
-    "\u4e0b\u8f7d\u56fe\u7247": [
-      {
-        "ok": true,
-        "data": {
-          "sufficient": true,
-          "currentBalance": 28496,
-          "required": 10
-        }
-      }
-    ],
-    "\u5206\u6790Agent-\u89c6\u9891\u7406\u89e3": [
-      {
-        "candidates": [
-          {
-            "content": {
-              "role": "model",
-              "parts": [
-                {
-                  "text": "{\n  \"product_name\": \"Meoky\u827a\u672f\u5370\u82b1\u5927\u5bb9\u91cf\u8f66\u8f7d\u4fdd\u6e29\u676f\",\n  \"visual_description\": \"\u4e00\u6b3e\u5927\u5bb9\u91cf\u5e26\u63d0\u624b\u7684\u8f66\u8f7d\u4fdd\u6e29\u676f\u3002\u676f\u8eab\u6574\u4f53\u5448\u4e0a\u5bbd\u4e0b\u7a84\u7684\u5706\u9525\u5f62\uff0c\u4fbf\u4e8e\u653e\u5165\u6c7d\u8f66\u676f\u67b6\u3002\u676f\u8eab\u8868\u9762\u8986\u76d6\u7740\u4e00\u5c42\u5168\u5305\u88f9\u7684\u827a\u672f\u753b\u4f5c\uff0c\u98ce\u683c\u7c7b\u4f3c\u68b5\u9ad8\u540e\u5370\u8c61\u6d3e\uff0c\u7b14\u89e6\u611f\u5f3a\u70c8\u3002\u753b\u4f5c\u5185\u5bb9\u4e3a\u4e00\u5e45\u5c71\u6c34\u98ce\u666f\uff0c\u4e3b\u8272\u8c03\u4e3a\u6df1\u9083\u7684\u84dd\u8272\u3001\u5b81\u9759\u7684\u6d45\u84dd\u3001\u660e\u4eae\u7684\u6de1\u9ec4\u8272\u548c\u6c89\u7a33\u7684\u6a44\u6984\u7eff\u3002\u676f\u5b50\u7684\u63d0\u624b\u3001\u676f\u76d6\u548c\u5438\u7ba1\u53e3\u5747\u4e3a\u7edf\u4e00\u7684\u54d1\u5149\u6df1\u84dd\u8272\u3002\u63d0\u624b\u5bbd\u5927\uff0c\u5448D\u5f62\uff0c\u6613\u4e8e\u6293\u63e1\u3002\u676f\u76d6\u4e2d\u592e\u90e8\u5206\u4e3a\u534a\u900f\u660e\u6750\u8d28\uff0c\u53ef\u4ee5\u770b\u5230\u5185\u90e8\uff0c\u8fb9\u7f18\u4e3a\u6df1\u84dd\u8272\uff0c\u8bbe\u6709\u4e00\u4e2a\u5438\u7ba1\u5b54\u548c\u4e00\u4e2a\u76f4\u996e\u53e3\u3002\u5438\u7ba1\u4e3a\u4e0d\u9508\u94a2\u6750\u8d28\uff0c\u914d\u6709\u540c\u8272\u7cfb\u7684\u84dd\u8272\u7845\u80f6\u5438\u7ba1\u5934\u3002\u676f\u8eab\u4e0b\u90e8\u5370\u6709\u767d\u8272\u5c0f\u5de7\u7684'MEOKY'\u54c1\u724c\u6807\u5fd7\u548c\u4e00\u4e2a\u5154\u5b50\u56fe\u6807\u3002\",\n  \"marketing_profile\": {\n    \"target_audience_vibe\": \"\u8ffd\u6c42\u751f\u6d3b\u7f8e\u5b66\u4e0e\u4e2a\u4eba\u98ce\u683c\u7684\u5e74\u8f7b\u90fd\u5e02\u4eba\u7fa4\uff0820-40\u5c81\uff09\uff0c\u5c24\u5176\u662f\u5973\u6027\u3002\u4ed6\u4eec\u53ef\u80fd\u662f\u8bbe\u8ba1\u5e08\u3001\u827a\u672f\u7231\u597d\u8005\u3001\u767d\u9886\u6216\u7cbe\u81f4\u5988\u5988\uff0c\u4e0d\u4ec5\u770b\u91cd\u4ea7\u54c1\u7684\u5b9e\u7528\u6027\uff0c\u66f4\u5e0c\u671b\u65e5\u5e38\u7528\u54c1\u80fd\u6210\u4e3a\u5f70\u663e\u4e2a\u6027\u7684\u65f6\u5c1a\u914d\u9970\u3002\u4ed6\u4eec\u70ed\u7231\u751f\u6d3b\uff0c\u4eab\u53d7\u6709\u4eea\u5f0f\u611f\u7684\u77ac\u95f4\u3002\",\n    \"ideal_environment\": \"\u73b0\u4ee3\u7b80\u7ea6\u7684\u529e\u516c\u5ba4\u3001\u5145\u6ee1\u827a\u672f\u6c14\u606f\u7684\u5496\u5561\u9986\u3001\u81ea\u9a7e\u6e38\u7684\u8f66\u5185\u3001\u5468\u672b\u91ce\u9910\u7684\u8349\u576a\u4e0a\uff0c\u6216\u662f\u8212\u9002\u60ec\u610f\u7684\u5bb6\u5c45\u73af\u5883\u4e2d\u3002\",\n    \"core_selling_points\": [\n      {\n        \"type\": \"Physical\",\n        \"description\": \"\u5927\u5bb9\u91cf\u8bbe\u8ba1\uff0c\u6ee1\u8db3\u5168\u5929\u5019\u996e\u6c34\u9700\u6c42\uff1b\u4e0a\u5bbd\u4e0b\u7a84\u7684\u676f\u8eab\u5b8c\u7f8e\u9002\u914d\u8f66\u8f7d\u676f\u67b6\uff1b\u575a\u56fa\u7684\u5927\u63d0\u624b\u8bbe\u8ba1\uff0c\u65b9\u4fbf\u643a\u5e26\uff0c\u89e3\u653e\u53cc\u624b\u3002\",\n        \"visual_proof\": \"\u7279\u5199\u955c\u5934\u5c55\u793a\u676f\u5b50\u8f7b\u677e\u653e\u5165\u6c7d\u8f66\u676f\u67b6\u4e2d\u3002\u7528\u6237\u4e00\u624b\u63d0\u7740\u7535\u8111\u5305\uff0c\u53e6\u4e00\u624b\u8f7b\u677e\u52fe\u7740\u6c34\u676f\u63d0\u624b\u884c\u8d70\u3002\u5c06\u676f\u5b50\u4e0e\u666e\u901a500ml\u77ff\u6cc9\u6c34\u74f6\u5e76\u5217\uff0c\u5bf9\u6bd4\u5c55\u793a\u5176\u53ef\u89c2\u7684\u5bb9\u91cf\u3002\"\n      },\n      {\n        \"type\": \"Physical\",\n        \"description\": \"\u4f18\u8d28\u4e0d\u9508\u94a2\u5185\u80c6\uff0c\u957f\u6548\u4fdd\u6e29\u4fdd\u51b7\uff1b\u5bc6\u5c01\u676f\u76d6\u8bbe\u8ba1\uff0c\u63d0\u4f9b\u5438\u7ba1\u4e0e\u76f4\u996e\u4e24\u79cd\u6a21\u5f0f\uff0c\u9632\u6cfc\u6e85\u6d12\u6f0f\u3002\",\n        \"visual_proof\": \"\u5728\u708e\u70ed\u590f\u65e5\uff0c\u5411\u88c5\u6ee1\u51b0\u5757\u7684\u676f\u4e2d\u5012\u5165\u996e\u6599\uff0c\u5ef6\u65f6\u6444\u5f71\u5c55\u793a\u6570\u5c0f\u65f6\u540e\u51b0\u5757\u4f9d\u7136\u575a\u633a\u3002\u7279\u5199\u955c\u5934\u5c55\u793a\u676f\u76d6\u7ed3\u6784\uff0c\u6f14\u793a\u5438\u7ba1\u548c\u76f4\u996e\u53e3\u7684\u5207\u6362\u4f7f\u7528\uff0c\u5e76\u8f7b\u8f7b\u6643\u52a8\u676f\u8eab\u8bc1\u660e\u5176\u5bc6\u5c01\u6027\u3002\"\n      },\n      {\n        \"type\": \"Emotional\",\n        \"description\": \"\u5c06\u4e16\u754c\u540d\u753b\u98ce\u683c\u878d\u5165\u65e5\u5e38\uff0c\u5b83\u4e0d\u4ec5\u662f\u6c34\u676f\uff0c\u66f4\u662f\u201c\u53ef\u4ee5\u5e26\u8d70\u7684\u827a\u672f\u54c1\u201d\uff0c\u662f\u5f70\u663e\u4e2a\u4eba\u72ec\u7279\u5ba1\u7f8e\u54c1\u5473\u7684\u793e\u4ea4\u540d\u7247\u3002\",\n        \"visual_proof\": \"\u4e00\u4f4d\u7a7f\u7740\u65f6\u5c1a\u7684\u7528\u6237\u5728\u753b\u5eca\u6216\u7f8e\u672f\u9986\u4e2d\uff0c\u624b\u4e2d\u7684\u676f\u5b50\u4e0e\u73af\u5883\u878d\u4e3a\u4e00\u4f53\u3002\u5728\u5496\u5561\u9986\u805a\u4f1a\u65f6\uff0c\u670b\u53cb\u88ab\u676f\u5b50\u72ec\u7279\u7684\u8bbe\u8ba1\u5438\u5f15\u5e76\u8be2\u95ee\u3002\u7279\u5199\u6162\u955c\u5934\uff0c\u5149\u7ebf\u626b\u8fc7\u676f\u8eab\uff0c\u7ec6\u817b\u5730\u5c55\u793a\u753b\u4f5c\u7684\u7b14\u89e6\u548c\u8272\u5f69\u7ec6\u8282\u3002\"\n      },\n      {\n        \"type\": \"Emotional\",\n        \"description\": \"\u4e3a\u5e73\u51e1\u7684\u996e\u6c34\u65f6\u523b\u6ce8\u5165\u827a\u672f\u7684\u6109\u60a6\u611f\u548c\u4eea\u5f0f\u611f\uff0c\u65e0\u8bba\u662f\u6e05\u6668\u7684\u7b2c\u4e00\u676f\u5496\u5561\uff0c\u8fd8\u662f\u5348\u540e\u7684\u63d0\u795e\u51b0\u8336\uff0c\u90fd\u80fd\u5e26\u6765\u7247\u523b\u7684\u7075\u611f\u4e0e\u6170\u85c9\u3002\",\n        \"visual_proof\": \"\u6e05\u6668\u9633\u5149\u4e0b\uff0c\u7528\u6237\u5c06\u70ed\u6c14\u817e\u817e\u7684\u5496\u5561\u5012\u5165\u676f\u4e2d\uff0c\u5f00\u542f\u7f8e\u597d\u4e00\u5929\u3002\u5de5\u4f5c\u75b2\u60eb\u65f6\uff0c\u4ece\u676f\u4e2d\u559d\u4e00\u53e3\u51b0\u996e\uff0c\u8138\u4e0a\u9732\u51fa\u653e\u677e\u60ec\u610f\u7684\u8868\u60c5\u3002\u7528\u6237\u5728\u9633\u53f0\u9605\u8bfb\uff0c\u624b\u8fb9\u653e\u7740\u8fd9\u6b3e\u827a\u672f\u6c34\u676f\uff0c\u6784\u6210\u4e00\u5e45\u5b81\u9759\u7f8e\u597d\u7684\u753b\u9762\u3002\"\n      }\n    ]\n  }\n}"
-                }
-              ]
-            },
-            "finishReason": "STOP",
-            "index": 0,
-            "safetyRatings": null
-          }
-        ],
-        "promptFeedback": {
-          "safetyRatings": null
-        },
-        "usageMetadata": {
-          "promptTokenCount": 2169,
-          "candidatesTokenCount": 862,
-          "totalTokenCount": 4653,
-          "thoughtsTokenCount": 1622,
-          "promptTokensDetails": [
-            {
-              "modality": "IMAGE",
-              "tokenCount": 1806
-            },
-            {
-              "modality": "TEXT",
-              "tokenCount": 363
-            }
-          ]
-        },
-        "modelVersion": "gemini-2.5-pro",
-        "responseId": "D6urabSqHNXElOoPvufAoQU"
-      }
-    ],
-    "Webhook": [
-      {
-        "headers": {
-          "host": "hooks.atomx.top",
-          "x-real-ip": "119.249.30.190",
-          "x-forwarded-for": "119.249.30.190",
-          "x-forwarded-proto": "https",
-          "connection": "close",
-          "content-length": "302",
-          "content-type": "application/json",
-          "accept": "*/*",
-          "accept-language": "*",
-          "sec-fetch-mode": "cors",
-          "user-agent": "node",
-          "accept-encoding": "br, gzip, deflate"
-        },
-        "params": {},
-        "query": {},
-        "body": {
-          "name": "\u4fdd\u6e29\u676f",
-          "description": "",
-          "product_id": "cmmftxno100005rq225zgs6yc",
-          "api_key": "sk_S-XJvpVKGGwnac1AlEFs3avCWZpqdOGaMMW27Y8iSPY",
-          "workflow_id": "flow_product_dna",
-          "image_url": "https://supabase-api.atomx.top/storage/v1/object/public/uploads/1772858090137-170108065-image1769085457935pmcyok2.png"
-        },
-        "webhookUrl": "http://localhost:5678/webhook/product_dna_web",
-        "executionMode": "production"
-      }
-    ]
-  },
+  "pinData": {},
   "meta": {
-    "templateCredsSetupCompleted": true,
     "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
   }
 }

@@ -2,19 +2,20 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { Home, Package, FileText, Repeat, Sparkles, Video, Settings, Sun, Moon, Languages, Clapperboard, Key, Users, History, ChevronUp, Activity, Zap, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, LayoutGrid, User, LogOut } from 'lucide-react';
+import { Home, Package, FileText, Repeat, Sparkles, Video, Settings, Sun, Moon, Languages, Clapperboard, Key, Users, History, ChevronUp, Activity, Zap, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, LayoutGrid, User, LogOut, Film } from 'lucide-react';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useEffect, useState } from 'react';
-import { AtomXLogo } from './AtomXLogo';
+import { TenantLogo } from './TenantLogo';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
-
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'react-hot-toast';
 import { onCreditsRefresh } from '@/lib/creditsBus';
+import { useTenant } from '@/hooks/useTenant';
+import { TenantIcon } from './TenantLogo';
 
 function SolidZapIcon({ size = 14, className }: { size?: number; className?: string }) {
   return (
@@ -35,6 +36,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
   const { language, setLanguage, t } = useLanguage();
+  const { tenant, basePath } = useTenant();
   const [mounted, setMounted] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(true);
@@ -52,29 +54,19 @@ export function Sidebar() {
     if (storedCollapsed) {
       setIsCollapsed(storedCollapsed === 'true');
     }
-    fetchCredits();
-
-    const { data } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_OUT') {
-        setCredits(null);
-        return;
-      }
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-        fetchCredits();
-      }
-    });
+    void fetchCredits();
 
     const off = onCreditsRefresh(() => {
-      fetchCredits();
+      void fetchCredits(true);
     });
 
     return () => {
-      data.subscription.unsubscribe();
       off();
     };
   }, []);
 
-  const fetchCredits = async () => {
+  const fetchCredits = async (force = false) => {
+    if (loadingCredits && !force) return;
     try {
       setLoadingCredits(true);
       const { data: { session } } = await supabase.auth.getSession();
@@ -118,7 +110,8 @@ export function Sidebar() {
       if (error) throw error;
       
       toast.success('Signed out successfully');
-      router.push('/login');
+      const tenantLoginPath = `${basePath || ''}/login`;
+      router.push(tenantLoginPath);
       router.refresh();
     } catch (error) {
       console.error('Error signing out:', error);
@@ -126,23 +119,25 @@ export function Sidebar() {
     }
   };
 
+  // 根据租户配置生成导航菜单
   const navigation = [
-    { name: t.sidebar.home, href: '/dashboard', icon: Home },
-    { name: t.sidebar.scripts, href: '/scripts', icon: Zap },
-    { name: t.sidebar.storyboardGen, href: '/storyboard-gen', icon: LayoutGrid },
-    { name: t.storyboard.title, href: '/storyboard', icon: Clapperboard },
-    { name: t.sidebar.digitalHuman, href: '/digital-human', icon: User },
-    { name: t.sidebar.replication, href: '/replication', icon: Video },
-    { 
+    tenant.features.dashboard && { name: t.sidebar.home, href: `${basePath}/dashboard`, icon: Home },
+    tenant.features.scripts && { name: t.sidebar.scripts, href: `${basePath}/scripts`, icon: Zap },
+    tenant.features.storyboardGen && { name: t.sidebar.storyboardGen, href: `${basePath}/storyboard-gen`, icon: LayoutGrid },
+    tenant.features.storyboard && { name: t.storyboard.title, href: `${basePath}/storyboard`, icon: Clapperboard },
+    tenant.features.digitalHuman && { name: t.sidebar.digitalHuman, href: `${basePath}/digital-human`, icon: User },
+    tenant.features.replication && { name: t.sidebar.replication, href: `${basePath}/replication`, icon: Video },
+    tenant.features.replicationShots && { name: t.sidebar.replicationShots, href: `${basePath}/replication-shots`, icon: Film },
+    tenant.features.products && { 
       name: t.sidebar.assets, 
       href: '#', 
       icon: Package,
       children: [
-        { name: t.products.title, href: '/products', icon: Package },
-        { name: t.characters.title, href: '/characters', icon: Users },
-      ]
+        tenant.features.products && { name: t.products.title, href: `${basePath}/products`, icon: Package },
+        tenant.features.characters && { name: t.characters.title, href: `${basePath}/characters`, icon: Users },
+      ].filter(Boolean)
     },
-  ];
+  ].filter(Boolean);
 
   if (!mounted) return <div className="w-64 bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800" />;
 
@@ -168,7 +163,7 @@ export function Sidebar() {
       {/* Header with Logo */}
       <div className={cn("flex items-center h-20 overflow-hidden transition-all duration-300 px-6", isCollapsed ? "justify-center px-0" : "justify-start")}>
         <div className={cn("transition-transform duration-300", isCollapsed && "scale-75")}>
-          <AtomXLogo size={isCollapsed ? 60 : 120} isCollapsed={isCollapsed} />
+          <TenantLogo showName={!isCollapsed} size={isCollapsed ? 'sm' : 'md'} />
         </div>
       </div>
       

@@ -1,0 +1,355 @@
+{
+  "updatedAt": "2026-03-12T04:42:36.338Z",
+  "createdAt": "2026-03-06T10:26:04.966Z",
+  "id": "eFM4rgmZI8bhSZut",
+  "name": "Content Factory Digital Human Callback",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "digital-human-callback",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-callback",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "digital-human-callback-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const incoming = $json || {};\n\nfunction toStringSafe(val) {\n  if (val === undefined || val === null) return '';\n  return String(val).trim();\n}\n\nfunction ensureObject(val) {\n  if (val && typeof val === 'object' && !Array.isArray(val)) return { ...val };\n  return {};\n}\n\nfunction parseJsonSafe(val, fallback = {}) {\n  if (val === undefined || val === null || val === '') return fallback;\n  if (typeof val === 'object') return val;\n  if (typeof val === 'string') {\n    try {\n      return JSON.parse(val);\n    } catch (e) {\n      return fallback;\n    }\n  }\n  return fallback;\n}\n\nconst body = ensureObject(incoming.body);\n\n// 你的业务任务ID：从 query 里拿\nconst myTaskId = toStringSafe(\n  incoming.query?.task_id ??\n  incoming.query?.taskId ??\n  incoming.query?.taskID\n);\n\nif (!myTaskId) {\n  throw new Error('回调地址中缺少我的任务ID：query.task_id');\n}\n\n// RunningHub 回调里的 taskId\nconst runninghubTaskId = toStringSafe(\n  body.taskId ?? body.taskID ?? body.task_id\n);\n\n// 解析 eventData（注意它现在是 JSON 字符串）\nconst eventData = parseJsonSafe(body.eventData, {});\n\n// 兼容 data 数组\nconst results = Array.isArray(eventData.data) ? eventData.data : [];\n\n// 可选：从结果里拆音频 / 视频\nconst audioFiles = results.filter(item => toStringSafe(item.fileType).toLowerCase() === 'mp3');\nconst videoFiles = results.filter(item => toStringSafe(item.fileType).toLowerCase() === 'mp4');\n\n// 统一状态\nlet status = 'unknown';\nif (toStringSafe(body.event) === 'TASK_END') {\n  status = Number(eventData.code) === 0 ? 'success' : 'failed';\n}\n\nconst payload = {\n  taskId: myTaskId,                 // 你的业务任务ID（数据库用这个）\n  runninghubTaskId,                 // RunningHub任务ID\n  event: toStringSafe(body.event),  // TASK_END\n  status,                           // success / failed / unknown\n  errorCode: toStringSafe(eventData.code),\n  errorMessage: toStringSafe(eventData.msg),\n  results,\n  audioFiles,\n  videoFiles\n};\n\nreturn [{ json: payload }];"
+      },
+      "id": "config-vars",
+      "name": "Merge TaskId",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://www.atomx.top/api/webhook/digital-human",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "update-web-app",
+      "name": "Update Web App",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"status\": \"received\"}",
+        "options": {}
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        608,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Merge TaskId",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge TaskId": {
+      "main": [
+        [
+          {
+            "node": "Update Web App",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Web App": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {
+    "RH回调入口": [
+      {
+        "json": {
+          "headers": {
+            "host": "hooks.flowonn.com",
+            "x-real-ip": "183.60.220.210",
+            "x-forwarded-for": "183.60.220.210",
+            "x-forwarded-proto": "https",
+            "connection": "close",
+            "content-length": "328",
+            "accept": "text/plain, application/json, application/*+json, */*",
+            "content-type": "application/json",
+            "user-agent": "Java/21.0.2"
+          },
+          "params": {},
+          "query": {
+            "r": "recvbtpAvSC8zI",
+            "a": "YU9abaRv9ach5rswCTQcbW7hn5b",
+            "t": "tblP6p5qdxiBYYNs",
+            "i": "cli_a909f6b119781bb6",
+            "s": "xaGRnSpgFUmPNVxGuuBRseiBoTHe6Qrq"
+          },
+          "body": {
+            "eventData": "{\"code\":0,\"msg\":\"success\",\"data\":[{\"fileUrl\":\"https://rh-images.xiaoyaoyou.com/4e951681c6707fd27413fa604e1511b9/output/INF_00002_p80-audio_jpxkq_1771321890.mp4\",\"fileType\":\"mp4\",\"taskCostTime\":1272,\"nodeId\":\"487\",\"consumeCoins\":\"509\"}]}",
+            "event": "TASK_END",
+            "taskId": "2023691492572401666"
+          },
+          "webhookUrl": "http://localhost:5678/webhook/rh_task_end",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ],
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "hooks.atomx.top",
+            "x-real-ip": "183.60.220.206",
+            "x-forwarded-for": "183.60.220.206",
+            "x-forwarded-proto": "https",
+            "connection": "close",
+            "content-length": "545",
+            "accept": "text/plain, application/json, application/*+json, */*",
+            "content-type": "application/json",
+            "user-agent": "Java/21.0.2"
+          },
+          "params": {},
+          "query": {
+            "task_id": "cmmmxqig10000dt5rqetcqyqi"
+          },
+          "body": {
+            "eventData": "{\"code\":0,\"msg\":\"success\",\"data\":[{\"fileUrl\":\"https://rh-images.xiaoyaoyou.com/4e951681c6707fd27413fa604e1511b9/output/audio/ComfyUI_00001_htfkh_1773287822.mp3\",\"fileType\":\"mp3\",\"taskCostTime\":594,\"nodeId\":\"697\",\"consumeCoins\":\"119\"},{\"fileUrl\":\"https://rh-images.xiaoyaoyou.com/4e951681c6707fd27413fa604e1511b9/output/INF_00001_p87-audio_tihti_1773288330.mp4\",\"fileType\":\"mp4\",\"taskCostTime\":594,\"nodeId\":\"342\",\"consumeCoins\":\"119\"}]}",
+            "event": "TASK_END",
+            "taskId": "2031942183770267650"
+          },
+          "webhookUrl": "http://localhost:5678/webhook/digital-human-callback",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "versionId": "cf26f175-cf78-4427-be77-def414258d4b",
+  "activeVersionId": "cf26f175-cf78-4427-be77-def414258d4b",
+  "versionCounter": 115,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-03-06T10:26:04.966Z",
+      "createdAt": "2026-03-06T10:26:04.966Z",
+      "role": "workflow:owner",
+      "workflowId": "eFM4rgmZI8bhSZut",
+      "projectId": "tMHfv8jC54QugIS3",
+      "project": {
+        "updatedAt": "2025-12-05T18:24:07.030Z",
+        "createdAt": "2025-12-05T18:00:52.525Z",
+        "id": "tMHfv8jC54QugIS3",
+        "name": "fan liu <591905097@qq.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "projectRelations": [
+          {
+            "updatedAt": "2025-12-05T18:00:52.525Z",
+            "createdAt": "2025-12-05T18:00:52.525Z",
+            "userId": "e1a90281-8c6a-4ec7-a985-3a344ba88b66",
+            "projectId": "tMHfv8jC54QugIS3",
+            "user": {
+              "updatedAt": "2026-03-12T04:36:50.363Z",
+              "createdAt": "2025-12-05T18:00:51.894Z",
+              "id": "e1a90281-8c6a-4ec7-a985-3a344ba88b66",
+              "email": "591905097@qq.com",
+              "firstName": "fan",
+              "lastName": "liu",
+              "personalizationAnswers": {
+                "version": "v4",
+                "personalization_survey_submitted_at": "2025-12-05T18:24:47.635Z",
+                "personalization_survey_n8n_version": "1.122.5",
+                "companySize": "<20",
+                "companyType": "saas",
+                "role": "business-owner",
+                "reportedSource": "youtube"
+              },
+              "settings": {
+                "userActivated": true,
+                "firstSuccessfulWorkflowId": "e9Q0InRVbw3mcRzk",
+                "userActivatedAt": 1773290207581,
+                "easyAIWorkflowOnboarded": true,
+                "npsSurvey": {
+                  "responded": true,
+                  "lastShownAt": 1772350096923
+                }
+              },
+              "disabled": false,
+              "mfaEnabled": false,
+              "lastActiveAt": "2026-03-12",
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-03-12T04:42:36.339Z",
+    "createdAt": "2026-03-12T04:42:36.339Z",
+    "versionId": "cf26f175-cf78-4427-be77-def414258d4b",
+    "workflowId": "eFM4rgmZI8bhSZut",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "digital-human-callback",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "webhook-callback",
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          0,
+          0
+        ],
+        "webhookId": "digital-human-callback-webhook"
+      },
+      {
+        "parameters": {
+          "jsCode": "const incoming = $json || {};\n\nfunction toStringSafe(val) {\n  if (val === undefined || val === null) return '';\n  return String(val).trim();\n}\n\nfunction ensureObject(val) {\n  if (val && typeof val === 'object' && !Array.isArray(val)) return { ...val };\n  return {};\n}\n\nfunction parseJsonSafe(val, fallback = {}) {\n  if (val === undefined || val === null || val === '') return fallback;\n  if (typeof val === 'object') return val;\n  if (typeof val === 'string') {\n    try {\n      return JSON.parse(val);\n    } catch (e) {\n      return fallback;\n    }\n  }\n  return fallback;\n}\n\nconst body = ensureObject(incoming.body);\n\n// 你的业务任务ID：从 query 里拿\nconst myTaskId = toStringSafe(\n  incoming.query?.task_id ??\n  incoming.query?.taskId ??\n  incoming.query?.taskID\n);\n\nif (!myTaskId) {\n  throw new Error('回调地址中缺少我的任务ID：query.task_id');\n}\n\n// RunningHub 回调里的 taskId\nconst runninghubTaskId = toStringSafe(\n  body.taskId ?? body.taskID ?? body.task_id\n);\n\n// 解析 eventData（注意它现在是 JSON 字符串）\nconst eventData = parseJsonSafe(body.eventData, {});\n\n// 兼容 data 数组\nconst results = Array.isArray(eventData.data) ? eventData.data : [];\n\n// 可选：从结果里拆音频 / 视频\nconst audioFiles = results.filter(item => toStringSafe(item.fileType).toLowerCase() === 'mp3');\nconst videoFiles = results.filter(item => toStringSafe(item.fileType).toLowerCase() === 'mp4');\n\n// 统一状态\nlet status = 'unknown';\nif (toStringSafe(body.event) === 'TASK_END') {\n  status = Number(eventData.code) === 0 ? 'success' : 'failed';\n}\n\nconst payload = {\n  taskId: myTaskId,                 // 你的业务任务ID（数据库用这个）\n  runninghubTaskId,                 // RunningHub任务ID\n  event: toStringSafe(body.event),  // TASK_END\n  status,                           // success / failed / unknown\n  errorCode: toStringSafe(eventData.code),\n  errorMessage: toStringSafe(eventData.msg),\n  results,\n  audioFiles,\n  videoFiles\n};\n\nreturn [{ json: payload }];"
+        },
+        "id": "config-vars",
+        "name": "Merge TaskId",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          208,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ `https://www.atomx.top/api/webhook/digital-human?task_id=${encodeURIComponent($json.taskId || $json.task_id || '')}` }}",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json }}",
+          "options": {}
+        },
+        "id": "update-web-app",
+        "name": "Update Web App",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          400,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "{\"status\": \"received\"}",
+          "options": {}
+        },
+        "id": "respond-webhook",
+        "name": "Respond to Webhook",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [
+          608,
+          0
+        ]
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "Merge TaskId",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge TaskId": {
+        "main": [
+          [
+            {
+              "node": "Update Web App",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Update Web App": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "fan liu",
+    "name": null,
+    "description": null
+  }
+}

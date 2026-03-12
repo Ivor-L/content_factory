@@ -2,11 +2,11 @@
 
 import { useLanguage } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
-import { Download, Share2, ThumbsUp, ThumbsDown, Check, ChevronDown, Calendar, Clock, Languages, Coins, Monitor, Maximize } from 'lucide-react';
+import { Download, Share2, Check, ChevronDown, Calendar, Clock, Languages, Monitor, Maximize, Copy, AlertTriangle } from 'lucide-react';
 import { deleteVideos } from "@/app/actions/video";
 import { useRouter } from "next/navigation";
 import { toast } from "react-hot-toast";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 interface VideoDetailsModalProps {
   item: any;
@@ -18,11 +18,53 @@ export function VideoDetailsModal({ item, onClose }: VideoDetailsModalProps) {
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState(false);
   
-  const resultData = typeof item.result === 'string' ? JSON.parse(item.result || '{}') : item.result;
+  const resultData = useMemo(() => {
+    if (!item?.result) return null;
+    if (typeof item.result === 'string') {
+      try {
+        return JSON.parse(item.result || '{}');
+      } catch (error) {
+        console.warn('Failed to parse replication result JSON', error);
+        return null;
+      }
+    }
+    if (typeof item.result === 'object') {
+      return item.result;
+    }
+    return null;
+  }, [item?.result]);
   const product = item.product || {};
   const script = item.script || {};
 
   const isDigitalHuman = item.type === 'LIP_SYNC' || item.type === 'VOICE_CLONE';
+  const promptResult = useMemo(() => {
+    const raw = resultData?.finalResult ?? resultData?.result ?? null;
+    if (!raw) return null;
+    if (typeof raw === 'string') {
+      try {
+        return JSON.parse(raw);
+      } catch (error) {
+        console.warn('Failed to parse prompt payload JSON', error);
+        return { generatedScript: raw };
+      }
+    }
+    return raw;
+  }, [resultData]);
+  const hasPromptResult = Boolean(
+    promptResult &&
+      (promptResult.generatedScript || promptResult.videoPrompt || promptResult.shots_count)
+  );
+  const stage = (resultData?.lastStage || resultData?.stage || '').toString().toLowerCase();
+  const resultStatus = (resultData?.status || '').toString().toLowerCase();
+  const promptReady =
+    hasPromptResult ||
+    (!!stage && stage.includes('prompt')) ||
+    (!!resultStatus && resultStatus.includes('prompt'));
+  const normalizedStatus = (item.status || '').toLowerCase();
+  const isCompleted = normalizedStatus === 'completed' || normalizedStatus === 'success';
+  const isFailed = normalizedStatus === 'failed' || normalizedStatus === 'error';
+  const statusLabel = isCompleted ? t.replication.completed : isFailed ? t.common.error : t.replication.processing;
+  const StatusIcon = isCompleted ? Check : isFailed ? AlertTriangle : Clock;
 
   // Mock data filling if missing
   const model = resultData?.model || (isDigitalHuman ? "Digital Human" : "Veo3.1 Fast");
@@ -43,6 +85,7 @@ export function VideoDetailsModal({ item, onClose }: VideoDetailsModalProps) {
   const promptText = isDigitalHuman
     ? (item.type === 'LIP_SYNC' ? "Lip Sync from audio" : "Voice Clone from text")
     : (resultData?.prompt || "A confident young man, appearing to be in his early 20s, with short brown hair and striking green eyes, wearing a dark casual shirt. Context: A modern, clean kitchen with white countertops and light-colored walls, suggesting a home setting.");
+  const downloadUrl = resultData?.videoUrl || item.resultUrl || "";
 
   const handleDelete = async () => {
     if (!confirm(t.common.confirmDelete)) return;
@@ -62,6 +105,42 @@ export function VideoDetailsModal({ item, onClose }: VideoDetailsModalProps) {
       toast.error(t.common.error);
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleDownload = () => {
+    if (!downloadUrl) {
+      toast.error("Video is still processing. Try again later.");
+      return;
+    }
+
+    try {
+      const anchor = document.createElement('a');
+      anchor.href = downloadUrl;
+      const urlWithoutQuery = downloadUrl.split('?')[0];
+      const extension = urlWithoutQuery.includes('.') ? urlWithoutQuery.split('.').pop() : 'mp4';
+      anchor.setAttribute('download', `${item.type || 'video'}-${item.id}.${extension}`);
+      anchor.setAttribute('target', '_blank');
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+    } catch (error) {
+      console.error('Failed to download video', error);
+      toast.error(t.common.error);
+    }
+  };
+
+  const handleCopy = async (text?: string) => {
+    if (!text) return;
+    try {
+      if (typeof navigator === 'undefined' || !navigator.clipboard) {
+        throw new Error('Clipboard API unavailable');
+      }
+      await navigator.clipboard.writeText(text);
+      toast.success(t.common.copied || "Copied!");
+    } catch (error) {
+      console.error('Failed to copy text to clipboard', error);
+      toast.error(t.common.error);
     }
   };
 
@@ -94,8 +173,17 @@ export function VideoDetailsModal({ item, onClose }: VideoDetailsModalProps) {
             <div className="bg-gray-50 dark:bg-gray-800 rounded-2xl p-6 border border-gray-100 dark:border-gray-700">
               <div className="flex justify-between items-center mb-6">
                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">{t.replication.projectInfo}</h3>
-                <span className="bg-black dark:bg-white text-white dark:text-black px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
-                  <Check size={12} strokeWidth={3} /> {t.replication.completed}
+                <span
+                  className={cn(
+                    "px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1",
+                    isCompleted
+                      ? "bg-black text-white dark:bg-white dark:text-black"
+                      : isFailed
+                        ? "bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-200"
+                        : "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200"
+                  )}
+                >
+                  <StatusIcon size={12} strokeWidth={3} /> {statusLabel}
                 </span>
               </div>
               
@@ -143,6 +231,12 @@ export function VideoDetailsModal({ item, onClose }: VideoDetailsModalProps) {
                 {isDigitalHuman ? "Task Parameters" : t.replication.aiPrompts}
               </h3>
               
+              {!isDigitalHuman && promptReady && (
+                <div className="mb-4 px-3 py-2 rounded-lg bg-amber-50 text-amber-900 border border-amber-100 text-xs font-semibold">
+                  {t.replication.promptReady}
+                </div>
+              )}
+              
               <div className="space-y-6">
                 {isDigitalHuman ? (
                   <>
@@ -182,6 +276,48 @@ export function VideoDetailsModal({ item, onClose }: VideoDetailsModalProps) {
                       </div>
                     )}
                   </>
+                ) : hasPromptResult ? (
+                  <>
+                    {promptResult?.generatedScript && (
+                      <div>
+                        <div className="flex items-center justify-between gap-2 text-gray-400 text-[10px] uppercase font-bold mb-2">
+                          <span className="flex items-center gap-2">
+                            <Monitor size={12} /> {t.replication.generatedScriptLabel}
+                          </span>
+                          <button
+                            type="button"
+                            className="flex items-center gap-1 text-xs font-semibold text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white"
+                            onClick={() => handleCopy(promptResult.generatedScript)}
+                          >
+                            <Copy size={12} /> {t.common.copy}
+                          </button>
+                        </div>
+                        <pre className="bg-white dark:bg-gray-900 p-4 rounded-xl border border-gray-100 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed max-h-80 overflow-y-auto custom-scrollbar">{promptResult.generatedScript}</pre>
+                      </div>
+                    )}
+
+                    {promptResult?.videoPrompt && (
+                      <div>
+                        <div className="flex items-center justify-between gap-2 text-gray-400 text-[10px] uppercase font-bold mb-2">
+                          <span className="flex items-center gap-2">
+                            <Share2 size={12} /> {t.replication.videoPromptLabel}
+                          </span>
+                          <button
+                            type="button"
+                            className="flex items-center gap-1 text-xs font-semibold text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white"
+                            onClick={() => handleCopy(promptResult.videoPrompt)}
+                          >
+                            <Copy size={12} /> {t.common.copy}
+                          </button>
+                        </div>
+                        <pre className="bg-white dark:bg-gray-900 p-4 rounded-xl border border-gray-100 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed max-h-80 overflow-y-auto custom-scrollbar">{promptResult.videoPrompt}</pre>
+                      </div>
+                    )}
+
+                    {!promptResult?.generatedScript && !promptResult?.videoPrompt && (
+                      <p className="text-sm text-gray-500 dark:text-gray-400">{t.replication.promptUnavailable}</p>
+                    )}
+                  </>
                 ) : (
                   <>
                     <div>
@@ -202,6 +338,12 @@ export function VideoDetailsModal({ item, onClose }: VideoDetailsModalProps) {
                         {promptText}
                       </div>
                     </div>
+
+                    {promptReady && (
+                      <div className="text-xs font-semibold text-amber-600 dark:text-amber-300">
+                        {t.replication.promptUnavailable}
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -235,9 +377,12 @@ export function VideoDetailsModal({ item, onClose }: VideoDetailsModalProps) {
           </>
         )}
 
-        <button className="flex items-center gap-2 px-6 py-2 bg-black dark:bg-white text-white dark:text-black hover:bg-gray-800 dark:hover:bg-gray-200 rounded-lg text-sm font-bold transition-colors shadow-lg shadow-black/20">
+        <button
+          onClick={handleDownload}
+          disabled={!downloadUrl}
+          className="flex items-center gap-2 px-6 py-2 bg-black dark:bg-white text-white dark:text-black hover:bg-gray-800 dark:hover:bg-gray-200 rounded-lg text-sm font-bold transition-colors shadow-lg shadow-black/20 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
             <Download size={16} /> {t.replication.download} 
-            <span className="bg-white/20 px-1.5 py-0.5 rounded text-[10px] ml-1">Free</span>
         </button>
       </div>
     </div>

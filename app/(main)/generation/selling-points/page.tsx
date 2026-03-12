@@ -1,7 +1,10 @@
+export const dynamic = "force-dynamic";
+
+
+
 import prisma from '@/lib/prisma';
 import SellingPointsForm from './Form';
 
-export const dynamic = 'force-dynamic';
 
 export default async function GenerateFromSellingPointsPage() {
   const products = await prisma.product.findMany({

@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
-import { Clock, ArrowRight, Play, Check } from 'lucide-react';
+import { Clock, ArrowRight, Play, Check, Trash2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface VideoCardProps {
@@ -11,18 +11,60 @@ interface VideoCardProps {
   onSelect?: (id: string) => void;
   selected?: boolean;
   onClick: () => void;
+  onDelete?: (id: string) => void;
 }
 
-export function VideoCard({ item, onSelect, selected, onClick }: VideoCardProps) {
+export function VideoCard({ item, onSelect, selected, onClick, onDelete }: VideoCardProps) {
   const { t } = useLanguage();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const resultData = useMemo(() => {
+    if (!item) return null;
+    if (!item.result) return null;
+    if (typeof item.result === 'string') {
+      try {
+        return JSON.parse(item.result || '{}');
+      } catch (error) {
+        console.warn('Failed to parse replication result JSON', error);
+        return null;
+      }
+    }
+    if (typeof item.result === 'object') {
+      return item.result;
+    }
+    return null;
+  }, [item?.result]);
   
-  // Parse result if it's a string
-  const resultData = typeof item.result === 'string' ? JSON.parse(item.result || '{}') : item.result;
-  const status = item.status?.toLowerCase() || 'pending';
+  const promptPayload = useMemo(() => {
+    const raw = resultData?.finalResult ?? resultData?.result ?? null;
+    if (!raw) return null;
+    if (typeof raw === 'string') {
+      try {
+        return JSON.parse(raw);
+      } catch (error) {
+        console.warn('Failed to parse prompt payload JSON', error);
+        return { generatedScript: raw };
+      }
+    }
+    return raw;
+  }, [resultData]);
+
+  const status = (item.status || '').toLowerCase();
   const isCompleted = status === 'completed' || status === 'success';
-  const isProcessing = status === 'processing' || status === 'pending' || status === 'generating';
+  const isFailed = status === 'failed' || status === 'error';
+  const isProcessing = !isCompleted && !isFailed;
+  const stage = (resultData?.lastStage || resultData?.stage || '').toString().toLowerCase();
+  const stageStatus = (resultData?.status || '').toString().toLowerCase();
+  const hasPromptDetails = Boolean(
+    promptPayload &&
+      (promptPayload.generatedScript ||
+        promptPayload.videoPrompt ||
+        promptPayload.shots_count)
+  );
+  const promptReady =
+    hasPromptDetails ||
+    (!!stage && stage.includes('prompt')) ||
+    (!!stageStatus && stageStatus.includes('prompt'));
   
   // Mock progress for now if processing
   const [progress, setProgress] = useState(0);
@@ -46,7 +88,10 @@ export function VideoCard({ item, onSelect, selected, onClick }: VideoCardProps)
         }
         
         // Calculate percentage, max 95% until actually completed
-        const p = Math.min(Math.floor((elapsedSeconds / durationSeconds) * 95), 95);
+        let p = Math.min(Math.floor((elapsedSeconds / durationSeconds) * 95), 95);
+        if (promptReady) {
+          p = Math.max(p, 70);
+        }
         setProgress(Math.max(0, p));
       };
 
@@ -55,8 +100,10 @@ export function VideoCard({ item, onSelect, selected, onClick }: VideoCardProps)
       return () => clearInterval(interval);
     } else if (isCompleted) {
         setProgress(100);
+    } else if (isFailed) {
+        setProgress(0);
     }
-  }, [isProcessing, isCompleted, item.createdAt, item.type]);
+  }, [isProcessing, isCompleted, isFailed, item.createdAt, item.type, promptReady]);
 
   const handleMouseEnter = () => {
     if (isCompleted && videoRef.current) {
@@ -105,7 +152,7 @@ export function VideoCard({ item, onSelect, selected, onClick }: VideoCardProps)
           "px-3 py-1 rounded-full text-xs font-bold shadow-sm",
           isCompleted 
             ? "bg-black text-white dark:bg-white dark:text-black" 
-            : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
+            : "bg-white text-black border border-gray-200 dark:bg-gray-900 dark:text-white dark:border-gray-700"
         )}>
           {isCompleted ? t.replication.completed : t.replication.processing}
         </span>
@@ -116,10 +163,15 @@ export function VideoCard({ item, onSelect, selected, onClick }: VideoCardProps)
            item.type === 'VOICE_CLONE' ? t.storyboard.voiceClone :
            t.replication.motionSwap}
         </span>
+        {promptReady && !isCompleted && (
+          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-200 shadow-sm">
+            {t.replication.promptReady}
+          </span>
+        )}
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 relative bg-gray-50 dark:bg-gray-900 flex items-center justify-center overflow-hidden">
+      <div className="flex-1 relative bg-white dark:bg-black flex items-center justify-center overflow-hidden">
         {/* Background Image (Always visible if available, dimmed when processing) */}
         {item.imageUrl && (
             <img 
@@ -127,23 +179,13 @@ export function VideoCard({ item, onSelect, selected, onClick }: VideoCardProps)
                 alt="Background" 
                 className={cn(
                     "absolute inset-0 w-full h-full object-cover transition-opacity",
-                    isCompleted ? "opacity-100" : "opacity-30 blur-sm"
+                    isCompleted ? "opacity-100" : "opacity-20 grayscale"
                 )}
             />
         )}
 
-        {/* Animated Processing Overlay */}
         {!isCompleted && (
-            <motion.div
-                className="absolute inset-0 z-0 bg-gradient-to-b from-transparent via-white/10 to-transparent"
-                initial={{ top: "-100%" }}
-                animate={{ top: "100%" }}
-                transition={{
-                    repeat: Infinity,
-                    duration: 2,
-                    ease: "linear",
-                }}
-            />
+          <div className="absolute inset-0 z-0 bg-gradient-to-b from-white via-gray-100 to-white dark:from-black dark:via-gray-900 dark:to-black opacity-90 pointer-events-none" />
         )}
 
         {isCompleted ? (
@@ -169,23 +211,23 @@ export function VideoCard({ item, onSelect, selected, onClick }: VideoCardProps)
           </>
         ) : (
           <div className="flex flex-col items-center justify-center w-full h-full relative z-10">
-            <div className="relative w-24 h-24 flex items-center justify-center">
+            <div className="relative w-24 h-24 flex items-center justify-center text-black dark:text-white">
               <svg className="w-full h-full transform -rotate-90">
                 <circle
                   cx="48"
                   cy="48"
                   r="40"
                   stroke="currentColor"
-                  strokeWidth="8"
+                  strokeWidth="6"
                   fill="transparent"
-                  className="text-gray-200 dark:text-gray-700 opacity-50"
+                  className="text-gray-200 dark:text-gray-700 opacity-70"
                 />
                 <motion.circle
                   cx="48"
                   cy="48"
                   r="40"
                   stroke="currentColor"
-                  strokeWidth="8"
+                  strokeWidth="6"
                   fill="transparent"
                   strokeDasharray={251.2}
                   strokeDashoffset={251.2 - (251.2 * progress) / 100}
@@ -199,6 +241,14 @@ export function VideoCard({ item, onSelect, selected, onClick }: VideoCardProps)
                 {progress}%
               </span>
             </div>
+            <p className="mt-4 text-xs uppercase tracking-wide text-gray-600 dark:text-gray-300">
+              {t.replication.generating}
+            </p>
+            {promptReady && (
+              <p className="mt-2 text-xs font-semibold text-amber-600 dark:text-amber-300">
+                {t.replication.promptReady}
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -225,30 +275,47 @@ export function VideoCard({ item, onSelect, selected, onClick }: VideoCardProps)
             onClick();
           }}
         >
-          {t.replication.viewDetails} <ArrowRight size={12} />
+          {promptReady && !isCompleted ? t.replication.viewPrompt : t.replication.viewDetails} <ArrowRight size={12} />
         </button>
       </div>
 
       {/* Selection Checkbox (Visible on hover or selected) */}
-      {onSelect && (
+      {(onSelect || onDelete) && (
         <div 
           className={cn(
-            "absolute top-3 right-3 z-30 transition-opacity",
-            selected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+            "absolute top-3 right-3 z-30 flex flex-col gap-2 transition-opacity",
+            !onDelete && !selected ? "opacity-0 group-hover:opacity-100" : "opacity-100"
           )}
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelect(item.id);
-          }}
         >
-          <div className={cn(
-            "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors",
-            selected 
-              ? "bg-black border-black text-white dark:bg-white dark:border-white dark:text-black" 
-              : "bg-white/80 border-gray-300 hover:border-black dark:hover:border-white"
-          )}>
-            {selected && <Check size={14} strokeWidth={3} />}
-          </div>
+          {onSelect && (
+            <button
+              className={cn(
+                "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors",
+                selected 
+                  ? "bg-black border-black text-white dark:bg-white dark:border-white dark:text-black" 
+                  : "bg-white/80 border-gray-300 hover:border-black dark:hover:border-white"
+              )}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect(item.id);
+              }}
+              title="Select item"
+            >
+              {selected && <Check size={14} strokeWidth={3} />}
+            </button>
+          )}
+          {onDelete && (
+            <button
+              className="w-6 h-6 rounded-full border-2 border-transparent bg-white/80 text-red-500 hover:text-red-600 hover:border-red-500 dark:bg-gray-900/80 dark:text-red-300 dark:hover:text-red-200"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(item.id);
+              }}
+              title="Delete"
+            >
+              <Trash2 size={13} strokeWidth={2.5} />
+            </button>
+          )}
         </div>
       )}
     </div>

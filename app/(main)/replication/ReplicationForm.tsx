@@ -11,6 +11,7 @@ import { ProductForm } from "@/components/ProductForm";
 import { ScriptForm } from "@/components/ScriptForm";
 import { createStoryboardTask } from "@/app/actions/storyboard";
 import { emitCreditsRefresh } from "@/lib/creditsBus";
+import { supabase } from "@/lib/supabase";
 
 import { CharacterForm } from "@/components/CharacterForm";
 
@@ -20,6 +21,7 @@ interface ReplicationFormProps {
   characters?: { id: string; name: string; avatar: string }[];
   preselectedScriptId?: string;
   mode?: 'one-click' | 'storyboard';
+  onSuccess?: () => void;
 }
 
 const COUNTRIES = [
@@ -254,7 +256,7 @@ function CustomSelect({
     );
 }
 
-export default function ReplicationForm({ products, scripts, characters = [], preselectedScriptId, mode = 'one-click' }: ReplicationFormProps) {
+export default function ReplicationForm({ products, scripts, characters = [], preselectedScriptId, mode = 'one-click', onSuccess }: ReplicationFormProps) {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const { t, language } = useLanguage();
@@ -272,6 +274,13 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isScriptModalOpen, setIsScriptModalOpen] = useState(false);
   const [isCharacterModalOpen, setIsCharacterModalOpen] = useState(false);
+  const [session, setSession] = useState<any>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+  }, []);
 
   // Update selectedScript when preselectedScriptId changes
   useEffect(() => {
@@ -370,6 +379,10 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
             formData.append('characterId', selectedCharacter);
         }
         
+        if (session?.user?.id) {
+          formData.append('userId', session.user.id);
+        }
+
         const result = await createStoryboardTask(formData);
         emitCreditsRefresh();
         toast.success("Storyboard task created! Redirecting...", { icon: "🚀" });
@@ -377,28 +390,40 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
 
       } else {
         // Existing One-Click Logic
+        const headers: HeadersInit = { 
+          "Content-Type": "application/json" 
+        };
+        if (session?.access_token) {
+          headers["Authorization"] = `Bearer ${session.access_token}`;
+        }
+
         const response = await fetch("/api/replication/generate", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers,
             body: JSON.stringify({ 
                 productId: selectedProduct, 
                 scriptId: selectedScript,
                 targetCountry,
                 targetLanguage,
                 duration,
-                quantity
+                quantity,
+                blueprint: currentScript?.blueprint || null
             }),
         });
 
-        if (!response.ok) throw new Error("Failed");
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `Failed with status ${response.status}`);
+        }
 
         emitCreditsRefresh();
-        toast.success("Replication task started!", { icon: "🚀" });
-        router.refresh();
+        toast.success(t.replication.toastStarted || t.common.success, { icon: "🚀" });
+        onSuccess?.();
+        router.push('/replication');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      toast.error("Failed to start replication.");
+      toast.error(error.message || "Failed to start replication.");
     } finally {
       setLoading(false);
     }

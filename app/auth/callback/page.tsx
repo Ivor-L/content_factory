@@ -11,6 +11,7 @@ export default function AuthCallbackPage() {
     // Check for session and redirect
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' || session) {
+        localStorage.setItem('login_timestamp', Date.now().toString());
         router.push('/dashboard');
       }
     });
@@ -18,6 +19,7 @@ export default function AuthCallbackPage() {
     // Also check immediately in case session is already restored
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
+        localStorage.setItem('login_timestamp', Date.now().toString());
         router.push('/dashboard');
       }
     });

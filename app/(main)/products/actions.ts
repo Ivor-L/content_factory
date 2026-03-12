@@ -14,6 +14,7 @@ export async function createProduct(formData: FormData) {
   const status = formData.get('status') as string;
   const progress = formData.get('progress') ? parseInt(formData.get('progress') as string) : undefined;
   const id = formData.get('id') as string; // Check if updating an existing product
+  const userId = formData.get('userId') as string | null;
 
   if (!name) {
     throw new Error('Name is required');
@@ -55,6 +56,7 @@ export async function createProduct(formData: FormData) {
         analysisResult: analysisResult || null,
         status: status || 'PENDING',
         progress: progress || 0,
+        userId: userId, // Save user ID
       } as any, // Cast to any to bypass linter
     });
   }
@@ -66,6 +68,7 @@ export async function createProduct(formData: FormData) {
 export async function createDraftProduct(formData: FormData) {
   const name = formData.get('name') as string;
   const images = formData.get('images') as string;
+  const userId = formData.get('userId') as string | null;
 
   if (!name) throw new Error('Name is required');
 
@@ -75,8 +78,9 @@ export async function createDraftProduct(formData: FormData) {
       description: '',
       sellingPoints: '[]',
       images: images || '[]',
+      userId: userId, // Save user ID
       // analysisResult: null, // Removed field
-    },
+    } as any,
   });
 
   return product.id;

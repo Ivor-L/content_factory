@@ -1,8 +1,16 @@
+export const dynamic = "force-dynamic";
+
+
 import prisma from '@/lib/prisma';
 import { StoryboardTaskList } from './StoryboardTaskList';
 
 export default async function StoryboardPage() {
   const tasks = await prisma.storyboardTask.findMany({
+    where: {
+      status: {
+        notIn: ['GENERATING_GRID', 'GRID_COMPLETED']
+      }
+    },
     orderBy: {
       createdAt: 'desc',
     },

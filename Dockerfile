@@ -1,13 +1,10 @@
 # Base image
 FROM node:20-alpine AS base
 
-# Replace apk repositories with Aliyun mirror for faster downloads in China
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
-
 # Install dependencies only when needed
 FROM base AS deps
 # Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine to understand why libc6-compat might be needed.
-RUN apk add --no-cache libc6-compat python3 make g++
+RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 # Install dependencies based on the preferred package manager
@@ -29,9 +26,24 @@ COPY . .
 # Uncomment the following line in case you want to disable telemetry during the build.
 ENV NEXT_TELEMETRY_DISABLED 1
 
+# Declare build arguments
+ARG DATABASE_URL
+ARG DIRECT_URL
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ARG NEXT_PUBLIC_APP_URL
+
+# Make build arguments available as environment variables during build
+ENV DATABASE_URL=$DATABASE_URL
+ENV DIRECT_URL=$DIRECT_URL
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
+
 # Generate Prisma Client
 RUN npx prisma generate
 
+# Build the application
 RUN \
   if [ -f yarn.lock ]; then yarn run build; \
   elif [ -f package-lock.json ]; then npm run build; \
@@ -51,6 +63,7 @@ RUN adduser --system --uid 1001 nextjs
 
 # Install openssl for Prisma and prisma CLI for migrations
 RUN apk add --no-cache openssl
+# Install prisma globally to ensure the CLI is available for migrations in entrypoint
 RUN npm install -g prisma --registry=https://registry.npmmirror.com
 
 COPY --from=builder /app/public ./public

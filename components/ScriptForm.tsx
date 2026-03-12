@@ -140,6 +140,12 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
         formData.append('id', initialData.id);
     }
 
+    // Get session for Authorization header
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user?.id) {
+        formData.append('userId', session.user.id);
+    }
+
     try {
       // 1. Create or Update script in DB
       // We need to update createScript action to handle ID for update

@@ -1,0 +1,1868 @@
+{
+  "updatedAt": "2026-03-11T15:15:19.450Z",
+  "createdAt": "2026-03-06T10:09:41.227Z",
+  "id": "MWOGfdQHNu64pFFl",
+  "name": "Veo3视频生成-发起调用-web (清理后)",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "veo3_Specialoffer_web",
+        "options": {}
+      },
+      "id": "3f9255b6-9f63-4383-ad47-a89d31408765",
+      "name": "子流程入口-Veo3",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2368,
+        -32
+      ],
+      "webhookId": "ceae668d-dbc7-4605-aea7-84464cf6be0b"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('子流程入口-Veo3').item.json.body.app_token }}/tables/{{ $('子流程入口-Veo3').item.json.body.table_id }}/records/{{ $('子流程入口-Veo3').item.json.body.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('子流程入口-Veo3').item.json.body.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"fields\": {\"视频生成进度\": \"生成中\"}\n}",
+        "options": {}
+      },
+      "name": "更新记录-生成中",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2144,
+        -32
+      ],
+      "id": "8c4fa370-8615-45b8-8470-3ec47d0109d1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b96bf7ae-675b-4e4c-add7-49247162d72f",
+              "leftValue": "={{ $('子流程入口-Veo3').item.json.body.first_frame_token }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1920,
+        -32
+      ],
+      "id": "a7051155-f6b9-4f3f-b899-86aca5dd0b54",
+      "name": "是否上传首帧图"
+    },
+    {
+      "parameters": {
+        "url": "https://open.feishu.cn/open-apis/drive/v1/medias/batch_get_tmp_download_url",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "file_tokens",
+              "value": "={{ $('子流程入口-Veo3').first().json.body.first_frame_token }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('子流程入口-Veo3').item.json.body.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1696,
+        -96
+      ],
+      "id": "3fa5bed7-c9c2-449d-9085-f1a3c7de7427",
+      "name": "获取首帧图下载链接"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('获取首帧图下载链接').first().json.body.data.tmp_download_urls[0].tmp_download_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "first_image_picbed"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1472,
+        -96
+      ],
+      "id": "9c839a6d-c8bf-44fa-9dae-d71e38f72b31",
+      "name": "下载首帧图-图床",
+      "retryOnFail": true,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://imageproxy.zhongzhuan.chat/api/upload",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "first_image_picbed"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1248,
+        -96
+      ],
+      "id": "c9f83d42-e22a-4d29-b4c2-c4dab11f379b",
+      "name": "上传首帧到图床",
+      "retryOnFail": true,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mMIH382GnJoMSu4L",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "d4bb7367-9458-4997-8019-f718d80a1950",
+              "leftValue": "={{ $('子流程入口-Veo3').item.json.body.last_frame_token }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1024,
+        -32
+      ],
+      "id": "c4466e83-1b6a-4ac6-a1b7-09ccc9ef10bd",
+      "name": "是否上传尾帧图"
+    },
+    {
+      "parameters": {
+        "url": "https://open.feishu.cn/open-apis/drive/v1/medias/batch_get_tmp_download_url",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "file_tokens",
+              "value": "={{ $('子流程入口-Veo3').first().json.body.last_frame_token }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('子流程入口-Veo3').item.json.body.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -800,
+        -96
+      ],
+      "id": "3f3fa33a-f17d-4e2d-a7db-a765e13bc0f7",
+      "name": "获取尾帧图下载链接"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('获取尾帧图下载链接').first().json.body.data.tmp_download_urls[0].tmp_download_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "last_image_picbed"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -576,
+        -96
+      ],
+      "id": "331d076e-52b2-4e25-9ef6-2988d20d0b91",
+      "name": "下载尾帧图-图床",
+      "retryOnFail": true,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://imageproxy.zhongzhuan.chat/api/upload",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "last_image_picbed"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -352,
+        -96
+      ],
+      "id": "ea51dd1e-babb-4004-b45a-71658b77560b",
+      "name": "上传尾帧到图床",
+      "retryOnFail": true,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mMIH382GnJoMSu4L",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "d4bb7367-9458-4997-8019-f718d80a1950",
+              "leftValue": "={{ $('子流程入口-Veo3').first().json.body?.prompt }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -128,
+        -32
+      ],
+      "id": "8a6d4bd4-9d52-4c03-aec2-863ffa4a67b4",
+      "name": "判断提示词不为空"
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * 组装 Agent 入参：基于首帧/尾帧写丝滑运镜提示词\n * - 输出：firstUrl, lastUrl, agent_user_prompt\n */\n\nfunction s(v){ return v == null ? '' : String(v); }\nfunction safe(v){ return s(v).replace(/\\r?\\n/g, ' ').trim(); }\n\nfunction getTmpUrl(nodeName) {\n  try {\n    const j = $(nodeName).first().json;\n    return safe(j?.body?.data?.tmp_download_urls?.[0]?.tmp_download_url);\n  } catch (e) {\n    return '';\n  }\n}\n\nconst firstUrl =\n  getTmpUrl('获取首帧图下载链接') ||\n  getTmpUrl('获取首帧图下载链接0') ||\n  getTmpUrl('获取首帧图下载链接1');\n\nconst lastUrl =\n  getTmpUrl('获取尾帧图下载链接') ||\n  getTmpUrl('获取尾帧图下载链接0') ||\n  getTmpUrl('获取尾帧图下载链接1');\n\nif (!firstUrl || !lastUrl) {\n  throw new Error('prompt 为空且缺少首帧/尾帧下载链接，无法自动生成运镜提示词');\n}\n\nconst agent_user_prompt =\n  '以第一张图为首帧图，第二张图为尾帧图，写一个连接首尾丝滑过渡的AI运镜提示词。' +\n  '要求：只输出提示词，不要解释；强调镜头运动/速度/景别变化/转场方式/光线连续性；适配 8 秒竖屏短视频；尽量写得像给视频模型的指令。';\n\nreturn [{ json: { firstUrl, lastUrl, agent_user_prompt } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        96,
+        48
+      ],
+      "id": "8222ef86-b1a6-4e91-a154-de4536f21deb",
+      "name": "组装Agent入参"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('获取首帧图下载链接').first().json.body.data.tmp_download_urls[0].tmp_download_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "first_image"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        48
+      ],
+      "id": "115e7a95-766c-45dc-ab6a-71e7fc111032",
+      "name": "下载首帧图",
+      "retryOnFail": true,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $('获取尾帧图下载链接').first().json.body.data.tmp_download_urls[0].tmp_download_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "last_image"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        544,
+        48
+      ],
+      "id": "e671e230-2a0d-494d-8bb7-3844cb47708d",
+      "name": "下载尾帧图",
+      "retryOnFail": true,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * 组装 Gemini generateContent 请求体\n * - 支持 n8n binary 为 filesystem-v2（落盘）时读取 Buffer 再转 base64\n * - 依赖：下载首帧图 outputPropertyName=first_image\n *        下载尾帧图 outputPropertyName=last_image\n */\n\nconst agent_user_prompt =\n  '以第一张图为首帧图，第二张图为尾帧图，写一个连接首尾丝滑过渡的AI运镜提示词。' +\n  '要求：只输出纯英文提示词，不要解释；强调镜头运动/速度/景别变化/转场方式/光线连续性；适配8秒竖屏短视频；尽量写得像给视频模型的指令。';\n\nconst items = $input.all();\nif (!items.length) throw new Error('没有输入 item');\n\nasync function readB64(itemIndex, binaryKey) {\n  const bin = items[itemIndex]?.binary?.[binaryKey];\n  if (!bin) throw new Error(`缺少 binary.${binaryKey}（检查下载节点 outputPropertyName）`);\n\n  const d = bin.data;\n  if (d && typeof d === 'string' && d !== 'filesystem-v2' && !d.startsWith('filesystem:')) {\n    return { b64: d, mime: bin.mimeType || 'image/jpeg' };\n  }\n\n  if (this?.helpers?.getBinaryDataBuffer) {\n    const buf = await this.helpers.getBinaryDataBuffer(itemIndex, binaryKey);\n    return { b64: buf.toString('base64'), mime: bin.mimeType || 'image/jpeg' };\n  }\n\n  throw new Error(\n    `binary.${binaryKey} 是 filesystem-v2，但当前环境拿不到 helpers.getBinaryDataBuffer；` +\n    `请确认这是 n8n Code 节点（不是表达式字段）并且允许使用 helpers。`\n  );\n}\n\nconst first = await readB64.call(this, 0, 'first_image');\nconst last  = await readB64.call(this, 0, 'last_image');\n\nconst gemini_body = {\n  contents: [\n    {\n      role: 'user',\n      parts: [\n        { text: agent_user_prompt },\n        { inline_data: { mime_type: first.mime, data: first.b64 } },\n        { inline_data: { mime_type: last.mime,  data: last.b64  } }\n      ]\n    }\n  ],\n  generationConfig: {\n    temperature: 0.4,\n    maxOutputTokens: 8192\n  }\n};\n\nreturn [{ json: { gemini_body } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        768,
+        48
+      ],
+      "id": "f311c426-6657-4f8f-a517-73e9d61a5686",
+      "name": "组装GeminiBody"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://yunwu.ai/v1beta/models/gemini-2.5-pro:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.gemini_body }}",
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        992,
+        48
+      ],
+      "id": "ad471d80-054e-412b-bf7a-3ea6fb1cb203",
+      "name": "分析Agent-提示词撰写",
+      "retryOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mMIH382GnJoMSu4L",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * 从 Gemini generateContent 响应里提取文本\n */\n\nconst res = $input.first().json || {};\nconst root = res.data ?? res;\n\nconst parts = root?.candidates?.[0]?.content?.parts || [];\nconst text = parts.map(p => p?.text ?? '').join('').trim();\n\nif (!text) {\n  throw new Error('Gemini 未返回有效提示词：' + JSON.stringify(root).slice(0, 800));\n}\n\nreturn [{ json: { prompt_from_agent: text } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1216,
+        48
+      ],
+      "id": "4b551e72-ec05-4b59-873b-561372be660e",
+      "name": "提取Agent提示词"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('子流程入口-Veo3').item.json.body.app_token }}/tables/{{ $('子流程入口-Veo3').item.json.body.table_id }}/records/{{ $('子流程入口-Veo3').item.json.body.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('子流程入口-Veo3').item.json.body.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{{\n  fields: {\n    \"视频提示词\": String($('提取Agent提示词').first().json.prompt_from_agent || '').trim()\n  }\n}\n}}",
+        "options": {}
+      },
+      "name": "更新记录-写入提示词",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        48
+      ],
+      "id": "f28fa2ae-f199-47e1-89cb-ebcad22c861f"
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * 准备视频参数-Veo3（云雾 /v1/video/create）\n * ✅ payload.model 原样透传\n * ✅ 兼容：只有首帧 / 首尾帧 / 无图\n * ✅ 关键：prompt 为空时，优先用 Agent 生成的 prompt\n * ✅ 关键：images 优先使用【云雾图床 URL】，避免 feishu internal 临时链接导致云雾抓取失败\n */\n\nconst payload = $('子流程入口-Veo3').first().json.body || {};\n\nfunction s(v){ return v == null ? '' : String(v); }\nconst safe = (v) => s(v).replace(/\\r?\\n/g, ' ').trim();\n\nfunction getTmpUrl(nodeName) {\n  try {\n    const j = $(nodeName).first().json;\n    return safe(j?.body?.data?.tmp_download_urls?.[0]?.tmp_download_url);\n  } catch (e) {\n    return '';\n  }\n}\n\nfunction getPicbedUrl(nodeName) {\n  try {\n    const j = $(nodeName).first().json;\n    // 图床返回常见：{ url: '...' } 或 { data: { url: '...' } }\n    return safe(j?.url || j?.data?.url || '');\n  } catch (e) {\n    return '';\n  }\n}\n\n// ---- 必填上下文字段 ----\nconst record_id = safe(payload.record_id);\nconst app_token = safe(payload.app_token);\nconst table_id = safe(payload.table_id);\nconst tenant_access_token = safe(payload.tenant_access_token);\nconst api_key = safe(payload.api_key);\nconst workflow_id_for_credits = safe(payload.workflow_id_for_credits);\n\nif (!record_id || !app_token || !table_id || !tenant_access_token || !api_key || !workflow_id_for_credits) {\n  throw new Error('子流程入口缺少必要字段（record_id/app_token/table_id/tenant_access_token/api_key/workflow_id_for_credits）');\n}\n\n// ---- prompt：优先 Agent 覆盖，其次入参 prompt ----\nlet prompt = '';\ntry { prompt = safe($('提取Agent提示词').first().json.prompt_from_agent); } catch (e) {}\nif (!prompt) prompt = safe(payload.prompt);\n\nif (!prompt) {\n  throw new Error('prompt 为空：且未生成 Agent prompt（检查 prompt是否为空 分支/Agent 调用）');\n}\n\n// ---- aspect_ratio ----\nconst aspect_ratio = safe(payload.aspect_ratio) || '9:16';\n\n// ---- model：严格遵守入参（原样透传）----\nconst model = safe(payload.model) || 'veo3-fast';\n\n// ---- 首/尾帧 URL：优先图床 ----\nconst firstUrl_picbed = getPicbedUrl('上传首帧到图床');\nconst lastUrl_picbed  = getPicbedUrl('上传尾帧到图床');\n\n// ---- 兜底：如果图床没跑到（比如没上传首帧），再 fallback 到 feishu tmp（不推荐但可保底） ----\nconst firstUrl_tmp =\n  getTmpUrl('获取首帧图下载链接') ||\n  getTmpUrl('获取首帧图下载链接0') ||\n  getTmpUrl('获取首帧图下载链接1');\n\nconst lastUrl_tmp =\n  getTmpUrl('获取尾帧图下载链接') ||\n  getTmpUrl('获取尾帧图下载链接0') ||\n  getTmpUrl('获取尾帧图下载链接1');\n\nconst firstUrl = firstUrl_picbed || firstUrl_tmp;\nconst lastUrl  = lastUrl_picbed  || lastUrl_tmp;\n\nlet images;\nif (firstUrl && lastUrl) images = [firstUrl, lastUrl];\nelse if (firstUrl) images = [firstUrl];\n\nconst requestBody = {\n  model,\n  prompt,\n  ...(images?.length ? { images } : {}),\n  enhance_prompt: payload.enhance_prompt ?? false,\n  enable_upsample: payload.enable_upsample ?? true,\n  aspect_ratio\n};\n\nreturn [{\n  json: {\n    requestBody,\n    record_id,\n    app_token,\n    table_id,\n    tenant_access_token,\n    api_key,\n    workflow_id_for_credits,\n    debug: {\n      prompt_from_input: safe(payload.prompt),\n      prompt_from_agent: (() => { try { return safe($('提取Agent提示词').first().json.prompt_from_agent); } catch(e){ return '';} })(),\n      model_from_input: safe(payload.model),\n      model_used: model,\n      aspect_ratio,\n      images_count: images?.length || 0,\n      firstUrl_picbed,\n      lastUrl_picbed,\n      firstUrl_tmp,\n      lastUrl_tmp,\n      firstUrl_used: firstUrl,\n      lastUrl_used: lastUrl\n    }\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1664,
+        -32
+      ],
+      "id": "11947d11-8bbe-45ff-ad59-3188e1a82a72",
+      "name": "准备视频参数-Veo3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const res = $input.first().json || {};\n\nconst id = res.id || res.data?.id;\nconst status = res.status || res.data?.status || 'unknown';\n\nif (!id) {\n  throw new Error(`创建任务失败，响应里没有 id：${JSON.stringify(res).slice(0, 500)}`);\n}\n\nreturn [{\n  json: {\n    task_id: id,\n    status\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2112,
+        -32
+      ],
+      "id": "10dfa1ea-a813-4242-a346-757de997580e",
+      "name": "提取任务id"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://yunwu.ai/v1/video/create",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.requestBody }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1920,
+        -32
+      ],
+      "id": "b286b080-8232-4595-8434-772c06952212",
+      "name": "提交Veo3请求",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000,
+      "alwaysOutputData": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mMIH382GnJoMSu4L",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.atomx.top/tools/veo/poll/async",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"task_id\": \"{{ $json.task_id }}\",\n  \"api_key\": \"sk-ENL5z1YykFkIZMIsjnbJeh36iY82VvGYznRzEazg1DWe8fkV\",\n  \"webhook_url\": \"https://hooks.flowonn.com/webhook/veo3story-callback\",\n  \"context\": {\n    \"record_id\": \"{{ $('子流程入口-Veo3').item.json.body.record_id }}\",\n    \"app_token\": \"{{ $('子流程入口-Veo3').item.json.body.app_token }}\",\n    \"table_id\": \"{{ $('子流程入口-Veo3').item.json.body.table_id }}\",\n    \"tenant_access_token\": \"{{ $('子流程入口-Veo3').item.json.body.tenant_access_token }}\",\n    \"api_key\": \"{{ $('子流程入口-Veo3').item.json.body.api_key }}\",\n    \"workflow_id_for_credits\": \"{{ $('子流程入口-Veo3').item.json.body.workflow_id_for_credits }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "9699563c-69eb-4937-8f56-7989e8192f35",
+      "name": "注册轮询任务",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2352,
+        -32
+      ]
+    }
+  ],
+  "connections": {
+    "子流程入口-Veo3": {
+      "main": [
+        [
+          {
+            "node": "更新记录-生成中",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "更新记录-生成中": {
+      "main": [
+        [
+          {
+            "node": "是否上传首帧图",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "是否上传首帧图": {
+      "main": [
+        [
+          {
+            "node": "获取首帧图下载链接",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "是否上传尾帧图",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "获取首帧图下载链接": {
+      "main": [
+        [
+          {
+            "node": "下载首帧图-图床",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "下载首帧图-图床": {
+      "main": [
+        [
+          {
+            "node": "上传首帧到图床",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "上传首帧到图床": {
+      "main": [
+        [
+          {
+            "node": "是否上传尾帧图",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "是否上传尾帧图": {
+      "main": [
+        [
+          {
+            "node": "获取尾帧图下载链接",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "判断提示词不为空",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "获取尾帧图下载链接": {
+      "main": [
+        [
+          {
+            "node": "下载尾帧图-图床",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "下载尾帧图-图床": {
+      "main": [
+        [
+          {
+            "node": "上传尾帧到图床",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "上传尾帧到图床": {
+      "main": [
+        [
+          {
+            "node": "判断提示词不为空",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "判断提示词不为空": {
+      "main": [
+        [
+          {
+            "node": "准备视频参数-Veo3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "组装Agent入参",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "准备视频参数-Veo3": {
+      "main": [
+        [
+          {
+            "node": "提交Veo3请求",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提取任务id": {
+      "main": [
+        [
+          {
+            "node": "注册轮询任务",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装Agent入参": {
+      "main": [
+        [
+          {
+            "node": "下载首帧图",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "下载首帧图": {
+      "main": [
+        [
+          {
+            "node": "下载尾帧图",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "下载尾帧图": {
+      "main": [
+        [
+          {
+            "node": "组装GeminiBody",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装GeminiBody": {
+      "main": [
+        [
+          {
+            "node": "分析Agent-提示词撰写",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "分析Agent-提示词撰写": {
+      "main": [
+        [
+          {
+            "node": "提取Agent提示词",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提取Agent提示词": {
+      "main": [
+        [
+          {
+            "node": "更新记录-写入提示词",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "更新记录-写入提示词": {
+      "main": [
+        [
+          {
+            "node": "准备视频参数-Veo3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提交Veo3请求": {
+      "main": [
+        [
+          {
+            "node": "提取任务id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {
+    "子流程入口-Veo3": [
+      {
+        "json": {
+          "headers": {
+            "host": "hooks.flowonn.com",
+            "x-real-ip": "47.107.155.228",
+            "x-forwarded-for": "47.107.155.228",
+            "x-forwarded-proto": "https",
+            "connection": "close",
+            "content-length": "415",
+            "accept": "application/json,text/html,application/xhtml+xml,application/xml,text/*;q=0.9, image/*;q=0.8, */*;q=0.7",
+            "content-type": "application/json",
+            "user-agent": "axios/1.12.0",
+            "accept-encoding": "gzip, compress, deflate, br"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "record_id": "recvc2fjISmugA",
+            "prompt": null,
+            "first_frame_token": "X32xbslxDoOtzyxPXd3ce48gngg",
+            "last_frame_token": "SaAlblRxYo1Skhxr2NFcOgpHnee",
+            "workflow_id_for_credits": "flow_video_Veo3.1_fast",
+            "model": "veo_3_1-fast",
+            "app_token": "UDmXbkODia7B9rsiYgmchd6mnrX",
+            "table_id": "tbl8tLjtbbBuMyVb",
+            "tenant_access_token": "t-g1042nhz4UFKNFVN33GUR6T6EESYFDAK7OCO3QYL",
+            "api_key": "sk_S-XJvpVKGGwnac1AlEFs3avCWZpqdOGaMMW27Y8iSPY"
+          },
+          "webhookUrl": "http://localhost:5678/webhook/veo3storyboard_video_Specialoffer",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "versionId": "52a65bd1-d20e-4b51-bc9c-a58a6fe52dda",
+  "activeVersionId": "52a65bd1-d20e-4b51-bc9c-a58a6fe52dda",
+  "versionCounter": 74,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-03-06T10:09:41.227Z",
+      "createdAt": "2026-03-06T10:09:41.227Z",
+      "role": "workflow:owner",
+      "workflowId": "MWOGfdQHNu64pFFl",
+      "projectId": "tMHfv8jC54QugIS3",
+      "project": {
+        "updatedAt": "2025-12-05T18:24:07.030Z",
+        "createdAt": "2025-12-05T18:00:52.525Z",
+        "id": "tMHfv8jC54QugIS3",
+        "name": "fan liu <591905097@qq.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "projectRelations": [
+          {
+            "updatedAt": "2025-12-05T18:00:52.525Z",
+            "createdAt": "2025-12-05T18:00:52.525Z",
+            "userId": "e1a90281-8c6a-4ec7-a985-3a344ba88b66",
+            "projectId": "tMHfv8jC54QugIS3",
+            "user": {
+              "updatedAt": "2026-03-12T04:36:50.363Z",
+              "createdAt": "2025-12-05T18:00:51.894Z",
+              "id": "e1a90281-8c6a-4ec7-a985-3a344ba88b66",
+              "email": "591905097@qq.com",
+              "firstName": "fan",
+              "lastName": "liu",
+              "personalizationAnswers": {
+                "version": "v4",
+                "personalization_survey_submitted_at": "2025-12-05T18:24:47.635Z",
+                "personalization_survey_n8n_version": "1.122.5",
+                "companySize": "<20",
+                "companyType": "saas",
+                "role": "business-owner",
+                "reportedSource": "youtube"
+              },
+              "settings": {
+                "userActivated": true,
+                "firstSuccessfulWorkflowId": "e9Q0InRVbw3mcRzk",
+                "userActivatedAt": 1773290207581,
+                "easyAIWorkflowOnboarded": true,
+                "npsSurvey": {
+                  "responded": true,
+                  "lastShownAt": 1772350096923
+                }
+              },
+              "disabled": false,
+              "mfaEnabled": false,
+              "lastActiveAt": "2026-03-12",
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-03-11T15:15:19.451Z",
+    "createdAt": "2026-03-11T15:15:19.451Z",
+    "versionId": "52a65bd1-d20e-4b51-bc9c-a58a6fe52dda",
+    "workflowId": "MWOGfdQHNu64pFFl",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "veo3_Specialoffer_web",
+          "options": {}
+        },
+        "id": "3f9255b6-9f63-4383-ad47-a89d31408765",
+        "name": "子流程入口-Veo3",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -2368,
+          -32
+        ],
+        "webhookId": "ceae668d-dbc7-4605-aea7-84464cf6be0b"
+      },
+      {
+        "parameters": {
+          "method": "PUT",
+          "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('子流程入口-Veo3').item.json.body.app_token }}/tables/{{ $('子流程入口-Veo3').item.json.body.table_id }}/records/{{ $('子流程入口-Veo3').item.json.body.record_id }}",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "user_id_type",
+                "value": "open_id"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $('子流程入口-Veo3').item.json.body.tenant_access_token }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"fields\": {\"视频生成进度\": \"生成中\"}\n}",
+          "options": {}
+        },
+        "name": "更新记录-生成中",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -2144,
+          -32
+        ],
+        "id": "8c4fa370-8615-45b8-8470-3ec47d0109d1"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "b96bf7ae-675b-4e4c-add7-49247162d72f",
+                "leftValue": "={{ $('子流程入口-Veo3').item.json.body.first_frame_token }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEmpty",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          -1920,
+          -32
+        ],
+        "id": "a7051155-f6b9-4f3f-b899-86aca5dd0b54",
+        "name": "是否上传首帧图"
+      },
+      {
+        "parameters": {
+          "url": "https://open.feishu.cn/open-apis/drive/v1/medias/batch_get_tmp_download_url",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "file_tokens",
+                "value": "={{ $('子流程入口-Veo3').first().json.body.first_frame_token }}"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $('子流程入口-Veo3').item.json.body.tenant_access_token }}"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          -1696,
+          -96
+        ],
+        "id": "3fa5bed7-c9c2-449d-9085-f1a3c7de7427",
+        "name": "获取首帧图下载链接"
+      },
+      {
+        "parameters": {
+          "url": "={{ $('获取首帧图下载链接').first().json.body.data.tmp_download_urls[0].tmp_download_url }}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "file",
+                "outputPropertyName": "first_image_picbed"
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -1472,
+          -96
+        ],
+        "id": "9c839a6d-c8bf-44fa-9dae-d71e38f72b31",
+        "name": "下载首帧图-图床",
+        "retryOnFail": true,
+        "waitBetweenTries": 2000,
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://imageproxy.zhongzhuan.chat/api/upload",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendBody": true,
+          "contentType": "multipart-form-data",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "parameterType": "formBinaryData",
+                "name": "file",
+                "inputDataFieldName": "first_image_picbed"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -1248,
+          -96
+        ],
+        "id": "c9f83d42-e22a-4d29-b4c2-c4dab11f379b",
+        "name": "上传首帧到图床",
+        "retryOnFail": true,
+        "waitBetweenTries": 2000,
+        "alwaysOutputData": true,
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "mMIH382GnJoMSu4L",
+            "name": "Header Auth account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "d4bb7367-9458-4997-8019-f718d80a1950",
+                "leftValue": "={{ $('子流程入口-Veo3').item.json.body.last_frame_token }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEmpty",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          -1024,
+          -32
+        ],
+        "id": "c4466e83-1b6a-4ac6-a1b7-09ccc9ef10bd",
+        "name": "是否上传尾帧图"
+      },
+      {
+        "parameters": {
+          "url": "https://open.feishu.cn/open-apis/drive/v1/medias/batch_get_tmp_download_url",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "file_tokens",
+                "value": "={{ $('子流程入口-Veo3').first().json.body.last_frame_token }}"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $('子流程入口-Veo3').item.json.body.tenant_access_token }}"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "fullResponse": true
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          -800,
+          -96
+        ],
+        "id": "3f3fa33a-f17d-4e2d-a7db-a765e13bc0f7",
+        "name": "获取尾帧图下载链接"
+      },
+      {
+        "parameters": {
+          "url": "={{ $('获取尾帧图下载链接').first().json.body.data.tmp_download_urls[0].tmp_download_url }}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "file",
+                "outputPropertyName": "last_image_picbed"
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -576,
+          -96
+        ],
+        "id": "331d076e-52b2-4e25-9ef6-2988d20d0b91",
+        "name": "下载尾帧图-图床",
+        "retryOnFail": true,
+        "waitBetweenTries": 2000,
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://imageproxy.zhongzhuan.chat/api/upload",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendBody": true,
+          "contentType": "multipart-form-data",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "parameterType": "formBinaryData",
+                "name": "file",
+                "inputDataFieldName": "last_image_picbed"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -352,
+          -96
+        ],
+        "id": "ea51dd1e-babb-4004-b45a-71658b77560b",
+        "name": "上传尾帧到图床",
+        "retryOnFail": true,
+        "waitBetweenTries": 2000,
+        "alwaysOutputData": true,
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "mMIH382GnJoMSu4L",
+            "name": "Header Auth account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "d4bb7367-9458-4997-8019-f718d80a1950",
+                "leftValue": "={{ $('子流程入口-Veo3').first().json.body?.prompt }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEmpty",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          -128,
+          -32
+        ],
+        "id": "8a6d4bd4-9d52-4c03-aec2-863ffa4a67b4",
+        "name": "判断提示词不为空"
+      },
+      {
+        "parameters": {
+          "jsCode": "/**\n * 组装 Agent 入参：基于首帧/尾帧写丝滑运镜提示词\n * - 输出：firstUrl, lastUrl, agent_user_prompt\n */\n\nfunction s(v){ return v == null ? '' : String(v); }\nfunction safe(v){ return s(v).replace(/\\r?\\n/g, ' ').trim(); }\n\nfunction getTmpUrl(nodeName) {\n  try {\n    const j = $(nodeName).first().json;\n    return safe(j?.body?.data?.tmp_download_urls?.[0]?.tmp_download_url);\n  } catch (e) {\n    return '';\n  }\n}\n\nconst firstUrl =\n  getTmpUrl('获取首帧图下载链接') ||\n  getTmpUrl('获取首帧图下载链接0') ||\n  getTmpUrl('获取首帧图下载链接1');\n\nconst lastUrl =\n  getTmpUrl('获取尾帧图下载链接') ||\n  getTmpUrl('获取尾帧图下载链接0') ||\n  getTmpUrl('获取尾帧图下载链接1');\n\nif (!firstUrl || !lastUrl) {\n  throw new Error('prompt 为空且缺少首帧/尾帧下载链接，无法自动生成运镜提示词');\n}\n\nconst agent_user_prompt =\n  '以第一张图为首帧图，第二张图为尾帧图，写一个连接首尾丝滑过渡的AI运镜提示词。' +\n  '要求：只输出提示词，不要解释；强调镜头运动/速度/景别变化/转场方式/光线连续性；适配 8 秒竖屏短视频；尽量写得像给视频模型的指令。';\n\nreturn [{ json: { firstUrl, lastUrl, agent_user_prompt } }];\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          96,
+          48
+        ],
+        "id": "8222ef86-b1a6-4e91-a154-de4536f21deb",
+        "name": "组装Agent入参"
+      },
+      {
+        "parameters": {
+          "url": "={{ $('获取首帧图下载链接').first().json.body.data.tmp_download_urls[0].tmp_download_url }}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "file",
+                "outputPropertyName": "first_image"
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          320,
+          48
+        ],
+        "id": "115e7a95-766c-45dc-ab6a-71e7fc111032",
+        "name": "下载首帧图",
+        "retryOnFail": true,
+        "waitBetweenTries": 2000,
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "url": "={{ $('获取尾帧图下载链接').first().json.body.data.tmp_download_urls[0].tmp_download_url }}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "file",
+                "outputPropertyName": "last_image"
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          544,
+          48
+        ],
+        "id": "e671e230-2a0d-494d-8bb7-3844cb47708d",
+        "name": "下载尾帧图",
+        "retryOnFail": true,
+        "waitBetweenTries": 2000,
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "jsCode": "/**\n * 组装 Gemini generateContent 请求体\n * - 支持 n8n binary 为 filesystem-v2（落盘）时读取 Buffer 再转 base64\n * - 依赖：下载首帧图 outputPropertyName=first_image\n *        下载尾帧图 outputPropertyName=last_image\n */\n\nconst agent_user_prompt =\n  '以第一张图为首帧图，第二张图为尾帧图，写一个连接首尾丝滑过渡的AI运镜提示词。' +\n  '要求：只输出纯英文提示词，不要解释；强调镜头运动/速度/景别变化/转场方式/光线连续性；适配8秒竖屏短视频；尽量写得像给视频模型的指令。';\n\nconst items = $input.all();\nif (!items.length) throw new Error('没有输入 item');\n\nasync function readB64(itemIndex, binaryKey) {\n  const bin = items[itemIndex]?.binary?.[binaryKey];\n  if (!bin) throw new Error(`缺少 binary.${binaryKey}（检查下载节点 outputPropertyName）`);\n\n  const d = bin.data;\n  if (d && typeof d === 'string' && d !== 'filesystem-v2' && !d.startsWith('filesystem:')) {\n    return { b64: d, mime: bin.mimeType || 'image/jpeg' };\n  }\n\n  if (this?.helpers?.getBinaryDataBuffer) {\n    const buf = await this.helpers.getBinaryDataBuffer(itemIndex, binaryKey);\n    return { b64: buf.toString('base64'), mime: bin.mimeType || 'image/jpeg' };\n  }\n\n  throw new Error(\n    `binary.${binaryKey} 是 filesystem-v2，但当前环境拿不到 helpers.getBinaryDataBuffer；` +\n    `请确认这是 n8n Code 节点（不是表达式字段）并且允许使用 helpers。`\n  );\n}\n\nconst first = await readB64.call(this, 0, 'first_image');\nconst last  = await readB64.call(this, 0, 'last_image');\n\nconst gemini_body = {\n  contents: [\n    {\n      role: 'user',\n      parts: [\n        { text: agent_user_prompt },\n        { inline_data: { mime_type: first.mime, data: first.b64 } },\n        { inline_data: { mime_type: last.mime,  data: last.b64  } }\n      ]\n    }\n  ],\n  generationConfig: {\n    temperature: 0.4,\n    maxOutputTokens: 8192\n  }\n};\n\nreturn [{ json: { gemini_body } }];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          768,
+          48
+        ],
+        "id": "f311c426-6657-4f8f-a517-73e9d61a5686",
+        "name": "组装GeminiBody"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://yunwu.ai/v1beta/models/gemini-2.5-pro:generateContent",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json.gemini_body }}",
+          "options": {
+            "response": {
+              "response": {}
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          992,
+          48
+        ],
+        "id": "ad471d80-054e-412b-bf7a-3ea6fb1cb203",
+        "name": "分析Agent-提示词撰写",
+        "retryOnFail": true,
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "mMIH382GnJoMSu4L",
+            "name": "Header Auth account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "/**\n * 从 Gemini generateContent 响应里提取文本\n */\n\nconst res = $input.first().json || {};\nconst root = res.data ?? res;\n\nconst parts = root?.candidates?.[0]?.content?.parts || [];\nconst text = parts.map(p => p?.text ?? '').join('').trim();\n\nif (!text) {\n  throw new Error('Gemini 未返回有效提示词：' + JSON.stringify(root).slice(0, 800));\n}\n\nreturn [{ json: { prompt_from_agent: text } }];\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1216,
+          48
+        ],
+        "id": "4b551e72-ec05-4b59-873b-561372be660e",
+        "name": "提取Agent提示词"
+      },
+      {
+        "parameters": {
+          "method": "PUT",
+          "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('子流程入口-Veo3').item.json.body.app_token }}/tables/{{ $('子流程入口-Veo3').item.json.body.table_id }}/records/{{ $('子流程入口-Veo3').item.json.body.record_id }}",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "user_id_type",
+                "value": "open_id"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $('子流程入口-Veo3').item.json.body.tenant_access_token }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{{\n  fields: {\n    \"视频提示词\": String($('提取Agent提示词').first().json.prompt_from_agent || '').trim()\n  }\n}\n}}",
+          "options": {}
+        },
+        "name": "更新记录-写入提示词",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1440,
+          48
+        ],
+        "id": "f28fa2ae-f199-47e1-89cb-ebcad22c861f"
+      },
+      {
+        "parameters": {
+          "jsCode": "/**\n * 准备视频参数-Veo3（云雾 /v1/video/create）\n * ✅ payload.model 原样透传\n * ✅ 兼容：只有首帧 / 首尾帧 / 无图\n * ✅ 关键：prompt 为空时，优先用 Agent 生成的 prompt\n * ✅ 关键：images 优先使用【云雾图床 URL】，避免 feishu internal 临时链接导致云雾抓取失败\n */\n\nconst payload = $('子流程入口-Veo3').first().json.body || {};\n\nfunction s(v){ return v == null ? '' : String(v); }\nconst safe = (v) => s(v).replace(/\\r?\\n/g, ' ').trim();\n\nfunction getTmpUrl(nodeName) {\n  try {\n    const j = $(nodeName).first().json;\n    return safe(j?.body?.data?.tmp_download_urls?.[0]?.tmp_download_url);\n  } catch (e) {\n    return '';\n  }\n}\n\nfunction getPicbedUrl(nodeName) {\n  try {\n    const j = $(nodeName).first().json;\n    // 图床返回常见：{ url: '...' } 或 { data: { url: '...' } }\n    return safe(j?.url || j?.data?.url || '');\n  } catch (e) {\n    return '';\n  }\n}\n\n// ---- 必填上下文字段 ----\nconst record_id = safe(payload.record_id);\nconst app_token = safe(payload.app_token);\nconst table_id = safe(payload.table_id);\nconst tenant_access_token = safe(payload.tenant_access_token);\nconst api_key = safe(payload.api_key);\nconst workflow_id_for_credits = safe(payload.workflow_id_for_credits);\n\nif (!record_id || !app_token || !table_id || !tenant_access_token || !api_key || !workflow_id_for_credits) {\n  throw new Error('子流程入口缺少必要字段（record_id/app_token/table_id/tenant_access_token/api_key/workflow_id_for_credits）');\n}\n\n// ---- prompt：优先 Agent 覆盖，其次入参 prompt ----\nlet prompt = '';\ntry { prompt = safe($('提取Agent提示词').first().json.prompt_from_agent); } catch (e) {}\nif (!prompt) prompt = safe(payload.prompt);\n\nif (!prompt) {\n  throw new Error('prompt 为空：且未生成 Agent prompt（检查 prompt是否为空 分支/Agent 调用）');\n}\n\n// ---- aspect_ratio ----\nconst aspect_ratio = safe(payload.aspect_ratio) || '9:16';\n\n// ---- model：严格遵守入参（原样透传）----\nconst model = safe(payload.model) || 'veo3-fast';\n\n// ---- 首/尾帧 URL：优先图床 ----\nconst firstUrl_picbed = getPicbedUrl('上传首帧到图床');\nconst lastUrl_picbed  = getPicbedUrl('上传尾帧到图床');\n\n// ---- 兜底：如果图床没跑到（比如没上传首帧），再 fallback 到 feishu tmp（不推荐但可保底） ----\nconst firstUrl_tmp =\n  getTmpUrl('获取首帧图下载链接') ||\n  getTmpUrl('获取首帧图下载链接0') ||\n  getTmpUrl('获取首帧图下载链接1');\n\nconst lastUrl_tmp =\n  getTmpUrl('获取尾帧图下载链接') ||\n  getTmpUrl('获取尾帧图下载链接0') ||\n  getTmpUrl('获取尾帧图下载链接1');\n\nconst firstUrl = firstUrl_picbed || firstUrl_tmp;\nconst lastUrl  = lastUrl_picbed  || lastUrl_tmp;\n\nlet images;\nif (firstUrl && lastUrl) images = [firstUrl, lastUrl];\nelse if (firstUrl) images = [firstUrl];\n\nconst requestBody = {\n  model,\n  prompt,\n  ...(images?.length ? { images } : {}),\n  enhance_prompt: payload.enhance_prompt ?? false,\n  enable_upsample: payload.enable_upsample ?? true,\n  aspect_ratio\n};\n\nreturn [{\n  json: {\n    requestBody,\n    record_id,\n    app_token,\n    table_id,\n    tenant_access_token,\n    api_key,\n    workflow_id_for_credits,\n    debug: {\n      prompt_from_input: safe(payload.prompt),\n      prompt_from_agent: (() => { try { return safe($('提取Agent提示词').first().json.prompt_from_agent); } catch(e){ return '';} })(),\n      model_from_input: safe(payload.model),\n      model_used: model,\n      aspect_ratio,\n      images_count: images?.length || 0,\n      firstUrl_picbed,\n      lastUrl_picbed,\n      firstUrl_tmp,\n      lastUrl_tmp,\n      firstUrl_used: firstUrl,\n      lastUrl_used: lastUrl\n    }\n  }\n}];\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1664,
+          -32
+        ],
+        "id": "11947d11-8bbe-45ff-ad59-3188e1a82a72",
+        "name": "准备视频参数-Veo3"
+      },
+      {
+        "parameters": {
+          "jsCode": "const res = $input.first().json || {};\n\nconst id = res.id || res.data?.id;\nconst status = res.status || res.data?.status || 'unknown';\n\nif (!id) {\n  throw new Error(`创建任务失败，响应里没有 id：${JSON.stringify(res).slice(0, 500)}`);\n}\n\nreturn [{\n  json: {\n    task_id: id,\n    status\n  }\n}];\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2112,
+          -32
+        ],
+        "id": "10dfa1ea-a813-4242-a346-757de997580e",
+        "name": "提取任务id"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://yunwu.ai/v1/video/create",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json.requestBody }}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1920,
+          -32
+        ],
+        "id": "b286b080-8232-4595-8434-772c06952212",
+        "name": "提交Veo3请求",
+        "retryOnFail": true,
+        "waitBetweenTries": 3000,
+        "alwaysOutputData": true,
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "mMIH382GnJoMSu4L",
+            "name": "Header Auth account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.atomx.top/tools/veo/poll/async",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"task_id\": \"{{ $json.task_id }}\",\n  \"api_key\": \"sk-ENL5z1YykFkIZMIsjnbJeh36iY82VvGYznRzEazg1DWe8fkV\",\n  \"webhook_url\": \"https://hooks.flowonn.com/webhook/veo3story-callback\",\n  \"context\": {\n    \"record_id\": \"{{ $('子流程入口-Veo3').item.json.body.record_id }}\",\n    \"app_token\": \"{{ $('子流程入口-Veo3').item.json.body.app_token }}\",\n    \"table_id\": \"{{ $('子流程入口-Veo3').item.json.body.table_id }}\",\n    \"tenant_access_token\": \"{{ $('子流程入口-Veo3').item.json.body.tenant_access_token }}\",\n    \"api_key\": \"{{ $('子流程入口-Veo3').item.json.body.api_key }}\",\n    \"workflow_id_for_credits\": \"{{ $('子流程入口-Veo3').item.json.body.workflow_id_for_credits }}\"\n  }\n}",
+          "options": {}
+        },
+        "id": "9699563c-69eb-4937-8f56-7989e8192f35",
+        "name": "注册轮询任务",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          2352,
+          -32
+        ]
+      }
+    ],
+    "connections": {
+      "子流程入口-Veo3": {
+        "main": [
+          [
+            {
+              "node": "更新记录-生成中",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "更新记录-生成中": {
+        "main": [
+          [
+            {
+              "node": "是否上传首帧图",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "是否上传首帧图": {
+        "main": [
+          [
+            {
+              "node": "获取首帧图下载链接",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "是否上传尾帧图",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "获取首帧图下载链接": {
+        "main": [
+          [
+            {
+              "node": "下载首帧图-图床",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "下载首帧图-图床": {
+        "main": [
+          [
+            {
+              "node": "上传首帧到图床",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "上传首帧到图床": {
+        "main": [
+          [
+            {
+              "node": "是否上传尾帧图",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "是否上传尾帧图": {
+        "main": [
+          [
+            {
+              "node": "获取尾帧图下载链接",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "判断提示词不为空",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "获取尾帧图下载链接": {
+        "main": [
+          [
+            {
+              "node": "下载尾帧图-图床",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "下载尾帧图-图床": {
+        "main": [
+          [
+            {
+              "node": "上传尾帧到图床",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "上传尾帧到图床": {
+        "main": [
+          [
+            {
+              "node": "判断提示词不为空",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "判断提示词不为空": {
+        "main": [
+          [
+            {
+              "node": "准备视频参数-Veo3",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "组装Agent入参",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "准备视频参数-Veo3": {
+        "main": [
+          [
+            {
+              "node": "提交Veo3请求",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "提取任务id": {
+        "main": [
+          [
+            {
+              "node": "注册轮询任务",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "组装Agent入参": {
+        "main": [
+          [
+            {
+              "node": "下载首帧图",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "下载首帧图": {
+        "main": [
+          [
+            {
+              "node": "下载尾帧图",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "下载尾帧图": {
+        "main": [
+          [
+            {
+              "node": "组装GeminiBody",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "组装GeminiBody": {
+        "main": [
+          [
+            {
+              "node": "分析Agent-提示词撰写",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "分析Agent-提示词撰写": {
+        "main": [
+          [
+            {
+              "node": "提取Agent提示词",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "提取Agent提示词": {
+        "main": [
+          [
+            {
+              "node": "更新记录-写入提示词",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "更新记录-写入提示词": {
+        "main": [
+          [
+            {
+              "node": "准备视频参数-Veo3",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "提交Veo3请求": {
+        "main": [
+          [
+            {
+              "node": "提取任务id",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "fan liu",
+    "name": null,
+    "description": null
+  }
+}

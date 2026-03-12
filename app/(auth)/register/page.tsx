@@ -5,9 +5,11 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import Link from 'next/link';
+import { TenantLogo } from '@/components/TenantLogo';
 import { AtomXLogo } from '@/components/AtomXLogo';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Globe } from 'lucide-react';
+import { useTenant } from '@/hooks/useTenant';
 
 export default function RegisterPage() {
   const [email, setEmail] = useState('');
@@ -15,7 +17,10 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const { t, language, setLanguage } = useLanguage();
+  const { basePath } = useTenant();
   const [mounted, setMounted] = useState(false);
+  const tenantHomePath = basePath || '/';
+  const tenantLoginPath = `${basePath || ''}/login`;
 
   useEffect(() => {
     setMounted(true);
@@ -63,8 +68,8 @@ export default function RegisterPage() {
       <div className="w-full lg:w-1/2 flex flex-col justify-center p-8 md:p-12 lg:p-24 relative z-10">
         {/* Logo */}
         <div className="absolute top-6 left-6 md:top-10 md:left-10">
-            <Link href="/">
-                <AtomXLogo size={96} showText={true} />
+            <Link href={tenantHomePath}>
+                <TenantLogo showName size="lg" />
             </Link>
         </div>
 
@@ -117,7 +122,7 @@ export default function RegisterPage() {
                     
                     <button
                         type="button"
-                        onClick={() => router.push('/login')}
+                        onClick={() => router.push(tenantLoginPath)}
                         className="w-full flex justify-center items-center py-3.5 px-4 border border-gray-200 rounded-full text-sm font-medium text-black bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-200 transition-all duration-200"
                     >
                         {t.auth?.back || 'Back'}
@@ -128,7 +133,7 @@ export default function RegisterPage() {
             <div className="mt-8 flex items-center justify-center text-sm">
                 <div className="flex items-center gap-1 text-gray-500">
                     {t.auth?.alreadyHaveAccount || 'Already have an account?'} 
-                    <Link href="/login" className="font-medium text-black hover:underline ml-1">
+                    <Link href={tenantLoginPath} className="font-medium text-black hover:underline ml-1">
                         {t.auth?.signIn || 'Sign in'}
                     </Link>
                 </div>

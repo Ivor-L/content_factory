@@ -1,7 +1,31 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { generateReplication } from "@/lib/n8n";
+import { generateReplication, generateOneClickReplication } from "@/lib/n8n";
 import { createClient } from "@supabase/supabase-js";
+
+const resolvePrimaryProductImage = (images?: string | null): string | null => {
+  if (!images) return null;
+  try {
+    const parsed = JSON.parse(images);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const first = parsed[0];
+      if (typeof first === "string" && first.trim()) return first.trim();
+      if (first && typeof first.url === "string") return first.url.trim();
+    }
+    if (typeof parsed === "string" && parsed.trim()) {
+      return parsed.trim();
+    }
+  } catch (error) {
+    const candidates = images
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (candidates.length > 0) {
+      return candidates[0];
+    }
+  }
+  return null;
+};
 
 export async function POST(request: Request) {
   try {
@@ -12,7 +36,8 @@ export async function POST(request: Request) {
         targetCountry, 
         targetLanguage, 
         duration, 
-        quantity 
+        quantity,
+        blueprint
     } = body;
 
     if (!productId || !scriptId) {
@@ -66,17 +91,21 @@ export async function POST(request: Request) {
       data: {
         status: "pending",
         result: "{}",
-        productId,
-        scriptId,
-        type: "FULL"
+        type: "FULL",
+        product: { connect: { id: productId } },
+        script: { connect: { id: scriptId } },
       },
     });
 
     const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/webhook/replication`;
+    const productImageUrl = resolvePrimaryProductImage(product.images);
+
+    const scriptForTrigger = blueprint ? { ...script, blueprint } : script;
 
     // Start background task (awaiting trigger success)
     try {
-        await generateReplication(product, script, {
+        // Use the new One-Click Replication function
+        await generateOneClickReplication(product, scriptForTrigger, {
             targetCountry: targetCountry || 'us',
             targetLanguage: targetLanguage || 'en',
             duration: duration || '15',
@@ -84,7 +113,8 @@ export async function POST(request: Request) {
             apiKey,
             userId,
             callbackUrl,
-            replicationId: replication.id
+            replicationId: replication.id,
+            productImageUrl
         });
     } catch (error) {
         console.error("Replication trigger failed", error);

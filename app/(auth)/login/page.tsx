@@ -5,10 +5,12 @@ import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import Link from 'next/link';
+import { TenantLogo } from '@/components/TenantLogo';
 import { AtomXLogo } from '@/components/AtomXLogo';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Globe, CheckCircle, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTenant } from '@/hooks/useTenant';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -19,7 +21,10 @@ export default function LoginPage() {
   const [otpSent, setOtpSent] = useState(false);
   const router = useRouter();
   const { t, language, setLanguage } = useLanguage();
+  const { basePath } = useTenant();
   const [mounted, setMounted] = useState(false);
+  const tenantDashboardPath = `${basePath || ''}/dashboard`;
+  const tenantHomePath = basePath || '/';
 
   useEffect(() => {
     setMounted(true);
@@ -67,8 +72,9 @@ export default function LoginPage() {
 
       if (error) throw error;
 
+      localStorage.setItem('login_timestamp', Date.now().toString());
       toast.success('Login successful');
-      router.push('/dashboard');
+      router.push(tenantDashboardPath);
       router.refresh();
     } catch (error: any) {
       toast.error(error.message || 'Invalid verification code');
@@ -89,8 +95,9 @@ export default function LoginPage() {
 
       if (error) throw error;
 
+      localStorage.setItem('login_timestamp', Date.now().toString());
       toast.success('Login successful');
-      router.push('/dashboard');
+      router.push(tenantDashboardPath);
       router.refresh();
     } catch (error: any) {
       toast.error(error.message || 'Failed to login');
@@ -119,8 +126,8 @@ export default function LoginPage() {
       <div className="w-full lg:w-1/2 flex flex-col justify-center p-8 md:p-12 lg:p-24 relative z-10">
         {/* Logo */}
         <div className="absolute top-6 left-6 md:top-10 md:left-10">
-            <Link href="/">
-                <AtomXLogo size={96} showText={true} />
+            <Link href={tenantHomePath}>
+                <TenantLogo showName size="lg" />
             </Link>
         </div>
 

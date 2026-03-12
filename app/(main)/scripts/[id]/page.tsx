@@ -1,9 +1,10 @@
+export const dynamic = "force-dynamic";
+
 import prisma from "@/lib/prisma";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { notFound } from "next/navigation";
 
-export const dynamic = "force-dynamic";
 
 interface ScriptDetailPageProps {
   params: Promise<{ id: string }>;

@@ -1,0 +1,858 @@
+{
+  "updatedAt": "2026-03-11T15:42:01.913Z",
+  "createdAt": "2026-03-11T14:32:55.805Z",
+  "id": "5QlPVB2C1qHJvGvC",
+  "name": "爆款复刻Veo3-脚本生成-网页版-v4",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "5QlPVB2C1qHJvGvC",
+        "options": {}
+      },
+      "id": "15050afe-29f2-4161-bb78-5bc17253f7da",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2112,
+        160
+      ],
+      "webhookId": "ed1048c5-af80-46b3-bf6d-deee483e392d"
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id={{ $('Webhook').item.json.body.workflow_id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1216,
+        160
+      ],
+      "id": "a4be0477-c5e9-4a9c-a65b-8f5673a63c15",
+      "name": "查询工作流积分"
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/api/balance/check?required=100&api_key={{ $('Webhook').item.json.body.api_key }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "required",
+              "value": "={{ $json.data.credit_cost }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -992,
+        160
+      ],
+      "id": "ae54915d-475f-4c6e-b4a3-cf4918804975",
+      "name": "验证api-key",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok }}",
+                    "rightValue": "false",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    },
+                    "id": "84e547e5-80ae-4340-a3e9-b76f32d20e0c"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "apikey_invalid"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "1f0f0883-abf7-4c55-8068-85568446efd2",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === false }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "insufficient_points"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "94a60a62-da20-469a-ac15-4867f6a63449",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === true }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pass"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -768,
+        144
+      ],
+      "id": "9d7d6ff0-7f83-41d1-aacf-f45b6db3f67d",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=presenterMode: {{ $json.presenterMode }}\npersonDesc: {{ $json.personDesc }}\nproductName: {{ $json.productName }}\nproductDesc: {{ $json.productDesc }}\nlanguage: {{ $json.language }}\ndurationSec: {{ $json.durationSec }}\nnSegments: {{ $json.nSegments }}\nsegSeconds: {{ $json.segSeconds }}\n\nrefScript:\n{{ $json.viralScriptSummaryRaw }}\n",
+        "options": {
+          "systemMessage": "=You are a Veo3 short-form UGC ad prompt engineer (TikTok-style, iPhone handheld).\n\nYou will receive:\n- presenterMode: one of [\"talking_head\",\"hands_only\",\"no_human\"]\n- personDesc: the presenter’s appearance/vibe (ONLY when presenterMode = talking_head)\n- productName + productDesc: product selling points + usage context\n- language: the spoken language for dialogue\n- durationSec: target total duration\n- nSegments: number of segments\n- segSeconds: seconds per segment (usually 8)\n- refScript: a viral reference script (for pacing/beat/vibe)\n\nTASK:\nRe-create the viral logic, beat structure, emotional arc, and “feel” of refScript, but adapt it to THIS product and THIS presenterMode.\nOutput EXACTLY nSegments segments that together form ONE continuous UGC clip cut into pieces.\n\nHARD CONSTRAINTS (must follow):\n1) Output MUST be valid JSON only. No markdown. No extra keys.\n2) Total shots MUST equal nSegments. shot_number must be 1..nSegments with no gaps.\n3) Each shot duration_seconds must be ~segSeconds (8). Total should roughly match durationSec.\n4) UGC look: iPhone handheld (selfie or POV), slight natural shake, imperfect real lighting, real home/casual setting. NOT commercial, NOT studio.\n5) No subtitles. No on-screen text. No logo. No watermark. No UI.\n6) Audio: include the spoken dialogue + natural SFX only. No background music.\n\n7) Presenter rules (CRITICAL):\n   - If presenterMode = \"talking_head\":\n       * Show ONE consistent presenter based on personDesc.\n       * Presenter speaks directly to camera (talking head).\n       * Mouth movement should match the spoken line (lip-sync required).\n   - If presenterMode = \"hands_only\":\n       * DO NOT show any face. Only hands/arms/body fragments are allowed.\n       * The dialogue is VOICEOVER narration (off-screen). No lip-sync requirement.\n   - If presenterMode = \"no_human\":\n       * No human body parts at all.\n       * The dialogue is VOICEOVER narration (off-screen). No lip-sync requirement.\n\n8) Timing: dialogue MUST be speakable within segSeconds.\n   - If language is English: voiceover MUST be <= 22 words per 8 seconds.\n   - If language is Chinese: voiceover MUST be <= 32 Chinese characters per 8 seconds.\n   - If language is other: keep it similarly short and speakable.\n\n9) Continuity & natural transitions (VERY HARD):\n   - The whole video must feel like ONE continuous clip, not separate ads.\n   - Same environment type, same props, same product look across all shots.\n   - Each shot MUST end with a bridge action/line into the next shot.\n   - The next shot MUST start by continuing that exact action/context with no reset.\n   - Use recurring anchors: one repeated hand action (showing/adjusting the product), one recurring prop (box/phone/mirror/mug), and a consistent emotional arc (curious → surprised → convinced → playful CTA).\n   - No abrupt topic jump. No “new scene/new day/reset”.\n\n10) Reference usage:\n   - Follow refScript’s persuasion logic and pacing, but do NOT copy word-for-word.\n   - Do NOT add technical/jargon claims unless clearly supported by productDesc.\n   - Keep it casual friend-to-friend UGC with slightly exaggerated but believable emotion.\n\n11) Dialogue exactness:\n   - shots[].voiceover is the EXACT spoken line (word-for-word).\n   - video_prompt MUST embed that exact line inside the block below (verbatim, no changes):\n     [SPOKEN_DIALOGUE - EXACT]\n     <voiceover>\n     [/SPOKEN_DIALOGUE - EXACT]\n   - If presenterMode = \"talking_head\":\n       video_prompt MUST explicitly say “lip-sync accurate” and “audio includes her spoken dialogue”.\n     Else:\n       video_prompt MUST explicitly say “voiceover narration (off-screen), no visible speaking”.\n\nOUTPUT JSON SCHEMA (exact keys):\n{\n  \"total_shots\": <int>,\n  \"shots\": [\n    {\n      \"shot_number\": <int>,\n      \"timestamp\": \"<string like 00:00-00:08>\",\n      \"duration_seconds\": <number>,\n      \"voiceover\": \"<EXACT spoken line in the target language>\",\n      \"sfx\": [\"<short natural SFX>\", \"...\"],\n      \"action\": \"<what happens on camera; must match voiceover and presenterMode rules>\",\n      \"transition_to_next\": \"<the exact bridge action/line into next shot; empty for last shot>\",\n      \"first_frame\": \"<first-frame image prompt; must match action and UGC look; no text overlay>\",\n      \"video_prompt\": \"<Veo3 prompt for this shot; MUST include the exact SPOKEN_DIALOGUE block; respect presenterMode; no text overlay>\"\n    }\n  ]\n}\n\nTIMESTAMP RULE:\n- shot 1: 00:00-00:08\n- shot 2: 00:08-00:16\n- shot 3: 00:16-00:24\n... continue accordingly.\n\nSTYLE TEMPLATE for video_prompt (must follow closely):\n- UGC iPhone handheld, natural micro-shake (selfie for talking_head; POV/overhead for hands_only; product-only for no_human)\n- Real home/casual environment, imperfect natural lighting, not studio\n- No on-screen text/subtitles/logos/watermarks\n- Include:\n  [SPOKEN_DIALOGUE - EXACT]\n  <voiceover>\n  [/SPOKEN_DIALOGUE - EXACT]\n- If presenterMode = \"talking_head\": include “lip-sync accurate, audio includes her spoken dialogue”\n  Else: include “voiceover narration (off-screen), no visible speaking”\n- Add the listed SFX only; no background music\n- End with the transition action into the next shot"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        112,
+        352
+      ],
+      "id": "01954874-11de-4cb9-a7f5-dc9d506e7319",
+      "name": "脚本生成器",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gemini-3-flash-preview-thinking",
+          "mode": "list",
+          "cachedResultName": "gemini-3-flash-preview-thinking"
+        },
+        "responsesApiEnabled": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        192,
+        576
+      ],
+      "id": "aebffcfb-7ab6-41cf-b2c4-8249cf2f228b",
+      "name": "gemini3-flash",
+      "credentials": {
+        "openAiApi": {
+          "id": "TVs8cHigrdXKUMDJ",
+          "name": "云雾api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * 解析提示词（Agent 输出 -> 标准 JSON）\n * 并把「读取记录」中的 AI达人 / 产品名称 注入到输出，方便后续写回表。\n */\n\nfunction stripFences(s) {\n  const t = String(s || \"\").trim();\n  if (t.startsWith(\"```\")) {\n    return t.replace(/^```[a-zA-Z]*\\n?/, \"\").replace(/```$/, \"\").trim();\n  }\n  return t;\n}\n\nfunction safeParse(s) {\n  try { return JSON.parse(s); } catch { return null; }\n}\n\nfunction pickRawText(in0) {\n  if (!in0) return \"\";\n  if (typeof in0 === \"object\" && in0.shots && Array.isArray(in0.shots)) return in0;\n\n  const direct = in0.output || in0.text || in0.response;\n  if (direct) return direct;\n\n  const gemText =\n    in0?.candidates?.[0]?.content?.parts?.map(p => p.text).filter(Boolean).join(\"\\n\") ||\n    in0?.candidates?.[0]?.content?.parts?.[0]?.text;\n  if (gemText) return gemText;\n\n  if (in0.body) return in0.body;\n  return \"\";\n}\n\nfunction extractFirstJsonObject(str) {\n  const s = String(str || \"\");\n  const i = s.indexOf(\"{\");\n  const j = s.lastIndexOf(\"}\");\n  if (i < 0 || j <= i) return null;\n  return s.slice(i, j + 1);\n}\n\nfunction toNumber(v, dflt = 0) {\n  const n = Number(v);\n  return Number.isFinite(n) ? n : dflt;\n}\n\nfunction toString(v) {\n  if (v == null) return \"\";\n  return String(v);\n}\n\nfunction ensureArray(v) {\n  return Array.isArray(v) ? v : [];\n}\n\nfunction normalizeSfx(v) {\n  if (Array.isArray(v)) return v.map(x => String(x || \"\")).filter(Boolean);\n  if (typeof v === \"string\") return v.split(/[,，]/).map(x => x.trim()).filter(Boolean);\n  return [];\n}\n\nfunction normalizeTimestamp(idx, segSeconds, provided) {\n  const t = String(provided || \"\").trim();\n  if (t) return t;\n\n  const start = idx * segSeconds;\n  const end = start + segSeconds;\n  const pad = (n) => String(Math.floor(n)).padStart(2, \"0\");\n  const mmss = (sec) => `${pad(sec / 60)}:${pad(sec % 60)}`;\n  return `${mmss(start)}-${mmss(end)}`;\n}\n\n// ✅ 从飞书「读取记录」拿 AI达人 / 产品名称（注意字段类型可能是富文本数组）\nfunction getFeishuTextField(fields, name) {\n  const v = fields?.[name];\n  if (Array.isArray(v) && v.length) {\n    // 常见：[{text:\"xxx\"}] 或 [{type:\"text\", text:\"xxx\"}]\n    if (v[0]?.text != null) return String(v[0].text);\n    // 兜底：直接 stringify\n    return String(v[0]);\n  }\n  if (typeof v === \"string\") return v;\n  return \"\";\n}\n\n// ---------------- main ----------------\n\nconst in0 = $input.first()?.json || {};\nlet raw = pickRawText(in0);\n\nlet obj = null;\nif (raw && typeof raw === \"object\" && Array.isArray(raw.shots)) {\n  obj = raw;\n} else {\n  raw = stripFences(raw);\n  const jsonStr = extractFirstJsonObject(raw);\n  if (!jsonStr) throw new Error(\"No JSON object found in model output. Ensure agent outputs JSON only.\");\n  obj = safeParse(jsonStr);\n  if (!obj) throw new Error(\"JSON.parse failed. Extracted JSON invalid.\");\n}\n\nconst shotsRaw = ensureArray(obj.shots);\nif (!shotsRaw.length) throw new Error(\"shots[] is empty after parsing.\");\n\n// ✅ segSeconds 从「标准化输入」取，取不到默认 8\nconst segSeconds = toNumber($(\"标准化输入\").first()?.json?.segSeconds, 8) || 8;\n\n// ✅ 关键：把名字拿出来\nconst recordFields = $(\"读取记录\").first()?.json?.data?.record?.fields || {};\nconst AI达人 = getFeishuTextField(recordFields, \"使用AI达人\") || getFeishuTextField(recordFields, \"AI达人\") || \"\";\nconst 产品名称 = getFeishuTextField(recordFields, \"产品名称\") || \"\";\n\n// 生成 shots\nconst shots = shotsRaw.map((s, idx) => {\n  const shot_number = Number.isInteger(s?.shot_number) ? s.shot_number : (idx + 1);\n  const duration_seconds = typeof s?.duration_seconds === \"number\"\n    ? s.duration_seconds\n    : toNumber(s?.duration_seconds, segSeconds);\n\n  return {\n    shot_number,\n    timestamp: normalizeTimestamp(idx, segSeconds, s?.timestamp),\n    duration_seconds,\n    voiceover: toString(s?.voiceover),\n    sfx: normalizeSfx(s?.sfx),\n    action: toString(s?.action),\n    transition_to_next: toString(s?.transition_to_next),\n    first_frame: toString(s?.first_frame),\n    video_prompt: toString(s?.video_prompt),\n\n    // ✅ 注入，给你后面写回用\n    AI达人,\n    产品名称,\n  };\n});\n\n// 排序 + 修正镜号\nshots.sort((a, b) => a.shot_number - b.shot_number);\nfor (let i = 0; i < shots.length; i++) shots[i].shot_number = i + 1;\nshots[shots.length - 1].transition_to_next = \"\";\n\nreturn [{\n  json: {\n    total_shots: shots.length,\n    AI达人,\n    产品名称,\n    shots\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        352
+      ],
+      "id": "01409bd3-0d62-4e3f-9533-097e4d2fddb5",
+      "name": "解析提示词"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Auth:getAccessToken auth1').item.json.tenant_access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.body}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        912,
+        352
+      ],
+      "id": "ce43d904-f748-4543-9ccc-7474222d0cff",
+      "name": "写入分镜表"
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * 输出：{ url, headers, body } 直接给 HTTP Request 节点使用（写入分镜表 batch_create）\n * 额外写入：\n * - AI达人（来自任务表字段：使用AI达人 或 AI达人；也兼容入参 root / shot）\n * - 产品名称（来自任务表字段：产品名称；也兼容入参 root / shot）\n * - 达人上身图url（来自任务表文本字段：达人上身图url）\n * - 口播文案：优先 shots[].voiceover（每镜），再降级任务表 fields/入参 root\n */\n\nconst root0 = $input.first().json;\nconst root = Array.isArray(root0) ? root0[0] : root0;\n\nconst shots = Array.isArray(root.shots) ? root.shots : [];\nif (!shots.length) throw new Error(\"shots[] is empty\");\n\nconst app_token = $('获取任务表信息').first().json.app_token;\nconst table_id  = $('获取脚本表信息').first().json.table_id;\nconst token     = $('Auth:getAccessToken auth1').first().json.tenant_access_token;\n\nconst parentRecordId = $('读取记录').first().json.data.record.record_id;\nconst fields = $('读取记录').first().json.data.record.fields || {};\n\n// ---------- helpers ----------\nfunction toText(v) {\n  if (v == null) return \"\";\n  if (typeof v === \"string\") return v;\n  if (Array.isArray(v) && v.length) {\n    if (v[0]?.text != null) return String(v[0].text);\n    return String(v[0]);\n  }\n  return String(v);\n}\n\nfunction getText(obj, name) {\n  if (!obj) return \"\";\n  return toText(obj[name]);\n}\n\n// ---------- values from task record (fields) / root fallback ----------\nconst AI达人_fromTask = getText(fields, \"使用AI达人\") || getText(fields, \"AI达人\");\nconst 产品名称_fromTask = getText(fields, \"产品名称\");\nconst 口播文案_fromTask = getText(fields, \"口播文案\");\nconst 达人上身图url = getText(fields, \"达人上身图url\"); // 你说的是文本\n\n// root 也可能带（你给的入参 root 有 产品名称）\nconst AI达人_fromRoot = getText(root, \"AI达人\");\nconst 产品名称_fromRoot = getText(root, \"产品名称\");\nconst 口播文案_fromRoot = getText(root, \"口播文案\");\n\n// ---------- map shot -> fields ----------\nfunction mapShotToFields(s) {\n  const ai = toText(s?.AI达人) || AI达人_fromTask || AI达人_fromRoot;\n  const prod = toText(s?.产品名称) || 产品名称_fromTask || 产品名称_fromRoot;\n\n  // ✅ 关键：每镜口播优先用 shots[].voiceover\n  const voiceover =\n    toText(s?.voiceover) ||          // 你入参就是这个\n    toText(s?.voice_over) ||         // 兼容不同命名\n    toText(s?.spoken_script) ||      // 兼容不同命名\n    口播文案_fromTask ||\n    口播文案_fromRoot;\n\n  return {\n    \"镜号\": Number(s.shot_number),\n    \"时间段\": toText(s.timestamp),\n    \"图片提示词\": toText(s.first_frame),\n    \"视频提示词\": toText(s.video_prompt),\n\n    // ✅ 写入字段（分镜表里必须存在同名字段）\n    \"AI达人\": toText(ai),\n    \"产品名称\": toText(prod),\n    \"口播文案\": toText(voiceover),\n    \"达人上身图url\": toText(达人上身图url),\n\n    // ✅ 双向关联字段：必须 string[]\n    \"🔥 爆款复刻任务\": [String(parentRecordId)]\n  };\n}\n\n// 飞书 batch_create 一次最多 100\nconst MAX = 100;\nconst batches = [];\nfor (let i = 0; i < shots.length; i += MAX) {\n  batches.push(shots.slice(i, i + MAX));\n}\n\n// 输出多批 item（每批一个 HTTP 调用）\nreturn batches.map((chunk) => {\n  const records = chunk.map(s => ({ fields: mapShotToFields(s) }));\n  return {\n    json: {\n      url: `https://open.feishu.cn/open-apis/bitable/v1/apps/${app_token}/tables/${table_id}/records/batch_create`,\n      headers: {\n        \"Authorization\": `Bearer ${token}`,\n        \"Content-Type\": \"application/json\"\n      },\n      body: { records }\n    }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        352
+      ],
+      "id": "33a7aec3-1f1f-4758-8ab1-87612d0c2d2c",
+      "name": "组装写回参数"
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * 标准化输入（可整段替换）\n * - 兼容飞书字段：纯字符串 / 富文本数组([{text:\"\"}]) / 数字\n * - 修复：时长字段为 \"56s\" / \"1分56秒\" / \"00:56\" / \"01:56\" 等格式时解析失败导致回退默认值\n * - 计算：durationSec / segSeconds -> nSegments\n * - ✅ 新增：提取爆款脚本总结（viralScriptSummaryRaw / viralScriptSummary）\n * - 输出：后续节点直接使用\n */\n\nconst root0 = $input.first()?.json;\nconst root = Array.isArray(root0) ? root0[0] : root0;\n\nif (!root) throw new Error(\"input is empty\");\n\nconst rec =\n  root?.data?.record?.fields ||\n  root?.data?.record?.record?.fields || // 兜底（有些节点会多包一层）\n  root?.record?.fields ||\n  root?.fields ||\n  {};\n\n// -------------------- helpers: text / number --------------------\nfunction toText(v) {\n  if (v == null) return \"\";\n  if (Array.isArray(v)) {\n    // 飞书富文本：[{text:\"...\"}] 或附件数组 / 其它数组\n    return v\n      .map((x) => {\n        if (x == null) return \"\";\n        if (typeof x === \"string\") return x;\n        if (typeof x === \"number\") return String(x);\n        if (typeof x === \"object\") return x.text ?? x.name ?? x.value ?? \"\";\n        return String(x);\n      })\n      .filter(Boolean)\n      .join(\"\\n\")\n      .trim();\n  }\n  if (typeof v === \"object\") return String(v.text ?? v.value ?? v.name ?? \"\").trim();\n  return String(v).trim();\n}\n\nfunction toNumber(v) {\n  // 更宽松：能从 \"56s\" 里抠出 56\n  if (v == null) return NaN;\n  if (typeof v === \"number\" && Number.isFinite(v)) return v;\n\n  const s = toText(v);\n  if (!s) return NaN;\n\n  // 先尝试直接 Number()\n  const direct = Number(s);\n  if (Number.isFinite(direct)) return direct;\n\n  // 再尝试提取首个数字（含小数）\n  const m = s.match(/(\\d+(\\.\\d+)?)/);\n  if (m) {\n    const n = Number(m[1]);\n    if (Number.isFinite(n)) return n;\n  }\n  return NaN;\n}\n\n/**\n * 把时长字段解析成秒数\n * 支持：\n * - 56 / \"56\" / \"56s\" / \"56秒\" / \"56 sec\"\n * - \"1分56秒\" / \"2分钟\" / \"1 min 20 sec\"\n * - \"00:56\" / \"01:56\" / \"00:01:56\"\n */\nfunction parseDurationToSec(v, fallback = 32) {\n  if (v == null) return fallback;\n\n  // 1) 直接数字\n  if (typeof v === \"number\" && Number.isFinite(v)) return Math.max(1, Math.round(v));\n\n  const s0 = toText(v);\n  if (!s0) return fallback;\n\n  const s = s0.trim();\n\n  // 2) 时间格式 mm:ss 或 hh:mm:ss\n  if (/^\\d{1,2}:\\d{2}(:\\d{2})?$/.test(s)) {\n    const parts = s.split(\":\").map((x) => parseInt(x, 10));\n    if (parts.some((n) => !Number.isFinite(n))) return fallback;\n    if (parts.length === 2) return parts[0] * 60 + parts[1];\n    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];\n  }\n\n  // 3) 含“分/分钟/min” + “秒/s/sec”\n  const minMatch = s.match(/(\\d+)\\s*(分|分钟|min|mins|minute|minutes)/i);\n  const secMatch = s.match(/(\\d+)\\s*(秒|s|sec|secs|second|seconds)/i);\n  if (minMatch || secMatch) {\n    const mins = minMatch ? parseInt(minMatch[1], 10) : 0;\n    const secs = secMatch ? parseInt(secMatch[1], 10) : 0;\n    const total = mins * 60 + secs;\n    return total > 0 ? total : fallback;\n  }\n\n  // 4) 兜底：从任何字符串中提取数字（可把 \"56s\" -> 56）\n  const n = toNumber(s);\n  if (Number.isFinite(n) && n > 0) return Math.max(1, Math.round(n));\n\n  return fallback;\n}\n\n// -------------------- get fields --------------------\nconst api_key = toText(rec[\"api_key\"]);\nconst app_id = toText(rec[\"app_id\"]);\nconst app_secret = toText(rec[\"app_secret\"]);\nconst record_id =\n  toText(rec[\"record_id\"]) ||\n  toText(rec[\"记录id\"]) ||\n  root?.data?.record?.record_id ||\n  root?.data?.record?.id ||\n  \"\";\n\nconst productDesc = toText(rec[\"产品卖点\"] || rec[\"产品描述\"] || \"\");\nconst productName = toText(rec[\"产品名称\"] || \"\");\nconst language = toText(rec[\"视频语言\"] || rec[\"language\"] || \"Chinese\");\nconst presenterMode = toText(rec[\"presenterMode\"] || rec[\"人物模式\"] || \"talking_head\");\n\n// ✅ 时长：支持 \"56s\"\nconst durationRaw =\n  rec[\"时长\"] ??\n  rec[\"视频时长\"] ??\n  rec[\"时长(秒)\"] ??\n  rec[\"duration\"] ??\n  rec[\"durationSec\"];\n\nconst durationSec = parseDurationToSec(durationRaw, 32);\n\n// 分段时长（你现在默认 8；也允许未来飞书可配字段）\nconst segSecondsRaw = rec[\"分段时长\"] ?? rec[\"segSeconds\"] ?? 8;\nconst segSeconds = Math.max(1, Math.round(toNumber(segSecondsRaw) || 8));\n\n// ✅ 片段数量：按 ceil 计算\nconst nSegments = Math.max(1, Math.ceil(durationSec / segSeconds));\n\n// 参考爆款脚本（可选）\nconst refScript = toText(rec[\"参考脚本\"] || rec[\"参考爆款脚本\"] || rec[\"爆款脚本\"] || \"\");\n\n// 达人特征/描述（可选）\nconst personDescRaw = toText(rec[\"达人特征\"] || rec[\"达人特征描述\"] || rec[\"人物特征\"] || \"\");\nconst personDesc = personDescRaw;\n\n// ✅ 爆款脚本总结（你缺的就是这个）\nconst viralScriptSummaryRaw = toText(\n  rec[\"爆款脚本总结\"] ||\n  rec[\"爆款脚本总结JSON\"] ||\n  rec[\"爆款脚本拆解\"] ||\n  rec[\"爆款总结\"] ||\n  \"\"\n);\n\n// 尽量把总结解析成对象（如果是 JSON 字符串）\nlet viralScriptSummary = null;\nlet viralScriptSummaryParseError = \"\";\nif (viralScriptSummaryRaw) {\n  const s = viralScriptSummaryRaw.trim();\n  if (s.startsWith(\"{\") || s.startsWith(\"[\")) {\n    try {\n      viralScriptSummary = JSON.parse(s);\n    } catch (e) {\n      viralScriptSummaryParseError = String(e?.message || e);\n      viralScriptSummary = null; // 保持可控\n    }\n  }\n}\n\n// -------------------- output --------------------\nreturn [\n  {\n    ...root,\n    api_key,\n    app_id,\n    app_secret,\n    record_id,\n\n    productName,\n    productDesc,\n    personDesc,\n    presenterMode,\n    language,\n\n    durationSec,\n    segSeconds,\n    nSegments,\n\n    refScript,\n\n    // ✅ 新增输出\n    viralScriptSummaryRaw,   // 原始字符串（不丢）\n    viralScriptSummary,      // 解析后的对象（给后面节点直接用）\n\n    _debug: {\n      durationRaw: typeof durationRaw === \"string\" ? durationRaw : JSON.stringify(durationRaw),\n      durationSec,\n      segSeconds,\n      nSegments,\n\n      recordFieldsKeys: Object.keys(rec || {}).slice(0, 80),\n\n      personDescLen: personDesc?.length || 0,\n      refScriptLen: refScript?.length || 0,\n\n      viralScriptSummaryLen: viralScriptSummaryRaw?.length || 0,\n      viralScriptSummaryParseError,\n      hasViralScriptSummary: !!viralScriptSummaryRaw,\n      viralScriptSummaryType: viralScriptSummary ? (Array.isArray(viralScriptSummary) ? \"array\" : typeof viralScriptSummary) : \"null\",\n    },\n  },\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -112,
+        352
+      ],
+      "id": "421ee85f-f27e-4ae3-acca-80e417e454cb",
+      "name": "标准化输入"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "标准化输入",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "标准化输入": {
+      "main": [
+        [
+          {
+            "node": "脚本生成器",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "脚本生成器": {
+      "main": [
+        [
+          {
+            "node": "gemini3-flash",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gemini3-flash": {
+      "main": [
+        [
+          {
+            "node": "解析提示词",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析提示词": {
+      "main": [
+        [
+          {
+            "node": "组装写回参数",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装写回参数": {
+      "main": [
+        [
+          {
+            "node": "写入分镜表",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "写入分镜表": {
+      "main": [
+        [
+          {
+            "node": "查询工作流积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "查询工作流积分": {
+      "main": [
+        [
+          {
+            "node": "验证api-key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "验证api-key": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "hooks.flowonn.com",
+            "x-real-ip": "123.58.10.238",
+            "x-forwarded-for": "123.58.10.238",
+            "x-forwarded-proto": "https",
+            "connection": "close",
+            "content-length": "468",
+            "user-agent": "Go-http-client/1.1",
+            "content-type": "application/json",
+            "x-base-automation-ua": "automation/1.0.0",
+            "x-tt-env": "prod",
+            "x-tt-logid": "02177201542969600000000000000000000ffff3ee60ebd66c6b7",
+            "accept-encoding": "gzip"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "record_id": "recvceuPfP6TOy",
+            "workflow_id": "flow_analysis_video_Veo",
+            "table_link": "https://my.feishu.cn/base/AqkCbTRIEawUI0saNcBcERmrnZg?table=tbl1gHBpa5SpjXPt&view=vew3HXRwTo",
+            "table_link2": "https://my.feishu.cn/base/AqkCbTRIEawUI0saNcBcERmrnZg?table=tbl2JT5ROZGAMmfw&view=vew3HXRwTo",
+            "app_id": "cli_a8d48c9783a4d00e",
+            "app_secret": "UMpMwnXyEnqaqjCV1NhaUbzPU8W8vIA7",
+            "app_token": "AqkCbTRIEawUI0saNcBcERmrnZg",
+            "api_key": "sk_S-XJvpVKGGwnac1AlEFs3avCWZpqdOGaMMW27Y8iSPY"
+          },
+          "webhookUrl": "http://localhost:5678/webhook/analysis_video_Veo",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "versionId": "35928ae1-db30-4baf-ba8a-6b0f6885c973",
+  "activeVersionId": "35928ae1-db30-4baf-ba8a-6b0f6885c973",
+  "versionCounter": 145,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-03-11T14:32:55.805Z",
+      "createdAt": "2026-03-11T14:32:55.805Z",
+      "role": "workflow:owner",
+      "workflowId": "5QlPVB2C1qHJvGvC",
+      "projectId": "tMHfv8jC54QugIS3",
+      "project": {
+        "updatedAt": "2025-12-05T18:24:07.030Z",
+        "createdAt": "2025-12-05T18:00:52.525Z",
+        "id": "tMHfv8jC54QugIS3",
+        "name": "fan liu <591905097@qq.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "projectRelations": [
+          {
+            "updatedAt": "2025-12-05T18:00:52.525Z",
+            "createdAt": "2025-12-05T18:00:52.525Z",
+            "userId": "e1a90281-8c6a-4ec7-a985-3a344ba88b66",
+            "projectId": "tMHfv8jC54QugIS3",
+            "user": {
+              "updatedAt": "2026-03-12T04:36:50.363Z",
+              "createdAt": "2025-12-05T18:00:51.894Z",
+              "id": "e1a90281-8c6a-4ec7-a985-3a344ba88b66",
+              "email": "591905097@qq.com",
+              "firstName": "fan",
+              "lastName": "liu",
+              "personalizationAnswers": {
+                "version": "v4",
+                "personalization_survey_submitted_at": "2025-12-05T18:24:47.635Z",
+                "personalization_survey_n8n_version": "1.122.5",
+                "companySize": "<20",
+                "companyType": "saas",
+                "role": "business-owner",
+                "reportedSource": "youtube"
+              },
+              "settings": {
+                "userActivated": true,
+                "firstSuccessfulWorkflowId": "e9Q0InRVbw3mcRzk",
+                "userActivatedAt": 1773290207581,
+                "easyAIWorkflowOnboarded": true,
+                "npsSurvey": {
+                  "responded": true,
+                  "lastShownAt": 1772350096923
+                }
+              },
+              "disabled": false,
+              "mfaEnabled": false,
+              "lastActiveAt": "2026-03-12",
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-03-11T15:42:01.914Z",
+    "createdAt": "2026-03-11T15:42:01.914Z",
+    "versionId": "35928ae1-db30-4baf-ba8a-6b0f6885c973",
+    "workflowId": "5QlPVB2C1qHJvGvC",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "5QlPVB2C1qHJvGvC",
+          "options": {}
+        },
+        "id": "15050afe-29f2-4161-bb78-5bc17253f7da",
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -2112,
+          160
+        ],
+        "webhookId": "ed1048c5-af80-46b3-bf6d-deee483e392d"
+      },
+      {
+        "parameters": {
+          "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id={{ $('Webhook').item.json.body.workflow_id }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -1216,
+          160
+        ],
+        "id": "a4be0477-c5e9-4a9c-a65b-8f5673a63c15",
+        "name": "查询工作流积分"
+      },
+      {
+        "parameters": {
+          "url": "=http://47.107.158.233:8080/api/balance/check?required=100&api_key={{ $('Webhook').item.json.body.api_key }}",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "required",
+                "value": "={{ $json.data.credit_cost }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -992,
+          160
+        ],
+        "id": "ae54915d-475f-4c6e-b4a3-cf4918804975",
+        "name": "验证api-key",
+        "alwaysOutputData": true,
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 2
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.ok }}",
+                      "rightValue": "false",
+                      "operator": {
+                        "type": "boolean",
+                        "operation": "false",
+                        "singleValue": true
+                      },
+                      "id": "84e547e5-80ae-4340-a3e9-b76f32d20e0c"
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "apikey_invalid"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 2
+                  },
+                  "conditions": [
+                    {
+                      "id": "1f0f0883-abf7-4c55-8068-85568446efd2",
+                      "leftValue": "={{ $json.ok === true && $json.data.sufficient === false }}",
+                      "rightValue": "",
+                      "operator": {
+                        "type": "boolean",
+                        "operation": "true",
+                        "singleValue": true
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "insufficient_points"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 2
+                  },
+                  "conditions": [
+                    {
+                      "id": "94a60a62-da20-469a-ac15-4867f6a63449",
+                      "leftValue": "={{ $json.ok === true && $json.data.sufficient === true }}",
+                      "rightValue": "",
+                      "operator": {
+                        "type": "boolean",
+                        "operation": "true",
+                        "singleValue": true
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "pass"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.2,
+        "position": [
+          -768,
+          144
+        ],
+        "id": "9d7d6ff0-7f83-41d1-aacf-f45b6db3f67d",
+        "name": "Switch"
+      },
+      {
+        "parameters": {
+          "promptType": "define",
+          "text": "=presenterMode: {{ $json.presenterMode }}\npersonDesc: {{ $json.personDesc }}\nproductName: {{ $json.productName }}\nproductDesc: {{ $json.productDesc }}\nlanguage: {{ $json.language }}\ndurationSec: {{ $json.durationSec }}\nnSegments: {{ $json.nSegments }}\nsegSeconds: {{ $json.segSeconds }}\n\nrefScript:\n{{ $json.viralScriptSummaryRaw }}\n",
+          "options": {
+            "systemMessage": "=You are a Veo3 short-form UGC ad prompt engineer (TikTok-style, iPhone handheld).\n\nYou will receive:\n- presenterMode: one of [\"talking_head\",\"hands_only\",\"no_human\"]\n- personDesc: the presenter’s appearance/vibe (ONLY when presenterMode = talking_head)\n- productName + productDesc: product selling points + usage context\n- language: the spoken language for dialogue\n- durationSec: target total duration\n- nSegments: number of segments\n- segSeconds: seconds per segment (usually 8)\n- refScript: a viral reference script (for pacing/beat/vibe)\n\nTASK:\nRe-create the viral logic, beat structure, emotional arc, and “feel” of refScript, but adapt it to THIS product and THIS presenterMode.\nOutput EXACTLY nSegments segments that together form ONE continuous UGC clip cut into pieces.\n\nHARD CONSTRAINTS (must follow):\n1) Output MUST be valid JSON only. No markdown. No extra keys.\n2) Total shots MUST equal nSegments. shot_number must be 1..nSegments with no gaps.\n3) Each shot duration_seconds must be ~segSeconds (8). Total should roughly match durationSec.\n4) UGC look: iPhone handheld (selfie or POV), slight natural shake, imperfect real lighting, real home/casual setting. NOT commercial, NOT studio.\n5) No subtitles. No on-screen text. No logo. No watermark. No UI.\n6) Audio: include the spoken dialogue + natural SFX only. No background music.\n\n7) Presenter rules (CRITICAL):\n   - If presenterMode = \"talking_head\":\n       * Show ONE consistent presenter based on personDesc.\n       * Presenter speaks directly to camera (talking head).\n       * Mouth movement should match the spoken line (lip-sync required).\n   - If presenterMode = \"hands_only\":\n       * DO NOT show any face. Only hands/arms/body fragments are allowed.\n       * The dialogue is VOICEOVER narration (off-screen). No lip-sync requirement.\n   - If presenterMode = \"no_human\":\n       * No human body parts at all.\n       * The dialogue is VOICEOVER narration (off-screen). No lip-sync requirement.\n\n8) Timing: dialogue MUST be speakable within segSeconds.\n   - If language is English: voiceover MUST be <= 22 words per 8 seconds.\n   - If language is Chinese: voiceover MUST be <= 32 Chinese characters per 8 seconds.\n   - If language is other: keep it similarly short and speakable.\n\n9) Continuity & natural transitions (VERY HARD):\n   - The whole video must feel like ONE continuous clip, not separate ads.\n   - Same environment type, same props, same product look across all shots.\n   - Each shot MUST end with a bridge action/line into the next shot.\n   - The next shot MUST start by continuing that exact action/context with no reset.\n   - Use recurring anchors: one repeated hand action (showing/adjusting the product), one recurring prop (box/phone/mirror/mug), and a consistent emotional arc (curious → surprised → convinced → playful CTA).\n   - No abrupt topic jump. No “new scene/new day/reset”.\n\n10) Reference usage:\n   - Follow refScript’s persuasion logic and pacing, but do NOT copy word-for-word.\n   - Do NOT add technical/jargon claims unless clearly supported by productDesc.\n   - Keep it casual friend-to-friend UGC with slightly exaggerated but believable emotion.\n\n11) Dialogue exactness:\n   - shots[].voiceover is the EXACT spoken line (word-for-word).\n   - video_prompt MUST embed that exact line inside the block below (verbatim, no changes):\n     [SPOKEN_DIALOGUE - EXACT]\n     <voiceover>\n     [/SPOKEN_DIALOGUE - EXACT]\n   - If presenterMode = \"talking_head\":\n       video_prompt MUST explicitly say “lip-sync accurate” and “audio includes her spoken dialogue”.\n     Else:\n       video_prompt MUST explicitly say “voiceover narration (off-screen), no visible speaking”.\n\nOUTPUT JSON SCHEMA (exact keys):\n{\n  \"total_shots\": <int>,\n  \"shots\": [\n    {\n      \"shot_number\": <int>,\n      \"timestamp\": \"<string like 00:00-00:08>\",\n      \"duration_seconds\": <number>,\n      \"voiceover\": \"<EXACT spoken line in the target language>\",\n      \"sfx\": [\"<short natural SFX>\", \"...\"],\n      \"action\": \"<what happens on camera; must match voiceover and presenterMode rules>\",\n      \"transition_to_next\": \"<the exact bridge action/line into next shot; empty for last shot>\",\n      \"first_frame\": \"<first-frame image prompt; must match action and UGC look; no text overlay>\",\n      \"video_prompt\": \"<Veo3 prompt for this shot; MUST include the exact SPOKEN_DIALOGUE block; respect presenterMode; no text overlay>\"\n    }\n  ]\n}\n\nTIMESTAMP RULE:\n- shot 1: 00:00-00:08\n- shot 2: 00:08-00:16\n- shot 3: 00:16-00:24\n... continue accordingly.\n\nSTYLE TEMPLATE for video_prompt (must follow closely):\n- UGC iPhone handheld, natural micro-shake (selfie for talking_head; POV/overhead for hands_only; product-only for no_human)\n- Real home/casual environment, imperfect natural lighting, not studio\n- No on-screen text/subtitles/logos/watermarks\n- Include:\n  [SPOKEN_DIALOGUE - EXACT]\n  <voiceover>\n  [/SPOKEN_DIALOGUE - EXACT]\n- If presenterMode = \"talking_head\": include “lip-sync accurate, audio includes her spoken dialogue”\n  Else: include “voiceover narration (off-screen), no visible speaking”\n- Add the listed SFX only; no background music\n- End with the transition action into the next shot"
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.agent",
+        "typeVersion": 3,
+        "position": [
+          112,
+          352
+        ],
+        "id": "01954874-11de-4cb9-a7f5-dc9d506e7319",
+        "name": "脚本生成器",
+        "retryOnFail": true,
+        "waitBetweenTries": 3000
+      },
+      {
+        "parameters": {
+          "model": {
+            "__rl": true,
+            "value": "gemini-3-flash-preview-thinking",
+            "mode": "list",
+            "cachedResultName": "gemini-3-flash-preview-thinking"
+          },
+          "responsesApiEnabled": false,
+          "options": {}
+        },
+        "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "typeVersion": 1.3,
+        "position": [
+          192,
+          576
+        ],
+        "id": "aebffcfb-7ab6-41cf-b2c4-8249cf2f228b",
+        "name": "gemini3-flash",
+        "credentials": {
+          "openAiApi": {
+            "id": "TVs8cHigrdXKUMDJ",
+            "name": "云雾api"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "/**\n * 解析提示词（Agent 输出 -> 标准 JSON）\n * 并把「读取记录」中的 AI达人 / 产品名称 注入到输出，方便后续写回表。\n */\n\nfunction stripFences(s) {\n  const t = String(s || \"\").trim();\n  if (t.startsWith(\"```\")) {\n    return t.replace(/^```[a-zA-Z]*\\n?/, \"\").replace(/```$/, \"\").trim();\n  }\n  return t;\n}\n\nfunction safeParse(s) {\n  try { return JSON.parse(s); } catch { return null; }\n}\n\nfunction pickRawText(in0) {\n  if (!in0) return \"\";\n  if (typeof in0 === \"object\" && in0.shots && Array.isArray(in0.shots)) return in0;\n\n  const direct = in0.output || in0.text || in0.response;\n  if (direct) return direct;\n\n  const gemText =\n    in0?.candidates?.[0]?.content?.parts?.map(p => p.text).filter(Boolean).join(\"\\n\") ||\n    in0?.candidates?.[0]?.content?.parts?.[0]?.text;\n  if (gemText) return gemText;\n\n  if (in0.body) return in0.body;\n  return \"\";\n}\n\nfunction extractFirstJsonObject(str) {\n  const s = String(str || \"\");\n  const i = s.indexOf(\"{\");\n  const j = s.lastIndexOf(\"}\");\n  if (i < 0 || j <= i) return null;\n  return s.slice(i, j + 1);\n}\n\nfunction toNumber(v, dflt = 0) {\n  const n = Number(v);\n  return Number.isFinite(n) ? n : dflt;\n}\n\nfunction toString(v) {\n  if (v == null) return \"\";\n  return String(v);\n}\n\nfunction ensureArray(v) {\n  return Array.isArray(v) ? v : [];\n}\n\nfunction normalizeSfx(v) {\n  if (Array.isArray(v)) return v.map(x => String(x || \"\")).filter(Boolean);\n  if (typeof v === \"string\") return v.split(/[,，]/).map(x => x.trim()).filter(Boolean);\n  return [];\n}\n\nfunction normalizeTimestamp(idx, segSeconds, provided) {\n  const t = String(provided || \"\").trim();\n  if (t) return t;\n\n  const start = idx * segSeconds;\n  const end = start + segSeconds;\n  const pad = (n) => String(Math.floor(n)).padStart(2, \"0\");\n  const mmss = (sec) => `${pad(sec / 60)}:${pad(sec % 60)}`;\n  return `${mmss(start)}-${mmss(end)}`;\n}\n\n// ✅ 从飞书「读取记录」拿 AI达人 / 产品名称（注意字段类型可能是富文本数组）\nfunction getFeishuTextField(fields, name) {\n  const v = fields?.[name];\n  if (Array.isArray(v) && v.length) {\n    // 常见：[{text:\"xxx\"}] 或 [{type:\"text\", text:\"xxx\"}]\n    if (v[0]?.text != null) return String(v[0].text);\n    // 兜底：直接 stringify\n    return String(v[0]);\n  }\n  if (typeof v === \"string\") return v;\n  return \"\";\n}\n\n// ---------------- main ----------------\n\nconst in0 = $input.first()?.json || {};\nlet raw = pickRawText(in0);\n\nlet obj = null;\nif (raw && typeof raw === \"object\" && Array.isArray(raw.shots)) {\n  obj = raw;\n} else {\n  raw = stripFences(raw);\n  const jsonStr = extractFirstJsonObject(raw);\n  if (!jsonStr) throw new Error(\"No JSON object found in model output. Ensure agent outputs JSON only.\");\n  obj = safeParse(jsonStr);\n  if (!obj) throw new Error(\"JSON.parse failed. Extracted JSON invalid.\");\n}\n\nconst shotsRaw = ensureArray(obj.shots);\nif (!shotsRaw.length) throw new Error(\"shots[] is empty after parsing.\");\n\n// ✅ segSeconds 从「标准化输入」取，取不到默认 8\nconst segSeconds = toNumber($(\"标准化输入\").first()?.json?.segSeconds, 8) || 8;\n\n// ✅ 关键：把名字拿出来\nconst recordFields = $(\"读取记录\").first()?.json?.data?.record?.fields || {};\nconst AI达人 = getFeishuTextField(recordFields, \"使用AI达人\") || getFeishuTextField(recordFields, \"AI达人\") || \"\";\nconst 产品名称 = getFeishuTextField(recordFields, \"产品名称\") || \"\";\n\n// 生成 shots\nconst shots = shotsRaw.map((s, idx) => {\n  const shot_number = Number.isInteger(s?.shot_number) ? s.shot_number : (idx + 1);\n  const duration_seconds = typeof s?.duration_seconds === \"number\"\n    ? s.duration_seconds\n    : toNumber(s?.duration_seconds, segSeconds);\n\n  return {\n    shot_number,\n    timestamp: normalizeTimestamp(idx, segSeconds, s?.timestamp),\n    duration_seconds,\n    voiceover: toString(s?.voiceover),\n    sfx: normalizeSfx(s?.sfx),\n    action: toString(s?.action),\n    transition_to_next: toString(s?.transition_to_next),\n    first_frame: toString(s?.first_frame),\n    video_prompt: toString(s?.video_prompt),\n\n    // ✅ 注入，给你后面写回用\n    AI达人,\n    产品名称,\n  };\n});\n\n// 排序 + 修正镜号\nshots.sort((a, b) => a.shot_number - b.shot_number);\nfor (let i = 0; i < shots.length; i++) shots[i].shot_number = i + 1;\nshots[shots.length - 1].transition_to_next = \"\";\n\nreturn [{\n  json: {\n    total_shots: shots.length,\n    AI达人,\n    产品名称,\n    shots\n  }\n}];\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          464,
+          352
+        ],
+        "id": "01409bd3-0d62-4e3f-9533-097e4d2fddb5",
+        "name": "解析提示词"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $json.url }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $('Auth:getAccessToken auth1').item.json.tenant_access_token }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{$json.body}}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          912,
+          352
+        ],
+        "id": "ce43d904-f748-4543-9ccc-7474222d0cff",
+        "name": "写入分镜表"
+      },
+      {
+        "parameters": {
+          "jsCode": "/**\n * 输出：{ url, headers, body } 直接给 HTTP Request 节点使用（写入分镜表 batch_create）\n * 额外写入：\n * - AI达人（来自任务表字段：使用AI达人 或 AI达人；也兼容入参 root / shot）\n * - 产品名称（来自任务表字段：产品名称；也兼容入参 root / shot）\n * - 达人上身图url（来自任务表文本字段：达人上身图url）\n * - 口播文案：优先 shots[].voiceover（每镜），再降级任务表 fields/入参 root\n */\n\nconst root0 = $input.first().json;\nconst root = Array.isArray(root0) ? root0[0] : root0;\n\nconst shots = Array.isArray(root.shots) ? root.shots : [];\nif (!shots.length) throw new Error(\"shots[] is empty\");\n\nconst app_token = $('获取任务表信息').first().json.app_token;\nconst table_id  = $('获取脚本表信息').first().json.table_id;\nconst token     = $('Auth:getAccessToken auth1').first().json.tenant_access_token;\n\nconst parentRecordId = $('读取记录').first().json.data.record.record_id;\nconst fields = $('读取记录').first().json.data.record.fields || {};\n\n// ---------- helpers ----------\nfunction toText(v) {\n  if (v == null) return \"\";\n  if (typeof v === \"string\") return v;\n  if (Array.isArray(v) && v.length) {\n    if (v[0]?.text != null) return String(v[0].text);\n    return String(v[0]);\n  }\n  return String(v);\n}\n\nfunction getText(obj, name) {\n  if (!obj) return \"\";\n  return toText(obj[name]);\n}\n\n// ---------- values from task record (fields) / root fallback ----------\nconst AI达人_fromTask = getText(fields, \"使用AI达人\") || getText(fields, \"AI达人\");\nconst 产品名称_fromTask = getText(fields, \"产品名称\");\nconst 口播文案_fromTask = getText(fields, \"口播文案\");\nconst 达人上身图url = getText(fields, \"达人上身图url\"); // 你说的是文本\n\n// root 也可能带（你给的入参 root 有 产品名称）\nconst AI达人_fromRoot = getText(root, \"AI达人\");\nconst 产品名称_fromRoot = getText(root, \"产品名称\");\nconst 口播文案_fromRoot = getText(root, \"口播文案\");\n\n// ---------- map shot -> fields ----------\nfunction mapShotToFields(s) {\n  const ai = toText(s?.AI达人) || AI达人_fromTask || AI达人_fromRoot;\n  const prod = toText(s?.产品名称) || 产品名称_fromTask || 产品名称_fromRoot;\n\n  // ✅ 关键：每镜口播优先用 shots[].voiceover\n  const voiceover =\n    toText(s?.voiceover) ||          // 你入参就是这个\n    toText(s?.voice_over) ||         // 兼容不同命名\n    toText(s?.spoken_script) ||      // 兼容不同命名\n    口播文案_fromTask ||\n    口播文案_fromRoot;\n\n  return {\n    \"镜号\": Number(s.shot_number),\n    \"时间段\": toText(s.timestamp),\n    \"图片提示词\": toText(s.first_frame),\n    \"视频提示词\": toText(s.video_prompt),\n\n    // ✅ 写入字段（分镜表里必须存在同名字段）\n    \"AI达人\": toText(ai),\n    \"产品名称\": toText(prod),\n    \"口播文案\": toText(voiceover),\n    \"达人上身图url\": toText(达人上身图url),\n\n    // ✅ 双向关联字段：必须 string[]\n    \"🔥 爆款复刻任务\": [String(parentRecordId)]\n  };\n}\n\n// 飞书 batch_create 一次最多 100\nconst MAX = 100;\nconst batches = [];\nfor (let i = 0; i < shots.length; i += MAX) {\n  batches.push(shots.slice(i, i + MAX));\n}\n\n// 输出多批 item（每批一个 HTTP 调用）\nreturn batches.map((chunk) => {\n  const records = chunk.map(s => ({ fields: mapShotToFields(s) }));\n  return {\n    json: {\n      url: `https://open.feishu.cn/open-apis/bitable/v1/apps/${app_token}/tables/${table_id}/records/batch_create`,\n      headers: {\n        \"Authorization\": `Bearer ${token}`,\n        \"Content-Type\": \"application/json\"\n      },\n      body: { records }\n    }\n  };\n});\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          688,
+          352
+        ],
+        "id": "33a7aec3-1f1f-4758-8ab1-87612d0c2d2c",
+        "name": "组装写回参数"
+      },
+      {
+        "parameters": {
+          "jsCode": "/**\n * 标准化输入（可整段替换）\n * - 兼容飞书字段：纯字符串 / 富文本数组([{text:\"\"}]) / 数字\n * - 修复：时长字段为 \"56s\" / \"1分56秒\" / \"00:56\" / \"01:56\" 等格式时解析失败导致回退默认值\n * - 计算：durationSec / segSeconds -> nSegments\n * - ✅ 新增：提取爆款脚本总结（viralScriptSummaryRaw / viralScriptSummary）\n * - 输出：后续节点直接使用\n */\n\nconst root0 = $input.first()?.json;\nconst root = Array.isArray(root0) ? root0[0] : root0;\n\nif (!root) throw new Error(\"input is empty\");\n\nconst rec =\n  root?.data?.record?.fields ||\n  root?.data?.record?.record?.fields || // 兜底（有些节点会多包一层）\n  root?.record?.fields ||\n  root?.fields ||\n  {};\n\n// -------------------- helpers: text / number --------------------\nfunction toText(v) {\n  if (v == null) return \"\";\n  if (Array.isArray(v)) {\n    // 飞书富文本：[{text:\"...\"}] 或附件数组 / 其它数组\n    return v\n      .map((x) => {\n        if (x == null) return \"\";\n        if (typeof x === \"string\") return x;\n        if (typeof x === \"number\") return String(x);\n        if (typeof x === \"object\") return x.text ?? x.name ?? x.value ?? \"\";\n        return String(x);\n      })\n      .filter(Boolean)\n      .join(\"\\n\")\n      .trim();\n  }\n  if (typeof v === \"object\") return String(v.text ?? v.value ?? v.name ?? \"\").trim();\n  return String(v).trim();\n}\n\nfunction toNumber(v) {\n  // 更宽松：能从 \"56s\" 里抠出 56\n  if (v == null) return NaN;\n  if (typeof v === \"number\" && Number.isFinite(v)) return v;\n\n  const s = toText(v);\n  if (!s) return NaN;\n\n  // 先尝试直接 Number()\n  const direct = Number(s);\n  if (Number.isFinite(direct)) return direct;\n\n  // 再尝试提取首个数字（含小数）\n  const m = s.match(/(\\d+(\\.\\d+)?)/);\n  if (m) {\n    const n = Number(m[1]);\n    if (Number.isFinite(n)) return n;\n  }\n  return NaN;\n}\n\n/**\n * 把时长字段解析成秒数\n * 支持：\n * - 56 / \"56\" / \"56s\" / \"56秒\" / \"56 sec\"\n * - \"1分56秒\" / \"2分钟\" / \"1 min 20 sec\"\n * - \"00:56\" / \"01:56\" / \"00:01:56\"\n */\nfunction parseDurationToSec(v, fallback = 32) {\n  if (v == null) return fallback;\n\n  // 1) 直接数字\n  if (typeof v === \"number\" && Number.isFinite(v)) return Math.max(1, Math.round(v));\n\n  const s0 = toText(v);\n  if (!s0) return fallback;\n\n  const s = s0.trim();\n\n  // 2) 时间格式 mm:ss 或 hh:mm:ss\n  if (/^\\d{1,2}:\\d{2}(:\\d{2})?$/.test(s)) {\n    const parts = s.split(\":\").map((x) => parseInt(x, 10));\n    if (parts.some((n) => !Number.isFinite(n))) return fallback;\n    if (parts.length === 2) return parts[0] * 60 + parts[1];\n    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];\n  }\n\n  // 3) 含“分/分钟/min” + “秒/s/sec”\n  const minMatch = s.match(/(\\d+)\\s*(分|分钟|min|mins|minute|minutes)/i);\n  const secMatch = s.match(/(\\d+)\\s*(秒|s|sec|secs|second|seconds)/i);\n  if (minMatch || secMatch) {\n    const mins = minMatch ? parseInt(minMatch[1], 10) : 0;\n    const secs = secMatch ? parseInt(secMatch[1], 10) : 0;\n    const total = mins * 60 + secs;\n    return total > 0 ? total : fallback;\n  }\n\n  // 4) 兜底：从任何字符串中提取数字（可把 \"56s\" -> 56）\n  const n = toNumber(s);\n  if (Number.isFinite(n) && n > 0) return Math.max(1, Math.round(n));\n\n  return fallback;\n}\n\n// -------------------- get fields --------------------\nconst api_key = toText(rec[\"api_key\"]);\nconst app_id = toText(rec[\"app_id\"]);\nconst app_secret = toText(rec[\"app_secret\"]);\nconst record_id =\n  toText(rec[\"record_id\"]) ||\n  toText(rec[\"记录id\"]) ||\n  root?.data?.record?.record_id ||\n  root?.data?.record?.id ||\n  \"\";\n\nconst productDesc = toText(rec[\"产品卖点\"] || rec[\"产品描述\"] || \"\");\nconst productName = toText(rec[\"产品名称\"] || \"\");\nconst language = toText(rec[\"视频语言\"] || rec[\"language\"] || \"Chinese\");\nconst presenterMode = toText(rec[\"presenterMode\"] || rec[\"人物模式\"] || \"talking_head\");\n\n// ✅ 时长：支持 \"56s\"\nconst durationRaw =\n  rec[\"时长\"] ??\n  rec[\"视频时长\"] ??\n  rec[\"时长(秒)\"] ??\n  rec[\"duration\"] ??\n  rec[\"durationSec\"];\n\nconst durationSec = parseDurationToSec(durationRaw, 32);\n\n// 分段时长（你现在默认 8；也允许未来飞书可配字段）\nconst segSecondsRaw = rec[\"分段时长\"] ?? rec[\"segSeconds\"] ?? 8;\nconst segSeconds = Math.max(1, Math.round(toNumber(segSecondsRaw) || 8));\n\n// ✅ 片段数量：按 ceil 计算\nconst nSegments = Math.max(1, Math.ceil(durationSec / segSeconds));\n\n// 参考爆款脚本（可选）\nconst refScript = toText(rec[\"参考脚本\"] || rec[\"参考爆款脚本\"] || rec[\"爆款脚本\"] || \"\");\n\n// 达人特征/描述（可选）\nconst personDescRaw = toText(rec[\"达人特征\"] || rec[\"达人特征描述\"] || rec[\"人物特征\"] || \"\");\nconst personDesc = personDescRaw;\n\n// ✅ 爆款脚本总结（你缺的就是这个）\nconst viralScriptSummaryRaw = toText(\n  rec[\"爆款脚本总结\"] ||\n  rec[\"爆款脚本总结JSON\"] ||\n  rec[\"爆款脚本拆解\"] ||\n  rec[\"爆款总结\"] ||\n  \"\"\n);\n\n// 尽量把总结解析成对象（如果是 JSON 字符串）\nlet viralScriptSummary = null;\nlet viralScriptSummaryParseError = \"\";\nif (viralScriptSummaryRaw) {\n  const s = viralScriptSummaryRaw.trim();\n  if (s.startsWith(\"{\") || s.startsWith(\"[\")) {\n    try {\n      viralScriptSummary = JSON.parse(s);\n    } catch (e) {\n      viralScriptSummaryParseError = String(e?.message || e);\n      viralScriptSummary = null; // 保持可控\n    }\n  }\n}\n\n// -------------------- output --------------------\nreturn [\n  {\n    ...root,\n    api_key,\n    app_id,\n    app_secret,\n    record_id,\n\n    productName,\n    productDesc,\n    personDesc,\n    presenterMode,\n    language,\n\n    durationSec,\n    segSeconds,\n    nSegments,\n\n    refScript,\n\n    // ✅ 新增输出\n    viralScriptSummaryRaw,   // 原始字符串（不丢）\n    viralScriptSummary,      // 解析后的对象（给后面节点直接用）\n\n    _debug: {\n      durationRaw: typeof durationRaw === \"string\" ? durationRaw : JSON.stringify(durationRaw),\n      durationSec,\n      segSeconds,\n      nSegments,\n\n      recordFieldsKeys: Object.keys(rec || {}).slice(0, 80),\n\n      personDescLen: personDesc?.length || 0,\n      refScriptLen: refScript?.length || 0,\n\n      viralScriptSummaryLen: viralScriptSummaryRaw?.length || 0,\n      viralScriptSummaryParseError,\n      hasViralScriptSummary: !!viralScriptSummaryRaw,\n      viralScriptSummaryType: viralScriptSummary ? (Array.isArray(viralScriptSummary) ? \"array\" : typeof viralScriptSummary) : \"null\",\n    },\n  },\n];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -112,
+          352
+        ],
+        "id": "421ee85f-f27e-4ae3-acca-80e417e454cb",
+        "name": "标准化输入"
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "标准化输入",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "标准化输入": {
+        "main": [
+          [
+            {
+              "node": "脚本生成器",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "脚本生成器": {
+        "main": [
+          [
+            {
+              "node": "gemini3-flash",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "gemini3-flash": {
+        "main": [
+          [
+            {
+              "node": "解析提示词",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "解析提示词": {
+        "main": [
+          [
+            {
+              "node": "组装写回参数",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "组装写回参数": {
+        "main": [
+          [
+            {
+              "node": "写入分镜表",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "写入分镜表": {
+        "main": [
+          [
+            {
+              "node": "查询工作流积分",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "查询工作流积分": {
+        "main": [
+          [
+            {
+              "node": "验证api-key",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "验证api-key": {
+        "main": [
+          [
+            {
+              "node": "Switch",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "fan liu",
+    "name": null,
+    "description": null
+  }
+}

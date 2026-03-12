@@ -8,6 +8,7 @@ export async function createScript(formData: FormData) {
   const videoUrl = formData.get('videoUrl') as string;
   const description = formData.get('description') as string;
   const id = formData.get('id') as string;
+  const userId = formData.get('userId') as string | null;
 
   if (!title || !videoUrl) {
     throw new Error('Title and Video URL are required');
@@ -35,6 +36,7 @@ export async function createScript(formData: FormData) {
             title,
             videoUrl,
             breakdown: JSON.stringify(initialBreakdown),
+            userId: userId, // Save user ID
         },
     });
   }

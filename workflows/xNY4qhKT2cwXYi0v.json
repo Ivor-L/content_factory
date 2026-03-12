@@ -1,0 +1,1350 @@
+{
+  "updatedAt": "2026-03-10T14:41:52.241Z",
+  "createdAt": "2026-03-06T09:54:19.435Z",
+  "id": "xNY4qhKT2cwXYi0v",
+  "name": "一键生成9宫格-剧情版plus-网页版",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "storyboard_Plot_web",
+        "options": {}
+      },
+      "id": "9f77c154-3b5e-4596-9da4-0a2a078c4ef1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        0
+      ],
+      "webhookId": "6a62bc24-387a-462f-b28b-096b2d11c234"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "storyboard_tasks",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "task_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Webhook').item.json.body.taskId }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "PROCESSING"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "10"
+            }
+          ]
+        }
+      },
+      "id": "366d38c6-e589-44ae-9725-55b88d2c64b2",
+      "name": "Update Progress 10%",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        80,
+        0
+      ],
+      "alwaysOutputData": false,
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Webhook').item.json.body.imageUrl }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "3c7146bd-5429-41d4-aeb4-43d577d25df2",
+      "name": "Download Reference Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        304,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputBody = $('Webhook').item.json.body || {};\nconst script = inputBody.script || inputBody.scriptContent || inputBody.story_text || '';\nconst contentType = inputBody.content_type || 'ugc带货';\n\nif (!script) {\n  throw new Error('Missing script / scriptContent / story_text');\n}\n\nconst itemIndex = 0;\nconst binaryPropertyName = 'data';\n\n// 读取真正的二进制 buffer\nconst buffer = await this.helpers.getBinaryDataBuffer(itemIndex, binaryPropertyName);\n\nif (!buffer || !buffer.length) {\n  throw new Error('参考图 buffer 为空，下载图片节点可能没有拿到文件');\n}\n\n// 取 binary 元信息\nconst item = $input.first();\nconst binaryMeta = item?.binary?.[binaryPropertyName] || {};\n\nreturn {\n  json: {\n    story_text: script,\n    person_image_b64: buffer.toString('base64'),\n    person_mime_type: binaryMeta.mimeType || 'image/jpeg',\n    content_type: contentType,\n    taskId: inputBody.taskId || inputBody.task_id || inputBody.record_id || 'unknown_task',\n    record_id: inputBody.record_id || '',\n    table_link: inputBody.table_link || '',\n    app_token: inputBody.app_token || '',\n    table_id: inputBody.table_id || '',\n    tenant_access_token: inputBody.tenant_access_token || '',\n    api_key: inputBody.api_key || '',\n    app_id: inputBody.app_id || '',\n    app_secret: inputBody.app_secret || '',\n    workflow_id: inputBody.workflow_id || 'flow_storyboard',\n    imageUrl: inputBody.imageUrl || inputBody.referenceImage || ''\n  }\n};"
+      },
+      "id": "fdcbac1a-029f-4e9e-89a7-f631d8076d6e",
+      "name": "Prepare Gemini Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        528,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function s(v){ return v == null ? '' : String(v); }\nfunction stripDataPrefix(b64){ return s(b64).trim().replace(/^data:.*;base64,/, '').trim(); }\n\nconst j = $json || {};\nconst content_type = s(j.content_type).trim() || 'ugc带货';\nconst story_text = s(j.story_text).trim();\nconst person_mime_type = s(j.person_mime_type).trim() || 'image/jpeg';\nconst person_image_b64 = stripDataPrefix(j.person_image_b64);\n\nif (!story_text) throw new Error('缺少 story_text（剧本为空）');\nif (!person_image_b64) throw new Error('缺少 person_image_b64（参考图为空）');\n\nconst baseRules = [\n  'You are a senior commercial storyboard director and prompt engineer.',\n  'Your job is to convert the script and reference image into a 9-shot storyboard plan for a single 3x3 storyboard grid image.',\n  'You must preserve identity consistency, outfit consistency, product consistency, and scene logic consistency.',\n  'Return JSON only. No markdown. No explanation.',\n  'shots must be exactly 9 items.',\n  'Each shot must be visually distinct but remain coherent as one continuous story.',\n  'Each shot is intended to later become an 8-second video shot, so each shot should already imply dynamic action potential.',\n  'Do not output vague prompts. Be concrete and visual.',\n  'No text overlays, no subtitles, no watermark, no UI.'\n].join(' ');\n\nconst typeRulesMap = {\n  'ugc带货': [\n    'UGC commercial style.',\n    'Phone-camera realism, natural motion logic, lifestyle feeling.',\n    'The same person should naturally interact with the same product across the 9 shots.',\n    'Environment should stay basically consistent unless script clearly requires a change.',\n    'Keep authentic handheld-feel compositions and conversion-oriented story beats.'\n  ].join(' '),\n  '产品展示': [\n    'Product showcase style.',\n    'The product is always the hero.',\n    'Use different framings, angles, detail focus, usage context, and hero beauty shots.',\n    'Avoid empty catalog shots; keep cinematic realism.'\n  ].join(' '),\n  '剧情故事': [\n    'Narrative storytelling style.',\n    'Characters and props must remain continuous.',\n    'Locations may evolve if the story requires, but continuity must be coherent.',\n    'Each shot should feel like one beat in a short film storyboard.'\n  ].join(' ')\n};\n\nconst typeRules = typeRulesMap[content_type] || typeRulesMap['ugc带货'];\n\nconst outputSchema = {\n  content_type: content_type,\n  visual_anchor: {\n    subject_identity: 'main character identity anchor from reference image',\n    outfit_anchor: 'same outfit and accessories as reference image unless script explicitly changes',\n    product_anchor: 'same product identity, same shape, color, logo, material',\n    scene_anchor: 'same environment logic and lighting logic'\n  },\n  global_style: 'photorealistic, cinematic, rich details, realistic lighting, no text, no UI',\n  negative_prompts: [\n    'extra fingers',\n    'deformed hands',\n    'identity drift',\n    'wrong product logo',\n    'new accessories',\n    'text overlay',\n    'watermark',\n    'frame border',\n    'gridline',\n    'cartoon look'\n  ],\n  shots: [\n    {\n      shot_index: 1,\n      title: 'shot title',\n      story_beat: 'what this beat does in the overall story',\n      subject: 'who/what is the main subject in this shot',\n      scene: 'where it happens',\n      emotion: 'emotion or tone',\n      camera_shot: 'composition / shot size / angle',\n      motion_hint: 'what dynamic motion should later happen in video',\n      prompt_text: 'detailed visual prompt for this panel'\n    }\n  ]\n};\n\nconst instruction = `${baseRules}\\n\\nContent type rules: ${typeRules}\\n\\nScript:\\n${story_text}\\n\\nReturn a JSON object following this structure exactly:\\n${JSON.stringify(outputSchema, null, 2)}\\n\\nImportant hard constraints:\\n1. shots must be exactly 9 items.\\n2. shot_index must be 1 to 9.\\n3. prompt_text must be detailed and visual, suitable for storyboard image generation.\\n4. motion_hint must make later video expansion easy.\\n5. Keep the same person, same outfit, same product, same scene logic unless the script explicitly changes it.\\n6. No extra people unless the script explicitly requires them.\\n7. No text elements in the frame.`;\n\nconst gemini_body = {\n  contents: [\n    {\n      role: 'user',\n      parts: [\n        { text: instruction },\n        {\n          inline_data: {\n            mime_type: person_mime_type,\n            data: person_image_b64\n          }\n        }\n      ]\n    }\n  ],\n  generationConfig: {\n    temperature: 0.6,\n    responseMimeType: 'application/json'\n  }\n};\n\nreturn {\n  json: {\n    ...j,\n    gemini_body\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        752,
+        0
+      ],
+      "id": "3ede812b-c596-4d2b-9f33-7d3a4dd314a6",
+      "name": "组装请求"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "storyboard_tasks",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "task_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.taskId }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "PROCESSING"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "45"
+            }
+          ]
+        }
+      },
+      "id": "4e789a34-78ca-4940-8293-811def1393d1",
+      "name": "Update Progress 45%",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        976,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://yunwu.ai/v1beta/models/gemini-2.5-pro:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('组装请求').item.json.gemini_body }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        0
+      ],
+      "id": "e29e1e54-110e-4c13-869a-8661707e4863",
+      "name": "分析Agent-提示词撰写",
+      "retryOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mMIH382GnJoMSu4L",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function unwrapRoot(x) {\n  if (x && typeof x === 'object' && x.body && typeof x.body === 'object') return x.body;\n  return x;\n}\n\nfunction extractFirstJsonObject(s) {\n  if (!s) return '';\n  const cleaned = String(s)\n    .replace(/```json\\s*/gi, '')\n    .replace(/```/g, '')\n    .trim();\n\n  const start = cleaned.indexOf('{');\n  if (start < 0) return '';\n\n  let depth = 0;\n  let inString = false;\n  let escaped = false;\n\n  for (let i = start; i < cleaned.length; i++) {\n    const ch = cleaned[i];\n\n    if (escaped) {\n      escaped = false;\n      continue;\n    }\n    if (ch === '\\\\') {\n      escaped = true;\n      continue;\n    }\n    if (ch === '\"') {\n      inString = !inString;\n      continue;\n    }\n    if (!inString) {\n      if (ch === '{') depth++;\n      if (ch === '}') depth--;\n      if (depth === 0) return cleaned.slice(start, i + 1).trim();\n    }\n  }\n  return '';\n}\n\nfunction extractText(root) {\n  const parts = root?.candidates?.[0]?.content?.parts;\n  if (!Array.isArray(parts) || parts.length === 0) return '';\n\n  const p1 = parts.find(p => typeof p?.text === 'string' && p.text.trim().startsWith('{') && !p.thought);\n  if (p1) return p1.text.trim();\n\n  const p2 = parts.find(p => typeof p?.text === 'string' && p.text.trim().startsWith('{'));\n  if (p2) return p2.text.trim();\n\n  const all = parts.map(p => typeof p?.text === 'string' ? p.text : '').filter(Boolean).join('\\n');\n  return extractFirstJsonObject(all);\n}\n\nfunction s(v){ return v == null ? '' : String(v); }\nfunction stripDataPrefix(b64){ return s(b64).trim().replace(/^data:.*;base64,/, '').trim(); }\n\nconst raw = $json || {};\nconst root = unwrapRoot(raw);\nconst text = extractText(root);\nif (!text) throw new Error('第一阶段 storyboard agent 未返回可解析 JSON');\n\nlet storyboard;\ntry {\n  storyboard = JSON.parse(text);\n} catch (e) {\n  throw new Error('第一阶段 storyboard JSON 解析失败：' + e.message + '\\n原文前500字：' + String(text).slice(0, 500));\n}\n\nconst shots = Array.isArray(storyboard?.shots) ? storyboard.shots : [];\nif (shots.length !== 9) {\n  throw new Error('第一阶段 storyboard shots 必须刚好 9 个；实际=' + shots.length);\n}\n\nconst base = $('Prepare Gemini Data').first().json || {};\nconst story_text = s(base.story_text).trim();\nconst content_type = s(base.content_type).trim() || 'ugc带货';\nconst person_image_b64 = stripDataPrefix(base.person_image_b64);\nconst person_mime_type = s(base.person_mime_type).trim() || 'image/jpeg';\n\nif (!person_image_b64) throw new Error('缺少参考图 person_image_b64');\n\nconst instruction = `You are a senior cinematic video prompt engineer.\\n\\nTask:\\nExpand each of the 9 storyboard shots into a highly detailed 8-second video prompt.\\n\\nHard requirements:\\n1. Do NOT rewrite the story structure.\\n2. Keep the same person identity, outfit, accessories, product identity, and scene logic from the reference image and storyboard.\\n3. Each shot duration is EXACTLY 8 seconds.\\n4. For EACH shot output these fields:\\n   - shot_index\\n   - title\\n   - story_beat\\n   - subject\\n   - scene\\n   - emotion\\n   - camera_shot\\n   - motion_hint\\n   - prompt_text\\n   - start_frame\\n   - action\\n   - end_frame\\n   - style\\n   - timeline (minimum 4 segments)\\n   - video_prompt\\n5. The final video_prompt must strictly use this structure:\\n   Start frame: ...\\n   Action: ...\\n   End frame: ...\\n   Style: ...\\n6. timeline must describe the exact 8-second evolution with time_range / visual / camera / environment.\\n7. Maintain subject consistency and scene consistency throughout.\\n8. Return JSON only. No markdown. No explanation.\\n\\nReturn schema example:\\n{\\n  \\\"content_type\\\": \\\"${content_type}\\\",\\n  \\\"global_video_rules\\\": {\\n    \\\"duration_per_shot\\\": 8,\\n    \\\"subject_consistency\\\": true,\\n    \\\"scene_consistency\\\": true,\\n    \\\"style_anchor\\\": \\\"photorealistic, cinematic, realistic light, rich detail\\\"\\n  },\\n  \\\"shots\\\": [\\n    {\\n      \\\"shot_index\\\": 1,\\n      \\\"title\\\": \\\"...\\\",\\n      \\\"story_beat\\\": \\\"...\\\",\\n      \\\"subject\\\": \\\"...\\\",\\n      \\\"scene\\\": \\\"...\\\",\\n      \\\"emotion\\\": \\\"...\\\",\\n      \\\"camera_shot\\\": \\\"...\\\",\\n      \\\"motion_hint\\\": \\\"...\\\",\\n      \\\"prompt_text\\\": \\\"...\\\",\\n      \\\"start_frame\\\": \\\"...\\\",\\n      \\\"action\\\": \\\"...\\\",\\n      \\\"end_frame\\\": \\\"...\\\",\\n      \\\"style\\\": \\\"...\\\",\\n      \\\"timeline\\\": [\\n        {\\n          \\\"time_range\\\": \\\"0.0-1.5s\\\",\\n          \\\"visual\\\": \\\"...\\\",\\n          \\\"camera\\\": \\\"...\\\",\\n          \\\"environment\\\": \\\"...\\\"\\n        },\\n        {\\n          \\\"time_range\\\": \\\"1.5-3.5s\\\",\\n          \\\"visual\\\": \\\"...\\\",\\n          \\\"camera\\\": \\\"...\\\",\\n          \\\"environment\\\": \\\"...\\\"\\n        },\\n        {\\n          \\\"time_range\\\": \\\"3.5-6.0s\\\",\\n          \\\"visual\\\": \\\"...\\\",\\n          \\\"camera\\\": \\\"...\\\",\\n          \\\"environment\\\": \\\"...\\\"\\n        },\\n        {\\n          \\\"time_range\\\": \\\"6.0-8.0s\\\",\\n          \\\"visual\\\": \\\"...\\\",\\n          \\\"camera\\\": \\\"...\\\",\\n          \\\"environment\\\": \\\"...\\\"\\n        }\\n      ],\\n      \\\"video_prompt\\\": \\\"Start frame: ... Action: ... End frame: ... Style: ...\\\"\\n    }\\n  ]\\n}`;\n\nconst video_prompt_body = {\n  contents: [\n    {\n      role: 'user',\n      parts: [\n        {\n          text: instruction + '\\n\\nStory text:\\n' + story_text + '\\n\\nStoryboard JSON:\\n' + JSON.stringify(storyboard, null, 2)\n        },\n        {\n          inline_data: {\n            mime_type: person_mime_type,\n            data: person_image_b64\n          }\n        }\n      ]\n    }\n  ],\n  generationConfig: {\n    temperature: 0.5,\n    responseMimeType: 'application/json'\n  }\n};\n\nreturn {\n  json: {\n    ...base,\n    storyboard_json: storyboard,\n    video_prompt_body\n  }\n};"
+      },
+      "id": "8ef95364-28cf-45bc-ae61-86d192a22293",
+      "name": "组装视频提示词请求",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1424,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://yunwu.ai/v1beta/models/gemini-3-flash-preview:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.video_prompt_body }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1648,
+        0
+      ],
+      "id": "a4b1acf0-2331-4b27-a5e3-ff751d7c7116",
+      "name": "分析Agent-视频提示词扩写",
+      "retryOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mMIH382GnJoMSu4L",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function unwrapRoot(x) {\n  if (x && typeof x === 'object' && x.body && typeof x.body === 'object') return x.body;\n  return x;\n}\n\nfunction extractFirstJsonObject(s) {\n  if (!s) return '';\n  const cleaned = String(s)\n    .replace(/```json\\s*/gi, '')\n    .replace(/```/g, '')\n    .trim();\n\n  const start = cleaned.indexOf('{');\n  if (start < 0) return '';\n\n  let depth = 0;\n  let inString = false;\n  let escaped = false;\n\n  for (let i = start; i < cleaned.length; i++) {\n    const ch = cleaned[i];\n\n    if (escaped) {\n      escaped = false;\n      continue;\n    }\n    if (ch === '\\\\') {\n      escaped = true;\n      continue;\n    }\n    if (ch === '\"') {\n      inString = !inString;\n      continue;\n    }\n    if (!inString) {\n      if (ch === '{') depth++;\n      if (ch === '}') depth--;\n      if (depth === 0) return cleaned.slice(start, i + 1).trim();\n    }\n  }\n  return '';\n}\n\nfunction extractText(root) {\n  const parts = root?.candidates?.[0]?.content?.parts;\n  if (!Array.isArray(parts) || parts.length === 0) return '';\n\n  const p1 = parts.find(p => typeof p?.text === 'string' && p.text.trim().startsWith('{') && !p.thought);\n  if (p1) return p1.text.trim();\n\n  const p2 = parts.find(p => typeof p?.text === 'string' && p.text.trim().startsWith('{'));\n  if (p2) return p2.text.trim();\n\n  const all = parts.map(p => typeof p?.text === 'string' ? p.text : '').filter(Boolean).join('\\n');\n  return extractFirstJsonObject(all);\n}\n\nfunction getNodeFirstJson(name) {\n  try {\n    return $(name).first().json || {};\n  } catch (e) {\n    return {};\n  }\n}\n\n// 关键：强制读取第一阶段“分析Agent-提示词撰写”的结果，而不是当前视频扩写结果\nconst firstStageRaw = getNodeFirstJson('分析Agent-提示词撰写');\nconst root = unwrapRoot(firstStageRaw);\nconst text = extractText(root);\n\nif (!text) {\n  throw new Error('第一阶段图片 storyboard 未返回可解析 JSON');\n}\n\nlet plan;\ntry {\n  plan = JSON.parse(text);\n} catch (e) {\n  throw new Error('第一阶段图片 storyboard JSON 解析失败：' + e.message + '\\n原文前500字：' + String(text).slice(0, 500));\n}\n\nconst shots = Array.isArray(plan?.shots) ? plan.shots : [];\nif (shots.length !== 9) {\n  throw new Error('第一阶段图片 storyboard shots 必须刚好 9 个；实际=' + shots.length);\n}\n\nconst content_type = String(plan?.content_type || 'ugc带货');\n\nconst hardCommon =\n`Create ONE single image. It must be a full-bleed 3x3 grid (nine panels) that fills the entire canvas with NO margins, NO borders, NO frames, NO gutters, NO gridlines, NO separators.\nNo visible text of any kind: no captions, no labels, no numbers, no watermark, no UI.\nPhotorealistic cinematic stills.\n`;\n\nconst hardByType = {\n  'ugc带货': `\nPreserve EXACTLY the same number of people as the reference image across all panels. Do NOT add or remove any person.\nKeep the SAME set of people across all panels. Keep EACH person's identity consistent (face, skin tone, hairstyle, outfit, accessories).\nKeep the SAME product identity across all panels (same logo/label/color/material).\nKeep a consistent UGC environment and lighting across all panels (phone-camera vibe, natural indoor light), only change camera angle/shot size and action beat.\n`,\n  '产品展示': `\nKeep the SAME product identity across all panels (same logo/label/color/material). Product is the hero.\nBackground can be simple and consistent. Show different angles, macro details, usage steps, and hero shots.\nAvoid pure catalog packshot; keep cinematic product photography.\n`,\n  '剧情故事': `\nIf the reference image contains multiple people, preserve EXACTLY the same number of people (do NOT add/remove).\nCharacters must stay consistent when they re-appear (face/outfit).\nLocations MAY change between panels if the story requires it, but keep continuity coherent.\n`\n};\n\nconst hardLayout = hardCommon + (hardByType[content_type] || hardByType['ugc带货']);\n\nconst panels = shots.map((s, i) => {\n  const p = String(s?.prompt_text || '').trim();\n  if (!p) throw new Error('第 ' + (i + 1) + ' 个 shot 的 prompt_text 为空');\n  return `Panel ${i + 1} (left-to-right, top-to-bottom): ${p}`;\n}).join('\\n\\n');\n\nconst neg = Array.isArray(plan?.negative_prompts) ? plan.negative_prompts.join(', ') : '';\nconst negBlock = neg ? `\\nNegative: ${neg}` : '';\n\nreturn {\n  json: {\n    ...($json || {}),\n    content_type,\n    grid_prompt: `${hardLayout}${panels}${negBlock}`,\n    grid_plan_json: plan,               // 图片分镜\n    image_storyboard_json: plan         // 明确标记这是图片 storyboard\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1872,
+        0
+      ],
+      "id": "afd2201c-79b5-4e6e-aa18-ee2304b4fb34",
+      "name": "JSON转grid_prompt"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "function s(v){ return v == null ? '' : String(v); }\nfunction stripDataPrefix(b64){ return s(b64).trim().replace(/^data:.*;base64,/, '').trim(); }\n\nfunction getNodeFirstJson(name) {\n  try {\n    return $(name).first().json || {};\n  } catch(e) {\n    return {};\n  }\n}\n\nconst j = $json || {};\n\n// 优先取当前输入；没有就回退到 Prepare Gemini Data\nconst prepare = getNodeFirstJson('Prepare Gemini Data');\n\nconst img_b64 = stripDataPrefix(j.person_image_b64) || stripDataPrefix(prepare.person_image_b64);\nconst img_mime = s(j.person_mime_type).trim() || s(prepare.person_mime_type).trim() || 'image/jpeg';\n\nif (!img_b64) {\n  throw new Error('缺少 person_image_b64。请从 “Download Reference Image → Prepare Gemini Data” 开始执行，或直接从 Webhook 执行整条流程。');\n}\n\nconst gridNode = getNodeFirstJson('JSON转grid_prompt');\nlet promptText = s(j.grid_prompt).trim() || s(gridNode.grid_prompt).trim();\n\nif (!promptText) {\n  throw new Error('缺少 grid_prompt（请检查 JSON转grid_prompt 是否有输出）');\n}\n\nconst CONSISTENCY_LOCK = `\nABSOLUTE CONSISTENCY LOCK (must follow):\n- Preserve EXACTLY the same number of people as the reference image. Do NOT add or remove any person.\n- Keep EXACTLY the same set of identities as the reference image (for EACH person): same face structure, eyes, nose, lips, skin tone, hairstyle, hair color, makeup.\n- Keep EXACTLY the same outfit and accessories as the reference image (for EACH person): no new jewelry, no missing earrings, no changes in clothing texture or color.\n- Keep EXACTLY the same core character design and props from the reference image.\n- Do NOT swap hands, do NOT mirror/flip the image.\n- Keep photorealistic cinematic stills.\n- No text, no subtitles, no watermark, no UI, no borders, no frames, no gridlines, no separators.\n`.trim();\n\nconst finalPrompt = `${CONSISTENCY_LOCK}\\n\\n${promptText}`;\n\nconst request_body = {\n  contents: [\n    {\n      role: 'user',\n      parts: [\n        { text: finalPrompt },\n        {\n          inline_data: {\n            mime_type: img_mime,\n            data: img_b64\n          }\n        }\n      ]\n    }\n  ],\n  generationConfig: {\n    responseModalities: ['IMAGE'],\n    imageConfig: {\n      aspectRatio: '9:16',\n      imageSize: '4K'\n    }\n  }\n};\n\nreturn {\n  json: {\n    ...j,\n    request_body,\n    grid_prompt: finalPrompt,\n    person_image_b64: img_b64,\n    person_mime_type: img_mime\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2096,
+        0
+      ],
+      "id": "e870b202-3fa4-48a7-aa85-b1af86eb798e",
+      "name": "组装生图请求体"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://yunwu.ai/v1beta/models/gemini-3.1-flash-image-preview:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.request_body }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2320,
+        0
+      ],
+      "id": "f091e94d-4e36-4d08-94c6-fe5a03551e6b",
+      "name": "生图请求",
+      "retryOnFail": false,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mMIH382GnJoMSu4L",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "function unwrapRoot(x) {\n  if (x && typeof x === 'object' && x.body && typeof x.body === 'object') return x.body;\n  return x;\n}\n\nfunction getByPath(obj, path) {\n  try {\n    return path.split('.').reduce((acc, k) => (acc == null ? undefined : acc[k]), obj);\n  } catch {\n    return undefined;\n  }\n}\n\nfunction findInlineImageParts(root) {\n  const candidates = root?.candidates;\n  if (!Array.isArray(candidates) || !candidates.length) return [];\n\n  const parts = candidates?.[0]?.content?.parts;\n  if (!Array.isArray(parts)) return [];\n\n  const imgs = [];\n  for (const p of parts) {\n    const inline = p?.inline_data || p?.inlineData;\n    if (inline?.data) {\n      imgs.push({\n        b64: inline.data,\n        mimeType: inline.mime_type || inline.mimeType || 'image/png'\n      });\n      continue;\n    }\n    const fd = p?.fileData;\n    if (fd?.fileUri) {\n      imgs.push({\n        fileUri: fd.fileUri,\n        mimeType: fd.mimeType || 'image/png'\n      });\n    }\n  }\n  return imgs;\n}\n\nfunction stripDataPrefix(b64) {\n  return String(b64 || '').replace(/^data:.*;base64,/, '').trim();\n}\n\nconst raw = $json || {};\nconst root = unwrapRoot(raw);\nconst imageIndex = Number(raw.image_index ?? raw.index ?? 1) || 1;\n\nlet imgs = findInlineImageParts(root);\n\nif (!imgs.length) {\n  const maybe =\n    getByPath(root, 'image.data') ||\n    getByPath(root, 'data.image') ||\n    getByPath(root, 'output.image') ||\n    getByPath(root, 'output.data') ||\n    null;\n\n  if (maybe && typeof maybe === 'string') {\n    imgs = [{ b64: maybe, mimeType: 'image/png' }];\n  }\n}\n\nif (!imgs.length) {\n  throw new Error('没有在返回体中找到图片数据（inline_data / inlineData）。请检查生图接口实际响应结构。');\n}\n\nconst first = imgs[0];\n\nif (first.fileUri && !first.b64) {\n  throw new Error(`返回的是 fileUri（${first.fileUri}）而不是 base64。需要额外一步去下载该文件再转 binary。`);\n}\n\nconst mimeType = first.mimeType || 'image/png';\nconst ext = mimeType.includes('jpeg') || mimeType.includes('jpg') ? 'jpg' : 'png';\nconst b64 = stripDataPrefix(first.b64);\n\nif (!b64) throw new Error('图片 base64 为空');\n\nreturn {\n  json: {\n    ...raw,\n    mimeType,\n    fileName: `knowledge_card_${imageIndex}.${ext}`\n  },\n  binary: {\n    data: {\n      data: b64,\n      mimeType,\n      fileName: `Product_display_image_${imageIndex}.${ext}`\n    }\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2544,
+        0
+      ],
+      "id": "7501a1d8-4cbb-4d54-aa8f-d87bbcf969c0",
+      "name": "转换为Binary"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.item;\nconst taskId = $('Webhook').item.json.body.taskId || $('Webhook').item.json.body.task_id || $('Webhook').item.json.body.record_id || 'unknown_task';\nconst timestamp = Date.now();\nconst fileName = `${taskId}_grid_${timestamp}.png`;\nconst publicBase = 'https://YOUR_SUPABASE_PUBLIC_DOMAIN/storage/v1/object/public/images/storyboard';\nconst publicUrl = `${publicBase}/${fileName}`;\n\nreturn {\n  json: {\n    ...($json || {}),\n    fileName: fileName,\n    taskId: taskId,\n    storyboard_image_url: publicUrl\n  },\n  binary: {\n    data: item.binary.data\n  }\n};"
+      },
+      "id": "39ad4dea-c468-4043-8ea8-b03ab649dc97",
+      "name": "Generate Filename",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2768,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "storyboard_tasks",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "task_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.taskId }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "COMPLETED"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "100"
+            },
+            {
+              "fieldId": "storyboard_structure",
+              "fieldValue": "={{ JSON.stringify($json.video_storyboard_json) }}"
+            },
+            {
+              "fieldId": "storyboard_image_url",
+              "fieldValue": "={{ $json.storyboard_image_url }}"
+            }
+          ]
+        }
+      },
+      "name": "Supabase Update 100%",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2992,
+        0
+      ],
+      "id": "02d5f6fa-ef81-4890-9bfc-1624f11cd808",
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Update Progress 10%",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Progress 10%": {
+      "main": [
+        [
+          {
+            "node": "Download Reference Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Reference Image": {
+      "main": [
+        [
+          {
+            "node": "Prepare Gemini Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Gemini Data": {
+      "main": [
+        [
+          {
+            "node": "组装请求",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装请求": {
+      "main": [
+        [
+          {
+            "node": "Update Progress 45%",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Progress 45%": {
+      "main": [
+        [
+          {
+            "node": "分析Agent-提示词撰写",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "分析Agent-提示词撰写": {
+      "main": [
+        [
+          {
+            "node": "组装视频提示词请求",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装视频提示词请求": {
+      "main": [
+        [
+          {
+            "node": "分析Agent-视频提示词扩写",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "分析Agent-视频提示词扩写": {
+      "main": [
+        [
+          {
+            "node": "JSON转grid_prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JSON转grid_prompt": {
+      "main": [
+        [
+          {
+            "node": "组装生图请求体",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装生图请求体": {
+      "main": [
+        [
+          {
+            "node": "生图请求",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "生图请求": {
+      "main": [
+        [
+          {
+            "node": "转换为Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "转换为Binary": {
+      "main": [
+        [
+          {
+            "node": "Generate Filename",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Filename": {
+      "main": [
+        [
+          {
+            "node": "Supabase Update 100%",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "hooks.atomx.top",
+            "x-real-ip": "119.249.30.190",
+            "x-forwarded-for": "119.249.30.190",
+            "x-forwarded-proto": "https",
+            "connection": "close",
+            "content-length": "306",
+            "content-type": "application/json",
+            "accept": "*/*",
+            "accept-language": "*",
+            "sec-fetch-mode": "cors",
+            "user-agent": "node",
+            "accept-encoding": "br, gzip, deflate"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "script": "双方开展激烈对决",
+            "imageUrl": "https://supabase-api.atomx.top/storage/v1/object/public/uploads/1773152119125-917222353-ComfyUI00002jjgzk1773037597.png",
+            "taskId": "cmmkozs1v00008dq2kc6hscwv",
+            "userId": "e6df9b49-88ce-48e0-a5cd-62758910a9df",
+            "aspectRatio": "16:9",
+            "content_type": "剧情故事"
+          },
+          "webhookUrl": "http://localhost:5678/webhook/storyboard_Plot_web",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ],
+    "分析Agent-提示词撰写": [
+      {
+        "json": {
+          "candidates": [
+            {
+              "content": {
+                "parts": [
+                  {
+                    "text": "{\n  \"content_type\": \"剧情故事\",\n  \"visual_anchor\": {\n    \"subject_identity\": \"A handsome young man with long silver-white hair in a topknot, sharp features. He is the protagonist. His opponent is a menacing warrior with dark, spiky hair, wearing ornate black and red armor.\",\n    \"outfit_anchor\": \"Protagonist wears a white and grey traditional Chinese robe with black accents, black sash, and dark bracers. Antagonist wears ornate black and red armor.\",\n    \"product_anchor\": \"Not applicable.\",\n    \"scene_anchor\": \"An ancient Chinese temple courtyard with grey stone tiles marked with circular patterns, ornate architecture in the background, set in a misty mountain environment under an overcast sky.\"\n  },\n  \"global_style\": \"photorealistic, cinematic, rich details, realistic lighting, no text, no UI, Wuxia fantasy style\",\n  \"negative_prompts\": [\n    \"extra fingers\",\n    \"deformed hands\",\n    \"identity drift\",\n    \"wrong product logo\",\n    \"new accessories\",\n    \"text overlay\",\n    \"watermark\",\n    \"frame border\",\n    \"gridline\",\n    \"cartoon look\"\n  ],\n  \"shots\": [\n    {\n      \"shot_index\": 1,\n      \"title\": \"The Standoff\",\n      \"story_beat\": \"Establishing the two opponents and the tense atmosphere before the duel begins.\",\n      \"subject\": \"The white-robed protagonist and the red-armored antagonist.\",\n      \"scene\": \"The center of the ancient temple courtyard.\",\n      \"emotion\": \"Tense, focused, imminent conflict.\",\n      \"camera_shot\": \"Wide establishing shot, eye-level, showing both characters facing each other from a distance.\",\n      \"motion_hint\": \"Slow camera dolly sideways, robes and hair gently blowing in the wind.\",\n      \"prompt_text\": \"Cinematic wide shot, a handsome man with long silver-white hair in a white robe faces off against a menacing warrior in black and red armor in the center of a vast, misty temple courtyard. The ground is made of grey stone with etched patterns. The air is thick with tension, dust motes visible in the air. Photorealistic, Wuxia fantasy.\"\n    },\n    {\n      \"shot_index\": 2,\n      \"title\": \"Protagonist's Opening Move\",\n      \"story_beat\": \"The protagonist initiates the attack, showcasing his power.\",\n      \"subject\": \"The white-robed protagonist.\",\n      \"scene\": \"His position in the temple courtyard.\",\n      \"emotion\": \"Concentrated, powerful, determined.\",\n      \"camera_shot\": \"Medium shot, from a low angle, focusing on the protagonist.\",\n      \"motion_hint\": \"Energy particles swirl and converge into his palm, the orb of light grows and pulsates.\",\n      \"prompt_text\": \"Photorealistic medium shot of the handsome man with silver-white hair, his expression focused. He extends one hand forward, a swirling orb of bright blue energy rapidly materializing in his palm, casting a cool light on his face and white robes. Particles of energy are drawn in from the air around him. The background temple is slightly out of focus.\"\n    },\n    {\n      \"shot_index\": 3,\n      \"title\": \"Antagonist's Retort\",\n      \"story_beat\": \"The antagonist prepares to counter, revealing his own elemental power.\",\n      \"subject\": \"The red-armored antagonist.\",\n      \"scene\": \"His position in the temple courtyard.\",\n      \"emotion\": \"Confident, aggressive, disdainful.\",\n      \"camera_shot\": \"Medium close-up on the antagonist, eye-level.\",\n      \"motion_hint\": \"He smirks as crimson flames erupt around his clenched fist, growing in intensity.\",\n      \"prompt_text\": \"Cinematic medium close-up of the menacing warrior in black and red armor. He has a confident smirk, his eyes glowing faintly red. His gauntleted fist is clenched, and crimson flames begin to erupt and swirl around his arm, emitting a warm, flickering light. Sparks fly off the flames. Photorealistic, detailed armor.\"\n    },\n    {\n      \"shot_index\": 4,\n      \"title\": \"First Clash\",\n      \"story_beat\": \"The initial exchange of power, testing each other's strength.\",\n      \"subject\": \"The two energy attacks colliding.\",\n      \"scene\": \"Mid-air, between the two combatants.\",\n      \"emotion\": \"Violent, energetic, explosive.\",\n      \"camera_shot\": \"Dynamic wide shot, tracking the protagonist's attack as it flies across the courtyard.\",\n      \"motion_hint\": \"The blue energy beam travels fast, then collides with a burst of red fire, creating a concussive blast of steam and light that ripples outwards.\",\n      \"prompt_text\": \"Dynamic action wide shot. A brilliant blue energy beam streaks across the temple courtyard, colliding violently with an explosive fireball of red and orange. At the point of impact, there is a blinding flash of white light, and a shockwave of steam and multi-colored energy expands outwards, kicking up dust and cracking the stone floor below. Photorealistic.\"\n    },\n    {\n      \"shot_index\": 5,\n      \"title\": \"Fiery Counterattack\",\n      \"story_beat\": \"The antagonist presses his advantage with a powerful offensive move.\",\n      \"subject\": \"The red-armored antagonist.\",\n      \"scene\": \"The temple courtyard.\",\n      \"emotion\": \"Fierce, relentless, overwhelming.\",\n      \"camera_shot\": \"Low-angle medium shot, looking up at the antagonist to make him seem imposing.\",\n      \"motion_hint\": \"He thrusts his hands forward, sending a massive wave of fire rushing towards the camera.\",\n      \"prompt_text\": \"Imposing low-angle shot of the warrior in red and black armor. He thrusts both hands forward, unleashing a roaring torrent of crimson fire that rushes towards the viewer, consuming the frame. The heat visibly distorts the air around him, and his armor glows with reflected light. His face is a mask of pure aggression. Photorealistic, intense action.\"\n    },\n    {\n      \"shot_index\": 6,\n      \"title\": \"Protagonist's Defense\",\n      \"story_beat\": \"The protagonist skillfully defends against the overwhelming attack.\",\n      \"subject\": \"The white-robed protagonist.\",\n      \"scene\": \"The temple courtyard, facing the incoming fire wave.\",\n      \"emotion\": \"Calm, steadfast, resilient.\",\n      \"camera_shot\": \"Over-the-shoulder shot from behind the protagonist.\",\n      \"motion_hint\": \"He sweeps his arm in an arc, and a translucent shield of swirling blue energy and wind forms just in time to block the fire wave, which splashes against it violently.\",\n      \"prompt_text\": \"Cinematic over-the-shoulder shot from behind the white-robed protagonist. He holds a defensive stance as a massive, roaring wave of fire crashes against a translucent, shimmering shield of blue wind-like energy he has conjured. The intense orange light of the fire contrasts with the cool blue of his shield. His white robes billow wildly from the force.\"\n    },\n    {\n      \"shot_index\": 7,\n      \"title\": \"Escalation\",\n      \"story_beat\": \"Both combatants realize they need to use their ultimate abilities, charging up for a decisive blow.\",\n      \"subject\": \"Both combatants.\",\n      \"scene\": \"The courtyard, which is now showing signs of damage.\",\n      \"emotion\": \"Maximum effort, climactic, immense power.\",\n      \"camera_shot\": \"Slightly wide Dutch angle shot, capturing both characters in their respective power-up poses.\",\n      \"motion_hint\": \"The ground cracks and floats up around them. The protagonist's blue energy swirls into a massive sphere above him, while the antagonist summons a giant serpent of pure fire.\",\n      \"prompt_text\": \"Dutch angle shot showing both duelists powering up. On the left, the white-robed man raises his hands, gathering a massive, crackling sphere of blue lightning energy. On the right, the red-armored warrior summons a colossal serpent made of roaring crimson flames. The stone ground between them cracks and levitates from the sheer energy release. Photorealistic.\"\n    },\n    {\n      \"shot_index\": 8,\n      \"title\": \"Ultimate Collision\",\n      \"story_beat\": \"The climax of the duel; the most powerful attacks collide in a spectacular explosion.\",\n      \"subject\": \"The collision of the two ultimate attacks.\",\n      \"scene\": \"The center of the courtyard.\",\n      \"emotion\": \"Cataclysmic, blinding, awe-inspiring.\",\n      \"camera_shot\": \"Extreme wide shot, low angle, showing the sheer scale of the explosion.\",\n      \"motion_hint\": \"The two attacks meet, and for a split second, there is silence before a massive dome-shaped explosion of purple and white light erupts, obliterating the center of the courtyard and sending a huge shockwave outwards.\",\n      \"prompt_text\": \"Extreme wide, low-angle shot of the cataclysmic impact. The blue energy sphere and the giant fire serpent collide, creating a blinding, dome-shaped explosion of violet and white light that engulfs the center of the temple courtyard. Debris and massive chunks of the stone floor are thrown high into the air. The temple buildings in the background are silhouetted against the intense light. Photorealistic, epic scale.\"\n    },\n    {\n      \"shot_index\": 9,\n      \"title\": \"The Aftermath\",\n      \"story_beat\": \"The result of the ultimate clash, showing both combatants pushed to their limits.\",\n      \"subject\": \"The two combatants in the ruined courtyard.\",\n      \"scene\": \"The now-devastated temple courtyard.\",\n      \"emotion\": \"Exhausted, determined, unresolved.\",\n      \"camera_shot\": \"Ground-level wide shot, through the settling smoke and dust.\",\n      \"motion_hint\": \"Camera slowly pushes in as smoke clears, revealing both figures standing, breathing heavily, their clothes torn and singed, readying themselves for the next round.\",\n      \"prompt_text\": \"Gritty ground-level shot through settling smoke and dust in the destroyed courtyard. The white-robed protagonist and the red-armored antagonist are on opposite sides of a massive crater, both breathing heavily. Their clothes are tattered and singed. They lock eyes across the devastation, bruised but undefeated, preparing to continue the fight. Photorealistic, cinematic.\"\n    }\n  ]\n}"
+                  }
+                ],
+                "role": "model"
+              },
+              "finishReason": "STOP",
+              "index": 0
+            }
+          ],
+          "usageMetadata": {
+            "promptTokenCount": 900,
+            "candidatesTokenCount": 2338,
+            "totalTokenCount": 5019,
+            "promptTokensDetails": [
+              {
+                "modality": "TEXT",
+                "tokenCount": 642
+              },
+              {
+                "modality": "IMAGE",
+                "tokenCount": 258
+              }
+            ],
+            "thoughtsTokenCount": 1781
+          },
+          "modelVersion": "gemini-2.5-pro",
+          "responseId": "wSewacusKreY-sAPlaOa8Q8"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ],
+    "分析Agent-视频提示词扩写": [
+      {
+        "json": {
+          "candidates": [
+            {
+              "content": {
+                "parts": [
+                  {
+                    "text": "{\n  \"content_type\": \"剧情故事\",\n  \"global_video_rules\": {\n    \"duration_per_shot\": 8,\n    \"subject_consistency\": true,\n    \"scene_consistency\": true,\n    \"style_anchor\": \"photorealistic, cinematic, realistic light, rich detail\"\n  },\n  \"shots\": [\n    {\n      \"shot_index\": 1,\n      \"title\": \"The Standoff\",\n      \"story_beat\": \"Establishing the two opponents and the tense atmosphere before the duel begins.\",\n      \"subject\": \"The white-robed protagonist and the red-armored antagonist.\",\n      \"scene\": \"The center of the ancient temple courtyard with misty mountains.\",\n      \"emotion\": \"Tense, focused, imminent conflict.\",\n      \"camera_shot\": \"Wide establishing shot, eye-level.\",\n      \"motion_hint\": \"Slow camera dolly sideways, robes and hair gently blowing in the wind.\",\n      \"prompt_text\": \"Cinematic wide shot, a handsome man with long silver-white hair in a white robe faces off against a menacing warrior in black and red armor in the center of a vast, misty temple courtyard. The ground is made of grey stone with etched patterns. The air is thick with tension, dust motes visible in the air. Photorealistic, Wuxia fantasy.\",\n      \"start_frame\": \"A wide view of the ancient temple courtyard under an overcast sky, two figures standing 20 meters apart.\",\n      \"action\": \"The camera slowly dollies to the right while the wind increases, causing the protagonist's long white hair and the antagonist's red cape to flutter aggressively. Dust swirls across the circular stone patterns on the floor.\",\n      \"end_frame\": \"A side-profile wide shot showing the intense gaze between the two combatants as the mist thickens in the background.\",\n      \"style\": \"photorealistic, cinematic, rich details, realistic lighting, Wuxia fantasy style\",\n      \"timeline\": [\n        {\n          \"time_range\": \"0.0-2.0s\",\n          \"visual\": \"Wide shot of the courtyard, the two combatants stand perfectly still.\",\n          \"camera\": \"Static wide shot.\",\n          \"environment\": \"Misty mountain temple, overcast lighting.\"\n        },\n        {\n          \"time_range\": \"2.0-4.5s\",\n          \"visual\": \"Wind begins to pick up, blowing the protagonist's white robes and silver hair.\",\n          \"camera\": \"Slow dolly right movement.\",\n          \"environment\": \"Dust particles begin to lift from the stone floor.\"\n        },\n        {\n          \"time_range\": \"4.5-6.5s\",\n          \"visual\": \"The antagonist's black and red armor glints; his hand moves slightly toward his weapon.\",\n          \"camera\": \"Continuing dolly, maintaining eye-level height.\",\n          \"environment\": \"Mist rolls in from the temple gates.\"\n        },\n        {\n          \"time_range\": \"6.5-8.0s\",\n          \"visual\": \"Close-up on the tension; the air seems to vibrate between them.\",\n          \"camera\": \"Slow zoom in towards the center gap.\",\n          \"environment\": \"Atmospheric depth increases with heavy fog.\"\n        }\n      ],\n      \"video_prompt\": \"Start frame: A wide view of the ancient temple courtyard under an overcast sky, two figures standing 20 meters apart. Action: The camera slowly dollies to the right while the wind increases, causing the protagonist's long white hair and the antagonist's red cape to flutter aggressively. Dust swirls across the circular stone patterns on the floor. End frame: A side-profile wide shot showing the intense gaze between the two combatants as the mist thickens in the background. Style: photorealistic, cinematic, rich details, realistic lighting, Wuxia fantasy style\"\n    },\n    {\n      \"shot_index\": 2,\n      \"title\": \"Protagonist's Opening Move\",\n      \"story_beat\": \"The protagonist initiates the attack, showcasing his power.\",\n      \"subject\": \"The white-robed protagonist.\",\n      \"scene\": \"The temple courtyard, low angle focusing on the protagonist.\",\n      \"emotion\": \"Concentrated, powerful, determined.\",\n      \"camera_shot\": \"Medium shot, from a low angle.\",\n      \"motion_hint\": \"Energy particles swirl and converge into his palm, the orb of light grows and pulsates.\",\n      \"prompt_text\": \"Photorealistic medium shot of the handsome man with silver-white hair, his expression focused. He extends one hand forward, a swirling orb of bright blue energy rapidly materializing in his palm, casting a cool light on his face and white robes. Particles of energy are drawn in from the air around him. The background temple is slightly out of focus.\",\n      \"start_frame\": \"Low angle shot of the protagonist standing firm, his hand beginning to reach forward.\",\n      \"action\": \"Bright blue energy filaments spiral from the air into his palm, forming a rotating sphere of light. The light reflects off his silver hair and the intricate patterns of his white robe.\",\n      \"end_frame\": \"The blue energy orb is fully formed and crackling with power, illuminating the protagonist's determined face.\",\n      \"style\": \"photorealistic, cinematic, rich details, realistic lighting, Wuxia fantasy style\",\n      \"timeline\": [\n        {\n          \"time_range\": \"0.0-2.0s\",\n          \"visual\": \"Protagonist raises his right hand; his eyes narrow in focus.\",\n          \"camera\": \"Low angle medium shot, static.\",\n          \"environment\": \"Temple background blurred with bokeh.\"\n        },\n        {\n          \"time_range\": \"2.0-4.0s\",\n          \"visual\": \"Blue sparks and light trails converge in the center of his palm.\",\n          \"camera\": \"Slight upward tilt.\",\n          \"environment\": \"The surrounding air darkens as energy is drawn in.\"\n        },\n        {\n          \"time_range\": \"4.0-6.5s\",\n          \"visual\": \"A glowing blue sphere expands, spinning rapidly and casting blue light on his chest.\",\n          \"camera\": \"Slow push-in on the hand.\",\n          \"environment\": \"Wind swirls around the protagonist's feet.\"\n        },\n        {\n          \"time_range\": \"6.5-8.0s\",\n          \"visual\": \"The orb pulses with a high-frequency hum; the protagonist's hair blows back.\",\n          \"camera\": \"Static, capturing the glow intensity.\",\n          \"environment\": \"Dust is repelled from his immediate vicinity.\"\n        }\n      ],\n      \"video_prompt\": \"Start frame: Low angle shot of the protagonist standing firm, his hand beginning to reach forward. Action: Bright blue energy filaments spiral from the air into his palm, forming a rotating sphere of light. The light reflects off his silver hair and the intricate patterns of his white robe. End frame: The blue energy orb is fully formed and crackling with power, illuminating the protagonist's determined face. Style: photorealistic, cinematic, rich details, realistic lighting, Wuxia fantasy style\"\n    },\n    {\n      \"shot_index\": 3,\n      \"title\": \"Antagonist's Retort\",\n      \"story_beat\": \"The antagonist prepares to counter, revealing his own elemental power.\",\n      \"subject\": \"The red-armored antagonist.\",\n      \"scene\": \"The temple courtyard, focusing on the antagonist.\",\n      \"emotion\": \"Confident, aggressive, disdainful.\",\n      \"camera_shot\": \"Medium close-up on the antagonist, eye-level.\",\n      \"motion_hint\": \"He smirks as crimson flames erupt around his clenched fist, growing in intensity.\",\n      \"prompt_text\": \"Cinematic medium close-up of the menacing warrior in black and red armor. He has a confident smirk, his eyes glowing faintly red. His gauntleted fist is clenched, and crimson flames begin to erupt and swirl around his arm, emitting a warm, flickering light. Sparks fly off the flames. Photorealistic, detailed armor.\",\n      \"start_frame\": \"Medium close-up of the antagonist's face, showing a subtle, mocking smirk.\",\n      \"action\": \"He clenches his black gauntlet, and intense crimson fire bursts from his knuckles, wrapping around his forearm in a violent spiral. His eyes ignite with a red glow.\",\n      \"end_frame\": \"The antagonist is framed by roaring orange and red flames, his armor reflecting the fire's heat.\",\n      \"style\": \"photorealistic, cinematic, rich details, realistic lighting, Wuxia fantasy style\",\n      \"timeline\": [\n        {\n          \"time_range\": \"0.0-2.0s\",\n          \"visual\": \"Antagonist smirks; his eyes begin to shimmer with red light.\",\n          \"camera\": \"Eye-level medium close-up.\",\n          \"environment\": \"Cool, misty background creates contrast with his warmth.\"\n        },\n        {\n          \"time_range\": \"2.0-4.5s\",\n          \"visual\": \"He clenches his fist; smoke and small embers rise from his gauntlet.\",\n          \"camera\": \"Slow zoom into his fist.\",\n          \"environment\": \"The air begins to shimmer from heat distortion.\"\n        },\n        {\n          \"time_range\": \"4.5-6.5s\",\n          \"visual\": \"A burst of crimson fire erupts, spiraling up his arm like a serpent.\",\n          \"camera\": \"Slight camera shake to emphasize power.\",\n          \"environment\": \"Sparks fly into the air, lighting up the dark armor.\"\n        },\n        {\n          \"time_range\": \"6.5-8.0s\",\n          \"visual\": \"The flames stabilize into a roaring aura around his arm; his expression is fierce.\",\n          \"camera\": \"Static close-up.\",\n          \"environment\": \"Surrounding mist evaporates from the heat.\"\n        }\n      ],\n      \"video_prompt\": \"Start frame: Medium close-up of the antagonist's face, showing a subtle, mocking smirk. Action: He clenches his black gauntlet, and intense crimson fire bursts from his knuckles, wrapping around his forearm in a violent spiral. His eyes ignite with a red glow. End frame: The antagonist is framed by roaring orange and red flames, his armor reflecting the fire's heat. Style: photorealistic, cinematic, rich details, realistic lighting, Wuxia fantasy style\"\n    },\n    {\n      \"shot_index\": 4,\n      \"title\": \"First Clash\",\n      \"story_beat\": \"The initial exchange of power, testing each other's strength.\",\n      \"subject\": \"The two energy attacks colliding.\",\n      \"scene\": \"Mid-air, between the two combatants in the courtyard.\",\n      \"emotion\": \"Violent, energetic, explosive.\",\n      \"camera_shot\": \"Dynamic wide shot, tracking the protagonist's attack.\",\n      \"motion_hint\": \"The blue energy beam travels fast, then collides with a burst of red fire, creating a concussive blast.\",\n      \"prompt_text\": \"Dynamic action wide shot. A brilliant blue energy beam streaks across the temple courtyard, colliding violently with an explosive fireball of red and orange. At the point of impact, there is a blinding flash of white light, and a shockwave of steam and multi-colored energy expands outwards, kicking up dust and cracking the stone floor below. Photorealistic.\",\n      \"start_frame\": \"The protagonist releases the blue orb, which transforms into a beam of light traveling across the screen.\",\n      \"action\": \"The blue beam hits an incoming fireball; the collision creates a massive explosion of light and steam. A circular shockwave ripples through the air, shattering the stone tiles beneath.\",\n      \"end_frame\": \"A screen filled with white steam and lingering blue and red sparks as the shockwave reaches the edges of the courtyard.\",\n      \"style\": \"photorealistic, cinematic, rich details, realistic lighting, Wuxia fantasy style\",\n      \"timeline\": [\n        {\n          \"time_range\": \"0.0-1.5s\",\n          \"visual\": \"The blue energy beam streaks from left to right at high speed.\",\n          \"camera\": \"Fast pan following the beam.\",\n          \"environment\": \"Motion blur on the temple background.\"\n        },\n        {\n          \"time_range\": \"1.5-3.5s\",\n          \"visual\": \"The beam impacts a massive red fireball in the center of the frame.\",\n          \"camera\": \"Wide shot, static at the center.\",\n          \"environment\": \"Blinding flash of white light at the impact point.\"\n        },\n        {\n          \"time_range\": \"3.5-6.0s\",\n          \"visual\": \"A massive shockwave of steam and energy expands; stone tiles fly upward.\",\n          \"camera\": \"Dramatic zoom out.\",\n          \"environment\": \"Dust and debris cloud the air.\"\n        },\n        {\n          \"time_range\": \"6.0-8.0s\",\n          \"visual\": \"The explosion subsides into a thick cloud of grey smoke and colorful embers.\",\n          \"camera\": \"Slow motion effect.\",\n          \"environment\": \"The courtyard floor is visibly cracked and scarred.\"\n        }\n      ],\n      \"video_prompt\": \"Start frame: The protagonist releases the blue orb, which transforms into a beam of light traveling across the screen. Action: The blue beam hits an incoming fireball; the collision creates a massive explosion of light and steam. A circular shockwave ripples through the air, shattering the stone tiles beneath. End frame: A screen filled with white steam and lingering blue and red sparks as the shockwave reaches the edges of the courtyard. Style: photorealistic, cinematic, rich details, realistic lighting, Wuxia fantasy style\"\n    },\n    {\n      \"shot_index\": 5,\n      \"title\": \"Fiery Counterattack\",\n      \"story_beat\": \"The antagonist presses his advantage with a powerful offensive move.\",\n      \"subject\": \"The red-armored antagonist.\",\n      \"scene\": \"The temple courtyard, low-angle looking up.\",\n      \"emotion\": \"Fierce, relentless, overwhelming.\",\n      \"camera_shot\": \"Low-angle medium shot.\",\n      \"motion_hint\": \"He thrusts his hands forward, sending a massive wave of fire rushing towards the camera.\",\n      \"prompt_text\": \"Imposing low-angle shot of the warrior in red and black armor. He thrusts both hands forward, unleashing a roaring torrent of crimson fire that rushes towards the viewer, consuming the frame. The heat visibly distorts the air around him, and his armor glows with reflected light. His face is a mask of pure aggression. Photorealistic, intense action.\",\n      \"start_frame\": \"The antagonist stands amidst the smoke, his hands pulled back near his waist, glowing with heat.\",\n      \"action\": \"He thrusts his palms forward with a roar; a massive, wide wave of fire erupts, filling the entire lower half of the frame and rushing toward the camera lens.\",\n      \"end_frame\": \"The screen is almost entirely engulfed in orange and red flames, with the antagonist's silhouette visible in the center.\",\n      \"style\": \"photorealistic, cinematic, rich details, realistic lighting, Wuxia fantasy style\",\n      \"timeline\": [\n        {\n          \"time_range\": \"0.0-2.0s\",\n          \"visual\": \"Antagonist takes a deep stance, his armor glowing red from internal heat.\",\n          \"camera\": \"Low angle, looking up.\",\n          \"environment\": \"Smoke from the previous clash swirls around him.\"\n        },\n        {\n          \"time_range\": \"2.0-4.5s\",\n          \"visual\": \"He thrusts his hands; a torrent of fire explodes outward.\",\n          \"camera\": \"Fast push-in toward the flames.\",\n          \"environment\": \"The air shimmers violently with heat waves.\"\n        },\n        {\n          \"time_range\": \"4.5-6.5s\",\n          \"visual\": \"The fire wave expands, licking the ground and melting the stone surface.\",\n          \"camera\": \"Camera remains low as fire passes over.\",\n          \"environment\": \"The entire scene turns orange and yellow.\"\n        },\n        {\n          \"time_range\": \"6.5-8.0s\",\n          \"visual\": \"The fire reaches the lens, creating a 'burn' effect on the frame.\",\n          \"camera\": \"Static, engulfed by fire.\",\n          \"environment\": \"Embers and sparks fill the foreground.\"\n        }\n      ],\n      \"video_prompt\": \"Start frame: The antagonist stands amidst the smoke, his hands pulled back near his waist, glowing with heat. Action: He thrusts his palms forward with a roar; a massive, wide wave of fire erupts, filling the entire lower half of the frame and rushing toward the camera lens. End frame: The screen is almost entirely engulfed in orange and red flames, with the antagonist's silhouette visible in the center. Style: photorealistic, cinematic, rich details, realistic lighting, Wuxia fantasy style\"\n    },\n    {\n      \"shot_index\": 6,\n      \"title\": \"Protagonist's Defense\",\n      \"story_beat\": \"The protagonist skillfully defends against the overwhelming attack.\",\n      \"subject\": \"The white-robed protagonist.\",\n      \"scene\": \"The temple courtyard, facing the incoming fire wave.\",\n      \"emotion\": \"Calm, steadfast, resilient.\",\n      \"camera_shot\": \"Over-the-shoulder shot from behind the protagonist.\",\n      \"motion_hint\": \"He sweeps his arm in an arc, and a translucent shield of blue energy forms to block the fire.\",\n      \"prompt_text\": \"Cinematic over-the-shoulder shot from behind the white-robed protagonist. He holds a defensive stance as a massive, roaring wave of fire crashes against a translucent, shimmering shield of blue wind-like energy he has conjured. The intense orange light of the fire contrasts with the cool blue of his shield. His white robes billow wildly from the force.\",\n      \"start_frame\": \"The back of the protagonist's head and shoulder as the wall of fire approaches from the distance.\",\n      \"action\": \"He sweeps his left arm across his chest; a shimmering blue dome of energy appears. The fire hits the shield and splits around it like water against a rock.\",\n      \"end_frame\": \"The protagonist stands firm inside the blue energy bubble while fire rages all around the perimeter.\",\n      \"style\": \"photorealistic, cinematic, rich details, realistic lighting, Wuxia fantasy style\",\n      \"timeline\": [\n        {\n          \"time_range\": \"0.0-2.0s\",\n          \"visual\": \"The wall of fire approaches rapidly; the protagonist remains unmoved.\",\n          \"camera\": \"Over-the-shoulder, static.\",\n          \"environment\": \"The courtyard is bathed in a hellish orange glow.\"\n        },\n        {\n          \"time_range\": \"2.0-4.0s\",\n          \"visual\": \"He moves his hand in a circular motion; blue light forms a barrier.\",\n          \"camera\": \"Slow zoom in past his shoulder.\",\n          \"environment\": \"Blue light creates a cool contrast on his white robes.\"\n        },\n        {\n          \"time_range\": \"4.0-6.5s\",\n          \"visual\": \"The fire impacts the shield; sparks and flames splash off the blue energy.\",\n          \"camera\": \"Slight camera shake from the impact.\",\n          \"environment\": \"The ground around him remains clear of fire.\"\n        },\n        {\n          \"time_range\": \"6.5-8.0s\",\n          \"visual\": \"The fire continues to flow around the shield; his hair is blown forward by the backdraft.\",\n          \"camera\": \"Static, focusing on the interface of blue and red.\",\n          \"environment\": \"Intense heat distortion outside the shield.\"\n        }\n      ],\n      \"video_prompt\": \"Start frame: The back of the protagonist's head and shoulder as the wall of fire approaches from the distance. Action: He sweeps his left arm across his chest; a shimmering blue dome of energy appears. The fire hits the shield and splits around it like water against a rock. End frame: The protagonist stands firm inside the blue energy bubble while fire rages all around the perimeter. Style: photorealistic, cinematic, rich details, realistic lighting, Wuxia fantasy style\"\n    },\n    {\n      \"shot_index\": 7,\n      \"title\": \"Escalation\",\n      \"story_beat\": \"Both combatants realize they need to use their ultimate abilities.\",\n      \"subject\": \"Both combatants.\",\n      \"scene\": \"The damaged courtyard, Dutch angle shot.\",\n      \"emotion\": \"Maximum effort, climactic, immense power.\",\n      \"camera_shot\": \"Slightly wide Dutch angle shot.\",\n      \"motion_hint\": \"The ground cracks and floats up around them. Blue lightning sphere vs fire serpent.\",\n      \"prompt_text\": \"Dutch angle shot showing both duelists powering up. On the left, the white-robed man raises his hands, gathering a massive, crackling sphere of blue lightning energy. On the right, the red-armored warrior summons a colossal serpent made of roaring crimson flames. The stone ground between them cracks and levitates from the sheer energy release. Photorealistic.\",\n      \"start_frame\": \"A tilted view of the courtyard with both fighters on opposite sides, preparing their final moves.\",\n      \"action\": \"The protagonist lifts both hands as lightning arcs between them, forming a huge sphere. Simultaneously, the antagonist's fire shapes into a giant snake head. Stone fragments rise into the air.\",\n      \"end_frame\": \"The two massive energy constructs are fully formed, ready to be launched at each other.\",\n      \"style\": \"photorealistic, cinematic, rich details, realistic lighting, Wuxia fantasy style\",\n      \"timeline\": [\n        {\n          \"time_range\": \"0.0-2.0s\",\n          \"visual\": \"Both fighters charge energy; the camera is tilted at a 15-degree angle.\",\n          \"camera\": \"Dutch angle wide shot.\",\n          \"environment\": \"The sky turns darker, and the wind becomes a gale.\"\n        },\n        {\n          \"time_range\": \"2.0-4.5s\",\n          \"visual\": \"Large chunks of the stone floor begin to hover and vibrate.\",\n          \"camera\": \"Slow dolly zoom (Vertigo effect).\",\n          \"environment\": \"Debris floats in zero-gravity-like motion.\"\n        },\n        {\n          \"time_range\": \"4.5-6.5s\",\n          \"visual\": \"A fire serpent rises behind the antagonist; blue lightning crackles around the protagonist.\",\n          \"camera\": \"Static Dutch angle.\",\n          \"environment\": \"The atmosphere is split between blue and red light.\"\n        },\n        {\n          \"time_range\": \"6.5-8.0s\",\n          \"visual\": \"The energy reaches a breaking point; the air itself seems to crack.\",\n          \"camera\": \"Fast vibration/shake.\",\n          \"environment\": \"Mist is completely blown away by the pressure.\"\n        }\n      ],\n      \"video_prompt\": \"Start frame: A tilted view of the courtyard with both fighters on opposite sides, preparing their final moves. Action: The protagonist lifts both hands as lightning arcs between them, forming a huge sphere. Simultaneously, the antagonist's fire shapes into a giant snake head. Stone fragments rise into the air. End frame: The two massive energy constructs are fully formed, ready to be launched at each other. Style: photorealistic, cinematic, rich details, realistic lighting, Wuxia fantasy style\"\n    },\n    {\n      \"shot_index\": 8,\n      \"title\": \"Ultimate Collision\",\n      \"story_beat\": \"The climax of the duel; the most powerful attacks collide.\",\n      \"subject\": \"The collision of the two ultimate attacks.\",\n      \"scene\": \"The center of the courtyard, extreme wide shot.\",\n      \"emotion\": \"Cataclysmic, blinding, awe-inspiring.\",\n      \"camera_shot\": \"Extreme wide shot, low angle.\",\n      \"motion_hint\": \"The two attacks meet, creating a massive dome-shaped explosion of purple and white light.\",\n      \"prompt_text\": \"Extreme wide, low-angle shot of the cataclysmic impact. The blue energy sphere and the giant fire serpent collide, creating a blinding, dome-shaped explosion of violet and white light that engulfs the center of the temple courtyard. Debris and massive chunks of the stone floor are thrown high into the air. The temple buildings in the background are silhouetted against the intense light. Photorealistic, epic scale.\",\n      \"start_frame\": \"The lightning sphere and fire serpent fly toward each other at the center of the courtyard.\",\n      \"action\": \"They collide; a momentary black void appears before expanding into a gargantuan dome of violet light that vaporizes everything in the center. A massive shockwave destroys the temple's outer walls.\",\n      \"end_frame\": \"A wide view of the explosion reaching its maximum size, with the temple silhouette barely visible through the glare.\",\n      \"style\": \"photorealistic, cinematic, rich details, realistic lighting, Wuxia fantasy style\",\n      \"timeline\": [\n        {\n          \"time_range\": \"0.0-1.5s\",\n          \"visual\": \"The two attacks converge at the center point.\",\n          \"camera\": \"Extreme wide shot, low angle.\",\n          \"environment\": \"The entire courtyard is illuminated by the clashing colors.\"\n        },\n        {\n          \"time_range\": \"1.5-3.0s\",\n          \"visual\": \"A blinding white flash occurs at the point of contact.\",\n          \"camera\": \"Static, lens flare effect.\",\n          \"environment\": \"Silence for a split second as the energy compresses.\"\n        },\n        {\n          \"time_range\": \"3.0-6.0s\",\n          \"visual\": \"A massive violet and white dome of energy erupts outward.\",\n          \"camera\": \"Slow zoom out to show scale.\",\n          \"environment\": \"Stone pillars and roof tiles are blown away by the blast.\"\n        },\n        {\n          \"time_range\": \"6.0-8.0s\",\n          \"visual\": \"The explosion fills the screen; debris is silhouetted against the light.\",\n          \"camera\": \"Static wide shot.\",\n          \"environment\": \"The sky is completely obscured by the energy flare.\"\n        }\n      ],\n      \"video_prompt\": \"Start frame: The lightning sphere and fire serpent fly toward each other at the center of the courtyard. Action: They collide; a momentary black void appears before expanding into a gargantuan dome of violet light that vaporizes everything in the center. A massive shockwave destroys the temple's outer walls. End frame: A wide view of the explosion reaching its maximum size, with the temple silhouette barely visible through the glare. Style: photorealistic, cinematic, rich details, realistic lighting, Wuxia fantasy style\"\n    },\n    {\n      \"shot_index\": 9,\n      \"title\": \"The Aftermath\",\n      \"story_beat\": \"The result of the ultimate clash, showing both combatants pushed to their limits.\",\n      \"subject\": \"The two combatants in the ruined courtyard.\",\n      \"scene\": \"The now-devastated temple courtyard, ground-level.\",\n      \"emotion\": \"Exhausted, determined, unresolved.\",\n      \"camera_shot\": \"Ground-level wide shot, through smoke.\",\n      \"motion_hint\": \"Camera slowly pushes in as smoke clears, revealing both figures standing, breathing heavily.\",\n      \"prompt_text\": \"Gritty ground-level shot through settling smoke and dust in the destroyed courtyard. The white-robed protagonist and the red-armored antagonist are on opposite sides of a massive crater, both breathing heavily. Their clothes are tattered and singed. They lock eyes across the devastation, bruised but undefeated, preparing to continue the fight. Photorealistic, cinematic.\",\n      \"start_frame\": \"A view through thick grey smoke and falling ash; only the silhouettes of the fighters are visible.\",\n      \"action\": \"The camera slowly pushes forward through the smoke. The protagonist is revealed, his white robe torn and stained with soot. He wipes blood from his lip and looks toward the antagonist, who stands similarly battered.\",\n      \"end_frame\": \"A medium shot of the two warriors looking at each other across a smoking crater, the fight clearly not over.\",\n      \"style\": \"photorealistic, cinematic, rich details, realistic lighting, Wuxia fantasy style\",\n      \"timeline\": [\n        {\n          \"time_range\": \"0.0-2.5s\",\n          \"visual\": \"Thick smoke and dust fill the frame; embers fall like snow.\",\n          \"camera\": \"Ground-level push-in.\",\n          \"environment\": \"The courtyard is now a giant crater; the temple is in ruins.\"\n        },\n        {\n          \"time_range\": \"2.5-5.0s\",\n          \"visual\": \"The protagonist's face emerges from the smoke; he is breathing heavily.\",\n          \"camera\": \"Slow push-in toward the protagonist.\",\n          \"environment\": \"The air is heavy with the smell of ozone and burnt stone.\"\n        },\n        {\n          \"time_range\": \"5.0-7.0s\",\n          \"visual\": \"The camera pans to show the antagonist standing 30 meters away, his armor cracked.\",\n          \"camera\": \"Slow pan left to right.\",\n          \"environment\": \"Fires still burn in the background ruins.\"\n        },\n        {\n          \"time_range\": \"7.0-8.0s\",\n          \"visual\": \"Both fighters tighten their grip, readying for the next round.\",\n          \"camera\": \"Static wide shot.\",\n          \"environment\": \"The mist begins to return, mixing with the smoke.\"\n        }\n      ],\n      \"video_prompt\": \"Start frame: A view through thick grey smoke and falling ash; only the silhouettes of the fighters are visible. Action: The camera slowly pushes forward through the smoke. The protagonist is revealed, his white robe torn and stained with soot. He wipes blood from his lip and looks toward the antagonist, who stands similarly battered. End frame: A medium shot of the two warriors looking at each other across a smoking crater, the fight clearly not over. Style: photorealistic, cinematic, rich details, realistic lighting, Wuxia fantasy style\"\n    }\n  ]\n}",
+                    "thoughtSignature": "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"
+                  }
+                ],
+                "role": "model"
+              },
+              "finishReason": "STOP",
+              "index": 0
+            }
+          ],
+          "usageMetadata": {
+            "promptTokenCount": 4105,
+            "candidatesTokenCount": 6784,
+            "totalTokenCount": 12033,
+            "cachedContentTokenCount": 4007,
+            "promptTokensDetails": [
+              {
+                "modality": "IMAGE",
+                "tokenCount": 1080
+              },
+              {
+                "modality": "TEXT",
+                "tokenCount": 3025
+              }
+            ],
+            "cacheTokensDetails": [
+              {
+                "modality": "IMAGE",
+                "tokenCount": 1054
+              },
+              {
+                "modality": "TEXT",
+                "tokenCount": 2953
+              }
+            ],
+            "thoughtsTokenCount": 1144
+          },
+          "modelVersion": "gemini-3-flash-preview",
+          "responseId": "lCqwaZX_Cb2e-sAPmfD5qAE"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ],
+    "Download Reference Image": [
+      {
+        "json": {
+          "id": "cmmkozs1v00008dq2kc6hscwv",
+          "status": "PROCESSING",
+          "videoUrl": "",
+          "coverImage": null,
+          "productId": null,
+          "characterId": null,
+          "sceneImage": null,
+          "scenePrompt": null,
+          "createdAt": "2026-03-10T14:15:25.123",
+          "updatedAt": "2026-03-10T14:15:25.265",
+          "referenceImage": "https://supabase-api.atomx.top/storage/v1/object/public/uploads/1773152119125-917222353-ComfyUI00002jjgzk1773037597.png",
+          "scriptContent": "双方开展激烈对决",
+          "user_id": "e6df9b49-88ce-48e0-a5cd-62758910a9df",
+          "progress": 10,
+          "storyboard_structure": null,
+          "task_id": "cmmkozs1v00008dq2kc6hscwv",
+          "video_type": "story"
+        },
+        "binary": {
+          "data": {
+            "mimeType": "image/png",
+            "fileType": "image",
+            "fileExtension": "png",
+            "data": "filesystem-v2",
+            "directory": "https://supabase-api.atomx.top/storage/v1/object/public/uploads/1773152119125-917222353-ComfyUI00002jjgzk1773037597.png",
+            "fileName": "1773152119125-917222353-ComfyUI00002jjgzk1773037597.png",
+            "id": "filesystem-v2:workflows/xNY4qhKT2cwXYi0v/executions/96414/binary_data/547240bc-bcdf-4428-b9ba-036b3842d787",
+            "fileSize": "2.34 MB"
+          }
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "versionId": "5fc8bc34-527b-4d02-a6a8-d83202b17c81",
+  "activeVersionId": "5fc8bc34-527b-4d02-a6a8-d83202b17c81",
+  "versionCounter": 118,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-03-06T09:54:19.435Z",
+      "createdAt": "2026-03-06T09:54:19.435Z",
+      "role": "workflow:owner",
+      "workflowId": "xNY4qhKT2cwXYi0v",
+      "projectId": "tMHfv8jC54QugIS3",
+      "project": {
+        "updatedAt": "2025-12-05T18:24:07.030Z",
+        "createdAt": "2025-12-05T18:00:52.525Z",
+        "id": "tMHfv8jC54QugIS3",
+        "name": "fan liu <591905097@qq.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "projectRelations": [
+          {
+            "updatedAt": "2025-12-05T18:00:52.525Z",
+            "createdAt": "2025-12-05T18:00:52.525Z",
+            "userId": "e1a90281-8c6a-4ec7-a985-3a344ba88b66",
+            "projectId": "tMHfv8jC54QugIS3",
+            "user": {
+              "updatedAt": "2026-03-12T04:36:50.363Z",
+              "createdAt": "2025-12-05T18:00:51.894Z",
+              "id": "e1a90281-8c6a-4ec7-a985-3a344ba88b66",
+              "email": "591905097@qq.com",
+              "firstName": "fan",
+              "lastName": "liu",
+              "personalizationAnswers": {
+                "version": "v4",
+                "personalization_survey_submitted_at": "2025-12-05T18:24:47.635Z",
+                "personalization_survey_n8n_version": "1.122.5",
+                "companySize": "<20",
+                "companyType": "saas",
+                "role": "business-owner",
+                "reportedSource": "youtube"
+              },
+              "settings": {
+                "userActivated": true,
+                "firstSuccessfulWorkflowId": "e9Q0InRVbw3mcRzk",
+                "userActivatedAt": 1773290207581,
+                "easyAIWorkflowOnboarded": true,
+                "npsSurvey": {
+                  "responded": true,
+                  "lastShownAt": 1772350096923
+                }
+              },
+              "disabled": false,
+              "mfaEnabled": false,
+              "lastActiveAt": "2026-03-12",
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-03-10T14:41:52.242Z",
+    "createdAt": "2026-03-10T14:41:52.242Z",
+    "versionId": "5fc8bc34-527b-4d02-a6a8-d83202b17c81",
+    "workflowId": "xNY4qhKT2cwXYi0v",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "storyboard_Plot_web",
+          "options": {}
+        },
+        "id": "9f77c154-3b5e-4596-9da4-0a2a078c4ef1",
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -144,
+          0
+        ],
+        "webhookId": "6a62bc24-387a-462f-b28b-096b2d11c234"
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "tableId": "storyboard_tasks",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "task_id",
+                "condition": "eq",
+                "keyValue": "={{ $('Webhook').item.json.body.taskId }}"
+              }
+            ]
+          },
+          "fieldsUi": {
+            "fieldValues": [
+              {
+                "fieldId": "status",
+                "fieldValue": "PROCESSING"
+              },
+              {
+                "fieldId": "progress",
+                "fieldValue": "10"
+              }
+            ]
+          }
+        },
+        "id": "366d38c6-e589-44ae-9725-55b88d2c64b2",
+        "name": "Update Progress 10%",
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          80,
+          0
+        ],
+        "alwaysOutputData": false,
+        "credentials": {
+          "supabaseApi": {
+            "id": "51Y43Q3CDfFRAjNI",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "url": "={{ $('Webhook').item.json.body.imageUrl }}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "file"
+              }
+            }
+          }
+        },
+        "id": "3c7146bd-5429-41d4-aeb4-43d577d25df2",
+        "name": "Download Reference Image",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          304,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const inputBody = $('Webhook').item.json.body || {};\nconst script = inputBody.script || inputBody.scriptContent || inputBody.story_text || '';\nconst contentType = inputBody.content_type || 'ugc带货';\n\nif (!script) {\n  throw new Error('Missing script / scriptContent / story_text');\n}\n\nconst itemIndex = 0;\nconst binaryPropertyName = 'data';\n\n// 读取真正的二进制 buffer\nconst buffer = await this.helpers.getBinaryDataBuffer(itemIndex, binaryPropertyName);\n\nif (!buffer || !buffer.length) {\n  throw new Error('参考图 buffer 为空，下载图片节点可能没有拿到文件');\n}\n\n// 取 binary 元信息\nconst item = $input.first();\nconst binaryMeta = item?.binary?.[binaryPropertyName] || {};\n\nreturn {\n  json: {\n    story_text: script,\n    person_image_b64: buffer.toString('base64'),\n    person_mime_type: binaryMeta.mimeType || 'image/jpeg',\n    content_type: contentType,\n    taskId: inputBody.taskId || inputBody.task_id || inputBody.record_id || 'unknown_task',\n    record_id: inputBody.record_id || '',\n    table_link: inputBody.table_link || '',\n    app_token: inputBody.app_token || '',\n    table_id: inputBody.table_id || '',\n    tenant_access_token: inputBody.tenant_access_token || '',\n    api_key: inputBody.api_key || '',\n    app_id: inputBody.app_id || '',\n    app_secret: inputBody.app_secret || '',\n    workflow_id: inputBody.workflow_id || 'flow_storyboard',\n    imageUrl: inputBody.imageUrl || inputBody.referenceImage || ''\n  }\n};"
+        },
+        "id": "fdcbac1a-029f-4e9e-89a7-f631d8076d6e",
+        "name": "Prepare Gemini Data",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          528,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "function s(v){ return v == null ? '' : String(v); }\nfunction stripDataPrefix(b64){ return s(b64).trim().replace(/^data:.*;base64,/, '').trim(); }\n\nconst j = $json || {};\nconst content_type = s(j.content_type).trim() || 'ugc带货';\nconst story_text = s(j.story_text).trim();\nconst person_mime_type = s(j.person_mime_type).trim() || 'image/jpeg';\nconst person_image_b64 = stripDataPrefix(j.person_image_b64);\n\nif (!story_text) throw new Error('缺少 story_text（剧本为空）');\nif (!person_image_b64) throw new Error('缺少 person_image_b64（参考图为空）');\n\nconst baseRules = [\n  'You are a senior commercial storyboard director and prompt engineer.',\n  'Your job is to convert the script and reference image into a 9-shot storyboard plan for a single 3x3 storyboard grid image.',\n  'You must preserve identity consistency, outfit consistency, product consistency, and scene logic consistency.',\n  'Return JSON only. No markdown. No explanation.',\n  'shots must be exactly 9 items.',\n  'Each shot must be visually distinct but remain coherent as one continuous story.',\n  'Each shot is intended to later become an 8-second video shot, so each shot should already imply dynamic action potential.',\n  'Do not output vague prompts. Be concrete and visual.',\n  'No text overlays, no subtitles, no watermark, no UI.'\n].join(' ');\n\nconst typeRulesMap = {\n  'ugc带货': [\n    'UGC commercial style.',\n    'Phone-camera realism, natural motion logic, lifestyle feeling.',\n    'The same person should naturally interact with the same product across the 9 shots.',\n    'Environment should stay basically consistent unless script clearly requires a change.',\n    'Keep authentic handheld-feel compositions and conversion-oriented story beats.'\n  ].join(' '),\n  '产品展示': [\n    'Product showcase style.',\n    'The product is always the hero.',\n    'Use different framings, angles, detail focus, usage context, and hero beauty shots.',\n    'Avoid empty catalog shots; keep cinematic realism.'\n  ].join(' '),\n  '剧情故事': [\n    'Narrative storytelling style.',\n    'Characters and props must remain continuous.',\n    'Locations may evolve if the story requires, but continuity must be coherent.',\n    'Each shot should feel like one beat in a short film storyboard.'\n  ].join(' ')\n};\n\nconst typeRules = typeRulesMap[content_type] || typeRulesMap['ugc带货'];\n\nconst outputSchema = {\n  content_type: content_type,\n  visual_anchor: {\n    subject_identity: 'main character identity anchor from reference image',\n    outfit_anchor: 'same outfit and accessories as reference image unless script explicitly changes',\n    product_anchor: 'same product identity, same shape, color, logo, material',\n    scene_anchor: 'same environment logic and lighting logic'\n  },\n  global_style: 'photorealistic, cinematic, rich details, realistic lighting, no text, no UI',\n  negative_prompts: [\n    'extra fingers',\n    'deformed hands',\n    'identity drift',\n    'wrong product logo',\n    'new accessories',\n    'text overlay',\n    'watermark',\n    'frame border',\n    'gridline',\n    'cartoon look'\n  ],\n  shots: [\n    {\n      shot_index: 1,\n      title: 'shot title',\n      story_beat: 'what this beat does in the overall story',\n      subject: 'who/what is the main subject in this shot',\n      scene: 'where it happens',\n      emotion: 'emotion or tone',\n      camera_shot: 'composition / shot size / angle',\n      motion_hint: 'what dynamic motion should later happen in video',\n      prompt_text: 'detailed visual prompt for this panel'\n    }\n  ]\n};\n\nconst instruction = `${baseRules}\\n\\nContent type rules: ${typeRules}\\n\\nScript:\\n${story_text}\\n\\nReturn a JSON object following this structure exactly:\\n${JSON.stringify(outputSchema, null, 2)}\\n\\nImportant hard constraints:\\n1. shots must be exactly 9 items.\\n2. shot_index must be 1 to 9.\\n3. prompt_text must be detailed and visual, suitable for storyboard image generation.\\n4. motion_hint must make later video expansion easy.\\n5. Keep the same person, same outfit, same product, same scene logic unless the script explicitly changes it.\\n6. No extra people unless the script explicitly requires them.\\n7. No text elements in the frame.`;\n\nconst gemini_body = {\n  contents: [\n    {\n      role: 'user',\n      parts: [\n        { text: instruction },\n        {\n          inline_data: {\n            mime_type: person_mime_type,\n            data: person_image_b64\n          }\n        }\n      ]\n    }\n  ],\n  generationConfig: {\n    temperature: 0.6,\n    responseMimeType: 'application/json'\n  }\n};\n\nreturn {\n  json: {\n    ...j,\n    gemini_body\n  }\n};"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          752,
+          0
+        ],
+        "id": "3ede812b-c596-4d2b-9f33-7d3a4dd314a6",
+        "name": "组装请求"
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "tableId": "storyboard_tasks",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "task_id",
+                "condition": "eq",
+                "keyValue": "={{ $json.taskId }}"
+              }
+            ]
+          },
+          "fieldsUi": {
+            "fieldValues": [
+              {
+                "fieldId": "status",
+                "fieldValue": "PROCESSING"
+              },
+              {
+                "fieldId": "progress",
+                "fieldValue": "45"
+              }
+            ]
+          }
+        },
+        "id": "4e789a34-78ca-4940-8293-811def1393d1",
+        "name": "Update Progress 45%",
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          976,
+          0
+        ],
+        "credentials": {
+          "supabaseApi": {
+            "id": "51Y43Q3CDfFRAjNI",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://yunwu.ai/v1beta/models/gemini-2.5-pro:generateContent",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $('组装请求').item.json.gemini_body }}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1200,
+          0
+        ],
+        "id": "e29e1e54-110e-4c13-869a-8661707e4863",
+        "name": "分析Agent-提示词撰写",
+        "retryOnFail": true,
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "mMIH382GnJoMSu4L",
+            "name": "Header Auth account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "function unwrapRoot(x) {\n  if (x && typeof x === 'object' && x.body && typeof x.body === 'object') return x.body;\n  return x;\n}\n\nfunction extractFirstJsonObject(s) {\n  if (!s) return '';\n  const cleaned = String(s)\n    .replace(/```json\\s*/gi, '')\n    .replace(/```/g, '')\n    .trim();\n\n  const start = cleaned.indexOf('{');\n  if (start < 0) return '';\n\n  let depth = 0;\n  let inString = false;\n  let escaped = false;\n\n  for (let i = start; i < cleaned.length; i++) {\n    const ch = cleaned[i];\n\n    if (escaped) {\n      escaped = false;\n      continue;\n    }\n    if (ch === '\\\\') {\n      escaped = true;\n      continue;\n    }\n    if (ch === '\"') {\n      inString = !inString;\n      continue;\n    }\n    if (!inString) {\n      if (ch === '{') depth++;\n      if (ch === '}') depth--;\n      if (depth === 0) return cleaned.slice(start, i + 1).trim();\n    }\n  }\n  return '';\n}\n\nfunction extractText(root) {\n  const parts = root?.candidates?.[0]?.content?.parts;\n  if (!Array.isArray(parts) || parts.length === 0) return '';\n\n  const p1 = parts.find(p => typeof p?.text === 'string' && p.text.trim().startsWith('{') && !p.thought);\n  if (p1) return p1.text.trim();\n\n  const p2 = parts.find(p => typeof p?.text === 'string' && p.text.trim().startsWith('{'));\n  if (p2) return p2.text.trim();\n\n  const all = parts.map(p => typeof p?.text === 'string' ? p.text : '').filter(Boolean).join('\\n');\n  return extractFirstJsonObject(all);\n}\n\nfunction s(v){ return v == null ? '' : String(v); }\nfunction stripDataPrefix(b64){ return s(b64).trim().replace(/^data:.*;base64,/, '').trim(); }\n\nconst raw = $json || {};\nconst root = unwrapRoot(raw);\nconst text = extractText(root);\nif (!text) throw new Error('第一阶段 storyboard agent 未返回可解析 JSON');\n\nlet storyboard;\ntry {\n  storyboard = JSON.parse(text);\n} catch (e) {\n  throw new Error('第一阶段 storyboard JSON 解析失败：' + e.message + '\\n原文前500字：' + String(text).slice(0, 500));\n}\n\nconst shots = Array.isArray(storyboard?.shots) ? storyboard.shots : [];\nif (shots.length !== 9) {\n  throw new Error('第一阶段 storyboard shots 必须刚好 9 个；实际=' + shots.length);\n}\n\nconst base = $('Prepare Gemini Data').first().json || {};\nconst story_text = s(base.story_text).trim();\nconst content_type = s(base.content_type).trim() || 'ugc带货';\nconst person_image_b64 = stripDataPrefix(base.person_image_b64);\nconst person_mime_type = s(base.person_mime_type).trim() || 'image/jpeg';\n\nif (!person_image_b64) throw new Error('缺少参考图 person_image_b64');\n\nconst instruction = `You are a senior cinematic video prompt engineer.\\n\\nTask:\\nExpand each of the 9 storyboard shots into a highly detailed 8-second video prompt.\\n\\nHard requirements:\\n1. Do NOT rewrite the story structure.\\n2. Keep the same person identity, outfit, accessories, product identity, and scene logic from the reference image and storyboard.\\n3. Each shot duration is EXACTLY 8 seconds.\\n4. For EACH shot output these fields:\\n   - shot_index\\n   - title\\n   - story_beat\\n   - subject\\n   - scene\\n   - emotion\\n   - camera_shot\\n   - motion_hint\\n   - prompt_text\\n   - start_frame\\n   - action\\n   - end_frame\\n   - style\\n   - timeline (minimum 4 segments)\\n   - video_prompt\\n5. The final video_prompt must strictly use this structure:\\n   Start frame: ...\\n   Action: ...\\n   End frame: ...\\n   Style: ...\\n6. timeline must describe the exact 8-second evolution with time_range / visual / camera / environment.\\n7. Maintain subject consistency and scene consistency throughout.\\n8. Return JSON only. No markdown. No explanation.\\n\\nReturn schema example:\\n{\\n  \\\"content_type\\\": \\\"${content_type}\\\",\\n  \\\"global_video_rules\\\": {\\n    \\\"duration_per_shot\\\": 8,\\n    \\\"subject_consistency\\\": true,\\n    \\\"scene_consistency\\\": true,\\n    \\\"style_anchor\\\": \\\"photorealistic, cinematic, realistic light, rich detail\\\"\\n  },\\n  \\\"shots\\\": [\\n    {\\n      \\\"shot_index\\\": 1,\\n      \\\"title\\\": \\\"...\\\",\\n      \\\"story_beat\\\": \\\"...\\\",\\n      \\\"subject\\\": \\\"...\\\",\\n      \\\"scene\\\": \\\"...\\\",\\n      \\\"emotion\\\": \\\"...\\\",\\n      \\\"camera_shot\\\": \\\"...\\\",\\n      \\\"motion_hint\\\": \\\"...\\\",\\n      \\\"prompt_text\\\": \\\"...\\\",\\n      \\\"start_frame\\\": \\\"...\\\",\\n      \\\"action\\\": \\\"...\\\",\\n      \\\"end_frame\\\": \\\"...\\\",\\n      \\\"style\\\": \\\"...\\\",\\n      \\\"timeline\\\": [\\n        {\\n          \\\"time_range\\\": \\\"0.0-1.5s\\\",\\n          \\\"visual\\\": \\\"...\\\",\\n          \\\"camera\\\": \\\"...\\\",\\n          \\\"environment\\\": \\\"...\\\"\\n        },\\n        {\\n          \\\"time_range\\\": \\\"1.5-3.5s\\\",\\n          \\\"visual\\\": \\\"...\\\",\\n          \\\"camera\\\": \\\"...\\\",\\n          \\\"environment\\\": \\\"...\\\"\\n        },\\n        {\\n          \\\"time_range\\\": \\\"3.5-6.0s\\\",\\n          \\\"visual\\\": \\\"...\\\",\\n          \\\"camera\\\": \\\"...\\\",\\n          \\\"environment\\\": \\\"...\\\"\\n        },\\n        {\\n          \\\"time_range\\\": \\\"6.0-8.0s\\\",\\n          \\\"visual\\\": \\\"...\\\",\\n          \\\"camera\\\": \\\"...\\\",\\n          \\\"environment\\\": \\\"...\\\"\\n        }\\n      ],\\n      \\\"video_prompt\\\": \\\"Start frame: ... Action: ... End frame: ... Style: ...\\\"\\n    }\\n  ]\\n}`;\n\nconst video_prompt_body = {\n  contents: [\n    {\n      role: 'user',\n      parts: [\n        {\n          text: instruction + '\\n\\nStory text:\\n' + story_text + '\\n\\nStoryboard JSON:\\n' + JSON.stringify(storyboard, null, 2)\n        },\n        {\n          inline_data: {\n            mime_type: person_mime_type,\n            data: person_image_b64\n          }\n        }\n      ]\n    }\n  ],\n  generationConfig: {\n    temperature: 0.5,\n    responseMimeType: 'application/json'\n  }\n};\n\nreturn {\n  json: {\n    ...base,\n    storyboard_json: storyboard,\n    video_prompt_body\n  }\n};"
+        },
+        "id": "8ef95364-28cf-45bc-ae61-86d192a22293",
+        "name": "组装视频提示词请求",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1424,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://yunwu.ai/v1beta/models/gemini-3-flash-preview:generateContent",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json.video_prompt_body }}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1648,
+          0
+        ],
+        "id": "a4b1acf0-2331-4b27-a5e3-ff751d7c7116",
+        "name": "分析Agent-视频提示词扩写",
+        "retryOnFail": true,
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "mMIH382GnJoMSu4L",
+            "name": "Header Auth account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "function unwrapRoot(x) {\n  if (x && typeof x === 'object' && x.body && typeof x.body === 'object') return x.body;\n  return x;\n}\n\nfunction extractFirstJsonObject(s) {\n  if (!s) return '';\n  const cleaned = String(s)\n    .replace(/```json\\s*/gi, '')\n    .replace(/```/g, '')\n    .trim();\n\n  const start = cleaned.indexOf('{');\n  if (start < 0) return '';\n\n  let depth = 0;\n  let inString = false;\n  let escaped = false;\n\n  for (let i = start; i < cleaned.length; i++) {\n    const ch = cleaned[i];\n\n    if (escaped) {\n      escaped = false;\n      continue;\n    }\n    if (ch === '\\\\') {\n      escaped = true;\n      continue;\n    }\n    if (ch === '\"') {\n      inString = !inString;\n      continue;\n    }\n    if (!inString) {\n      if (ch === '{') depth++;\n      if (ch === '}') depth--;\n      if (depth === 0) return cleaned.slice(start, i + 1).trim();\n    }\n  }\n  return '';\n}\n\nfunction extractText(root) {\n  const parts = root?.candidates?.[0]?.content?.parts;\n  if (!Array.isArray(parts) || parts.length === 0) return '';\n\n  const p1 = parts.find(p => typeof p?.text === 'string' && p.text.trim().startsWith('{') && !p.thought);\n  if (p1) return p1.text.trim();\n\n  const p2 = parts.find(p => typeof p?.text === 'string' && p.text.trim().startsWith('{'));\n  if (p2) return p2.text.trim();\n\n  const all = parts.map(p => typeof p?.text === 'string' ? p.text : '').filter(Boolean).join('\\n');\n  return extractFirstJsonObject(all);\n}\n\nfunction getNodeFirstJson(name) {\n  try {\n    return $(name).first().json || {};\n  } catch (e) {\n    return {};\n  }\n}\n\n// 关键：强制读取第一阶段“分析Agent-提示词撰写”的结果，而不是当前视频扩写结果\nconst firstStageRaw = getNodeFirstJson('分析Agent-提示词撰写');\nconst root = unwrapRoot(firstStageRaw);\nconst text = extractText(root);\n\nif (!text) {\n  throw new Error('第一阶段图片 storyboard 未返回可解析 JSON');\n}\n\nlet plan;\ntry {\n  plan = JSON.parse(text);\n} catch (e) {\n  throw new Error('第一阶段图片 storyboard JSON 解析失败：' + e.message + '\\n原文前500字：' + String(text).slice(0, 500));\n}\n\nconst shots = Array.isArray(plan?.shots) ? plan.shots : [];\nif (shots.length !== 9) {\n  throw new Error('第一阶段图片 storyboard shots 必须刚好 9 个；实际=' + shots.length);\n}\n\nconst content_type = String(plan?.content_type || 'ugc带货');\n\nconst hardCommon =\n`Create ONE single image. It must be a full-bleed 3x3 grid (nine panels) that fills the entire canvas with NO margins, NO borders, NO frames, NO gutters, NO gridlines, NO separators.\nNo visible text of any kind: no captions, no labels, no numbers, no watermark, no UI.\nPhotorealistic cinematic stills.\n`;\n\nconst hardByType = {\n  'ugc带货': `\nPreserve EXACTLY the same number of people as the reference image across all panels. Do NOT add or remove any person.\nKeep the SAME set of people across all panels. Keep EACH person's identity consistent (face, skin tone, hairstyle, outfit, accessories).\nKeep the SAME product identity across all panels (same logo/label/color/material).\nKeep a consistent UGC environment and lighting across all panels (phone-camera vibe, natural indoor light), only change camera angle/shot size and action beat.\n`,\n  '产品展示': `\nKeep the SAME product identity across all panels (same logo/label/color/material). Product is the hero.\nBackground can be simple and consistent. Show different angles, macro details, usage steps, and hero shots.\nAvoid pure catalog packshot; keep cinematic product photography.\n`,\n  '剧情故事': `\nIf the reference image contains multiple people, preserve EXACTLY the same number of people (do NOT add/remove).\nCharacters must stay consistent when they re-appear (face/outfit).\nLocations MAY change between panels if the story requires it, but keep continuity coherent.\n`\n};\n\nconst hardLayout = hardCommon + (hardByType[content_type] || hardByType['ugc带货']);\n\nconst panels = shots.map((s, i) => {\n  const p = String(s?.prompt_text || '').trim();\n  if (!p) throw new Error('第 ' + (i + 1) + ' 个 shot 的 prompt_text 为空');\n  return `Panel ${i + 1} (left-to-right, top-to-bottom): ${p}`;\n}).join('\\n\\n');\n\nconst neg = Array.isArray(plan?.negative_prompts) ? plan.negative_prompts.join(', ') : '';\nconst negBlock = neg ? `\\nNegative: ${neg}` : '';\n\nreturn {\n  json: {\n    ...($json || {}),\n    content_type,\n    grid_prompt: `${hardLayout}${panels}${negBlock}`,\n    grid_plan_json: plan,               // 图片分镜\n    image_storyboard_json: plan         // 明确标记这是图片 storyboard\n  }\n};"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1872,
+          0
+        ],
+        "id": "afd2201c-79b5-4e6e-aa18-ee2304b4fb34",
+        "name": "JSON转grid_prompt"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "function s(v){ return v == null ? '' : String(v); }\nfunction stripDataPrefix(b64){ return s(b64).trim().replace(/^data:.*;base64,/, '').trim(); }\n\nfunction getNodeFirstJson(name) {\n  try {\n    return $(name).first().json || {};\n  } catch(e) {\n    return {};\n  }\n}\n\nconst j = $json || {};\n\n// 优先取当前输入；没有就回退到 Prepare Gemini Data\nconst prepare = getNodeFirstJson('Prepare Gemini Data');\n\nconst img_b64 = stripDataPrefix(j.person_image_b64) || stripDataPrefix(prepare.person_image_b64);\nconst img_mime = s(j.person_mime_type).trim() || s(prepare.person_mime_type).trim() || 'image/jpeg';\n\nif (!img_b64) {\n  throw new Error('缺少 person_image_b64。请从 “Download Reference Image → Prepare Gemini Data” 开始执行，或直接从 Webhook 执行整条流程。');\n}\n\nconst gridNode = getNodeFirstJson('JSON转grid_prompt');\nlet promptText = s(j.grid_prompt).trim() || s(gridNode.grid_prompt).trim();\n\nif (!promptText) {\n  throw new Error('缺少 grid_prompt（请检查 JSON转grid_prompt 是否有输出）');\n}\n\nconst CONSISTENCY_LOCK = `\nABSOLUTE CONSISTENCY LOCK (must follow):\n- Preserve EXACTLY the same number of people as the reference image. Do NOT add or remove any person.\n- Keep EXACTLY the same set of identities as the reference image (for EACH person): same face structure, eyes, nose, lips, skin tone, hairstyle, hair color, makeup.\n- Keep EXACTLY the same outfit and accessories as the reference image (for EACH person): no new jewelry, no missing earrings, no changes in clothing texture or color.\n- Keep EXACTLY the same core character design and props from the reference image.\n- Do NOT swap hands, do NOT mirror/flip the image.\n- Keep photorealistic cinematic stills.\n- No text, no subtitles, no watermark, no UI, no borders, no frames, no gridlines, no separators.\n`.trim();\n\nconst finalPrompt = `${CONSISTENCY_LOCK}\\n\\n${promptText}`;\n\nconst request_body = {\n  contents: [\n    {\n      role: 'user',\n      parts: [\n        { text: finalPrompt },\n        {\n          inline_data: {\n            mime_type: img_mime,\n            data: img_b64\n          }\n        }\n      ]\n    }\n  ],\n  generationConfig: {\n    responseModalities: ['IMAGE'],\n    imageConfig: {\n      aspectRatio: '9:16',\n      imageSize: '4K'\n    }\n  }\n};\n\nreturn {\n  json: {\n    ...j,\n    request_body,\n    grid_prompt: finalPrompt,\n    person_image_b64: img_b64,\n    person_mime_type: img_mime\n  }\n};"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2096,
+          0
+        ],
+        "id": "e870b202-3fa4-48a7-aa85-b1af86eb798e",
+        "name": "组装生图请求体"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://yunwu.ai/v1beta/models/gemini-3.1-flash-image-preview:generateContent",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json.request_body }}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          2320,
+          0
+        ],
+        "id": "f091e94d-4e36-4d08-94c6-fe5a03551e6b",
+        "name": "生图请求",
+        "retryOnFail": false,
+        "waitBetweenTries": 3000,
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "mMIH382GnJoMSu4L",
+            "name": "Header Auth account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "function unwrapRoot(x) {\n  if (x && typeof x === 'object' && x.body && typeof x.body === 'object') return x.body;\n  return x;\n}\n\nfunction getByPath(obj, path) {\n  try {\n    return path.split('.').reduce((acc, k) => (acc == null ? undefined : acc[k]), obj);\n  } catch {\n    return undefined;\n  }\n}\n\nfunction findInlineImageParts(root) {\n  const candidates = root?.candidates;\n  if (!Array.isArray(candidates) || !candidates.length) return [];\n\n  const parts = candidates?.[0]?.content?.parts;\n  if (!Array.isArray(parts)) return [];\n\n  const imgs = [];\n  for (const p of parts) {\n    const inline = p?.inline_data || p?.inlineData;\n    if (inline?.data) {\n      imgs.push({\n        b64: inline.data,\n        mimeType: inline.mime_type || inline.mimeType || 'image/png'\n      });\n      continue;\n    }\n    const fd = p?.fileData;\n    if (fd?.fileUri) {\n      imgs.push({\n        fileUri: fd.fileUri,\n        mimeType: fd.mimeType || 'image/png'\n      });\n    }\n  }\n  return imgs;\n}\n\nfunction stripDataPrefix(b64) {\n  return String(b64 || '').replace(/^data:.*;base64,/, '').trim();\n}\n\nconst raw = $json || {};\nconst root = unwrapRoot(raw);\nconst imageIndex = Number(raw.image_index ?? raw.index ?? 1) || 1;\n\nlet imgs = findInlineImageParts(root);\n\nif (!imgs.length) {\n  const maybe =\n    getByPath(root, 'image.data') ||\n    getByPath(root, 'data.image') ||\n    getByPath(root, 'output.image') ||\n    getByPath(root, 'output.data') ||\n    null;\n\n  if (maybe && typeof maybe === 'string') {\n    imgs = [{ b64: maybe, mimeType: 'image/png' }];\n  }\n}\n\nif (!imgs.length) {\n  throw new Error('没有在返回体中找到图片数据（inline_data / inlineData）。请检查生图接口实际响应结构。');\n}\n\nconst first = imgs[0];\n\nif (first.fileUri && !first.b64) {\n  throw new Error(`返回的是 fileUri（${first.fileUri}）而不是 base64。需要额外一步去下载该文件再转 binary。`);\n}\n\nconst mimeType = first.mimeType || 'image/png';\nconst ext = mimeType.includes('jpeg') || mimeType.includes('jpg') ? 'jpg' : 'png';\nconst b64 = stripDataPrefix(first.b64);\n\nif (!b64) throw new Error('图片 base64 为空');\n\nreturn {\n  json: {\n    ...raw,\n    mimeType,\n    fileName: `knowledge_card_${imageIndex}.${ext}`\n  },\n  binary: {\n    data: {\n      data: b64,\n      mimeType,\n      fileName: `Product_display_image_${imageIndex}.${ext}`\n    }\n  }\n};"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2544,
+          0
+        ],
+        "id": "7501a1d8-4cbb-4d54-aa8f-d87bbcf969c0",
+        "name": "转换为Binary"
+      },
+      {
+        "parameters": {
+          "jsCode": "const item = $input.item;\nconst taskId = $('Webhook').item.json.body.taskId || $('Webhook').item.json.body.task_id || $('Webhook').item.json.body.record_id || 'unknown_task';\nconst timestamp = Date.now();\nconst fileName = `${taskId}_grid_${timestamp}.png`;\nconst publicBase = 'https://YOUR_SUPABASE_PUBLIC_DOMAIN/storage/v1/object/public/images/storyboard';\nconst publicUrl = `${publicBase}/${fileName}`;\n\nreturn {\n  json: {\n    ...($json || {}),\n    fileName: fileName,\n    taskId: taskId,\n    storyboard_image_url: publicUrl\n  },\n  binary: {\n    data: item.binary.data\n  }\n};"
+        },
+        "id": "39ad4dea-c468-4043-8ea8-b03ab649dc97",
+        "name": "Generate Filename",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2768,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "tableId": "storyboard_tasks",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "task_id",
+                "condition": "eq",
+                "keyValue": "={{ $json.taskId }}"
+              }
+            ]
+          },
+          "fieldsUi": {
+            "fieldValues": [
+              {
+                "fieldId": "status",
+                "fieldValue": "COMPLETED"
+              },
+              {
+                "fieldId": "progress",
+                "fieldValue": "100"
+              },
+              {
+                "fieldId": "storyboard_structure",
+                "fieldValue": "={{ JSON.stringify($json.video_storyboard_json) }}"
+              },
+              {
+                "fieldId": "storyboard_image_url",
+                "fieldValue": "={{ $json.storyboard_image_url }}"
+              }
+            ]
+          }
+        },
+        "name": "Supabase Update 100%",
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          2992,
+          0
+        ],
+        "id": "02d5f6fa-ef81-4890-9bfc-1624f11cd808",
+        "credentials": {
+          "supabaseApi": {
+            "id": "51Y43Q3CDfFRAjNI",
+            "name": "Supabase account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "Update Progress 10%",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Update Progress 10%": {
+        "main": [
+          [
+            {
+              "node": "Download Reference Image",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Download Reference Image": {
+        "main": [
+          [
+            {
+              "node": "Prepare Gemini Data",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Gemini Data": {
+        "main": [
+          [
+            {
+              "node": "组装请求",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "组装请求": {
+        "main": [
+          [
+            {
+              "node": "Update Progress 45%",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Update Progress 45%": {
+        "main": [
+          [
+            {
+              "node": "分析Agent-提示词撰写",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "分析Agent-提示词撰写": {
+        "main": [
+          [
+            {
+              "node": "组装视频提示词请求",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "组装视频提示词请求": {
+        "main": [
+          [
+            {
+              "node": "分析Agent-视频提示词扩写",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "分析Agent-视频提示词扩写": {
+        "main": [
+          [
+            {
+              "node": "JSON转grid_prompt",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "JSON转grid_prompt": {
+        "main": [
+          [
+            {
+              "node": "组装生图请求体",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "组装生图请求体": {
+        "main": [
+          [
+            {
+              "node": "生图请求",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "生图请求": {
+        "main": [
+          [
+            {
+              "node": "转换为Binary",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "转换为Binary": {
+        "main": [
+          [
+            {
+              "node": "Generate Filename",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Generate Filename": {
+        "main": [
+          [
+            {
+              "node": "Supabase Update 100%",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "fan liu",
+    "name": null,
+    "description": null
+  }
+}

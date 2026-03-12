@@ -381,7 +381,7 @@
     {
       "parameters": {
         "operation": "update",
-        "tableId": "StoryboardTask"
+        "tableId": "storyboard_tasks"
       },
       "id": "supabase-end-node-id",
       "name": "Supabase: Update Status (Completed)",
@@ -402,7 +402,7 @@
       "parameters": {
         "operation": "update",
         "schema": "public",
-        "tableId": "StoryboardTask",
+        "tableId": "storyboard_tasks",
         "updateKey": "id",
         "columns": "status",
         "value": "GENERATING_GRID",
@@ -500,7 +500,7 @@
       "parameters": {
         "operation": "update",
         "schema": "public",
-        "tableId": "StoryboardTask",
+        "tableId": "storyboard_tasks",
         "updateKey": "id",
         "columns": "status,coverImage",
         "value": "GRID_COMPLETED",
@@ -509,6 +509,10 @@
             {
               "column": "coverImage",
               "value": "={{ $json.publicUrl }}"
+            },
+            {
+              "column": "storyboard_structure",
+              "value": "={{ $('JSON转grid_prompt').item.json.plan_json }}"
             }
           ]
         }
@@ -690,7 +694,7 @@
       {
         "json": {
           "headers": {
-            "host": "hooks.flowonn.com",
+            "host": "hooks.atomx.top",
             "x-real-ip": "47.107.155.228",
             "x-forwarded-for": "47.107.155.228",
             "x-forwarded-proto": "https",
@@ -1165,7 +1169,7 @@
       {
         "parameters": {
           "operation": "update",
-          "tableId": "StoryboardTask"
+          "tableId": "storyboard_tasks"
         },
         "id": "supabase-end-node-id",
         "name": "Supabase: Update Status (Completed)",
@@ -1186,7 +1190,7 @@
         "parameters": {
           "operation": "update",
           "schema": "public",
-          "tableId": "StoryboardTask",
+          "tableId": "storyboard_tasks",
           "updateKey": "id",
           "columns": "status",
           "value": "GENERATING_GRID",
@@ -1284,15 +1288,19 @@
         "parameters": {
           "operation": "update",
           "schema": "public",
-          "tableId": "StoryboardTask",
+          "tableId": "storyboard_tasks",
           "updateKey": "id",
-          "columns": "status,coverImage",
+          "columns": "status,coverImage,storyboard_structure",
           "value": "GRID_COMPLETED",
           "additionalFields": {
             "values": [
               {
                 "column": "coverImage",
                 "value": "={{ $json.publicUrl }}"
+              },
+              {
+                "column": "storyboard_structure",
+                "value": "={{ $('JSON转grid_prompt').item.json.grid_plan_json }}"
               }
             ]
           }

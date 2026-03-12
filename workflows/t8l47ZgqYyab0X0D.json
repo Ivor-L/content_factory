@@ -1,0 +1,1518 @@
+{
+  "updatedAt": "2026-03-11T13:53:31.579Z",
+  "createdAt": "2026-03-07T05:31:59.997Z",
+  "id": "t8l47ZgqYyab0X0D",
+  "name": "Content Factory Digital Human Gen",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "digital-human-gen",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "5d20fbbd-e7dc-460f-83fe-037e3b942c4b",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        3040,
+        32
+      ],
+      "webhookId": "digital-human-gen-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.body ?? $json ?? {};\n\nfunction pickFirst(...vals) {\n  for (const v of vals) {\n    if (v !== undefined && v !== null && String(v).trim() !== '') return v;\n  }\n  return undefined;\n}\n\nfunction normalizeUrl(v) {\n  if (v == null) return '';\n  return String(v).trim();\n}\n\nfunction parseDurationSeconds(rawVal) {\n  if (rawVal === undefined || rawVal === null || rawVal === '') return null;\n\n  if (typeof rawVal === 'number' && Number.isFinite(rawVal)) {\n    if (rawVal > 1000) return rawVal / 1000;\n    return rawVal;\n  }\n\n  const s = String(rawVal).trim();\n  if (!s) return null;\n\n  const num = Number(s);\n  if (Number.isFinite(num)) {\n    if (num > 1000) return num / 1000;\n    return num;\n  }\n\n  const hhmmss = s.match(/^(\\d{1,2}):(\\d{1,2})(?::(\\d{1,2}(?:\\.\\d+)?))?$/);\n  if (hhmmss) {\n    if (hhmmss[3] !== undefined) {\n      const h = Number(hhmmss[1] || 0);\n      const m = Number(hhmmss[2] || 0);\n      const sec = Number(hhmmss[3] || 0);\n      return h * 3600 + m * 60 + sec;\n    }\n    const m = Number(hhmmss[1] || 0);\n    const sec = Number(hhmmss[2] || 0);\n    return m * 60 + sec;\n  }\n\n  return null;\n}\n\nfunction estimateTtsDuration(text) {\n  const s = String(text || '').trim();\n  if (!s) return null;\n\n  const chineseChars = (s.match(/[\\u4e00-\\u9fa5]/g) || []).length;\n  const englishWords = s\n    .replace(/[\\u4e00-\\u9fa5]/g, ' ')\n    .trim()\n    .split(/\\s+/)\n    .filter(Boolean).length;\n\n  let sec = 0;\n  if (chineseChars > 0) sec += chineseChars / 4.2;\n  if (englishWords > 0) sec += englishWords / 2.5;\n  sec += 0.8;\n\n  return Number(sec.toFixed(3));\n}\n\nconst imageUrl = normalizeUrl(pickFirst(raw.imageUrl, raw.image_url, raw.image, raw.coverUrl));\nconst audioUrl = normalizeUrl(pickFirst(raw.audioUrl, raw.audio_url, raw.audio, raw.voiceUrl));\nconst voiceRefAudioUrl = normalizeUrl(\n  pickFirst(raw.voice_ref_audio_url, raw.voiceRefAudioUrl, raw.voice_ref_audio, raw.voiceRefAudio)\n);\nconst emoRefAudioUrl = normalizeUrl(\n  pickFirst(raw.emo_ref_audio_url, raw.emoRefAudioUrl, raw.emo_ref_audio, raw.emoRefAudio)\n);\n\nconst scriptContent = String(\n  pickFirst(raw.script_content, raw.scriptContent, raw.text, raw.content, '')\n).trim();\n\nconst callbackUrl = String(\n  pickFirst(raw.callbackUrl, raw.callback_url, 'https://hooks.atomx.top/webhook/digital-human-callback')\n);\n\nconst runninghubKey = String(\n  pickFirst(raw.runninghub_key, raw.apiKey, raw.runninghubKey, '052eb9082e504c83978b7a18fe0d8c79')\n);\n\nconst apiKey = String(\n  pickFirst(raw.api_key, raw.user_api_key, raw.userApiKey, '')\n).trim();\n\nconst workflowIdFromUser = String(\n  pickFirst(raw.workflow_id, raw.workflowId, 'flow_digital_human')\n).trim();\n\nconst workflowName = String(\n  pickFirst(raw.workflow_name, raw.workflowName, '数字人生成')\n).trim();\n\nconst modeRaw = String(\n  pickFirst(raw.type, raw.mode, raw.gen_mode, raw.generate_mode, 'LIP_SYNC')\n).trim().toUpperCase();\n\nconst mode = modeRaw === 'VOICE_CLONE' ? 'VOICE_CLONE' : 'LIP_SYNC';\nconst rhModeValue = mode === 'VOICE_CLONE' ? 2 : 1;\n\nconst audioDurationRaw = pickFirst(\n  raw.audioDuration,\n  raw.audio_duration,\n  raw.duration,\n  raw.durationMs,\n  raw.duration_ms,\n  raw.audioLength,\n  raw.audio_length\n);\n\nlet audioDurationSec = parseDurationSeconds(audioDurationRaw);\nconst taskId = pickFirst(raw.task_id, raw.taskId);\n\nconst passthrough = {\n  record_id: pickFirst(raw.record_id, raw.recordId),\n  app_id: pickFirst(raw.app_id, raw.appId),\n  app_secret: pickFirst(raw.app_secret, raw.appSecret),\n  table_id: pickFirst(raw.table_id, raw.tableId),\n  base_id: pickFirst(raw.base_id, raw.baseId),\n  user_id: pickFirst(raw.user_id, raw.userId),\n  request_id: pickFirst(raw.request_id, raw.requestId),\n  task_name: pickFirst(raw.task_name, raw.taskName),\n  ext: raw.ext && typeof raw.ext === 'object' ? raw.ext : {}\n};\n\nif (!apiKey) {\n  throw new Error('缺少 api_key');\n}\n\nif (!imageUrl) {\n  throw new Error('缺少图片地址：请传 body.imageUrl / image_url');\n}\nif (!/^https?:\\/\\//i.test(imageUrl)) {\n  throw new Error('imageUrl 必须是 http/https 地址');\n}\n\nif (mode === 'LIP_SYNC') {\n  if (!audioUrl) {\n    throw new Error('LIP_SYNC 模式缺少音频地址：请传 body.audioUrl / audio_url');\n  }\n  if (!/^https?:\\/\\//i.test(audioUrl)) {\n    throw new Error('audioUrl 必须是 http/https 地址');\n  }\n  if (audioDurationSec == null || !Number.isFinite(audioDurationSec) || audioDurationSec <= 0) {\n    throw new Error('LIP_SYNC 模式缺少可用的音频时长：请传 body.audioDuration（秒）或 durationMs（毫秒）');\n  }\n}\n\nif (mode === 'VOICE_CLONE') {\n  if (!voiceRefAudioUrl) {\n    throw new Error('VOICE_CLONE 模式缺少音色参考音频：请传 voice_ref_audio_url');\n  }\n  if (!/^https?:\\/\\//i.test(voiceRefAudioUrl)) {\n    throw new Error('voice_ref_audio_url 必须是 http/https 地址');\n  }\n  if (emoRefAudioUrl && !/^https?:\\/\\//i.test(emoRefAudioUrl)) {\n    throw new Error('emo_ref_audio_url 必须是 http/https 地址');\n  }\n  if (!scriptContent) {\n    throw new Error('VOICE_CLONE 模式缺少 script_content');\n  }\n\n  if (audioDurationSec == null || !Number.isFinite(audioDurationSec) || audioDurationSec <= 0) {\n    audioDurationSec = estimateTtsDuration(scriptContent);\n  }\n\n  if (audioDurationSec == null || !Number.isFinite(audioDurationSec) || audioDurationSec <= 0) {\n    throw new Error('VOICE_CLONE 模式无法得到有效时长，请补传 audio_duration');\n  }\n}\n\nreturn [{\n  json: {\n    mode,\n    rhModeValue,\n    imageUrl,\n    audioUrl,\n    voiceRefAudioUrl,\n    emoRefAudioUrl,\n    scriptContent,\n    callbackUrl,\n    runninghubKey,\n    apiKey,\n    workflowIdFromUser,\n    workflowName,\n    audioDurationSec,\n    taskId,\n    passthrough\n  }\n}];"
+      },
+      "id": "9fcf304f-e4f9-425d-8a15-137633422ae1",
+      "name": "输入清洗与校验",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3264,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.atomx.top/workflow-credits/query",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "workflow_id",
+              "value": "={{ $json.workflowIdFromUser }}"
+            },
+            {
+              "name": "workflow_name",
+              "value": "={{ $json.workflowName }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ef2b5ade-a2ed-43ab-b510-4a0527a3ea54",
+      "name": "查询工作流积分",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3488,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.atomx.top/api/balance/check",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "={{ $('输入清洗与校验').item.json.apiKey }}"
+            },
+            {
+              "name": "required",
+              "value": "={{ $json.data.credit_cost }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f7656ae5-1d31-4ce3-bbb7-77186b995929",
+      "name": "验证api-key",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3712,
+        32
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "apikey_invalid"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok === true && $json.data && $json.data.sufficient === false }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "insufficient_points"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok === true && $json.data && $json.data.sufficient === true }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pass"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d5907708-76d2-402e-a6f2-ce8e70170f53",
+      "name": "Switch-鉴权分流",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        3936,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, error: 'api_key_invalid', detail: $node['验证api-key'].json } }}",
+        "options": {}
+      },
+      "id": "0706c067-c755-411a-a2d0-346f09b44680",
+      "name": "提醒-key错误",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        4160,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, error: 'insufficient_credits', required: $node['查询工作流积分'].json.data.credit_cost, balance_check: $node['验证api-key'].json } }}",
+        "options": {}
+      },
+      "id": "0dcc1cea-5d44-4890-bf84-bb71b9e20deb",
+      "name": "提醒-积分不足",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        4160,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const j = $('输入清洗与校验').item.json || {};\nconst d = Number(j.audioDurationSec);\n\nif (!Number.isFinite(d) || d <= 0) {\n  throw new Error('audioDurationSec 非法');\n}\n\nlet workflowId = '';\nlet workflowRule = '';\n\nif (d < 16) {\n  workflowId = '2030212461009313794';\n  workflowRule = '<16s';\n} else if (d < 32) {\n  workflowId = '2030212148579799042';\n  workflowRule = '16s~32s';\n} else {\n  throw new Error(`音频时长 ${d}s 超出支持范围：当前只支持小于32秒`);\n}\n\nreturn [{\n  json: {\n    ...j,\n    workflowId,\n    workflowRule\n  }\n}];"
+      },
+      "id": "7562fb03-8786-4123-b9b8-ef6c0e4e97ca",
+      "name": "按音频时长选择工作流",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4160,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "runninghub_key",
+              "value": "={{ $json.runninghubKey }}"
+            },
+            {
+              "name": "workflow_id",
+              "value": "={{ $json.workflowId }}"
+            },
+            {
+              "name": "callback_url",
+              "value": "=https://hooks.atomx.top/webhook/digital-human-callback?task_id={{ $('输入清洗与校验').item.json.taskId || $('输入清洗与校验').item.json.task_id }}"
+            },
+            {
+              "name": "image_url",
+              "value": "={{ $json.imageUrl }}"
+            },
+            {
+              "name": "audio_url",
+              "value": "={{ $json.audioUrl }}"
+            },
+            {
+              "name": "voice_ref_audio_url",
+              "value": "={{ $json.voiceRefAudioUrl }}"
+            },
+            {
+              "name": "emo_ref_audio_url",
+              "value": "={{ $json.emoRefAudioUrl }}"
+            },
+            {
+              "name": "script_content",
+              "value": "={{ $json.scriptContent }}"
+            },
+            {
+              "name": "workflow_rule",
+              "value": "={{ $json.workflowRule }}"
+            },
+            {
+              "name": "mode",
+              "value": "={{ $json.mode }}"
+            },
+            {
+              "name": "rh_mode_value",
+              "value": "={{ String($json.rhModeValue) }}"
+            },
+            {
+              "name": "api_key",
+              "value": "={{ $json.apiKey }}"
+            },
+            {
+              "name": "workflow_billing_id",
+              "value": "={{ $json.workflowIdFromUser }}"
+            },
+            {
+              "name": "workflow_billing_name",
+              "value": "={{ $json.workflowName }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "98623d1d-4e66-44b9-b6a6-4ed9e8916966",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        4384,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Config').item.json || {};\nconst inputMeta = $('按音频时长选择工作流').item.json || {};\n\nconst apiKey = cfg.runninghub_key;\nconst workflowId = cfg.workflow_id;\nconst webhookUrl = cfg.callback_url;\n\nconst imageUrl = cfg.image_url;\nconst audioUrl = cfg.audio_url;\nconst voiceRefAudioUrl = cfg.voice_ref_audio_url;\nconst emoRefAudioUrl = cfg.emo_ref_audio_url;\nconst scriptContent = cfg.script_content || '';\nconst workflowRule = cfg.workflow_rule || '';\nconst mode = String(cfg.mode || 'LIP_SYNC').toUpperCase();\nconst rhModeValue = String(cfg.rh_mode_value || (mode === 'VOICE_CLONE' ? '2' : '1'));\nconst audioDurationSec = inputMeta.audioDurationSec;\n\nconst digitalHumanTaskId =\n  $('输入清洗与校验').item.json.taskId ||\n  $('输入清洗与校验').item.json.task_id ||\n  inputMeta.passthrough?.task_id ||\n  inputMeta.passthrough?.record_id ||\n  '';\n\nif (!apiKey) throw new Error('缺少 runninghub_key');\nif (!workflowId) throw new Error('缺少 workflow_id');\nif (!webhookUrl) throw new Error('缺少 callback_url');\nif (!imageUrl) throw new Error('缺少 image_url');\n\nconst nodeInfoList = [\n  {\n    nodeId: '221',\n    fieldName: 'image',\n    fieldValue: String(imageUrl)\n  },\n  {\n    nodeId: '800',\n    fieldName: 'value',\n    fieldValue: String(rhModeValue)\n  }\n];\n\nif (mode === 'LIP_SYNC') {\n  if (!audioUrl) throw new Error('LIP_SYNC 模式缺少 audio_url');\n\n  nodeInfoList.push({\n    nodeId: '238',\n    fieldName: 'audio',\n    fieldValue: String(audioUrl)\n  });\n}\n\nif (mode === 'VOICE_CLONE') {\n  if (!voiceRefAudioUrl) throw new Error('VOICE_CLONE 模式缺少 voice_ref_audio_url');\n  if (!scriptContent) throw new Error('VOICE_CLONE 模式缺少 script_content');\n\n  nodeInfoList.push(\n    {\n      nodeId: '688',\n      fieldName: 'value',\n      fieldValue: String(scriptContent)\n    },\n    {\n      nodeId: '689',\n      fieldName: 'audio',\n      fieldValue: String(voiceRefAudioUrl)\n    }\n  );\n\n  if (emoRefAudioUrl) {\n    nodeInfoList.push({\n      nodeId: '690',\n      fieldName: 'audio',\n      fieldValue: String(emoRefAudioUrl)\n    });\n  }\n}\n\nconst payload = {\n  apiKey: String(apiKey),\n  workflowId: String(workflowId),\n  nodeInfoList,\n  webhookUrl: String(webhookUrl)\n};\n\nif (digitalHumanTaskId) {\n  payload.clientId = String(digitalHumanTaskId);\n}\n\nreturn [{\n  json: {\n    ...payload,\n    passthrough: inputMeta.passthrough || {},\n    route: {\n      mode,\n      rhModeValue,\n      audioDurationSec,\n      workflowRule,\n      workflowId\n    },\n    media: {\n      imagePublicUrl: imageUrl,\n      audioPublicUrl: audioUrl || '',\n      voiceRefAudioPublicUrl: voiceRefAudioUrl || '',\n      emoRefAudioPublicUrl: emoRefAudioUrl || ''\n    },\n    billing: {\n      api_key: cfg.api_key || '',\n      workflow_id: cfg.workflow_billing_id || '',\n      workflow_name: cfg.workflow_billing_name || ''\n    }\n  }\n}];"
+      },
+      "id": "4afdb48c-1306-4bc6-8d0d-976e037a0116",
+      "name": "RH组装createPayload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4608,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const cfg = $('Config').item.json || {};\nconst inputMeta = $('按音频时长选择工作流').item.json || {};\nconst billingMeta = $('RH组装createPayload').item.json?.billing || {};\n\nconst apiKey = cfg.runninghub_key;\nconst workflowId = cfg.workflow_id;\nconst webhookUrl = cfg.callback_url;\n\nconst imageUrl = cfg.image_url;\nconst audioUrl = cfg.audio_url;\nconst voiceRefAudioUrl = cfg.voice_ref_audio_url;\nconst emoRefAudioUrl = cfg.emo_ref_audio_url;\nconst scriptContent = cfg.script_content || '';\nconst workflowRule = cfg.workflow_rule || '';\nconst mode = String(cfg.mode || 'LIP_SYNC').toUpperCase();\nconst rhModeValue = String(cfg.rh_mode_value || (mode === 'VOICE_CLONE' ? '2' : '1'));\nconst audioDurationSec = inputMeta.audioDurationSec;\n\nconst digitalHumanTaskId =\n  $('输入清洗与校验').item.json.taskId ||\n  $('输入清洗与校验').item.json.task_id ||\n  inputMeta.passthrough?.task_id ||\n  inputMeta.passthrough?.record_id ||\n  '';\n\nif (!apiKey) throw new Error('缺少 runninghub_key');\nif (!workflowId) throw new Error('缺少 workflow_id');\nif (!webhookUrl) throw new Error('缺少 callback_url');\nif (!imageUrl) throw new Error('缺少 image_url');\n\nconst firstRefAudioUrl = voiceRefAudioUrl || audioUrl || '';\nconst secondRefAudioUrl = emoRefAudioUrl || firstRefAudioUrl || '';\n\nconst nodeInfoList = [\n  {\n    nodeId: '221',\n    fieldName: 'image',\n    fieldValue: String(imageUrl)\n  },\n  {\n    nodeId: '800',\n    fieldName: 'value',\n    fieldValue: String(rhModeValue)\n  }\n];\n\nif (mode === 'LIP_SYNC') {\n  if (!audioUrl) throw new Error('LIP_SYNC 模式缺少 audio_url');\n\n  nodeInfoList.push({\n    nodeId: '238',\n    fieldName: 'audio',\n    fieldValue: String(audioUrl)\n  });\n}\n\nif (mode === 'VOICE_CLONE') {\n  if (!scriptContent) throw new Error('VOICE_CLONE 模式缺少 script_content');\n\n  nodeInfoList.push({\n    nodeId: '688',\n    fieldName: 'value',\n    fieldValue: String(scriptContent)\n  });\n}\n\nif (firstRefAudioUrl) {\n  nodeInfoList.push({\n    nodeId: '689',\n    fieldName: 'audio',\n    fieldValue: String(firstRefAudioUrl)\n  });\n}\n\nif (secondRefAudioUrl) {\n  nodeInfoList.push({\n    nodeId: '690',\n    fieldName: 'audio',\n    fieldValue: String(secondRefAudioUrl)\n  });\n}\n\nconst payload = {\n  apiKey: String(apiKey),\n  workflowId: String(workflowId),\n  nodeInfoList,\n  webhookUrl: String(webhookUrl)\n};\n\nif (digitalHumanTaskId) {\n  payload.clientId = String(digitalHumanTaskId);\n}\n\nreturn [{\n  json: {\n    ...payload,\n    passthrough: inputMeta.passthrough || {},\n    route: {\n      mode,\n      rhModeValue,\n      audioDurationSec,\n      workflowRule,\n      workflowId\n    },\n    media: {\n      imagePublicUrl: imageUrl,\n      audioPublicUrl: audioUrl || '',\n      voiceRefAudioPublicUrl: firstRefAudioUrl || '',\n      emoRefAudioPublicUrl: secondRefAudioUrl || ''\n    },\n    billing: billingMeta\n  }\n}];"
+      },
+      "id": "800a8083-181a-4fed-b16c-d1c26593999b",
+      "name": "校验RH请求体",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4832,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.runninghub.cn/task/openapi/create",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { apiKey: $json.apiKey, workflowId: $json.workflowId, nodeInfoList: $json.nodeInfoList, webhookUrl: $json.webhookUrl } }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "54409bb9-fde4-4d5b-bd05-54a7fae90de8",
+      "name": "RH创建任务",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        5056,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rh = $json || {};\nconst req = $('校验RH请求体').item.json || {};\nconst inputMeta = $('输入清洗与校验').item.json || {};\nconst creditMeta = $('查询工作流积分').item.json || {};\n\nconst code = rh.code ?? rh.status ?? rh.errCode ?? 0;\nconst success = code === 0 || code === '0' || rh.success === true || rh.msg === 'success';\n\nconst possibleTaskId = rh.taskId || rh.data?.taskId || rh.data?.id || rh.id || rh.task_id || '';\nconst possibleMsg = rh.msg || rh.message || rh.errorMessage || '';\n\nreturn [{\n  json: {\n    success,\n    code,\n    message: possibleMsg,\n    runninghub: rh,\n    task: {\n      taskId: possibleTaskId,\n      workflowId: req.workflowId || ''\n    },\n    route: req.route || {},\n    media: req.media || {},\n    passthrough: req.passthrough || {},\n    billing: {\n      api_key: inputMeta.apiKey || req.billing?.api_key || '',\n      workflow_id: creditMeta?.data?.workflow_id || inputMeta.workflowIdFromUser || req.billing?.workflow_id || '',\n      workflow_name: creditMeta?.data?.workflow_name || inputMeta.workflowName || req.billing?.workflow_name || '',\n      credit_cost: creditMeta?.data?.credit_cost || 0\n    }\n  }\n}];"
+      },
+      "id": "97275969-56a0-4d22-9017-d7224523ec6e",
+      "name": "整理RH响应",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5280,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.success }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "fa8c3298-8f0d-411f-8f8f-70e70478c322",
+      "name": "IF-RH创建成功",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        5504,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "digital_human_videos",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('输入清洗与校验').item.json.taskId }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "PROCESSING"
+            }
+          ]
+        }
+      },
+      "id": "16f12729-1c42-4a9d-87f7-92f829d033bf",
+      "name": "Supabase Update Task",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        5728,
+        128
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.atomx.top/api/credits/deduct",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { api_key: $('整理RH响应').item.json.billing.api_key, amount: Number($('整理RH响应').item.json.billing.credit_cost || 0), reason: $('整理RH响应').item.json.billing.workflow_name, workflow_id: $('整理RH响应').item.json.billing.workflow_id, workflow_name: $('整理RH响应').item.json.billing.workflow_name } }}",
+        "options": {}
+      },
+      "id": "bb710a4c-0af3-46ad-8cdd-31a81e9ce23b",
+      "name": "扣除积分",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        5952,
+        128
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const summary = $('整理RH响应').item.json || {};\nlet deduct = {};\ntry {\n  deduct = $('扣除积分').item.json || {};\n} catch (e) {\n  deduct = {};\n}\n\nreturn [{\n  json: {\n    ok: true,\n    success: true,\n    code: summary.code,\n    message: summary.message,\n    task: summary.task || {},\n    route: summary.route || {},\n    media: summary.media || {},\n    passthrough: summary.passthrough || {},\n    billing: {\n      ...(summary.billing || {}),\n      deduct_response: deduct\n    },\n    runninghub: summary.runninghub || {}\n  }\n}];"
+      },
+      "id": "4ba02bf9-9dac-4e62-9afb-8aa86b3d134e",
+      "name": "输出成功响应",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6176,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "9fab7bfd-0681-42c4-9c09-d550a5334d06",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        6400,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const summary = $('整理RH响应').item.json || {};\nreturn [{\n  json: {\n    ok: false,\n    success: false,\n    error: 'runninghub_create_failed',\n    code: summary.code,\n    message: summary.message,\n    task: summary.task || {},\n    route: summary.route || {},\n    media: summary.media || {},\n    passthrough: summary.passthrough || {},\n    billing: summary.billing || {},\n    runninghub: summary.runninghub || {}\n  }\n}];"
+      },
+      "id": "bdd16450-a4f3-4f57-bb6b-6c0d5df3448a",
+      "name": "输出失败响应",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5728,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "50c70be7-5b8f-407a-aa0d-a6b855464221",
+      "name": "Respond-RH失败",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        5952,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "输入清洗与校验",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "输入清洗与校验": {
+      "main": [
+        [
+          {
+            "node": "查询工作流积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "查询工作流积分": {
+      "main": [
+        [
+          {
+            "node": "验证api-key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "验证api-key": {
+      "main": [
+        [
+          {
+            "node": "Switch-鉴权分流",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch-鉴权分流": {
+      "main": [
+        [
+          {
+            "node": "提醒-key错误",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "提醒-积分不足",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "按音频时长选择工作流",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "按音频时长选择工作流": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "RH组装createPayload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RH组装createPayload": {
+      "main": [
+        [
+          {
+            "node": "校验RH请求体",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "校验RH请求体": {
+      "main": [
+        [
+          {
+            "node": "RH创建任务",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RH创建任务": {
+      "main": [
+        [
+          {
+            "node": "整理RH响应",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "整理RH响应": {
+      "main": [
+        [
+          {
+            "node": "IF-RH创建成功",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF-RH创建成功": {
+      "main": [
+        [
+          {
+            "node": "Supabase Update Task",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "输出失败响应",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Update Task": {
+      "main": [
+        [
+          {
+            "node": "扣除积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "扣除积分": {
+      "main": [
+        [
+          {
+            "node": "输出成功响应",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "输出成功响应": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "输出失败响应": {
+      "main": [
+        [
+          {
+            "node": "Respond-RH失败",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "hooks.atomx.top",
+            "x-real-ip": "47.107.158.233",
+            "x-forwarded-for": "47.107.158.233",
+            "x-forwarded-proto": "https",
+            "connection": "close",
+            "content-length": "385",
+            "content-type": "application/json",
+            "accept": "*/*",
+            "accept-language": "*",
+            "sec-fetch-mode": "cors",
+            "user-agent": "node",
+            "accept-encoding": "br, gzip, deflate"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "task_id": "cmmivwa6t000101r3txm6u7zi",
+            "type": "LIP_SYNC",
+            "image_url": "https://supabase-api.atomx.top/storage/v1/object/public/uploads/1773042751880-574469257-20260304160310991519.jpg",
+            "timestamp": "2026-03-09T07:53:07.365Z",
+            "flow": "flow_Digital_Human",
+            "audio_url": "https://supabase-api.atomx.top/storage/v1/object/public/uploads/1773042780011-962365531-2.MP3",
+            "audio_duration": 8.411417
+          },
+          "webhookUrl": "http://localhost:5678/webhook/digital-human-gen",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "versionId": "8996ca29-5e81-4b69-907f-950f16fada93",
+  "activeVersionId": "8996ca29-5e81-4b69-907f-950f16fada93",
+  "versionCounter": 39,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-03-07T05:31:59.997Z",
+      "createdAt": "2026-03-07T05:31:59.997Z",
+      "role": "workflow:owner",
+      "workflowId": "t8l47ZgqYyab0X0D",
+      "projectId": "tMHfv8jC54QugIS3",
+      "project": {
+        "updatedAt": "2025-12-05T18:24:07.030Z",
+        "createdAt": "2025-12-05T18:00:52.525Z",
+        "id": "tMHfv8jC54QugIS3",
+        "name": "fan liu <591905097@qq.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "projectRelations": [
+          {
+            "updatedAt": "2025-12-05T18:00:52.525Z",
+            "createdAt": "2025-12-05T18:00:52.525Z",
+            "userId": "e1a90281-8c6a-4ec7-a985-3a344ba88b66",
+            "projectId": "tMHfv8jC54QugIS3",
+            "user": {
+              "updatedAt": "2026-03-12T04:36:50.363Z",
+              "createdAt": "2025-12-05T18:00:51.894Z",
+              "id": "e1a90281-8c6a-4ec7-a985-3a344ba88b66",
+              "email": "591905097@qq.com",
+              "firstName": "fan",
+              "lastName": "liu",
+              "personalizationAnswers": {
+                "version": "v4",
+                "personalization_survey_submitted_at": "2025-12-05T18:24:47.635Z",
+                "personalization_survey_n8n_version": "1.122.5",
+                "companySize": "<20",
+                "companyType": "saas",
+                "role": "business-owner",
+                "reportedSource": "youtube"
+              },
+              "settings": {
+                "userActivated": true,
+                "firstSuccessfulWorkflowId": "e9Q0InRVbw3mcRzk",
+                "userActivatedAt": 1773290207581,
+                "easyAIWorkflowOnboarded": true,
+                "npsSurvey": {
+                  "responded": true,
+                  "lastShownAt": 1772350096923
+                }
+              },
+              "disabled": false,
+              "mfaEnabled": false,
+              "lastActiveAt": "2026-03-12",
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-03-11T13:53:31.581Z",
+    "createdAt": "2026-03-11T13:53:31.581Z",
+    "versionId": "8996ca29-5e81-4b69-907f-950f16fada93",
+    "workflowId": "t8l47ZgqYyab0X0D",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "digital-human-gen",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "5d20fbbd-e7dc-460f-83fe-037e3b942c4b",
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          3040,
+          32
+        ],
+        "webhookId": "digital-human-gen-webhook"
+      },
+      {
+        "parameters": {
+          "jsCode": "const raw = $json.body ?? $json ?? {};\n\nfunction pickFirst(...vals) {\n  for (const v of vals) {\n    if (v !== undefined && v !== null && String(v).trim() !== '') return v;\n  }\n  return undefined;\n}\n\nfunction normalizeUrl(v) {\n  if (v == null) return '';\n  return String(v).trim();\n}\n\nfunction parseDurationSeconds(rawVal) {\n  if (rawVal === undefined || rawVal === null || rawVal === '') return null;\n\n  if (typeof rawVal === 'number' && Number.isFinite(rawVal)) {\n    if (rawVal > 1000) return rawVal / 1000;\n    return rawVal;\n  }\n\n  const s = String(rawVal).trim();\n  if (!s) return null;\n\n  const num = Number(s);\n  if (Number.isFinite(num)) {\n    if (num > 1000) return num / 1000;\n    return num;\n  }\n\n  const hhmmss = s.match(/^(\\d{1,2}):(\\d{1,2})(?::(\\d{1,2}(?:\\.\\d+)?))?$/);\n  if (hhmmss) {\n    if (hhmmss[3] !== undefined) {\n      const h = Number(hhmmss[1] || 0);\n      const m = Number(hhmmss[2] || 0);\n      const sec = Number(hhmmss[3] || 0);\n      return h * 3600 + m * 60 + sec;\n    }\n    const m = Number(hhmmss[1] || 0);\n    const sec = Number(hhmmss[2] || 0);\n    return m * 60 + sec;\n  }\n\n  return null;\n}\n\nfunction estimateTtsDuration(text) {\n  const s = String(text || '').trim();\n  if (!s) return null;\n\n  const chineseChars = (s.match(/[\\u4e00-\\u9fa5]/g) || []).length;\n  const englishWords = s\n    .replace(/[\\u4e00-\\u9fa5]/g, ' ')\n    .trim()\n    .split(/\\s+/)\n    .filter(Boolean).length;\n\n  let sec = 0;\n  if (chineseChars > 0) sec += chineseChars / 4.2;\n  if (englishWords > 0) sec += englishWords / 2.5;\n  sec += 0.8;\n\n  return Number(sec.toFixed(3));\n}\n\nconst imageUrl = normalizeUrl(pickFirst(raw.imageUrl, raw.image_url, raw.image, raw.coverUrl));\nconst audioUrl = normalizeUrl(pickFirst(raw.audioUrl, raw.audio_url, raw.audio, raw.voiceUrl));\nconst voiceRefAudioUrl = normalizeUrl(\n  pickFirst(raw.voice_ref_audio_url, raw.voiceRefAudioUrl, raw.voice_ref_audio, raw.voiceRefAudio)\n);\nconst emoRefAudioUrl = normalizeUrl(\n  pickFirst(raw.emo_ref_audio_url, raw.emoRefAudioUrl, raw.emo_ref_audio, raw.emoRefAudio)\n);\n\nconst scriptContent = String(\n  pickFirst(raw.script_content, raw.scriptContent, raw.text, raw.content, '')\n).trim();\n\nconst callbackUrl = String(\n  pickFirst(raw.callbackUrl, raw.callback_url, 'https://hooks.atomx.top/webhook/digital-human-callback')\n);\n\nconst runninghubKey = String(\n  pickFirst(raw.runninghub_key, raw.apiKey, raw.runninghubKey, '052eb9082e504c83978b7a18fe0d8c79')\n);\n\nconst apiKey = String(\n  pickFirst(raw.api_key, raw.user_api_key, raw.userApiKey, '')\n).trim();\n\nconst workflowIdFromUser = String(\n  pickFirst(raw.workflow_id, raw.workflowId, 'flow_digital_human')\n).trim();\n\nconst workflowName = String(\n  pickFirst(raw.workflow_name, raw.workflowName, '数字人生成')\n).trim();\n\nconst modeRaw = String(\n  pickFirst(raw.type, raw.mode, raw.gen_mode, raw.generate_mode, 'LIP_SYNC')\n).trim().toUpperCase();\n\nconst mode = modeRaw === 'VOICE_CLONE' ? 'VOICE_CLONE' : 'LIP_SYNC';\nconst rhModeValue = mode === 'VOICE_CLONE' ? 2 : 1;\n\nconst audioDurationRaw = pickFirst(\n  raw.audioDuration,\n  raw.audio_duration,\n  raw.duration,\n  raw.durationMs,\n  raw.duration_ms,\n  raw.audioLength,\n  raw.audio_length\n);\n\nlet audioDurationSec = parseDurationSeconds(audioDurationRaw);\nconst taskId = pickFirst(raw.task_id, raw.taskId);\n\nconst passthrough = {\n  record_id: pickFirst(raw.record_id, raw.recordId),\n  app_id: pickFirst(raw.app_id, raw.appId),\n  app_secret: pickFirst(raw.app_secret, raw.appSecret),\n  table_id: pickFirst(raw.table_id, raw.tableId),\n  base_id: pickFirst(raw.base_id, raw.baseId),\n  user_id: pickFirst(raw.user_id, raw.userId),\n  request_id: pickFirst(raw.request_id, raw.requestId),\n  task_name: pickFirst(raw.task_name, raw.taskName),\n  ext: raw.ext && typeof raw.ext === 'object' ? raw.ext : {}\n};\n\nif (!apiKey) {\n  throw new Error('缺少 api_key');\n}\n\nif (!imageUrl) {\n  throw new Error('缺少图片地址：请传 body.imageUrl / image_url');\n}\nif (!/^https?:\\/\\//i.test(imageUrl)) {\n  throw new Error('imageUrl 必须是 http/https 地址');\n}\n\nif (mode === 'LIP_SYNC') {\n  if (!audioUrl) {\n    throw new Error('LIP_SYNC 模式缺少音频地址：请传 body.audioUrl / audio_url');\n  }\n  if (!/^https?:\\/\\//i.test(audioUrl)) {\n    throw new Error('audioUrl 必须是 http/https 地址');\n  }\n  if (audioDurationSec == null || !Number.isFinite(audioDurationSec) || audioDurationSec <= 0) {\n    throw new Error('LIP_SYNC 模式缺少可用的音频时长：请传 body.audioDuration（秒）或 durationMs（毫秒）');\n  }\n}\n\nif (mode === 'VOICE_CLONE') {\n  if (!voiceRefAudioUrl) {\n    throw new Error('VOICE_CLONE 模式缺少音色参考音频：请传 voice_ref_audio_url');\n  }\n  if (!/^https?:\\/\\//i.test(voiceRefAudioUrl)) {\n    throw new Error('voice_ref_audio_url 必须是 http/https 地址');\n  }\n  if (emoRefAudioUrl && !/^https?:\\/\\//i.test(emoRefAudioUrl)) {\n    throw new Error('emo_ref_audio_url 必须是 http/https 地址');\n  }\n  if (!scriptContent) {\n    throw new Error('VOICE_CLONE 模式缺少 script_content');\n  }\n\n  if (audioDurationSec == null || !Number.isFinite(audioDurationSec) || audioDurationSec <= 0) {\n    audioDurationSec = estimateTtsDuration(scriptContent);\n  }\n\n  if (audioDurationSec == null || !Number.isFinite(audioDurationSec) || audioDurationSec <= 0) {\n    throw new Error('VOICE_CLONE 模式无法得到有效时长，请补传 audio_duration');\n  }\n}\n\nreturn [{\n  json: {\n    mode,\n    rhModeValue,\n    imageUrl,\n    audioUrl,\n    voiceRefAudioUrl,\n    emoRefAudioUrl,\n    scriptContent,\n    callbackUrl,\n    runninghubKey,\n    apiKey,\n    workflowIdFromUser,\n    workflowName,\n    audioDurationSec,\n    taskId,\n    passthrough\n  }\n}];"
+        },
+        "id": "9fcf304f-e4f9-425d-8a15-137633422ae1",
+        "name": "输入清洗与校验",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          3264,
+          32
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://api.atomx.top/workflow-credits/query",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "workflow_id",
+                "value": "={{ $json.workflowIdFromUser }}"
+              },
+              {
+                "name": "workflow_name",
+                "value": "={{ $json.workflowName }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "ef2b5ade-a2ed-43ab-b510-4a0527a3ea54",
+        "name": "查询工作流积分",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          3488,
+          32
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://api.atomx.top/api/balance/check",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "api_key",
+                "value": "={{ $('输入清洗与校验').item.json.apiKey }}"
+              },
+              {
+                "name": "required",
+                "value": "={{ $json.data.credit_cost }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "f7656ae5-1d31-4ce3-bbb7-77186b995929",
+        "name": "验证api-key",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          3712,
+          32
+        ],
+        "alwaysOutputData": true,
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 2
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.ok }}",
+                      "rightValue": "",
+                      "operator": {
+                        "type": "boolean",
+                        "operation": "false",
+                        "singleValue": true
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "apikey_invalid"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 2
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.ok === true && $json.data && $json.data.sufficient === false }}",
+                      "rightValue": "",
+                      "operator": {
+                        "type": "boolean",
+                        "operation": "true",
+                        "singleValue": true
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "insufficient_points"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 2
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.ok === true && $json.data && $json.data.sufficient === true }}",
+                      "rightValue": "",
+                      "operator": {
+                        "type": "boolean",
+                        "operation": "true",
+                        "singleValue": true
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "pass"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "d5907708-76d2-402e-a6f2-ce8e70170f53",
+        "name": "Switch-鉴权分流",
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.2,
+        "position": [
+          3936,
+          16
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ { ok: false, error: 'api_key_invalid', detail: $node['验证api-key'].json } }}",
+          "options": {}
+        },
+        "id": "0706c067-c755-411a-a2d0-346f09b44680",
+        "name": "提醒-key错误",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [
+          4160,
+          -160
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ { ok: false, error: 'insufficient_credits', required: $node['查询工作流积分'].json.data.credit_cost, balance_check: $node['验证api-key'].json } }}",
+          "options": {}
+        },
+        "id": "0dcc1cea-5d44-4890-bf84-bb71b9e20deb",
+        "name": "提醒-积分不足",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [
+          4160,
+          32
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const j = $('输入清洗与校验').item.json || {};\nconst d = Number(j.audioDurationSec);\n\nif (!Number.isFinite(d) || d <= 0) {\n  throw new Error('audioDurationSec 非法');\n}\n\nlet workflowId = '';\nlet workflowRule = '';\n\nif (d < 16) {\n  workflowId = '2030212461009313794';\n  workflowRule = '<16s';\n} else if (d < 32) {\n  workflowId = '2030212148579799042';\n  workflowRule = '16s~32s';\n} else {\n  throw new Error(`音频时长 ${d}s 超出支持范围：当前只支持小于32秒`);\n}\n\nreturn [{\n  json: {\n    ...j,\n    workflowId,\n    workflowRule\n  }\n}];"
+        },
+        "id": "7562fb03-8786-4123-b9b8-ef6c0e4e97ca",
+        "name": "按音频时长选择工作流",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          4160,
+          224
+        ]
+      },
+      {
+        "parameters": {
+          "values": {
+            "string": [
+              {
+                "name": "runninghub_key",
+                "value": "={{ $json.runninghubKey }}"
+              },
+              {
+                "name": "workflow_id",
+                "value": "={{ $json.workflowId }}"
+              },
+              {
+                "name": "callback_url",
+                "value": "=https://hooks.atomx.top/webhook/digital-human-callback?task_id={{ $('输入清洗与校验').item.json.taskId || $('输入清洗与校验').item.json.task_id }}"
+              },
+              {
+                "name": "image_url",
+                "value": "={{ $json.imageUrl }}"
+              },
+              {
+                "name": "audio_url",
+                "value": "={{ $json.audioUrl }}"
+              },
+              {
+                "name": "voice_ref_audio_url",
+                "value": "={{ $json.voiceRefAudioUrl }}"
+              },
+              {
+                "name": "emo_ref_audio_url",
+                "value": "={{ $json.emoRefAudioUrl }}"
+              },
+              {
+                "name": "script_content",
+                "value": "={{ $json.scriptContent }}"
+              },
+              {
+                "name": "workflow_rule",
+                "value": "={{ $json.workflowRule }}"
+              },
+              {
+                "name": "mode",
+                "value": "={{ $json.mode }}"
+              },
+              {
+                "name": "rh_mode_value",
+                "value": "={{ String($json.rhModeValue) }}"
+              },
+              {
+                "name": "api_key",
+                "value": "={{ $json.apiKey }}"
+              },
+              {
+                "name": "workflow_billing_id",
+                "value": "={{ $json.workflowIdFromUser }}"
+              },
+              {
+                "name": "workflow_billing_name",
+                "value": "={{ $json.workflowName }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "98623d1d-4e66-44b9-b6a6-4ed9e8916966",
+        "name": "Config",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 1,
+        "position": [
+          4384,
+          224
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const cfg = $('Config').item.json || {};\nconst inputMeta = $('按音频时长选择工作流').item.json || {};\n\nconst apiKey = cfg.runninghub_key;\nconst workflowId = cfg.workflow_id;\nconst webhookUrl = cfg.callback_url;\n\nconst imageUrl = cfg.image_url;\nconst audioUrl = cfg.audio_url;\nconst voiceRefAudioUrl = cfg.voice_ref_audio_url;\nconst emoRefAudioUrl = cfg.emo_ref_audio_url;\nconst scriptContent = cfg.script_content || '';\nconst workflowRule = cfg.workflow_rule || '';\nconst mode = String(cfg.mode || 'LIP_SYNC').toUpperCase();\nconst rhModeValue = String(cfg.rh_mode_value || (mode === 'VOICE_CLONE' ? '2' : '1'));\nconst audioDurationSec = inputMeta.audioDurationSec;\n\nconst digitalHumanTaskId =\n  $('输入清洗与校验').item.json.taskId ||\n  $('输入清洗与校验').item.json.task_id ||\n  inputMeta.passthrough?.task_id ||\n  inputMeta.passthrough?.record_id ||\n  '';\n\nif (!apiKey) throw new Error('缺少 runninghub_key');\nif (!workflowId) throw new Error('缺少 workflow_id');\nif (!webhookUrl) throw new Error('缺少 callback_url');\nif (!imageUrl) throw new Error('缺少 image_url');\n\nconst nodeInfoList = [\n  {\n    nodeId: '221',\n    fieldName: 'image',\n    fieldValue: String(imageUrl)\n  },\n  {\n    nodeId: '800',\n    fieldName: 'value',\n    fieldValue: String(rhModeValue)\n  }\n];\n\nif (mode === 'LIP_SYNC') {\n  if (!audioUrl) throw new Error('LIP_SYNC 模式缺少 audio_url');\n\n  nodeInfoList.push({\n    nodeId: '238',\n    fieldName: 'audio',\n    fieldValue: String(audioUrl)\n  });\n}\n\nif (mode === 'VOICE_CLONE') {\n  if (!voiceRefAudioUrl) throw new Error('VOICE_CLONE 模式缺少 voice_ref_audio_url');\n  if (!scriptContent) throw new Error('VOICE_CLONE 模式缺少 script_content');\n\n  nodeInfoList.push(\n    {\n      nodeId: '688',\n      fieldName: 'value',\n      fieldValue: String(scriptContent)\n    },\n    {\n      nodeId: '689',\n      fieldName: 'audio',\n      fieldValue: String(voiceRefAudioUrl)\n    }\n  );\n\n  if (emoRefAudioUrl) {\n    nodeInfoList.push({\n      nodeId: '690',\n      fieldName: 'audio',\n      fieldValue: String(emoRefAudioUrl)\n    });\n  }\n}\n\nconst payload = {\n  apiKey: String(apiKey),\n  workflowId: String(workflowId),\n  nodeInfoList,\n  webhookUrl: String(webhookUrl)\n};\n\nif (digitalHumanTaskId) {\n  payload.clientId = String(digitalHumanTaskId);\n}\n\nreturn [{\n  json: {\n    ...payload,\n    passthrough: inputMeta.passthrough || {},\n    route: {\n      mode,\n      rhModeValue,\n      audioDurationSec,\n      workflowRule,\n      workflowId\n    },\n    media: {\n      imagePublicUrl: imageUrl,\n      audioPublicUrl: audioUrl || '',\n      voiceRefAudioPublicUrl: voiceRefAudioUrl || '',\n      emoRefAudioPublicUrl: emoRefAudioUrl || ''\n    },\n    billing: {\n      api_key: cfg.api_key || '',\n      workflow_id: cfg.workflow_billing_id || '',\n      workflow_name: cfg.workflow_billing_name || ''\n    }\n  }\n}];"
+        },
+        "id": "4afdb48c-1306-4bc6-8d0d-976e037a0116",
+        "name": "RH组装createPayload",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          4608,
+          224
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const cfg = $('Config').item.json || {};\nconst inputMeta = $('按音频时长选择工作流').item.json || {};\nconst billingMeta = $('RH组装createPayload').item.json?.billing || {};\n\nconst apiKey = cfg.runninghub_key;\nconst workflowId = cfg.workflow_id;\nconst webhookUrl = cfg.callback_url;\n\nconst imageUrl = cfg.image_url;\nconst audioUrl = cfg.audio_url;\nconst voiceRefAudioUrl = cfg.voice_ref_audio_url;\nconst emoRefAudioUrl = cfg.emo_ref_audio_url;\nconst scriptContent = cfg.script_content || '';\nconst workflowRule = cfg.workflow_rule || '';\nconst mode = String(cfg.mode || 'LIP_SYNC').toUpperCase();\nconst rhModeValue = String(cfg.rh_mode_value || (mode === 'VOICE_CLONE' ? '2' : '1'));\nconst audioDurationSec = inputMeta.audioDurationSec;\n\nconst digitalHumanTaskId =\n  $('输入清洗与校验').item.json.taskId ||\n  $('输入清洗与校验').item.json.task_id ||\n  inputMeta.passthrough?.task_id ||\n  inputMeta.passthrough?.record_id ||\n  '';\n\nif (!apiKey) throw new Error('缺少 runninghub_key');\nif (!workflowId) throw new Error('缺少 workflow_id');\nif (!webhookUrl) throw new Error('缺少 callback_url');\nif (!imageUrl) throw new Error('缺少 image_url');\n\nconst firstRefAudioUrl = voiceRefAudioUrl || audioUrl || '';\nconst secondRefAudioUrl = emoRefAudioUrl || firstRefAudioUrl || '';\n\nconst nodeInfoList = [\n  {\n    nodeId: '221',\n    fieldName: 'image',\n    fieldValue: String(imageUrl)\n  },\n  {\n    nodeId: '800',\n    fieldName: 'value',\n    fieldValue: String(rhModeValue)\n  }\n];\n\nif (mode === 'LIP_SYNC') {\n  if (!audioUrl) throw new Error('LIP_SYNC 模式缺少 audio_url');\n\n  nodeInfoList.push({\n    nodeId: '238',\n    fieldName: 'audio',\n    fieldValue: String(audioUrl)\n  });\n}\n\nif (mode === 'VOICE_CLONE') {\n  if (!scriptContent) throw new Error('VOICE_CLONE 模式缺少 script_content');\n\n  nodeInfoList.push({\n    nodeId: '688',\n    fieldName: 'value',\n    fieldValue: String(scriptContent)\n  });\n}\n\nif (firstRefAudioUrl) {\n  nodeInfoList.push({\n    nodeId: '689',\n    fieldName: 'audio',\n    fieldValue: String(firstRefAudioUrl)\n  });\n}\n\nif (secondRefAudioUrl) {\n  nodeInfoList.push({\n    nodeId: '690',\n    fieldName: 'audio',\n    fieldValue: String(secondRefAudioUrl)\n  });\n}\n\nconst payload = {\n  apiKey: String(apiKey),\n  workflowId: String(workflowId),\n  nodeInfoList,\n  webhookUrl: String(webhookUrl)\n};\n\nif (digitalHumanTaskId) {\n  payload.clientId = String(digitalHumanTaskId);\n}\n\nreturn [{\n  json: {\n    ...payload,\n    passthrough: inputMeta.passthrough || {},\n    route: {\n      mode,\n      rhModeValue,\n      audioDurationSec,\n      workflowRule,\n      workflowId\n    },\n    media: {\n      imagePublicUrl: imageUrl,\n      audioPublicUrl: audioUrl || '',\n      voiceRefAudioPublicUrl: firstRefAudioUrl || '',\n      emoRefAudioPublicUrl: secondRefAudioUrl || ''\n    },\n    billing: billingMeta\n  }\n}];"
+        },
+        "id": "800a8083-181a-4fed-b16c-d1c26593999b",
+        "name": "校验RH请求体",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          4832,
+          224
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://www.runninghub.cn/task/openapi/create",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ { apiKey: $json.apiKey, workflowId: $json.workflowId, nodeInfoList: $json.nodeInfoList, webhookUrl: $json.webhookUrl } }}",
+          "options": {
+            "timeout": 120000
+          }
+        },
+        "id": "54409bb9-fde4-4d5b-bd05-54a7fae90de8",
+        "name": "RH创建任务",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          5056,
+          224
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const rh = $json || {};\nconst req = $('校验RH请求体').item.json || {};\nconst inputMeta = $('输入清洗与校验').item.json || {};\nconst creditMeta = $('查询工作流积分').item.json || {};\n\nconst code = rh.code ?? rh.status ?? rh.errCode ?? 0;\nconst success = code === 0 || code === '0' || rh.success === true || rh.msg === 'success';\n\nconst possibleTaskId = rh.taskId || rh.data?.taskId || rh.data?.id || rh.id || rh.task_id || '';\nconst possibleMsg = rh.msg || rh.message || rh.errorMessage || '';\n\nreturn [{\n  json: {\n    success,\n    code,\n    message: possibleMsg,\n    runninghub: rh,\n    task: {\n      taskId: possibleTaskId,\n      workflowId: req.workflowId || ''\n    },\n    route: req.route || {},\n    media: req.media || {},\n    passthrough: req.passthrough || {},\n    billing: {\n      api_key: inputMeta.apiKey || req.billing?.api_key || '',\n      workflow_id: creditMeta?.data?.workflow_id || inputMeta.workflowIdFromUser || req.billing?.workflow_id || '',\n      workflow_name: creditMeta?.data?.workflow_name || inputMeta.workflowName || req.billing?.workflow_name || '',\n      credit_cost: creditMeta?.data?.credit_cost || 0\n    }\n  }\n}];"
+        },
+        "id": "97275969-56a0-4d22-9017-d7224523ec6e",
+        "name": "整理RH响应",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          5280,
+          224
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "leftValue": "={{ $json.success }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "fa8c3298-8f0d-411f-8f8f-70e70478c322",
+        "name": "IF-RH创建成功",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [
+          5504,
+          224
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "tableId": "digital_human_videos",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "id",
+                "condition": "eq",
+                "keyValue": "={{ $('输入清洗与校验').item.json.taskId }}"
+              }
+            ]
+          },
+          "fieldsUi": {
+            "fieldValues": [
+              {
+                "fieldId": "status",
+                "fieldValue": "PROCESSING"
+              }
+            ]
+          }
+        },
+        "id": "16f12729-1c42-4a9d-87f7-92f829d033bf",
+        "name": "Supabase Update Task",
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          5728,
+          128
+        ],
+        "credentials": {
+          "supabaseApi": {
+            "id": "51Y43Q3CDfFRAjNI",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.atomx.top/api/credits/deduct",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ { api_key: $('整理RH响应').item.json.billing.api_key, amount: Number($('整理RH响应').item.json.billing.credit_cost || 0), reason: $('整理RH响应').item.json.billing.workflow_name, workflow_id: $('整理RH响应').item.json.billing.workflow_id, workflow_name: $('整理RH响应').item.json.billing.workflow_name } }}",
+          "options": {}
+        },
+        "id": "bb710a4c-0af3-46ad-8cdd-31a81e9ce23b",
+        "name": "扣除积分",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          5952,
+          128
+        ],
+        "alwaysOutputData": true,
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const summary = $('整理RH响应').item.json || {};\nlet deduct = {};\ntry {\n  deduct = $('扣除积分').item.json || {};\n} catch (e) {\n  deduct = {};\n}\n\nreturn [{\n  json: {\n    ok: true,\n    success: true,\n    code: summary.code,\n    message: summary.message,\n    task: summary.task || {},\n    route: summary.route || {},\n    media: summary.media || {},\n    passthrough: summary.passthrough || {},\n    billing: {\n      ...(summary.billing || {}),\n      deduct_response: deduct\n    },\n    runninghub: summary.runninghub || {}\n  }\n}];"
+        },
+        "id": "4ba02bf9-9dac-4e62-9afb-8aa86b3d134e",
+        "name": "输出成功响应",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          6176,
+          128
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ $json }}",
+          "options": {}
+        },
+        "id": "9fab7bfd-0681-42c4-9c09-d550a5334d06",
+        "name": "Respond to Webhook",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [
+          6400,
+          128
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const summary = $('整理RH响应').item.json || {};\nreturn [{\n  json: {\n    ok: false,\n    success: false,\n    error: 'runninghub_create_failed',\n    code: summary.code,\n    message: summary.message,\n    task: summary.task || {},\n    route: summary.route || {},\n    media: summary.media || {},\n    passthrough: summary.passthrough || {},\n    billing: summary.billing || {},\n    runninghub: summary.runninghub || {}\n  }\n}];"
+        },
+        "id": "bdd16450-a4f3-4f57-bb6b-6c0d5df3448a",
+        "name": "输出失败响应",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          5728,
+          320
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ $json }}",
+          "options": {}
+        },
+        "id": "50c70be7-5b8f-407a-aa0d-a6b855464221",
+        "name": "Respond-RH失败",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [
+          5952,
+          320
+        ]
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "输入清洗与校验",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "输入清洗与校验": {
+        "main": [
+          [
+            {
+              "node": "查询工作流积分",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "查询工作流积分": {
+        "main": [
+          [
+            {
+              "node": "验证api-key",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "验证api-key": {
+        "main": [
+          [
+            {
+              "node": "Switch-鉴权分流",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Switch-鉴权分流": {
+        "main": [
+          [
+            {
+              "node": "提醒-key错误",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "提醒-积分不足",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "按音频时长选择工作流",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "按音频时长选择工作流": {
+        "main": [
+          [
+            {
+              "node": "Config",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Config": {
+        "main": [
+          [
+            {
+              "node": "RH组装createPayload",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "RH组装createPayload": {
+        "main": [
+          [
+            {
+              "node": "校验RH请求体",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "校验RH请求体": {
+        "main": [
+          [
+            {
+              "node": "RH创建任务",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "RH创建任务": {
+        "main": [
+          [
+            {
+              "node": "整理RH响应",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "整理RH响应": {
+        "main": [
+          [
+            {
+              "node": "IF-RH创建成功",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "IF-RH创建成功": {
+        "main": [
+          [
+            {
+              "node": "Supabase Update Task",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "输出失败响应",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Supabase Update Task": {
+        "main": [
+          [
+            {
+              "node": "扣除积分",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "扣除积分": {
+        "main": [
+          [
+            {
+              "node": "输出成功响应",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "输出成功响应": {
+        "main": [
+          [
+            {
+              "node": "Respond to Webhook",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "输出失败响应": {
+        "main": [
+          [
+            {
+              "node": "Respond-RH失败",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "fan liu",
+    "name": null,
+    "description": null
+  }
+}

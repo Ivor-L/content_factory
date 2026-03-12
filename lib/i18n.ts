@@ -9,6 +9,7 @@ export const translations = {
       storyboard: "Storyboard",
       storyboardGen: "Storyboard Video",
       digitalHuman: "Digital Human",
+      replicationShots: "Shot Control",
       sellingPoints: "Selling Points",
       generateScript: "Generate Script",
       settings: "API Keys",
@@ -32,7 +33,9 @@ export const translations = {
       yes: "Yes",
       no: "No",
       submit: "Submit",
-      fileSizeTooLarge: "File size too large (Max 50MB)"
+      fileSizeTooLarge: "File size too large (Max 50MB)",
+      copy: "Copy",
+      copied: "Copied!"
     },
     countries: {
       US: "United States",
@@ -51,7 +54,7 @@ export const translations = {
       fr: "French"
     },
     home: {
-      heroTitle: "AtomX Makes Content Marketing Simpler",
+      heroTitle: "NexTide Makes Content Marketing Simpler",
       oneClickMode: "One-Click Video",
       storyboardMode: "Storyboard Control",
       uploadPlaceholder: "Paste TikTok link or upload viral video file...",
@@ -161,6 +164,12 @@ export const translations = {
     replication: {
       title: "My Videos",
       startNew: "Start New Replication",
+      toastStarted: "Replication task started! Redirecting to My Videos...",
+      promptReady: "Prompt ready",
+      viewPrompt: "View prompt",
+      generatedScriptLabel: "Generated Script",
+      videoPromptLabel: "Video Prompt",
+      promptUnavailable: "Prompt is not available yet.",
       history: "History",
       selectProduct: "Select Product",
       selectScript: "Select Script",
@@ -292,7 +301,6 @@ export const translations = {
         create: "Create New",
         noTasks: "No generation tasks yet.",
         startFirst: "Start your first generation",
-        generatingGrid: "Generating Grid...",
         gridCompleted: "Grid Completed",
         breakdown: "Breakdown",
         noScript: "No script content",
@@ -304,7 +312,18 @@ export const translations = {
         pleaseWriteScript: "Please write a script",
         generationFailed: "Generation failed",
         breakdownFailed: "Breakdown failed",
-        breakdownComplete: "Breakdown complete!"
+        breakdownComplete: "Breakdown complete!",
+        dragDrop: "or drag and drop",
+        clickUpload: "Click to upload image",
+        aspectRatio: "Aspect Ratio",
+        portrait: "Portrait",
+        landscape: "Landscape",
+        analyzingScript: "Analyzing Script...",
+        generatingImage: "Generating Image...",
+        generatingGrid: "Generating Grid...",
+        taskStarted: "Task started successfully!",
+        prompts: "Scene Prompts",
+        noPrompts: "No scene prompts available."
       }
     },
     userBlock: {
@@ -354,8 +373,9 @@ export const translations = {
       replication: "我的视频",
       myVideos: "我的视频",
       storyboard: "分镜管理",
-      storyboardGen: "故事板成片",
+      storyboardGen: "故事版成片",
       digitalHuman: "数字人",
+      replicationShots: "分镜模式",
       sellingPoints: "生成卖点",
       generateScript: "生成脚本",
       settings: "API 秘钥",
@@ -379,7 +399,9 @@ export const translations = {
       yes: "是",
       no: "否",
       submit: "提交",
-      fileSizeTooLarge: "文件大小过大（最大 50MB）"
+      fileSizeTooLarge: "文件大小过大（最大 50MB）",
+      copy: "复制",
+      copied: "已复制！"
     },
     countries: {
       US: "美国",
@@ -398,7 +420,7 @@ export const translations = {
       fr: "法语"
     },
     home: {
-      heroTitle: "AtomX让内容营销更简单",
+      heroTitle: "NexTide让内容营销更简单",
       oneClickMode: "一键成片模式",
       storyboardMode: "分镜控制模式",
       uploadPlaceholder: "上传TikTok链接或上传爆款视频文件...",
@@ -426,7 +448,7 @@ export const translations = {
         batchVideoSubtitle: "一键并发生成",
         digitalHuman: "数字人",
         digitalHumanSubtitle: "高保真口型同步",
-        storyboardVideo: "故事板视频",
+        storyboardVideo: "故事版视频",
         storyboardSubtitle: "高一致性视频"
       }
     },
@@ -508,6 +530,12 @@ export const translations = {
     replication: {
       title: "我的视频",
       startNew: "爆款复刻",
+      toastStarted: "复刻任务已启动！即将跳转到“我的视频”...",
+      promptReady: "提示词已生成",
+      viewPrompt: "查看提示词",
+      generatedScriptLabel: "提示词内容",
+      videoPromptLabel: "视频提示词",
+      promptUnavailable: "暂无提示词内容。",
       history: "历史记录",
       selectProduct: "选择产品",
       selectScript: "选择脚本",
@@ -621,7 +649,7 @@ export const translations = {
       id: "ID",
       guide: "操作指南",
       guideStep1: "上传参考图片并编写脚本。",
-      guideStep2: "AI 生成九宫格故事板可视化。",
+      guideStep2: "AI 生成九宫格故事版可视化。",
       guideStep3: "点击拆解以在分镜管理中生成单独的场景。",
       guideStep4: "获取您的最终视频！",
       lipSync: "对口型",
@@ -635,11 +663,10 @@ export const translations = {
       storyboardGen: "故事板成片",
       digitalHuman: "数字人",
       genList: {
-        title: "故事板成片任务",
+        title: "故事版成片",
         create: "新建成片",
         noTasks: "暂无成片任务",
         startFirst: "开始您的第一次生成",
-        generatingGrid: "正在生成九宫格...",
         gridCompleted: "九宫格已完成",
         breakdown: "一键拆解",
         noScript: "无脚本内容",
@@ -651,7 +678,18 @@ export const translations = {
         pleaseWriteScript: "请填写脚本",
         generationFailed: "生成失败",
         breakdownFailed: "拆解失败",
-        breakdownComplete: "拆解完成！"
+        breakdownComplete: "拆解完成！",
+        dragDrop: "或拖拽上传",
+        clickUpload: "点击上传或拖拽图片",
+        aspectRatio: "画面比例",
+        portrait: "竖屏",
+        landscape: "横屏",
+        analyzingScript: "正在分析剧本...",
+        generatingImage: "正在生成图片...",
+        generatingGrid: "正在生成九宫格...",
+        taskStarted: "任务已开始！",
+        prompts: "分镜提示词",
+        noPrompts: "暂无分镜提示词"
       }
     },
     userBlock: {
@@ -725,7 +763,9 @@ export const translations = {
       yes: "是",
       no: "否",
       submit: "提交",
-      fileSizeTooLarge: "文件大小過大（最大 50MB）"
+      fileSizeTooLarge: "文件大小過大（最大 50MB）",
+      copy: "複製",
+      copied: "已複製！"
     },
     countries: {
       US: "美國",
@@ -744,7 +784,7 @@ export const translations = {
       fr: "法語"
     },
     home: {
-      heroTitle: "AtomX讓內容營銷更簡單",
+      heroTitle: "NexTide讓內容營銷更簡單",
       oneClickMode: "一鍵成片模式",
       storyboardMode: "分鏡控制模式",
       uploadPlaceholder: "上傳TikTok鏈接或上傳爆款視頻文件...",
@@ -772,7 +812,7 @@ export const translations = {
         batchVideoSubtitle: "一鍵並發生成",
         digitalHuman: "數字人",
         digitalHumanSubtitle: "高保真口型同步",
-        storyboardVideo: "故事板視頻",
+        storyboardVideo: "故事版視頻",
         storyboardSubtitle: "高一致性視頻"
       }
     },
@@ -854,6 +894,12 @@ export const translations = {
     replication: {
       title: "我的視頻",
       startNew: "爆款復刻",
+      toastStarted: "復刻任務已啟動！即將前往「我的影片」...",
+      promptReady: "提示詞已生成",
+      viewPrompt: "查看提示詞",
+      generatedScriptLabel: "提示詞內容",
+      videoPromptLabel: "影片提示詞",
+      promptUnavailable: "暫無提示詞內容。",
       history: "歷史記錄",
       selectProduct: "選擇產品",
       selectScript: "選擇腳本",
@@ -967,7 +1013,7 @@ export const translations = {
       id: "ID",
       guide: "操作指南",
       guideStep1: "上傳參考圖片並編寫腳本。",
-      guideStep2: "AI 生成九宮格故事板可視化。",
+      guideStep2: "AI 生成九宮格故事版可視化。",
       guideStep3: "點擊拆解以在分鏡管理中生成單獨的場景。",
       guideStep4: "獲取您的最終視頻！",
       lipSync: "對口型",
@@ -981,11 +1027,10 @@ export const translations = {
       storyboardGen: "故事板成片",
       digitalHuman: "數字人",
       genList: {
-        title: "故事板成片任務",
+        title: "故事板成片",
         create: "新建成片",
         noTasks: "暫無成片任務",
         startFirst: "開始您的第一次生成",
-        generatingGrid: "正在生成九宮格...",
         gridCompleted: "九宮格已完成",
         breakdown: "一鍵拆解",
         noScript: "無腳本內容",
@@ -997,7 +1042,18 @@ export const translations = {
         pleaseWriteScript: "請填寫腳本",
         generationFailed: "生成失敗",
         breakdownFailed: "拆解失敗",
-        breakdownComplete: "拆解完成！"
+        breakdownComplete: "拆解完成！",
+        dragDrop: "或拖曳上傳",
+        clickUpload: "點擊上傳圖片",
+        aspectRatio: "畫面比例",
+        portrait: "豎屏",
+        landscape: "橫屏",
+        analyzingScript: "正在分析劇本...",
+        generatingImage: "正在生成圖片...",
+        generatingGrid: "正在生成九宮格...",
+        taskStarted: "任務已開始！",
+        prompts: "分鏡提示詞",
+        noPrompts: "暫無分鏡提示詞"
       }
     },
     userBlock: {

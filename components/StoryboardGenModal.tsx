@@ -3,11 +3,12 @@
 
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { Upload, X, Loader2, LayoutGrid, Film } from 'lucide-react';
+import { Upload, X, Loader2, LayoutGrid, Film, Smartphone, Monitor, Tag } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'react-hot-toast';
 import { generateStoryboardGrid, breakdownStoryboardGrid } from '@/app/actions/storyboard-gen';
 import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
 
 interface StoryboardGenModalProps {
   onClose: () => void;
@@ -25,10 +26,21 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
   // Steps: 'input' -> 'generating' -> 'result' -> 'breaking-down'
   const [step, setStep] = useState<'input' | 'generating' | 'result' | 'breaking-down'>('input');
   
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) setUserId(user.id);
+    });
+  }, []);
+
   const [script, setScript] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageUrl, setImageUrl] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [aspectRatio, setAspectRatio] = useState<'9:16' | '16:9'>('9:16');
+  const [videoType, setVideoType] = useState<'ugc' | 'product' | 'story'>('ugc');
+  const [isDragging, setIsDragging] = useState(false);
   
   // Mock Result
   const [gridResultUrl, setGridResultUrl] = useState('');
@@ -48,6 +60,39 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
       return () => clearInterval(interval);
     }
   }, [step]);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    const file = e.dataTransfer.files?.[0];
+    if (!file || !file.type.startsWith('image/')) return;
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/upload', { method: 'POST', body: formData });
+      if (!res.ok) throw new Error('Upload failed');
+      const data = await res.json();
+      setImageUrl(data.url);
+      setImageFile(file);
+    } catch (error) {
+      toast.error(getText('uploadFailed', 'Failed to upload image'));
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -76,20 +121,27 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
     setStep('generating');
     setProgress(0);
 
+    // Optimistic close: Close modal immediately
+    onClose();
+    toast.success(getText('taskStarted', 'Task started successfully! Check the list for progress.'));
+
     try {
       const formData = new FormData();
       formData.append('imageUrl', imageUrl);
       formData.append('script', script);
+      formData.append('aspectRatio', aspectRatio);
+      formData.append('videoType', videoType);
+      if (userId) formData.append('userId', userId);
       
-      const result = await generateStoryboardGrid(formData);
+      // Call server action in background
+      generateStoryboardGrid(formData).catch(error => {
+        console.error("Background generation failed:", error);
+        toast.error(getText('generationFailed', 'Generation failed in background'));
+      });
       
-      setGridResultUrl(result.gridImageUrl);
-      setTaskId(result.taskId);
-      setStep('result');
     } catch (error) {
       console.error(error);
       toast.error(getText('generationFailed', 'Generation failed'));
-      setStep('input');
     }
   };
 
@@ -100,6 +152,7 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
       formData.append('gridImageUrl', gridResultUrl);
       formData.append('script', script);
       if (taskId) formData.append('taskId', taskId);
+      if (userId) formData.append('userId', userId);
       
       const result = await breakdownStoryboardGrid(formData);
       
@@ -110,6 +163,15 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
       console.error(error);
       toast.error(getText('breakdownFailed', 'Breakdown failed'));
       setStep('result');
+    }
+  };
+
+  const getVideoTypeLabel = (type: string) => {
+    switch (type) {
+        case 'ugc': return 'ugc带货';
+        case 'product': return '产品展示';
+        case 'story': return '剧情故事';
+        default: return type;
     }
   };
 
@@ -138,7 +200,17 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
                     {t.storyboard.sceneRef}
                 </label>
                 <div className="flex items-center justify-center w-full">
-                    <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-lg cursor-pointer bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-750 transition-colors">
+                    <label 
+                        className={cn(
+                            "flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-lg cursor-pointer transition-colors",
+                            isDragging 
+                                ? "bg-blue-50 dark:bg-blue-900/20 border-blue-500 dark:border-blue-400" 
+                                : "bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-750"
+                        )}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                    >
                     {imageUrl ? (
                         <img src={imageUrl} alt="Reference" className="h-full object-contain rounded-lg" />
                     ) : (
@@ -149,7 +221,10 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
                             <>
                             <Upload className="w-8 h-8 mb-3 text-gray-400" />
                             <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-                                <span className="font-semibold">{t.scripts.clickUpload}</span>
+                                <span className="font-semibold">{getText('clickUpload', 'Click to upload image')}</span>
+                            </p>
+                            <p className="text-xs text-gray-400 dark:text-gray-500">
+                                {getText('dragDrop', 'or drag and drop')}
                             </p>
                             </>
                         )}
@@ -158,6 +233,72 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
                     <input type="file" className="hidden" onChange={handleImageUpload} accept="image/*" />
                     </label>
                 </div>
+                </div>
+
+                {/* Aspect Ratio & Video Type Selection */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Aspect Ratio */}
+                    <div>
+                        <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                            {getText('aspectRatio', 'Aspect Ratio')}
+                        </label>
+                        <div className="flex gap-4">
+                            <button
+                                onClick={() => setAspectRatio('9:16')}
+                                className={cn(
+                                    "flex items-center gap-2 px-4 py-2 rounded-lg border transition-all",
+                                    aspectRatio === '9:16'
+                                        ? "border-black dark:border-white bg-black/5 dark:bg-white/10 ring-1 ring-black dark:ring-white"
+                                        : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+                                )}
+                            >
+                                <Smartphone size={20} className={aspectRatio === '9:16' ? "text-black dark:text-white" : "text-gray-500"} />
+                                <span className={cn("text-sm font-medium", aspectRatio === '9:16' ? "text-black dark:text-white" : "text-gray-500")}>
+                                    {getText('portrait', 'Portrait')} (9:16)
+                                </span>
+                            </button>
+                            <button
+                                onClick={() => setAspectRatio('16:9')}
+                                className={cn(
+                                    "flex items-center gap-2 px-4 py-2 rounded-lg border transition-all",
+                                    aspectRatio === '16:9'
+                                        ? "border-black dark:border-white bg-black/5 dark:bg-white/10 ring-1 ring-black dark:ring-white"
+                                        : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+                                )}
+                            >
+                                <Monitor size={20} className={aspectRatio === '16:9' ? "text-black dark:text-white" : "text-gray-500"} />
+                                <span className={cn("text-sm font-medium", aspectRatio === '16:9' ? "text-black dark:text-white" : "text-gray-500")}>
+                                    {getText('landscape', 'Landscape')} (16:9)
+                                </span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Video Type */}
+                    <div>
+                        <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                            {getText('videoType', 'Video Type')}
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                            {['ugc', 'product', 'story'].map((type) => (
+                                <button
+                                    key={type}
+                                    onClick={() => setVideoType(type as any)}
+                                    className={cn(
+                                        "flex items-center gap-2 px-3 py-2 rounded-lg border transition-all",
+                                        videoType === type
+                                            ? "border-black dark:border-white bg-black/5 dark:bg-white/10 ring-1 ring-black dark:ring-white"
+                                            : "border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
+                                    )}
+                                >
+                                    <Tag size={16} className={videoType === type ? "text-black dark:text-white" : "text-gray-500"} />
+                                    <span className={cn("text-sm font-medium", videoType === type ? "text-black dark:text-white" : "text-gray-500")}>
+                                        {getVideoTypeLabel(type)}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                 </div>
 
                 {/* Script Input */}

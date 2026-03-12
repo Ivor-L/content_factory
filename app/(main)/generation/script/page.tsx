@@ -1,7 +1,10 @@
+export const dynamic = "force-dynamic";
+
+
+
 import prisma from '@/lib/prisma';
 import ScriptForm from './Form';
 
-export const dynamic = 'force-dynamic';
 
 export default async function GenerateFromScriptPage() {
   const scripts = await prisma.script.findMany({

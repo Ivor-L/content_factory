@@ -1,0 +1,793 @@
+{
+  "updatedAt": "2026-03-11T15:41:03.208Z",
+  "createdAt": "2026-03-11T14:35:33.259Z",
+  "id": "YPzVxDvKVKPVmPuo",
+  "name": "爆款复刻首帧图片生成-网页版-v4",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "/**\n * 组装云雾 request_body（Gemini generateContent）\n * ✅ 2 张参考图：上身（person）+ 产品（product）\n * ✅ 强制 UGC iPhone 手持风格，避免商业棚拍\n * ✅ prompt：优先任务表字段，其次 webhook.body.prompt\n * ✅ ratio 白名单\n */\n\nfunction s(v){ return v == null ? \"\" : String(v); }\n\nfunction normalizeRatio(ratio) {\n  const allowed = new Set([\"1:1\",\"3:2\",\"2:3\",\"3:4\",\"4:3\",\"4:5\",\"5:4\",\"9:16\",\"16:9\",\"21:9\"]);\n  const r = s(ratio).trim();\n  return allowed.has(r) ? r : \"9:16\";\n}\n\nfunction stripDataPrefix(b64) {\n  return s(b64).trim().replace(/^data:.*;base64,/, \"\").trim();\n}\n\nfunction pushInline(parts, { b64, mimeType, label }) {\n  const clean = stripDataPrefix(b64);\n  if (!clean) return;\n  // label 会成为 prompt 的一部分（这是我们想要的：告诉模型这张图是什么）\n  parts.push({ text: label });\n  parts.push({\n    inline_data: {\n      mime_type: s(mimeType).trim() || \"image/jpeg\",\n      data: clean,\n    },\n  });\n}\n\nfunction buildFinalPrompt({ promptBase, personDesc, productDesc }) {\n  const base = s(promptBase).trim();\n  if (!base) throw new Error(\"缺少 prompt（准备数据.prompt 或 Webhook.body.prompt）\");\n\n  const pDesc = s(personDesc).trim();\n  const prDesc = s(productDesc).trim();\n\n  const ugcRules = [\n    // ✅ UGC 关键：反商业\n    \"Style: authentic UGC iPhone handheld video still (single frame).\",\n    \"Not a commercial ad. No studio lighting. No product catalog look. No overly perfect composition.\",\n    \"Natural, casual, slightly imperfect framing, real skin texture, real fabric texture.\",\n    \"Lighting: soft natural indoor light. No dramatic rim light. No spotlight.\",\n    \"Background: simple real home/room background, not a pure studio backdrop, but keep it uncluttered.\",\n    // ✅ 强制合成逻辑\n    \"Use the PERSON reference image as the identity constraint (face, hair, skin, outfit).\",\n    \"Use the PRODUCT reference image as the product constraint (shape, material, details).\",\n    \"Compose the frame so the person is holding / wearing / presenting the product naturally in-frame.\",\n    // ✅ 防止跑偏\n    \"Avoid: brand logos, watermarks, UI, text overlay, subtitles, poster layout, e-commerce banner style, showroom style, unrealistic glamour, hyper-polished ad look.\",\n  ].join(\" \");\n\n  const consistency = [\n    pDesc ? `PERSON NOTES: ${pDesc}` : \"\",\n    prDesc ? `PRODUCT NOTES: ${prDesc}` : \"\",\n  ].filter(Boolean).join(\"\\n\");\n\n  return [base, consistency, ugcRules].filter(Boolean).join(\"\\n\\n\");\n}\n\n// ---------------- main ----------------\nconst j = $json || {};\nconst base = $(\"准备数据\").first()?.json || {};\n\n// prompt：优先任务表，其次 webhook\nconst promptBase = s(base.prompt).trim() || s(j.prompt).trim();\nconst ratio = normalizeRatio(base.ratio || j.aspect_ratio || \"9:16\");\n\n// 可选增强一致性（你如果准备数据没给这两个字段，就留空也不影响）\nconst personDesc = s(base[\"人物特征\"] || base.person_desc || \"\").trim();\nconst productDesc = s(base[\"产品描述及卖点\"] || base.product_desc || \"\").trim();\n\nconst finalPrompt = buildFinalPrompt({ promptBase, personDesc, productDesc });\n\n// 从 Merge 过来的两张图（你 Binary→Base 节点已经输出了这些）\nconst person_b64  = s(j.person_image_b64 || \"\").trim();\nconst person_mime = s(j.person_mime_type || \"\").trim() || \"image/jpeg\";\n\nconst prod_b64    = s(j.product_image_b64 || \"\").trim();\nconst prod_mime   = s(j.product_mime_type || \"\").trim() || \"image/jpeg\";\n\n// parts：先文本，再图片\nconst parts = [{ text: finalPrompt }];\n\n// 两张参考图必须都给（你想要“上身+产品”）\nif (!person_b64) throw new Error(\"缺少 person_image_b64（上身图未转 base64 或 Merge 未合并成功）\");\nif (!prod_b64) throw new Error(\"缺少 product_image_b64（产品图未转 base64 或 Merge 未合并成功）\");\n\npushInline(parts, { b64: person_b64, mimeType: person_mime, label: \"REFERENCE_IMAGE_1: PERSON (identity must match)\" });\npushInline(parts, { b64: prod_b64, mimeType: prod_mime, label: \"REFERENCE_IMAGE_2: PRODUCT (must match details)\" });\n\n// 强制只要图片\nconst request_body = {\n  contents: [{ role: \"user\", parts }],\n  generationConfig: {\n    responseModalities: [\"IMAGE\"],\n    imageConfig: { aspectRatio: ratio },\n  },\n};\n\nreturn {\n  json: {\n    ...base,\n    ...j,\n    request_body,\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1696,
+        -144
+      ],
+      "id": "869dab9e-f454-4622-81e2-550d69f4ecd3",
+      "name": "组装生图请求体"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "YPzVxDvKVKPVmPuo",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        -144
+      ],
+      "id": "f399c639-f089-47bc-85d1-6e79dece630f",
+      "name": "Webhook",
+      "webhookId": "bd6b3c11-3b7d-407d-acb2-d0d2de75fbf0"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://yunwu.ai/v1beta/models/gemini-3-pro-image-preview:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.request_body }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1920,
+        -144
+      ],
+      "id": "d290594f-3bda-417e-89d0-2e1785f4cf1c",
+      "name": "生图请求",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mMIH382GnJoMSu4L",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://47.107.158.233:8080/api/credits/deduct",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"api_key\": \"{{ $('读取记录').item.json.data.record.fields.api_key[0].text }}\",\n  \"amount\":  \"{{ $json.data.credit_cost }}\",\n  \"reason\": \"生图扣费\",\n  \"workflow_id\": \"{{ $json.data.workflow_id }}\",\n  \"workflow_name\": \"{{ $json.data.workflow_name }}\"\n}\n",
+        "options": {}
+      },
+      "id": "0b7b9d7b-2b85-48f6-8955-f2e8d4efd5ad",
+      "name": "扣除积分",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3712,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id=flow_image_video_Veo",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3488,
+        -144
+      ],
+      "id": "3b8c498e-576e-4b43-b21e-fe48a0a5eea6",
+      "name": "查询工作流积分"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "/**\n * 云雾 / Gemini generateContent 响应 -> n8n binary\n *\n * 兼容常见返回路径：\n * - candidates[0].content.parts[*].inline_data.data\n * - candidates[0].content.parts[*].inlineData.data\n * - candidates[0].content.parts[*].fileData（如果有）\n * - data / body 包裹（httpRequest fullResponse 有时会包在 body）\n *\n * 输出：\n * - binary.data.data = base64（无 data: 前缀）\n * - binary.data.mimeType = image/png|image/jpeg\n * - binary.data.fileName = knowledge_card_{image_index}.png\n */\n\nfunction unwrapRoot(x) {\n  // 兼容 httpRequest fullResponse：{ body, headers, statusCode... }\n  if (x && typeof x === \"object\" && x.body && typeof x.body === \"object\") return x.body;\n  return x;\n}\n\nfunction getByPath(obj, path) {\n  try {\n    return path.split(\".\").reduce((acc, k) => (acc == null ? undefined : acc[k]), obj);\n  } catch {\n    return undefined;\n  }\n}\n\nfunction findInlineImageParts(root) {\n  const candidates = root?.candidates;\n  if (!Array.isArray(candidates) || !candidates.length) return [];\n\n  const parts = candidates?.[0]?.content?.parts;\n  if (!Array.isArray(parts)) return [];\n\n  // 找到带 inline_data/inlineData 的 part\n  const imgs = [];\n  for (const p of parts) {\n    const inline = p?.inline_data || p?.inlineData;\n    if (inline?.data) {\n      imgs.push({\n        b64: inline.data,\n        mimeType: inline.mime_type || inline.mimeType || \"image/png\",\n      });\n      continue;\n    }\n    // 有些实现是 fileData（不一定是 base64）\n    const fd = p?.fileData;\n    if (fd?.fileUri) {\n      imgs.push({\n        fileUri: fd.fileUri,\n        mimeType: fd.mimeType || \"image/png\",\n      });\n    }\n  }\n  return imgs;\n}\n\nfunction stripDataPrefix(b64) {\n  // 兼容 data:image/png;base64,xxxx\n  return String(b64 || \"\").replace(/^data:.*;base64,/, \"\").trim();\n}\n\nconst raw = $json || {};\nconst root = unwrapRoot(raw);\n\n// 你前面节点保留了 image_index（如果没有就默认为 1）\nconst imageIndex = Number(raw.image_index ?? raw.index ?? 1) || 1;\n\n// 1) 从 candidates.parts 找 inline image\nlet imgs = findInlineImageParts(root);\n\n// 2) 兜底：有些服务把 base64 放在 data / image / output 之类字段（尽量不猜太多，只做常见兜底）\nif (!imgs.length) {\n  const maybe =\n    getByPath(root, \"image.data\") ||\n    getByPath(root, \"data.image\") ||\n    getByPath(root, \"output.image\") ||\n    getByPath(root, \"output.data\") ||\n    null;\n\n  if (maybe && typeof maybe === \"string\") {\n    imgs = [{ b64: maybe, mimeType: \"image/png\" }];\n  }\n}\n\nif (!imgs.length) {\n  throw new Error(\"没有在返回体中找到图片数据（inline_data / inlineData）。请检查生图接口实际响应结构。\");\n}\n\n// 只取第一张（你这个工作流每个 item 对应一张图）\nconst first = imgs[0];\n\n// 如果是 fileUri（不是 base64），这里直接报错：因为你后面要上传飞书需要真实二进制\nif (first.fileUri && !first.b64) {\n  throw new Error(\n    `返回的是 fileUri（${first.fileUri}）而不是 base64。需要额外一步去下载该文件再转 binary。`\n  );\n}\n\nconst mimeType = first.mimeType || \"image/png\";\nconst ext = mimeType.includes(\"jpeg\") || mimeType.includes(\"jpg\") ? \"jpg\" : \"png\";\nconst b64 = stripDataPrefix(first.b64);\n\nif (!b64) throw new Error(\"图片 base64 为空\");\n\n// 组装 n8n binary（重要：data 要是纯 base64，不要带 data:image 前缀）\nreturn {\n  json: {\n    ...raw,\n    mimeType,\n    fileName: `knowledge_card_${imageIndex}.${ext}`,\n  },\n  binary: {\n    data: {\n      data: b64,\n      mimeType,\n      fileName: `Product_display_image_${imageIndex}.${ext}`,\n    },\n  },\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2144,
+        -144
+      ],
+      "id": "8e6443fd-0344-4b31-97d4-c5d3cc6fa466",
+      "name": "转换为Binary"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c22b9259-e07f-44aa-8917-406530cdfaf0",
+              "name": "达人上身图url",
+              "value": "={{ $json.data.record.fields['达人上身图url'] }}",
+              "type": "string"
+            },
+            {
+              "id": "144d662c-4621-43d2-80ec-cc8983616c6a",
+              "name": "image_person_token",
+              "value": "={{ $json.data.record.fields['达人照片'][0].attachmentToken }}",
+              "type": "string"
+            },
+            {
+              "id": "6727fa2c-41b8-47bd-a705-14923a9ca4ff",
+              "name": "image_product_token",
+              "value": "={{ $json.data.record.fields['产品照片'][0].attachmentToken }}",
+              "type": "string"
+            },
+            {
+              "id": "6b4dae79-564a-4cef-8250-9243e038f993",
+              "name": "prompt",
+              "value": "={{ $json.data.record.fields['图片提示词'] }}",
+              "type": "string"
+            },
+            {
+              "id": "37ccd11e-7bae-4f50-b73e-5ba1fc1a9ec5",
+              "name": "ratio",
+              "value": "=9:16",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        800,
+        -144
+      ],
+      "id": "277b66f7-e8e1-43b7-b12f-618039f21d86",
+      "name": "准备数据"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1472,
+        -144
+      ],
+      "id": "9db9a328-ef5d-49ef-83c8-66081c091542",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "bucket": "content-factory",
+        "fileName": "={{ $json.fileName }}",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "id": "81b5d2ac-176c-48eb-ba5a-209a97d3e9a5",
+      "name": "上传Supabase",
+      "position": [
+        2344,
+        -144
+      ],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnce",
+        "jsCode": "return { json: { publicUrl: 'https://supabase-api.atomx.top/storage/v1/object/public/content-factory/' + $json.fileName } };"
+      },
+      "id": "3f59d4f6-f270-4ae4-bbc6-b4d5e8d2c72d",
+      "name": "生成URL",
+      "position": [
+        2544,
+        -144
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "准备数据",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "准备数据": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "组装生图请求体",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装生图请求体": {
+      "main": [
+        [
+          {
+            "node": "生图请求",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "生图请求": {
+      "main": [
+        [
+          {
+            "node": "转换为Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "转换为Binary": {
+      "main": [
+        [
+          {
+            "node": "上传Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "上传Supabase": {
+      "main": [
+        [
+          {
+            "node": "生成URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "生成URL": {
+      "main": [
+        [
+          {
+            "node": "查询工作流积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "查询工作流积分": {
+      "main": [
+        [
+          {
+            "node": "扣除积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "hooks.flowonn.com",
+            "x-real-ip": "47.107.155.228",
+            "x-forwarded-for": "47.107.155.228",
+            "x-forwarded-proto": "https",
+            "connection": "close",
+            "content-length": "1004",
+            "accept": "application/json,text/html,application/xhtml+xml,application/xml,text/*;q=0.9, image/*;q=0.8, */*;q=0.7",
+            "content-type": "application/json",
+            "user-agent": "axios/1.12.0",
+            "accept-encoding": "gzip, compress, deflate, br"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "任务表record_id": "recvaILIq8zLVA",
+            "prompt": "Macro shot of a brilliant round diamond held between a thumb and index finger, with bright sunlight creating lens flares.",
+            "aspect_ratio": "9:16",
+            "product_image_token": "DfrMbMkivoDIhExd1mrcxEv8nUc",
+            "avatar_image_token": null,
+            "workflow_id_for_credits": "flow_image_video_Veo",
+            "app_token": "CTjxbndFKaUcIwsJ53pcjt6dnIg",
+            "table_id": "tblYCuquqmxU9DeR",
+            "tenant_access_token": "t-g10429hIPU5YPRE25OEZGXRZS24RZQNLTDW7RSRU",
+            "api_key": "sk_S-XJvpVKGGwnac1AlEFs3avCWZpqdOGaMMW27Y8iSPY",
+            "app_id": "cli_a84fa88ac9a6d00c",
+            "app_secret": "2n4R5DDvAqQoE8D3U2Maie5KMeSrzFHL",
+            "out_app_token": "CTjxbndFKaUcIwsJ53pcjt6dnIg",
+            "out_table_id": "tbluWyN4tDgUt35j",
+            "record_id": "recvaIP5gfTTrI",
+            "是否有产品": null,
+            "是否有人物": null,
+            "达人上身图url": "https://oss.flowonn.com/n8n_data/2026-02-08/ee78766c-8806-44e2-bca7-10a3e82d0078-Product_display_image_1.jpg",
+            "table_link": "https://icnihzenib3m.feishu.cn/base/CTjxbndFKaUcIwsJ53pcjt6dnIg?table=tblYCuquqmxU9DeR&view=vew3HXRwTo"
+          },
+          "webhookUrl": "http://localhost:5678/webhook/NB2_videoV3",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "versionId": "fb618042-d33e-4a70-864a-15b5d4e79d17",
+  "activeVersionId": "fb618042-d33e-4a70-864a-15b5d4e79d17",
+  "versionCounter": 92,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-03-11T14:35:33.259Z",
+      "createdAt": "2026-03-11T14:35:33.259Z",
+      "role": "workflow:owner",
+      "workflowId": "YPzVxDvKVKPVmPuo",
+      "projectId": "tMHfv8jC54QugIS3",
+      "project": {
+        "updatedAt": "2025-12-05T18:24:07.030Z",
+        "createdAt": "2025-12-05T18:00:52.525Z",
+        "id": "tMHfv8jC54QugIS3",
+        "name": "fan liu <591905097@qq.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "projectRelations": [
+          {
+            "updatedAt": "2025-12-05T18:00:52.525Z",
+            "createdAt": "2025-12-05T18:00:52.525Z",
+            "userId": "e1a90281-8c6a-4ec7-a985-3a344ba88b66",
+            "projectId": "tMHfv8jC54QugIS3",
+            "user": {
+              "updatedAt": "2026-03-12T04:36:50.363Z",
+              "createdAt": "2025-12-05T18:00:51.894Z",
+              "id": "e1a90281-8c6a-4ec7-a985-3a344ba88b66",
+              "email": "591905097@qq.com",
+              "firstName": "fan",
+              "lastName": "liu",
+              "personalizationAnswers": {
+                "version": "v4",
+                "personalization_survey_submitted_at": "2025-12-05T18:24:47.635Z",
+                "personalization_survey_n8n_version": "1.122.5",
+                "companySize": "<20",
+                "companyType": "saas",
+                "role": "business-owner",
+                "reportedSource": "youtube"
+              },
+              "settings": {
+                "userActivated": true,
+                "firstSuccessfulWorkflowId": "e9Q0InRVbw3mcRzk",
+                "userActivatedAt": 1773290207581,
+                "easyAIWorkflowOnboarded": true,
+                "npsSurvey": {
+                  "responded": true,
+                  "lastShownAt": 1772350096923
+                }
+              },
+              "disabled": false,
+              "mfaEnabled": false,
+              "lastActiveAt": "2026-03-12",
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-03-11T15:41:03.209Z",
+    "createdAt": "2026-03-11T15:41:03.209Z",
+    "versionId": "fb618042-d33e-4a70-864a-15b5d4e79d17",
+    "workflowId": "YPzVxDvKVKPVmPuo",
+    "nodes": [
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "/**\n * 组装云雾 request_body（Gemini generateContent）\n * ✅ 2 张参考图：上身（person）+ 产品（product）\n * ✅ 强制 UGC iPhone 手持风格，避免商业棚拍\n * ✅ prompt：优先任务表字段，其次 webhook.body.prompt\n * ✅ ratio 白名单\n */\n\nfunction s(v){ return v == null ? \"\" : String(v); }\n\nfunction normalizeRatio(ratio) {\n  const allowed = new Set([\"1:1\",\"3:2\",\"2:3\",\"3:4\",\"4:3\",\"4:5\",\"5:4\",\"9:16\",\"16:9\",\"21:9\"]);\n  const r = s(ratio).trim();\n  return allowed.has(r) ? r : \"9:16\";\n}\n\nfunction stripDataPrefix(b64) {\n  return s(b64).trim().replace(/^data:.*;base64,/, \"\").trim();\n}\n\nfunction pushInline(parts, { b64, mimeType, label }) {\n  const clean = stripDataPrefix(b64);\n  if (!clean) return;\n  // label 会成为 prompt 的一部分（这是我们想要的：告诉模型这张图是什么）\n  parts.push({ text: label });\n  parts.push({\n    inline_data: {\n      mime_type: s(mimeType).trim() || \"image/jpeg\",\n      data: clean,\n    },\n  });\n}\n\nfunction buildFinalPrompt({ promptBase, personDesc, productDesc }) {\n  const base = s(promptBase).trim();\n  if (!base) throw new Error(\"缺少 prompt（准备数据.prompt 或 Webhook.body.prompt）\");\n\n  const pDesc = s(personDesc).trim();\n  const prDesc = s(productDesc).trim();\n\n  const ugcRules = [\n    // ✅ UGC 关键：反商业\n    \"Style: authentic UGC iPhone handheld video still (single frame).\",\n    \"Not a commercial ad. No studio lighting. No product catalog look. No overly perfect composition.\",\n    \"Natural, casual, slightly imperfect framing, real skin texture, real fabric texture.\",\n    \"Lighting: soft natural indoor light. No dramatic rim light. No spotlight.\",\n    \"Background: simple real home/room background, not a pure studio backdrop, but keep it uncluttered.\",\n    // ✅ 强制合成逻辑\n    \"Use the PERSON reference image as the identity constraint (face, hair, skin, outfit).\",\n    \"Use the PRODUCT reference image as the product constraint (shape, material, details).\",\n    \"Compose the frame so the person is holding / wearing / presenting the product naturally in-frame.\",\n    // ✅ 防止跑偏\n    \"Avoid: brand logos, watermarks, UI, text overlay, subtitles, poster layout, e-commerce banner style, showroom style, unrealistic glamour, hyper-polished ad look.\",\n  ].join(\" \");\n\n  const consistency = [\n    pDesc ? `PERSON NOTES: ${pDesc}` : \"\",\n    prDesc ? `PRODUCT NOTES: ${prDesc}` : \"\",\n  ].filter(Boolean).join(\"\\n\");\n\n  return [base, consistency, ugcRules].filter(Boolean).join(\"\\n\\n\");\n}\n\n// ---------------- main ----------------\nconst j = $json || {};\nconst base = $(\"准备数据\").first()?.json || {};\n\n// prompt：优先任务表，其次 webhook\nconst promptBase = s(base.prompt).trim() || s(j.prompt).trim();\nconst ratio = normalizeRatio(base.ratio || j.aspect_ratio || \"9:16\");\n\n// 可选增强一致性（你如果准备数据没给这两个字段，就留空也不影响）\nconst personDesc = s(base[\"人物特征\"] || base.person_desc || \"\").trim();\nconst productDesc = s(base[\"产品描述及卖点\"] || base.product_desc || \"\").trim();\n\nconst finalPrompt = buildFinalPrompt({ promptBase, personDesc, productDesc });\n\n// 从 Merge 过来的两张图（你 Binary→Base 节点已经输出了这些）\nconst person_b64  = s(j.person_image_b64 || \"\").trim();\nconst person_mime = s(j.person_mime_type || \"\").trim() || \"image/jpeg\";\n\nconst prod_b64    = s(j.product_image_b64 || \"\").trim();\nconst prod_mime   = s(j.product_mime_type || \"\").trim() || \"image/jpeg\";\n\n// parts：先文本，再图片\nconst parts = [{ text: finalPrompt }];\n\n// 两张参考图必须都给（你想要“上身+产品”）\nif (!person_b64) throw new Error(\"缺少 person_image_b64（上身图未转 base64 或 Merge 未合并成功）\");\nif (!prod_b64) throw new Error(\"缺少 product_image_b64（产品图未转 base64 或 Merge 未合并成功）\");\n\npushInline(parts, { b64: person_b64, mimeType: person_mime, label: \"REFERENCE_IMAGE_1: PERSON (identity must match)\" });\npushInline(parts, { b64: prod_b64, mimeType: prod_mime, label: \"REFERENCE_IMAGE_2: PRODUCT (must match details)\" });\n\n// 强制只要图片\nconst request_body = {\n  contents: [{ role: \"user\", parts }],\n  generationConfig: {\n    responseModalities: [\"IMAGE\"],\n    imageConfig: { aspectRatio: ratio },\n  },\n};\n\nreturn {\n  json: {\n    ...base,\n    ...j,\n    request_body,\n  }\n};\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1696,
+          -144
+        ],
+        "id": "869dab9e-f454-4622-81e2-550d69f4ecd3",
+        "name": "组装生图请求体"
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "YPzVxDvKVKPVmPuo",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -320,
+          -144
+        ],
+        "id": "f399c639-f089-47bc-85d1-6e79dece630f",
+        "name": "Webhook",
+        "webhookId": "bd6b3c11-3b7d-407d-acb2-d0d2de75fbf0"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://yunwu.ai/v1beta/models/gemini-3-pro-image-preview:generateContent",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json.request_body }}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          }
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1920,
+          -144
+        ],
+        "id": "d290594f-3bda-417e-89d0-2e1785f4cf1c",
+        "name": "生图请求",
+        "retryOnFail": true,
+        "waitBetweenTries": 3000,
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "mMIH382GnJoMSu4L",
+            "name": "Header Auth account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://47.107.158.233:8080/api/credits/deduct",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"api_key\": \"{{ $('读取记录').item.json.data.record.fields.api_key[0].text }}\",\n  \"amount\":  \"{{ $json.data.credit_cost }}\",\n  \"reason\": \"生图扣费\",\n  \"workflow_id\": \"{{ $json.data.workflow_id }}\",\n  \"workflow_name\": \"{{ $json.data.workflow_name }}\"\n}\n",
+          "options": {}
+        },
+        "id": "0b7b9d7b-2b85-48f6-8955-f2e8d4efd5ad",
+        "name": "扣除积分",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          3712,
+          -144
+        ]
+      },
+      {
+        "parameters": {
+          "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id=flow_image_video_Veo",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          3488,
+          -144
+        ],
+        "id": "3b8c498e-576e-4b43-b21e-fe48a0a5eea6",
+        "name": "查询工作流积分"
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "/**\n * 云雾 / Gemini generateContent 响应 -> n8n binary\n *\n * 兼容常见返回路径：\n * - candidates[0].content.parts[*].inline_data.data\n * - candidates[0].content.parts[*].inlineData.data\n * - candidates[0].content.parts[*].fileData（如果有）\n * - data / body 包裹（httpRequest fullResponse 有时会包在 body）\n *\n * 输出：\n * - binary.data.data = base64（无 data: 前缀）\n * - binary.data.mimeType = image/png|image/jpeg\n * - binary.data.fileName = knowledge_card_{image_index}.png\n */\n\nfunction unwrapRoot(x) {\n  // 兼容 httpRequest fullResponse：{ body, headers, statusCode... }\n  if (x && typeof x === \"object\" && x.body && typeof x.body === \"object\") return x.body;\n  return x;\n}\n\nfunction getByPath(obj, path) {\n  try {\n    return path.split(\".\").reduce((acc, k) => (acc == null ? undefined : acc[k]), obj);\n  } catch {\n    return undefined;\n  }\n}\n\nfunction findInlineImageParts(root) {\n  const candidates = root?.candidates;\n  if (!Array.isArray(candidates) || !candidates.length) return [];\n\n  const parts = candidates?.[0]?.content?.parts;\n  if (!Array.isArray(parts)) return [];\n\n  // 找到带 inline_data/inlineData 的 part\n  const imgs = [];\n  for (const p of parts) {\n    const inline = p?.inline_data || p?.inlineData;\n    if (inline?.data) {\n      imgs.push({\n        b64: inline.data,\n        mimeType: inline.mime_type || inline.mimeType || \"image/png\",\n      });\n      continue;\n    }\n    // 有些实现是 fileData（不一定是 base64）\n    const fd = p?.fileData;\n    if (fd?.fileUri) {\n      imgs.push({\n        fileUri: fd.fileUri,\n        mimeType: fd.mimeType || \"image/png\",\n      });\n    }\n  }\n  return imgs;\n}\n\nfunction stripDataPrefix(b64) {\n  // 兼容 data:image/png;base64,xxxx\n  return String(b64 || \"\").replace(/^data:.*;base64,/, \"\").trim();\n}\n\nconst raw = $json || {};\nconst root = unwrapRoot(raw);\n\n// 你前面节点保留了 image_index（如果没有就默认为 1）\nconst imageIndex = Number(raw.image_index ?? raw.index ?? 1) || 1;\n\n// 1) 从 candidates.parts 找 inline image\nlet imgs = findInlineImageParts(root);\n\n// 2) 兜底：有些服务把 base64 放在 data / image / output 之类字段（尽量不猜太多，只做常见兜底）\nif (!imgs.length) {\n  const maybe =\n    getByPath(root, \"image.data\") ||\n    getByPath(root, \"data.image\") ||\n    getByPath(root, \"output.image\") ||\n    getByPath(root, \"output.data\") ||\n    null;\n\n  if (maybe && typeof maybe === \"string\") {\n    imgs = [{ b64: maybe, mimeType: \"image/png\" }];\n  }\n}\n\nif (!imgs.length) {\n  throw new Error(\"没有在返回体中找到图片数据（inline_data / inlineData）。请检查生图接口实际响应结构。\");\n}\n\n// 只取第一张（你这个工作流每个 item 对应一张图）\nconst first = imgs[0];\n\n// 如果是 fileUri（不是 base64），这里直接报错：因为你后面要上传飞书需要真实二进制\nif (first.fileUri && !first.b64) {\n  throw new Error(\n    `返回的是 fileUri（${first.fileUri}）而不是 base64。需要额外一步去下载该文件再转 binary。`\n  );\n}\n\nconst mimeType = first.mimeType || \"image/png\";\nconst ext = mimeType.includes(\"jpeg\") || mimeType.includes(\"jpg\") ? \"jpg\" : \"png\";\nconst b64 = stripDataPrefix(first.b64);\n\nif (!b64) throw new Error(\"图片 base64 为空\");\n\n// 组装 n8n binary（重要：data 要是纯 base64，不要带 data:image 前缀）\nreturn {\n  json: {\n    ...raw,\n    mimeType,\n    fileName: `knowledge_card_${imageIndex}.${ext}`,\n  },\n  binary: {\n    data: {\n      data: b64,\n      mimeType,\n      fileName: `Product_display_image_${imageIndex}.${ext}`,\n    },\n  },\n};\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2144,
+          -144
+        ],
+        "id": "8e6443fd-0344-4b31-97d4-c5d3cc6fa466",
+        "name": "转换为Binary"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "c22b9259-e07f-44aa-8917-406530cdfaf0",
+                "name": "达人上身图url",
+                "value": "={{ $json.data.record.fields['达人上身图url'] }}",
+                "type": "string"
+              },
+              {
+                "id": "144d662c-4621-43d2-80ec-cc8983616c6a",
+                "name": "image_person_token",
+                "value": "={{ $json.data.record.fields['达人照片'][0].attachmentToken }}",
+                "type": "string"
+              },
+              {
+                "id": "6727fa2c-41b8-47bd-a705-14923a9ca4ff",
+                "name": "image_product_token",
+                "value": "={{ $json.data.record.fields['产品照片'][0].attachmentToken }}",
+                "type": "string"
+              },
+              {
+                "id": "6b4dae79-564a-4cef-8250-9243e038f993",
+                "name": "prompt",
+                "value": "={{ $json.data.record.fields['图片提示词'] }}",
+                "type": "string"
+              },
+              {
+                "id": "37ccd11e-7bae-4f50-b73e-5ba1fc1a9ec5",
+                "name": "ratio",
+                "value": "=9:16",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          800,
+          -144
+        ],
+        "id": "277b66f7-e8e1-43b7-b12f-618039f21d86",
+        "name": "准备数据"
+      },
+      {
+        "parameters": {
+          "mode": "combine",
+          "combineBy": "combineByPosition",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3.2,
+        "position": [
+          1472,
+          -144
+        ],
+        "id": "9db9a328-ef5d-49ef-83c8-66081c091542",
+        "name": "Merge"
+      },
+      {
+        "parameters": {
+          "bucket": "content-factory",
+          "fileName": "={{ $json.fileName }}",
+          "inputDataFieldName": "data",
+          "options": {}
+        },
+        "id": "81b5d2ac-176c-48eb-ba5a-209a97d3e9a5",
+        "name": "上传Supabase",
+        "position": [
+          2344,
+          -144
+        ],
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "credentials": {
+          "supabaseApi": {
+            "id": "51Y43Q3CDfFRAjNI",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "mode": "runOnce",
+          "jsCode": "return { json: { publicUrl: 'https://supabase-api.atomx.top/storage/v1/object/public/content-factory/' + $json.fileName } };"
+        },
+        "id": "3f59d4f6-f270-4ae4-bbc6-b4d5e8d2c72d",
+        "name": "生成URL",
+        "position": [
+          2544,
+          -144
+        ],
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "准备数据",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "准备数据": {
+        "main": [
+          [
+            {
+              "node": "Merge",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Merge": {
+        "main": [
+          [
+            {
+              "node": "组装生图请求体",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "组装生图请求体": {
+        "main": [
+          [
+            {
+              "node": "生图请求",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "生图请求": {
+        "main": [
+          [
+            {
+              "node": "转换为Binary",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "转换为Binary": {
+        "main": [
+          [
+            {
+              "node": "上传Supabase",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "上传Supabase": {
+        "main": [
+          [
+            {
+              "node": "生成URL",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "生成URL": {
+        "main": [
+          [
+            {
+              "node": "查询工作流积分",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "查询工作流积分": {
+        "main": [
+          [
+            {
+              "node": "扣除积分",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "fan liu",
+    "name": null,
+    "description": null
+  }
+}

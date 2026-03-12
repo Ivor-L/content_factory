@@ -1,0 +1,589 @@
+{
+  "updatedAt": "2026-03-11T15:15:43.440Z",
+  "createdAt": "2026-03-06T10:09:52.864Z",
+  "id": "HoHIHcIkZ4VT80LP",
+  "name": "Veo3视频生成-回调接收流-web (已检查)",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id={{ $('Webhook-Veo3回调').item.json.body.context.workflow_id_for_credits }}",
+        "options": {}
+      },
+      "id": "7ea734dd-5051-4f05-88e6-3061fc2e42fa",
+      "name": "查询工作流积分配置",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1776,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://47.107.158.233:8080/api/credits/deduct",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "={{ $('Webhook-Veo3回调').item.json.body.context.api_key }}"
+            },
+            {
+              "name": "amount",
+              "value": "={{ $json.data.credit_cost }}"
+            },
+            {
+              "name": "reason",
+              "value": "veo3_video_async_callback"
+            },
+            {
+              "name": "workflow_id",
+              "value": "={{ $json.data.workflow_id }}"
+            },
+            {
+              "name": "workflow_name",
+              "value": "={{ $json.data.workflow_name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "91e8598a-9df7-4956-a1e8-4088ff721b40",
+      "name": "执行扣除积分",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1504,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.body.status }}",
+              "rightValue": "success",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "58ebd250-2508-4733-9476-a9acaf16d916",
+      "name": "判断任务状态1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -2352,
+        784
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('Webhook-Veo3回调').item.json.body.context.app_token }}/tables/{{ $('Webhook-Veo3回调').item.json.body.context.table_id }}/records/{{ $('Webhook-Veo3回调').item.json.body.context.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Webhook-Veo3回调').item.json.body.context.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"fields\": {\n    \"视频生成进度\": \"已完成\",\n    \"AI视频URL\": \"{{ $('Webhook-Veo3回调').item.json.body.data.video_url }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "51f0af43-f69e-45b3-b98d-2cb8be4fb4bd",
+      "name": "回写飞书-成功1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2064,
+        656
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('Webhook-Veo3回调').item.json.body.context.app_token }}/tables/{{ $('Webhook-Veo3回调').item.json.body.context.table_id }}/records/{{ $('Webhook-Veo3回调').item.json.body.context.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Webhook-Veo3回调').item.json.body.context.tenant_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"fields\": {\n    \"视频生成进度\": \"生成失败：{{ $json.body.message || '未知错误' }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "79e436f7-1600-422f-bdd9-2006125ac91d",
+      "name": "回写飞书-失败1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2064,
+        944
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "veo3-callback_web",
+        "options": {}
+      },
+      "id": "71c7c6eb-7070-4b03-a0d8-dd7c296715a8",
+      "name": "Webhook-Veo3回调",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2560,
+        784
+      ],
+      "webhookId": "40011c2f-f5a8-4518-9e14-8fb0df06a1f6"
+    }
+  ],
+  "connections": {
+    "查询工作流积分配置": {
+      "main": [
+        [
+          {
+            "node": "执行扣除积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "判断任务状态1": {
+      "main": [
+        [
+          {
+            "node": "回写飞书-成功1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "回写飞书-失败1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "回写飞书-成功1": {
+      "main": [
+        [
+          {
+            "node": "查询工作流积分配置",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook-Veo3回调": {
+      "main": [
+        [
+          {
+            "node": "判断任务状态1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {
+    "Webhook-Veo3回调": [
+      {
+        "json": {
+          "headers": {
+            "host": "hooks.flowonn.com",
+            "x-real-ip": "47.107.158.233",
+            "x-forwarded-for": "47.107.158.233",
+            "x-forwarded-proto": "https",
+            "connection": "close",
+            "content-length": "399",
+            "accept": "*/*",
+            "accept-encoding": "gzip, deflate",
+            "user-agent": "python-httpx/0.28.1",
+            "content-type": "application/json"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "status": "error",
+            "task_id": "video_58249abd-d0ff-4071-99bb-16f601f8a8c9",
+            "message": "Veo Task Failed: failed",
+            "context": {
+              "record_id": "recvbMOT3VlRE3",
+              "app_token": "OzchbMB9UanOdqscNqZctxwpnsg",
+              "table_id": "tbliQocoTq3f4U8g",
+              "tenant_access_token": "t-g1042lejEX4UPMWBAOXZ4C43JO5RT4TQTXVTNLIP",
+              "api_key": "sk_S-XJvpVKGGwnac1AlEFs3avCWZpqdOGaMMW27Y8iSPY",
+              "workflow_id_for_credits": "flow_video_Veo3.1_fast"
+            }
+          },
+          "webhookUrl": "http://localhost:5678/webhook/veo3clone-callback",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "versionId": "414a40c6-5a0a-4256-a56d-aa4caa018640",
+  "activeVersionId": "414a40c6-5a0a-4256-a56d-aa4caa018640",
+  "versionCounter": 46,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-03-06T10:09:52.864Z",
+      "createdAt": "2026-03-06T10:09:52.864Z",
+      "role": "workflow:owner",
+      "workflowId": "HoHIHcIkZ4VT80LP",
+      "projectId": "tMHfv8jC54QugIS3",
+      "project": {
+        "updatedAt": "2025-12-05T18:24:07.030Z",
+        "createdAt": "2025-12-05T18:00:52.525Z",
+        "id": "tMHfv8jC54QugIS3",
+        "name": "fan liu <591905097@qq.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "projectRelations": [
+          {
+            "updatedAt": "2025-12-05T18:00:52.525Z",
+            "createdAt": "2025-12-05T18:00:52.525Z",
+            "userId": "e1a90281-8c6a-4ec7-a985-3a344ba88b66",
+            "projectId": "tMHfv8jC54QugIS3",
+            "user": {
+              "updatedAt": "2026-03-12T04:36:50.363Z",
+              "createdAt": "2025-12-05T18:00:51.894Z",
+              "id": "e1a90281-8c6a-4ec7-a985-3a344ba88b66",
+              "email": "591905097@qq.com",
+              "firstName": "fan",
+              "lastName": "liu",
+              "personalizationAnswers": {
+                "version": "v4",
+                "personalization_survey_submitted_at": "2025-12-05T18:24:47.635Z",
+                "personalization_survey_n8n_version": "1.122.5",
+                "companySize": "<20",
+                "companyType": "saas",
+                "role": "business-owner",
+                "reportedSource": "youtube"
+              },
+              "settings": {
+                "userActivated": true,
+                "firstSuccessfulWorkflowId": "e9Q0InRVbw3mcRzk",
+                "userActivatedAt": 1773290207581,
+                "easyAIWorkflowOnboarded": true,
+                "npsSurvey": {
+                  "responded": true,
+                  "lastShownAt": 1772350096923
+                }
+              },
+              "disabled": false,
+              "mfaEnabled": false,
+              "lastActiveAt": "2026-03-12",
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-03-11T15:15:43.441Z",
+    "createdAt": "2026-03-11T15:15:43.441Z",
+    "versionId": "414a40c6-5a0a-4256-a56d-aa4caa018640",
+    "workflowId": "HoHIHcIkZ4VT80LP",
+    "nodes": [
+      {
+        "parameters": {
+          "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id={{ $('Webhook-Veo3回调').item.json.body.context.workflow_id_for_credits }}",
+          "options": {}
+        },
+        "id": "7ea734dd-5051-4f05-88e6-3061fc2e42fa",
+        "name": "查询工作流积分配置",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -1776,
+          656
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://47.107.158.233:8080/api/credits/deduct",
+          "sendBody": true,
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "api_key",
+                "value": "={{ $('Webhook-Veo3回调').item.json.body.context.api_key }}"
+              },
+              {
+                "name": "amount",
+                "value": "={{ $json.data.credit_cost }}"
+              },
+              {
+                "name": "reason",
+                "value": "veo3_video_async_callback"
+              },
+              {
+                "name": "workflow_id",
+                "value": "={{ $json.data.workflow_id }}"
+              },
+              {
+                "name": "workflow_name",
+                "value": "={{ $json.data.workflow_name }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "91e8598a-9df7-4956-a1e8-4088ff721b40",
+        "name": "执行扣除积分",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -1504,
+          656
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 3
+            },
+            "conditions": [
+              {
+                "id": "c1",
+                "leftValue": "={{ $json.body.status }}",
+                "rightValue": "success",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "58ebd250-2508-4733-9476-a9acaf16d916",
+        "name": "判断任务状态1",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          -2352,
+          784
+        ]
+      },
+      {
+        "parameters": {
+          "method": "PUT",
+          "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('Webhook-Veo3回调').item.json.body.context.app_token }}/tables/{{ $('Webhook-Veo3回调').item.json.body.context.table_id }}/records/{{ $('Webhook-Veo3回调').item.json.body.context.record_id }}",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "user_id_type",
+                "value": "open_id"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $('Webhook-Veo3回调').item.json.body.context.tenant_access_token }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"fields\": {\n    \"视频生成进度\": \"已完成\",\n    \"AI视频URL\": \"{{ $('Webhook-Veo3回调').item.json.body.data.video_url }}\"\n  }\n}",
+          "options": {}
+        },
+        "id": "51f0af43-f69e-45b3-b98d-2cb8be4fb4bd",
+        "name": "回写飞书-成功1",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -2064,
+          656
+        ]
+      },
+      {
+        "parameters": {
+          "method": "PUT",
+          "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('Webhook-Veo3回调').item.json.body.context.app_token }}/tables/{{ $('Webhook-Veo3回调').item.json.body.context.table_id }}/records/{{ $('Webhook-Veo3回调').item.json.body.context.record_id }}",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "user_id_type",
+                "value": "open_id"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $('Webhook-Veo3回调').item.json.body.context.tenant_access_token }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"fields\": {\n    \"视频生成进度\": \"生成失败：{{ $json.body.message || '未知错误' }}\"\n  }\n}",
+          "options": {}
+        },
+        "id": "79e436f7-1600-422f-bdd9-2006125ac91d",
+        "name": "回写飞书-失败1",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -2064,
+          944
+        ]
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "veo3-callback_web",
+          "options": {}
+        },
+        "id": "71c7c6eb-7070-4b03-a0d8-dd7c296715a8",
+        "name": "Webhook-Veo3回调",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -2560,
+          784
+        ],
+        "webhookId": "40011c2f-f5a8-4518-9e14-8fb0df06a1f6"
+      }
+    ],
+    "connections": {
+      "查询工作流积分配置": {
+        "main": [
+          [
+            {
+              "node": "执行扣除积分",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "判断任务状态1": {
+        "main": [
+          [
+            {
+              "node": "回写飞书-成功1",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "回写飞书-失败1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "回写飞书-成功1": {
+        "main": [
+          [
+            {
+              "node": "查询工作流积分配置",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Webhook-Veo3回调": {
+        "main": [
+          [
+            {
+              "node": "判断任务状态1",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "fan liu",
+    "name": null,
+    "description": null
+  }
+}

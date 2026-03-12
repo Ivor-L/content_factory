@@ -99,6 +99,17 @@ export function HomeContent({ recentVideos, products }: HomeContentProps) {
 
   const selectedProduct = products.find(p => p.id === product);
 
+  const safeParseArray = (raw?: string | null) => {
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      console.warn('Invalid JSON array', raw, error);
+      return [];
+    }
+  };
+
   const handleExecute = async () => {
     const newErrors = {
       product: !product,
@@ -497,13 +508,10 @@ export function HomeContent({ recentVideos, products }: HomeContentProps) {
                                         {t.products.newProduct}
                                     </button>
                                     
-                                    {filteredProducts.length > 0 ? (
+                                  {filteredProducts.length > 0 ? (
                                         filteredProducts.map(p => {
-                                            let imageUrl = null;
-                                            try {
-                                                const images = JSON.parse(p.images || '[]');
-                                                if (images.length > 0) imageUrl = images[0];
-                                            } catch (e) {}
+                                            const images = safeParseArray(p.images);
+                                            const imageUrl = images.length > 0 ? images[0] : null;
 
                                             return (
                                                 <button

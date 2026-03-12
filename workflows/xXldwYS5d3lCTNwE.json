@@ -1,0 +1,1540 @@
+{
+  "updatedAt": "2026-03-07T08:00:56.894Z",
+  "createdAt": "2026-02-25T17:56:34.813Z",
+  "id": "xXldwYS5d3lCTNwE",
+  "name": "爆款拆解-Veo3&sora-网页版",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "script_extract_web",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "cbddfe70-ad68-433d-81da-37497fe171a3",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2176,
+        80
+      ],
+      "webhookId": "228d8b53-6c3b-42a2-8c3f-e7d6d116822a"
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id={{ $('Webhook').item.json.body.workflow_id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1952,
+        80
+      ],
+      "id": "423a7115-ee70-46d6-8b20-cb87cdc05104",
+      "name": "查询工作流积分"
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/api/balance/check",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "required",
+              "value": "={{ $('查询工作流积分').item.json.data.credit_cost }}"
+            },
+            {
+              "name": "api_key",
+              "value": "={{ $('Webhook').item.json.body.api_key }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1728,
+        80
+      ],
+      "id": "47adebd1-cfa7-4340-a9cc-5ed79f9a6eeb",
+      "name": "验证api-key",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok === false }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    },
+                    "id": "apikey_invalid_cond"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "apikey_invalid"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "insufficient_points_cond",
+                    "leftValue": "={{ $json.ok === true && $json.data && $json.data.sufficient === false }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "insufficient_points"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "pass_cond",
+                    "leftValue": "={{ $json.ok === true && $json.data && $json.data.sufficient === true }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pass"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -1504,
+        64
+      ],
+      "id": "8e621bc5-780f-4271-af52-528c879414e9",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok:false, code:\"API_KEY_INVALID\", message:\"api_key无效\" } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -1280,
+        -112
+      ],
+      "id": "50446f1a-a919-4ff0-9143-2a5ed9a1b0ab",
+      "name": "Respond-api_key错误"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok:false, code:\"INSUFFICIENT_POINTS\", message:\"积分不足\" } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -1280,
+        80
+      ],
+      "id": "8dd2516a-c1d9-49dc-a5bd-a70219b681bb",
+      "name": "Respond-积分不足"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, message: \"Started\", script_id: $('Webhook').item.json.body.script_id } }}",
+        "options": {}
+      },
+      "id": "10b6cb2e-9230-4d64-96be-381857fa8a31",
+      "name": "Respond-Started",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -1280,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "scripts",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Webhook').item.json.body.script_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "extracting"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": 10
+            },
+            {
+              "fieldId": "error",
+              "fieldValue": "={{ null }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -1056,
+        272
+      ],
+      "id": "93b5ae68-ba5b-43f6-a38f-83315e7916c1",
+      "name": "Supabase-标记extracting",
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "scripts",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Webhook').item.json.body.script_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "analyzing"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": 30
+            },
+            {
+              "fieldId": "error",
+              "fieldValue": "={{ null }}"
+            }
+          ]
+        }
+      },
+      "id": "271e7905-1cce-4eff-bbb8-4473a708ce48",
+      "name": "Supabase-Update-Analyzing",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -832,
+        272
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Webhook').item.json.body.video_url }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -608,
+        272
+      ],
+      "id": "a7cb460f-fd8e-4f50-ad1d-9fda5228f7c3",
+      "name": "下载视频",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * 单线增强版：\n * 1. 尝试从下载节点提取 binary/base64\n * 2. 不直接 throw，而是统一输出：\n *    - download_ok\n *    - final_status\n *    - final_error\n *    - gemini_body\n */\n\nfunction pickBinaryKey(bin) {\n  if (!bin || typeof bin !== 'object') return '';\n  if (bin.video) return 'video';\n  if (bin.data) return 'data';\n  const keys = Object.keys(bin);\n  return keys.length ? keys[0] : '';\n}\n\nasync function getBase64(itemIndex, binaryKey) {\n  const item = $input.all()[itemIndex];\n  const bin = item.binary?.[binaryKey];\n  if (!bin) return null;\n\n  if (bin.data && typeof bin.data === 'string' && bin.data.length > 20) {\n    return bin.data;\n  }\n\n  if (this?.helpers?.getBinaryDataBuffer) {\n    const buf = await this.helpers.getBinaryDataBuffer(itemIndex, binaryKey);\n    return buf.toString('base64');\n  }\n\n  return null;\n}\n\nconst systemText = `# Role\n你是一位精通视频逆向工程与商业叙事逻辑拆解的专家。你的核心能力是透过像素表象，提取视频的“爆款基因”。\n\n# Goal\n输出一份标准 JSON 分析报告。这份报告将作为“母版”，指导下游 AI 在保留原视频运镜、节奏和情绪逻辑的前提下，填入全新的产品生成新视频。\n\n# Output Format\n请严格输出 JSON，不要输出 Markdown，不要闲聊：\n{\n  \"meta\": {\n    \"art_style\": \"全局艺术风格\",\n    \"render_quality\": \"渲染质量\",\n    \"mood_atmosphere\": \"核心情绪氛围\",\n    \"total_duration\": \"视频总时长\"\n  },\n  \"scene_breakdown\": [\n    {\n      \"id\": 1,\n      \"time_range\": \"00:00 - 00:XX\",\n      \"visual_specs\": {\n        \"camera\": \"镜头信息\",\n        \"subject_action\": \"主体动作\",\n        \"lighting_environment\": \"环境细节\",\n        \"auxiliary_elements\": \"辅助元素\"\n      },\n      \"abstract_logic\": {\n        \"narrative_role\": \"叙事功能\",\n        \"universal_instruction\": \"通用生成指令，包含[HERO_PRODUCT]变量\"\n      }\n    }\n  ]\n}`;\n\nconst items = $input.all();\nconst out = [];\nconst webhookBody = $('Webhook').item.json.body || {};\n\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i];\n  const err = item.json?.error;\n  const bin = item.binary || {};\n  const binaryKey = pickBinaryKey(bin);\n\n  let download_ok = false;\n  let final_status = null;\n  let final_error = null;\n  let gemini_body = null;\n  let mimeType = null;\n  let base64 = null;\n\n  if (err) {\n    final_status = 'failed';\n    final_error = `下载视频失败: ${err.message || JSON.stringify(err)}`;\n  } else if (!binaryKey) {\n    final_status = 'failed';\n    final_error = '下载视频失败：未拿到binary数据';\n  } else {\n    mimeType = bin[binaryKey]?.mimeType || 'video/mp4';\n    base64 = await getBase64.call(this, i, binaryKey);\n\n    if (!base64) {\n      final_status = 'failed';\n      final_error = '视频binary转base64失败';\n    } else {\n      download_ok = true;\n      gemini_body = {\n        systemInstruction: {\n          parts: [{ text: systemText }]\n        },\n        contents: [\n          {\n            role: 'user',\n            parts: [\n              {\n                inlineData: {\n                  mimeType,\n                  data: base64\n                }\n              }\n            ]\n          }\n        ],\n        generationConfig: {\n          responseMimeType: 'application/json'\n        }\n      };\n    }\n  }\n\n  out.push({\n    json: {\n      script_id: webhookBody.script_id,\n      video_url: webhookBody.video_url,\n      api_key: webhookBody.api_key,\n      workflow_id: webhookBody.workflow_id,\n      download_ok,\n      final_status,\n      final_error,\n      gemini_body,\n      _debug_binary: {\n        binaryKey: binaryKey || null,\n        mimeType,\n        base64_length: base64 ? base64.length : 0\n      }\n    },\n    binary: item.binary\n  });\n}\n\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -384,
+        272
+      ],
+      "id": "3eb34e2b-3adf-49a5-81c2-d622af663202",
+      "name": "组装请求"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "download_ok_true",
+              "leftValue": "={{ $json.download_ok === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -160,
+        272
+      ],
+      "id": "0dc3ab2f-9756-46ee-a5bf-082e483e819a",
+      "name": "If-下载是否成功"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://yunwu.ai/v1beta/models/gemini-2.5-pro:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.gemini_body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        64,
+        176
+      ],
+      "id": "703a6bfa-95c5-4c7f-b7a9-6cc48ffb4aca",
+      "name": "分析Agent-视频理解",
+      "retryOnFail": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mMIH382GnJoMSu4L",
+          "name": "Header Auth account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * 单线增强版：统一解析 Gemini 返回\n * 输出：\n * - parse_ok\n * - analysis\n * - final_status\n * - final_error\n * - should_deduct\n */\n\nfunction getAllText(root) {\n  const r = Array.isArray(root) ? root[0] : root;\n  const parts = r?.candidates?.[0]?.content?.parts || [];\n  return parts.map(p => p?.text || '').join('\\n').trim();\n}\n\nfunction stripCodeFence(text) {\n  return String(text || '')\n    .replace(/^```json\\s*/i, '')\n    .replace(/^```\\s*/i, '')\n    .replace(/\\s*```$/i, '')\n    .trim();\n}\n\nfunction tryParseJsonWithFixes(text) {\n  const errs = [];\n\n  try {\n    return { obj: JSON.parse(text), fixedText: text, errs };\n  } catch (e) {\n    errs.push('direct JSON.parse failed: ' + e.message);\n  }\n\n  let fixed = text;\n\n  fixed = fixed.replace(\n    /(\\\"time_range\\\"\\s*:\\s*)([^\\\"\\s][^,\\n}]*)/g,\n    (m, p1, p2) => {\n      const cleaned = String(p2).trim().replace(/^\\\"+|\\\"+$/g, '');\n      return `${p1}\\\"${cleaned}\\\"`;\n    }\n  );\n\n  fixed = fixed.replace(/,\\s*([}\\]])/g, '$1');\n\n  try {\n    return { obj: JSON.parse(fixed), fixedText: fixed, errs };\n  } catch (e) {\n    errs.push('fixed JSON.parse failed: ' + e.message);\n  }\n\n  return { obj: null, fixedText: fixed, errs };\n}\n\nconst items = $input.all();\nconst out = [];\n\nfor (const item of items) {\n  const original = item.json || {};\n\n  const result = {\n    ...original,\n    parse_ok: false,\n    analysis: null,\n    final_status: 'failed',\n    final_error: null,\n    should_deduct: false,\n    _raw_text: null,\n    _fixed_text: null,\n    errors: []\n  };\n\n  if (original.error) {\n    result.final_error = `Gemini调用失败: ${original.error.message || JSON.stringify(original.error)}`;\n    result.errors = [result.final_error];\n    out.push({ json: result });\n    continue;\n  }\n\n  const text = stripCodeFence(getAllText(original));\n  result._raw_text = text;\n\n  if (!text) {\n    result.final_error = 'Gemini返回为空，未找到 candidates[0].content.parts[].text';\n    result.errors = [result.final_error];\n    out.push({ json: result });\n    continue;\n  }\n\n  const parsed = tryParseJsonWithFixes(text);\n  result._fixed_text = parsed.fixedText;\n\n  if (!parsed.obj) {\n    result.final_error = parsed.errs.join(' | ') || 'JSON解析失败';\n    result.errors = parsed.errs;\n    out.push({ json: result });\n    continue;\n  }\n\n  result.parse_ok = true;\n  result.analysis = parsed.obj;\n  result.final_status = 'completed';\n  result.final_error = null;\n  result.should_deduct = true;\n  result.errors = [];\n\n  out.push({ json: result });\n}\n\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        288,
+        176
+      ],
+      "id": "c3248d11-d507-4d7b-ae58-cabc572d0658",
+      "name": "解析结构数据"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "scripts",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Webhook').first().json.body.script_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "blueprint",
+              "fieldValue": "={{ $json.analysis || null }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $json.final_status }}"
+            },
+            {
+              "fieldId": "error",
+              "fieldValue": "={{ $json.final_error || null }}"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "={{ $json.final_status === 'completed' ? 100 : 0 }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        512,
+        176
+      ],
+      "id": "b67b3d2e-c961-4834-9392-21352baac5a2",
+      "name": "写回Supabase-scripts",
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://47.107.158.233:8080/api/credits/deduct",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"api_key\": \"{{ $('Webhook').item.json.body.api_key }}\",\n  \"amount\": {{ $('查询工作流积分').item.json.data.credit_cost }},\n  \"reason\": \"{{ $('查询工作流积分').item.json.data.workflow_name }}\",\n  \"workflow_id\": \"{{ $('查询工作流积分').item.json.data.workflow_id }}\",\n  \"workflow_name\": \"{{ $('查询工作流积分').item.json.data.workflow_name }}\"\n}",
+        "options": {}
+      },
+      "id": "9a456f48-12df-414a-900e-bb62b5545238",
+      "name": "扣除积分",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        736,
+        176
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "scripts",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.script_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $json.final_status || 'failed' }}"
+            },
+            {
+              "fieldId": "error",
+              "fieldValue": "={{ $json.final_error || '未知错误' }}"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": 0
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        64,
+        368
+      ],
+      "id": "938b585a-88c4-47bb-939b-bf5bce84bca9",
+      "name": "写回Supabase-失败",
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "查询工作流积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "查询工作流积分": {
+      "main": [
+        [
+          {
+            "node": "验证api-key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "验证api-key": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Respond-api_key错误",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond-积分不足",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond-Started",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond-Started": {
+      "main": [
+        [
+          {
+            "node": "Supabase-标记extracting",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase-标记extracting": {
+      "main": [
+        [
+          {
+            "node": "Supabase-Update-Analyzing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase-Update-Analyzing": {
+      "main": [
+        [
+          {
+            "node": "下载视频",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "下载视频": {
+      "main": [
+        [
+          {
+            "node": "组装请求",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装请求": {
+      "main": [
+        [
+          {
+            "node": "If-下载是否成功",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If-下载是否成功": {
+      "main": [
+        [
+          {
+            "node": "分析Agent-视频理解",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "写回Supabase-失败",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "分析Agent-视频理解": {
+      "main": [
+        [
+          {
+            "node": "解析结构数据",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析结构数据": {
+      "main": [
+        [
+          {
+            "node": "写回Supabase-scripts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "写回Supabase-scripts": {
+      "main": [
+        [
+          {
+            "node": "扣除积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "hooks.flowonn.com",
+            "x-real-ip": "59.67.193.100",
+            "x-forwarded-for": "59.67.193.100",
+            "x-forwarded-proto": "https",
+            "connection": "close",
+            "content-length": "289",
+            "content-type": "application/json",
+            "accept": "*/*",
+            "accept-language": "*",
+            "sec-fetch-mode": "cors",
+            "user-agent": "node",
+            "accept-encoding": "br, gzip, deflate"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "script_id": "cmmfyg24g0005um8o7niofl8x",
+            "video_url": "https://supabase-api.atomx.top/storage/v1/object/public/temp_uploads/1772865667208_video_redhutclea_20260108071701_7592886294427077910__1_.mp4",
+            "api_key": "sk_S-XJvpVKGGwnac1AlEFs3avCWZpqdOGaMMW27Y8iSPY",
+            "workflow_id": "flow_script_dna"
+          },
+          "webhookUrl": "http://localhost:5678/webhook/script_extract_web",
+          "executionMode": "production"
+        }
+      }
+    ],
+    "分析Agent-视频理解": [
+      {
+        "json": {
+          "candidates": [
+            {
+              "content": {
+                "parts": [
+                  {
+                    "text": "{\n  \"meta\": {\n    \"art_style\": \"真实家居生活 (UGC风格)\",\n    \"render_quality\": \"高清画质\",\n    \"mood_atmosphere\": \"轻松愉快，高效清洁\",\n    \"total_duration\": \"00:15\"\n  },\n  \"scene_breakdown\": [\n    {\n      \"id\": 1,\n      \"time_range\": \"00:00 - 00:06\",\n      \"visual_specs\": {\n        \"camera\": \"中景，固定机位，略微俯拍，聚焦于沙发和产品清洁的动作。\",\n        \"subject_action\": \"一名女性用户手持白色蒸汽清洁机，对浅灰色布艺沙发进行来回清洁。机器喷出大量可见的白色蒸汽，动作富有节奏感。\",\n        \"lighting_environment\": \"室内环境，光线明亮柔和，营造出温馨的居家感。背景是现代风格的竖条纹墙面。\",\n        \"auxiliary_elements\": \"欢快的背景音乐；大量具象化的蒸汽效果，视觉冲击力强；配合口播节奏出现的动态字幕。\"\n      },\n      \"abstract_logic\": {\n        \"narrative_role\": \"问题场景代入与解决方案展示\",\n        \"universal_instruction\": \"中景镜头开场，展示用户在典型家居场景中使用[HERO_PRODUCT]进行清洁。通过特写产品的工作状态（如蒸汽、吸力、刷头转动），直观展示其强大功效，快速建立用户对产品效果的认知。\"\n      }\n    },\n    {\n      \"id\": 2,\n      \"time_range\": \"00:06 - 00:15\",\n      \"visual_specs\": {\n        \"camera\": \"镜头保持中景，机位不变。焦点从清洁动作转移到人物面部。\",\n        \"subject_action\": \"女性用户停止清洁，放松地坐在沙发上，手持产品，面带热情洋溢的微笑直视镜头进行讲解。她会配合讲解内容，自然地晃动或展示手中的产品。\",\n        \"lighting_environment\": \"与上一场景保持一致的温馨室内环境。\",\n        \"auxiliary_elements\": \"口播讲解产品优点、使用场景和促销信息；动态字幕持续跟进，突出“春季大扫除”、“特别折扣”、“直播间”等关键词；背景音乐持续。\"\n      },\n      \"abstract_logic\": {\n        \"narrative_role\": \"价值讲解与行动号召 (Call To Action)\",\n        \"universal_instruction\": \"演示者停止操作，转向镜头，以热情、自信的姿态手持[HERO_PRODUCT]进行讲解。快速提炼产品核心卖点，并立即抛出限时优惠或特殊活动作为钩子，最后以清晰明确的指令（如“点击链接”、“进入直播间”）引导用户完成转化动作。\"\n      }\n    }\n  ]\n}"
+                  }
+                ],
+                "role": "model"
+              },
+              "finishReason": "STOP",
+              "index": 0
+            }
+          ],
+          "usageMetadata": {
+            "promptTokenCount": 5023,
+            "candidatesTokenCount": 655,
+            "totalTokenCount": 6650,
+            "promptTokensDetails": [
+              {
+                "modality": "TEXT",
+                "tokenCount": 306
+              },
+              {
+                "modality": "VIDEO",
+                "tokenCount": 4208
+              },
+              {
+                "modality": "AUDIO",
+                "tokenCount": 509
+              }
+            ],
+            "thoughtsTokenCount": 972
+          },
+          "modelVersion": "gemini-2.5-pro",
+          "responseId": "2dGradaMA_uf-8YP6dbh8A0"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "versionId": "d93522c1-aad0-49ea-8f74-c14e7100d9e2",
+  "activeVersionId": "d93522c1-aad0-49ea-8f74-c14e7100d9e2",
+  "versionCounter": 165,
+  "triggerCount": 1,
+  "shared": [
+    {
+      "updatedAt": "2026-02-25T17:56:34.813Z",
+      "createdAt": "2026-02-25T17:56:34.813Z",
+      "role": "workflow:owner",
+      "workflowId": "xXldwYS5d3lCTNwE",
+      "projectId": "tMHfv8jC54QugIS3",
+      "project": {
+        "updatedAt": "2025-12-05T18:24:07.030Z",
+        "createdAt": "2025-12-05T18:00:52.525Z",
+        "id": "tMHfv8jC54QugIS3",
+        "name": "fan liu <591905097@qq.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "projectRelations": [
+          {
+            "updatedAt": "2025-12-05T18:00:52.525Z",
+            "createdAt": "2025-12-05T18:00:52.525Z",
+            "userId": "e1a90281-8c6a-4ec7-a985-3a344ba88b66",
+            "projectId": "tMHfv8jC54QugIS3",
+            "user": {
+              "updatedAt": "2026-03-12T04:36:50.363Z",
+              "createdAt": "2025-12-05T18:00:51.894Z",
+              "id": "e1a90281-8c6a-4ec7-a985-3a344ba88b66",
+              "email": "591905097@qq.com",
+              "firstName": "fan",
+              "lastName": "liu",
+              "personalizationAnswers": {
+                "version": "v4",
+                "personalization_survey_submitted_at": "2025-12-05T18:24:47.635Z",
+                "personalization_survey_n8n_version": "1.122.5",
+                "companySize": "<20",
+                "companyType": "saas",
+                "role": "business-owner",
+                "reportedSource": "youtube"
+              },
+              "settings": {
+                "userActivated": true,
+                "firstSuccessfulWorkflowId": "e9Q0InRVbw3mcRzk",
+                "userActivatedAt": 1773290207581,
+                "easyAIWorkflowOnboarded": true,
+                "npsSurvey": {
+                  "responded": true,
+                  "lastShownAt": 1772350096923
+                }
+              },
+              "disabled": false,
+              "mfaEnabled": false,
+              "lastActiveAt": "2026-03-12",
+              "isPending": false
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-03-07T08:00:56.895Z",
+    "createdAt": "2026-03-07T08:00:56.895Z",
+    "versionId": "d93522c1-aad0-49ea-8f74-c14e7100d9e2",
+    "workflowId": "xXldwYS5d3lCTNwE",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "script_extract_web",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "cbddfe70-ad68-433d-81da-37497fe171a3",
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -2176,
+          80
+        ],
+        "webhookId": "228d8b53-6c3b-42a2-8c3f-e7d6d116822a"
+      },
+      {
+        "parameters": {
+          "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id={{ $('Webhook').item.json.body.workflow_id }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -1952,
+          80
+        ],
+        "id": "423a7115-ee70-46d6-8b20-cb87cdc05104",
+        "name": "查询工作流积分"
+      },
+      {
+        "parameters": {
+          "url": "=http://47.107.158.233:8080/api/balance/check",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "required",
+                "value": "={{ $('查询工作流积分').item.json.data.credit_cost }}"
+              },
+              {
+                "name": "api_key",
+                "value": "={{ $('Webhook').item.json.body.api_key }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -1728,
+          80
+        ],
+        "id": "47adebd1-cfa7-4340-a9cc-5ed79f9a6eeb",
+        "name": "验证api-key",
+        "alwaysOutputData": true,
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 2
+                  },
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.ok === false }}",
+                      "rightValue": "",
+                      "operator": {
+                        "type": "boolean",
+                        "operation": "true",
+                        "singleValue": true
+                      },
+                      "id": "apikey_invalid_cond"
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "apikey_invalid"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 2
+                  },
+                  "conditions": [
+                    {
+                      "id": "insufficient_points_cond",
+                      "leftValue": "={{ $json.ok === true && $json.data && $json.data.sufficient === false }}",
+                      "rightValue": "",
+                      "operator": {
+                        "type": "boolean",
+                        "operation": "true",
+                        "singleValue": true
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "insufficient_points"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 2
+                  },
+                  "conditions": [
+                    {
+                      "id": "pass_cond",
+                      "leftValue": "={{ $json.ok === true && $json.data && $json.data.sufficient === true }}",
+                      "rightValue": "",
+                      "operator": {
+                        "type": "boolean",
+                        "operation": "true",
+                        "singleValue": true
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "pass"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.2,
+        "position": [
+          -1504,
+          64
+        ],
+        "id": "8e621bc5-780f-4271-af52-528c879414e9",
+        "name": "Switch"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ { ok:false, code:\"API_KEY_INVALID\", message:\"api_key无效\" } }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [
+          -1280,
+          -112
+        ],
+        "id": "50446f1a-a919-4ff0-9143-2a5ed9a1b0ab",
+        "name": "Respond-api_key错误"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ { ok:false, code:\"INSUFFICIENT_POINTS\", message:\"积分不足\" } }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [
+          -1280,
+          80
+        ],
+        "id": "8dd2516a-c1d9-49dc-a5bd-a70219b681bb",
+        "name": "Respond-积分不足"
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={{ { ok: true, message: \"Started\", script_id: $('Webhook').item.json.body.script_id } }}",
+          "options": {}
+        },
+        "id": "10b6cb2e-9230-4d64-96be-381857fa8a31",
+        "name": "Respond-Started",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [
+          -1280,
+          272
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "tableId": "scripts",
+          "matchType": "allFilters",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "id",
+                "condition": "eq",
+                "keyValue": "={{ $('Webhook').item.json.body.script_id }}"
+              }
+            ]
+          },
+          "fieldsUi": {
+            "fieldValues": [
+              {
+                "fieldId": "status",
+                "fieldValue": "extracting"
+              },
+              {
+                "fieldId": "progress",
+                "fieldValue": 10
+              },
+              {
+                "fieldId": "error",
+                "fieldValue": "={{ null }}"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          -1056,
+          272
+        ],
+        "id": "93b5ae68-ba5b-43f6-a38f-83315e7916c1",
+        "name": "Supabase-标记extracting",
+        "credentials": {
+          "supabaseApi": {
+            "id": "51Y43Q3CDfFRAjNI",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "tableId": "scripts",
+          "matchType": "allFilters",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "id",
+                "condition": "eq",
+                "keyValue": "={{ $('Webhook').item.json.body.script_id }}"
+              }
+            ]
+          },
+          "fieldsUi": {
+            "fieldValues": [
+              {
+                "fieldId": "status",
+                "fieldValue": "analyzing"
+              },
+              {
+                "fieldId": "progress",
+                "fieldValue": 30
+              },
+              {
+                "fieldId": "error",
+                "fieldValue": "={{ null }}"
+              }
+            ]
+          }
+        },
+        "id": "271e7905-1cce-4eff-bbb8-4473a708ce48",
+        "name": "Supabase-Update-Analyzing",
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          -832,
+          272
+        ],
+        "credentials": {
+          "supabaseApi": {
+            "id": "51Y43Q3CDfFRAjNI",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "url": "={{ $('Webhook').item.json.body.video_url }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.3,
+        "position": [
+          -608,
+          272
+        ],
+        "id": "a7cb460f-fd8e-4f50-ad1d-9fda5228f7c3",
+        "name": "下载视频",
+        "alwaysOutputData": true,
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "/**\n * 单线增强版：\n * 1. 尝试从下载节点提取 binary/base64\n * 2. 不直接 throw，而是统一输出：\n *    - download_ok\n *    - final_status\n *    - final_error\n *    - gemini_body\n */\n\nfunction pickBinaryKey(bin) {\n  if (!bin || typeof bin !== 'object') return '';\n  if (bin.video) return 'video';\n  if (bin.data) return 'data';\n  const keys = Object.keys(bin);\n  return keys.length ? keys[0] : '';\n}\n\nasync function getBase64(itemIndex, binaryKey) {\n  const item = $input.all()[itemIndex];\n  const bin = item.binary?.[binaryKey];\n  if (!bin) return null;\n\n  if (bin.data && typeof bin.data === 'string' && bin.data.length > 20) {\n    return bin.data;\n  }\n\n  if (this?.helpers?.getBinaryDataBuffer) {\n    const buf = await this.helpers.getBinaryDataBuffer(itemIndex, binaryKey);\n    return buf.toString('base64');\n  }\n\n  return null;\n}\n\nconst systemText = `# Role\n你是一位精通视频逆向工程与商业叙事逻辑拆解的专家。你的核心能力是透过像素表象，提取视频的“爆款基因”。\n\n# Goal\n输出一份标准 JSON 分析报告。这份报告将作为“母版”，指导下游 AI 在保留原视频运镜、节奏和情绪逻辑的前提下，填入全新的产品生成新视频。\n\n# Output Format\n请严格输出 JSON，不要输出 Markdown，不要闲聊：\n{\n  \"meta\": {\n    \"art_style\": \"全局艺术风格\",\n    \"render_quality\": \"渲染质量\",\n    \"mood_atmosphere\": \"核心情绪氛围\",\n    \"total_duration\": \"视频总时长\"\n  },\n  \"scene_breakdown\": [\n    {\n      \"id\": 1,\n      \"time_range\": \"00:00 - 00:XX\",\n      \"visual_specs\": {\n        \"camera\": \"镜头信息\",\n        \"subject_action\": \"主体动作\",\n        \"lighting_environment\": \"环境细节\",\n        \"auxiliary_elements\": \"辅助元素\"\n      },\n      \"abstract_logic\": {\n        \"narrative_role\": \"叙事功能\",\n        \"universal_instruction\": \"通用生成指令，包含[HERO_PRODUCT]变量\"\n      }\n    }\n  ]\n}`;\n\nconst items = $input.all();\nconst out = [];\nconst webhookBody = $('Webhook').item.json.body || {};\n\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i];\n  const err = item.json?.error;\n  const bin = item.binary || {};\n  const binaryKey = pickBinaryKey(bin);\n\n  let download_ok = false;\n  let final_status = null;\n  let final_error = null;\n  let gemini_body = null;\n  let mimeType = null;\n  let base64 = null;\n\n  if (err) {\n    final_status = 'failed';\n    final_error = `下载视频失败: ${err.message || JSON.stringify(err)}`;\n  } else if (!binaryKey) {\n    final_status = 'failed';\n    final_error = '下载视频失败：未拿到binary数据';\n  } else {\n    mimeType = bin[binaryKey]?.mimeType || 'video/mp4';\n    base64 = await getBase64.call(this, i, binaryKey);\n\n    if (!base64) {\n      final_status = 'failed';\n      final_error = '视频binary转base64失败';\n    } else {\n      download_ok = true;\n      gemini_body = {\n        systemInstruction: {\n          parts: [{ text: systemText }]\n        },\n        contents: [\n          {\n            role: 'user',\n            parts: [\n              {\n                inlineData: {\n                  mimeType,\n                  data: base64\n                }\n              }\n            ]\n          }\n        ],\n        generationConfig: {\n          responseMimeType: 'application/json'\n        }\n      };\n    }\n  }\n\n  out.push({\n    json: {\n      script_id: webhookBody.script_id,\n      video_url: webhookBody.video_url,\n      api_key: webhookBody.api_key,\n      workflow_id: webhookBody.workflow_id,\n      download_ok,\n      final_status,\n      final_error,\n      gemini_body,\n      _debug_binary: {\n        binaryKey: binaryKey || null,\n        mimeType,\n        base64_length: base64 ? base64.length : 0\n      }\n    },\n    binary: item.binary\n  });\n}\n\nreturn out;\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -384,
+          272
+        ],
+        "id": "3eb34e2b-3adf-49a5-81c2-d622af663202",
+        "name": "组装请求"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "download_ok_true",
+                "leftValue": "={{ $json.download_ok === true }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -160,
+          272
+        ],
+        "id": "0dc3ab2f-9756-46ee-a5bf-082e483e819a",
+        "name": "If-下载是否成功"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://yunwu.ai/v1beta/models/gemini-2.5-pro:generateContent",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json.gemini_body }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          64,
+          176
+        ],
+        "id": "703a6bfa-95c5-4c7f-b7a9-6cc48ffb4aca",
+        "name": "分析Agent-视频理解",
+        "retryOnFail": true,
+        "alwaysOutputData": true,
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "mMIH382GnJoMSu4L",
+            "name": "Header Auth account"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "/**\n * 单线增强版：统一解析 Gemini 返回\n * 输出：\n * - parse_ok\n * - analysis\n * - final_status\n * - final_error\n * - should_deduct\n */\n\nfunction getAllText(root) {\n  const r = Array.isArray(root) ? root[0] : root;\n  const parts = r?.candidates?.[0]?.content?.parts || [];\n  return parts.map(p => p?.text || '').join('\\n').trim();\n}\n\nfunction stripCodeFence(text) {\n  return String(text || '')\n    .replace(/^```json\\s*/i, '')\n    .replace(/^```\\s*/i, '')\n    .replace(/\\s*```$/i, '')\n    .trim();\n}\n\nfunction tryParseJsonWithFixes(text) {\n  const errs = [];\n\n  try {\n    return { obj: JSON.parse(text), fixedText: text, errs };\n  } catch (e) {\n    errs.push('direct JSON.parse failed: ' + e.message);\n  }\n\n  let fixed = text;\n\n  fixed = fixed.replace(\n    /(\\\"time_range\\\"\\s*:\\s*)([^\\\"\\s][^,\\n}]*)/g,\n    (m, p1, p2) => {\n      const cleaned = String(p2).trim().replace(/^\\\"+|\\\"+$/g, '');\n      return `${p1}\\\"${cleaned}\\\"`;\n    }\n  );\n\n  fixed = fixed.replace(/,\\s*([}\\]])/g, '$1');\n\n  try {\n    return { obj: JSON.parse(fixed), fixedText: fixed, errs };\n  } catch (e) {\n    errs.push('fixed JSON.parse failed: ' + e.message);\n  }\n\n  return { obj: null, fixedText: fixed, errs };\n}\n\nconst items = $input.all();\nconst out = [];\n\nfor (const item of items) {\n  const original = item.json || {};\n\n  const result = {\n    ...original,\n    parse_ok: false,\n    analysis: null,\n    final_status: 'failed',\n    final_error: null,\n    should_deduct: false,\n    _raw_text: null,\n    _fixed_text: null,\n    errors: []\n  };\n\n  if (original.error) {\n    result.final_error = `Gemini调用失败: ${original.error.message || JSON.stringify(original.error)}`;\n    result.errors = [result.final_error];\n    out.push({ json: result });\n    continue;\n  }\n\n  const text = stripCodeFence(getAllText(original));\n  result._raw_text = text;\n\n  if (!text) {\n    result.final_error = 'Gemini返回为空，未找到 candidates[0].content.parts[].text';\n    result.errors = [result.final_error];\n    out.push({ json: result });\n    continue;\n  }\n\n  const parsed = tryParseJsonWithFixes(text);\n  result._fixed_text = parsed.fixedText;\n\n  if (!parsed.obj) {\n    result.final_error = parsed.errs.join(' | ') || 'JSON解析失败';\n    result.errors = parsed.errs;\n    out.push({ json: result });\n    continue;\n  }\n\n  result.parse_ok = true;\n  result.analysis = parsed.obj;\n  result.final_status = 'completed';\n  result.final_error = null;\n  result.should_deduct = true;\n  result.errors = [];\n\n  out.push({ json: result });\n}\n\nreturn out;\n"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          288,
+          176
+        ],
+        "id": "c3248d11-d507-4d7b-ae58-cabc572d0658",
+        "name": "解析结构数据"
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "tableId": "scripts",
+          "matchType": "allFilters",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "id",
+                "condition": "eq",
+                "keyValue": "={{ $('Webhook').first().json.body.script_id }}"
+              }
+            ]
+          },
+          "fieldsUi": {
+            "fieldValues": [
+              {
+                "fieldId": "blueprint",
+                "fieldValue": "={{ $json.analysis || null }}"
+              },
+              {
+                "fieldId": "status",
+                "fieldValue": "={{ $json.final_status }}"
+              },
+              {
+                "fieldId": "error",
+                "fieldValue": "={{ $json.final_error || null }}"
+              },
+              {
+                "fieldId": "progress",
+                "fieldValue": "={{ $json.final_status === 'completed' ? 100 : 0 }}"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          512,
+          176
+        ],
+        "id": "b67b3d2e-c961-4834-9392-21352baac5a2",
+        "name": "写回Supabase-scripts",
+        "credentials": {
+          "supabaseApi": {
+            "id": "51Y43Q3CDfFRAjNI",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "http://47.107.158.233:8080/api/credits/deduct",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"api_key\": \"{{ $('Webhook').item.json.body.api_key }}\",\n  \"amount\": {{ $('查询工作流积分').item.json.data.credit_cost }},\n  \"reason\": \"{{ $('查询工作流积分').item.json.data.workflow_name }}\",\n  \"workflow_id\": \"{{ $('查询工作流积分').item.json.data.workflow_id }}\",\n  \"workflow_name\": \"{{ $('查询工作流积分').item.json.data.workflow_name }}\"\n}",
+          "options": {}
+        },
+        "id": "9a456f48-12df-414a-900e-bb62b5545238",
+        "name": "扣除积分",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          736,
+          176
+        ],
+        "alwaysOutputData": true,
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "tableId": "scripts",
+          "matchType": "allFilters",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "id",
+                "condition": "eq",
+                "keyValue": "={{ $json.script_id }}"
+              }
+            ]
+          },
+          "fieldsUi": {
+            "fieldValues": [
+              {
+                "fieldId": "status",
+                "fieldValue": "={{ $json.final_status || 'failed' }}"
+              },
+              {
+                "fieldId": "error",
+                "fieldValue": "={{ $json.final_error || '未知错误' }}"
+              },
+              {
+                "fieldId": "progress",
+                "fieldValue": 0
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          64,
+          368
+        ],
+        "id": "938b585a-88c4-47bb-939b-bf5bce84bca9",
+        "name": "写回Supabase-失败",
+        "credentials": {
+          "supabaseApi": {
+            "id": "51Y43Q3CDfFRAjNI",
+            "name": "Supabase account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "查询工作流积分",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "查询工作流积分": {
+        "main": [
+          [
+            {
+              "node": "验证api-key",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "验证api-key": {
+        "main": [
+          [
+            {
+              "node": "Switch",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Switch": {
+        "main": [
+          [
+            {
+              "node": "Respond-api_key错误",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Respond-积分不足",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Respond-Started",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Respond-Started": {
+        "main": [
+          [
+            {
+              "node": "Supabase-标记extracting",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Supabase-标记extracting": {
+        "main": [
+          [
+            {
+              "node": "Supabase-Update-Analyzing",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Supabase-Update-Analyzing": {
+        "main": [
+          [
+            {
+              "node": "下载视频",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "下载视频": {
+        "main": [
+          [
+            {
+              "node": "组装请求",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "组装请求": {
+        "main": [
+          [
+            {
+              "node": "If-下载是否成功",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "If-下载是否成功": {
+        "main": [
+          [
+            {
+              "node": "分析Agent-视频理解",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "写回Supabase-失败",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "分析Agent-视频理解": {
+        "main": [
+          [
+            {
+              "node": "解析结构数据",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "解析结构数据": {
+        "main": [
+          [
+            {
+              "node": "写回Supabase-scripts",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "写回Supabase-scripts": {
+        "main": [
+          [
+            {
+              "node": "扣除积分",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "fan liu",
+    "name": null,
+    "description": null
+  }
+}

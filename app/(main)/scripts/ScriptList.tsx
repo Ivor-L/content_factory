@@ -273,6 +273,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                         progress={script.progress || 0} 
                         scriptId={script.id}
                         error={script.error}
+                        compact
                     />
                 )}
 
@@ -635,6 +636,12 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                                 characters={characters}
                                 preselectedScriptId={selectedReplicationScript.id}
                                 mode={replicationMode}
+                                onSuccess={() => {
+                                    setIsReplicationModalOpen(false);
+                                    setSelectedReplicationScript(null);
+                                    setReplicationMode('one-click');
+                                    setAnalysisTab('replication');
+                                }}
                             />
                         ) : (
                             <div className="h-full overflow-y-auto pr-2 custom-scrollbar space-y-6">

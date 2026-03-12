@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createProduct, createDraftProduct } from '@/app/(main)/products/actions';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { emitCreditsRefresh } from '@/lib/creditsBus';
+import { supabase } from '@/lib/supabase';
 
 import { toast } from 'react-hot-toast';
 
@@ -133,12 +134,17 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
     setAnalysisStatus('analyzing');
 
     try {
+      // Get session
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+
       // 1. Create Draft Product if not exists
       let productId = id;
       if (!productId) {
           const formData = new FormData();
           formData.append('name', name);
           formData.append('images', JSON.stringify(images));
+          if (userId) formData.append('userId', userId);
           productId = await createDraftProduct(formData);
           setId(productId);
       }
@@ -158,6 +164,7 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
       formData.append('analysisResult', JSON.stringify({ status: 'ANALYZING' }));
       formData.append('status', 'PROCESSING');
       formData.append('progress', '0');
+      if (userId) formData.append('userId', userId);
       
       await createProduct(formData);
 

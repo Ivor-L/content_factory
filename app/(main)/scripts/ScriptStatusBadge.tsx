@@ -3,15 +3,17 @@
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
 
 interface ScriptStatusBadgeProps {
   status: string;
   progress: number;
   scriptId: string;
   error?: string;
+  compact?: boolean;
 }
 
-export function ScriptStatusBadge({ status: initialStatus, progress: initialProgress, scriptId, error: initialError }: ScriptStatusBadgeProps) {
+export function ScriptStatusBadge({ status: initialStatus, progress: initialProgress, scriptId, error: initialError, compact = false }: ScriptStatusBadgeProps) {
   const [status, setStatus] = useState(initialStatus);
   const [progress, setProgress] = useState(initialProgress);
   const [error, setError] = useState(initialError);
@@ -68,11 +70,18 @@ export function ScriptStatusBadge({ status: initialStatus, progress: initialProg
   );
 
   return (
-    <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] z-10 flex flex-col items-center justify-center p-4 text-center transition-all duration-500">
+    <div
+      className={cn(
+        "absolute inset-0 z-10 flex flex-col items-center justify-center text-center transition-all duration-500 pointer-events-none",
+        compact
+          ? "bg-gradient-to-b from-black/80 via-black/60 to-transparent text-white p-3"
+          : "bg-black/60 backdrop-blur-[2px] text-white p-4"
+      )}
+    >
       {status === 'failed' ? (
         <div className="text-red-400 font-bold flex flex-col items-center max-w-full">
             <span className="text-2xl mb-2">❌</span>
-            <span>Analysis Failed</span>
+            <span className="uppercase tracking-wide">{getStatusLabel(status)}</span>
             {error && (
                 <span className="text-xs text-red-200 mt-2 bg-red-900/50 px-2 py-1 rounded max-w-[90%] truncate" title={error}>
                     {error}
@@ -81,17 +90,15 @@ export function ScriptStatusBadge({ status: initialStatus, progress: initialProg
         </div>
       ) : (
         <>
-            <Loader2 className="w-8 h-8 text-blue-400 animate-spin mb-3" />
-            <span className="text-white font-bold text-lg drop-shadow-md tracking-wide">
-                {getStatusLabel(status)}
-            </span>
-            <div className="w-full max-w-[80%] bg-white/20 rounded-full h-1.5 mt-3 overflow-hidden">
+            <Loader2 className="w-6 h-6 text-white animate-spin mb-2" />
+            <span className="font-bold text-sm tracking-wide uppercase">{getStatusLabel(status)}</span>
+            <div className="w-full max-w-[70%] bg-white/20 rounded-full h-1 mt-2 overflow-hidden">
                 <div 
-                    className="bg-blue-500 h-full rounded-full transition-all duration-700 ease-out" 
+                    className="bg-white h-full rounded-full transition-all duration-700 ease-out" 
                     style={{ width: `${displayProgress}%` }}
                 />
             </div>
-            <span className="text-white/80 text-xs mt-1 font-mono">{displayProgress}%</span>
+            <span className="text-white/80 text-[10px] mt-1 font-mono">{displayProgress}%</span>
         </>
       )}
     </div>
