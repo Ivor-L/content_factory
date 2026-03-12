@@ -480,6 +480,7 @@ model Script {
   status    String   @default("PENDING")
   progress  Int      @default(0)
   error     String?  // New field for error messages
+  userId    String?  @map("user_id") @db.Uuid
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   replications         Replication[]
@@ -537,6 +538,8 @@ model DigitalHumanVideo {
   resultUrl   String?
   status      String   @default("GENERATING")
   userId      String?  @map("user_id") @db.Uuid
+  durationSeconds Float? @map("duration_seconds")
+  workflowId String? @map("workflow_id")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
