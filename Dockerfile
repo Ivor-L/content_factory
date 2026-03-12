@@ -1,5 +1,7 @@
 # Base image
 FROM node:20-alpine AS base
+# Replace default apk mirror to speed up installs in CN network
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 
 # Install dependencies only when needed
 FROM base AS deps
