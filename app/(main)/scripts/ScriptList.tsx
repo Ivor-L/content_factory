@@ -23,7 +23,7 @@ interface Script {
   createdAt: string;
   status?: string;
   progress?: number;
-  error?: string;
+  error?: string | null;
   blueprint?: string | null;
 }
 
