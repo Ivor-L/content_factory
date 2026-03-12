@@ -272,7 +272,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                         status={script.status} 
                         progress={script.progress || 0} 
                         scriptId={script.id}
-                        error={script.error}
+                        error={script.error ?? undefined}
                         compact
                     />
                 )}
