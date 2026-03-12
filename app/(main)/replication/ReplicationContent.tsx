@@ -259,7 +259,7 @@ export default function ReplicationContent({ history, digitalHumanVideos = [] }:
               setSelectedVideo(item);
               setIsModalOpen(true);
             }}
-            onDelete={(id) => handleDelete([id])}
+            onDelete={(id) => handleDeleteRequest([id])}
           />
         ))}
       </div>
