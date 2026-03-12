@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getRequestUserContext } from '@/lib/authServer';
 import {
   getReplicationShotTaskById,
@@ -28,15 +28,16 @@ const sanitizeArray = <T>(value: unknown): T[] | null => {
 };
 
 export async function GET(
-  request: Request,
-  { params }: { params: { taskId: string } }
+  request: NextRequest,
+  { params }: { params: Promise<{ taskId: string }> }
 ) {
+  const { taskId } = await params;
   const { userId } = await getRequestUserContext(request);
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const task = await getReplicationShotTaskById(params.taskId, userId);
+  const task = await getReplicationShotTaskById(taskId, userId);
   if (!task) {
     return NextResponse.json({ error: 'Not Found' }, { status: 404 });
   }
@@ -45,9 +46,10 @@ export async function GET(
 }
 
 export async function PATCH(
-  request: Request,
-  { params }: { params: { taskId: string } }
+  request: NextRequest,
+  { params }: { params: Promise<{ taskId: string }> }
 ) {
+  const { taskId } = await params;
   const { userId } = await getRequestUserContext(request);
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -66,7 +68,7 @@ export async function PATCH(
 
   try {
     const updated = await updateReplicationShotTask({
-      taskId: params.taskId,
+      taskId,
       userId,
       data: {
         status: payload.status,
