@@ -1,3 +1,5 @@
+/* eslint-disable @next/next/no-img-element -- Logo component swaps multiple static SVGs dynamically */
+
 import React from 'react';
 
 export function AtomXLogo({ 

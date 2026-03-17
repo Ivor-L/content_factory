@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+/* eslint-disable @next/next/no-img-element -- Upload previews rely on raw <img> because files can be local or blob URLs */
+
+import { useMemo, useState } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { AtomXLogo } from '@/components/AtomXLogo';
 import { VideoCard } from '@/components/VideoCard';
@@ -18,6 +20,12 @@ import { toast } from 'react-hot-toast';
 import { createStoryboardTask } from '@/app/actions/storyboard';
 import { createScript } from '@/app/(main)/scripts/actions';
 import { emitCreditsRefresh } from '@/lib/creditsBus';
+import { useTenant } from '@/hooks/useTenant';
+import { DigitalHumanModal } from '@/components/DigitalHumanModal';
+import { StoryboardGenModal } from '@/components/StoryboardGenModal';
+import { CharacterEmptyGuide } from '@/components/characters/CharacterEmptyGuide';
+
+const DIGITAL_HUMAN_GUIDE_KEY = 'digitalHumanGuideDismissed';
 
 interface HomeContentProps {
   recentVideos: any[];
@@ -26,6 +34,7 @@ interface HomeContentProps {
 
 export function HomeContent({ recentVideos, products }: HomeContentProps) {
   const { t } = useLanguage();
+  const { tenant, tenantSlug, basePath } = useTenant();
   const router = useRouter();
   const [mode, setMode] = useState<'one-click' | 'storyboard'>('one-click');
   const [inputValue, setInputValue] = useState('');
@@ -45,6 +54,14 @@ export function HomeContent({ recentVideos, products }: HomeContentProps) {
   
   const [isDragging, setIsDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [isDigitalHumanModalOpen, setIsDigitalHumanModalOpen] = useState(false);
+  const [isDigitalHumanGuideOpen, setIsDigitalHumanGuideOpen] = useState(false);
+  const [storyboardModalContext, setStoryboardModalContext] = useState<'nine-grid' | 'batch' | null>(null);
+
+  const getTenantPath = (path: string) => {
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    return `${basePath || ''}${normalizedPath}`;
+  };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -155,7 +172,7 @@ export function HomeContent({ recentVideos, products }: HomeContentProps) {
             
             toast.dismiss(loadingToast);
             toast.success('Task created! Redirecting...');
-            router.push(`/storyboard/${result.taskId}`);
+            router.push(getTenantPath(`/storyboard/${result.taskId}`));
             
         } catch (error) {
             console.error(error);
@@ -289,36 +306,73 @@ export function HomeContent({ recentVideos, products }: HomeContentProps) {
   };
 
   // Quick Access Cards Data
+  const openDigitalHumanModal = () => setIsDigitalHumanModalOpen(true);
+
+  const handleDigitalHumanQuickAccess = () => {
+    if (typeof window !== 'undefined') {
+      const dismissed = window.localStorage.getItem(DIGITAL_HUMAN_GUIDE_KEY) === 'true';
+      if (!dismissed) {
+        setIsDigitalHumanGuideOpen(true);
+        return;
+      }
+    }
+    openDigitalHumanModal();
+  };
+
+  const handleDigitalHumanGuideContinue = () => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(DIGITAL_HUMAN_GUIDE_KEY, 'true');
+    }
+    setIsDigitalHumanGuideOpen(false);
+    openDigitalHumanModal();
+  };
+
   const quickAccessCards = [
     {
+      key: 'digital-human',
       title: (t as any).home?.quickAccess?.digitalHuman || 'Digital Human',
       subtitle: (t as any).home?.quickAccess?.digitalHumanSubtitle || 'High-fidelity Lip-sync',
       icon: <User className="w-6 h-6 text-red-500" />,
-      link: '/digital-human',
-      badge: null
+      badge: null,
+      onClick: handleDigitalHumanQuickAccess
     },
     {
+      key: 'storyboard-video',
       title: (t as any).home?.quickAccess?.storyboardVideo || 'Storyboard Video',
       subtitle: (t as any).home?.quickAccess?.storyboardSubtitle || 'High Consistency Video',
       icon: <Clapperboard className="w-6 h-6 text-orange-500" />,
-      link: '/storyboard-gen',
-      badge: null
+      badge: null,
+      onClick: () => setStoryboardModalContext('nine-grid')
     },
     {
+      key: 'batch-video',
       title: (t as any).home?.quickAccess?.batchVideoGen || 'Batch Video Generation',
       subtitle: (t as any).home?.quickAccess?.batchVideoSubtitle || 'One-click Concurrent Generation',
-      icon: <Film className="w-6 h-6 text-blue-600" />,
-      link: '/replication',
-      badge: null
-    },
-    {
-      title: (t as any).home?.quickAccess?.imageGeneration || 'Image Generation',
-      subtitle: (t as any).home?.quickAccess?.batchImageGen || 'One-click Batch Generation',
-      icon: <ImageIcon className="w-6 h-6 text-purple-500" />,
-      link: '/products/new',
-      badge: null
+      icon: <Film className="w-6 h-6 text-primary" />,
+      badge: null,
+      link: getTenantPath('/storyboard/create')
     }
   ];
+
+  const isJubaopen = tenantSlug === 'jubaopen';
+  const heroTitle = useMemo(() => {
+    if (isJubaopen) return '聚保盆让内容营销更简单';
+    return (t as any).home?.heroTitle || 'AtomX Makes Content Marketing Simpler';
+  }, [isJubaopen, t]);
+
+  const heroLogo = useMemo(() => {
+    if (isJubaopen) {
+      const logoSrc = tenant.browserLogo || '/logo/jubaopeng_logo.svg';
+      return (
+        <img
+          src={logoSrc}
+          alt={tenant.name}
+          className="mr-2 h-12 w-12 rounded-full object-cover"
+        />
+      );
+    }
+    return <AtomXLogo className="inline-flex mr-2" size={48} showText={false} />;
+  }, [isJubaopen, tenant.browserLogo, tenant.name]);
 
   return (
     <div className="min-h-screen bg-[#F6F7F9] dark:bg-black font-sans">
@@ -327,9 +381,9 @@ export function HomeContent({ recentVideos, products }: HomeContentProps) {
         {/* Hero Section */}
         <div className="flex flex-col items-center justify-center mb-10 text-center">
           <h1 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white tracking-tight flex items-center gap-2">
-            <AtomXLogo className="inline-flex mr-2" size={48} showText={false} />
-            <span className="hidden">AtomX</span>
-            {(t as any).home?.heroTitle || 'AtomX Makes Content Marketing Simpler'}
+            {heroLogo}
+            <span className="hidden">{tenant.name}</span>
+            {heroTitle}
           </h1>
         </div>
 
@@ -351,7 +405,7 @@ export function HomeContent({ recentVideos, products }: HomeContentProps) {
                       </div>
                       <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
                           <div 
-                              className="bg-blue-600 h-full transition-all duration-300 ease-out"
+                              className="bg-primary h-full transition-all duration-300 ease-out"
                               style={{ width: `${progress}%` }}
                           />
                       </div>
@@ -367,7 +421,7 @@ export function HomeContent({ recentVideos, products }: HomeContentProps) {
               onDrop={handleDrop}
               className={cn(
                 "w-24 h-32 md:w-32 md:h-32 shrink-0 bg-gray-50 dark:bg-gray-800 border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer group hover:bg-gray-100 dark:hover:bg-gray-700",
-                isDragging ? "border-brand-blue bg-brand-blue/5" : "border-gray-200 dark:border-gray-700"
+                isDragging ? "border-primary bg-primary/5" : "border-gray-200 dark:border-gray-700"
               )}
             >
               <input 
@@ -491,7 +545,7 @@ export function HomeContent({ recentVideos, products }: HomeContentProps) {
                                             placeholder="Search..." 
                                             value={productSearch}
                                             onChange={(e) => setProductSearch(e.target.value)}
-                                            className="w-full bg-gray-50 dark:bg-gray-900 rounded-lg pl-9 pr-3 py-2 text-xs text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-black dark:focus:ring-white placeholder:text-gray-400"
+                                            className="w-full bg-gray-50 dark:bg-gray-900 rounded-lg pl-9 pr-3 py-2 text-xs text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-gray-400"
                                             autoFocus
                                         />
                                     </div>
@@ -502,7 +556,7 @@ export function HomeContent({ recentVideos, products }: HomeContentProps) {
                                             setIsProductDropdownOpen(false);
                                             setIsProductModalOpen(true);
                                         }}
-                                        className="w-full text-left px-3 py-2 text-xs font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg flex items-center gap-2 mb-1"
+                                        className="w-full text-left px-3 py-2 text-xs font-bold text-primary dark:text-primary hover:bg-primary-soft/60 dark:hover:bg-primary/10 rounded-lg flex items-center gap-2 mb-1"
                                     >
                                         <Plus size={14} />
                                         {t.products.newProduct}
@@ -695,44 +749,63 @@ export function HomeContent({ recentVideos, products }: HomeContentProps) {
         </div>
 
         {/* Quick Access Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-12">
-          {quickAccessCards.map((card, idx) => (
-            <Link 
-              key={idx} 
-              href={card.link}
-              className="bg-white dark:bg-gray-900 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-800 hover:shadow-md transition-all flex items-center gap-3 group"
-            >
-              <div className="w-10 h-10 rounded-full bg-gray-50 dark:bg-gray-800 flex items-center justify-center shrink-0 group-hover:bg-blue-50 dark:group-hover:bg-blue-900/20 transition-colors">
-                {card.badge && (
-                    <span className={cn(
-                        "absolute -top-1 -right-1 text-[10px] font-bold text-white px-1.5 py-0.5 rounded-full",
-                        card.badge === '4.1' ? "bg-black text-white" : "bg-blue-600"
-                    )}>
-                        {card.badge}
-                    </span>
-                )}
-                <div className="relative">
-                     {card.icon}
-                     {card.badge && (
-                        <div className={cn(
-                            "absolute -top-2 -right-2 text-[8px] font-bold text-white px-1 rounded-full",
-                            card.badge === '4.1' ? "bg-black text-white" : "bg-blue-600"
-                        )}>
-                            {card.badge}
-                        </div>
-                     )}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-4 mb-12">
+          {quickAccessCards.map((card) => {
+            const sharedContent = (
+              <>
+                <div className="w-10 h-10 rounded-full bg-gray-50 dark:bg-gray-800 flex items-center justify-center shrink-0 group-hover:bg-primary-soft dark:group-hover:bg-primary/10 transition-colors">
+                  {card.badge && (
+                      <span className={cn(
+                          "absolute -top-1 -right-1 text-[10px] font-bold text-white px-1.5 py-0.5 rounded-full",
+                          card.badge === '4.1' ? "bg-black text-white" : "bg-primary"
+                      )}>
+                          {card.badge}
+                      </span>
+                  )}
+                  <div className="relative">
+                      {card.icon}
+                      {card.badge && (
+                          <div className={cn(
+                              "absolute -top-2 -right-2 text-[8px] font-bold text-white px-1 rounded-full",
+                              card.badge === '4.1' ? "bg-black text-white" : "bg-primary"
+                          )}>
+                              {card.badge}
+                          </div>
+                      )}
+                  </div>
                 </div>
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="font-bold text-sm text-gray-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                    {card.title}
-                </span>
-                <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                    {card.subtitle}
-                </span>
-              </div>
-            </Link>
-          ))}
+                <div className="flex flex-col min-w-0">
+                  <span className="font-bold text-sm text-gray-900 dark:text-white truncate group-hover:text-primary dark:group-hover:text-primary transition-colors">
+                      {card.title}
+                  </span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                      {card.subtitle}
+                  </span>
+                </div>
+              </>
+            );
+
+            const baseClasses = "bg-white dark:bg-gray-900 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-800 hover:shadow-md transition-all flex items-center gap-3 group";
+
+            if (card.link) {
+              return (
+                <Link key={card.key} href={card.link!} className={baseClasses}>
+                  {sharedContent}
+                </Link>
+              );
+            }
+
+            return (
+              <button
+                key={card.key}
+                type="button"
+                onClick={card.onClick}
+                className={cn(baseClasses, "text-left")}
+              >
+                {sharedContent}
+              </button>
+            );
+          })}
         </div>
 
         {/* Recent Projects (Simplified/Moved down) */}
@@ -742,7 +815,7 @@ export function HomeContent({ recentVideos, products }: HomeContentProps) {
                     <div className="w-1.5 h-6 bg-black dark:bg-white rounded-full"></div>
                     {(t as any).home?.recentProjects || 'Recent Projects'}
                 </h2>
-                <Link href="/replication" className="text-sm font-bold text-gray-500 hover:text-black dark:hover:text-white flex items-center gap-1 transition-colors">
+                <Link href={getTenantPath('/replication')} className="text-sm font-bold text-gray-500 hover:text-black dark:hover:text-white flex items-center gap-1 transition-colors">
                     {(t as any).home?.viewMore || 'View More'} <ArrowRight size={14} />
                 </Link>
             </div>
@@ -774,6 +847,53 @@ export function HomeContent({ recentVideos, products }: HomeContentProps) {
               onSuccess={handleProductCreated} 
           />
         </Modal>
+
+        <Modal
+          isOpen={isDigitalHumanGuideOpen}
+          onClose={() => setIsDigitalHumanGuideOpen(false)}
+          title={t.characters?.emptyGuide?.badge || '数字人生成指引'}
+          maxWidth="max-w-6xl"
+        >
+          <CharacterEmptyGuide
+            copy={t.characters?.emptyGuide}
+            onCtaClick={handleDigitalHumanGuideContinue}
+          />
+        </Modal>
+
+        <Modal
+          isOpen={isDigitalHumanModalOpen}
+          onClose={() => setIsDigitalHumanModalOpen(false)}
+          title={
+            <span className="flex items-center gap-2 text-base font-semibold text-gray-900 dark:text-white">
+              <User className="w-5 h-5" />
+              {t.storyboard.digitalHuman}
+            </span>
+          }
+          maxWidth="max-w-6xl"
+        >
+          <DigitalHumanModal hideInternalTitle onClose={() => setIsDigitalHumanModalOpen(false)} />
+        </Modal>
+
+        {storyboardModalContext && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={() => setStoryboardModalContext(null)}
+          >
+            <div
+              className="w-full max-w-6xl bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden h-[85vh]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <StoryboardGenModal
+                onClose={() => setStoryboardModalContext(null)}
+                initialValues={
+                  storyboardModalContext === 'batch'
+                    ? { videoType: 'story' }
+                    : undefined
+                }
+              />
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

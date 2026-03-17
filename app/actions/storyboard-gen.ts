@@ -2,7 +2,9 @@
 'use server';
 
 import prisma from '@/lib/prisma';
-import { revalidatePath } from 'next/cache';
+import { emitStoryboardTaskDelete, emitStoryboardTaskUpsert } from '@/lib/storyboardEvents';
+import { normalizeStoryboardSegments } from '@/lib/storyboardTime';
+import { requireEnv } from '@/lib/env';
 
 export async function generateStoryboardGrid(formData: FormData) {
   const imageUrl = formData.get('imageUrl') as string;
@@ -27,19 +29,21 @@ export async function generateStoryboardGrid(formData: FormData) {
       videoType: videoType,
     } as any
   });
+  emitStoryboardTaskUpsert(task);
 
   // Update taskId with the generated ID (or keep them same)
   // Since we added taskId as unique, we can just use the ID as taskId for simplicity
-  await prisma.storyboardTask.update({
+  const syncedTask = await prisma.storyboardTask.update({
     where: { id: task.id },
     data: { taskId: task.id }
   });
+  emitStoryboardTaskUpsert(syncedTask);
 
   // revalidatePath('/storyboard-gen'); // Removed to avoid lock issues, frontend polls instead
 
   // Call N8N Webhook
   try {
-    const webhookUrl = process.env.N8N_STORYBOARD_GEN_WEBHOOK!;
+    const webhookUrl = requireEnv('N8N_STORYBOARD_GEN_WEBHOOK');
     const payload = {
       script,
       imageUrl,
@@ -64,20 +68,22 @@ export async function generateStoryboardGrid(formData: FormData) {
         console.error('N8N Webhook failed:', response.status, errorText);
         
         // Optional: Update task to FAILED
-        await prisma.storyboardTask.update({
+        const failedTask = await prisma.storyboardTask.update({
             where: { id: task.id },
             data: { status: 'FAILED' } as any
         });
+        emitStoryboardTaskUpsert(failedTask);
         throw new Error(`Failed to start generation workflow: ${response.status} ${errorText}`);
     }
     
     console.log('N8N Webhook success');
   } catch (error) {
     console.error('Error calling N8N:', error);
-    await prisma.storyboardTask.update({
+    const failedTask = await prisma.storyboardTask.update({
         where: { id: task.id },
         data: { status: 'FAILED' } as any
     });
+    emitStoryboardTaskUpsert(failedTask);
     throw error;
   }
 
@@ -134,13 +140,28 @@ export async function breakdownStoryboardGrid(formData: FormData) {
         videoPrompt: `Camera pans over scene ${i + 1}, high quality, 4k`,
         status: 'PENDING',
         // We use the grid image as placeholder for now, or you could slice it
-        generatedImage: gridImageUrl 
+        generatedImage: gridImageUrl,
+        generatedVideo: '',
     }));
 
+    const normalizedSegments = normalizeStoryboardSegments(segments);
+
     await prisma.storyboardSegment.createMany({
-        data: segments as any // Type casting for quick proto
+        data: normalizedSegments.map((segment) => ({
+          taskId: segment.taskId,
+          order: segment.order,
+          duration: segment.duration,
+          timeRange: segment.timeRange,
+          imagePrompt: segment.imagePrompt,
+          videoPrompt: segment.videoPrompt,
+          generatedImage: segment.generatedImage,
+          generatedVideo: segment.generatedVideo,
+          status: segment.status,
+        })) as any // Type casting for quick proto
     });
   }
+
+  emitStoryboardTaskUpsert(task);
 
   // revalidatePath('/storyboard');
   // revalidatePath('/storyboard-gen');
@@ -152,8 +173,7 @@ export async function deleteStoryboardTask(taskId: string) {
     await prisma.storyboardTask.delete({
       where: { id: taskId }
     });
-    revalidatePath('/storyboard-gen');
-    revalidatePath('/storyboard');
+    emitStoryboardTaskDelete(taskId);
     return { success: true };
   } catch (error) {
     console.error('Error deleting task:', error);
@@ -170,8 +190,7 @@ export async function deleteStoryboardTasks(taskIds: string[]) {
         }
       }
     });
-    revalidatePath('/storyboard-gen');
-    revalidatePath('/storyboard');
+    taskIds.forEach((id) => emitStoryboardTaskDelete(id));
     return { success: true };
   } catch (error) {
     console.error('Error deleting tasks:', error);

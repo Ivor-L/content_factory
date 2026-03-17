@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- Upload preview needs direct <img> for blob URLs */
+
 import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -164,7 +166,7 @@ export default function UploadPage() {
             </div>
           )}
 
-          <img src={publicUrl} className="w-full rounded border" />
+          <img src={publicUrl} alt="Uploaded asset preview" className="w-full rounded border" />
         </div>
       )}
     </div>

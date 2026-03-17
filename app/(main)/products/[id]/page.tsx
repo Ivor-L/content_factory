@@ -1,5 +1,7 @@
 'use client';
 
+/* eslint-disable @next/next/no-img-element -- Detailed product previews display arbitrary Supabase media */
+
 import { useLanguage } from '@/contexts/LanguageContext';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';

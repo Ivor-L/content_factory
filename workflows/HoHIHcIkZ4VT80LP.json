@@ -268,10 +268,10 @@
             "message": "Veo Task Failed: failed",
             "context": {
               "record_id": "recvbMOT3VlRE3",
-              "app_token": "OzchbMB9UanOdqscNqZctxwpnsg",
+              "app_token": "",
               "table_id": "tbliQocoTq3f4U8g",
-              "tenant_access_token": "t-g1042lejEX4UPMWBAOXZ4C43JO5RT4TQTXVTNLIP",
-              "api_key": "sk_S-XJvpVKGGwnac1AlEFs3avCWZpqdOGaMMW27Y8iSPY",
+              "tenant_access_token": "",
+              "api_key": "",
               "workflow_id_for_credits": "flow_video_Veo3.1_fast"
             }
           },

@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 interface ScriptStatusPollerProps {
   scriptId: string;
@@ -12,6 +14,7 @@ interface ScriptStatusPollerProps {
 
 export default function ScriptStatusPoller({ scriptId, initialStatus, initialProgress = 0 }: ScriptStatusPollerProps) {
   const router = useRouter();
+  const { t } = useLanguage();
   const [status, setStatus] = useState(initialStatus);
   const [progress, setProgress] = useState(initialProgress);
 
@@ -48,16 +51,9 @@ export default function ScriptStatusPoller({ scriptId, initialStatus, initialPro
     return null;
   }
 
+  const statusMessages = t.scripts?.statusMessages || {};
   const getStatusText = (s: string) => {
-    switch (s) {
-      case "queued": return "Waiting in queue...";
-      case "extracting": return "Extracting audio/video...";
-      case "downloading": return "Downloading video...";
-      case "analyzing": return "Analyzing content (this may take a minute)...";
-      case "parsing": return "Parsing results...";
-      case "failed": return "Analysis failed.";
-      default: return "Processing...";
-    }
+    return statusMessages[s as keyof typeof statusMessages] || statusMessages.processing || "Processing...";
   };
   
   // Calculate progress bar width based on status if progress is not provided by backend
@@ -79,25 +75,45 @@ export default function ScriptStatusPoller({ scriptId, initialStatus, initialPro
   const currentProgress = getEstimatedProgress();
 
   return (
-    <div className="flex flex-col items-center justify-center py-20 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 text-gray-500">
-      <div className="animate-pulse flex flex-col items-center w-full max-w-md px-4">
-        {status === "failed" ? (
-             <span className="text-4xl mb-4">❌</span>
-        ) : (
-            <Loader2 className="h-10 w-10 animate-spin text-blue-500 mb-4" />
-        )}
-        <p className="font-medium text-lg text-gray-700">{getStatusText(status)}</p>
-        
-        <div className="w-full bg-gray-200 rounded-full h-2.5 mt-4 mb-2">
-          <div 
-            className={`bg-blue-600 h-2.5 rounded-full transition-all duration-500 ease-out ${status === 'failed' ? 'bg-red-500' : ''}`} 
-            style={{ width: `${currentProgress}%` }}
-          ></div>
+    <div className="w-full h-full flex items-center justify-center py-16 px-6">
+      <div className="relative w-full max-w-md">
+        <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-white/70 via-white/50 to-white/20 dark:from-gray-900/80 dark:via-gray-900/60 dark:to-gray-900/30 blur-xl"></div>
+        <div className="relative rounded-3xl border border-white/80 dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 backdrop-blur-xl shadow-2xl px-8 py-10 flex flex-col items-center gap-6 text-center">
+          <div className={`w-16 h-16 rounded-2xl border ${status === 'failed' ? 'border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-950/30' : 'border-primary/30 bg-primary-soft dark:border-primary/20 dark:bg-primary/15'} flex items-center justify-center`}>
+            {status === "failed" ? (
+              <span className="text-2xl">❌</span>
+            ) : (
+              <Loader2 className="h-6 w-6 text-primary animate-spin" />
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-lg font-semibold text-gray-900 dark:text-white">{getStatusText(status)}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{statusMessages.progressNote || "AI is processing your video script."}</p>
+          </div>
+
+          <div className="w-full text-left space-y-2">
+            <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              <span>{statusMessages.progressLabel || "Progress"}</span>
+              <span>{currentProgress}%</span>
+            </div>
+            <div className="h-2.5 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden">
+              <div
+                className={cn(
+                  "h-full rounded-full transition-all duration-500 ease-out",
+                  status === "failed"
+                    ? "bg-gradient-to-r from-red-400 to-red-600"
+                    : "bg-gradient-to-r from-primary via-primary-active to-primary"
+                )}
+                style={{ width: `${currentProgress}%` }}
+              />
+            </div>
+          </div>
+
+          <p className="text-xs text-gray-400 dark:text-gray-500">
+            {statusMessages.ctaLocked || "Please wait for the analysis to complete before launching a clone task."}
+          </p>
         </div>
-        <p className="text-sm opacity-70 flex justify-between w-full">
-            <span>AI is processing your video script.</span>
-            <span>{currentProgress}%</span>
-        </p>
       </div>
     </div>
   );

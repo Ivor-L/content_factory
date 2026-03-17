@@ -13,12 +13,15 @@
 export interface TenantFeature {
   products: boolean;
   scripts: boolean;
+  contentCreation: boolean;
   replication: boolean;
   replicationShots: boolean;
   storyboard: boolean;
   storyboardGen: boolean;
   digitalHuman: boolean;
+  knowledgeVideos: boolean;
   characters: boolean;
+  assetLibrary: boolean;
   myVideos: boolean;
   upload: boolean;
   settings: boolean;
@@ -35,6 +38,7 @@ export interface TenantConfig {
   slug: string;
   name: string;
   logo?: string;
+  browserLogo?: string;
   primaryColor?: string;
   features: TenantFeature;
   navItems: TenantNavItem[];
@@ -46,30 +50,32 @@ export const tenants: Record<string, TenantConfig> = {
     slug: 'crossborder',
     name: 'AtomX',
     logo: '/logo-full.svg',
-    primaryColor: '#007AFF',
+    primaryColor: '#FCD34D',
     features: {
       dashboard: true,
       products: true,
       scripts: true,
+      contentCreation: true,
       replication: true,
-      replicationShots: true,
+      replicationShots: false,
       storyboard: true,
       storyboardGen: true,
       digitalHuman: true,
+      knowledgeVideos: false,
       characters: true,
+      assetLibrary: true,
       myVideos: true,
       upload: true,
       settings: true,
     },
-    navItems: [
+      navItems: [
       { label: '首页', href: '/dashboard', icon: 'Home' },
       { label: '产品库', href: '/products', icon: 'Package' },
       { label: '脚本库', href: '/scripts', icon: 'FileText' },
+      { label: '内容创作', href: '/content', icon: 'PenSquare' },
       { label: '爆款复刻', href: '/replication', icon: 'Video' },
       { label: '故事板', href: '/storyboard', icon: 'Clapperboard' },
-      { label: '故事板成片', href: '/storyboard-gen', icon: 'LayoutGrid' },
-      { label: '数字人', href: '/digital-human', icon: 'User' },
-      { label: '我的视频', href: '/my-videos', icon: 'History' },
+      { label: '我的作品', href: '/my-videos', icon: 'History' },
       { label: '素材上传', href: '/upload', icon: 'Upload' },
       { label: '设置', href: '/settings', icon: 'Settings' },
     ],
@@ -85,23 +91,26 @@ export const tenants: Record<string, TenantConfig> = {
       dashboard: true,
       products: true,
       scripts: true,
+      contentCreation: true,
       replication: true,
-      replicationShots: true,
+      replicationShots: false,
       storyboard: false,
       storyboardGen: false,
       digitalHuman: true,
+      knowledgeVideos: false,
       characters: true,
+      assetLibrary: true,
       myVideos: true,
       upload: true,
       settings: true,
     },
-    navItems: [
+      navItems: [
       { label: '首页', href: '/dashboard', icon: 'Home' },
       { label: '产品库', href: '/products', icon: 'Package' },
       { label: '脚本库', href: '/scripts', icon: 'FileText' },
+      { label: '内容创作', href: '/content', icon: 'PenSquare' },
       { label: '爆款复刻', href: '/replication', icon: 'Video' },
-      { label: '数字人', href: '/digital-human', icon: 'User' },
-      { label: '我的视频', href: '/my-videos', icon: 'History' },
+      { label: '我的作品', href: '/my-videos', icon: 'History' },
       { label: '素材上传', href: '/upload', icon: 'Upload' },
       { label: '设置', href: '/settings', icon: 'Settings' },
     ],
@@ -117,25 +126,27 @@ export const tenants: Record<string, TenantConfig> = {
       dashboard: true,
       products: true,
       scripts: true,
+      contentCreation: true,
       replication: true,
-      replicationShots: true,
+      replicationShots: false,
       storyboard: true,
       storyboardGen: true,
       digitalHuman: true,
+      knowledgeVideos: false,
       characters: true,
+      assetLibrary: true,
       myVideos: true,
       upload: true,
       settings: true,
     },
-    navItems: [
+      navItems: [
       { label: '首页', href: '/dashboard', icon: 'Home' },
       { label: '产品库', href: '/products', icon: 'Package' },
       { label: '脚本库', href: '/scripts', icon: 'FileText' },
+      { label: '内容创作', href: '/content', icon: 'PenSquare' },
       { label: '爆款复刻', href: '/replication', icon: 'Video' },
       { label: '故事板', href: '/storyboard', icon: 'Clapperboard' },
-      { label: '故事板成片', href: '/storyboard-gen', icon: 'LayoutGrid' },
-      { label: '数字人', href: '/digital-human', icon: 'User' },
-      { label: '我的视频', href: '/my-videos', icon: 'History' },
+      { label: '我的作品', href: '/my-videos', icon: 'History' },
       { label: '素材上传', href: '/upload', icon: 'Upload' },
       { label: '设置', href: '/settings', icon: 'Settings' },
     ],
@@ -151,25 +162,64 @@ export const tenants: Record<string, TenantConfig> = {
       dashboard: true,
       products: true,
       scripts: true,
+      contentCreation: true,
       replication: true,
-      replicationShots: true,
+      replicationShots: false,
       storyboard: true,
       storyboardGen: true,
       digitalHuman: true,
+      knowledgeVideos: false,
       characters: true,
+      assetLibrary: true,
       myVideos: true,
       upload: true,
       settings: true,
     },
-    navItems: [
+      navItems: [
       { label: '首页', href: '/dashboard', icon: 'Home' },
       { label: '产品库', href: '/products', icon: 'Package' },
       { label: '脚本库', href: '/scripts', icon: 'FileText' },
+      { label: '内容创作', href: '/content', icon: 'PenSquare' },
       { label: '爆款复刻', href: '/replication', icon: 'Video' },
       { label: '故事板', href: '/storyboard', icon: 'Clapperboard' },
-      { label: '故事板成片', href: '/storyboard-gen', icon: 'LayoutGrid' },
-      { label: '数字人', href: '/digital-human', icon: 'User' },
-      { label: '我的视频', href: '/my-videos', icon: 'History' },
+      { label: '我的作品', href: '/my-videos', icon: 'History' },
+      { label: '素材上传', href: '/upload', icon: 'Upload' },
+      { label: '设置', href: '/settings', icon: 'Settings' },
+    ],
+  },
+
+  // 租户 5：聚保盆
+  jubaopen: {
+    slug: 'jubaopen',
+    name: '聚保盆',
+    logo: '/logo/jubaopen.svg',
+    browserLogo: '/logo/jubaopeng_logo.svg',
+    primaryColor: '#333333',
+    features: {
+      dashboard: true,
+      products: true,
+      scripts: true,
+      contentCreation: true,
+      replication: true,
+      replicationShots: false,
+      storyboard: true,
+      storyboardGen: true,
+      digitalHuman: true,
+      knowledgeVideos: false,
+      characters: true,
+      assetLibrary: true,
+      myVideos: true,
+      upload: true,
+      settings: true,
+    },
+      navItems: [
+      { label: '首页', href: '/dashboard', icon: 'Home' },
+      { label: '产品库', href: '/products', icon: 'Package' },
+      { label: '脚本库', href: '/scripts', icon: 'FileText' },
+      { label: '内容创作', href: '/content', icon: 'PenSquare' },
+      { label: '爆款复刻', href: '/replication', icon: 'Video' },
+      { label: '故事板', href: '/storyboard', icon: 'Clapperboard' },
+      { label: '我的作品', href: '/my-videos', icon: 'History' },
       { label: '素材上传', href: '/upload', icon: 'Upload' },
       { label: '设置', href: '/settings', icon: 'Settings' },
     ],

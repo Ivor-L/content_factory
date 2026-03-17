@@ -1,5 +1,6 @@
-
 'use client';
+
+/* eslint-disable @next/next/no-img-element -- Storyboard generation modal shows remote grid snapshots */
 
 import { useState, useEffect } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -12,9 +13,16 @@ import { supabase } from '@/lib/supabase';
 
 interface StoryboardGenModalProps {
   onClose: () => void;
+  onTaskCreated?: (taskId: string) => Promise<void> | void;
+  initialValues?: {
+    script?: string;
+    imageUrl?: string;
+    aspectRatio?: '9:16' | '16:9';
+    videoType?: 'ugc' | 'product' | 'story';
+  } | null;
 }
 
-export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
+export function StoryboardGenModal({ onClose, initialValues, onTaskCreated }: StoryboardGenModalProps) {
   const { t } = useLanguage();
   const router = useRouter();
   
@@ -34,20 +42,30 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
     });
   }, []);
 
-  const [script, setScript] = useState('');
+  const [script, setScript] = useState(initialValues?.script || '');
   const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imageUrl, setImageUrl] = useState('');
+  const [imageUrl, setImageUrl] = useState(initialValues?.imageUrl || '');
   const [uploading, setUploading] = useState(false);
-  const [aspectRatio, setAspectRatio] = useState<'9:16' | '16:9'>('9:16');
-  const [videoType, setVideoType] = useState<'ugc' | 'product' | 'story'>('ugc');
+  const [aspectRatio, setAspectRatio] = useState<'9:16' | '16:9'>(initialValues?.aspectRatio || '9:16');
+  const [videoType, setVideoType] = useState<'ugc' | 'product' | 'story'>(initialValues?.videoType || 'ugc');
   const [isDragging, setIsDragging] = useState(false);
   
   // Mock Result
   const [gridResultUrl, setGridResultUrl] = useState('');
   const [taskId, setTaskId] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Timer
   const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    if (initialValues) {
+      if (initialValues.script) setScript(initialValues.script);
+      if (initialValues.imageUrl) setImageUrl(initialValues.imageUrl);
+      if (initialValues.aspectRatio) setAspectRatio(initialValues.aspectRatio);
+      if (initialValues.videoType) setVideoType(initialValues.videoType);
+    }
+  }, [initialValues]);
 
   useEffect(() => {
     if (step === 'generating') {
@@ -115,15 +133,13 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
   };
 
   const handleGenerate = async () => {
+    if (isSubmitting) return;
     if (!imageUrl) return toast.error(getText('pleaseUploadImage', 'Please upload an image'));
     if (!script) return toast.error(getText('pleaseWriteScript', 'Please write a script'));
 
+    setIsSubmitting(true);
     setStep('generating');
     setProgress(0);
-
-    // Optimistic close: Close modal immediately
-    onClose();
-    toast.success(getText('taskStarted', 'Task started successfully! Check the list for progress.'));
 
     try {
       const formData = new FormData();
@@ -132,16 +148,29 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
       formData.append('aspectRatio', aspectRatio);
       formData.append('videoType', videoType);
       if (userId) formData.append('userId', userId);
-      
-      // Call server action in background
-      generateStoryboardGrid(formData).catch(error => {
-        console.error("Background generation failed:", error);
-        toast.error(getText('generationFailed', 'Generation failed in background'));
-      });
-      
+
+      const result = await generateStoryboardGrid(formData);
+      const createdTaskId = result?.taskId;
+      if (!createdTaskId) {
+        throw new Error('Missing storyboard task id');
+      }
+      setTaskId(createdTaskId);
+
+      if (onTaskCreated) {
+        await onTaskCreated(createdTaskId);
+      } else {
+        router.refresh();
+      }
+
+      toast.success(getText('taskStarted', 'Task started successfully! Check the list for progress.'));
+      onClose();
     } catch (error) {
       console.error(error);
       toast.error(getText('generationFailed', 'Generation failed'));
+      setStep('input');
+      setProgress(0);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -204,7 +233,7 @@ export function StoryboardGenModal({ onClose }: StoryboardGenModalProps) {
                         className={cn(
                             "flex flex-col items-center justify-center w-full h-48 border-2 border-dashed rounded-lg cursor-pointer transition-colors",
                             isDragging 
-                                ? "bg-blue-50 dark:bg-blue-900/20 border-blue-500 dark:border-blue-400" 
+                                ? "bg-primary-soft dark:bg-primary/15 border-primary dark:border-primary" 
                                 : "bg-gray-50 dark:bg-gray-800 border-gray-300 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-750"
                         )}
                         onDragOver={handleDragOver}

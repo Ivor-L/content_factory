@@ -3,25 +3,21 @@ FROM node:20-alpine AS base
 # Replace default apk mirror to speed up installs in CN network
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 
-# Install dependencies only when needed
-FROM base AS deps
-# Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine to understand why libc6-compat might be needed.
+# Rebuild the source code only when needed
+FROM base AS builder
+WORKDIR /app
+
 # better-sqlite3 需要 python3/g++/make 才能在 alpine 上编译
 RUN apk add --no-cache libc6-compat python3 make g++
-WORKDIR /app
 
 # Install dependencies based on the preferred package manager
 COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* ./
 RUN \
-  if [ -f yarn.lock ]; then yarn --frozen-lockfile --registry=https://registry.npmmirror.com; \
-  elif [ -f package-lock.json ]; then npm ci --registry=https://registry.npmmirror.com; \
-  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm i --frozen-lockfile --registry=https://registry.npmmirror.com; \
+  if [ -f yarn.lock ]; then yarn install --frozen-lockfile --production --registry=https://registry.npmmirror.com; \
+  elif [ -f package-lock.json ]; then npm ci --omit=dev --registry=https://registry.npmmirror.com; \
+  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm i --frozen-lockfile --prod --registry=https://registry.npmmirror.com; \
   else echo "Lockfile not found." && exit 1; fi
 
-# Rebuild the source code only when needed
-FROM base AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Next.js collects completely anonymous telemetry data about general usage.
@@ -35,6 +31,7 @@ ARG DIRECT_URL
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
 ARG NEXT_PUBLIC_APP_URL
+ARG SUPABASE_SERVICE_ROLE_KEY
 
 # Make build arguments available as environment variables during build
 ENV DATABASE_URL=$DATABASE_URL
@@ -42,6 +39,7 @@ ENV DIRECT_URL=$DIRECT_URL
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
+ENV SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY
 
 # Generate Prisma Client
 RUN npx prisma generate
@@ -82,6 +80,9 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 # Copy prisma directory for database file persistence and migrations
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+# Provide a JS Prisma config so CLI can resolve DATABASE_URL at runtime
+RUN printf 'module.exports = { schema: "prisma/schema.prisma", datasource: { url: process.env.DATABASE_URL } };' > prisma.config.js
+RUN rm -f prisma.config.ts
 
 # Copy entrypoint script
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./

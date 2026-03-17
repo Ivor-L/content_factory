@@ -1,9 +1,9 @@
 #!/bin/sh
 set -e
 
-# Run migrations
-echo "Running database migrations..."
-prisma migrate deploy
+# Push schema to match database (no migration history in prod)
+echo "Pushing database schema..."
+npx prisma db push --accept-data-loss
 
 # Start the application
 echo "Starting application..."

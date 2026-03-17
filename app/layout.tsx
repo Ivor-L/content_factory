@@ -15,7 +15,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="zh-CN" suppressHydrationWarning>
-      <body className="h-screen bg-[#F6F7F9] dark:bg-black transition-colors duration-300" suppressHydrationWarning={true}>
+      <body
+        className="min-h-screen bg-[radial-gradient(circle_at_top,_var(--theme-primary-muted),_#f7f5ef)] dark:bg-[#05060b] text-gray-900 dark:text-gray-100 transition-colors duration-300"
+        suppressHydrationWarning={true}
+      >
         <Providers>
           {children}
           <Toaster position="top-center" />

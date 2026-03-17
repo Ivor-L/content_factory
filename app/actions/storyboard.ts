@@ -1,11 +1,116 @@
 'use server'
 
 import prisma from '@/lib/prisma';
-import { revalidatePath } from 'next/cache';
+import { emitStoryboardTaskUpsert } from '@/lib/storyboardEvents';
+import { normalizeStoryboardSegments } from '@/lib/storyboardTime';
+import { Prisma } from '@prisma/client';
 
 const STORYBOARD_WORKFLOW_ID = 'flow_storyboard';
 const STORYBOARD_WORKFLOW_NAME = 'Storyboard Video';
 const DEFAULT_REFERENCE_IMAGE = 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=1000&auto=format&fit=crop';
+
+export interface ManualStoryboardSegmentInput {
+  prompt: string;
+  firstFrameUrl?: string;
+  lastFrameUrl?: string;
+  duration?: number;
+  timeRange?: string;
+}
+
+export interface ManualStoryboardPayload {
+  title?: string;
+  description?: string;
+  userId?: string | null;
+  segments: ManualStoryboardSegmentInput[];
+}
+
+type StructuredShot = {
+  index: number;
+  prompt: string;
+  firstFrameUrl?: string | null;
+  lastFrameUrl?: string | null;
+};
+
+export async function createManualStoryboardTask(payload: ManualStoryboardPayload) {
+  const sanitizedSegments = (payload.segments || [])
+    .map((segment, index) => {
+      const prompt = (segment.prompt || '').trim();
+      const firstFrameUrl = segment.firstFrameUrl?.trim() || '';
+      const lastFrameUrl = segment.lastFrameUrl?.trim() || '';
+      return {
+        order: index,
+        prompt,
+        firstFrameUrl: firstFrameUrl || null,
+        lastFrameUrl: lastFrameUrl || null,
+        duration: segment.duration ?? 8,
+        timeRange: segment.timeRange?.trim() || '',
+      };
+    })
+    .filter((segment) => segment.prompt || segment.firstFrameUrl || segment.lastFrameUrl);
+
+  if (!sanitizedSegments.length) {
+    throw new Error('至少需要填写 1 条分镜信息。');
+  }
+
+  const title = payload.title?.trim();
+  const description = payload.description?.trim();
+  const coverImage = sanitizedSegments.find((segment) => segment.firstFrameUrl)?.firstFrameUrl || null;
+  const storyboardImages = sanitizedSegments
+    .map((segment) => segment.firstFrameUrl)
+    .filter((url): url is string => Boolean(url));
+
+  const structuredShots: StructuredShot[] = sanitizedSegments.map((segment, index) => ({
+    index: index + 1,
+    prompt: segment.prompt,
+    firstFrameUrl: segment.firstFrameUrl,
+    lastFrameUrl: segment.lastFrameUrl,
+  }));
+
+  const scriptSections: string[] = [];
+  if (title) scriptSections.push(title);
+  if (description) scriptSections.push(description);
+  scriptSections.push(
+    sanitizedSegments
+      .map(
+        (segment, index) =>
+          `Shot ${index + 1}: ${segment.prompt || 'N/A'}`
+      )
+      .join('\n')
+  );
+
+  const task = await prisma.storyboardTask.create({
+    data: {
+      status: 'COMPLETED',
+      coverImage,
+      sceneImage: coverImage,
+      referenceImage: coverImage,
+      scriptContent: scriptSections.filter(Boolean).join('\n\n') || 'Manual storyboard task',
+      storyboardStructure: structuredShots as Prisma.InputJsonValue,
+      storyboardImages: storyboardImages.length ? (storyboardImages as Prisma.InputJsonValue) : undefined,
+      userId: payload.userId || undefined,
+      progress: 100,
+    } as any,
+  });
+  emitStoryboardTaskUpsert(task);
+
+  const normalizedSegments = normalizeStoryboardSegments(sanitizedSegments);
+
+  await prisma.storyboardSegment.createMany({
+    data: normalizedSegments.map((segment) => ({
+      taskId: task.id,
+      order: segment.order,
+      duration: segment.duration,
+      timeRange: segment.timeRange,
+      imagePrompt: segment.prompt,
+      videoPrompt: segment.prompt,
+      generatedImage: segment.firstFrameUrl,
+      generatedVideo: segment.lastFrameUrl,
+      status: 'COMPLETED',
+    })),
+  });
+
+  return { success: true, taskId: task.id };
+}
 
 export async function createStoryboardTask(formData: FormData) {
   const productId = formData.get('productId') as string;
@@ -65,11 +170,13 @@ export async function createStoryboardTask(formData: FormData) {
       referenceImage,
     } as any,
   });
+  emitStoryboardTaskUpsert(task);
 
-  await prisma.storyboardTask.update({
+  const syncedTask = await prisma.storyboardTask.update({
     where: { id: task.id },
     data: { taskId: task.id },
   });
+  emitStoryboardTaskUpsert(syncedTask);
 
   const payload: Record<string, any> = {
     taskId: task.id,
@@ -108,14 +215,14 @@ export async function createStoryboardTask(formData: FormData) {
       throw new Error(`n8n generation failed: ${response.status} ${errorText}`);
     }
   } catch (error) {
-    await prisma.storyboardTask.update({
+    const failedTask = await prisma.storyboardTask.update({
       where: { id: task.id },
       data: { status: 'FAILED' },
     });
+    emitStoryboardTaskUpsert(failedTask);
     throw error;
   }
 
-  revalidatePath('/storyboard');
   return { success: true, taskId: task.id };
 }
 

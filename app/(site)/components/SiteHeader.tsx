@@ -1,9 +1,13 @@
 'use client';
 
+/* eslint-disable @next/next/no-img-element -- Marketing header needs raw SVG logo for tenant overrides */
+
 import Link from 'next/link';
-import { useState, useEffect } from 'react';
-import { Menu, X, Globe } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Globe, Menu, X } from 'lucide-react';
+
 import { siteContent } from '../content';
+import { useTenant, useTenantPath } from '@/hooks/useTenant';
 
 interface SiteHeaderProps {
   lang: 'en' | 'zh';
@@ -12,91 +16,173 @@ interface SiteHeaderProps {
 
 export function SiteHeader({ lang, setLang }: SiteHeaderProps) {
   const [isScrolled, setIsScrolled] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const t = siteContent[lang].nav;
+  const { tenant } = useTenant();
+  const isNextideTenant = tenant.slug === 'nextide';
+  const brandLogo = isNextideTenant ? '/logo/nextide_logo.svg' : tenant.logo || '/logo.svg';
+  const brandName = tenant.name || 'PolyWhale Studio';
+  const homePath = useTenantPath('/');
+  const dashboardPath = useTenantPath('/dashboard');
+  const openClawPath = useTenantPath('/openclaw');
+  const shouldUseWhiteLogo = isNextideTenant && !isScrolled;
+  const brandLogoStyle = shouldUseWhiteLogo ? { filter: 'brightness(0) invert(1)' } : undefined;
+  const brandLogoClass = `${
+    isNextideTenant ? 'h-[54px] md:h-[64px]' : 'h-[28px] md:h-[32px]'
+  } object-contain transition duration-300`;
 
   useEffect(() => {
-    const handleScroll = () => {
-      setIsScrolled(window.scrollY > 20);
-    };
+    const handleScroll = () => setIsScrolled(window.scrollY > 48);
+    handleScroll();
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  const handleAnchorClick = (href: string) => {
+    if (typeof document === 'undefined') return;
+    const target = document.querySelector<HTMLElement>(href);
+    if (!target) return;
+
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', href);
+    }
+  };
+
+  const navAnchors = [
+    { href: '#hero', label: t.hero },
+    { href: '#director', label: t.director },
+    { href: '#workflow', label: t.workflow },
+    { href: '#templates', label: t.templates },
+    { href: '#pricing', label: t.pricing },
+    { href: '#download', label: t.download }
+  ];
+
+  const navLinkClass = isScrolled
+    ? 'text-sm font-medium text-gray-700 hover:text-[var(--tenant-primary-strong)] dark:text-gray-200 dark:hover:text-[var(--tenant-primary)] transition-colors'
+    : 'text-sm font-medium text-white/80 hover:text-[var(--tenant-primary)] transition-colors';
+
+  const languageClass = isScrolled
+    ? 'text-gray-600 hover:text-[var(--tenant-primary-strong)] dark:text-gray-300 dark:hover:text-[var(--tenant-primary)]'
+    : 'text-white/70 hover:text-[var(--tenant-primary)]';
+
+  const primaryButtonClass = 'px-5 py-2 rounded-full bg-[var(--tenant-primary)] text-[var(--tenant-primary-foreground)] font-semibold shadow-theme-glow hover:-translate-y-0.5 transition-transform';
+
   return (
-    <header 
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        isScrolled ? 'bg-white/80 dark:bg-black/80 backdrop-blur-md border-b border-gray-100 dark:border-gray-800 py-0.5' : 'bg-transparent py-0.5'
+    <header
+      className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
+        isScrolled
+          ? 'bg-white/85 dark:bg-black/75 backdrop-blur-xl border-b border-[var(--tenant-primary-muted)]'
+          : 'bg-transparent'
       }`}
     >
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between">
-        {/* Logo */}
-        <Link href="/" className="flex items-center z-50">
-          <img src="/logo.svg" alt="AtomX Logo" className="h-20" />
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-2 sm:px-6 lg:px-8">
+        <Link href={homePath} className="relative z-50 flex items-center gap-3">
+          <img
+            src={brandLogo}
+            alt={`${brandName} logo`}
+            className={brandLogoClass}
+            style={brandLogoStyle}
+          />
+          {!isNextideTenant && (
+            <span
+              className={`hidden text-lg font-semibold tracking-tight md:inline ${
+                isScrolled ? 'text-gray-900 dark:text-white' : 'text-white'
+              }`}
+            >
+              {brandName}
+            </span>
+          )}
         </Link>
 
-        {/* Desktop Nav */}
-        <nav className="hidden md:flex items-center gap-8">
-          <a href="#features" className="text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white transition-colors">
-            {t.features}
-          </a>
-          <a href="#showcase" className="text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white transition-colors">
-            {t.showcase}
-          </a>
-          <a href="#pricing" className="text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white transition-colors">
-            {t.pricing}
-          </a>
+        <nav className="hidden items-center gap-8 md:flex">
+          {navAnchors.map((item) => (
+            <a
+              key={item.href}
+              href={item.href}
+              className={navLinkClass}
+              onClick={(event) => {
+                event.preventDefault();
+                handleAnchorClick(item.href);
+              }}
+            >
+              {item.label}
+            </a>
+          ))}
+          <Link href={openClawPath} className={navLinkClass}>
+            {t.openclaw}
+          </Link>
         </nav>
 
-        {/* Actions */}
-        <div className="hidden md:flex items-center gap-4">
-          <button 
+        <div className="hidden items-center gap-4 md:flex">
+          <button
             onClick={() => setLang(lang === 'en' ? 'zh' : 'en')}
-            className="flex items-center gap-1 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white transition-colors"
+            className={`flex items-center gap-1 text-sm font-medium transition-colors ${languageClass}`}
           >
             <Globe size={16} />
-            {lang === 'en' ? 'CN' : 'EN'}
+            {lang === 'en' ? '中文' : 'EN'}
           </button>
-          
-          <Link 
-            href="/dashboard"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-5 py-2.5 bg-black dark:bg-white text-white dark:text-black text-sm font-bold rounded-full hover:scale-105 transition-transform"
-          >
+
+          <Link href={dashboardPath} target="_blank" rel="noopener noreferrer" className={primaryButtonClass}>
             {t.dashboard}
           </Link>
         </div>
 
-        {/* Mobile Menu Button */}
-        <button 
-          className="md:hidden z-50 text-gray-900 dark:text-white"
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+        <button
+          type="button"
+          onClick={() => setMobileOpen((prev) => !prev)}
+          className={`relative z-50 md:hidden ${
+            isScrolled ? 'text-gray-900 dark:text-white' : 'text-white'
+          }`}
+          aria-label="Toggle navigation"
         >
-          {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+          {mobileOpen ? <X size={26} /> : <Menu size={26} />}
         </button>
-
-        {/* Mobile Menu */}
-        {mobileMenuOpen && (
-          <div className="fixed inset-0 bg-white dark:bg-black z-40 flex flex-col items-center justify-center space-y-8 animate-in fade-in slide-in-from-top-10 duration-200">
-            <a href="#features" onClick={() => setMobileMenuOpen(false)} className="text-2xl font-bold text-gray-900 dark:text-white">{t.features}</a>
-            <a href="#showcase" onClick={() => setMobileMenuOpen(false)} className="text-2xl font-bold text-gray-900 dark:text-white">{t.showcase}</a>
-            <a href="#pricing" onClick={() => setMobileMenuOpen(false)} className="text-2xl font-bold text-gray-900 dark:text-white">{t.pricing}</a>
-            <div className="w-16 h-px bg-gray-200 dark:bg-gray-800 my-4" />
-            <button onClick={() => { setLang(lang === 'en' ? 'zh' : 'en'); setMobileMenuOpen(false); }} className="text-lg font-medium text-gray-600 dark:text-gray-400">
-              Switch to {lang === 'en' ? '中文' : 'English'}
-            </button>
-            <Link 
-              href="/dashboard"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-8 py-4 bg-black dark:bg-white text-white dark:text-black text-lg font-bold rounded-full"
-            >
-              {t.dashboard}
-            </Link>
-          </div>
-        )}
       </div>
+
+      {mobileOpen && (
+        <div className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-8 bg-gradient-to-b from-[var(--tenant-primary-soft)] via-white to-white px-6 text-center dark:from-gray-900 dark:via-black dark:to-black">
+          {navAnchors.map((item) => (
+            <a
+              key={item.href}
+              href={item.href}
+              className="text-2xl font-semibold text-gray-900 transition-colors hover:text-primary dark:text-white"
+              onClick={(event) => {
+                event.preventDefault();
+                setMobileOpen(false);
+                handleAnchorClick(item.href);
+              }}
+            >
+              {item.label}
+            </a>
+          ))}
+          <Link
+            href={openClawPath}
+            className="text-2xl font-semibold text-gray-900 transition-colors hover:text-primary dark:text-white"
+            onClick={() => setMobileOpen(false)}
+          >
+            {t.openclaw}
+          </Link>
+          <button
+            onClick={() => {
+              setLang(lang === 'en' ? 'zh' : 'en');
+              setMobileOpen(false);
+            }}
+            className="text-lg font-medium text-gray-600 transition-colors hover:text-primary dark:text-gray-300 dark:hover:text-white"
+          >
+            {lang === 'en' ? '切换到中文' : 'Switch to English'}
+          </button>
+          <Link
+            href={dashboardPath}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-full bg-[var(--tenant-primary)] px-8 py-3 text-lg font-semibold text-[var(--tenant-primary-foreground)] transition-transform hover:-translate-y-0.5 shadow-theme-glow"
+            onClick={() => setMobileOpen(false)}
+          >
+            {t.dashboard}
+          </Link>
+        </div>
+      )}
     </header>
   );
 }

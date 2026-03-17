@@ -1,5 +1,7 @@
 'use client';
 
+/* eslint-disable @next/next/no-img-element -- Video card backgrounds leverage remote thumbnails */
+
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
@@ -33,7 +35,7 @@ export function VideoCard({ item, onSelect, selected, onClick, onDelete }: Video
       return item.result;
     }
     return null;
-  }, [item?.result]);
+  }, [item]);
   
   const promptPayload = useMemo(() => {
     const raw = resultData?.finalResult ?? resultData?.result ?? null;
@@ -306,7 +308,7 @@ export function VideoCard({ item, onSelect, selected, onClick, onDelete }: Video
           )}
           {onDelete && (
             <button
-              className="w-6 h-6 rounded-full border-2 border-transparent bg-white/80 text-red-500 hover:text-red-600 hover:border-red-500 dark:bg-gray-900/80 dark:text-red-300 dark:hover:text-red-200"
+              className="w-6 h-6 rounded-full border-2 border-transparent bg-white/80 text-red-500 hover:text-red-600 hover:border-red-500 dark:bg-gray-900/80 dark:text-red-300 dark:hover:text-red-200 flex items-center justify-center"
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete(item.id);

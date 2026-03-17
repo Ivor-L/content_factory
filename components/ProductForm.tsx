@@ -1,5 +1,7 @@
 'use client';
 
+/* eslint-disable @next/next/no-img-element -- Product form previews rely on temporary blob URLs */
+
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createProduct, createDraftProduct } from '@/app/(main)/products/actions';
@@ -220,7 +222,7 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
         <input
           type="text"
           required
-          className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="e.g. Wireless Headphones"
@@ -231,7 +233,7 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
       <div>
         <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">{t.products.sellingPoints}</label>
         <textarea
-            className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 h-32 focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 h-32 focus:ring-2 focus:ring-primary focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             value={sellingPoints.join('\n')}
             onChange={(e) => setSellingPoints(e.target.value.split('\n'))}
             placeholder={t.products.sellingPoints + "..."}
@@ -249,7 +251,7 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
             <div className="flex items-center justify-center w-full">
                 <label 
                     className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
-                        dragActive ? 'border-black dark:border-white bg-gray-50 dark:bg-gray-800' : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700'
+                        dragActive ? 'border-primary bg-primary-soft/60 dark:bg-primary/10' : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 hover:bg-primary-soft/50 dark:hover:bg-primary/10'
                     }`}
                     onDragEnter={handleDrag}
                     onDragLeave={handleDrag}

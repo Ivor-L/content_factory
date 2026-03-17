@@ -1,9 +1,12 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+/* eslint-disable @next/next/no-img-element -- Storyboard modal displays uploaded references without Next optimization */
+
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { toast } from 'react-hot-toast';
 import { getCaretCoordinates } from '@/lib/caret';
+import { normalizeStoryboardSegments } from '@/lib/storyboardTime';
 
 interface Product {
   id: string;
@@ -21,6 +24,7 @@ interface StoryboardSegment {
   id: string;
   order: number;
   duration: number;
+  timeRange?: string | null;
   imagePrompt: string | null;
   videoPrompt: string | null;
   generatedImage: string | null;
@@ -40,6 +44,14 @@ interface StoryboardTask {
   segments: StoryboardSegment[];
   createdAt: Date | string;
   updatedAt: Date | string;
+}
+
+const videoExtensions = ['.mp4', '.mov', '.webm', '.mkv', '.avi'];
+
+function isVideoSource(url?: string | null) {
+  if (!url) return false;
+  const normalized = url.split('?')[0]?.toLowerCase() || '';
+  return videoExtensions.some((ext) => normalized.endsWith(ext));
 }
 
 interface StoryboardModalProps {
@@ -68,17 +80,29 @@ export function StoryboardModal({ task: initialTask, isOpen, onClose, products =
       setSelectedSegmentId(initialTask.segments[0].id);
     }
     setTask(initialTask);
-  }, [initialTask]);
+  }, [initialTask, selectedSegmentId]);
 
-  if (!isOpen) return null;
+  const normalizedSegments = useMemo(
+    () => normalizeStoryboardSegments(task.segments || []),
+    [task.segments]
+  );
 
-  const currentSegment = task.segments.find(s => s.id === selectedSegmentId) || task.segments[0];
+  const currentSegment = useMemo(
+    () => normalizedSegments.find((segment) => segment.id === selectedSegmentId) || normalizedSegments[0],
+    [normalizedSegments, selectedSegmentId]
+  );
+
+  const secondPaneIsVideo = useMemo(
+    () => isVideoSource(currentSegment?.generatedVideo),
+    [currentSegment?.generatedVideo]
+  );
+
+  const secondPaneLabel = secondPaneIsVideo ? t.storyboard.videoSegment : t.storyboard.keyframe;
 
   useEffect(() => {
-    if (currentSegment) {
-      setImagePrompt(currentSegment.imagePrompt || '');
-    }
-  }, [currentSegment?.id]);
+    if (!isOpen || !currentSegment) return;
+    setImagePrompt(currentSegment.imagePrompt || '');
+  }, [isOpen, currentSegment]);
 
   const handleImagePromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
      const val = e.target.value;
@@ -140,14 +164,21 @@ export function StoryboardModal({ task: initialTask, isOpen, onClose, products =
   };
 
   useEffect(() => {
-      const handleClickOutside = (event: MouseEvent) => {
-          if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node) && !textareaRef.current?.contains(event.target as Node)) {
-              setShowMentions(false);
-          }
-      };
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    if (!isOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node) &&
+        !textareaRef.current?.contains(event.target as Node)
+      ) {
+        setShowMentions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  if (!isOpen) return null;
 
   const filteredProducts = products.filter(p => p.name.toLowerCase().includes(mentionQuery.toLowerCase()));
   const filteredCharacters = characters.filter(c => c.name.toLowerCase().includes(mentionQuery.toLowerCase()));
@@ -267,18 +298,24 @@ export function StoryboardModal({ task: initialTask, isOpen, onClose, products =
                             </div>
                         </div>
 
-                        {/* Video Preview */}
+                        {/* Video / Last Frame Preview */}
                         <div className="flex flex-col h-full items-center w-full max-w-[300px]">
                             <div className="text-sm font-medium text-gray-500 mb-2 flex items-center gap-2 w-full">
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-                                {t.storyboard.videoSegment}
+                                {secondPaneLabel}
                             </div>
                             <div className="w-full aspect-[9/16] bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden relative shadow-sm">
                                  {currentSegment?.generatedVideo ? (
-                                    <video src={currentSegment.generatedVideo} controls className="w-full h-full object-cover" />
+                                    secondPaneIsVideo ? (
+                                        <video src={currentSegment.generatedVideo} controls className="w-full h-full object-cover" />
+                                    ) : (
+                                        <img src={currentSegment.generatedVideo} alt="Last Frame" className="w-full h-full object-cover" />
+                                    )
                                 ) : (
                                     <div className="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
-                                        <span className="text-sm">{t.storyboard.videoNotGenerated}</span>
+                                        <span className="text-sm">
+                                          {secondPaneIsVideo ? t.storyboard.videoNotGenerated : t.storyboard.imageNotGenerated}
+                                        </span>
                                     </div>
                                 )}
                             </div>
@@ -394,7 +431,9 @@ export function StoryboardModal({ task: initialTask, isOpen, onClose, products =
                             <div className="flex justify-between items-start mb-1.5">
                                 <span className="font-bold text-sm text-gray-900 dark:text-white">{t.storyboard.shot} 1</span>
                                 <div className="flex items-center gap-2">
-                                    <span className="text-[10px] text-gray-400 font-mono">00:00 - 00:{currentSegment?.duration.toString().padStart(2, '0')}</span>
+                                    <span className="text-[10px] text-gray-400 font-mono">
+                                      {currentSegment?.timeRange || `00:00-00:${currentSegment?.duration.toString().padStart(2, '0')}`}
+                                    </span>
                                     <button className="text-gray-400 hover:text-red-500">
                                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                     </button>

@@ -1,12 +1,15 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- History thumbnails are remote URLs we display verbatim */
+
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { LayoutGrid, List, Trash2, Download, RefreshCw, PlayCircle, Loader2 } from "lucide-react";
+import { LayoutGrid, List, Trash2, Download, RefreshCw, PlayCircle, Loader2, History } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "react-hot-toast";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { EmptyState } from "@/components/EmptyState";
 
 interface ReplicationHistoryItem {
   id: string;
@@ -71,7 +74,11 @@ export default function ReplicationHistory({ initialHistory }: ReplicationHistor
   ];
 
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
-  const [history, setHistory] = useState(initialHistory.length > 0 ? initialHistory : MOCK_HISTORY);
+  const shouldUseMockHistory = process.env.NEXT_PUBLIC_ENABLE_MOCK_HISTORY === "true";
+  const initialHistoryState = initialHistory.length > 0
+    ? initialHistory
+    : (shouldUseMockHistory ? MOCK_HISTORY : []);
+  const [history, setHistory] = useState(initialHistoryState);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
@@ -155,10 +162,16 @@ export default function ReplicationHistory({ initialHistory }: ReplicationHistor
       {/* Content Area */}
       <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
         {history.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-gray-400 dark:text-gray-500">
-                <RefreshCw size={48} className="mb-4 opacity-20" />
-                <p>No replication history yet.</p>
-            </div>
+          <EmptyState
+            fullHeight
+            icon={<History className="h-6 w-6" />}
+            title={t.replication.historyEmpty.title}
+            description={t.replication.historyEmpty.description}
+            action={{
+              label: t.replication.historyEmpty.action,
+              href: "/",
+            }}
+          />
         ) : (
             <div className={cn(
                 "gap-6",

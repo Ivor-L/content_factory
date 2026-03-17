@@ -33,7 +33,7 @@ export default function ReplicationDetail({ replication }: ReplicationDetailProp
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Replication Result</h1>
-        <Link href="/replication" className="text-blue-600 hover:underline">
+        <Link href="/replication" className="text-primary hover:underline">
           Back to list
         </Link>
       </div>
@@ -69,7 +69,7 @@ export default function ReplicationDetail({ replication }: ReplicationDetailProp
 
         {replication.status === "pending" && (
           <div className="flex flex-col items-center justify-center py-12 space-y-4">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             <span className="text-gray-500">Generating content...</span>
           </div>
         )}

@@ -1,13 +1,18 @@
 'use client';
 
+/* eslint-disable @next/next/no-img-element -- Character avatars come from user uploads with unknown domains/sizes */
+
 import { useState } from 'react';
 import { Modal } from '@/components/Modal';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { CharacterForm } from '@/components/CharacterForm';
+import { AddButton } from '@/components/AddButton';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import { deleteCharacter } from './actions';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { EmptyState } from '@/components/EmptyState';
+import { CharacterEmptyGuide } from '@/components/characters/CharacterEmptyGuide';
 
 interface Character {
   id: string;
@@ -20,9 +25,15 @@ interface Character {
 
 interface CharacterListProps {
   initialCharacters: Character[];
+  showHeader?: boolean;
+  showEmptyGuide?: boolean;
 }
 
-export function CharacterList({ initialCharacters }: CharacterListProps) {
+export function CharacterList({
+  initialCharacters,
+  showHeader = true,
+  showEmptyGuide = true,
+}: CharacterListProps) {
   const router = useRouter();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
@@ -62,33 +73,44 @@ export function CharacterList({ initialCharacters }: CharacterListProps) {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 font-sans">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{t.characters.title}</h1>
-        <button
+    <div className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 ${showHeader ? "py-12" : "pt-2 pb-8"} font-sans`}>
+      <div className={`flex items-center ${showHeader ? "justify-between mb-8" : "justify-end mb-4"}`}>
+        {showHeader && (
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{t.characters.title}</h1>
+        )}
+        <AddButton
+          label={t.characters.newCharacter}
           onClick={() => {
             setEditingCharacter(null);
             setIsModalOpen(true);
           }}
-          className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-bold rounded-lg shadow-sm text-white dark:text-black bg-black dark:bg-white hover:bg-gray-900 dark:hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black dark:focus:ring-white transition-colors uppercase tracking-wide"
-        >
-          {t.characters.newCharacter}
-        </button>
+        />
       </div>
 
       {initialCharacters.length === 0 ? (
-        <div className="text-center py-20 text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
-          <p className="mb-4">{t.characters.noCharacters}</p>
-          <button 
-            onClick={() => {
+        showEmptyGuide ? (
+          <CharacterEmptyGuide
+            copy={t.characters.emptyGuide}
+            onCtaClick={() => {
+              setEditingCharacter(null);
+              setIsModalOpen(true);
+            }}
+          />
+        ) : (
+          <EmptyState
+            title={t.characters.noCharacters || '未找到角色'}
+            description={t.characters.createFirst || '创建您的第一个角色'}
+            action={{
+              label: t.characters.newCharacter,
+              onClick: () => {
                 setEditingCharacter(null);
                 setIsModalOpen(true);
+              },
             }}
-            className="text-blue-600 hover:text-blue-500 font-medium underline"
-          >
-            {t.characters.createFirst}
-          </button>
-        </div>
+            compact
+            className="bg-white dark:bg-gray-900"
+          />
+        )
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {initialCharacters.map((character) => (
@@ -123,7 +145,7 @@ export function CharacterList({ initialCharacters }: CharacterListProps) {
                   <div className="flex items-center gap-2">
                       <button
                           onClick={(e) => handleEdit(e, character)}
-                          className="text-gray-400 hover:text-blue-600 p-1 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded transition-colors"
+                          className="text-gray-400 hover:text-primary p-1 hover:bg-primary-soft dark:hover:bg-primary/10 rounded transition-colors"
                           title={t.common.edit}
                       >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 00 2 2h11a2 2 0 00 2-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>

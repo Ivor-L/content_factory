@@ -12,3 +12,6 @@ dev.log
 .DS_Store
 .env
 .env.*
+supabase/
+supabase-self-hosted/
+runs/

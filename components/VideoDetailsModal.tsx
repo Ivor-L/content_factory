@@ -1,12 +1,44 @@
 'use client';
 
+/* eslint-disable @next/next/no-img-element -- Video detail modal surfaces remote thumbnails */
+
 import { useLanguage } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
-import { Download, Share2, Check, ChevronDown, Calendar, Clock, Languages, Monitor, Maximize, Copy, AlertTriangle } from 'lucide-react';
+import { Download, Share2, Check, ChevronDown, Calendar, Clock, Languages, Monitor, Maximize, Copy, AlertTriangle, Globe } from 'lucide-react';
 import { deleteVideos } from "@/app/actions/video";
 import { useRouter } from "next/navigation";
 import { toast } from "react-hot-toast";
 import { useMemo, useState } from "react";
+
+const COUNTRY_LABELS: Record<string, string> = {
+  us: 'United States',
+  uk: 'United Kingdom',
+  ca: 'Canada',
+  au: 'Australia',
+  de: 'Germany',
+  fr: 'France',
+  es: 'Spain',
+  it: 'Italy',
+  jp: 'Japan',
+  kr: 'South Korea',
+  cn: 'China',
+  in: 'India',
+  br: 'Brazil',
+  mx: 'Mexico',
+  ru: 'Russia',
+};
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  en: 'English',
+  zh: 'Chinese',
+  es: 'Spanish',
+  ru: 'Russian',
+  fr: 'French',
+  de: 'German',
+  jp: 'Japanese',
+  ko: 'Korean',
+  pt: 'Portuguese',
+};
 
 interface VideoDetailsModalProps {
   item: any;
@@ -66,21 +98,54 @@ export function VideoDetailsModal({ item, onClose }: VideoDetailsModalProps) {
   const statusLabel = isCompleted ? t.replication.completed : isFailed ? t.common.error : t.replication.processing;
   const StatusIcon = isCompleted ? Check : isFailed ? AlertTriangle : Clock;
 
-  // Mock data filling if missing
-  const model = resultData?.model || (isDigitalHuman ? "Digital Human" : "Veo3.1 Fast");
+  const inputParams = useMemo(() => {
+    if (!item?.inputParams) return null;
+    if (typeof item.inputParams === 'string') {
+      try {
+        return JSON.parse(item.inputParams);
+      } catch (error) {
+        console.warn('Failed to parse inputParams JSON', error);
+        return null;
+      }
+    }
+    return item.inputParams;
+  }, [item?.inputParams]);
+  const productSnapshot = inputParams?.productSnapshot;
+  const scriptSnapshot = inputParams?.scriptSnapshot;
+
   const ratio = resultData?.ratio || "9:16";
-  const duration = resultData?.duration || "8s";
-  const language = resultData?.language || "EN";
+  const language =
+    (inputParams?.targetLanguage && LANGUAGE_LABELS[inputParams.targetLanguage.toLowerCase()]?.toUpperCase()) ||
+    (resultData?.language || "EN");
   const credits = resultData?.credits || (isDigitalHuman ? "10" : "20");
   const createdAt = new Date(item.createdAt).toLocaleDateString();
+  const targetCountryLabel =
+    inputParams?.targetCountry ? COUNTRY_LABELS[inputParams.targetCountry.toLowerCase()] || inputParams.targetCountry.toUpperCase() : null;
+  const quantity = inputParams?.quantity || "1";
+  const displayedProductName = productSnapshot?.name || product.name || t.replication.selectProduct;
+  const displayedScriptTitle = scriptSnapshot?.title || script.title || t.replication.selectScript;
   
+  const parsedBreakdown = useMemo(() => {
+    const raw = scriptSnapshot?.breakdown || script.breakdown;
+    if (!raw) return null;
+    try {
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return Array.isArray(parsed) ? parsed : null;
+    } catch (error) {
+      console.warn('Failed to parse script breakdown', error);
+      return null;
+    }
+  }, [scriptSnapshot?.breakdown, script.breakdown]);
+
+  const firstScene = parsedBreakdown?.[0] || null;
+
   const scene1Text = isDigitalHuman 
     ? (item.scriptContent || "No script content.") 
-    : (script.breakdown ? JSON.parse(script.breakdown)[0]?.visual || "Scene 1 visual description..." : "No script breakdown available.");
+    : (firstScene?.visual || "No script breakdown available.");
   
   const spokenText = isDigitalHuman 
     ? (item.scriptContent || "No audio script.") 
-    : (script.breakdown ? JSON.parse(script.breakdown)[0]?.audio || "No audio script available." : "No script audio available.");
+    : (firstScene?.audio || "No script audio available.");
     
   const promptText = isDigitalHuman
     ? (item.type === 'LIP_SYNC' ? "Lip Sync from audio" : "Voice Clone from text")
@@ -192,27 +257,41 @@ export function VideoDetailsModal({ item, onClose }: VideoDetailsModalProps) {
                   <>
                     <div>
                       <div className="flex items-center gap-2 text-gray-400 text-[10px] uppercase font-bold mb-1">
-                        <Monitor size={12} /> {t.replication.videoModel}
-                      </div>
-                      <div className="font-bold text-gray-900 dark:text-white text-sm">{model}</div>
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 text-gray-400 text-[10px] uppercase font-bold mb-1">
                         <Maximize size={12} /> {t.replication.ratio}
                       </div>
                       <div className="font-bold text-gray-900 dark:text-white text-sm">{ratio}</div>
                     </div>
                     <div>
                       <div className="flex items-center gap-2 text-gray-400 text-[10px] uppercase font-bold mb-1">
-                        <Clock size={12} /> {t.replication.duration}
+                        {t.products.title}
                       </div>
-                      <div className="font-bold text-gray-900 dark:text-white text-sm">{duration}</div>
+                      <div className="font-bold text-gray-900 dark:text-white text-sm">{displayedProductName}</div>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 text-gray-400 text-[10px] uppercase font-bold mb-1">
+                        {t.scripts.title}
+                      </div>
+                      <div className="font-bold text-gray-900 dark:text-white text-sm">{displayedScriptTitle}</div>
                     </div>
                     <div>
                       <div className="flex items-center gap-2 text-gray-400 text-[10px] uppercase font-bold mb-1">
                         <Languages size={12} /> {t.replication.language}
                       </div>
                       <div className="font-bold text-gray-900 dark:text-white text-sm">{language}</div>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 text-gray-400 text-[10px] uppercase font-bold mb-1">
+                        <Globe size={12} /> {t.replication.targetCountry || 'Country'}
+                      </div>
+                      <div className="font-bold text-gray-900 dark:text-white text-sm">
+                        {targetCountryLabel || '--'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 text-gray-400 text-[10px] uppercase font-bold mb-1">
+                        {t.replication.quantity}
+                      </div>
+                      <div className="font-bold text-gray-900 dark:text-white text-sm">{quantity}</div>
                     </div>
                   </>
                 )}
@@ -325,7 +404,7 @@ export function VideoDetailsModal({ item, onClose }: VideoDetailsModalProps) {
                         <Monitor size={12} /> {t.replication.scene} 1
                       </div>
                       <div className="bg-white dark:bg-gray-900 p-4 rounded-xl border border-gray-100 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-300 italic relative">
-                        <span className="absolute top-2 left-2 text-gray-300 text-2xl font-serif">"</span>
+                        <span className="absolute top-2 left-2 text-gray-300 text-2xl font-serif">&quot;</span>
                         <p className="pl-4">{spokenText}</p>
                       </div>
                     </div>

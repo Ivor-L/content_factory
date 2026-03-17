@@ -1,0 +1,7 @@
+{
+  "name": "数字人素材库",
+  "description": "管理数字人形象与音色，支持上传和录音",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

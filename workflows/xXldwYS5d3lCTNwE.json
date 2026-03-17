@@ -725,7 +725,7 @@
           "body": {
             "script_id": "cmmfyg24g0005um8o7niofl8x",
             "video_url": "https://supabase-api.atomx.top/storage/v1/object/public/temp_uploads/1772865667208_video_redhutclea_20260108071701_7592886294427077910__1_.mp4",
-            "api_key": "sk_S-XJvpVKGGwnac1AlEFs3avCWZpqdOGaMMW27Y8iSPY",
+            "api_key": "",
             "workflow_id": "flow_script_dna"
           },
           "webhookUrl": "http://localhost:5678/webhook/script_extract_web",

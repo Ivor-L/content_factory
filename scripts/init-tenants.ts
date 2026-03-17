@@ -11,24 +11,74 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+type TenantRecord = {
+  id: string;
+  name: string;
+  slug: string;
+  logo: string | null;
+  primaryColor: string | null;
+};
+
+type TenantUpsertArgs = {
+  where: { slug: string };
+  update: Record<string, never>;
+  create: {
+    name: string;
+    slug: string;
+    logo: string | null;
+    primaryColor: string;
+  };
+};
+
+type TenantUserRecord = {
+  userId: string;
+  tenantId: string;
+  role: string;
+};
+
+type TenantUserFindUniqueArgs = {
+  where: {
+    userId_tenantId: {
+      userId: string;
+      tenantId: string;
+    };
+  };
+};
+
+type TenantUserCreateArgs = {
+  data: TenantUserRecord;
+};
+
+type LegacyPrismaClient = PrismaClient & {
+  tenant: {
+    upsert(args: TenantUpsertArgs): Promise<TenantRecord>;
+  };
+  tenant_user: {
+    findUnique(args: TenantUserFindUniqueArgs): Promise<TenantUserRecord | null>;
+    create(args: TenantUserCreateArgs): Promise<TenantUserRecord>;
+  };
+};
+
+const legacyPrisma = prisma as unknown as LegacyPrismaClient;
+
 async function main() {
   console.log('开始初始化租户数据...');
 
   // 创建租户 1: 跨境出海 (crossborder)
-  const crossborder = await prisma.tenant.upsert({
+  const crossborder = await legacyPrisma.tenant.upsert({
     where: { slug: 'crossborder' },
     update: {},
     create: {
       name: 'AtomX',
       slug: 'crossborder',
       logo: null, // TODO: 提供 Logo
-      primaryColor: '#007AFF',
+      primaryColor: '#FCD34D',
     },
   });
   console.log(`创建租户: ${crossborder.name} (${crossborder.slug})`);
 
   // 创建租户 2: 保险 (insurance)
-  const insurance = await prisma.tenant.upsert({
+  const insurance = await legacyPrisma.tenant.upsert({
     where: { slug: 'insurance' },
     update: {},
     create: {
@@ -40,8 +90,21 @@ async function main() {
   });
   console.log(`创建租户: ${insurance.name} (${insurance.slug})`);
 
-  // 创建租户 3: 企业版 (enterprise)
-  const enterprise = await prisma.tenant.upsert({
+  // 创建租户 3: 聚保盆 (jubaopen)
+  const jubaopen = await legacyPrisma.tenant.upsert({
+    where: { slug: 'jubaopen' },
+    update: {},
+    create: {
+      name: '聚保盆',
+      slug: 'jubaopen',
+      logo: '/logo/jubaopen.svg',
+      primaryColor: '#333333',
+    },
+  });
+  console.log(`创建租户: ${jubaopen.name} (${jubaopen.slug})`);
+
+  // 创建租户 4: 企业版 (enterprise)
+  const enterprise = await legacyPrisma.tenant.upsert({
     where: { slug: 'enterprise' },
     update: {},
     create: {
@@ -61,7 +124,7 @@ async function main() {
 
   // 为每个用户关联默认租户 (crossborder)
   for (const user of users) {
-    const existing = await prisma.tenant_user.findUnique({
+    const existing = await legacyPrisma.tenant_user.findUnique({
       where: {
         userId_tenantId: {
           userId: user.id,
@@ -71,7 +134,7 @@ async function main() {
     });
 
     if (!existing) {
-      await prisma.tenant_user.create({
+      await legacyPrisma.tenant_user.create({
         data: {
           userId: user.id,
           tenantId: crossborder.id,

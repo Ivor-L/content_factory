@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
+import { getApiKeyForUser } from "@/lib/authServer";
+import { deductCredits } from "@/lib/credits";
+import { parseMetadata } from "@/lib/creativeTaskService";
+import { setTaskActionStatus } from "@/lib/creativeTaskUtils";
 
 type ResultEntry = {
   fileUrl?: string;
@@ -10,6 +15,148 @@ type ResultEntry = {
   fileType?: string;
   type?: string;
 };
+
+const DEFAULT_WORKFLOW_ID = "flow_digital_human";
+const SHORT_VIDEO_THRESHOLD = 15;
+const DEFAULT_POINTS_API_BASE = "https://api.atomx.top";
+
+const POINTS_API_BASES = Array.from(
+  new Set(
+    [process.env.POINTS_API_BASE, DEFAULT_POINTS_API_BASE]
+      .filter(
+        (value): value is string =>
+          typeof value === "string" && value.trim().length > 0
+      )
+      .map((value) => value.trim().replace(/\/$/, ""))
+  )
+);
+
+type WorkflowCreditMeta = {
+  workflow_id?: string;
+  workflow_name?: string;
+  credit_cost?: number;
+};
+
+const normalizeWorkflowId = (value: unknown): string => {
+  if (value === undefined || value === null) return "";
+  const normalized = String(value).trim();
+  return normalized ? normalized.toLowerCase() : "";
+};
+
+const resolveWorkflowIdForCredits = (
+  payload: Record<string, unknown>,
+  taskWorkflowId?: string | null,
+  taskDurationSeconds?: number | null
+): string => {
+  const fromPayload = normalizeWorkflowId(
+    payload.workflow_id ?? payload.workflowId ?? payload.flow
+  );
+  if (fromPayload) return fromPayload;
+  if (taskWorkflowId) return normalizeWorkflowId(taskWorkflowId);
+  if (
+    typeof taskDurationSeconds === "number" &&
+    taskDurationSeconds > 0 &&
+    taskDurationSeconds <= SHORT_VIDEO_THRESHOLD
+  ) {
+    return "flow_digital_human16s";
+  }
+  return DEFAULT_WORKFLOW_ID;
+};
+
+async function fetchWorkflowCreditMeta(
+  workflowId: string
+): Promise<WorkflowCreditMeta | null> {
+  for (const base of POINTS_API_BASES) {
+    try {
+      const url = `${base}/workflow-credits/query?workflow_id=${encodeURIComponent(
+        workflowId
+      )}`;
+      const response = await fetch(url, {
+        method: "GET",
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        continue;
+      }
+      const parsed = await response.json();
+      const payload =
+        (parsed && typeof parsed === "object" && "data" in parsed
+          ? (parsed as Record<string, unknown>).data
+          : parsed) ?? {};
+      if (payload && typeof payload === "object") {
+        const payloadRecord = payload as Record<string, unknown>;
+        const creditCost = Number(
+          payloadRecord.credit_cost ?? payloadRecord.creditCost
+        );
+        const resolvedWorkflowId =
+          payloadRecord.workflow_id ??
+          payloadRecord.workflowId ??
+          workflowId;
+        const resolvedWorkflowName =
+          payloadRecord.workflow_name ??
+          payloadRecord.workflowName ??
+          "Digital Human";
+
+        return {
+          workflow_id:
+            resolvedWorkflowId !== undefined && resolvedWorkflowId !== null
+              ? String(resolvedWorkflowId)
+              : workflowId,
+          workflow_name:
+            resolvedWorkflowName !== undefined &&
+            resolvedWorkflowName !== null
+              ? String(resolvedWorkflowName)
+              : "Digital Human",
+          credit_cost: Number.isFinite(creditCost) ? creditCost : undefined,
+        };
+      }
+    } catch (error) {
+      console.error("Failed to fetch workflow credit meta", {
+        workflowId,
+        base,
+        error,
+      });
+    }
+  }
+  return null;
+}
+
+async function deductCreditsForDigitalHuman(
+  userId: string | null,
+  workflowId: string
+) {
+  let apiKey: string | null = null;
+  if (userId) {
+    apiKey = await getApiKeyForUser(userId);
+  }
+  if (!apiKey && process.env.DEFAULT_USER_API_KEY) {
+    apiKey = process.env.DEFAULT_USER_API_KEY;
+  }
+  if (!apiKey) {
+    console.error("Skipping credit deduction: missing apiKey", {
+      workflowId,
+      userId,
+    });
+    return;
+  }
+
+  const workflowMeta = await fetchWorkflowCreditMeta(workflowId);
+  const creditCost = workflowMeta?.credit_cost;
+  if (!creditCost || creditCost <= 0) {
+    console.error("Skipping credit deduction: invalid credit cost", {
+      workflowId,
+      workflowMeta,
+    });
+    return;
+  }
+
+  await deductCredits(apiKey, {
+    amount: creditCost,
+    workflowId: workflowMeta.workflow_id ?? workflowId,
+    workflowName: workflowMeta.workflow_name ?? "Digital Human",
+    reason: "digital_human",
+  });
+}
 
 const toArray = (source: unknown): ResultEntry[] => {
   if (!source) return [];
@@ -97,6 +244,15 @@ export async function POST(request: Request) {
       console.error(`Digital Human task not found: ${taskId}`);
       return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
+    const normalizedPayload: Record<string, unknown> =
+      payload && typeof payload === "object"
+        ? (payload as Record<string, unknown>)
+        : {};
+    const workflowIdForCredits = resolveWorkflowIdForCredits(
+      normalizedPayload,
+      task.workflowId,
+      task.durationSeconds
+    );
 
     let updateStatus = "COMPLETED";
     let videoUrl: string | null = null;
@@ -177,6 +333,9 @@ export async function POST(request: Request) {
       );
     }
 
+    const shouldDeductCredits =
+      updateStatus === "COMPLETED" && task.status !== "COMPLETED";
+
     await prisma.digitalHumanVideo.update({
       where: { id: taskId },
       data: {
@@ -184,6 +343,52 @@ export async function POST(request: Request) {
         resultUrl: videoUrl || task.resultUrl,
       },
     });
+
+    if (task.sourceTaskId) {
+      const creativeTask = await prisma.creativeTask.findUnique({
+        where: { id: task.sourceTaskId },
+        select: { id: true, metadata: true },
+      });
+      if (creativeTask) {
+        try {
+          const nextMetadata = setTaskActionStatus(
+            parseMetadata(creativeTask.metadata),
+            "digitalHuman",
+            {
+              status: updateStatus === "COMPLETED" ? "ready" : "error",
+              jobId: task.id,
+              error:
+                updateStatus === "COMPLETED"
+                  ? undefined
+                  : (payload.error as string | undefined) ??
+                    (body.error as string | undefined) ??
+                    undefined,
+            }
+          );
+          await prisma.creativeTask.update({
+            where: { id: creativeTask.id },
+            data: { metadata: nextMetadata as Prisma.InputJsonValue },
+          });
+        } catch (metaError) {
+          console.error("Failed to sync digital human status to creative task", {
+            creativeTaskId: creativeTask.id,
+            metaError,
+          });
+        }
+      }
+    }
+
+    if (shouldDeductCredits) {
+      try {
+        await deductCreditsForDigitalHuman(task.userId, workflowIdForCredits);
+      } catch (error) {
+        console.error("Failed to deduct credits for digital human task", {
+          taskId,
+          workflowId: workflowIdForCredits,
+          error,
+        });
+      }
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

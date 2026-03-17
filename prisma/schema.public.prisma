@@ -1,0 +1,402 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters", "multiSchema", "partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["public"]
+}
+model Character {
+  id                   String                @id @default(cuid())
+  name                 String
+  avatar               String
+  voiceId              String?               @map("voice_id")
+  userId               String?               @map("user_id") @db.Uuid
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+  storyboardTasks      StoryboardTask[]
+  replicationShotTasks ReplicationShotTask[]
+
+  @@map("characters")
+  @@schema("public")
+}
+
+model Product {
+  id                   String                @id @default(cuid())
+  name                 String
+  description          String
+  sellingPoints        String                @map("selling_points")
+  sellingPointsText    String?               @map("selling_points_text")
+  images               String
+  analysisResult       String?               @map("analysis_result")
+  status               String                @default("PENDING")
+  progress             Int                   @default(0)
+  userId               String?               @map("user_id") @db.Uuid
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+  replications         Replication[]
+  storyboardTasks      StoryboardTask[]
+  replicationShotTasks ReplicationShotTask[]
+
+  @@map("products")
+  @@schema("public")
+}
+
+model Replication {
+  id          String   @id @default(cuid())
+  status      String
+  result      String
+  type        String   @default("FULL")
+  productId   String?  @map("product_id")
+  scriptId    String?  @map("script_id")
+  inputParams Json?    @default("{}") @map("input_params")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  product     Product? @relation(fields: [productId], references: [id])
+  script      Script?  @relation(fields: [scriptId], references: [id])
+
+  @@map("replications")
+  @@schema("public")
+}
+
+model Script {
+  id                   String                @id @default(cuid())
+  title                String
+  videoUrl             String                @map("video_url")
+  breakdown            String
+  blueprint            String?               @db.Text // New field for JSON analysis result
+  status               String                @default("PENDING")
+  progress             Int                   @default(0)
+  error                String? // New field for error messages
+  userId               String?               @map("user_id") @db.Uuid
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+  replications         Replication[]
+  replicationShotTasks ReplicationShotTask[]
+
+  @@map("scripts")
+  @@schema("public")
+}
+
+model HistoryDoc {
+  id             String                   @id @default(uuid()) @db.Uuid
+  userId         String?                  @map("user_id") @db.Uuid
+  channel        String?
+  title          String
+  description    String?
+  sourceType     String?                  @map("source_type")
+  originalPath   String                   @map("original_path")
+  insightsPath   String?                  @map("insights_path")
+  status         String                   @default("PENDING")
+  metadata       Json?
+  voiceProfileId String?                  @map("voice_profile_id") @db.Uuid
+  createdAt      DateTime                 @default(now()) @map("created_at")
+  updatedAt      DateTime                 @updatedAt @map("updated_at")
+  voiceProfile   VoiceProfile?            @relation(fields: [voiceProfileId], references: [id])
+  taskLinks      CreativeTaskHistoryDoc[]
+
+  @@map("history_docs")
+  @@schema("public")
+}
+
+model VoiceProfile {
+  id            String         @id @default(uuid()) @db.Uuid
+  userId        String?        @map("user_id") @db.Uuid
+  channel       String?
+  name          String?
+  description   String?
+  profile       Json // structured tone & style definition
+  previewUrl    String?        @map("preview_url")
+  metadata      Json?
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  historyDocs   HistoryDoc[]
+  creativeTasks CreativeTask[]
+
+  @@map("voice_profiles")
+  @@schema("public")
+}
+
+model StoryAsset {
+  id          String              @id @default(uuid()) @db.Uuid
+  userId      String?             @map("user_id") @db.Uuid
+  title       String
+  summary     String?
+  channel     String?
+  tags        String[]
+  contentPath String?             @map("content_path")
+  structure   Json?
+  metadata    Json?
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+  taskLinks   CreativeTaskStory[]
+
+  @@map("story_assets")
+  @@schema("public")
+}
+
+model StylePreset {
+  id          String              @id @default(uuid()) @db.Uuid
+  userId      String?             @map("user_id") @db.Uuid
+  name        String
+  type        String
+  description String?
+  previewUrl  String?             @map("preview_url")
+  spec        Json // structured visual spec or prompt
+  metadata    Json?
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+  taskLinks   CreativeTaskStyle[]
+
+  @@map("style_presets")
+  @@schema("public")
+}
+
+model CreativeTask {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  userId             String?                  @map("user_id") @db.Uuid
+  title              String?
+  channel            String?
+  targetOutput       String?                  @map("target_output")
+  ideaText           String?                  @map("idea_text")
+  stage              String                   @default("diagnosis")
+  status             String                   @default("active")
+  goal               Json?
+  metadata           Json?
+  outlinePath        String?                  @map("outline_path")
+  draftPath          String?                  @map("draft_path")
+  artifacts          Json?
+  voiceProfileId     String?                  @map("voice_profile_id") @db.Uuid
+  createdAt          DateTime                 @default(now()) @map("created_at")
+  updatedAt          DateTime                 @updatedAt @map("updated_at")
+  voiceProfile       VoiceProfile?            @relation(fields: [voiceProfileId], references: [id])
+  historyDocs        CreativeTaskHistoryDoc[]
+  stories            CreativeTaskStory[]
+  styles             CreativeTaskStyle[]
+  events             CreativeEvent[]
+  posterJobs         XhsPosterJob[]
+  digitalHumanVideos DigitalHumanVideo[]
+  knowledgeVideos    KnowledgeVideoTask[]
+
+  @@map("creative_tasks")
+  @@schema("public")
+}
+
+model CreativeTaskHistoryDoc {
+  taskId       String       @map("task_id") @db.Uuid
+  historyDocId String       @map("history_doc_id") @db.Uuid
+  createdAt    DateTime     @default(now()) @map("created_at")
+  task         CreativeTask @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  historyDoc   HistoryDoc   @relation(fields: [historyDocId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([taskId, historyDocId])
+  @@map("creative_task_history_docs")
+  @@schema("public")
+}
+
+model CreativeTaskStory {
+  taskId    String       @map("task_id") @db.Uuid
+  storyId   String       @map("story_id") @db.Uuid
+  createdAt DateTime     @default(now()) @map("created_at")
+  task      CreativeTask @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  story     StoryAsset   @relation(fields: [storyId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([taskId, storyId])
+  @@map("creative_task_stories")
+  @@schema("public")
+}
+
+model CreativeTaskStyle {
+  taskId    String       @map("task_id") @db.Uuid
+  styleId   String       @map("style_id") @db.Uuid
+  createdAt DateTime     @default(now()) @map("created_at")
+  task      CreativeTask @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  style     StylePreset  @relation(fields: [styleId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([taskId, styleId])
+  @@map("creative_task_styles")
+  @@schema("public")
+}
+
+model CreativeEvent {
+  id        String       @id @default(uuid()) @db.Uuid
+  taskId    String       @map("task_id") @db.Uuid
+  type      String
+  payload   Json?
+  createdAt DateTime     @default(now()) @map("created_at")
+  task      CreativeTask @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@map("creative_events")
+  @@schema("public")
+}
+
+model StoryboardSegment {
+  id             String         @id @default(cuid())
+  order          Int
+  duration       Float          @default(8.0)
+  timeRange      String?        @map("time_range")
+  imagePrompt    String?        @map("image_prompt")
+  videoPrompt    String?        @map("video_prompt")
+  generatedImage String?        @map("generated_image")
+  generatedVideo String?        @map("generated_video")
+  status         String         @default("PENDING")
+  taskId         String         @map("task_id")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+  task           StoryboardTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("storyboard_segments")
+  @@schema("public")
+}
+
+model StoryboardTask {
+  id                  String              @id @default(cuid())
+  status              String              @default("ANALYZING")
+  videoUrl            String?             @map("video_url")
+  coverImage          String?             @map("cover_image")
+  productId           String?             @map("product_id")
+  characterId         String?             @map("character_id")
+  sceneImage          String?             @map("scene_image")
+  scenePrompt         String?             @map("scene_prompt")
+  scriptContent       String?             @map("script_content")
+  referenceImage      String?             @map("reference_image")
+  storyboardImageUrl  String?             @map("storyboard_image_url")
+  storyboardStructure Json?               @map("storyboard_structure")
+  storyboardImages    Json?               @map("storyboard_images")
+  timeline            Json?
+  progress            Int                 @default(0)
+  videoType           String?             @map("video_type")
+  taskId              String?             @map("task_id")
+  userId              String?             @map("user_id") @db.Uuid
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+  segments            StoryboardSegment[]
+  character           Character?          @relation(fields: [characterId], references: [id])
+  product             Product?            @relation(fields: [productId], references: [id])
+
+  @@unique([taskId], map: "storyboard_tasks_task_id_key")
+  @@map("storyboard_tasks")
+  @@schema("public")
+}
+
+model XhsPosterJob {
+  id             String           @id @default(uuid())
+  userId         String           @map("user_id") @db.Uuid
+  title          String?
+  copyText       String           @map("copy_text")
+  variationCount Int              @default(3) @map("variation_count")
+  styleId        String           @map("style_id")
+  styleName      String?          @map("style_name")
+  styleSnapshot  Json?            @map("style_snapshot")
+  status         String           @default("pending")
+  error          String?
+  sourceTaskId   String?          @map("source_task_id") @db.Uuid
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+  images         XhsPosterImage[]
+  sourceTask     CreativeTask?    @relation(fields: [sourceTaskId], references: [id])
+
+  @@map("xhs_poster_jobs")
+  @@schema("public")
+}
+
+model XhsPosterImage {
+  id          String       @id @default(uuid())
+  jobId       String       @map("job_id")
+  imageUrl    String       @map("image_url")
+  storagePath String       @map("storage_path")
+  prompt      String?
+  sortOrder   Int          @default(0) @map("sort_order")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  job         XhsPosterJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("xhs_poster_images")
+  @@schema("public")
+}
+
+model DigitalHumanVideo {
+  id              String        @id @default(cuid())
+  type            String
+  imageUrl        String        @map("image_url")
+  audioUrl        String        @map("audio_url")
+  scriptContent   String?       @map("script_content")
+  resultUrl       String?       @map("result_url")
+  status          String        @default("GENERATING")
+  userId          String?       @map("user_id") @db.Uuid
+  durationSeconds Float?        @map("duration_seconds")
+  workflowId      String?       @map("workflow_id")
+  sourceTaskId    String?       @map("source_task_id") @db.Uuid
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  sourceTask      CreativeTask? @relation(fields: [sourceTaskId], references: [id])
+
+  @@map("digital_human_videos")
+  @@schema("public")
+}
+
+model KnowledgeVideoTask {
+  id                  String        @id @default(cuid())
+  userId              String?       @map("user_id") @db.Uuid
+  title               String?
+  videoType           String        @map("video_type")
+  scriptContent       String?       @map("script_content")
+  audioUrl            String?       @map("audio_url")
+  audioDuration       Float?        @map("audio_duration")
+  themeKey            String?       @map("theme_key")
+  status              String        @default("QUEUED")
+  error               String?
+  videoUrl            String?       @map("video_url")
+  videoStoragePath    String?       @map("video_storage_path")
+  coverUrl            String?       @map("cover_url")
+  coverStoragePath    String?       @map("cover_storage_path")
+  durationSeconds     Float?        @map("duration_seconds")
+  timeline            Json?
+  metadata            Json?
+  renderStats         Json?         @map("render_stats")
+  remotionComposition String?       @map("remotion_composition")
+  remotionProps       Json?         @map("remotion_props")
+  sourceTaskId        String?       @map("source_task_id") @db.Uuid
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+  sourceTask          CreativeTask? @relation(fields: [sourceTaskId], references: [id])
+
+  @@map("knowledge_video_tasks")
+  @@schema("public")
+}
+
+model ReplicationShotTask {
+  id                   String     @id @default(cuid())
+  userId               String?    @map("user_id") @db.Uuid
+  scriptId             String     @map("script_id")
+  productId            String?    @map("product_id")
+  characterId          String?    @map("character_id")
+  sceneImageUrl        String?    @map("scene_image_url")
+  productSceneImageUrl String?    @map("product_scene_image_url")
+  shotPrompts          Json?      @map("shot_prompts")
+  firstFrames          Json?      @map("first_frames")
+  endFrameOptions      Json?      @map("end_frame_options")
+  videos               Json?
+  finalVideoUrl        String?    @map("final_video_url")
+  status               String     @default("PENDING")
+  createdAt            DateTime   @default(now()) @map("created_at")
+  updatedAt            DateTime   @updatedAt @map("updated_at")
+  script               Script     @relation(fields: [scriptId], references: [id], onDelete: Cascade)
+  product              Product?   @relation(fields: [productId], references: [id])
+  character            Character? @relation(fields: [characterId], references: [id])
+
+  @@map("replication_shot_tasks")
+  @@schema("public")
+}
+
+model profiles {
+  id         String    @id @db.Uuid
+  updated_at DateTime? @db.Timestamptz(6)
+  username   String?
+  full_name  String?
+  avatar_url String?
+  website    String?
+  api_key    String?
+
+  @@schema("public")
+}

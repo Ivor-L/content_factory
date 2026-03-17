@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createScript } from "@/app/(main)/scripts/actions";
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -19,11 +19,17 @@ interface ScriptFormProps {
 
 import { createClient } from '@supabase/supabase-js';
 
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY");
+}
+
+// Initialize Supabase client (auth only)
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+const UPLOAD_MODE_STORAGE_KEY = "script_form_upload_mode";
 
 export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
   const router = useRouter();
@@ -39,6 +45,21 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
   const [videoUrl, setVideoUrl] = useState(initialData?.videoUrl || '');
 
   const [dragActive, setDragActive] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const storedMode = window.localStorage.getItem(UPLOAD_MODE_STORAGE_KEY);
+    if (storedMode === "url" || storedMode === "file") {
+      setUploadMode(storedMode);
+    }
+  }, []);
+
+  const switchUploadMode = (mode: 'url' | 'file') => {
+    setUploadMode(mode);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(UPLOAD_MODE_STORAGE_KEY, mode);
+    }
+  };
 
 
   const handleDrag = (e: React.DragEvent) => {
@@ -92,34 +113,26 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
             return;
         }
         if (videoFile) {
-             // Upload to Supabase Storage
-             const toastId = toast.loading('Uploading video...');
+             const toastId = toast.loading(t.common.uploadingVideo || 'Uploading video...');
              try {
-                 const fileName = `${Date.now()}_${videoFile.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
-                 const { data, error: uploadError } = await supabase.storage
-                    .from('temp_uploads')
-                    .upload(fileName, videoFile, {
-                        cacheControl: '3600',
-                        upsert: false
-                    });
-                 
-                 if (uploadError) {
-                     // Check if bucket exists error
-                     if (uploadError.message.includes('bucket not found')) {
-                         throw new Error('Storage bucket not configured. Please contact admin.');
-                     }
-                     throw uploadError;
+                 const fileFormData = new FormData();
+                 fileFormData.append('file', videoFile);
+                 const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: fileFormData
+                 });
+
+                 if (!response.ok) {
+                    const errorPayload = await response.json().catch(() => ({}));
+                    throw new Error(errorPayload.error || (t.common.uploadFailed || 'Upload failed'));
                  }
 
-                 const { data: { publicUrl } } = supabase.storage
-                    .from('temp_uploads')
-                    .getPublicUrl(fileName);
-                 
-                 formData.append('videoUrl', publicUrl);
-                 toast.success('Upload complete', { id: toastId });
+                 const payload = await response.json();
+                 formData.append('videoUrl', payload.url);
+                 toast.success(t.common.uploadSuccess || 'Upload complete', { id: toastId });
              } catch (e: any) {
                  console.error('Upload failed:', e);
-                 toast.error(`Upload failed: ${e.message}`, { id: toastId });
+                 toast.error(`${t.common.uploadFailed || 'Upload failed'}: ${e.message}`, { id: toastId });
                  setLoading(false);
                  return;
              }
@@ -172,9 +185,11 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
 
       if (!res.ok) {
         console.error("Breakdown failed", await res.text());
-        toast.error("Script saved, but breakdown failed.");
+        toast.error(
+          t.scripts.toastPartial || "Script saved, but breakdown failed."
+        );
       } else {
-        toast.success(initialData ? "Script updated successfully!" : "Script created successfully!", {
+        toast.success(initialData ? (t.scripts.toastUpdated || "Script updated successfully!") : (t.scripts.toastCreated || "Script created successfully!"), {
             duration: 2000,
             icon: '✅',
             style: {
@@ -223,8 +238,8 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
             id="title"
             name="title"
             required
-            className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            placeholder="e.g., How to make coffee"
+            className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            placeholder={t.scripts.namePlaceholder || "e.g., How to make coffee"}
             value={title || ''}
             onChange={(e) => setTitle(e.target.value)}
           />
@@ -236,25 +251,25 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
           <div className="flex space-x-4 mb-4">
             <button
               type="button"
-              onClick={() => setUploadMode('url')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                uploadMode === 'url' 
-                  ? 'bg-black text-white dark:bg-white dark:text-black' 
-                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
-              }`}
-            >
-              {t.scripts.tiktokUrl}
-            </button>
-            <button
-              type="button"
-              onClick={() => setUploadMode('file')}
+              onClick={() => switchUploadMode('file')}
               className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
                 uploadMode === 'file' 
-                  ? 'bg-black text-white dark:bg-white dark:text-black' 
-                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                  ? 'bg-primary text-primary-foreground shadow-theme-glow' 
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-primary-soft/60'
               }`}
             >
               {t.scripts.uploadFile}
+            </button>
+            <button
+              type="button"
+              onClick={() => switchUploadMode('url')}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                uploadMode === 'url' 
+                  ? 'bg-primary text-primary-foreground shadow-theme-glow' 
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-primary-soft/60'
+              }`}
+            >
+              {t.scripts.tiktokUrl}
             </button>
           </div>
 
@@ -264,7 +279,7 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
                 type="url"
                 value={videoUrl || ''}
                 onChange={(e) => setVideoUrl(e.target.value)}
-                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 placeholder="https://www.tiktok.com/@user/video/..."
               />
               <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">{t.scripts.pasteUrl}</p>
@@ -273,7 +288,7 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
             <div 
               key="file-mode"
               className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
-                dragActive ? 'border-black dark:border-white bg-gray-50 dark:bg-gray-800' : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700'
+                dragActive ? 'border-primary bg-primary-soft/60' : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 hover:bg-primary-soft/60 dark:hover:bg-primary/10'
               }`}
               onDragEnter={handleDrag}
               onDragLeave={handleDrag}
@@ -322,7 +337,7 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-black text-white dark:bg-white dark:text-black py-3 rounded-lg hover:bg-gray-900 dark:hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold shadow-sm uppercase tracking-wide"
+            className="w-full bg-primary text-primary-foreground py-3 rounded-lg hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold shadow-theme-glow uppercase tracking-wide"
           >
             {loading ? t.common.loading : t.scripts.createAnalyze}
           </button>

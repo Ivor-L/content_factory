@@ -1,178 +1,198 @@
 'use client';
 
-import { useState } from 'react';
-import { Play, Check, Link as LinkIcon, ArrowRight, Loader2 } from 'lucide-react';
+import { FormEvent, useState } from 'react';
+import { ArrowRight, Download, Github, Video } from 'lucide-react';
+
 import { siteContent } from '../content';
-import { AnalysisModal } from './AnalysisModal';
-
-interface HeroVideoProps {
-  label: string;
-  videoSrc?: string;
-  poster?: string;
-}
-
-function HeroVideo({ label, videoSrc, poster }: HeroVideoProps) {
-  return (
-    <div className="relative w-[240px] aspect-[9/16] rounded-3xl overflow-hidden shadow-2xl border-4 border-white dark:border-gray-800 bg-gray-900">
-      {/* Label Badge */}
-      <div className={`absolute top-4 left-4 z-10 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider text-white ${
-        label.includes('VIRAL') || label.includes('爆款') ? 'bg-red-500' : 'bg-black'
-      }`}>
-        {label}
-      </div>
-
-      {/* Video Content */}
-      <div className="w-full h-full relative">
-        {videoSrc ? (
-          <video 
-            src={videoSrc}
-            poster={poster}
-            autoPlay 
-            muted 
-            loop 
-            playsInline
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <div className="w-full h-full bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center">
-            <Play className="text-white/20 w-12 h-12" />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 interface HeroProps {
   lang: 'en' | 'zh';
 }
 
 export function Hero({ lang }: HeroProps) {
-  const t = siteContent[lang].hero;
-  const [url, setUrl] = useState('');
-  const [showModal, setShowModal] = useState(false);
+  const content = siteContent[lang];
+  const hero = content.hero;
+  const promo = content.promoBanner;
+  const [idea, setIdea] = useState('');
+  const subtitleLines = hero.subtitle.split('\n');
 
-  const handleAnalyze = () => {
-    if (!url) return;
-    setShowModal(true);
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!idea) return;
+    // TODO: hook up to actual submission endpoint once backend is ready.
+    setIdea('');
   };
 
   return (
-    <section className="relative pt-24 pb-20 lg:pt-32 lg:pb-32 overflow-hidden">
-      {/* Background Gradients */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[600px] bg-gradient-to-b from-blue-50/50 to-transparent dark:from-blue-900/10 dark:to-transparent -z-10 pointer-events-none" />
-      
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-          
-          {/* Left: Content */}
-          <div className="text-left animate-in fade-in slide-in-from-bottom-8 duration-700">
-            {/* Badges */}
-            <div className="flex gap-3 mb-8">
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Kling 3.0 is live</span>
-              </div>
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Nano Banana 2 is live</span>
-              </div>
-            </div>
-
-            <h1 className="text-5xl md:text-6xl font-bold tracking-tight text-gray-900 dark:text-white mb-6 leading-[1.1]">
-              {t.title.split(' ').map((word, i) => (
-                word === 'Your' || word === 'Own' || word === '销量' ? 
-                <span key={i} className="relative inline-block mr-3">
-                  {word}
-                  <span className="absolute bottom-2 left-0 w-full h-3 bg-blue-500/20 -z-10" />
-                </span> : 
-                <span key={i} className="mr-3">{word}</span>
-              ))}
-            </h1>
-
-            <p className="text-xl text-gray-600 dark:text-gray-300 mb-10 max-w-xl leading-relaxed">
-              {t.subtitle}
-            </p>
-
-            {/* Checklist */}
-            <ul className="space-y-4 mb-10">
-              {t.features.map((feature, i) => (
-                <li key={i} className="flex items-start gap-3">
-                  <div className="mt-1 w-5 h-5 rounded-full bg-black/5 dark:bg-white/10 flex items-center justify-center shrink-0">
-                    <Check size={12} className="text-black dark:text-white" />
-                  </div>
-                  <span className="text-gray-600 dark:text-gray-300">{feature}</span>
-                </li>
-              ))}
-            </ul>
-
-            {/* Input & Action */}
-            <div className="flex flex-col sm:flex-row gap-3 max-w-xl">
-              <div className="flex-1 relative">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">
-                  <LinkIcon size={18} />
-                </div>
-                <input 
-                  type="text" 
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  placeholder={t.inputPlaceholder}
-                  className="w-full h-12 pl-11 pr-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-black dark:focus:ring-white outline-none transition-all"
-                />
-              </div>
-              <button 
-                onClick={handleAnalyze}
-                disabled={!url}
-                className="h-12 px-6 bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white font-bold rounded-xl hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+    <section
+      id="hero"
+      className="relative overflow-hidden bg-[#040410] text-white scroll-mt-32"
+    >
+      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top,_rgba(252,211,77,0.35),_transparent_55%)]" />
+      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_bottom,_rgba(245,158,11,0.25),_transparent_60%)]" />
+      <div className="max-w-6xl mx-auto grid grid-cols-1 gap-16 px-4 pb-24 pt-36 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:pb-28 lg:pt-40">
+        <div className="space-y-8">
+          {promo && (
+            <div className="inline-flex items-center gap-3 rounded-full border border-[var(--tenant-primary-muted)] bg-[var(--tenant-primary)]/10 px-4 py-2 text-sm backdrop-blur">
+              <span className="rounded-full bg-[var(--tenant-primary)]/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[var(--tenant-primary-foreground)]">
+                {promo.title}
+              </span>
+              <span className="text-white/90">{promo.message}</span>
+              <button
+                type="button"
+                className="rounded-full border border-[var(--tenant-primary)]/40 px-3 py-1 text-xs font-semibold text-white/80 transition hover:border-[var(--tenant-primary)] hover:text-white"
               >
-                {t.analyzeBtn}
-                <ArrowRight size={18} />
-              </button>
-              <button className="h-12 px-6 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors flex items-center justify-center">
-                {t.joinBtn}
+                {promo.cta}
               </button>
             </div>
+          )}
+
+          <div className="space-y-4">
+            <span className="inline-flex items-center gap-2 rounded-full bg-[var(--tenant-primary)]/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--tenant-primary-foreground)]">
+              ● {hero.eyebrow}
+            </span>
+            <h1 className="text-4xl font-bold leading-tight tracking-tight sm:text-5xl lg:text-[3.5rem]">
+              {hero.title}
+            </h1>
+            <p className="text-lg text-white/80 sm:text-xl">
+              {subtitleLines.map((line, index) => (
+                <span key={line + index}>
+                  {line}
+                  {index !== subtitleLines.length - 1 ? <br /> : null}
+                </span>
+              ))}
+            </p>
           </div>
 
-          {/* Right: Video Demo */}
-          <div className="flex justify-center lg:justify-end gap-6 animate-in fade-in slide-in-from-right-8 duration-1000 delay-200 relative">
-            {/* Background decoration */}
-            <div className="absolute inset-0 bg-gradient-to-tr from-blue-500/10 to-purple-500/10 rounded-[40px] -z-10 blur-3xl transform rotate-3 scale-110" />
-            
-            <HeroVideo 
-              label={t.viralLabel}
-              videoSrc="/videos/demo-viral.mp4" 
-            />
-            <HeroVideo 
-              label={t.cloneLabel}
-              videoSrc="/videos/demo-clone.mp4?v=2"
-            />
+          <p className="max-w-2xl text-base text-white/70 sm:text-lg">
+            {hero.description}
+          </p>
+
+          <form
+            onSubmit={handleSubmit}
+            className="flex w-full max-w-xl flex-col gap-3 sm:flex-row sm:items-center"
+          >
+            <div className="flex-1 rounded-2xl border border-[var(--tenant-primary-muted)] bg-white/5 px-5 py-3 backdrop-blur transition focus-within:border-[var(--tenant-primary)] focus-within:bg-[var(--tenant-primary)]/10">
+              <input
+                value={idea}
+                onChange={(event) => setIdea(event.target.value)}
+                placeholder={hero.inputPlaceholder}
+                className="w-full bg-transparent text-sm text-white/90 outline-none placeholder:text-white/40 sm:text-base"
+              />
+            </div>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--tenant-primary)] px-6 py-3 text-sm font-semibold text-[var(--tenant-primary-foreground)] shadow-theme-glow transition hover:-translate-y-0.5 hover:bg-[var(--tenant-primary-strong)] sm:text-base"
+            >
+              {hero.primaryCta}
+              <ArrowRight size={18} />
+            </button>
+          </form>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--tenant-primary)]/40 bg-[var(--tenant-primary)]/10 px-5 py-2.5 text-sm font-medium text-white/90 transition hover:border-[var(--tenant-primary)] hover:bg-[var(--tenant-primary)]/20"
+            >
+              <Video size={18} />
+              {hero.secondaryCta}
+            </button>
+            <button
+              type="button"
+              className="text-sm font-medium text-[var(--tenant-primary)] underline-offset-4 hover:underline"
+            >
+              {hero.waitlistCta}
+            </button>
           </div>
 
+          <div className="flex flex-wrap items-center gap-4 pt-2">
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--tenant-primary)]/40 px-4 py-2 text-xs font-semibold text-white/90 transition hover:border-[var(--tenant-primary)] hover:text-white sm:text-sm"
+            >
+              <Download size={16} />
+              {hero.downloads.mac}
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--tenant-primary)]/40 px-4 py-2 text-xs font-semibold text-white/90 transition hover:border-[var(--tenant-primary)] hover:text-white sm:text-sm"
+            >
+              <Download size={16} />
+              {hero.downloads.windows}
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-full border border-[var(--tenant-primary)]/40 px-4 py-2 text-xs font-semibold text-white/90 transition hover:border-[var(--tenant-primary)] hover:text-white sm:text-sm"
+            >
+              <Github size={16} />
+              {hero.downloads.github}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4 pt-6 max-w-lg">
+            {hero.metrics.map((metric) => (
+              <div
+                key={metric.label}
+                className="rounded-2xl border border-[var(--tenant-primary)]/25 bg-white/5 p-4 text-center backdrop-blur transition hover:border-[var(--tenant-primary)]/50"
+              >
+                <div className="text-xl font-semibold text-white sm:text-2xl">
+                  {metric.value}
+                </div>
+                <div className="text-xs uppercase tracking-wide text-white/60 sm:text-sm">
+                  {metric.label}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* Trusted By */}
-        <div className="mt-24 pt-10 border-t border-gray-100 dark:border-gray-800 animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-500">
-          <p className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-8 uppercase tracking-wider text-center">
-            {t.trustedBy}
-          </p>
-          
-          <div className="flex flex-wrap justify-center items-center gap-8 md:gap-16 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
-            {/* Mock Logos - Replace with real SVGs */}
-            <div className="h-8 w-24 bg-gray-300 dark:bg-gray-700 rounded" />
-            <div className="h-8 w-24 bg-gray-300 dark:bg-gray-700 rounded" />
-            <div className="h-8 w-24 bg-gray-300 dark:bg-gray-700 rounded" />
-            <div className="h-8 w-24 bg-gray-300 dark:bg-gray-700 rounded" />
-            <div className="h-8 w-24 bg-gray-300 dark:bg-gray-700 rounded" />
+        <div className="relative overflow-hidden rounded-[32px] border border-[var(--tenant-primary)]/25 bg-white/5 p-6 backdrop-blur">
+          <div className="absolute -top-20 -right-16 h-64 w-64 rounded-full bg-gradient-to-br from-[var(--tenant-primary)] to-[#f59e0b] opacity-30 blur-3xl" />
+          <div className="absolute -bottom-24 -left-12 h-56 w-56 rounded-full bg-gradient-to-tr from-[#fff3c4] via-[var(--tenant-primary)] to-[#f59e0b] opacity-30 blur-3xl" />
+
+          <div className="relative space-y-6">
+            <div className="rounded-3xl border border-white/10 bg-black/40 p-5 shadow-lg">
+              <div className="flex items-center justify-between text-xs text-white/50">
+                <span>Storyboard</span>
+                <span>Seedance 2.0</span>
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-3 text-xs font-semibold text-white">
+                <span className="rounded-xl bg-white/10 px-3 py-2 text-center">Wide Shot</span>
+                <span className="rounded-xl bg-white/10 px-3 py-2 text-center">Close Up</span>
+                <span className="rounded-xl bg-white/10 px-3 py-2 text-center">Transition</span>
+              </div>
+              <p className="mt-5 text-sm text-white/70">
+                {lang === 'en'
+                  ? 'Agents plan every beat, maintain character identity, and prepare the timeline automatically.'
+                  : '智能体自动规划镜头节奏，保持角色一致性，并同步生成剪辑时间线。'}
+              </p>
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-black/60 p-5 shadow-inner">
+              <h3 className="text-sm font-semibold text-white/80">
+                Seedance 2.0 — {lang === 'en' ? 'Shot Preview' : '镜头预览'}
+              </h3>
+              <div className="mt-4 aspect-[4/3] overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-white/10 via-white/5 to-transparent">
+                <div className="flex h-full flex-col justify-between p-4">
+                  <div className="flex items-center justify-between text-xs text-white/60">
+                    <span>{lang === 'en' ? 'Camera: 35mm' : '镜头：35mm'}</span>
+                    <span>{lang === 'en' ? 'Lighting: Golden hour' : '光线：黄金时刻'}</span>
+                  </div>
+                  <div className="rounded-2xl bg-white/10 p-3 text-center text-sm font-medium text-white">
+                    {lang === 'en'
+                      ? 'Final frame composited with motion & VFX'
+                      : '最终画面结合动作与特效呈现'}
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-white/50">
+                    <span>{lang === 'en' ? 'Audio: Auto Score' : '音乐：自动配乐'}</span>
+                    <span>{lang === 'en' ? 'Status: Rendering' : '状态：渲染中'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-
-      <AnalysisModal 
-        isOpen={showModal} 
-        onClose={() => setShowModal(false)} 
-        url={url} 
-      />
     </section>
   );
 }

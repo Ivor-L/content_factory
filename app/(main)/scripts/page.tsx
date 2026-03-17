@@ -10,6 +10,7 @@ export default async function ScriptsPage() {
       id: true,
       title: true,
       videoUrl: true,
+      breakdown: true,
       createdAt: true,
       updatedAt: true,
       status: true,

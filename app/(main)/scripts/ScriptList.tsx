@@ -1,10 +1,14 @@
 'use client';
 
-import { useState, useEffect } from "react";
-import { PlusCircle, PlayCircle, Eye, ShoppingBag, ChevronDown, Zap, Layers, FileJson } from "lucide-react";
+/* eslint-disable @next/next/no-img-element -- Script previews show remote assets and generated frames */
+
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { PlusCircle, PlayCircle, Eye, ShoppingBag, ChevronDown, Zap, Layers, FileJson, ScrollText, User } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { ScriptForm } from "@/components/ScriptForm";
+import { EmptyState } from "@/components/EmptyState";
+import { AddButton } from "@/components/AddButton";
 import ReplicationForm from "@/app/(main)/replication/ReplicationForm";
 import { useRouter } from "next/navigation";
 import { toast } from "react-hot-toast";
@@ -15,11 +19,13 @@ import { motion } from "framer-motion";
 
 import { ScriptStatusBadge } from "./ScriptStatusBadge";
 import ScriptStatusPoller from "./[id]/ScriptStatusPoller";
+import { deriveCopyInsights } from "@/lib/copyInsights";
 
 interface Script {
   id: string;
   title: string;
   videoUrl: string | null;
+  breakdown?: string | null;
   createdAt: string;
   status?: string;
   progress?: number;
@@ -105,9 +111,18 @@ const CATEGORIES = [
     { id: 'toys', en: 'Toys & Hobbies', zh: '玩具兴趣' },
 ];
 
+const REPLICATION_MODE_STORAGE_KEY = 'replication_mode_preference';
+const REPLICATION_MODES: Array<'one-click' | 'storyboard' | 'digital-human'> = [
+  'one-click',
+  'storyboard',
+  'digital-human',
+];
+const REPLICATION_COMING_SOON = process.env.NEXT_PUBLIC_REPLICATION_COMING_SOON !== "false";
+
 export function ScriptList({ initialScripts, products, characters }: ScriptListProps) {
   const router = useRouter();
   const { t, language } = useLanguage();
+  const replicationComingSoon = REPLICATION_COMING_SOON;
   const [activeTab, setActiveTab] = useState<'my-templates' | 'viral-templates'>('my-templates');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingScript, setEditingScript] = useState<Script | null>(null);
@@ -122,12 +137,56 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
   const [activeDropdown, setActiveDropdown] = useState<'region' | 'category' | null>(null);
   
   // Replication Mode
-  const [replicationMode, setReplicationMode] = useState<'one-click' | 'storyboard'>('one-click');
-  const [analysisTab, setAnalysisTab] = useState<'replication' | 'breakdown'>('replication');
+  const [replicationMode, setReplicationMode] = useState<'one-click' | 'storyboard' | 'digital-human'>('one-click');
+  const [analysisTab, setAnalysisTab] = useState<'replication' | 'breakdown' | 'copy'>('replication');
 
   const [mounted, setMounted] = useState(false);
+  const replicationModeLabels = useMemo(() => {
+    if (language === 'zh') {
+      return {
+        'one-click': '一键成片',
+        'storyboard': '分镜成片',
+        'digital-human': '数字人',
+      } as const;
+    }
+    if (language === 'zh-TW') {
+      return {
+        'one-click': '一鍵成片',
+        'storyboard': '分鏡成片',
+        'digital-human': '數字人',
+      } as const;
+    }
+    return {
+      'one-click': ((t as any).home?.oneClickMode || 'One-Click Video') as string,
+      'storyboard': ((t as any).home?.storyboardMode || 'Storyboard Control') as string,
+      'digital-human': (t.replication.digitalHumanModeLabel || 'Digital Human') as string,
+    } as const;
+  }, [language, t]);
+  const selectedScriptInsights = useMemo(() => {
+    if (!selectedReplicationScript) return null;
+    return deriveCopyInsights({
+      breakdown: selectedReplicationScript.breakdown,
+      blueprint: selectedReplicationScript.blueprint,
+    });
+  }, [selectedReplicationScript]);
+  const handleComingSoonRedirect = useCallback(() => {
+    setIsReplicationModalOpen(false);
+    setSelectedReplicationScript(null);
+    setAnalysisTab('replication');
+    setActiveTab('viral-templates');
+  }, [setActiveTab, setAnalysisTab, setIsReplicationModalOpen, setSelectedReplicationScript]);
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedMode = window.localStorage.getItem(REPLICATION_MODE_STORAGE_KEY);
+      if (
+        storedMode &&
+        REPLICATION_MODES.includes(storedMode as 'one-click' | 'storyboard' | 'digital-human')
+      ) {
+        setReplicationMode(storedMode as 'one-click' | 'storyboard' | 'digital-human');
+      }
+    }
+
     setMounted(true);
     
     // Click outside handler
@@ -143,6 +202,15 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
         document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  useEffect(() => {
+    if (!mounted || typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(REPLICATION_MODE_STORAGE_KEY, replicationMode);
+    } catch (error) {
+      console.warn('Failed to persist replication mode', error);
+    }
+  }, [replicationMode, mounted]);
 
   const handleScriptCreated = () => {
     setIsModalOpen(false);
@@ -229,16 +297,13 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
             </button>
         </div>
 
-        <button
+        <AddButton
+          label={t.scripts.newScript}
           onClick={() => {
             setEditingScript(null);
             setIsModalOpen(true);
           }}
-          className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-bold rounded-lg shadow-sm text-white dark:text-black bg-black dark:bg-white hover:bg-gray-900 dark:hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black dark:focus:ring-white transition-colors uppercase tracking-wide gap-2"
-        >
-          <PlusCircle size={20} />
-          {t.scripts.newScript}
-        </button>
+        />
       </div>
 
       {activeTab === 'my-templates' ? (
@@ -334,19 +399,21 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
             ))}
             
             {initialScripts.length === 0 && (
-            <div className="col-span-full flex flex-col items-center justify-center py-16 text-gray-500 dark:text-gray-400 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800">
-                <p className="text-lg mb-4 font-medium">{t.scripts.noScripts}</p>
-                <button 
-                onClick={() => {
-                    setEditingScript(null);
-                    setIsModalOpen(true);
-                }}
-                className="text-gray-900 dark:text-gray-100 hover:text-black font-bold flex items-center gap-2 hover:underline"
-                >
-                <PlusCircle size={20} />
-                {t.scripts.createFirst}
-                </button>
-            </div>
+              <div className="col-span-full">
+                <EmptyState
+                  icon={<ScrollText className="h-6 w-6" />}
+                  title={t.scripts.noScripts}
+                  description={t.scripts.emptyDescription}
+                  action={{
+                    label: t.scripts.createFirst,
+                    icon: <PlusCircle className="h-4 w-4" />,
+                    onClick: () => {
+                      setEditingScript(null);
+                      setIsModalOpen(true);
+                    },
+                  }}
+                />
+              </div>
             )}
         </div>
       ) : (
@@ -538,6 +605,25 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                         <FileJson size={16} />
                         爆款拆解
                     </button>
+                    <button
+                        onClick={() => setAnalysisTab('copy')}
+                        className={cn(
+                            "px-6 py-1.5 rounded-full text-sm font-bold transition-all flex items-center gap-2 relative z-10",
+                            analysisTab === 'copy' 
+                                ? "text-white" 
+                                : "text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white"
+                        )}
+                    >
+                        {analysisTab === 'copy' && (
+                            <motion.div
+                                layoutId="analysis-tab-bg"
+                                className="absolute inset-0 bg-black dark:bg-white rounded-full -z-10 shadow-sm"
+                                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                            />
+                        )}
+                        <ScrollText size={16} />
+                        {t.replication.copyTabLabel || '文案解析'}
+                    </button>
                 </div>
             </div>
         }
@@ -566,7 +652,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                                 />
                             )}
                             <Zap size={14} />
-                            {(t as any).home?.oneClickMode || 'One-Click Video'}
+                            {replicationModeLabels['one-click']}
                         </button>
                         <button
                             onClick={() => setReplicationMode('storyboard')}
@@ -585,7 +671,26 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                                 />
                             )}
                             <Layers size={14} />
-                            {(t as any).home?.storyboardMode || 'Storyboard Control'}
+                            {replicationModeLabels['storyboard']}
+                        </button>
+                        <button
+                            onClick={() => setReplicationMode('digital-human')}
+                            className={cn(
+                                "px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-2 relative z-10",
+                                replicationMode === 'digital-human' 
+                                    ? "text-black dark:text-white" 
+                                    : "text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white"
+                            )}
+                        >
+                            {replicationMode === 'digital-human' && (
+                                <motion.div
+                                    layoutId="replication-mode-bg"
+                                    className="absolute inset-0 bg-white dark:bg-gray-700 rounded-full -z-10 shadow-sm"
+                                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                />
+                            )}
+                            <User size={14} />
+                            {replicationModeLabels['digital-human']}
                         </button>
                     </div>
                 )}
@@ -630,20 +735,35 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                 )}>
                     {selectedReplicationScript && (
                         analysisTab === 'replication' ? (
-                            <ReplicationForm 
-                                products={products} 
-                                scripts={[selectedReplicationScript]}
-                                characters={characters}
-                                preselectedScriptId={selectedReplicationScript.id}
-                                mode={replicationMode}
-                                onSuccess={() => {
-                                    setIsReplicationModalOpen(false);
-                                    setSelectedReplicationScript(null);
-                                    setReplicationMode('one-click');
-                                    setAnalysisTab('replication');
-                                }}
-                            />
-                        ) : (
+                            replicationComingSoon ? (
+                                <div className="flex flex-1 items-center justify-center px-6">
+                                    <EmptyState
+                                        className="w-full"
+                                        fullHeight
+                                        icon={<Zap className="h-6 w-6" />}
+                                        title={t.replication.comingSoon?.title || t.replication.title}
+                                        description={t.replication.comingSoon?.description}
+                                        action={t.replication.comingSoon?.action ? {
+                                            label: t.replication.comingSoon.action,
+                                            onClick: handleComingSoonRedirect,
+                                        } : undefined}
+                                    />
+                                </div>
+                            ) : (
+                                <ReplicationForm 
+                                    products={products} 
+                                    scripts={[selectedReplicationScript]}
+                                    characters={characters}
+                                    preselectedScriptId={selectedReplicationScript.id}
+                                    mode={replicationMode}
+                                    onSuccess={() => {
+                                        setIsReplicationModalOpen(false);
+                                        setSelectedReplicationScript(null);
+                                        setAnalysisTab('replication');
+                                    }}
+                                />
+                            )
+                        ) : analysisTab === 'breakdown' ? (
                             <div className="h-full overflow-y-auto pr-2 custom-scrollbar space-y-6">
                                 {/* Analysis Result Content */}
                                 {selectedReplicationScript.blueprint ? (
@@ -727,7 +847,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                                                                             <span className="font-bold">功能：</span> {scene.abstract_logic?.narrative_role}
                                                                         </p>
                                                                         <p className="text-xs text-gray-500 dark:text-gray-400 italic">
-                                                                            "{scene.abstract_logic?.universal_instruction}"
+                                                                            &quot;{scene.abstract_logic?.universal_instruction}&quot;
                                                                         </p>
                                                                     </div>
                                                                 </div>
@@ -751,6 +871,80 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                                         <p className="text-xs mt-2">请等待分析完成</p>
                                     </div>
                                 )}
+                            </div>
+                        ) : (
+                            <div className="h-full overflow-y-auto pr-2 custom-scrollbar space-y-6">
+                                <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
+                                    <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                                        <span className="text-xl">📝</span> {t.replication.copySections?.scriptTitle || '视频文案'}
+                                    </h3>
+                                    <div className="space-y-4">
+                                        {['intro', 'body', 'conclusion'].map((key) => {
+                                            const labelMap: Record<string, string> = {
+                                                intro: t.replication.copySections?.intro || '开场钩子',
+                                                body: t.replication.copySections?.body || '价值展开',
+                                                conclusion: t.replication.copySections?.conclusion || '收尾 CTA',
+                                            };
+                                            const content = selectedScriptInsights?.segments?.[key as 'intro' | 'body' | 'conclusion'];
+                                            if (!content) return null;
+                                            return (
+                                                <div key={key} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-700 p-4 shadow-sm">
+                                                    <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">{labelMap[key]}</div>
+                                                    <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-200 whitespace-pre-wrap">{content}</p>
+                                                </div>
+                                            );
+                                        })}
+                                        {selectedScriptInsights?.segments?.description && (
+                                            <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-700 p-4 shadow-sm">
+                                                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">{t.replication.copySections?.description || '背景洞察'}</div>
+                                                <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-200 whitespace-pre-wrap">{selectedScriptInsights.segments.description}</p>
+                                            </div>
+                                        )}
+                                        {!selectedScriptInsights?.copyText && (
+                                            <p className="text-sm text-gray-500 dark:text-gray-400">{t.replication.copySections?.empty || '暂无可用文案，请先完成拆解。'}</p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
+                                    <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                                        <span className="text-xl">🧠</span> {t.replication.copyInsights?.title || '文案拆解'}
+                                    </h3>
+                                    <div className="space-y-5">
+                                        <div>
+                                            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">{t.replication.copyInsights?.core || '核心观点'}</div>
+                                            <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed">{selectedScriptInsights?.coreViewpoint || t.replication.copyInsights?.empty || '暂无数据'}</p>
+                                        </div>
+                                        <div className="grid grid-cols-1 gap-4">
+                                            {[{
+                                                label: t.replication.copyInsights?.angles || '爆款选题角度',
+                                                items: selectedScriptInsights?.viralAngles || []
+                                            }, {
+                                                label: t.replication.copyInsights?.structure || '结构逻辑',
+                                                items: selectedScriptInsights?.structureLogic || []
+                                            }, {
+                                                label: t.replication.copyInsights?.golden || '金句',
+                                                items: selectedScriptInsights?.goldenSentences || []
+                                            }, {
+                                                label: t.replication.copyInsights?.pains || '用户痛点',
+                                                items: selectedScriptInsights?.painPoints || []
+                                            }].map(({ label, items }) => (
+                                                <div key={label} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-700 p-4 shadow-sm">
+                                                    <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">{label}</div>
+                                                    {items.length > 0 ? (
+                                                        <ul className="space-y-2 text-sm text-gray-700 dark:text-gray-200">
+                                                            {items.map((item, index) => (
+                                                                <li key={`${label}-${index}`} className="leading-relaxed">• {item}</li>
+                                                            ))}
+                                                        </ul>
+                                                    ) : (
+                                                        <p className="text-sm text-gray-500 dark:text-gray-400">{t.replication.copyInsights?.empty || '暂无数据'}</p>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         )
                     )}

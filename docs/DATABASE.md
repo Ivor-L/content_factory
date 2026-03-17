@@ -37,6 +37,12 @@
 
 应用程序使用 **PostgreSQL** 作为主要数据库，并利用 **Prisma ORM** 进行数据访问和模式管理。用户身份验证和部分用户数据由 **Supabase** 管理。
 
+## 关键文件
+
+- Prisma 客户端初始化： [prisma.ts](file:///Users/kaka/Desktop/软件开发/content-factory-web%203/lib/prisma.ts)
+- Prisma 模型权威来源： [schema.prisma](file:///Users/kaka/Desktop/软件开发/content-factory-web%203/prisma/schema.prisma)
+- Supabase SQL 迁移：`supabase/migrations/*`
+
 ## 技术栈
 
 - **数据库**: PostgreSQL
@@ -133,3 +139,42 @@
 - `DATABASE_URL`: PostgreSQL 连接字符串。
 - `NEXT_PUBLIC_SUPABASE_URL`: Supabase URL。
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Supabase Anon Key。
+
+## 迁移与变更流程（推荐）
+
+本项目同时存在 Prisma schema 与 Supabase SQL migrations：
+
+- Prisma：用于类型与模型约束（应用侧读写以 Prisma 为准）
+- Supabase migrations：用于在实际数据库中增量创建/修改表、开启 RLS、补充字段等
+
+建议后续开发遵循：
+
+1) 先在 `prisma/schema.prisma` 里定义/修改模型
+2) 再在 `supabase/migrations/` 增加对应 SQL 迁移（尤其是新增列、索引、RLS policy）
+3) 确保 n8n 工作流里涉及写库的字段名与表名一致（参见 [WORKFLOWS.md](WORKFLOWS.md)）
+
+## 历史文案运行时对象（Creative Runtime）
+
+为支持“精准召回 + 最小注入”，历史文案现在需要写入结构化的运行时对象表：
+
+| 表 / 字段 | 作用 |
+| --- | --- |
+| `history_doc_derivatives` | 保存 style_summary / writing_blocks / case_bank / applicability JSON 以及对应的对象存储路径 |
+| `history_docs.latest_derivative_id` | 指向最新一次成功归一化的 derivative |
+
+### 必须执行的步骤
+
+1. **运行 SQL 迁移**：`supabase/migrations/20260317095500_add_history_doc_derivatives.sql`（创建 `history_doc_derivatives` + 外键）。在 Supabase CLI 或 `psql` 上执行：  
+   ```bash
+   supabase db push   # 如果使用 supabase cli  
+   # 或者
+   psql "$DATABASE_URL" -f supabase/migrations/20260317095500_add_history_doc_derivatives.sql
+   ```
+2. **同步 Prisma**：迁移完成后运行  
+   ```bash
+   npx prisma generate
+   ```  
+   同步新的模型/类型，避免 CI 构建失败。
+3. **回填历史文案**：旧的 `history_docs` 需要重新跑资产 Worker（`npm run workers:assets` 或在 PG Boss 中重新投递 `historyDoc` job），以生成 `history_doc_derivatives` 记录并写入 `latest_derivative_id`。
+
+完成以上步骤后，创作流水线才会读取新表中的运行时对象，Stage 03/04 才能稳定使用“最小注入”策略。

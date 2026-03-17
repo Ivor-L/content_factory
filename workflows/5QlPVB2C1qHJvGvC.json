@@ -406,9 +406,9 @@
             "table_link": "https://my.feishu.cn/base/AqkCbTRIEawUI0saNcBcERmrnZg?table=tbl1gHBpa5SpjXPt&view=vew3HXRwTo",
             "table_link2": "https://my.feishu.cn/base/AqkCbTRIEawUI0saNcBcERmrnZg?table=tbl2JT5ROZGAMmfw&view=vew3HXRwTo",
             "app_id": "cli_a8d48c9783a4d00e",
-            "app_secret": "UMpMwnXyEnqaqjCV1NhaUbzPU8W8vIA7",
-            "app_token": "AqkCbTRIEawUI0saNcBcERmrnZg",
-            "api_key": "sk_S-XJvpVKGGwnac1AlEFs3avCWZpqdOGaMMW27Y8iSPY"
+            "app_secret": "",
+            "app_token": "",
+            "api_key": ""
           },
           "webhookUrl": "http://localhost:5678/webhook/analysis_video_Veo",
           "executionMode": "production"

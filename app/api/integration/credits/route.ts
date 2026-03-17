@@ -1,92 +1,13 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-
-const DEFAULT_POINTS_API_BASE = 'https://api.atomx.top';
-const POINTS_API_BASES = Array.from(
-  new Set(
-    [process.env.POINTS_API_BASE, DEFAULT_POINTS_API_BASE]
-      .filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
-      .map((v) => v.trim().replace(/\/$/, ''))
-  )
-);
-
-async function readTextSafe(res: Response) {
-  try {
-    return await res.text();
-  } catch {
-    return '';
-  }
-}
-
-function looksLikeHtml(res: Response, bodyText: string) {
-  const ct = res.headers.get('content-type') || '';
-  return ct.includes('text/html') || bodyText.trimStart().startsWith('<!DOCTYPE html');
-}
-
-// Initialize Supabase client
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabaseAdmin = supabaseServiceKey
-  ? createClient(supabaseUrl, supabaseServiceKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
-    })
-  : null;
-
-function createAuthedSupabase(token: string) {
-  return createClient(supabaseUrl, supabaseAnonKey, {
-    global: {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    },
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  });
-}
-
-async function getUserApiKey(request: Request) {
-  // 1. Get the Authorization header
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader) {
-    return null;
-  }
-
-  // 2. Get the user from Supabase Auth
-  const token = authHeader.replace('Bearer ', '');
-  const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-
-  if (userError || !user) {
-    console.error('Auth Error:', userError);
-    return null;
-  }
-
-  // 3. Get the API Key from profiles table
-  const profileClient = supabaseAdmin ?? createAuthedSupabase(token);
-  const { data: profile, error: profileError } = await profileClient
-    .from('profiles')
-    .select('api_key')
-    .eq('id', user.id)
-    .maybeSingle();
-
-  if (profileError || !profile?.api_key) {
-    console.error('Profile Error:', profileError);
-    // Fallback for testing if env var is set, otherwise return null
-    return process.env.MOCK_USER_API_KEY || null;
-  }
-
-  return profile.api_key;
-}
+import {
+  POINTS_API_BASES,
+  readTextSafe,
+  looksLikeHtml,
+  getStoredUserApiKey
+} from '@/lib/points-server';
 
 export async function GET(request: Request) {
-  const storedApiKey = await getUserApiKey(request);
+  const storedApiKey = await getStoredUserApiKey(request);
   const headerApiKey = request.headers.get('x-user-api-key');
   const apiKey = storedApiKey || headerApiKey;
 
@@ -193,7 +114,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const apiKey = await getUserApiKey(request);
+    const apiKey = await getStoredUserApiKey(request);
 
     if (!apiKey) {
       return NextResponse.json({ error: 'Unauthorized or no API key linked' }, { status: 401 });

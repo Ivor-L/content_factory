@@ -12,6 +12,10 @@ import { Globe, CheckCircle, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTenant } from '@/hooks/useTenant';
 
+const SHORT_COOLDOWN_SECONDS = 60;
+const RATE_LIMIT_COOLDOWN_SECONDS = 60 * 60; // 1 hour default limit on Supabase shared SMTP
+const COOLDOWN_STORAGE_KEY = 'login_otp_cooldown_expires';
+
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -19,21 +23,76 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [loginMethod, setLoginMethod] = useState<'magic_link' | 'password'>('magic_link');
   const [otpSent, setOtpSent] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
   const router = useRouter();
   const { t, language, setLanguage } = useLanguage();
-  const { basePath } = useTenant();
+  const { basePath, tenant } = useTenant();
   const [mounted, setMounted] = useState(false);
   const tenantDashboardPath = `${basePath || ''}/dashboard`;
   const tenantHomePath = basePath || '/';
+  const brandName = tenant?.name || 'AtomX';
+  const termsText = (t.auth?.termsPrivacy || "By continuing you agree to {{brand}}'s Terms of Service and Privacy Policy.").replace('{{brand}}', brandName);
 
   useEffect(() => {
     setMounted(true);
+    if (typeof window === 'undefined') return;
+    const storedExpiry = localStorage.getItem(COOLDOWN_STORAGE_KEY);
+    if (storedExpiry) {
+      const remaining = Math.max(0, Math.ceil((Number(storedExpiry) - Date.now()) / 1000));
+      if (remaining > 0) {
+        setCooldown(remaining);
+      } else {
+        localStorage.removeItem(COOLDOWN_STORAGE_KEY);
+      }
+    }
   }, []);
+
+  const hasCooldown = cooldown > 0;
+
+  useEffect(() => {
+    if (!hasCooldown) return;
+    const timer = setInterval(() => {
+      setCooldown((prev) => {
+        if (prev <= 1) {
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem(COOLDOWN_STORAGE_KEY);
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [hasCooldown]);
+
+  const startCooldown = (seconds = SHORT_COOLDOWN_SECONDS) => {
+    const clampedSeconds = Math.max(0, Math.round(seconds));
+    if (!clampedSeconds) {
+      setCooldown(0);
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(COOLDOWN_STORAGE_KEY);
+      }
+      return;
+    }
+    setCooldown((prev) => {
+      const next = Math.max(prev, clampedSeconds);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(
+          COOLDOWN_STORAGE_KEY,
+          String(Date.now() + next * 1000)
+        );
+      }
+      return next;
+    });
+  };
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) {
         toast.error('Please enter your email');
+        return;
+    }
+    if (cooldown > 0) {
         return;
     }
     setLoading(true);
@@ -47,9 +106,24 @@ export default function LoginPage() {
       if (error) throw error;
 
       setOtpSent(true);
+      startCooldown(SHORT_COOLDOWN_SECONDS);
       toast.success(t.auth?.otpSent || 'Verification code sent!');
     } catch (error: any) {
-      toast.error(error.message || 'Failed to send verification code');
+      const message = error?.message || 'Failed to send verification code';
+      const isRateLimited =
+        error?.status === 429 ||
+        (typeof message === 'string' && message.toLowerCase().includes('rate limit'));
+
+      if (isRateLimited) {
+        startCooldown(RATE_LIMIT_COOLDOWN_SECONDS);
+      }
+
+      const authCopy = t.auth as Record<string, string | undefined> | undefined;
+      const rateLimitMessage =
+        authCopy?.otpRateLimited ||
+        authCopy?.rateLimited ||
+        'Too many requests. Please wait up to 1 hour before trying again.';
+      toast.error(isRateLimited ? rateLimitMessage : message);
     } finally {
       setLoading(false);
     }
@@ -118,16 +192,21 @@ export default function LoginPage() {
     return '繁體中文';
   };
 
+  const getCooldownLabel = () => {
+    const template = (t.auth as Record<string, string | undefined> | undefined)?.resendIn;
+    return template ? template.replace('{seconds}', String(cooldown)) : `Resend in ${cooldown}s`;
+  };
+
   if (!mounted) return null;
 
   return (
-    <div className="flex min-h-screen w-full bg-white dark:bg-black font-sans selection:bg-black selection:text-white">
+    <div className="flex min-h-screen w-full bg-white dark:bg-black font-sans selection:bg-[var(--tenant-primary)] selection:text-[var(--tenant-primary-foreground)]">
       {/* Left Panel - Content */}
       <div className="w-full lg:w-1/2 flex flex-col justify-center p-8 md:p-12 lg:p-24 relative z-10">
         {/* Logo */}
-        <div className="absolute top-6 left-6 md:top-10 md:left-10">
+        <div className="absolute top-2 left-4 md:top-6 md:left-6 lg:top-8 lg:left-8">
             <Link href={tenantHomePath}>
-                <TenantLogo showName size="lg" />
+                <TenantLogo showName size="md" className="max-w-[160px]" />
             </Link>
         </div>
 
@@ -160,7 +239,7 @@ export default function LoginPage() {
                                     onChange={(e) => setOtp(e.target.value)}
                                     required
                                     autoFocus
-                                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all duration-200 tracking-widest text-lg"
+                                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200 tracking-widest text-lg"
                                     placeholder="123456"
                                 />
                             </div>
@@ -169,7 +248,7 @@ export default function LoginPage() {
                                 <button
                                     type="submit"
                                     disabled={loading}
-                                    className="w-full flex justify-center items-center py-3.5 px-4 border border-transparent rounded-full text-sm font-medium text-white bg-black hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black disabled:opacity-50 transition-all duration-200 shadow-lg shadow-black/10"
+                                    className="w-full flex justify-center items-center py-3.5 px-4 border border-transparent rounded-full text-sm font-medium text-primary-foreground bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 transition-all duration-200 shadow-theme-glow"
                                 >
                                     {loading 
                                         ? (t.auth?.verifying || 'Verifying...') 
@@ -212,7 +291,7 @@ export default function LoginPage() {
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     required
-                                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all duration-200"
+                                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
                                     placeholder=""
                                 />
                             </div>
@@ -228,7 +307,7 @@ export default function LoginPage() {
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                         required
-                                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all duration-200"
+                                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
                                     />
                                 </div>
                             )}
@@ -236,12 +315,16 @@ export default function LoginPage() {
                             <div className="space-y-3 pt-4">
                                 <button
                                     type="submit"
-                                    disabled={loading}
-                                    className="w-full flex justify-center items-center py-3.5 px-4 border border-transparent rounded-full text-sm font-medium text-white bg-black hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black disabled:opacity-50 transition-all duration-200 shadow-lg shadow-black/10"
+                                    disabled={loading || (loginMethod === 'magic_link' && cooldown > 0)}
+                                    className="w-full flex justify-center items-center py-3.5 px-4 border border-transparent rounded-full text-sm font-medium text-primary-foreground bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 transition-all duration-200 shadow-theme-glow"
                                 >
-                                    {loading 
-                                        ? (t.auth?.sending || 'Sending...') 
-                                        : (loginMethod === 'magic_link' ? (t.auth?.sendCode || 'Send Verification Code') : (t.auth?.signIn || 'Sign in'))
+                                    {loading
+                                        ? (t.auth?.sending || 'Sending...')
+                                        : loginMethod === 'magic_link'
+                                          ? cooldown > 0
+                                            ? getCooldownLabel()
+                                            : (t.auth?.sendCode || 'Send Verification Code')
+                                          : (t.auth?.signIn || 'Sign in')
                                     }
                                 </button>
                                 
@@ -258,7 +341,10 @@ export default function LoginPage() {
                         <div className="mt-8 flex items-center justify-between text-sm">
                             <div className="flex items-center gap-1 text-gray-500">
                                 {t.auth?.noAccount || 'No account?'} 
-                                <Link href="/register" className="font-medium text-black hover:underline ml-1">
+                                <Link
+                                    href={`${basePath || ''}/register`}
+                                    className="font-medium text-black hover:underline ml-1"
+                                >
                                     {t.auth?.signUp || 'Sign up'}
                                 </Link>
                             </div>
@@ -277,7 +363,7 @@ export default function LoginPage() {
 
         {/* Footer */}
         <div className="text-xs text-gray-400 text-center lg:text-left mt-8 lg:mt-0 absolute bottom-6 left-0 w-full px-8 md:px-12 lg:px-24">
-            {t.auth?.termsPrivacy || "By continuing you agree to AtomX's Terms of Service and Privacy Policy."}
+            {termsText}
         </div>
       </div>
 

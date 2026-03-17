@@ -1,7 +1,6 @@
 'use server';
 
 import prisma from '@/lib/prisma';
-import { revalidatePath } from 'next/cache';
 
 export async function deleteVideos(ids: string[]) {
   try {
@@ -19,7 +18,6 @@ export async function deleteVideos(ids: string[]) {
       where: { id: { in: ids } }
     });
 
-    revalidatePath('/replication');
     return { success: true };
   } catch (error) {
     console.error('Failed to delete videos:', error);

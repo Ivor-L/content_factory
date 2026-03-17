@@ -3,8 +3,9 @@
  * 
  * 根据当前租户配置显示不同的 Logo
  */
-
 'use client';
+
+/* eslint-disable @next/next/no-img-element -- Tenant logos are admin-uploaded URLs with unknown hosts */
 
 import { useTenant } from '@/hooks/useTenant';
 import { cn } from '@/lib/utils';
@@ -15,6 +16,20 @@ interface TenantLogoProps {
   showName?: boolean;
   size?: 'sm' | 'md' | 'lg';
 }
+
+const SIZE_MAP: Record<'sm' | 'md' | 'lg', number> = {
+  sm: 120,
+  md: 160,
+  lg: 200,
+};
+
+const SIZE_CLASSES: Record<'sm' | 'md' | 'lg', string> = {
+  sm: "text-sm",
+  md: "text-base",
+  lg: "text-lg",
+};
+
+const FALLBACK_PRIMARY_COLOR = '#007AFF';
 
 export function TenantLogo({ 
   className, 
@@ -31,25 +46,13 @@ export function TenantLogo({
     );
   }
 
-  const sizeMap = {
-    sm: 120,
-    md: 160,
-    lg: 200,
-  } as const;
-
-  const sizeClasses = {
-    sm: "text-sm",
-    md: "text-base",
-    lg: "text-lg",
-  } as const;
-
   const content = tenant.logo ? (
     <img 
       src={tenant.logo} 
       alt={tenant.name}
       className="object-contain"
       style={{
-        height: sizeMap[size],
+        height: SIZE_MAP[size],
         width: 'auto',
         objectFit: 'contain'
       }}
@@ -59,17 +62,17 @@ export function TenantLogo({
       <div 
         className="flex items-center justify-center rounded-lg"
         style={{ 
-          backgroundColor: tenant.primaryColor || '#007AFF',
-          width: sizeMap[size],
-          height: sizeMap[size],
+          backgroundColor: tenant.primaryColor || FALLBACK_PRIMARY_COLOR,
+          width: SIZE_MAP[size],
+          height: SIZE_MAP[size],
         }}
       >
         <Sparkles className="text-white" size={size === 'sm' ? 12 : size === 'md' ? 16 : 20} />
       </div>
       {showName && (
         <span 
-          className={cn("font-bold", sizeClasses[size])}
-          style={{ color: tenant.primaryColor || '#007AFF' }}
+          className={cn("font-bold", SIZE_CLASSES[size])}
+          style={{ color: tenant.primaryColor || FALLBACK_PRIMARY_COLOR }}
         >
           {tenant.name}
         </span>

@@ -367,9 +367,9 @@
             "workflow_id": "flow_Product_Personnel",
             "table_link": "https://icnihzenib3m.feishu.cn/base/CTjxbndFKaUcIwsJ53pcjt6dnIg?table=tbludSATuwd7TUnN&view=vew3HXRwTo",
             "app_id": "cli_a84fa88ac9a6d00c",
-            "app_secret": "2n4R5DDvAqQoE8D3U2Maie5KMeSrzFHL",
-            "app_token": "CTjxbndFKaUcIwsJ53pcjt6dnIg",
-            "api_key": "sk_S-XJvpVKGGwnac1AlEFs3avCWZpqdOGaMMW27Y8iSPY"
+            "app_secret": "",
+            "app_token": "",
+            "api_key": ""
           },
           "webhookUrl": "https://hooks.flowonn.com/webhook-test/Product&Personnel",
           "executionMode": "test"

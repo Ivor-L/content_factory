@@ -11,36 +11,55 @@ export default async function Home() {
   const threeDaysAgo = new Date();
   threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
 
-  const recentVideos = await prisma.replication.findMany({
-    where: {
-      createdAt: {
-        gte: threeDaysAgo,
+  type RecentVideo = Awaited<
+    ReturnType<typeof prisma.replication.findMany>
+  >[number];
+  type SerializedVideo = Omit<RecentVideo, "createdAt" | "updatedAt"> & {
+    createdAt: string;
+    updatedAt: string;
+  };
+  type ProductSummary = { id: string; name: string };
+
+  let serializedVideos: SerializedVideo[] = [];
+  let products: ProductSummary[] = [];
+
+  try {
+    const recentVideos = await prisma.replication.findMany({
+      where: {
+        createdAt: {
+          gte: threeDaysAgo,
+        },
       },
-    },
-    orderBy: {
-      createdAt: 'desc',
-    },
-    take: 5, // Limit to 5 for a single row
-    include: {
-      product: { select: { name: true } },
-    },
-  });
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: 5,
+      include: {
+        product: { select: { name: true } },
+      },
+    });
 
-  const serializedVideos = recentVideos.map(video => ({
-    ...video,
-    createdAt: video.createdAt.toISOString(),
-    updatedAt: video.updatedAt.toISOString(),
-  }));
+    const mappedVideos = recentVideos.map((video: RecentVideo) => ({
+      ...video,
+      createdAt: video.createdAt.toISOString(),
+      updatedAt: video.updatedAt.toISOString(),
+    }));
 
-  const products = await prisma.product.findMany({
-    select: {
-      id: true,
-      name: true,
-    },
-    orderBy: {
-      createdAt: 'desc',
-    },
-  });
+    const fetchedProducts = await prisma.product.findMany({
+      select: {
+        id: true,
+        name: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    serializedVideos = mappedVideos;
+    products = fetchedProducts;
+  } catch (error) {
+    console.error("Failed to load dashboard data", error);
+  }
 
   return <HomeContent recentVideos={serializedVideos} products={products} />;
 }

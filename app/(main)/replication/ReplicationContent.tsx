@@ -1,56 +1,202 @@
 'use client';
 
-import { useState, useEffect } from "react";
+/* eslint-disable @next/next/no-img-element -- Poster previews rely on remote URLs that are not managed by next/image */
+
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { VideoCard } from "@/components/VideoCard";
 import { VideoDetailsModal } from "@/components/VideoDetailsModal";
 import { Modal } from "@/components/Modal";
+import { EmptyState } from "@/components/EmptyState";
 import { cn } from "@/lib/utils";
-import { Clapperboard, Video, ArrowLeftRight, Download, AlertTriangle, LayoutGrid, User } from "lucide-react";
+import { Clapperboard, Download, AlertTriangle, LayoutGrid, User, Image as ImageIcon, FileText, Copy, ExternalLink, Loader2, Check } from "lucide-react";
 import { StoryboardGenModal } from "@/components/StoryboardGenModal";
 import { DigitalHumanModal } from "@/components/DigitalHumanModal";
 
 import { deleteVideos } from "@/app/actions/video";
 import { toast } from "react-hot-toast";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
 interface ReplicationContentProps {
   history: any[];
   digitalHumanVideos?: any[];
+  context?: 'replication' | 'myVideos';
+  showCreationActions?: boolean;
+  enableImageTab?: boolean;
 }
 
-export default function ReplicationContent({ history, digitalHumanVideos = [] }: ReplicationContentProps) {
+type MediaTab = 'VIDEO' | 'GRAPHIC' | 'IMAGE';
+type PosterJob = {
+  id: string;
+  title?: string | null;
+  copyText: string;
+  status: "pending" | "ready" | "error";
+  error?: string | null;
+  createdAt: string;
+  sourceTaskId?: string | null;
+  style?: {
+    id: string;
+    name?: string | null;
+  } | null;
+  images: Array<{
+    id: string;
+    imageUrl: string;
+    prompt?: string;
+  }>;
+  variationCount?: number | null;
+};
+
+export default function ReplicationContent({
+  history,
+  digitalHumanVideos = [],
+  context = 'replication',
+  showCreationActions,
+  enableImageTab,
+}: ReplicationContentProps) {
   const { t } = useLanguage();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [activeFilter, setActiveFilter] = useState('ALL');
   const [selectedVideo, setSelectedVideo] = useState<any | null>(null);
-  
-  const filters = [
-    { id: 'ALL', label: t.replication.allAds, icon: Clapperboard },
-    { id: 'FULL', label: t.replication.viralClone, icon: null },
-    { id: 'STORYBOARD_GEN', label: 'Storyboard Gen', icon: LayoutGrid },
-    { id: 'DIGITAL_HUMAN', label: t.storyboard.digitalHuman, icon: User },
-  ];
+  const [selectedVideoIds, setSelectedVideoIds] = useState<Set<string>>(new Set());
+  const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(new Set());
+  const [selectedPosterIds, setSelectedPosterIds] = useState<Set<string>>(new Set());
+  const hasMediaTabs = context === 'myVideos' || context === 'replication';
+  const isImageTabEnabled = typeof enableImageTab === 'boolean' ? enableImageTab : context !== 'myVideos';
+  const shouldShowCreationActions = typeof showCreationActions === 'boolean' ? showCreationActions : !hasMediaTabs;
+  const [activeMediaTab, setActiveMediaTab] = useState<MediaTab>('VIDEO');
+  const isGraphicView = hasMediaTabs && activeMediaTab === 'GRAPHIC';
+  const isImageView = hasMediaTabs && activeMediaTab === 'IMAGE' && isImageTabEnabled;
+  const creationActionsVisible = shouldShowCreationActions && !isGraphicView;
+  const isMyVideosPage = context === 'myVideos';
+  const tabSectionSpacing = isMyVideosPage ? 'mb-4' : 'mb-8';
+  const bannerSpacing = isMyVideosPage ? 'mb-2' : 'mb-4';
+  const emptyStateOffset = isMyVideosPage ? 'mt-1' : 'mt-6';
+  const emptyStatePadding = isMyVideosPage ? 'py-6' : 'py-12';
 
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const mediaTabOptions = useMemo(() => {
+    if (!hasMediaTabs) return [];
+    const options = [
+      { id: 'VIDEO' as MediaTab, label: t.replication.mediaTabs?.video || '视频', icon: Clapperboard },
+      { id: 'GRAPHIC' as MediaTab, label: t.replication.mediaTabs?.article || '图文', icon: FileText },
+    ];
+    if (isImageTabEnabled) {
+      options.push({ id: 'IMAGE' as MediaTab, label: t.replication.mediaTabs?.image || '图片', icon: ImageIcon });
+    }
+    return options;
+  }, [hasMediaTabs, isImageTabEnabled, t]);
+  const showMediaTabs = hasMediaTabs && mediaTabOptions.length > 0;
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showBanner, setShowBanner] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [pendingDeleteIds, setPendingDeleteIds] = useState<string[]>([]);
+  const [pendingDeleteType, setPendingDeleteType] = useState<'video' | 'graphic'>('video');
+  const [authToken, setAuthToken] = useState<string | null>(null);
+  const [requiresAuth, setRequiresAuth] = useState(false);
+  const [posterJobs, setPosterJobs] = useState<PosterJob[]>([]);
+  const [posterLoading, setPosterLoading] = useState(false);
+  const [posterError, setPosterError] = useState<string | null>(null);
+  const [selectedPosterJob, setSelectedPosterJob] = useState<PosterJob | null>(null);
+  const [isPosterModalOpen, setIsPosterModalOpen] = useState(false);
   
   // New Modals
   const [isStoryboardGenOpen, setIsStoryboardGenOpen] = useState(false);
   const [isDigitalHumanOpen, setIsDigitalHumanOpen] = useState(false);
 
   useEffect(() => {
+    if (context !== 'myVideos') return;
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      const token = data.session?.access_token ?? null;
+      setAuthToken(token);
+      setRequiresAuth(!token);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      const token = session?.access_token ?? null;
+      setAuthToken(token);
+      setRequiresAuth(!token);
+    });
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [context]);
+
+  useEffect(() => {
     const tab = searchParams.get('tab');
-    if (tab && filters.some(f => f.id === tab)) {
-      setActiveFilter(tab);
+    if (!tab || !hasMediaTabs) return;
+
+    let normalizedTab: MediaTab = 'VIDEO';
+    if (tab === 'GRAPHIC') {
+      normalizedTab = 'GRAPHIC';
+    } else if (tab === 'IMAGE' || tab === 'STORYBOARD_GEN') {
+      normalizedTab = isImageTabEnabled ? 'IMAGE' : 'VIDEO';
     }
-  }, [searchParams]);
+
+    setActiveMediaTab(normalizedTab);
+  }, [searchParams, hasMediaTabs, isImageTabEnabled]);
+
+  useEffect(() => {
+    if (!isImageTabEnabled && activeMediaTab === 'IMAGE') {
+      setActiveMediaTab('VIDEO');
+    }
+  }, [isImageTabEnabled, activeMediaTab]);
+
+  useEffect(() => {
+    if (context !== 'myVideos') return;
+    if (!authToken) {
+      setPosterJobs([]);
+      setPosterError(null);
+      setPosterLoading(false);
+      setSelectedPosterIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      setPosterLoading(true);
+      setPosterError(null);
+      try {
+        const res = await fetch("/api/xhs-images/jobs", {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(payload.error || "Failed to load posts");
+        }
+        if (!cancelled) {
+          const jobs: PosterJob[] = Array.isArray(payload.data) ? payload.data : [];
+          jobs.sort((a: PosterJob, b: PosterJob) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          setPosterJobs(jobs);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setPosterError(error instanceof Error ? error.message : t.common.error);
+        }
+      } finally {
+        if (!cancelled) {
+          setPosterLoading(false);
+        }
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken, context, t.common.error]);
+
+  const handleMediaTabChange = (tabId: MediaTab) => {
+    if (tabId === 'IMAGE' && !isImageTabEnabled) return;
+    setActiveMediaTab(tabId);
+  };
 
   // Map Digital Human videos to match VideoCard expectation
   const mappedDigitalHumanVideos = digitalHumanVideos.map(v => ({
@@ -62,23 +208,45 @@ export default function ReplicationContent({ history, digitalHumanVideos = [] }:
   const allVideos = [...history, ...mappedDigitalHumanVideos].sort((a, b) => 
     new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
+  const videoItems = allVideos.filter(item => item.type !== 'STORYBOARD_GEN');
+  const imageItems = history.filter(item => item.type === 'STORYBOARD_GEN');
+  const emptyStateTitle =
+    t.replication?.emptyState?.title ||
+    t.replication?.title ||
+    t.sidebar?.myVideos ||
+    "My Videos";
+  const emptyStateDescription =
+    t.replication?.emptyState?.description ||
+    t.replication?.history ||
+    "Start by generating or uploading content to see it here.";
+  const emptyStateActionLabel =
+    t.replication?.emptyState?.action ||
+    t.replication?.startNew ||
+    t.common?.create ||
+    "Create now";
+  const emptyStateAction = isMyVideosPage || !creationActionsVisible
+    ? undefined
+    : {
+        label: emptyStateActionLabel,
+        href: "/",
+      };
 
-  const filteredHistory = activeFilter === 'DIGITAL_HUMAN'
-    ? mappedDigitalHumanVideos
-    : activeFilter === 'ALL' 
-      ? allVideos
-      : history.filter(item => item.type === activeFilter);
 
+  const toggleSelection = useCallback((setter: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) => {
+    setter(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
 
-  const handleSelect = (id: string) => {
-    const newSelected = new Set(selectedIds);
-    if (newSelected.has(id)) {
-      newSelected.delete(id);
-    } else {
-      newSelected.add(id);
-    }
-    setSelectedIds(newSelected);
-  };
+  const handleVideoSelect = useCallback((id: string) => toggleSelection(setSelectedVideoIds, id), [toggleSelection]);
+  const handleImageSelect = useCallback((id: string) => toggleSelection(setSelectedImageIds, id), [toggleSelection]);
+  const handlePosterSelect = useCallback((id: string) => toggleSelection(setSelectedPosterIds, id), [toggleSelection]);
 
   const parseResult = (item: any) => {
     if (!item) return null;
@@ -109,9 +277,32 @@ export default function ReplicationContent({ history, digitalHumanVideos = [] }:
   };
 
   const handleBatchDownload = () => {
-    if (!selectedIds.size) return;
+    if (isGraphicView) {
+      if (!selectedPosterIds.size) return;
+      let downloaded = 0;
+      let missing = 0;
+      selectedPosterIds.forEach((id) => {
+        const job = posterJobs.find((poster) => poster.id === id);
+        const cover = job?.images?.[0]?.imageUrl;
+        if (!job || !cover) {
+          missing += 1;
+          return;
+        }
+        const urlWithoutQuery = cover.split('?')[0];
+        const extension = urlWithoutQuery.includes('.') ? urlWithoutQuery.split('.').pop() : 'png';
+        triggerDownload(cover, `${job.title || 'poster'}-${job.id}.${extension}`);
+        downloaded += 1;
+      });
+      if (downloaded) toast.success(t.common.success);
+      if (missing) toast.error(t.common.error);
+      return;
+    }
 
-    const targets = allVideos.filter(item => selectedIds.has(item.id));
+    const selection = isImageView ? selectedImageIds : selectedVideoIds;
+    if (!selection.size) return;
+
+    const sourceItems = isImageView ? imageItems : videoItems;
+    const targets = sourceItems.filter((item) => selection.has(item.id));
     let successCount = 0;
     let missingCount = 0;
 
@@ -131,12 +322,186 @@ export default function ReplicationContent({ history, digitalHumanVideos = [] }:
       toast.success(t.common.success);
     }
     if (missingCount) {
-      toast.error("Some selected videos are still processing and cannot be downloaded yet.");
+      toast.error(t.replication?.promptUnavailable || t.common.error);
     }
   };
 
-  const handleDeleteRequest = (ids: string[]) => {
+  const handleBatchDeleteClick = () => {
+    if (isGraphicView) {
+      handleDeleteRequest(Array.from(selectedPosterIds), 'graphic');
+      return;
+    }
+    const selection = isImageView ? selectedImageIds : selectedVideoIds;
+    handleDeleteRequest(Array.from(selection), 'video');
+  };
+
+  const currentSelectionCount = isGraphicView
+    ? selectedPosterIds.size
+    : isImageView
+    ? selectedImageIds.size
+    : selectedVideoIds.size;
+  const showCreationButtons = creationActionsVisible;
+  const creationActionButtons = showCreationButtons ? (
+    <div className="flex flex-wrap gap-3">
+      <button
+        onClick={() => setIsStoryboardGenOpen(true)}
+        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-black text-white text-sm font-semibold shadow-md hover:bg-gray-900 transition-colors"
+      >
+        <LayoutGrid size={16} />
+        {t.storyboard.genList?.create || t.storyboard.storyboardGen}
+      </button>
+      <button
+        onClick={() => setIsDigitalHumanOpen(true)}
+        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-semibold shadow-md hover:bg-gray-800 transition-colors"
+      >
+        <User size={16} />
+        {t.storyboard.generateDigitalHumanVideo}
+      </button>
+    </div>
+  ) : null;
+  const batchActionButtons = (
+    <div className="flex items-center gap-3 flex-wrap">
+      <button
+        onClick={handleBatchDeleteClick}
+        disabled={currentSelectionCount === 0 || isDeleting}
+        className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >
+        {isDeleting ? t.common.loading : t.replication.batchDelete}
+      </button>
+      <button
+        onClick={handleBatchDownload}
+        disabled={currentSelectionCount === 0}
+        className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >
+        <Download size={16} />
+        {t.replication.batchDownload}
+        {currentSelectionCount > 0 && (
+          <span className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full text-xs">{currentSelectionCount}</span>
+        )}
+      </button>
+    </div>
+  );
+
+  const getPosterStatusMeta = useCallback(
+    (status: PosterJob["status"]) => {
+      const directCopy = t.contentCreation?.newTask?.direct;
+      if (status === "ready") {
+        return {
+          label: directCopy?.readyStatus || t.common.success,
+          tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-100",
+        };
+      }
+      if (status === "error") {
+        return {
+          label: directCopy?.errorStatus || t.common.error,
+          tone: "bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-100",
+        };
+      }
+      return {
+        label: directCopy?.pendingStatus || t.replication.processing,
+        tone: "bg-amber-50 text-amber-700 dark:bg-amber-500/15 dark:text-amber-100",
+      };
+    },
+    [t.common.error, t.common.success, t.contentCreation?.newTask?.direct, t.replication.processing]
+  );
+
+  const handlePosterCopy = useCallback(
+    async (text: string) => {
+      const payload = text?.trim();
+      if (!payload) return;
+      if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
+        toast.error(t.contentCreation?.stagePanel?.copyFailed ?? t.common.error);
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(payload);
+        toast.success(t.common.copied);
+      } catch (error) {
+        console.error(error);
+        toast.error(t.contentCreation?.stagePanel?.copyFailed ?? t.common.error);
+      }
+    },
+    [t.common.copied, t.common.error, t.contentCreation?.stagePanel?.copyFailed]
+  );
+
+  const handlePosterOpen = useCallback((url?: string) => {
+    if (!url) return;
+    window.open(url, "_blank", "noopener,noreferrer");
+  }, []);
+
+  const openPosterModal = useCallback((job: PosterJob) => {
+    setSelectedPosterJob(job);
+    setIsPosterModalOpen(true);
+  }, []);
+
+  const closePosterModal = useCallback(() => {
+    setIsPosterModalOpen(false);
+    setSelectedPosterJob(null);
+  }, []);
+
+  const formatPosterDate = useCallback((dateString: string) => {
+    try {
+      return new Date(dateString).toLocaleString();
+    } catch {
+      return dateString;
+    }
+  }, []);
+
+  const removeIdsFromSelection = useCallback((ids: string[]) => {
+    setSelectedVideoIds(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.delete(id));
+      return next;
+    });
+    setSelectedImageIds(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.delete(id));
+      return next;
+    });
+  }, []);
+
+  const removePosterIdsFromSelection = useCallback((ids: string[]) => {
+    setSelectedPosterIds(prev => {
+      const next = new Set(prev);
+      ids.forEach(id => next.delete(id));
+      return next;
+    });
+  }, []);
+
+  const deletePosterJobs = useCallback(async (ids: string[]) => {
+    if (!authToken) {
+      toast.error(t.common.loginPlease);
+      return false;
+    }
+    try {
+      await Promise.all(
+        ids.map((id) =>
+          fetch(`/api/xhs-images/jobs/${id}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${authToken}` },
+          }).then((res) => {
+            if (!res.ok) {
+              return res.json().then((data) => {
+                throw new Error(data?.error || "Failed to delete");
+              });
+            }
+          })
+        )
+      );
+      setPosterJobs((prev) => prev.filter((job) => !ids.includes(job.id)));
+      removePosterIdsFromSelection(ids);
+      toast.success(t.common.success);
+      return true;
+    } catch (error) {
+      console.error(error);
+      toast.error(error instanceof Error ? error.message : t.common.error);
+      return false;
+    }
+  }, [authToken, removePosterIdsFromSelection, t.common.error, t.common.loginPlease, t.common.success]);
+
+  const handleDeleteRequest = (ids: string[], type: 'video' | 'graphic' = 'video') => {
     if (!ids.length) return;
+    setPendingDeleteType(type);
     setPendingDeleteIds(ids);
     setIsDeleteModalOpen(true);
   };
@@ -147,19 +512,31 @@ export default function ReplicationContent({ history, digitalHumanVideos = [] }:
     setIsDeleteModalOpen(false);
   };
 
+  const handleDelete = (id: string) => {
+    handleDeleteRequest([id], 'video');
+  };
+
   const confirmDelete = async () => {
     if (!pendingDeleteIds.length) return;
     setIsDeleting(true);
     try {
-      const res = await deleteVideos(pendingDeleteIds);
-      if (res.success) {
-        toast.success(t.common.success);
-        setSelectedIds(new Set());
-        setPendingDeleteIds([]);
-        setIsDeleteModalOpen(false);
-        router.refresh();
+      if (pendingDeleteType === 'graphic') {
+        const result = await deletePosterJobs(pendingDeleteIds);
+        if (result) {
+          setPendingDeleteIds([]);
+          setIsDeleteModalOpen(false);
+        }
       } else {
-        toast.error(t.common.error);
+        const res = await deleteVideos(pendingDeleteIds);
+        if (res.success) {
+          toast.success(t.common.success);
+          removeIdsFromSelection(pendingDeleteIds);
+          setPendingDeleteIds([]);
+          setIsDeleteModalOpen(false);
+          router.refresh();
+        } else {
+          toast.error(t.common.error);
+        }
       }
     } catch (error) {
       console.error(error);
@@ -169,69 +546,72 @@ export default function ReplicationContent({ history, digitalHumanVideos = [] }:
     }
   };
 
+  const currentItems = isImageView ? imageItems : videoItems;
+  const selectionSet = isImageView ? selectedImageIds : selectedVideoIds;
+  const handleSelectFn = isImageView ? handleImageSelect : handleVideoSelect;
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 font-sans h-full flex flex-col">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{t.replication.title}</h1>
+    <div
+      className={cn(
+        "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 font-sans h-full flex flex-col",
+        isMyVideosPage ? "py-8" : "py-12"
+      )}
+    >
+      <div
+        className={cn(
+          "flex justify-between items-center",
+          isMyVideosPage ? "mb-6" : "mb-8"
+        )}
+      >
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+          {context === 'myVideos' ? t.sidebar.myVideos : t.replication.title}
+        </h1>
       </div>
 
-      {/* Top Navigation & Actions */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 shrink-0">
-        {/* Filters */}
-        <div className="flex flex-wrap gap-3">
-          {filters.map((filter) => {
-            return (
-            <button
-              key={filter.id}
-              onClick={() => {
-                 if (filter.id === 'STORYBOARD_GEN') {
-                     setIsStoryboardGenOpen(true);
-                 } else if (filter.id === 'DIGITAL_HUMAN') {
-                     setActiveFilter(filter.id);
-                 } else {
-                     setActiveFilter(filter.id);
-                 }
-              }}
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all border",
-                activeFilter === filter.id && filter.id !== 'STORYBOARD_GEN'
-                  ? "bg-black text-white border-black dark:bg-white dark:text-black dark:border-white shadow-md"
-                  : "bg-white text-gray-600 border-gray-200 hover:border-gray-300 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700"
-              )}
-            >
-              {filter.icon && <filter.icon size={16} />}
-              {filter.label}
-            </button>
-            );
-          })}
+      {showMediaTabs ? (
+        <div
+          className={cn(
+            "flex flex-col gap-4",
+            tabSectionSpacing
+          )}
+        >
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="flex flex-wrap gap-3">
+              {mediaTabOptions.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => handleMediaTabChange(tab.id)}
+                  className={cn(
+                    "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all border",
+                    activeMediaTab === tab.id
+                      ? "bg-black text-white border-black dark:bg-white dark:text-black dark:border-white shadow-md"
+                      : "bg-white text-gray-600 border-gray-200 hover:border-gray-300 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700"
+                  )}
+                >
+                  <tab.icon size={16} />
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            {batchActionButtons}
+          </div>
+          {creationActionButtons}
         </div>
-
-        <div className="flex items-center gap-3">
-            {/* Batch Delete */}
-            <button
-            onClick={() => handleDeleteRequest(Array.from(selectedIds))}
-            disabled={selectedIds.size === 0 || isDeleting}
-            className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-            {isDeleting ? t.common.loading : t.replication.batchDelete}
-            </button>
-
-            {/* Batch Actions */}
-            <button
-            onClick={handleBatchDownload}
-            disabled={selectedIds.size === 0}
-            className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-            <Download size={16} />
-            {t.replication.batchDownload}
-            {selectedIds.size > 0 && <span className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full text-xs">{selectedIds.size}</span>}
-            </button>
+      ) : (
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 shrink-0">
+          {creationActionButtons || <div />}
+          {batchActionButtons}
         </div>
-      </div>
+      )}
 
       {/* Warning Banner */}
       {showBanner && (
-        <div className="mb-8 p-4 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl flex items-start justify-between gap-3 shrink-0">
+        <div
+          className={cn(
+            "p-4 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl flex items-start justify-between gap-3 shrink-0",
+            bannerSpacing
+          )}
+        >
             <div className="flex items-start gap-3">
                 <AlertTriangle className="text-gray-600 dark:text-gray-400 mt-0.5 shrink-0" size={18} />
                 <p className="text-sm text-gray-800 dark:text-gray-200 font-medium">
@@ -247,29 +627,178 @@ export default function ReplicationContent({ history, digitalHumanVideos = [] }:
         </div>
       )}
 
-      {/* Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-8">
-        {filteredHistory.map((item) => (
-          <VideoCard
-            key={item.id}
-            item={item}
-            selected={selectedIds.has(item.id)}
-            onSelect={handleSelect}
-            onClick={() => {
-              setSelectedVideo(item);
-              setIsModalOpen(true);
-            }}
-            onDelete={(id) => handleDeleteRequest([id])}
-          />
-        ))}
-      </div>
-
-      {/* Empty State */}
-      {filteredHistory.length === 0 && (
-        <div className="flex-1 flex flex-col items-center justify-center text-gray-400 py-20">
-          <Clapperboard size={48} className="mb-4 opacity-20" />
-          <p>No videos found</p>
+      {isGraphicView ? (
+        <div className={cn(isMyVideosPage ? "pb-6" : "pb-8")}>
+          {posterLoading ? (
+            <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              {t.common.loading}
+            </div>
+          ) : requiresAuth ? (
+            <EmptyState
+              className={cn(emptyStateOffset, emptyStatePadding)}
+              fullHeight={!isMyVideosPage}
+              compact={isMyVideosPage}
+              icon={<FileText className="h-6 w-6" />}
+              title={t.replication.graphicAuthRequired || t.common.loginPlease}
+              description={t.replication.graphicEmptyDescription}
+            />
+          ) : posterError ? (
+            <div className="rounded-2xl border border-red-200 bg-red-50 text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-200 px-4 py-3 text-sm">
+              {posterError}
+            </div>
+          ) : posterJobs.length === 0 ? (
+            <EmptyState
+              className={cn(emptyStateOffset, emptyStatePadding)}
+              fullHeight={!isMyVideosPage}
+              compact={isMyVideosPage}
+              icon={<FileText className="h-6 w-6" />}
+              title={t.replication.graphicEmptyTitle || emptyStateTitle}
+              description={t.replication.graphicEmptyDescription || emptyStateDescription}
+            />
+          ) : (
+            <div
+              className={cn(
+                "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4",
+                isMyVideosPage ? "gap-5" : "gap-6"
+              )}
+            >
+              {posterJobs.map((job) => {
+                const statusMeta = getPosterStatusMeta(job.status);
+                const cover = job.images[0]?.imageUrl;
+                const displayTitle =
+                  job.title ||
+                  t.contentCreation?.newTask.direct?.untitledPoster ||
+                  t.replication.mediaTabs?.article ||
+                  "Poster";
+                const isSelected = selectedPosterIds.has(job.id);
+                return (
+                  <div
+                    key={job.id}
+                    className={cn(
+                      "h-full rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm hover:shadow-lg transition-all flex flex-col",
+                      isSelected ? "ring-2 ring-black dark:ring-white" : ""
+                    )}
+                    onClick={() => openPosterModal(job)}
+                  >
+                    <div className="relative aspect-[4/5] w-full overflow-hidden rounded-2xl rounded-b-none bg-gray-50 dark:bg-gray-800">
+                      {cover ? (
+                        <img src={cover} alt={displayTitle} className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-sm text-gray-400 dark:text-gray-500">
+                          {t.common.loading}
+                        </div>
+                      )}
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handlePosterSelect(job.id);
+                        }}
+                        className={cn(
+                          "absolute top-3 right-3 w-6 h-6 rounded-full border flex items-center justify-center text-xs font-semibold",
+                          isSelected
+                            ? "bg-black text-white border-black dark:bg-white dark:text-black"
+                            : "bg-white/80 dark:bg-black/60 text-gray-600 border-gray-200 dark:border-gray-700"
+                        )}
+                        aria-label="select poster"
+                      >
+                        {isSelected ? <Check size={14} /> : null}
+                      </button>
+                      <span
+                        className={cn(
+                          "absolute top-3 left-3 px-3 py-1 rounded-full text-xs font-semibold shadow-sm",
+                          statusMeta.tone
+                        )}
+                      >
+                        {statusMeta.label}
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-3 p-4 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-base font-semibold text-gray-900 dark:text-white">{displayTitle}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{formatPosterDate(job.createdAt)}</p>
+                        </div>
+                        <span className="text-xs font-semibold text-gray-400 dark:text-gray-500">
+                          {t.replication.viewDetails}
+                        </span>
+                      </div>
+                      {job.style?.name && (
+                        <span className="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-800 px-2 py-0.5 text-xs text-gray-600 dark:text-gray-300 self-start">
+                          {job.style.name}
+                        </span>
+                      )}
+                      <p className="text-sm text-gray-700 dark:text-gray-200 whitespace-pre-line max-h-32 overflow-hidden">
+                        {job.copyText}
+                      </p>
+                      <div className="mt-auto flex flex-wrap gap-2">
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handlePosterCopy(job.copyText);
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                        >
+                          <Copy size={14} />
+                          {t.common.copy}
+                        </button>
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handlePosterOpen(cover);
+                          }}
+                          disabled={!cover}
+                          className="inline-flex items-center gap-1 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-60 transition-colors"
+                        >
+                          <ExternalLink size={14} />
+                          {t.replication.download}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
+      ) : (
+        <>
+          {currentItems.length > 0 && (
+            <div
+              className={cn(
+                "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4",
+                isMyVideosPage ? "gap-5 pb-2" : "gap-6 pb-4"
+              )}
+            >
+              {currentItems.map((item) => (
+                <VideoCard
+                  key={item.id}
+                  item={item}
+                  selected={selectionSet.has(item.id)}
+                  onSelect={handleSelectFn}
+                  onClick={() => {
+                    setSelectedVideo(item);
+                    setIsModalOpen(true);
+                  }}
+                  onDelete={handleDelete}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Empty State */}
+          {currentItems.length === 0 && (
+            <EmptyState
+              className={cn(emptyStateOffset, emptyStatePadding)}
+              fullHeight={!isMyVideosPage}
+              compact={isMyVideosPage}
+              icon={<Clapperboard className="h-6 w-6" />}
+              title={emptyStateTitle}
+              description={emptyStateDescription}
+              action={emptyStateAction}
+            />
+          )}
+        </>
       )}
 
       {/* Details Modal */}
@@ -290,6 +819,42 @@ export default function ReplicationContent({ history, digitalHumanVideos = [] }:
         )}
       </Modal>
 
+      {/* Poster Details Modal */}
+      <Modal
+        isOpen={isPosterModalOpen}
+        onClose={closePosterModal}
+        title={selectedPosterJob?.title || t.replication.mediaTabs?.article || "图文"}
+        maxWidth="max-w-4xl"
+      >
+        {selectedPosterJob && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {selectedPosterJob.images.length > 0 ? (
+                selectedPosterJob.images.map((image) => (
+                  <div key={image.id} className="rounded-2xl overflow-hidden bg-gray-50 dark:bg-gray-800">
+                    <img src={image.imageUrl} alt={selectedPosterJob.title || "poster"} className="w-full h-full object-cover" />
+                  </div>
+                ))
+              ) : (
+                <div className="text-sm text-gray-500 dark:text-gray-300">
+                  {t.contentCreation?.newTask.direct?.emptyResults || t.common.loading}
+                </div>
+              )}
+            </div>
+            <div className="rounded-2xl bg-gray-50 dark:bg-gray-900/40 p-4 space-y-3">
+              <p className="text-sm text-gray-800 dark:text-gray-100 whitespace-pre-line">{selectedPosterJob.copyText}</p>
+              <button
+                onClick={() => handlePosterCopy(selectedPosterJob.copyText)}
+                className="inline-flex items-center gap-2 rounded-lg bg-black text-white px-4 py-2 text-sm font-semibold dark:bg-white dark:text-black"
+              >
+                <Copy size={16} />
+                {t.common.copy}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       {/* Storyboard Generation Modal */}
       <Modal
         isOpen={isStoryboardGenOpen}
@@ -304,10 +869,15 @@ export default function ReplicationContent({ history, digitalHumanVideos = [] }:
       <Modal
         isOpen={isDigitalHumanOpen}
         onClose={() => setIsDigitalHumanOpen(false)}
-        title="" // Custom header in component
-        maxWidth="max-w-xl"
+        title={
+          <span className="flex items-center gap-2 text-base font-semibold text-gray-900 dark:text-white">
+            <User className="w-5 h-5" />
+            {t.storyboard.digitalHuman}
+          </span>
+        }
+        maxWidth="max-w-6xl"
       >
-        <DigitalHumanModal onClose={() => setIsDigitalHumanOpen(false)} />
+        <DigitalHumanModal hideInternalTitle onClose={() => setIsDigitalHumanOpen(false)} />
       </Modal>
       <Modal
         isOpen={isDeleteModalOpen}

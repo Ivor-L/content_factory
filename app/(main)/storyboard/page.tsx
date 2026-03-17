@@ -6,11 +6,6 @@ import { StoryboardTaskList } from './StoryboardTaskList';
 
 export default async function StoryboardPage() {
   const tasks = await prisma.storyboardTask.findMany({
-    where: {
-      status: {
-        notIn: ['GENERATING_GRID', 'GRID_COMPLETED']
-      }
-    },
     orderBy: {
       createdAt: 'desc',
     },
@@ -23,15 +18,5 @@ export default async function StoryboardPage() {
 
   const serializedTasks = JSON.parse(JSON.stringify(tasks));
 
-  const products = await prisma.product.findMany({
-    orderBy: { createdAt: 'desc' }
-  });
-  const serializedProducts = JSON.parse(JSON.stringify(products));
-
-  const characters = await prisma.character.findMany({
-    orderBy: { createdAt: 'desc' }
-  });
-  const serializedCharacters = JSON.parse(JSON.stringify(characters));
-
-  return <StoryboardTaskList initialTasks={serializedTasks} products={serializedProducts} characters={serializedCharacters} />;
+  return <StoryboardTaskList initialTasks={serializedTasks} />;
 }

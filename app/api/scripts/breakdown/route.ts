@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { breakdownScript } from "@/lib/n8n";
 import { createClient } from "@supabase/supabase-js";
+import { requireEnv } from "@/lib/env";
 
 export async function POST(request: Request) {
   try {
@@ -31,8 +32,8 @@ export async function POST(request: Request) {
     let apiKey: string | undefined;
 
     const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        requireEnv("NEXT_PUBLIC_SUPABASE_URL"),
+        requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
     );
 
     let user = null;

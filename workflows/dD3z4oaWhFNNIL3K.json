@@ -749,7 +749,7 @@
             "name": "保温杯",
             "description": "",
             "product_id": "cmmftxno100005rq225zgs6yc",
-            "api_key": "sk_S-XJvpVKGGwnac1AlEFs3avCWZpqdOGaMMW27Y8iSPY",
+            "api_key": "",
             "workflow_id": "flow_product_dna",
             "image_url": "https://supabase-api.atomx.top/storage/v1/object/public/uploads/1772858090137-170108065-image1769085457935pmcyok2.png"
           },

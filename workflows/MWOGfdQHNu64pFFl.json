@@ -905,14 +905,14 @@
           "body": {
             "record_id": "recvc2fjISmugA",
             "prompt": null,
-            "first_frame_token": "X32xbslxDoOtzyxPXd3ce48gngg",
-            "last_frame_token": "SaAlblRxYo1Skhxr2NFcOgpHnee",
+            "first_frame_token": "",
+            "last_frame_token": "",
             "workflow_id_for_credits": "flow_video_Veo3.1_fast",
             "model": "veo_3_1-fast",
-            "app_token": "UDmXbkODia7B9rsiYgmchd6mnrX",
+            "app_token": "",
             "table_id": "tbl8tLjtbbBuMyVb",
-            "tenant_access_token": "t-g1042nhz4UFKNFVN33GUR6T6EESYFDAK7OCO3QYL",
-            "api_key": "sk_S-XJvpVKGGwnac1AlEFs3avCWZpqdOGaMMW27Y8iSPY"
+            "tenant_access_token": "",
+            "api_key": ""
           },
           "webhookUrl": "http://localhost:5678/webhook/veo3storyboard_video_Specialoffer",
           "executionMode": "production"

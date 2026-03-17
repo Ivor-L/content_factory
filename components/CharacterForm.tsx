@@ -1,5 +1,7 @@
 'use client';
 
+/* eslint-disable @next/next/no-img-element -- Character avatar previews rely on blob URLs */
+
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createCharacter } from "@/app/(main)/characters/actions";
@@ -199,7 +201,7 @@ export function CharacterForm({ onSuccess, initialData }: CharacterFormProps) {
         <input
           type="text"
           required
-          className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t.characters.name}
@@ -215,10 +217,10 @@ export function CharacterForm({ onSuccess, initialData }: CharacterFormProps) {
             <label 
                 className={`relative flex flex-col items-center justify-center w-full h-32 border-2 rounded-lg cursor-pointer transition-colors overflow-hidden ${
                     imageDragActive 
-                      ? 'border-black dark:border-white bg-gray-50 dark:bg-gray-800 border-dashed' 
+                      ? 'border-primary bg-primary-soft/60 border-dashed' 
                       : avatar 
                         ? 'border-transparent' 
-                        : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border-dashed'
+                        : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 hover:bg-primary-soft/50 dark:hover:bg-primary/10 border-dashed'
                 }`}
                 onDragEnter={handleImageDrag}
                 onDragLeave={handleImageDrag}

@@ -9,7 +9,7 @@ export default async function ReplicationPage() {
       orderBy: { createdAt: "desc" },
       include: {
         product: { select: { name: true } },
-        script: { select: { title: true, breakdown: true } }, // Include breakdown for details
+        script: { select: { title: true, breakdown: true, blueprint: true } }, // Include breakdown for details
       },
       take: 50, // Increase limit
     }),
@@ -24,6 +24,7 @@ export default async function ReplicationPage() {
     ...item,
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
+    inputParams: item.inputParams ? JSON.parse(JSON.stringify(item.inputParams)) : null,
   }));
 
   const serializedDigitalHumanVideos = digitalHumanVideos.map(item => ({
@@ -32,5 +33,12 @@ export default async function ReplicationPage() {
     updatedAt: item.updatedAt.toISOString(),
   }));
 
-  return <ReplicationContent history={serializedHistory} digitalHumanVideos={serializedDigitalHumanVideos} />;
+  return (
+    <ReplicationContent
+      history={serializedHistory}
+      digitalHumanVideos={serializedDigitalHumanVideos}
+      showCreationActions={false}
+      enableImageTab={false}
+    />
+  );
 }

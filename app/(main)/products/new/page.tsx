@@ -1,5 +1,7 @@
 'use client';
 
+/* eslint-disable @next/next/no-img-element -- Product creation previews rely on blob URLs that next/image cannot handle */
+
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createProduct, createDraftProduct } from '../actions';
@@ -248,7 +250,7 @@ export default function NewProductPage() {
             type="button"
             onClick={handleAnalyze}
             disabled={analyzing || !name}
-            className="px-4 py-2 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50 flex items-center gap-2"
+            className="px-4 py-2 bg-primary-soft text-primary rounded hover:bg-primary-hover/20 disabled:opacity-50 flex items-center gap-2"
           >
             {analyzing ? (
               <>
@@ -264,7 +266,7 @@ export default function NewProductPage() {
           </button>
           
           {analysisStatus === 'analyzing' && (
-             <span className="text-sm text-blue-600">Analyzing product selling points...</span>
+             <span className="text-sm text-primary">Analyzing product selling points...</span>
           )}
           {analysisStatus === 'complete' && (
              <span className="text-sm text-green-600">Analysis Complete! Review the results below.</span>

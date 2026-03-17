@@ -4,10 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "prisma generate",
     "dev": "next dev",
+    "prebuild": "prisma generate",
     "build": "next build",
+    "prestart": "prisma generate",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint .",
+    "postinstall": "prisma generate",
+    "workers:assets": "tsx workers/assetProcessor.ts",
+    "styles:previews": "tsx scripts/generate-style-previews.ts",
+    "layouts:previews": "tsx scripts/regenerate-layout-previews.ts"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.4.1",
@@ -23,13 +30,17 @@
     "next": "latest",
     "next-themes": "^0.4.6",
     "pg": "^8.19.0",
+    "pg-boss": "^12.14.0",
     "react": "latest",
     "react-dom": "latest",
     "react-hot-toast": "^2.6.0",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.5.0",
+    "xlsx": "^0.18.5",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "latest",
     "@types/pg": "^8.18.0",
     "@types/react": "latest",
@@ -38,9 +49,11 @@
     "dotenv": "^17.3.1",
     "eslint": "latest",
     "eslint-config-next": "latest",
+    "playwright": "^1.58.2",
     "postcss": "^8.4.47",
     "prisma": "latest",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.21.0",
     "typescript": "latest"
   }
 }

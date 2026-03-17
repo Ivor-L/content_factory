@@ -220,7 +220,7 @@ export async function generateOneClickReplication(
     }
 
     // Construct the payload with specific Chinese keys as requested
-    const payload = {
+    const payload: Record<string, unknown> = {
       "产品信息": productInfo,
       "Target Language": options.targetLanguage,
       "爆款视频拆解报告": breakdownReport,
@@ -235,6 +235,10 @@ export async function generateOneClickReplication(
       "user_id": options.userId
     };
 
+    if (options.apiKey) {
+      payload["api_key"] = options.apiKey;
+    }
+
     console.log("Triggering One-Click Replication:", JSON.stringify(payload, null, 2));
 
     const response = await fetch(webhookUrl, {
@@ -244,7 +248,12 @@ export async function generateOneClickReplication(
     });
 
     if (!response.ok) {
-      throw new Error(`One-Click Webhook failed with status ${response.status}`);
+      const errorText = await response.text().catch(() => '');
+      throw new Error(
+        `One-Click Webhook failed with status ${response.status}${
+          errorText ? `: ${errorText.slice(0, 500)}` : ''
+        }`
+      );
     }
 
     // Log response
@@ -275,7 +284,7 @@ export async function generateReplication(
   }
 
   try {
-    const payload = {
+    const payload: Record<string, unknown> = {
       product_id: product.id,
       script_id: script.id,
       ...options,

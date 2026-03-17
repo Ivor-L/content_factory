@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import jwt, { JwtPayload } from 'jsonwebtoken';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -32,6 +33,59 @@ function createAuthedClient(token: string) {
   });
 }
 
+function parseCookies(header: string | null): Record<string, string> {
+  if (!header) return {};
+  return header
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .reduce<Record<string, string>>((acc, part) => {
+      const separatorIndex = part.indexOf('=');
+      if (separatorIndex === -1) return acc;
+      const key = part.slice(0, separatorIndex).trim();
+      const rawValue = part.slice(separatorIndex + 1).trim();
+      try {
+        acc[key] = decodeURIComponent(rawValue);
+      } catch {
+        acc[key] = rawValue;
+      }
+      return acc;
+    }, {});
+}
+
+function extractBearerToken(request: Request): string | null {
+  const header =
+    request.headers.get('authorization') ??
+    request.headers.get('Authorization');
+  if (header) {
+    const match = header.match(/^Bearer\s+(.+)$/i);
+    if (match && match[1]) {
+      return match[1].trim();
+    }
+  }
+
+  const cookies = parseCookies(request.headers.get('cookie'));
+  const cookieCandidates = [
+    'sb-access-token',
+    'sb:access-token',
+    'sb_access_token',
+    'sb:access_token',
+    'sb-token',
+    'sb:token',
+    'supabase-access-token',
+    'supabase:access_token',
+    'access_token',
+  ];
+
+  for (const key of cookieCandidates) {
+    if (cookies[key]) {
+      return cookies[key];
+    }
+  }
+
+  return null;
+}
+
 export interface RequestUserContext {
   userId: string | null;
   token: string | null;
@@ -39,45 +93,128 @@ export interface RequestUserContext {
 }
 
 export async function getRequestUserContext(request: Request): Promise<RequestUserContext> {
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader) {
-    return { userId: null, token: null, apiKey: null };
-  }
-
-  const token = authHeader.replace(/^Bearer\\s+/i, '').trim();
+  const headerApiKey = request.headers.get('x-user-api-key')?.trim() ?? null;
+  const token = extractBearerToken(request);
   if (!token) {
+    if (headerApiKey) {
+      const userIdFromKey = await findUserIdByApiKey(headerApiKey);
+      if (userIdFromKey) {
+        return { userId: userIdFromKey, token: null, apiKey: headerApiKey };
+      }
+    }
     return { userId: null, token: null, apiKey: null };
   }
 
+  let resolvedUserId: string | null = null;
   try {
     const { data, error } = await supabaseAnonClient.auth.getUser(token);
-    if (error || !data?.user) {
-      return { userId: null, token: null, apiKey: null };
+    if (!error && data?.user?.id) {
+      resolvedUserId = data.user.id;
     }
-
-    let apiKey: string | null = null;
-    const profileClient = supabaseAdminClient ?? createAuthedClient(token);
-    try {
-      const { data: profile } = await profileClient
-        .from('profiles')
-        .select('api_key')
-        .eq('id', data.user.id)
-        .maybeSingle();
-
-      if (profile?.api_key) {
-        apiKey = profile.api_key;
-      }
-    } catch (profileError) {
-      console.error('Failed to read profile api_key', profileError);
-    }
-
-    if (!apiKey && process.env.DEFAULT_USER_API_KEY) {
-      apiKey = process.env.DEFAULT_USER_API_KEY;
-    }
-
-    return { userId: data.user.id, token, apiKey };
   } catch (error) {
     console.error('Failed to resolve Supabase user', error);
+  }
+
+  if (!resolvedUserId) {
+    resolvedUserId = decodeSupabaseUserId(token);
+  }
+
+  if (!resolvedUserId) {
+    if (headerApiKey) {
+      const userIdFromKey = await findUserIdByApiKey(headerApiKey);
+      if (userIdFromKey) {
+        return { userId: userIdFromKey, token: null, apiKey: headerApiKey };
+      }
+    }
     return { userId: null, token: null, apiKey: null };
+  }
+
+  let apiKey: string | null = headerApiKey ?? null;
+  const profileClient = supabaseAdminClient ?? createAuthedClient(token);
+  try {
+    const { data: profile } = await profileClient
+      .from('profiles')
+      .select('api_key')
+      .eq('id', resolvedUserId)
+      .maybeSingle();
+
+    if (!apiKey && profile?.api_key) {
+      apiKey = profile.api_key;
+    }
+  } catch (profileError) {
+    console.error('Failed to read profile api_key', profileError);
+  }
+
+  if (!apiKey && process.env.DEFAULT_USER_API_KEY) {
+    apiKey = process.env.DEFAULT_USER_API_KEY;
+  }
+
+  return { userId: resolvedUserId, token, apiKey };
+}
+
+async function findUserIdByApiKey(apiKey: string | null): Promise<string | null> {
+  if (!apiKey) return null;
+  try {
+    const client = supabaseAdminClient ?? supabaseAnonClient;
+    const { data, error } = await client
+      .from('profiles')
+      .select('id')
+      .eq('api_key', apiKey)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Failed to resolve user via api_key', { message: error.message });
+      return null;
+    }
+    return data?.id ?? null;
+  } catch (error) {
+    console.error('Failed to resolve user via api_key lookup', error);
+    return null;
+  }
+}
+
+export async function getApiKeyForUser(userId: string): Promise<string | null> {
+  if (!userId) return null;
+  try {
+    const client = supabaseAdminClient ?? supabaseAnonClient;
+    const { data, error } = await client
+      .from('profiles')
+      .select('api_key')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Failed to read profile api_key', error);
+      return null;
+    }
+    if (data?.api_key) return data.api_key;
+  } catch (error) {
+    console.error('Failed to fetch api key for user', error);
+  }
+  return process.env.DEFAULT_USER_API_KEY || null;
+}
+
+function decodeSupabaseUserId(token: string): string | null {
+  try {
+    const secret = process.env.SUPABASE_JWT_SECRET;
+    if (secret) {
+      const payload = jwt.verify(token, secret) as JwtPayload;
+      return typeof payload?.sub === 'string' ? payload.sub : null;
+    }
+
+    const segments = token.split('.');
+    if (segments.length < 2) return null;
+    const normalizedPayload = segments[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padding = normalizedPayload.length % 4;
+    const paddedPayload =
+      padding === 0
+        ? normalizedPayload
+        : normalizedPayload + '='.repeat(4 - padding);
+    const payloadJson = Buffer.from(paddedPayload, 'base64').toString('utf8');
+    const payload = JSON.parse(payloadJson);
+    return typeof payload?.sub === 'string' ? payload.sub : payload?.user_id ?? null;
+  } catch (error) {
+    console.error('Failed to decode Supabase token', error);
+    return null;
   }
 }

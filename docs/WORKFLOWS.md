@@ -2,6 +2,12 @@
 
 本文件用于把“前端功能 -> 后端接口 -> n8n 工作流（webhook）”的对接关系固化下来，方便后续补齐 `workflow_id` / 工作流名，并进行统一的请求体/回调体设计。
 
+## 0. 文件与脚本位置（仓库约定）
+
+- `workflows/`：主用工作流导出（用于对接字段核对、排障）
+- `workflows/exports/`：历史导出、修复版、对比快照（不直接被运行时引用）
+- `scripts/maintenance/`：工作流导出/上传/修复脚本（读取 `.vibe/credentials.env`）
+
 ## 1. 字段说明
 
 - `feature_key`：前后端用于标识一个“功能/工作流入口”的 key（通常也是 webhook path 的命名）。

@@ -4,13 +4,24 @@ import { PrismaPg } from '@prisma/adapter-pg';
 
 const prismaClientSingleton = () => {
   const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error('DATABASE_URL is not set');
+  }
+
+  const sslMode =
+    process.env.DATABASE_SSL?.toLowerCase() ||
+    process.env.PGSSLMODE?.toLowerCase() ||
+    '';
+
+  const ssl =
+    sslMode === 'require' || sslMode === 'true' || sslMode === '1'
+      ? { rejectUnauthorized: false }
+      : false;
   
   // Create a new Pool with explicit SSL configuration
   const pool = new Pool({ 
     connectionString,
-    // Explicitly disable SSL for the SSH tunnel connection
-    // This is critical because the tunnel forwards to a non-SSL local port
-    ssl: false 
+    ssl,
   });
   
   const adapter = new PrismaPg(pool);

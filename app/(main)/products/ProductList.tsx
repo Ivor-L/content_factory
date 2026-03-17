@@ -1,13 +1,28 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+/* eslint-disable @next/next/no-img-element -- Product imagery is user-provided and may reside on arbitrary remote hosts */
+
+import { useState, useEffect, useMemo } from 'react';
 import { Modal } from '@/components/Modal';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { ProductForm } from '@/components/ProductForm';
+import { AddButton } from '@/components/AddButton';
+import { EmptyState } from '@/components/EmptyState';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import { deleteProduct } from './actions';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { Package } from 'lucide-react';
+
+const ANALYSIS_TIMEOUT_MS = 10 * 60 * 1000;
+const POLLING_INTERVAL_MS = 2000;
+const TIME_TRACK_INTERVAL_MS = 30_000;
+
+type ProductStatusMeta = {
+  hasAnalysis: boolean;
+  isAnalyzing: boolean;
+  isTimedOut: boolean;
+};
 
 interface Product {
   id: string;
@@ -25,9 +40,10 @@ interface Product {
 
 interface ProductListProps {
   initialProducts: Product[];
+  showHeader?: boolean;
 }
 
-export function ProductList({ initialProducts }: ProductListProps) {
+export function ProductList({ initialProducts, showHeader = true }: ProductListProps) {
   const router = useRouter();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -39,26 +55,70 @@ export function ProductList({ initialProducts }: ProductListProps) {
 
   const { t } = useLanguage();
 
-  // Poll for updates if any product is processing
-  useEffect(() => {
-    const hasProcessing = initialProducts.some(p => {
-        let hasPoints = false;
-        try {
-            const points = JSON.parse(p.sellingPoints);
-            hasPoints = Array.isArray(points) && points.length > 0;
-        } catch (e) {
-            hasPoints = false;
-        }
-        return p.status === 'PROCESSING' || (p.analysisResult?.includes('ANALYZING') && !hasPoints && !p.sellingPointsText);
-    });
+  const [now, setNow] = useState(() => Date.now());
 
-    if (hasProcessing) {
-        const interval = setInterval(() => {
-            router.refresh();
-        }, 2000);
-        return () => clearInterval(interval);
-    }
-  }, [initialProducts, router]);
+  const productStatusMap = useMemo<Record<string, ProductStatusMeta>>(() => {
+    const currentTime = now;
+    return initialProducts.reduce<Record<string, ProductStatusMeta>>((acc, product) => {
+      let hasPoints = false;
+      try {
+        const parsed = JSON.parse(product.sellingPoints);
+        if (Array.isArray(parsed)) {
+          hasPoints = parsed.length > 0;
+        } else if (parsed && typeof parsed === 'object') {
+          const corePoints = (parsed as any)?.marketing_profile?.core_selling_points;
+          if (Array.isArray(corePoints)) {
+            hasPoints = corePoints.length > 0;
+          } else {
+            hasPoints = Object.keys(parsed).length > 0;
+          }
+        }
+      } catch {
+        hasPoints = false;
+      }
+
+      const hasAnalysis = hasPoints || Boolean(product.sellingPointsText);
+      const isAnalyzing =
+        !hasAnalysis &&
+        (product.analysisResult?.includes('ANALYZING') || product.status === 'PROCESSING');
+
+      const updatedAtMs = new Date(product.updatedAt).getTime();
+      const createdAtMs = new Date(product.createdAt).getTime();
+      const referenceTime = Number.isFinite(updatedAtMs) ? updatedAtMs : createdAtMs;
+      const isTimedOut =
+        Boolean(isAnalyzing) &&
+        Number.isFinite(referenceTime) &&
+        currentTime - referenceTime >= ANALYSIS_TIMEOUT_MS;
+
+      acc[product.id] = {
+        hasAnalysis,
+        isAnalyzing,
+        isTimedOut,
+      };
+      return acc;
+    }, {});
+  }, [initialProducts, now]);
+
+  const shouldPoll = useMemo(() => {
+    return initialProducts.some(product => {
+      const meta = productStatusMap[product.id];
+      return meta?.isAnalyzing && !meta?.isTimedOut;
+    });
+  }, [initialProducts, productStatusMap]);
+
+  useEffect(() => {
+    if (!shouldPoll) return;
+    const interval = setInterval(() => {
+      router.refresh();
+    }, POLLING_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [router, shouldPoll]);
+
+  useEffect(() => {
+    if (!shouldPoll) return;
+    const timer = setInterval(() => setNow(Date.now()), TIME_TRACK_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [shouldPoll]);
 
   const handleProductCreated = () => {
     setIsModalOpen(false);
@@ -91,34 +151,39 @@ export function ProductList({ initialProducts }: ProductListProps) {
     setIsModalOpen(true);
   };
 
+  const viewingProductStatus = viewingProduct ? productStatusMap[viewingProduct.id] : undefined;
+  const viewingProductHasAnalysis = viewingProductStatus?.hasAnalysis;
+  const viewingProductIsTimedOut = viewingProductStatus?.isTimedOut;
+  const viewingProductIsAnalyzing = viewingProductStatus?.isAnalyzing;
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 font-sans">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{t.products.title}</h1>
-        <button
+    <div className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 ${showHeader ? "py-12" : "pt-2 pb-8"} font-sans`}>
+      <div className={`flex items-center ${showHeader ? "justify-between mb-8" : "justify-end mb-4"}`}>
+        {showHeader && (
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{t.products.title}</h1>
+        )}
+        <AddButton
+          label={t.products.newProduct}
           onClick={() => {
             setEditingProduct(null);
             setIsModalOpen(true);
           }}
-          className="inline-flex items-center px-6 py-2 border border-transparent text-sm font-bold rounded-lg shadow-sm text-white dark:text-black bg-black dark:bg-white hover:bg-gray-900 dark:hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black dark:focus:ring-white transition-colors uppercase tracking-wide"
-        >
-          {t.products.newProduct}
-        </button>
+        />
       </div>
 
       {initialProducts.length === 0 ? (
-        <div className="text-center py-20 text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
-          <p className="mb-4">{t.products.noProducts}</p>
-          <button 
-            onClick={() => {
-                setEditingProduct(null);
-                setIsModalOpen(true);
-            }}
-            className="text-blue-600 hover:text-blue-500 font-medium underline"
-          >
-            {t.products.createFirst}
-          </button>
-        </div>
+        <EmptyState
+          icon={<Package className="h-6 w-6" />}
+          title={t.products.noProducts}
+          description={t.products.emptyDescription || t.products.createFirst}
+          action={{
+            label: t.products.createFirst,
+            onClick: () => {
+              setEditingProduct(null);
+              setIsModalOpen(true);
+            },
+          }}
+        />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {initialProducts.map((product) => {
@@ -129,17 +194,12 @@ export function ProductList({ initialProducts }: ProductListProps) {
               // ignore
             }
 
-            let hasPoints = false;
-            try {
-                const points = JSON.parse(product.sellingPoints);
-                hasPoints = Array.isArray(points) && points.length > 0;
-            } catch (e) {
-                hasPoints = false;
-            }
-
-            const hasAnalysis = hasPoints || !!product.sellingPointsText;
-            const isAnalyzing = !hasAnalysis && (product.analysisResult?.includes('ANALYZING') || product.status === 'PROCESSING');
+            const meta = productStatusMap[product.id];
+            const hasAnalysis = meta?.hasAnalysis ?? false;
+            const isAnalyzing = meta?.isAnalyzing ?? false;
+            const isTimedOut = meta?.isTimedOut ?? false;
             const progress = product.progress || 0;
+            const showAnalyzingOverlay = isAnalyzing && !isTimedOut;
 
             return (
               <div
@@ -165,7 +225,7 @@ export function ProductList({ initialProducts }: ProductListProps) {
                   )}
 
                   {/* Processing Overlay with Circular Progress */}
-                  {isAnalyzing && (
+                  {showAnalyzingOverlay && (
                     <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 backdrop-blur-[1px] transition-all duration-300">
                         <div className="relative w-16 h-16">
                             <svg className="w-full h-full transform -rotate-90">
@@ -199,6 +259,12 @@ export function ProductList({ initialProducts }: ProductListProps) {
                         </div>
                     </div>
                   )}
+                  {isTimedOut && (
+                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/60 backdrop-blur-[1px] px-4 text-center gap-1">
+                      <span className="text-white font-semibold text-sm">{t.products.status.timeout}</span>
+                      <span className="text-xs text-white/80 leading-relaxed">{t.products.timeoutHint}</span>
+                    </div>
+                  )}
                   
                   {/* Status Badge */}
                   <div className="absolute top-2 right-2 px-2 py-1 text-xs font-bold rounded-full bg-white/90 dark:bg-black/70 backdrop-blur-sm shadow-sm z-30">
@@ -207,9 +273,14 @@ export function ProductList({ initialProducts }: ProductListProps) {
                             <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
                             {t.products.status.completed}
                         </span>
+                    ) : isTimedOut ? (
+                        <span className="text-red-600 dark:text-red-400 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                            {t.products.status.timeout}
+                        </span>
                     ) : isAnalyzing ? (
-                        <span className="text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                        <span className="text-primary flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
                             {t.products.status.analyzing}
                         </span>
                     ) : (
@@ -230,7 +301,7 @@ export function ProductList({ initialProducts }: ProductListProps) {
                     <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                         <button
                             onClick={(e) => handleEdit(e, product)}
-                            className="text-gray-400 hover:text-blue-600 p-1 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded transition-colors"
+                            className="text-gray-400 hover:text-primary p-1 hover:bg-primary-soft dark:hover:bg-primary/10 rounded transition-colors"
                             title={t.common.edit}
                         >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 00 2 2h11a2 2 0 00 2-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
@@ -304,19 +375,16 @@ export function ProductList({ initialProducts }: ProductListProps) {
                         <h4 className="font-bold text-gray-900 dark:text-white text-xl tracking-tight">
                             {t.products.analysisResultTitle}
                         </h4>
-                        {viewingProduct.sellingPointsText || (
-                            (() => {
-                                try {
-                                    const points = JSON.parse(viewingProduct.sellingPoints);
-                                    return Array.isArray(points) && points.length > 0;
-                                } catch { return false; }
-                            })()
-                        ) ? (
+                        {viewingProductHasAnalysis ? (
                             <span className="ml-auto px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
                                 {t.products.status.completed}
                             </span>
-                        ) : (viewingProduct.analysisResult?.includes('ANALYZING') || viewingProduct.status === 'PROCESSING') ? (
-                            <span className="ml-auto px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 animate-pulse">
+                        ) : viewingProductIsTimedOut ? (
+                            <span className="ml-auto px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                                {t.products.status.timeout}
+                            </span>
+                        ) : viewingProductIsAnalyzing ? (
+                            <span className="ml-auto px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-soft text-primary dark:bg-primary/15 dark:text-primary-foreground animate-pulse">
                                 {viewingProduct.progress && viewingProduct.progress > 0 ? `${viewingProduct.progress}%` : t.products.status.analyzing}
                             </span>
                         ) : (
@@ -373,8 +441,8 @@ export function ProductList({ initialProducts }: ProductListProps) {
                                         {(target_audience_vibe || ideal_environment) && (
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                 {target_audience_vibe && (
-                                                    <div className="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-xl border border-blue-100 dark:border-blue-900/30">
-                                                        <div className="flex items-center gap-2 mb-2 text-blue-700 dark:text-blue-300 font-bold text-xs uppercase tracking-wider">
+                                                    <div className="bg-primary-soft/70 dark:bg-primary/15 p-4 rounded-xl border border-primary/30">
+                                                        <div className="flex items-center gap-2 mb-2 text-primary font-bold text-xs uppercase tracking-wider">
                                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
                                                             {t.products.targetAudience}
                                                         </div>
@@ -455,22 +523,32 @@ export function ProductList({ initialProducts }: ProductListProps) {
                                     </div>
                                 );
                             }
-                            
+
+                            if (viewingProductIsTimedOut) {
+                                return (
+                                    <div className="h-full flex flex-col items-center justify-center text-center text-red-500 gap-3 px-6">
+                                        <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01M5.455 19h13.09a1 1 0 00.894-1.447L12.894 5.553a1 1 0 00-1.788 0L4.561 17.553A1 1 0 005.455 19z"></path></svg>
+                                        <p className="text-sm font-semibold">{t.products.status.timeout}</p>
+                                        <p className="text-xs text-red-400 dark:text-red-300 leading-relaxed">{t.products.timeoutHint}</p>
+                                    </div>
+                                );
+                            }
+
                             // Loading State
-                            if (viewingProduct.analysisResult?.includes('ANALYZING') || viewingProduct.status === 'PROCESSING') {
+                            if (viewingProductIsAnalyzing) {
                                 const progress = viewingProduct.progress || 0;
                                 return (
                                     <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4">
                                         <div className="relative w-16 h-16">
                                             <div className="w-16 h-16 rounded-full border-4 border-gray-100 dark:border-gray-700"></div>
-                                            <div className="absolute top-0 left-0 w-16 h-16 rounded-full border-4 border-blue-500 border-t-transparent animate-spin"></div>
+                                            <div className="absolute top-0 left-0 w-16 h-16 rounded-full border-4 border-primary border-t-transparent animate-spin"></div>
                                             {progress > 0 && (
-                                                <div className="absolute inset-0 flex items-center justify-center text-sm font-bold text-blue-500">
+                                                <div className="absolute inset-0 flex items-center justify-center text-sm font-bold text-primary">
                                                     {progress}%
                                                 </div>
                                             )}
                                         </div>
-                                        <p className="text-sm font-medium animate-pulse text-blue-500">
+                                        <p className="text-sm font-medium animate-pulse text-primary">
                                             {t.products.status.analyzing}
                                         </p>
                                     </div>

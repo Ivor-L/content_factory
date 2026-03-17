@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import Link from 'next/link';
 import { TenantLogo } from '@/components/TenantLogo';
@@ -10,30 +10,49 @@ import { AtomXLogo } from '@/components/AtomXLogo';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Globe } from 'lucide-react';
 import { useTenant } from '@/hooks/useTenant';
+import { persistReferralCode } from '@/lib/referrals';
 
 export default function RegisterPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { t, language, setLanguage } = useLanguage();
-  const { basePath } = useTenant();
+  const { basePath, tenant } = useTenant();
   const [mounted, setMounted] = useState(false);
+  const referralParam = searchParams.get('ref');
   const tenantHomePath = basePath || '/';
   const tenantLoginPath = `${basePath || ''}/login`;
+  const brandName = tenant?.name || 'AtomX';
+  const termsText = (t.auth?.termsPrivacy || "By continuing you agree to {{brand}}'s Terms of Service and Privacy Policy.").replace('{{brand}}', brandName);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (referralParam) {
+      persistReferralCode(referralParam);
+    }
+  }, [referralParam]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
+      const referralCode = referralParam?.trim() || undefined;
       const { error } = await supabase.auth.signUp({
         email,
         password,
+        options: referralCode
+          ? {
+              data: {
+                referral_code: referralCode
+              }
+            }
+          : undefined
       });
 
       if (error) throw error;
@@ -63,7 +82,7 @@ export default function RegisterPage() {
   if (!mounted) return null;
 
   return (
-    <div className="flex min-h-screen w-full bg-white dark:bg-black font-sans selection:bg-black selection:text-white">
+    <div className="flex min-h-screen w-full bg-white dark:bg-black font-sans selection:bg-[var(--tenant-primary)] selection:text-[var(--tenant-primary-foreground)]">
       {/* Left Panel - Content */}
       <div className="w-full lg:w-1/2 flex flex-col justify-center p-8 md:p-12 lg:p-24 relative z-10">
         {/* Logo */}
@@ -90,7 +109,7 @@ export default function RegisterPage() {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         required
-                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all duration-200"
+                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
                     />
                 </div>
 
@@ -104,7 +123,7 @@ export default function RegisterPage() {
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         required
-                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent transition-all duration-200"
+                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
                     />
                 </div>
 
@@ -112,7 +131,7 @@ export default function RegisterPage() {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full flex justify-center items-center py-3.5 px-4 border border-transparent rounded-full text-sm font-medium text-white bg-black hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black disabled:opacity-50 transition-all duration-200 shadow-lg shadow-black/10"
+                        className="w-full flex justify-center items-center py-3.5 px-4 border border-transparent rounded-full text-sm font-medium text-primary-foreground bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 transition-all duration-200 shadow-theme-glow"
                     >
                         {loading 
                             ? (t.auth?.creating || 'Creating account...') 
@@ -142,7 +161,7 @@ export default function RegisterPage() {
 
         {/* Footer */}
         <div className="text-xs text-gray-400 text-center lg:text-left mt-8 lg:mt-0 absolute bottom-6 left-0 w-full px-8 md:px-12 lg:px-24">
-            {t.auth?.termsPrivacy || "By continuing you agree to AtomX's Terms of Service and Privacy Policy."}
+            {termsText}
         </div>
       </div>
 
