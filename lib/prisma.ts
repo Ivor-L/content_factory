@@ -32,7 +32,20 @@ declare global {
   var prisma: undefined | ReturnType<typeof prismaClientSingleton>;
 }
 
-const prisma = globalThis.prisma ?? prismaClientSingleton();
+function createLazyPrismaClient() {
+  let client: ReturnType<typeof prismaClientSingleton> | undefined;
+  return new Proxy({} as ReturnType<typeof prismaClientSingleton>, {
+    get(_target, prop) {
+      if (!client) {
+        client = prismaClientSingleton();
+      }
+      return (client as Record<string | symbol, unknown>)[prop];
+    },
+  });
+}
+
+const prisma: ReturnType<typeof prismaClientSingleton> =
+  globalThis.prisma ?? createLazyPrismaClient();
 
 export default prisma;
 
