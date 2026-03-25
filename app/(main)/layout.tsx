@@ -1,17 +1,32 @@
 'use client';
 
-import { ReactNode, useEffect } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { ApiKeyModal } from "@/components/ApiKeyModal";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { toast } from "react-hot-toast";
 import { useTenant } from "@/hooks/useTenant";
+import { AuthSessionSync } from "@/components/AuthSessionSync";
 
 export default function MainLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { basePath } = useTenant();
   const tenantLoginPath = `${basePath || ''}/login`;
+  const canvasBasePath = `${basePath || ''}/canvas`;
+  const isCanvasPage = pathname?.includes('/canvas');
+  const tightenStoryboardSpacing = pathname?.includes('/storyboard/create');
+  const isStoryboardDetail = pathname ? /\/storyboard\/[^/]+/.test(pathname) && !pathname.includes('/storyboard/create') && !pathname.endsWith('/storyboard') : false;
+  const [isCanvasDetailView, setIsCanvasDetailView] = useState(false);
+  const mainSpacingClass = isCanvasPage
+    ? 'p-0'
+    : isStoryboardDetail
+      ? 'p-0'
+      : tightenStoryboardSpacing
+        ? 'px-8 pb-8 pt-0 sm:pt-0'
+        : 'p-8';
+  const showSidebar = !isCanvasDetailView;
 
   useEffect(() => {
     const checkSession = async () => {
@@ -38,10 +53,33 @@ export default function MainLayout({ children }: { children: ReactNode }) {
     checkSession();
   }, [router, tenantLoginPath]);
 
+  useEffect(() => {
+    if (!pathname?.includes('/canvas')) {
+      setIsCanvasDetailView(false);
+    }
+  }, [pathname]);
+
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (typeof window === 'undefined') return;
+      if (event.origin !== window.location.origin) return;
+      const data = event.data;
+      if (!data || typeof data !== 'object') return;
+      if (data.type === 'canvas-enter') {
+        setIsCanvasDetailView(true);
+      } else if (data.type === 'canvas-exit') {
+        setIsCanvasDetailView(false);
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
   return (
     <div className="flex w-full h-full">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto p-8 dark:text-gray-100">
+      <AuthSessionSync />
+      {showSidebar && <Sidebar />}
+      <main className={`flex-1 min-w-0 overflow-y-auto dark:text-gray-100 ${mainSpacingClass}`}>
         {children}
       </main>
       <ApiKeyModal />

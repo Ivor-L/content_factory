@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getRequestUserContext } from "@/lib/authServer";
-import { parseMetadata, loadTaskWithAssets } from "@/lib/creativeTaskService";
+import { parseMetadata, loadTaskWithAssets, parseGeneratedImages } from "@/lib/creativeTaskService";
 import { serializeTaskDetail } from "@/lib/creativeTaskFormatter";
 import type { CreativeStageKey } from "@/lib/creativeStages";
 import { creativeStageOrder } from "@/lib/creativeStages";
@@ -9,6 +9,7 @@ import {
   createCreativeTaskWithAssets,
   type CreateCreativeTaskPayload,
 } from "@/lib/creativeTaskCreation";
+import { syncTaskToSummary } from "@/lib/taskSummary";
 
 export async function GET(request: NextRequest) {
   const { userId } = await getRequestUserContext(request);
@@ -53,6 +54,7 @@ export async function GET(request: NextRequest) {
     ideaText: task.ideaText,
     channel: task.channel,
     targetOutput: task.targetOutput,
+    goal: task.goal,
     metadata: parseMetadata(task.metadata),
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
@@ -61,6 +63,7 @@ export async function GET(request: NextRequest) {
       stories: task._count.stories,
       styles: task._count.styles,
     },
+    generatedImages: parseGeneratedImages(task.generatedImagesJson),
   }));
 
   return NextResponse.json({ data });
@@ -95,6 +98,12 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
+
+  await syncTaskToSummary({
+    taskType: 'creative',
+    taskId: task.id,
+    operation: 'create',
+  });
 
   const fullTask = await loadTaskWithAssets(task.id, userId);
   return NextResponse.json({ data: fullTask ? serializeTaskDetail(fullTask) : null }, { status: 201 });

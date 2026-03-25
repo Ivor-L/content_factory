@@ -1,812 +1,271 @@
 'use client';
 
-/* eslint-disable @next/next/no-img-element -- Upload previews rely on raw <img> because files can be local or blob URLs */
+/* eslint-disable @next/next/no-img-element -- Dashboard cards render remote task thumbnails with mixed dimensions */
 
-import { useMemo, useState } from 'react';
-import { useLanguage } from '@/contexts/LanguageContext';
-import { AtomXLogo } from '@/components/AtomXLogo';
-import { VideoCard } from '@/components/VideoCard';
-import { Modal } from '@/components/Modal';
-import { ProductForm } from '@/components/ProductForm';
-import { 
-  Upload, Link as LinkIcon, Zap, Layers, Play, Image as ImageIcon, 
-  ArrowRight, ArrowUp, Plus, Search, ChevronDown, Check, 
-  Sparkles, Sliders, Layout, Clapperboard, Mic, User, Film
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import Link from 'next/link';
+import { useCallback, useEffect, useState, type KeyboardEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'react-hot-toast';
-import { createStoryboardTask } from '@/app/actions/storyboard';
-import { createScript } from '@/app/(main)/scripts/actions';
-import { emitCreditsRefresh } from '@/lib/creditsBus';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { ArrowRight, User, Clock, Clapperboard, SendHorizontal, Sparkles, Image } from 'lucide-react';
+import Link from 'next/link';
 import { useTenant } from '@/hooks/useTenant';
+import { Modal } from '@/components/Modal';
 import { DigitalHumanModal } from '@/components/DigitalHumanModal';
-import { StoryboardGenModal } from '@/components/StoryboardGenModal';
-import { CharacterEmptyGuide } from '@/components/characters/CharacterEmptyGuide';
-
-const DIGITAL_HUMAN_GUIDE_KEY = 'digitalHumanGuideDismissed';
+import { QuickPosterForm, QuickReplicationForm } from './QuickActionForms';
+import { CreativeQuickStartModal } from './CreativeQuickStart';
+import type { TaskType } from '@/lib/taskSummary';
+import { createCanvasProjectOnServer } from '@/app/(main)/canvas/lib/api';
+import { formatDashboardTimestamp } from '@/lib/formatDashboardTimestamp';
 
 interface HomeContentProps {
-  recentVideos: any[];
+  recentTasks: DashboardTaskSummary[];
   products: any[];
 }
 
-export function HomeContent({ recentVideos, products }: HomeContentProps) {
-  const { t } = useLanguage();
+type DashboardTaskSummary = {
+  id: string;
+  taskType: TaskType;
+  taskId: string;
+  title: string | null;
+  status: string;
+  preview?: string | null;
+  thumbnailUrl?: string | null;
+  progress?: number | null;
+  metadata?: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+  updatedAtFormatted?: string;
+};
+
+type CopyMap = { en: string; zh: string; 'zh-TW': string };
+type LanguageCode = keyof CopyMap;
+type StatusTone = 'success' | 'processing' | 'pending' | 'danger';
+
+const DEFAULT_TYPE_COPY: CopyMap = { en: 'Project', zh: '项目', 'zh-TW': '專案' };
+const DEFAULT_STATUS_COPY: CopyMap = { en: 'Processing', zh: '处理中', 'zh-TW': '處理中' };
+
+const TYPE_LABELS: Record<TaskType, CopyMap> = {
+  creative: { en: 'Creative workspace', zh: '智能创作', 'zh-TW': '智能創作' },
+  poster: { en: 'Poster experiments', zh: '图文创意', 'zh-TW': '圖文創意' },
+  digitalHuman: { en: 'Digital human', zh: '数字人视频', 'zh-TW': '數字人影片' },
+  replication: { en: 'Viral replications', zh: '爆款复刻', 'zh-TW': '爆款復刻' },
+  storyboard: { en: 'Storyboards', zh: '分镜任务', 'zh-TW': '分鏡任務' },
+  knowledgeVideo: { en: 'Knowledge videos', zh: '知识视频', 'zh-TW': '知識影片' },
+  replicationShot: { en: 'Scene clones', zh: '场景复刻', 'zh-TW': '場景復刻' },
+};
+
+const STATUS_DISPLAY: Record<string, { label: CopyMap; tone: StatusTone }> = {
+  COMPLETED: { label: { en: 'Completed', zh: '已完成', 'zh-TW': '已完成' }, tone: 'success' },
+  READY: { label: { en: 'Ready', zh: '可下载', 'zh-TW': '可下載' }, tone: 'success' },
+  ACTIVE: { label: { en: 'Active', zh: '进行中', 'zh-TW': '進行中' }, tone: 'processing' },
+  PUBLISHED: { label: { en: 'Published', zh: '已发布', 'zh-TW': '已發布' }, tone: 'success' },
+  PROCESSING: { label: { en: 'Processing', zh: '处理中', 'zh-TW': '處理中' }, tone: 'processing' },
+  ANALYZING: { label: { en: 'Analyzing', zh: '分析中', 'zh-TW': '分析中' }, tone: 'processing' },
+  RUNNING: { label: { en: 'Running', zh: '运行中', 'zh-TW': '執行中' }, tone: 'processing' },
+  IN_PROGRESS: { label: { en: 'In progress', zh: '处理中', 'zh-TW': '處理中' }, tone: 'processing' },
+  QUEUED: { label: { en: 'Queued', zh: '排队中', 'zh-TW': '排隊中' }, tone: 'pending' },
+  PENDING: { label: { en: 'Queued', zh: '排队中', 'zh-TW': '排隊中' }, tone: 'pending' },
+  FAILED: { label: { en: 'Failed', zh: '失败', 'zh-TW': '失敗' }, tone: 'danger' },
+  ERROR: { label: { en: 'Error', zh: '出错', 'zh-TW': '錯誤' }, tone: 'danger' },
+  BREAKDOWN_COMPLETED: { label: { en: 'Analyzed', zh: '拆解完成', 'zh-TW': '拆解完成' }, tone: 'success' },
+  VIDEO_GENERATION_COMPLETED: { label: { en: 'Video ready', zh: '视频就绪', 'zh-TW': '影片就緒' }, tone: 'success' },
+  IMAGE_GENERATION_COMPLETED: { label: { en: 'Images ready', zh: '首帧图就绪', 'zh-TW': '首幀圖就緒' }, tone: 'success' },
+};
+
+const STATUS_BADGE_CLASSES: Record<StatusTone, string> = {
+  success: 'bg-emerald-50/95 text-emerald-800 border border-emerald-100/70 backdrop-blur-sm',
+  processing: 'bg-sky-50/95 text-sky-800 border border-sky-100/70 backdrop-blur-sm',
+  pending: 'bg-amber-50/95 text-amber-800 border border-amber-100/70 backdrop-blur-sm',
+  danger: 'bg-rose-50/95 text-rose-800 border border-rose-100/70 backdrop-blur-sm',
+};
+
+const clampProgress = (value: number) => Math.min(100, Math.max(0, Math.round(value)));
+const pickCopy = (map: CopyMap | undefined, lang: LanguageCode, fallback: string) =>
+  map?.[lang] ?? fallback;
+const looksLikeVideoUrl = (url?: string | null) => {
+  if (!url) return false;
+  const normalized = url.split('?')[0]?.toLowerCase() ?? '';
+  return normalized.endsWith('.mp4') || normalized.endsWith('.mov') || normalized.endsWith('.webm');
+};
+export function HomeContent({ recentTasks, products: _products }: HomeContentProps) {
+  const { t, language } = useLanguage();
   const { tenant, tenantSlug, basePath } = useTenant();
   const router = useRouter();
-  const [mode, setMode] = useState<'one-click' | 'storyboard'>('one-click');
-  const [inputValue, setInputValue] = useState('');
-  
-  // Processing State
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processStep, setProcessStep] = useState<string>('idle');
-  const [progress, setProgress] = useState(0);
-  
-  // Form States
-  const [product, setProduct] = useState('');
-  const [country, setCountry] = useState('US');
-  const [language, setLanguage] = useState('en');
-  const [duration, setDuration] = useState('15s');
-  const [quantity, setQuantity] = useState(1);
-  const [influencer, setInfluencer] = useState('');
-  
-  const [isDragging, setIsDragging] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
-  const [isDigitalHumanModalOpen, setIsDigitalHumanModalOpen] = useState(false);
-  const [isDigitalHumanGuideOpen, setIsDigitalHumanGuideOpen] = useState(false);
-  const [storyboardModalContext, setStoryboardModalContext] = useState<'nine-grid' | 'batch' | null>(null);
+  const [showReplicationModal, setShowReplicationModal] = useState(false);
+  const [showPosterModal, setShowPosterModal] = useState(false);
+  const [showCreativeModal, setShowCreativeModal] = useState(false);
+  const [showDigitalHumanModal, setShowDigitalHumanModal] = useState(false);
+  const [canvasPrompt, setCanvasPrompt] = useState('');
+  const [heroTitleEntered, setHeroTitleEntered] = useState(false);
 
   const getTenantPath = (path: string) => {
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     return `${basePath || ''}${normalizedPath}`;
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
+  const heroTenantName = tenant.name || 'NexTide';
+  const langKey = (language ?? 'zh') as LanguageCode;
+  const isNextideTenant =
+    (tenantSlug?.toLowerCase() ?? '') === 'nextide' || heroTenantName.toLowerCase() === 'nextide';
+  const heroTitle = isNextideTenant
+    ? `${heroTenantName}让内容营销更简单`
+    : `${heroTenantName}内容创作工作台`;
 
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const droppedFile = e.dataTransfer.files[0];
-      if (droppedFile.type.startsWith('video/')) {
-        setFile(droppedFile);
-      }
-    }
-  };
-  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
-  const [isProductDropdownOpen, setIsProductDropdownOpen] = useState(false);
-  const [isCountryDropdownOpen, setIsCountryDropdownOpen] = useState(false);
-  const [isLanguageDropdownOpen, setIsLanguageDropdownOpen] = useState(false);
-  const [isModeDropdownOpen, setIsModeDropdownOpen] = useState(false);
-  const [productSearch, setProductSearch] = useState('');
-  const [errors, setErrors] = useState({ product: false, input: false });
-
-  const countries = [
-    { code: 'US', label: (t as any).countries?.US || 'United States' },
-    { code: 'UK', label: (t as any).countries?.UK || 'United Kingdom' },
-    { code: 'JP', label: (t as any).countries?.JP || 'Japan' },
-    { code: 'DE', label: (t as any).countries?.DE || 'Germany' },
-    { code: 'FR', label: (t as any).countries?.FR || 'France' },
-    { code: 'ES', label: (t as any).countries?.ES || 'Spain' },
-  ];
-
-  const languages = [
-    { code: 'en', label: (t as any).languages?.en || 'English' },
-    { code: 'es', label: (t as any).languages?.es || 'Spanish' },
-    { code: 'jp', label: (t as any).languages?.jp || 'Japanese' },
-    { code: 'zh', label: (t as any).languages?.zh || 'Chinese' },
-    { code: 'de', label: (t as any).languages?.de || 'German' },
-    { code: 'fr', label: (t as any).languages?.fr || 'French' },
-  ];
-
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(productSearch.toLowerCase())
-  );
-
-  const selectedProduct = products.find(p => p.id === product);
-
-  const safeParseArray = (raw?: string | null) => {
-    if (!raw) return [];
-    try {
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-      console.warn('Invalid JSON array', raw, error);
-      return [];
-    }
-  };
-
-  const handleExecute = async () => {
-    const newErrors = {
-      product: !product,
-      input: !inputValue && !file
-    };
-
-    setErrors(newErrors);
-
-    if (newErrors.product) {
-      toast.error((t as any).home?.pleaseSelectProduct || 'Please select a product');
-    } else if (newErrors.input) {
-      toast.error((t as any).home?.pleaseUploadVideo || 'Please upload a video or enter a link');
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setHeroTitleEntered(true);
+      return;
     }
 
-    if (!newErrors.product && !newErrors.input) {
-      
-      if (mode === 'storyboard') {
-        const loadingToast = toast.loading('Creating storyboard task...');
-        try {
-            const formData = new FormData();
-            formData.append('productId', product);
-            
-            // Handle Video Source
-            if (file) {
-                 // Upload file first to get URL
-                 const uploadData = new FormData();
-                 uploadData.append('file', file);
-                 const res = await fetch('/api/upload', { method: 'POST', body: uploadData });
-                 if (!res.ok) throw new Error('Failed to upload video');
-                 const data = await res.json();
-                 formData.append('videoUrl', data.url);
-            } else {
-                 formData.append('videoUrl', inputValue);
-            }
+    const frame = window.requestAnimationFrame(() => {
+      setHeroTitleEntered(true);
+    });
 
-            if (influencer) {
-                // Assuming influencer value is ID
-                // formData.append('characterId', influencer);
-            }
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
 
-            const result = await createStoryboardTask(formData);
-            emitCreditsRefresh();
-            
-            toast.dismiss(loadingToast);
-            toast.success('Task created! Redirecting...');
-            router.push(getTenantPath(`/storyboard/${result.taskId}`));
-            
-        } catch (error) {
-            console.error(error);
-            toast.dismiss(loadingToast);
-            toast.error('Failed to create task');
-        }
-      } else {
-        // One-Click Mode Logic (Sequential Flow)
-        setIsProcessing(true);
-        setProcessStep('uploading');
-        setProgress(0);
-        const loadingToast = toast.loading('Starting process...');
-
-        try {
-            // 1. Upload/Get Video URL
-            let videoUrl = inputValue;
-            if (file) {
-                 const uploadData = new FormData();
-                 uploadData.append('file', file);
-                 const res = await fetch('/api/upload', { method: 'POST', body: uploadData });
-                 if (!res.ok) throw new Error('Failed to upload video');
-                 const data = await res.json();
-                 videoUrl = data.url;
-            }
-
-            if (!videoUrl) throw new Error('No video URL provided');
-
-            // 2. Create Script
-            setProcessStep('creating_script');
-            setProgress(5);
-            toast.loading('Creating script...', { id: loadingToast });
-            
-            const scriptFormData = new FormData();
-            scriptFormData.append('title', `Homepage Upload - ${new Date().toLocaleString()}`);
-            scriptFormData.append('videoUrl', videoUrl);
-            scriptFormData.append('description', 'Auto-generated from homepage upload');
-            
-            // Use server action to create script
-            const script = await createScript(scriptFormData);
-            
-            if (!script || !script.id) throw new Error('Failed to create script');
-
-            // 3. Trigger Breakdown
-            setProcessStep('breakdown');
-            setProgress(10);
-            toast.loading('Analyzing video structure (Explosive Dismantling)...', { id: loadingToast });
-            
-            const breakdownRes = await fetch('/api/scripts/breakdown', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ scriptId: script.id })
-            });
-            
-            if (!breakdownRes.ok) throw new Error('Failed to start breakdown');
-
-            // 4. Poll for Completion
-            await new Promise((resolve, reject) => {
-                const interval = setInterval(async () => {
-                    try {
-                        const res = await fetch(`/api/scripts/${script.id}/status`);
-                        if (!res.ok) throw new Error('Failed to check status');
-                        const data = await res.json();
-                        
-                        // Update progress based on status (approximate)
-                        if (data.status === 'queued') setProgress(15);
-                        else if (data.status === 'extracting') setProgress(25);
-                        else if (data.status === 'downloading') setProgress(40);
-                        else if (data.status === 'analyzing') setProgress(60);
-                        else if (data.status === 'parsing') setProgress(80);
-                        
-                        if (data.status === 'completed') {
-                            setProgress(100);
-                            clearInterval(interval);
-                            resolve(data);
-                        } else if (data.status === 'failed') {
-                            clearInterval(interval);
-                            reject(new Error('Analysis failed'));
-                        }
-                    } catch (e) {
-                        clearInterval(interval);
-                        reject(e);
-                    }
-                }, 2000);
-            });
-            
-            // 5. Trigger Replication
-            setProcessStep('replication');
-            setProgress(95);
-            toast.loading('Starting replication process...', { id: loadingToast });
-            
-            const replicationRes = await fetch('/api/replication/generate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    scriptId: script.id,
-                    productId: product,
-                    targetCountry: country,
-                    targetLanguage: language,
-                    duration: duration,
-                    quantity: quantity.toString()
-                })
-            });
-            
-            if (!replicationRes.ok) throw new Error('Failed to start replication');
-            
-            const replicationData = await replicationRes.json();
-            
-            toast.success('Replication started! Redirecting...', { id: loadingToast });
-            
-            // 6. Redirect
-            if (replicationData.id) {
-                 router.push(`/replication/${replicationData.id}`);
-            } else {
-                 router.push('/replication');
-            }
-
-        } catch (error) {
-            console.error(error);
-            toast.error(error instanceof Error ? error.message : 'Something went wrong', { id: loadingToast });
-            setIsProcessing(false);
-            setProcessStep('idle');
-            setProgress(0);
-        }
-      }
-    }
-  };
-
-  const handleProductCreated = () => {
-    setIsProductModalOpen(false);
-    router.refresh();
-  };
-
-  // Quick Access Cards Data
-  const openDigitalHumanModal = () => setIsDigitalHumanModalOpen(true);
-
-  const handleDigitalHumanQuickAccess = () => {
-    if (typeof window !== 'undefined') {
-      const dismissed = window.localStorage.getItem(DIGITAL_HUMAN_GUIDE_KEY) === 'true';
-      if (!dismissed) {
-        setIsDigitalHumanGuideOpen(true);
+  const openQuickAction = useCallback(
+    (action: 'creative' | 'replication' | 'poster' | 'digitalHuman') => {
+      if (action === 'creative') {
+        setShowCreativeModal(true);
         return;
       }
-    }
-    openDigitalHumanModal();
-  };
-
-  const handleDigitalHumanGuideContinue = () => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(DIGITAL_HUMAN_GUIDE_KEY, 'true');
-    }
-    setIsDigitalHumanGuideOpen(false);
-    openDigitalHumanModal();
-  };
-
-  const quickAccessCards = [
-    {
-      key: 'digital-human',
-      title: (t as any).home?.quickAccess?.digitalHuman || 'Digital Human',
-      subtitle: (t as any).home?.quickAccess?.digitalHumanSubtitle || 'High-fidelity Lip-sync',
-      icon: <User className="w-6 h-6 text-red-500" />,
-      badge: null,
-      onClick: handleDigitalHumanQuickAccess
+      if (action === 'replication') {
+        setShowReplicationModal(true);
+        return;
+      }
+      if (action === 'poster') {
+        setShowPosterModal(true);
+        return;
+      }
+      if (action === 'digitalHuman') {
+        setShowDigitalHumanModal(true);
+        return;
+      }
     },
-    {
-      key: 'storyboard-video',
-      title: (t as any).home?.quickAccess?.storyboardVideo || 'Storyboard Video',
-      subtitle: (t as any).home?.quickAccess?.storyboardSubtitle || 'High Consistency Video',
-      icon: <Clapperboard className="w-6 h-6 text-orange-500" />,
-      badge: null,
-      onClick: () => setStoryboardModalContext('nine-grid')
+  []);
+
+  const openCanvasProject = useCallback(async () => {
+    const prompt = canvasPrompt.trim();
+    try {
+      const project = await createCanvasProjectOnServer(prompt || '未命名项目');
+      if (prompt) {
+        await fetch('/api/canvas/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectId: project.id,
+            messages: [
+              {
+                role: 'system',
+                content: '你是 NexTide 的创作助手，请根据用户给出的创意补充成可供无限画布使用的提示词。',
+              },
+              { role: 'user', content: prompt },
+            ],
+            stream: false,
+          }),
+        }).catch((error) => {
+          console.error('Canvas agent call failed', error);
+        });
+      }
+      const search = new URLSearchParams();
+      search.set('projectId', project.id);
+      if (prompt) {
+        search.set('prompt', prompt);
+      }
+      search.set('returnTo', getTenantPath('/dashboard'));
+      const targetUrl = `${getTenantPath('/canvas')}?${search.toString()}`;
+      router.push(targetUrl);
+      setCanvasPrompt('');
+    } catch (error) {
+      console.error('Failed to create canvas project', error);
+    }
+  }, [canvasPrompt, getTenantPath, router]);
+
+  const handleCanvasPromptKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLTextAreaElement>) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+        event.preventDefault();
+        void openCanvasProject();
+      }
     },
-    {
-      key: 'batch-video',
-      title: (t as any).home?.quickAccess?.batchVideoGen || 'Batch Video Generation',
-      subtitle: (t as any).home?.quickAccess?.batchVideoSubtitle || 'One-click Concurrent Generation',
-      icon: <Film className="w-6 h-6 text-primary" />,
-      badge: null,
-      link: getTenantPath('/storyboard/create')
-    }
-  ];
-
-  const isJubaopen = tenantSlug === 'jubaopen';
-  const heroTitle = useMemo(() => {
-    if (isJubaopen) return '聚保盆让内容营销更简单';
-    return (t as any).home?.heroTitle || 'AtomX Makes Content Marketing Simpler';
-  }, [isJubaopen, t]);
-
-  const heroLogo = useMemo(() => {
-    if (isJubaopen) {
-      const logoSrc = tenant.browserLogo || '/logo/jubaopeng_logo.svg';
-      return (
-        <img
-          src={logoSrc}
-          alt={tenant.name}
-          className="mr-2 h-12 w-12 rounded-full object-cover"
-        />
-      );
-    }
-    return <AtomXLogo className="inline-flex mr-2" size={48} showText={false} />;
-  }, [isJubaopen, tenant.browserLogo, tenant.name]);
+    [openCanvasProject],
+  );
 
   return (
     <div className="min-h-screen bg-[#F6F7F9] dark:bg-black font-sans">
       <div className="max-w-6xl mx-auto px-4 py-12">
       
         {/* Hero Section */}
-        <div className="flex flex-col items-center justify-center mb-10 text-center">
-          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white tracking-tight flex items-center gap-2">
-            {heroLogo}
-            <span className="hidden">{tenant.name}</span>
-            {heroTitle}
-          </h1>
-        </div>
-
-        {/* Main Interaction Area - Styled like the Reference Image */}
-        <div className="bg-white dark:bg-gray-900 rounded-[2rem] p-6 md:p-8 shadow-sm border border-gray-100 dark:border-gray-800 mb-10 relative">
-          
-          {/* Processing Overlay */}
-          {isProcessing && (
-              <div className="absolute inset-0 bg-white/80 dark:bg-black/80 backdrop-blur-sm z-50 rounded-[2rem] flex flex-col items-center justify-center animate-in fade-in duration-300">
-                  <div className="w-72 space-y-4 p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700">
-                      <div className="flex items-center justify-between text-sm font-bold text-gray-900 dark:text-white">
-                          <span className="animate-pulse">
-                              {processStep === 'uploading' && 'Uploading Video...'}
-                              {processStep === 'creating_script' && 'Creating Script...'}
-                              {processStep === 'breakdown' && 'Explosive Dismantling...'}
-                              {processStep === 'replication' && 'Starting Replication...'}
-                          </span>
-                          <span>{Math.round(progress)}%</span>
-                      </div>
-                      <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2 overflow-hidden">
-                          <div 
-                              className="bg-primary h-full transition-all duration-300 ease-out"
-                              style={{ width: `${progress}%` }}
-                          />
-                      </div>
-                  </div>
-              </div>
-          )}
-
-          <div className="flex flex-col md:flex-row gap-6 mb-20">
-            {/* Upload Placeholder Box */}
-            <label 
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              className={cn(
-                "w-24 h-32 md:w-32 md:h-32 shrink-0 bg-gray-50 dark:bg-gray-800 border-2 border-dashed rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer group hover:bg-gray-100 dark:hover:bg-gray-700",
-                isDragging ? "border-primary bg-primary/5" : "border-gray-200 dark:border-gray-700"
-              )}
+        <section className="mb-10 py-8 md:py-12">
+          <div className="text-center space-y-3">
+            <h1
+              className={`text-[1.45rem] sm:text-[2.1rem] md:text-[2.75rem] font-semibold leading-snug sm:leading-tight text-gray-900 dark:text-white transform-gpu transition-[opacity,transform,filter] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                heroTitleEntered
+                  ? 'opacity-100 translate-y-0 blur-0 scale-100'
+                  : 'opacity-0 translate-y-3 blur-[2px] scale-[0.985]'
+              }`}
             >
-              <input 
-                type="file" 
-                className="hidden" 
-                accept="video/*"
-                onChange={(e) => {
-                  if (e.target.files && e.target.files.length > 0) {
-                    setFile(e.target.files[0]);
-                    setErrors(prev => ({ ...prev, input: false }));
-                  }
-                }}
-              />
-              {file ? (
-                file.type.startsWith('video/') ? (
-                  <video 
-                    src={URL.createObjectURL(file)} 
-                    className="w-full h-full object-cover rounded-xl"
-                    controls={false}
-                    autoPlay
-                    muted
-                    loop
-                  />
-                ) : (
-                  <img 
-                    src={URL.createObjectURL(file)} 
-                    alt={file.name} 
-                    className="w-full h-full object-cover rounded-xl"
-                  />
-                )
-              ) : (
-                <Plus className="text-gray-400 group-hover:text-gray-600 dark:text-gray-500" size={24} />
-              )}
-            </label>
-
-            {/* Text Input Area */}
-            <div className="flex-1">
-               <textarea
-                value={inputValue}
-                onChange={(e) => {
-                  setInputValue(e.target.value);
-                  if (e.target.value) setErrors(prev => ({ ...prev, input: false }));
-                }}
-                placeholder={(t as any).home?.uploadPlaceholder || 'Seedance 2.0 Full Reference, Video Creativity Unlimited Possibilities...'}
-                className="w-full h-full min-h-[100px] bg-transparent border-none outline-none text-gray-800 dark:text-gray-200 placeholder:text-gray-400 dark:placeholder:text-gray-600 resize-none text-lg font-medium p-2"
-              />
-            </div>
+              {heroTitle}
+            </h1>
           </div>
-
-          {/* Bottom Controls Bar */}
-          <div className="absolute bottom-6 left-6 right-6 flex flex-wrap items-center justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Mode Selector Pill */}
-              <div className="relative">
+          <div className="mx-auto mt-8 max-w-4xl">
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+              <textarea
+                value={canvasPrompt}
+                onChange={(event) => setCanvasPrompt(event.target.value)}
+                onKeyDown={handleCanvasPromptKeyDown}
+                placeholder="输入你的创意，开始新项目"
+                className="min-h-[110px] w-full resize-none bg-transparent text-base text-gray-900 outline-none placeholder:text-gray-400 dark:text-white dark:placeholder:text-gray-500"
+              />
+              <div className="mt-3 flex justify-end">
                 <button
-                  onClick={() => setIsModeDropdownOpen(!isModeDropdownOpen)}
-                  className="flex items-center gap-2 px-4 py-2 bg-black dark:bg-white border border-transparent rounded-full shadow-sm text-sm font-bold text-white dark:text-black hover:bg-gray-900 dark:hover:bg-gray-100 transition-colors"
+                  type="button"
+                  onClick={() => void openCanvasProject()}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--tenant-primary,#16a34a)] text-white transition hover:opacity-90"
+                  title="打开无限画布"
                 >
-                  <Sparkles size={16} />
-                  <span>
-                    {mode === 'one-click' ? ((t as any).home?.oneClickMode || 'Agent Mode') : ((t as any).home?.storyboardMode || 'Storyboard')}
-                  </span>
-                  <ChevronDown size={14} className="text-gray-400" />
+                  <SendHorizontal className="h-5 w-5" />
                 </button>
-                
-                {isModeDropdownOpen && (
-                   <>
-                    <div className="fixed inset-0 z-10" onClick={() => setIsModeDropdownOpen(false)} />
-                    <div className="absolute bottom-full left-0 mb-2 w-48 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-100 dark:border-gray-700 z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                      <button
-                        onClick={() => { 
-                          setMode('one-click'); 
-                          setDuration('15s');
-                          setIsModeDropdownOpen(false); 
-                        }}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium flex items-center justify-between"
-                      >
-                        {(t as any).home?.oneClickMode || 'Agent Mode'}
-                        {mode === 'one-click' && <Check size={14} className="text-black dark:text-white" />}
-                      </button>
-                      <button
-                        onClick={() => { 
-                          setMode('storyboard'); 
-                          setDuration('32s');
-                          setIsModeDropdownOpen(false); 
-                        }}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium flex items-center justify-between"
-                      >
-                        {(t as any).home?.storyboardMode || 'Storyboard Mode'}
-                        {mode === 'storyboard' && <Check size={14} className="text-black dark:text-white" />}
-                      </button>
-                    </div>
-                   </>
-                )}
               </div>
-
-              {/* Product Dropdown */}
-                <div className="relative">
-                    <button
-                        onClick={() => setIsProductDropdownOpen(!isProductDropdownOpen)}
-                        className={cn(
-                            "flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border rounded-full shadow-sm text-sm font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors max-w-[160px]",
-                            errors.product ? "border-red-500" : "border-gray-200 dark:border-gray-700"
-                        )}
-                    >
-                        <span className="truncate">
-                            {selectedProduct ? selectedProduct.name : ((t as any).home?.selectProduct || 'Select Product')}
-                        </span>
-                        <ChevronDown size={14} className="text-gray-400 shrink-0" />
-                    </button>
-
-                    {isProductDropdownOpen && (
-                        <>
-                            <div className="fixed inset-0 z-10" onClick={() => setIsProductDropdownOpen(false)} />
-                            <div className="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-100 dark:border-gray-700 z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                                <div className="p-2 border-b border-gray-100 dark:border-gray-700">
-                                    <div className="relative">
-                                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                                        <input 
-                                            type="text" 
-                                            placeholder="Search..." 
-                                            value={productSearch}
-                                            onChange={(e) => setProductSearch(e.target.value)}
-                                            className="w-full bg-gray-50 dark:bg-gray-900 rounded-lg pl-9 pr-3 py-2 text-xs text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-gray-400"
-                                            autoFocus
-                                        />
-                                    </div>
-                                </div>
-                                <div className="max-h-48 overflow-y-auto custom-scrollbar p-1">
-                                    <button
-                                        onClick={() => {
-                                            setIsProductDropdownOpen(false);
-                                            setIsProductModalOpen(true);
-                                        }}
-                                        className="w-full text-left px-3 py-2 text-xs font-bold text-primary dark:text-primary hover:bg-primary-soft/60 dark:hover:bg-primary/10 rounded-lg flex items-center gap-2 mb-1"
-                                    >
-                                        <Plus size={14} />
-                                        {t.products.newProduct}
-                                    </button>
-                                    
-                                  {filteredProducts.length > 0 ? (
-                                        filteredProducts.map(p => {
-                                            const images = safeParseArray(p.images);
-                                            const imageUrl = images.length > 0 ? images[0] : null;
-
-                                            return (
-                                                <button
-                                                    key={p.id}
-                                                    onClick={() => {
-                                                        setProduct(p.id);
-                                                        setErrors(prev => ({ ...prev, product: false }));
-                                                        setIsProductDropdownOpen(false);
-                                                    }}
-                                                    className={cn(
-                                                        "w-full text-left px-3 py-2 text-xs rounded-lg flex items-center gap-3 transition-colors",
-                                                        product === p.id 
-                                                            ? "bg-black/5 dark:bg-white/10 text-black dark:text-white font-bold" 
-                                                            : "text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                                                    )}
-                                                >
-                                                    <div className="w-6 h-6 rounded bg-gray-200 dark:bg-gray-600 shrink-0 overflow-hidden">
-                                                        {imageUrl ? (
-                                                            <img src={imageUrl} alt="" className="w-full h-full object-cover" />
-                                                        ) : (
-                                                            <div className="w-full h-full flex items-center justify-center text-gray-400">
-                                                                <ImageIcon size={12} />
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    <span className="truncate">{p.name}</span>
-                                                    {product === p.id && <Check size={14} className="ml-auto text-black dark:text-white" />}
-                                                </button>
-                                            );
-                                        })
-                                    ) : (
-                                        <div className="px-3 py-4 text-center text-xs text-gray-400">
-                                            No products found
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </>
-                    )}
-                </div>
-
-                {/* Country Dropdown */}
-                <div className="relative hidden md:block">
-                    <button
-                        onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
-                        className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full shadow-sm text-sm font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                    >
-                        <span className="truncate max-w-[100px]">
-                             {countries.find(c => c.code === country)?.label || country}
-                        </span>
-                        <ChevronDown size={14} className="text-gray-400" />
-                    </button>
-
-                    {isCountryDropdownOpen && (
-                        <>
-                            <div className="fixed inset-0 z-10" onClick={() => setIsCountryDropdownOpen(false)} />
-                            <div className="absolute bottom-full left-0 mb-2 w-48 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-100 dark:border-gray-700 z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                                <div className="max-h-48 overflow-y-auto custom-scrollbar p-1">
-                                    {countries.map(c => (
-                                        <button
-                                            key={c.code}
-                                            onClick={() => {
-                                                setCountry(c.code);
-                                                setIsCountryDropdownOpen(false);
-                                            }}
-                                            className={cn(
-                                                "w-full text-left px-3 py-2 text-xs rounded-lg flex items-center justify-between transition-colors",
-                                                country === c.code 
-                                                    ? "bg-black/5 dark:bg-white/10 text-black dark:text-white font-bold" 
-                                                    : "text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                                            )}
-                                        >
-                                            <span>{c.label}</span>
-                                            {country === c.code && <Check size={14} className="text-black dark:text-white" />}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </>
-                    )}
-                </div>
-
-                 {/* Language Dropdown */}
-                 <div className="relative hidden md:block">
-                    <button
-                        onClick={() => setIsLanguageDropdownOpen(!isLanguageDropdownOpen)}
-                        className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full shadow-sm text-sm font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                    >
-                        <span className="truncate max-w-[100px]">
-                             {languages.find(l => l.code === language)?.label || language}
-                        </span>
-                        <ChevronDown size={14} className="text-gray-400" />
-                    </button>
-
-                    {isLanguageDropdownOpen && (
-                        <>
-                            <div className="fixed inset-0 z-10" onClick={() => setIsLanguageDropdownOpen(false)} />
-                            <div className="absolute bottom-full left-0 mb-2 w-48 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-100 dark:border-gray-700 z-20 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                                <div className="max-h-48 overflow-y-auto custom-scrollbar p-1">
-                                    {languages.map(l => (
-                                        <button
-                                            key={l.code}
-                                            onClick={() => {
-                                                setLanguage(l.code);
-                                                setIsLanguageDropdownOpen(false);
-                                            }}
-                                            className={cn(
-                                                "w-full text-left px-3 py-2 text-xs rounded-lg flex items-center justify-between transition-colors",
-                                                language === l.code 
-                                                    ? "bg-black/5 dark:bg-white/10 text-black dark:text-white font-bold" 
-                                                    : "text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                                            )}
-                                        >
-                                            <span>{l.label}</span>
-                                            {language === l.code && <Check size={14} className="text-black dark:text-white" />}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </>
-                    )}
-                </div>
-
-                {/* Duration */}
-                <div className="flex bg-gray-100 dark:bg-gray-800 rounded-full border border-gray-200 dark:border-gray-700 p-0.5">
-                    {mode === 'one-click' ? (
-                        <>
-                            {['10s', '15s'].map(d => (
-                                <button
-                                    key={d}
-                                    onClick={() => setDuration(d)}
-                                    className={cn(
-                                        "px-3 py-1.5 rounded-full text-xs font-bold transition-all",
-                                        duration === d ? "bg-white text-black shadow-sm dark:bg-gray-700 dark:text-white" : "text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white"
-                                    )}
-                                >
-                                    {d}
-                                </button>
-                            ))}
-                        </>
-                    ) : (
-                         <>
-                            {['16s', '24s', '32s', '40s', '48s', '56s'].map(d => (
-                                <button
-                                    key={d}
-                                    onClick={() => setDuration(d)}
-                                    className={cn(
-                                        "px-3 py-1.5 rounded-full text-xs font-bold transition-all",
-                                        duration === d ? "bg-white text-black shadow-sm dark:bg-gray-700 dark:text-white" : "text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white"
-                                    )}
-                                >
-                                    {d}
-                                </button>
-                            ))}
-                        </>
-                    )}
-                </div>
-
-                {/* Quantity */}
-                <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 rounded-full border border-gray-200 dark:border-gray-700 px-3 py-1.5">
-                    <span className="text-xs text-gray-500 dark:text-gray-400 font-bold">{(t as any).home?.quantity || 'Qty'}:</span>
-                    <input 
-                        type="number" 
-                        min="1" 
-                        max="10" 
-                        value={quantity}
-                        onChange={(e) => setQuantity(parseInt(e.target.value))}
-                        className="w-8 bg-transparent text-center text-xs font-bold outline-none text-gray-900 dark:text-white"
-                    />
-                </div>
             </div>
-
-            {/* Execute Button */}
-            <button 
-              onClick={handleExecute}
-              className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black transition-colors group ml-auto"
-            >
-              <ArrowUp size={20} className="text-gray-500 dark:text-gray-400 group-hover:text-white dark:group-hover:text-black" />
-            </button>
           </div>
-        </div>
-
-        {/* Quick Access Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-4 mb-12">
-          {quickAccessCards.map((card) => {
-            const sharedContent = (
-              <>
-                <div className="w-10 h-10 rounded-full bg-gray-50 dark:bg-gray-800 flex items-center justify-center shrink-0 group-hover:bg-primary-soft dark:group-hover:bg-primary/10 transition-colors">
-                  {card.badge && (
-                      <span className={cn(
-                          "absolute -top-1 -right-1 text-[10px] font-bold text-white px-1.5 py-0.5 rounded-full",
-                          card.badge === '4.1' ? "bg-black text-white" : "bg-primary"
-                      )}>
-                          {card.badge}
-                      </span>
-                  )}
-                  <div className="relative">
-                      {card.icon}
-                      {card.badge && (
-                          <div className={cn(
-                              "absolute -top-2 -right-2 text-[8px] font-bold text-white px-1 rounded-full",
-                              card.badge === '4.1' ? "bg-black text-white" : "bg-primary"
-                          )}>
-                              {card.badge}
-                          </div>
-                      )}
-                  </div>
-                </div>
-                <div className="flex flex-col min-w-0">
-                  <span className="font-bold text-sm text-gray-900 dark:text-white truncate group-hover:text-primary dark:group-hover:text-primary transition-colors">
-                      {card.title}
-                  </span>
-                  <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                      {card.subtitle}
-                  </span>
-                </div>
-              </>
-            );
-
-            const baseClasses = "bg-white dark:bg-gray-900 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-800 hover:shadow-md transition-all flex items-center gap-3 group";
-
-            if (card.link) {
-              return (
-                <Link key={card.key} href={card.link!} className={baseClasses}>
-                  {sharedContent}
-                </Link>
-              );
-            }
-
-            return (
+          <div className="mx-auto mt-10 max-w-4xl">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               <button
-                key={card.key}
                 type="button"
-                onClick={card.onClick}
-                className={cn(baseClasses, "text-left")}
+                onClick={() => openQuickAction('creative')}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-200 bg-white/90 px-4 py-3 text-sm font-medium text-gray-700 shadow-sm transition hover:border-[#ffd445] hover:bg-white hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900/80 dark:text-gray-200 dark:hover:border-[#ffd445] dark:hover:bg-gray-900"
               >
-                {sharedContent}
+                <Sparkles className="h-4 w-4" />
+                智能创作
               </button>
-            );
-          })}
-        </div>
+              <button
+                type="button"
+                onClick={() => openQuickAction('replication')}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-200 bg-white/90 px-4 py-3 text-sm font-medium text-gray-700 shadow-sm transition hover:border-[#ffd445] hover:bg-white hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900/80 dark:text-gray-200 dark:hover:border-[#ffd445] dark:hover:bg-gray-900"
+              >
+                <Clapperboard className="h-4 w-4" />
+                视频复刻
+              </button>
+              <button
+                type="button"
+                onClick={() => openQuickAction('poster')}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-200 bg-white/90 px-4 py-3 text-sm font-medium text-gray-700 shadow-sm transition hover:border-[#ffd445] hover:bg-white hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900/80 dark:text-gray-200 dark:hover:border-[#ffd445] dark:hover:bg-gray-900"
+              >
+                <Image className="h-4 w-4" />
+                小红书图文
+              </button>
+              <button
+                type="button"
+                onClick={() => openQuickAction('digitalHuman')}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-200 bg-white/90 px-4 py-3 text-sm font-medium text-gray-700 shadow-sm transition hover:border-[#ffd445] hover:bg-white hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900/80 dark:text-gray-200 dark:hover:border-[#ffd445] dark:hover:bg-gray-900"
+              >
+                <User className="h-4 w-4" />
+                数字人视频
+              </button>
+            </div>
+          </div>
+        </section>
 
         {/* Recent Projects (Simplified/Moved down) */}
         <div className="mb-8">
@@ -815,87 +274,160 @@ export function HomeContent({ recentVideos, products }: HomeContentProps) {
                     <div className="w-1.5 h-6 bg-black dark:bg-white rounded-full"></div>
                     {(t as any).home?.recentProjects || 'Recent Projects'}
                 </h2>
-                <Link href={getTenantPath('/replication')} className="text-sm font-bold text-gray-500 hover:text-black dark:hover:text-white flex items-center gap-1 transition-colors">
+                <Link href={getTenantPath('/my-works')} className="text-sm font-bold text-gray-500 hover:text-black dark:hover:text-white flex items-center gap-1 transition-colors">
                     {(t as any).home?.viewMore || 'View More'} <ArrowRight size={14} />
                 </Link>
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                {recentVideos.length > 0 ? (
-                    recentVideos.map((video) => (
-                        <div key={video.id} className="aspect-[9/16] h-auto">
-                             <VideoCard 
-                                item={video} 
-                                onClick={() => {}} 
-                             />
-                        </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5">
+                {recentTasks.length > 0 ? (
+                    recentTasks.map((task) => (
+                        <RecentProjectCard
+                          key={task.id}
+                          task={task}
+                          lang={langKey}
+                          detailHref={`${getTenantPath('/my-works')}?taskId=${encodeURIComponent(task.taskId)}`}
+                        />
                     ))
                 ) : (
-                    <div className="col-span-full py-12 text-center text-gray-400 bg-white dark:bg-gray-800/50 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-700">
+                    <div className="col-span-full py-12 text-center text-gray-400 bg-white dark:bg-[#1F2127]/50 rounded-2xl border-2 border-dashed border-gray-200 dark:border-[#34363E]">
                         <p>No recent projects found</p>
                     </div>
                 )}
             </div>
         </div>
 
-        <Modal
-          isOpen={isProductModalOpen}
-          onClose={() => setIsProductModalOpen(false)}
-          title={t.products.formTitle}
-        >
-          <ProductForm 
-              onSuccess={handleProductCreated} 
-          />
-        </Modal>
-
-        <Modal
-          isOpen={isDigitalHumanGuideOpen}
-          onClose={() => setIsDigitalHumanGuideOpen(false)}
-          title={t.characters?.emptyGuide?.badge || '数字人生成指引'}
-          maxWidth="max-w-6xl"
-        >
-          <CharacterEmptyGuide
-            copy={t.characters?.emptyGuide}
-            onCtaClick={handleDigitalHumanGuideContinue}
-          />
-        </Modal>
-
-        <Modal
-          isOpen={isDigitalHumanModalOpen}
-          onClose={() => setIsDigitalHumanModalOpen(false)}
-          title={
-            <span className="flex items-center gap-2 text-base font-semibold text-gray-900 dark:text-white">
-              <User className="w-5 h-5" />
-              {t.storyboard.digitalHuman}
-            </span>
-          }
-          maxWidth="max-w-6xl"
-        >
-          <DigitalHumanModal hideInternalTitle onClose={() => setIsDigitalHumanModalOpen(false)} />
-        </Modal>
-
-        {storyboardModalContext && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-            onClick={() => setStoryboardModalContext(null)}
+        {showReplicationModal && (
+          <Modal
+            isOpen={showReplicationModal}
+            onClose={() => setShowReplicationModal(false)}
+            title={<span className="text-base font-semibold">视频复刻</span>}
+            maxWidth="max-w-4xl"
           >
-            <div
-              className="w-full max-w-6xl bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden h-[85vh]"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <StoryboardGenModal
-                onClose={() => setStoryboardModalContext(null)}
-                initialValues={
-                  storyboardModalContext === 'batch'
-                    ? { videoType: 'story' }
-                    : undefined
-                }
-              />
-            </div>
-          </div>
+            <QuickReplicationForm onClose={() => setShowReplicationModal(false)} />
+          </Modal>
         )}
 
+        {showPosterModal && (
+          <Modal
+            isOpen={showPosterModal}
+            onClose={() => setShowPosterModal(false)}
+            title={<span className="text-base font-semibold">创建小红书图文</span>}
+            maxWidth="max-w-4xl"
+          >
+            <QuickPosterForm onClose={() => setShowPosterModal(false)} />
+          </Modal>
+        )}
+        {showDigitalHumanModal && (
+          <Modal
+            isOpen={showDigitalHumanModal}
+            onClose={() => setShowDigitalHumanModal(false)}
+            title={
+              <span className="flex items-center gap-2 text-base font-semibold text-gray-900 dark:text-white">
+                <User className="w-5 h-5" />
+                {t.storyboard?.digitalHuman ?? '数字人视频'}
+              </span>
+            }
+            maxWidth="max-w-6xl"
+          >
+            <DigitalHumanModal
+              hideInternalTitle
+              showAssistant={false}
+              onClose={() => setShowDigitalHumanModal(false)}
+            />
+          </Modal>
+        )}
+        <CreativeQuickStartModal isOpen={showCreativeModal} onClose={() => setShowCreativeModal(false)} />
       </div>
     </div>
+  );
+
+}
+
+interface RecentProjectCardProps {
+  task: DashboardTaskSummary;
+  lang: LanguageCode;
+  detailHref: string;
+}
+
+function RecentProjectCard({ task, lang, detailHref }: RecentProjectCardProps) {
+  const statusKey = (task.status || '').toUpperCase();
+  const statusEntry =
+    STATUS_DISPLAY[statusKey] ?? ({ label: DEFAULT_STATUS_COPY, tone: 'processing' } as {
+      label: CopyMap;
+      tone: StatusTone;
+    });
+  const statusLabel = pickCopy(
+    statusEntry.label,
+    lang,
+    task.status || pickCopy(DEFAULT_STATUS_COPY, lang, 'Processing'),
+  );
+  const typeLabel = pickCopy(
+    TYPE_LABELS[task.taskType],
+    lang,
+    pickCopy(DEFAULT_TYPE_COPY, lang, 'Project'),
+  );
+  const thumbnailIsVideo = looksLikeVideoUrl(task.thumbnailUrl);
+  const timestampSource = task.updatedAtFormatted ?? formatDashboardTimestamp(task.updatedAt);
+  const timestamp = (timestampSource ?? "未知时间").replace(/,\s*/g, " ");
+
+  return (
+    <Link
+      href={detailHref}
+      className="group relative flex aspect-[2/3] sm:aspect-[9/16] w-full flex-col overflow-hidden rounded-3xl border border-white/20 bg-white/10 text-left shadow-lg backdrop-blur dark:border-white/10 dark:bg-white/5"
+    >
+      <div className="absolute inset-0">
+        {task.thumbnailUrl ? (
+          thumbnailIsVideo ? (
+            <video
+              src={task.thumbnailUrl}
+              className="h-full w-full object-cover"
+              autoPlay
+              loop
+              muted
+              playsInline
+            />
+          ) : (
+            <img
+              src={task.thumbnailUrl}
+              alt={task.title || typeLabel}
+              className="h-full w-full object-cover"
+              loading="lazy"
+            />
+          )
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white/60">
+            <Clapperboard className="h-8 w-8" />
+          </div>
+        )}
+      </div>
+      <div className="absolute inset-0 bg-black/45 transition group-hover:bg-black/60" />
+      {statusEntry.tone === 'processing' && (
+        <div className="absolute inset-0 overflow-hidden">
+          <div className="animate-shimmer-sweep absolute inset-0 w-1/2 bg-gradient-to-r from-transparent via-white/[0.25] to-transparent" />
+        </div>
+      )}
+      <div className="relative z-10 flex h-full flex-col justify-between p-5 text-white">
+        <div className="flex flex-col items-start gap-1.5 text-xs font-semibold">
+          <span className="inline-flex items-center rounded-full bg-white/20 px-2.5 py-0.5 leading-5">
+            {typeLabel}
+          </span>
+          <span
+            className={`inline-flex items-center rounded-full px-2.5 py-0.5 leading-5 ${STATUS_BADGE_CLASSES[statusEntry.tone]}`}
+          >
+            {statusLabel}
+          </span>
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold leading-tight line-clamp-1">
+            {task.title || typeLabel}
+          </h3>
+          <p className="mt-2 inline-flex items-center gap-2 text-sm text-white/75">
+            <Clock className="h-4 w-4" />
+            {timestamp}
+          </p>
+        </div>
+      </div>
+    </Link>
   );
 }

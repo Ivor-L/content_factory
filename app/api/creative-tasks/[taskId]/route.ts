@@ -4,6 +4,7 @@ import { getRequestUserContext } from "@/lib/authServer";
 import { loadTaskWithAssets, parseMetadata } from "@/lib/creativeTaskService";
 import { serializeTaskDetail } from "@/lib/creativeTaskFormatter";
 import { sanitizeStyleRules } from "@/lib/styleRules";
+import { syncTaskToSummary } from "@/lib/taskSummary";
 
 type Params = {
   params: Promise<{ taskId: string }>;
@@ -108,6 +109,12 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     data,
   });
 
+  await syncTaskToSummary({
+    taskType: 'creative',
+    taskId: taskId,
+    operation: 'update',
+  });
+
   const updated = await loadTaskWithAssets(taskId, userId);
   return NextResponse.json({ data: serializeTaskDetail(updated!) });
 }
@@ -149,6 +156,12 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     const message = error instanceof Error ? error.message : "Failed to delete task";
     return NextResponse.json({ error: message }, { status: 500 });
   }
+
+  await syncTaskToSummary({
+    taskType: 'creative',
+    taskId: taskId,
+    operation: 'delete',
+  });
 
   return NextResponse.json({ ok: true });
 }

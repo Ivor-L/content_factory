@@ -3,7 +3,8 @@
 /* eslint-disable @next/next/no-img-element -- Storyboard creation page renders direct previews */
 
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import type { DragEvent } from 'react';
+import clsx from 'clsx';
+import type { DragEvent, SyntheticEvent } from 'react';
 import Link from 'next/link';
 import { toast } from 'react-hot-toast';
 import {
@@ -15,12 +16,15 @@ import {
   Plus,
   Download,
   ChevronDown,
+  ChevronUp,
   Image as ImageIcon,
   Clapperboard,
   Clock3,
   X,
+  Share2,
+  RefreshCcw,
+  Wand2,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useTenant } from '@/hooks/useTenant';
 import { StoryboardAssetViewer, ViewerItem } from './StoryboardAssetViewer';
@@ -124,6 +128,40 @@ interface StoryboardCreationPageProps {
     label?: string;
   } | null;
 }
+
+interface AssetPreviewProps {
+  src: string;
+  alt?: string;
+  className?: string;
+}
+
+const AssetPreview = ({ src, alt = 'preview', className }: AssetPreviewProps) => {
+  const [isPortrait, setIsPortrait] = useState(false);
+
+  useEffect(() => {
+    setIsPortrait(false);
+  }, [src]);
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={clsx(
+        'h-full w-full transition-transform duration-500',
+        isPortrait ? 'object-contain bg-black/80 dark:bg-black/70' : 'object-cover',
+        className
+      )}
+      onLoad={(event) => {
+        const { naturalHeight, naturalWidth } = event.currentTarget;
+        if (!naturalHeight || !naturalWidth) {
+          setIsPortrait(false);
+          return;
+        }
+        setIsPortrait(naturalHeight > naturalWidth);
+      }}
+    />
+  );
+};
 
 const sanitizePersistableUrl = (url?: string | null) => {
   if (!url || url.startsWith('blob:')) return undefined;
@@ -242,11 +280,21 @@ export function StoryboardCreationPage({
   initialData = null,
   timelineLink = null,
 }: StoryboardCreationPageProps = {}) {
-  const { t } = useLanguage();
+  const { t: i18nText } = useLanguage();
+  const t = i18nText as any;
+  const manualText = t.storyboard.manual;
+  const storyboardTabLabel = manualText?.storyboardTab || '分镜板';
+  const timelineTabLabel = manualText?.timelineTab || '时间轴';
   const { tenantSlug, isLoading: tenantLoading } = useTenant();
   useSidebarAutoCollapse(true, true);
-  const [rows, setRows] = useState<StoryboardRow[]>(() => hydrateRowsFromPrefill(initialData));
+  const initialRowsRef = useRef<StoryboardRow[] | null>(null);
+  if (!initialRowsRef.current) {
+    initialRowsRef.current = hydrateRowsFromPrefill(initialData);
+  }
+  const initialRows = initialRowsRef.current ?? createInitialRows();
+  const [rows, setRows] = useState<StoryboardRow[]>(initialRows);
   const [taskName, setTaskName] = useState(() => initialData?.taskName || '新的任务');
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(initialRows[0]?.id ?? null);
   const previewUrlsRef = useRef(new Set<string>());
   const [draggingTarget, setDraggingTarget] = useState<string | null>(null);
   const [activeViewer, setActiveViewer] = useState<{
@@ -263,7 +311,6 @@ export function StoryboardCreationPage({
   const downloadMenuRef = useRef<HTMLDivElement | null>(null);
   const promptRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
-  const [hoveredGap, setHoveredGap] = useState<number | null>(null);
   const [activeView, setActiveView] = useState<'board' | 'timeline'>('board');
   const [draftLoaded, setDraftLoaded] = useState(false);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -291,6 +338,34 @@ export function StoryboardCreationPage({
     });
     return previewRows;
   }, [rows]);
+  const selectedRowIndex = useMemo(
+    () => rows.findIndex((row) => row.id === selectedRowId),
+    [rows, selectedRowId]
+  );
+  const selectedRow = selectedRowIndex >= 0 ? rows[selectedRowIndex] : rows[0];
+  const selectedRowLabel =
+    selectedRowIndex >= 0
+      ? `${manualText?.rowTitle || '分镜'} ${selectedRowIndex + 1}`
+      : manualText?.rowTitle || '分镜';
+  const selectedFirstAsset =
+    selectedRow?.firstFrame || selectedRow?.firstGallery?.[0] || null;
+  const selectedLastAsset =
+    selectedRow?.lastFrame || selectedRow?.lastGallery?.[0] || null;
+  const previewActions = [
+    { key: 'reference', label: t.storyboard.sceneRef || '用作参考图', icon: ImageIcon },
+    { key: 'edit', label: t.storyboard.partialEdit || '局部修改', icon: Wand2 },
+    {
+      key: 'regenerate',
+      label: t.storyboard.regenerate || t.storyboard.generate || '重新生成',
+      icon: RefreshCcw,
+    },
+    { key: 'share', label: t.storyboard.share || '分享', icon: Share2 },
+    {
+      key: 'download',
+      label: manualText?.downloadImages || t.storyboard.download || '下载',
+      icon: Download,
+    },
+  ] as const;
 
   const clearDraftStorage = () => {
     if (!allowDraftPersistence || typeof window === 'undefined') return;
@@ -320,7 +395,10 @@ export function StoryboardCreationPage({
   useEffect(() => {
     if (!initialData) return;
     cleanupPreviews();
-    setRows(hydrateRowsFromPrefill(initialData));
+    const hydrated = hydrateRowsFromPrefill(initialData);
+    initialRowsRef.current = hydrated;
+    setRows(hydrated);
+    setSelectedRowId(hydrated[0]?.id ?? null);
     if (initialData.taskName) {
       setTaskName(initialData.taskName);
     }
@@ -371,6 +449,7 @@ export function StoryboardCreationPage({
       cleanupPreviews();
       const restoredRows = ensureMinimumRows(rehydrateDraftRows(parsed.rows));
       setRows(restoredRows);
+      setSelectedRowId(restoredRows[0]?.id ?? null);
       if (parsed.taskName) {
         setTaskName(parsed.taskName);
       }
@@ -414,41 +493,53 @@ export function StoryboardCreationPage({
     };
   }, [rows, taskName, draftStorageKey, tenantLoading, draftLoaded, allowDraftPersistence]);
 
-  const manualText = t.storyboard.manual;
-  const storyboardTabLabel = manualText?.storyboardTab || '分镜板';
-  const timelineTabLabel = manualText?.timelineTab || '时间轴';
+  useEffect(() => {
+    if (!rows.length) {
+      setSelectedRowId(null);
+      return;
+    }
+    if (!selectedRowId || !rows.some((row) => row.id === selectedRowId)) {
+      setSelectedRowId(rows[0].id);
+    }
+  }, [rows, selectedRowId]);
 
   const renderViewTabs = () => (
-    <div className="flex flex-wrap items-center justify-center gap-3">
+    <div className="inline-flex items-center gap-2 rounded-full bg-white/10 p-1">
       {(['board', 'timeline'] as const).map((view) => {
-        const isActive = activeView === view;
         const label = view === 'board' ? storyboardTabLabel : timelineTabLabel;
         const Icon = view === 'board' ? Clapperboard : Clock3;
-        const activeTextClass = 'text-primary-foreground';
+        const isTimelineLink = view === 'timeline' && Boolean(timelineLink?.href);
+        const isActive = !isTimelineLink && activeView === view;
+        const baseClass =
+          'relative inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold transition-all';
+        const activeClass = 'bg-white text-gray-900 shadow-theme-glow';
+        const inactiveClass = 'text-white/70 hover:text-white';
+        const children = (
+          <span className="inline-flex items-center gap-2">
+            <Icon className="h-3.5 w-3.5" />
+            <span>{label}</span>
+          </span>
+        );
+
+        if (isTimelineLink && timelineLink?.href) {
+          return (
+            <Link key={view} href={timelineLink.href} className={`${baseClass} ${activeClass}`}>
+              {children}
+            </Link>
+          );
+        }
+
         return (
           <button
             key={view}
             type="button"
             onClick={() => setActiveView(view)}
-            className={`relative inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold transition-colors overflow-hidden ${
-              isActive ? activeTextClass : 'text-white/80 bg-gray-900/70'
-            }`}
+            className={`${baseClass} ${isActive ? activeClass : inactiveClass}`}
           >
+            {children}
             {isActive && (
-              <motion.span
-                layoutId="storyboard-tab-highlight"
-                className={`absolute inset-0 rounded-full ${
-                  view === 'board'
-                    ? 'bg-gradient-to-r from-primary-soft via-primary to-primary-active'
-                    : 'bg-primary'
-                }`}
-                transition={{ type: 'spring', stiffness: 400, damping: 35 }}
-              />
+              <span className="absolute inset-0 rounded-full border border-white/40 shadow-[0_0_12px_rgba(255,255,255,0.3)]" />
             )}
-            <span className="relative inline-flex items-center gap-2">
-              <Icon className="h-4 w-4" />
-              {label}
-            </span>
           </button>
         );
       })}
@@ -984,11 +1075,16 @@ export function StoryboardCreationPage({
   const removeRow = (rowId: string) => {
     setRows((prev) => {
       if (prev.length === 1) return prev;
+      const index = prev.findIndex((row) => row.id === rowId);
       const next = prev.filter((row) => row.id !== rowId);
       const removedRow = prev.find((row) => row.id === rowId);
       revokePreviewUrl(removedRow?.firstFrame?.previewUrl);
       revokePreviewUrl(removedRow?.lastFrame?.previewUrl);
       removedRow?.referenceGallery?.forEach((attachment) => revokePreviewUrl(attachment.previewUrl));
+      if (selectedRowId === rowId) {
+        const fallback = next[Math.min(Math.max(index, 0), next.length - 1)]?.id;
+        setSelectedRowId(fallback || next[0]?.id || null);
+      }
       return next.length ? next : [createEmptyRow()];
     });
   };
@@ -1007,7 +1103,7 @@ export function StoryboardCreationPage({
   };
 
   const insertRowAtPosition = useCallback(
-    (position: number, options: { focus?: boolean } = {}) => {
+    (position: number, options: { focus?: boolean; selectNew?: boolean } = {}) => {
       let newRowId: string | null = null;
       setRows((prev) => {
         const next = [...prev];
@@ -1017,7 +1113,9 @@ export function StoryboardCreationPage({
         next.splice(clamped, 0, newRow);
         return next;
       });
-      setHoveredGap(null);
+      if (newRowId && options.selectNew !== false) {
+        setSelectedRowId(newRowId);
+      }
       if (options.focus !== false && newRowId && typeof window !== 'undefined') {
         window.requestAnimationFrame(() => {
           focusPromptField(newRowId);
@@ -1028,7 +1126,7 @@ export function StoryboardCreationPage({
   );
 
   const addRow = () => {
-    insertRowAtPosition(rows.length);
+    insertRowAtPosition(rows.length, { selectNew: true });
   };
 
   const renderFrameField = (row: StoryboardRow, rowIndex: number, type: FrameType, label: string) => {
@@ -1036,17 +1134,18 @@ export function StoryboardCreationPage({
     const inputId = `${type}-${row.id}`;
     const dropKey = getDropKey(row.id, type);
     const isActive = draggingTarget === dropKey;
-    const mediaUrl = attachment?.previewUrl || attachment?.remoteUrl;
+    const mediaUrl = attachment?.previewUrl || attachment?.remoteUrl || '';
     const isVideoField = type === 'lastFrame';
     const hasAsset = Boolean(mediaUrl);
     return (
-      <div className="space-y-2">
-        <div className="flex items-center justify-end min-h-[1.25rem]">
+      <div className="relative space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-xs uppercase tracking-wide text-white/50">{label}</p>
           {attachment && (
             <button
               type="button"
               onClick={() => removeFrame(row.id, type)}
-              className="px-3 py-1 rounded-lg border border-gray-200 dark:border-gray-600 text-xs text-gray-500 hover:text-red-500 hover:border-red-200 transition"
+              className="text-[11px] text-white/60 hover:text-red-300 transition"
             >
               {manualText?.remove || '清除'}
             </button>
@@ -1056,16 +1155,20 @@ export function StoryboardCreationPage({
           <button
             type="button"
             onClick={() => openViewerForRow(row, type, rowIndex)}
-            className="group block relative rounded-2xl border border-gray-200 dark:border-gray-700 bg-black/80 overflow-hidden aspect-video"
+            className="group relative block overflow-hidden rounded-[24px] border border-white/10 bg-black/70"
             style={{ aspectRatio: '16 / 9' }}
           >
             {isVideoField ? (
-              <video src={mediaUrl} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" muted />
+              <video
+                src={mediaUrl}
+                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                muted
+              />
             ) : (
-              <img
+              <AssetPreview
                 src={mediaUrl}
                 alt={attachment?.filename || 'preview'}
-                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                className="group-hover:scale-105"
               />
             )}
             <span className="absolute inset-0 flex items-center justify-center text-sm font-semibold text-white bg-black/60 opacity-0 group-hover:opacity-100 transition">
@@ -1076,8 +1179,8 @@ export function StoryboardCreationPage({
           <label
             htmlFor={inputId}
             aria-label={label}
-            className={`block relative rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-4 cursor-pointer transition ${
-              isActive ? 'border-black/60 bg-white dark:border-white/60 dark:bg-gray-700/60' : ''
+            className={`block relative rounded-[24px] border border-dashed border-white/15 bg-white/5 p-4 text-white/60 cursor-pointer transition ${
+              isActive ? 'border-white/60 bg-white/10' : ''
             }`}
             onDragOver={(event) => handleDragOverZone(event, row.id, type)}
             onDragEnter={(event) => handleDragOverZone(event, row.id, type)}
@@ -1085,10 +1188,9 @@ export function StoryboardCreationPage({
             onDrop={(event) => handleDropOnZone(event, row.id, type)}
           >
             <div
-              className="w-full aspect-video rounded-2xl overflow-hidden bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-700 flex items-center justify-center"
-              style={{ aspectRatio: '16 / 9' }}
+              className="w-full aspect-video rounded-2xl border border-white/10 bg-black/40 flex items-center justify-center"
             >
-              <div className="text-xs text-gray-400 flex flex-col items-center text-center px-4">
+              <div className="text-xs text-white/50 flex flex-col items-center text-center px-4">
                 <UploadCloud className="h-5 w-5 mb-1" />
                 {isVideoField
                   ? manualText?.videoPlaceholder || '点击或拖拽视频到此处'
@@ -1096,8 +1198,8 @@ export function StoryboardCreationPage({
               </div>
             </div>
             {attachment?.uploading && (
-              <div className="absolute inset-0 bg-white/70 dark:bg-black/40 flex items-center justify-center rounded-xl pointer-events-none">
-                <Loader2 className="h-4 w-4 animate-spin text-gray-600 dark:text-gray-200" />
+              <div className="absolute inset-0 bg-black/40 flex items-center justify-center rounded-[24px] pointer-events-none">
+                <Loader2 className="h-4 w-4 animate-spin text-white" />
               </div>
             )}
             <input
@@ -1120,11 +1222,11 @@ export function StoryboardCreationPage({
     const isActive = draggingTarget === dropKey;
     const inputId = `${dropKey}-input`;
     return (
-      <div className="space-y-2">
+      <div className="space-y-3">
         <div
-          className={`rounded-2xl border border-dashed ${
-            isActive ? 'border-black/60 bg-white dark:border-white/60 dark:bg-gray-700/60' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800'
-          } p-3 transition`}
+          className={`rounded-[28px] border border-dashed ${
+            isActive ? 'border-white/60 bg-white/10' : 'border-white/15 bg-white/5'
+          } p-4 transition`}
           onDragOver={(event) => handleReferenceDragOver(event, row.id)}
           onDragEnter={(event) => handleReferenceDragOver(event, row.id)}
           onDragLeave={(event) => handleReferenceDragLeave(event, row.id)}
@@ -1138,7 +1240,7 @@ export function StoryboardCreationPage({
                 return (
                   <div
                     key={attachment.id}
-                    className="group relative aspect-square rounded-xl overflow-hidden bg-white dark:bg-gray-900"
+                    className="group relative aspect-square rounded-2xl overflow-hidden border border-white/10 bg-black/40"
                   >
                     <img src={mediaUrl} alt={attachment.filename || 'reference'} className="h-full w-full object-cover" />
                     <button
@@ -1149,13 +1251,13 @@ export function StoryboardCreationPage({
                           attachment.id || attachment.previewUrl || ''
                         )
                       }
-                      className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white text-xs opacity-0 transition group-hover:opacity-100 hover:bg-black/80"
+                      className="absolute right-2 top-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-white text-xs opacity-0 transition group-hover:opacity-100 hover:bg-black/90"
                       aria-label={manualText?.remove || '清除'}
                     >
                       <X className="h-3 w-3" />
                     </button>
                     {attachment.uploading && (
-                      <div className="absolute inset-0 bg-black/30 flex items-center justify-center text-white">
+                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white">
                         <Loader2 className="h-4 w-4 animate-spin" />
                       </div>
                     )}
@@ -1164,7 +1266,7 @@ export function StoryboardCreationPage({
               })}
               <label
                 htmlFor={inputId}
-                className="flex aspect-square cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-gray-300 text-xs text-gray-500 hover:border-gray-400 hover:text-gray-700 dark:border-gray-600 dark:text-gray-400 dark:hover:border-gray-400 dark:hover:text-gray-200"
+                className="flex aspect-square cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-white/20 text-xs text-white/70 hover:border-white/60 hover:text-white transition"
               >
                 <Plus className="h-4 w-4 mb-1" />
                 {manualText?.addReference || '添加参考'}
@@ -1173,11 +1275,11 @@ export function StoryboardCreationPage({
           ) : (
             <label
               htmlFor={inputId}
-              className="flex min-h-[150px] cursor-pointer flex-col items-center justify-center text-center text-xs text-gray-400 gap-2"
+              className="flex min-h-[180px] cursor-pointer flex-col items-center justify-center text-center text-xs text-white/60 gap-2"
             >
               <UploadCloud className="h-5 w-5" />
               <span>{label}</span>
-              <span className="text-[11px] text-gray-400">
+              <span className="text-[11px] text-white/40">
                 {manualText?.multiImageHint || '支持多张图片，拖拽或点击上传'}
               </span>
             </label>
@@ -1195,288 +1297,382 @@ export function StoryboardCreationPage({
     );
   };
 
-  const formatInsertHint = (position: number) => {
-    const rowLabel = (index: number) => `${manualText?.rowTitle || '分镜'} ${index + 1}`;
-    const prevIndex = position - 1;
-    const nextIndex = position;
-    if (prevIndex >= 0 && nextIndex < rows.length) {
-      const template =
-        manualText?.insertBetween || '在{start}和{end}之间新增一个分镜';
-      return template.replace('{start}', rowLabel(prevIndex)).replace('{end}', rowLabel(nextIndex));
+  const summarizePrompt = (value?: string | null) => {
+    const trimmed = (value || '').trim();
+    if (!trimmed) {
+      return manualText?.promptPlaceholder || '描述镜头、景别、动作…';
     }
-    if (nextIndex < rows.length) {
-      const template = manualText?.insertBefore || '在{target}之前新增一个分镜';
-      return template.replace('{target}', rowLabel(nextIndex));
-    }
-    if (prevIndex >= 0) {
-      const template = manualText?.insertAfter || '在{target}之后新增一个分镜';
-      return template.replace('{target}', rowLabel(prevIndex));
-    }
-    return manualText?.addRow || '新增行';
+    const firstLine =
+      trimmed
+        .split('\n')
+        .map((line) => line.trim())
+        .find((line) => line.length > 0) || trimmed;
+    return firstLine.length > 80 ? `${firstLine.slice(0, 80)}…` : firstLine;
   };
 
-  const renderInsertControl = (position: number) => {
-    const label = formatInsertHint(position);
-    const isActive = hoveredGap === position;
-    const containerPadding = 'py-2';
-    const baseLineTone = 'bg-gray-200 dark:bg-gray-700';
-    const activeLineTone = 'bg-black/50 dark:bg-white/70';
-    return (
-      <div
-        key={`insert-control-${position}`}
-        className={`relative ${containerPadding}`}
-        onMouseEnter={() => setHoveredGap(position)}
-        onMouseLeave={() => setHoveredGap((prev) => (prev === position ? null : prev))}
-      >
-        <div className="relative h-[2px] w-full overflow-hidden rounded-full">
-          <div className={`absolute inset-0 ${baseLineTone}`} />
-          <div
-            className={`absolute inset-0 ${activeLineTone} origin-center transition-transform duration-300 ${
-              isActive ? 'scale-x-100 opacity-100' : 'scale-x-0 opacity-0'
-            }`}
-          />
-        </div>
-        <div className="absolute inset-0">
-          <div
-            className={`absolute left-1/2 top-1/2 flex flex-col items-center gap-2 transition-all duration-200 ${
-              isActive ? 'opacity-100' : 'opacity-0'
-            }`}
-            style={{
-              transform: `translate(-50%, ${isActive ? '-75%' : '-60%'})`,
-            }}
-          >
-            {label && (
-              <div className="pointer-events-none rounded-full bg-black px-3 py-1 text-xs text-white dark:bg-white dark:text-black whitespace-nowrap text-center shadow-sm">
-                {label}
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={() => insertRowAtPosition(position)}
-              aria-label={label}
-              className="pointer-events-auto flex h-8 w-8 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-600 shadow transition-colors hover:bg-black hover:text-white dark:border-gray-500 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-white dark:hover:text-black"
-              tabIndex={isActive ? 0 : -1}
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+  const handleSelectRow = (rowId: string, options: { focus?: boolean } = {}) => {
+    setSelectedRowId(rowId);
+    if (options.focus !== false) {
+      focusPromptField(rowId);
+    }
+  };
+
+  const handleNavigateRow = (direction: 'prev' | 'next') => {
+    if (!rows.length) return;
+    if (selectedRowIndex < 0) {
+      setSelectedRowId(rows[0].id);
+      return;
+    }
+    const delta = direction === 'prev' ? -1 : 1;
+    const nextIndex = (selectedRowIndex + delta + rows.length) % rows.length;
+    const targetId = rows[nextIndex]?.id;
+    if (targetId) {
+      setSelectedRowId(targetId);
+      focusPromptField(targetId);
+    }
+  };
+
+  const handlePreviewAction = (action: 'reference' | 'edit' | 'regenerate' | 'share' | 'download') => {
+    switch (action) {
+      case 'reference':
+        toast.success(t.storyboard.sceneRef || '用作参考图');
+        break;
+      case 'edit':
+        toast.success(t.storyboard.partialEdit || '局部修改');
+        break;
+      case 'regenerate':
+        toast.success(t.storyboard.regenerate || t.storyboard.generate || '重新生成');
+        break;
+      case 'share':
+        toast.success(t.storyboard.share || '分享');
+        break;
+      case 'download': {
+        const targetAsset = selectedFirstAsset || selectedLastAsset;
+        const url = targetAsset?.remoteUrl || targetAsset?.previewUrl;
+        if (url) {
+          triggerBrowserDownload(
+            url,
+            buildDownloadFilename(
+              selectedRowIndex >= 0 ? selectedRowIndex : 0,
+              targetAsset?.type === 'video' ? 'lastFrame' : 'firstFrame',
+              targetAsset || undefined
+            )
+          );
+        } else {
+          toast.error(manualText?.noImagesToDownload || '当前没有可下载的素材');
+        }
+        break;
+      }
+      default:
+        break;
+    }
   };
 
   return (
     <>
-      <div className="-m-8 min-h-screen bg-white dark:bg-[#050505]">
-        <div className="sticky top-0 z-30 border-b border-gray-200/70 bg-white shadow-lg shadow-black/5 dark:border-gray-800/70 dark:bg-[#050505] dark:shadow-black/40">
-          <div className="mx-auto w-full max-w-[1600px] space-y-5 px-4 py-6 sm:px-8 md:py-7">
-            <div className="flex justify-center">
-              {renderViewTabs()}
-            </div>
-            <header className="flex flex-col gap-4">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex flex-col gap-3 flex-1 min-w-[260px] -mt-4">
-                  <input
-                    type="text"
-                    value={taskName}
-                    onChange={(e) => setTaskName(e.target.value)}
-                    className="w-full border-none bg-transparent text-4xl font-semibold text-gray-900 focus:outline-none focus:ring-0 dark:text-white"
-                    placeholder={manualText?.taskNamePlaceholder || '新的任务'}
-                  />
-                </div>
-                <div className="w-full lg:w-auto">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-start gap-2">
-                      <div className="flex flex-col gap-1">
-                        <button
-                          type="button"
-                          onClick={() => excelInputRef.current?.click()}
-                          className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-700/80"
-                        >
-                          <FileSpreadsheet className="h-4 w-4" />
-                          {manualText?.importPrompts || '导入提示词'}
-                        </button>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => firstFolderInputRef.current?.click()}
-                          className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-700/80"
-                        >
-                          <FolderOpen className="h-4 w-4" />
-                          {manualText?.importFirst || '导入首帧图'}
-                        </button>
-                        <div className="relative" ref={downloadMenuRef}>
-                          <button
-                            type="button"
-                            onClick={() => setIsDownloadMenuOpen((prev) => !prev)}
-                            className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-700/80"
-                            aria-expanded={isDownloadMenuOpen}
-                          >
-                            <Download className="h-4 w-4" />
-                            {manualText?.batchDownload || '批量下载'}
-                            <ChevronDown
-                              className={`h-3 w-3 transition-transform ${isDownloadMenuOpen ? 'rotate-180' : ''}`}
-                            />
-                          </button>
-                          {isDownloadMenuOpen && (
-                            <div className="absolute right-0 z-20 mt-2 w-48 space-y-1 rounded-2xl border border-gray-100 bg-white p-2 shadow-lg dark:border-gray-700 dark:bg-gray-900">
-                              <button
-                                type="button"
-                                onClick={() => handleBatchDownload('firstFrame')}
-                                className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium text-gray-700 transition hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800"
-                              >
-                                <ImageIcon className="h-4 w-4" />
-                                {manualText?.downloadImages || '批量下载图片'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleBatchDownload('lastFrame')}
-                                className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium text-gray-700 transition hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800"
-                              >
-                                <Clapperboard className="h-4 w-4" />
-                                {manualText?.downloadVideos || '批量下载视频'}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
+      <div className="-mx-8 -mb-8 min-h-screen bg-[#050505] text-white">
+        <header className="sticky top-0 z-30 border-b border-white/10 bg-[#050505]/90 backdrop-blur">
+          <div className="mx-auto w-full max-w-[1600px] px-4 py-3 sm:px-8">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-1 items-center gap-4 min-w-0">
+                {renderViewTabs()}
+                <input
+                  type="text"
+                  value={taskName}
+                  onChange={(e) => setTaskName(e.target.value)}
+                  className="flex-1 min-w-0 border-none bg-transparent text-2xl font-semibold text-white placeholder:text-white/40 focus:outline-none focus:ring-0"
+                  placeholder={manualText?.taskNamePlaceholder || '新的任务'}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => excelInputRef.current?.click()}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/80 transition hover:border-white/50 hover:text-white"
+                  title={manualText?.importPrompts || '导入提示词'}
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => firstFolderInputRef.current?.click()}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/80 transition hover:border-white/50 hover:text-white"
+                  title={manualText?.importFirst || '导入首帧图'}
+                >
+                  <FolderOpen className="h-4 w-4" />
+                </button>
+                <div className="relative" ref={downloadMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsDownloadMenuOpen((prev) => !prev)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white/80 transition hover:border-white/50 hover:text-white"
+                    aria-expanded={isDownloadMenuOpen}
+                    title={manualText?.batchDownload || '批量下载'}
+                  >
+                    <Download className="h-4 w-4" />
+                    <ChevronDown
+                      className={`absolute -right-1 -bottom-1 h-3 w-3 text-white/50 transition ${isDownloadMenuOpen ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+                  {isDownloadMenuOpen && (
+                    <div className="absolute right-0 z-20 mt-2 w-48 space-y-1 rounded-2xl border border-white/10 bg-[#111]/95 p-2 shadow-2xl">
+                      <button
+                        type="button"
+                        onClick={() => handleBatchDownload('firstFrame')}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs text-white/80 transition hover:bg-white/5"
+                      >
+                        <ImageIcon className="h-4 w-4" />
+                        {manualText?.downloadImages || '批量下载图片'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleBatchDownload('lastFrame')}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs text-white/80 transition hover:bg-white/5"
+                      >
+                        <Clapperboard className="h-4 w-4" />
+                        {manualText?.downloadVideos || '批量下载视频'}
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={addRow}
-                      className="inline-flex items-center gap-2 rounded-full bg-black px-4 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-200"
-                    >
-                      <Plus className="h-4 w-4" />
-                      {manualText?.addRow || '新增行'}
-                    </button>
-                  </div>
+                  )}
                 </div>
-              </div>
-            </header>
-            {activeView === 'board' && (
-              <div className="border-t border-gray-100 pt-3 dark:border-gray-800">
-                <div className="grid grid-cols-1 gap-3 text-xs font-semibold uppercase tracking-wide text-gray-500 md:grid-cols-2 lg:grid-cols-5">
-                  <span className="md:col-span-2 lg:col-span-2">{promptHeading}</span>
-                  <span>{referenceHeading}</span>
-                  <span>{firstFrameHeading}</span>
-                  <span>{videoHeading}</span>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="mx-auto w-full max-w-[1600px] px-4 pb-12 pt-10 sm:px-8">
-          {activeView === 'board' ? (
-            <>
-              <section className="space-y-0 pt-6">
-                {renderInsertControl(0)}
-                <AnimatePresence initial={false}>
-                  {rows.map((row, index) => (
-                    <motion.div
-                      key={row.id}
-                      layout
-                      initial={{ opacity: 0, y: -16, scale: 0.98 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 16, scale: 0.98 }}
-                      transition={{ duration: 0.22, ease: 'easeOut' }}
-                    >
-                      <div className="py-3">
-                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <span className="w-6 h-6 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 text-xs font-semibold flex items-center justify-center">
-                              {index + 1}
-                            </span>
-                            <p className="text-xs font-medium text-gray-600 dark:text-gray-200">
-                              {manualText?.rowTitle || '分镜'}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[11px] text-gray-500 dark:text-gray-400">
-                                {manualText?.timeRangeLabel || '时间段'}
-                              </span>
-                              <input
-                                type="text"
-                                value={row.timeRange}
-                                onChange={(e) => handleTimeRangeChange(row.id, e.target.value)}
-                                placeholder={manualText?.timeRangePlaceholder || '00:00-00:08'}
-                              className="h-8 w-28 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 text-xs text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary"
-                              />
-                            </div>
-                            {rows.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => removeRow(row.id)}
-                                className="flex items-center gap-1 text-xs text-red-500 hover:text-red-600"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                                {manualText?.deleteRow || '删除'}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-                          <div className="md:col-span-2 lg:col-span-2 space-y-2">
-                            <label htmlFor={`storyboard-row-${row.id}-prompt`} className="sr-only">
-                              {promptHeading}
-                            </label>
-                            <textarea
-                              id={`storyboard-row-${row.id}-prompt`}
-                              ref={(node) => registerPromptRef(row.id, node)}
-                              className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-3 text-sm min-h-[160px] focus:outline-none focus:ring-2 focus:ring-primary"
-                              placeholder={manualText?.promptPlaceholder || '描述镜头、景别、动作…'}
-                              value={row.prompt}
-                              onChange={(e) => handlePromptChange(row.id, e.target.value)}
-                            />
-                          </div>
-                          {renderReferenceField(row, referencePlaceholder)}
-                          {renderFrameField(row, index, 'firstFrame', manualText?.firstFrame || '首帧图')}
-                          {renderFrameField(
-                            row,
-                            index,
-                            'lastFrame',
-                            manualText?.lastFrameVideo || manualText?.lastFrame || t.storyboard.video || '视频'
-                          )}
-                        </div>
-                      </div>
-                      {renderInsertControl(index + 1)}
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-              </section>
-
-              <footer className="pt-8 border-t border-gray-100 dark:border-gray-800">
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  {activeUploads
-                    ? manualText?.uploading || '图片上传中…'
-                    : manualText?.footerHint || '填写内容会自动保存，无需额外操作。'}
-                </div>
-              </footer>
-            </>
-          ) : (
-            <section className="space-y-6 pt-6">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-gray-400">
-                    {timelinePreviewTitle}
-                  </p>
-                  <h2 className="text-2xl font-semibold text-gray-900 dark:text-white">{taskName}</h2>
-                </div>
-                {timelineLink?.href && (
+                {timelineLink && (
                   <Link
                     href={timelineLink.href}
-                    className="inline-flex items-center gap-2 rounded-full border border-primary-border/50 bg-primary-soft/60 px-4 py-2 text-xs font-semibold text-primary dark:text-primary-foreground hover:bg-primary-soft transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    className="inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-1.5 text-xs font-semibold text-white hover:border-white/60"
                   >
-                    <Clock3 className="h-4 w-4 text-primary" />
+                    <Clock3 className="h-3.5 w-3.5" />
                     {timelineLink.label || timelineTabLabel}
                   </Link>
                 )}
               </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-8 -mt-1.5">
+          {activeView === 'board' ? (
+            selectedRow ? (
+              <div className="flex flex-col gap-6 xl:flex-row">
+                <aside className="w-full xl:w-64 flex flex-col rounded-[32px] border border-white/10 bg-white/5 p-4">
+                  <div className="mb-4 flex items-center justify-between text-[11px] uppercase tracking-wide text-white/60">
+                    <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                      {t.storyboard.selected || '已选中'}
+                    </span>
+                    <span>
+                      {rows.length} {manualText?.segments || 'Shots'}
+                    </span>
+                  </div>
+                  <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+                    <button
+                      type="button"
+                      onClick={addRow}
+                      className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-white/20 bg-black/20 px-4 py-6 text-sm text-white/70 transition hover:border-white/60 hover:text-white"
+                    >
+                      <Plus className="h-5 w-5" />
+                      {manualText?.addRow || '新增行'}
+                    </button>
+                    {rows.map((row, index) => {
+                      const thumbnailAsset =
+                        row.firstFrame ||
+                        row.firstGallery?.[0] ||
+                        row.lastFrame ||
+                        row.lastGallery?.[0] ||
+                        null;
+                      const thumbnailUrl = thumbnailAsset?.previewUrl || thumbnailAsset?.remoteUrl;
+                      const isVideoThumb = thumbnailAsset?.type === 'video';
+                      const isSelected = row.id === selectedRow?.id;
+                      return (
+                        <button
+                          key={row.id}
+                          type="button"
+                          onClick={() => handleSelectRow(row.id, { focus: false })}
+                          className={clsx(
+                            'w-full text-left rounded-[28px] border px-3 py-3 transition',
+                            isSelected
+                              ? 'border-white bg-white/15 shadow-theme-glow'
+                              : 'border-white/10 bg-black/30 hover:border-white/40'
+                          )}
+                        >
+                          <div className="relative mb-3 aspect-[3/4] overflow-hidden rounded-2xl bg-black/30">
+                            {thumbnailUrl ? (
+                              isVideoThumb ? (
+                                <video src={thumbnailUrl} muted className="h-full w-full object-cover" />
+                              ) : (
+                                <img src={thumbnailUrl} alt={`shot-${index + 1}`} className="h-full w-full object-cover" />
+                              )
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-xs text-white/50">
+                                {manualText?.imagePlaceholder || '上传首帧图'}
+                              </div>
+                            )}
+                            {thumbnailAsset?.uploading && (
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                                <Loader2 className="h-4 w-4 animate-spin text-white" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] uppercase tracking-wider text-white/60">
+                            <span>{`${manualText?.rowTitle || '分镜'} ${index + 1}`}</span>
+                            <span>{row.timeRange || '--:--'}</span>
+                          </div>
+                          <p className="mt-2 text-sm text-white/80 line-clamp-2">{summarizePrompt(row.prompt)}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-4 text-[11px] text-white/50">
+                    {manualText?.primaryHint || '第一张素材会作为分镜主图/视频'}
+                  </p>
+                </aside>
+
+                <section className="flex-1 rounded-[32px] border border-white/10 bg-white/5 p-6 space-y-6">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-white/50">{selectedRowLabel}</p>
+                      <p className="text-sm text-white/70">
+                        {selectedRow?.timeRange || manualText?.timeRangeLabel || '时间段未设置'}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {previewActions.map((action) => (
+                        <button
+                          key={action.key}
+                          type="button"
+                          onClick={() => handlePreviewAction(action.key)}
+                          className="inline-flex items-center gap-1 rounded-full border border-white/15 px-3 py-1.5 text-xs text-white/80 transition hover:border-white/60 hover:text-white"
+                        >
+                          <action.icon className="h-3.5 w-3.5" />
+                          {action.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="relative flex-1 rounded-[32px] border border-white/10 bg-black/70 overflow-hidden">
+                    {(() => {
+                      const previewAsset = selectedFirstAsset || selectedLastAsset;
+                      const previewUrl = previewAsset?.previewUrl || previewAsset?.remoteUrl;
+                      if (!previewUrl) {
+                        return (
+                          <div className="flex h-full items-center justify-center text-white/60 text-sm">
+                            {manualText?.imagePlaceholder || '点击左侧添加素材'}
+                          </div>
+                        );
+                      }
+                      if (previewAsset?.type === 'video') {
+                        return <video src={previewUrl} controls className="h-full w-full object-cover" />;
+                      }
+                      return <AssetPreview src={previewUrl} alt={selectedRowLabel} />;
+                    })()}
+                    <div className="absolute left-4 top-4 flex flex-col gap-2 text-xs text-white/70">
+                      <span className="rounded-full bg-white/10 px-3 py-1">{selectedRowLabel}</span>
+                      <span className="rounded-full bg-white/10 px-3 py-1">
+                        {selectedRow?.timeRange || '--:--'}
+                      </span>
+                    </div>
+                    <div className="absolute right-4 top-1/2 flex -translate-y-1/2 flex-col gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleNavigateRow('prev')}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/40 text-white hover:border-white/60"
+                      >
+                        <ChevronUp className="h-5 w-5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleNavigateRow('next')}
+                        className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/40 text-white hover:border-white/60"
+                      >
+                        <ChevronDown className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {renderFrameField(
+                      selectedRow,
+                      selectedRowIndex >= 0 ? selectedRowIndex : 0,
+                      'firstFrame',
+                      firstFrameHeading
+                    )}
+                    {renderFrameField(
+                      selectedRow,
+                      selectedRowIndex >= 0 ? selectedRowIndex : 0,
+                      'lastFrame',
+                      videoHeading
+                    )}
+                  </div>
+                </section>
+
+                <aside className="w-full xl:max-w-[420px] flex flex-col gap-4">
+                  <div className="rounded-[32px] border border-white/10 bg-white/5 p-6 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-white/50">{selectedRowLabel}</p>
+                        <h3 className="text-2xl font-semibold text-white">{taskName || selectedRowLabel}</h3>
+                      </div>
+                      {rows.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeRow(selectedRow.id)}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/20 text-white/70 hover:text-red-300"
+                          title={manualText?.deleteRow || '删除'}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs uppercase tracking-wide text-white/50">
+                        {manualText?.timeRangeLabel || '时间段'}
+                      </label>
+                      <input
+                        type="text"
+                        value={selectedRow?.timeRange || ''}
+                        onChange={(event) => handleTimeRangeChange(selectedRow.id, event.target.value)}
+                        className="w-full rounded-2xl border border-white/15 bg-black/30 px-4 py-2 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30"
+                        placeholder="00:00-00:05"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs uppercase tracking-wide text-white/50">{promptHeading}</label>
+                      <textarea
+                        id={`storyboard-row-${selectedRow.id}-prompt`}
+                        ref={(node) => registerPromptRef(selectedRow.id, node)}
+                        className="w-full min-h-[180px] rounded-2xl border border-white/15 bg-black/30 px-4 py-3 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30"
+                        placeholder={manualText?.promptPlaceholder || '输入想要描述的镜头、景别、动作…'}
+                        value={selectedRow.prompt}
+                        onChange={(e) => handlePromptChange(selectedRow.id, e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-[32px] border border-white/10 bg-white/5 p-6 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-white">{referenceHeading}</p>
+                      <span className="text-xs text-white/60">
+                        {(selectedRow.referenceGallery?.length || 0).toString().padStart(2, '0')}
+                      </span>
+                    </div>
+                    {renderReferenceField(selectedRow, referencePlaceholder)}
+                  </div>
+
+                  <div className="rounded-[28px] border border-white/10 bg-white/5 p-4 text-xs text-white/60">
+                    {activeUploads
+                      ? manualText?.uploading || '图片上传中…'
+                      : manualText?.footerHint || '填写内容会自动保存，无需额外操作。'}
+                  </div>
+                </aside>
+              </div>
+            ) : (
+              <div className="rounded-[32px] border border-dashed border-white/20 bg-white/5 p-12 text-center text-white/70">
+                {manualText?.needOneRow || '至少保留一行分镜。'}
+              </div>
+            )
+          ) : (
+            <section className="space-y-6">
               {timelinePreviewRows.length === 0 ? (
-                <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-gray-300 dark:border-gray-700 py-16 text-sm text-gray-500 dark:text-gray-300">
-                  <Clock3 className="h-10 w-10 text-gray-300 dark:text-gray-600" />
+                <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-white/20 bg-white/5 py-16 text-sm text-white/70">
+                  <Clock3 className="h-10 w-10 text-white/40" />
                   <p className="mt-3 text-center">{timelinePreviewEmpty}</p>
                 </div>
               ) : (
@@ -1488,23 +1684,23 @@ export function StoryboardCreationPage({
                     return (
                       <div
                         key={row.id}
-                        className="flex gap-4 rounded-3xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900/40 p-5"
+                        className="flex gap-4 rounded-3xl border border-white/10 bg-[#0c0c0f] p-5"
                       >
                         <div className="flex flex-col items-center">
                           <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground shadow-theme-glow">
                             {row.order}
                           </span>
                           {index < timelinePreviewRows.length - 1 && (
-                            <span className="mt-2 w-px flex-1 bg-gray-200 dark:bg-gray-700" />
+                            <span className="mt-2 w-px flex-1 bg-white/10" />
                           )}
                         </div>
                         <div className="flex-1 space-y-4">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
-                              <p className="text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                              <p className="text-xs uppercase tracking-wide text-white/40">
                                 {manualText?.timeRangeLabel || '时间段'}
                               </p>
-                              <p className="font-mono text-sm text-gray-900 dark:text-gray-100">
+                              <p className="font-mono text-sm text-white">
                                 {row.timeRange || '--:--'}
                               </p>
                             </div>
@@ -1514,40 +1710,39 @@ export function StoryboardCreationPage({
                                 setActiveView('board');
                                 focusPromptField(row.id);
                               }}
-                              className="inline-flex items-center gap-1 rounded-full border border-gray-200 dark:border-gray-700 px-3 py-1 text-xs font-semibold text-gray-700 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 transition"
+                              className="inline-flex items-center gap-1 rounded-full border border-white/20 px-3 py-1 text-xs font-semibold text-white hover:border-white/60"
                             >
                               {t.storyboard.viewOrEdit || '查看 / 编辑'}
                             </button>
                           </div>
                           <div>
-                            <p className="text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                            <p className="text-xs uppercase tracking-wide text-white/40">
                               {promptHeading}
                             </p>
-                            <p className="mt-2 whitespace-pre-wrap rounded-2xl bg-gray-50 dark:bg-gray-800/60 p-4 text-sm text-gray-700 dark:text-gray-100">
+                            <p className="mt-2 whitespace-pre-wrap rounded-2xl bg-white/5 p-4 text-sm text-white/90">
                               {row.prompt || manualText?.promptPlaceholder || '暂无提示词'}
                             </p>
                           </div>
                           <div className="grid gap-4 md:grid-cols-2">
                             {firstAssetUrl && (
                               <div>
-                                <p className="text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                                <p className="text-xs uppercase tracking-wide text-white/40">
                                   {firstFrameHeading}
                                 </p>
-                                <div className="mt-2 aspect-video w-full overflow-hidden rounded-2xl border border-gray-100 dark:border-gray-800 bg-black/5 dark:bg-white/5">
-                                  <img
+                                <div className="mt-2 aspect-video w-full overflow-hidden rounded-2xl border border-white/10 bg-black/30">
+                                  <AssetPreview
                                     src={firstAssetUrl}
                                     alt={`${firstFrameHeading} ${row.order}`}
-                                    className="h-full w-full object-cover"
                                   />
                                 </div>
                               </div>
                             )}
                             {lastAssetUrl && (
                               <div>
-                                <p className="text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                                <p className="text-xs uppercase tracking-wide text-white/40">
                                   {videoHeading}
                                 </p>
-                                <div className="mt-2 aspect-video w-full overflow-hidden rounded-2xl border border-gray-100 dark:border-gray-800 bg-black/5 dark:bg-white/5">
+                                <div className="mt-2 aspect-video w-full overflow-hidden rounded-2xl border border-white/10 bg-black/30">
                                   {isLastVideo ? (
                                     <video
                                       src={lastAssetUrl}
@@ -1556,10 +1751,9 @@ export function StoryboardCreationPage({
                                       poster={row.firstAsset?.previewUrl || row.firstAsset?.remoteUrl}
                                     />
                                   ) : (
-                                    <img
+                                    <AssetPreview
                                       src={lastAssetUrl}
                                       alt={`${videoHeading} ${row.order}`}
-                                      className="h-full w-full object-cover"
                                     />
                                   )}
                                 </div>
@@ -1574,7 +1768,7 @@ export function StoryboardCreationPage({
               )}
             </section>
           )}
-        </div>
+        </main>
         <input
           ref={excelInputRef}
           type="file"
@@ -1596,23 +1790,23 @@ export function StoryboardCreationPage({
           className="hidden"
           onChange={(event) => handleFolderFiles('firstFrame', event.target.files)}
         />
-      {activeViewer && (
-        <StoryboardAssetViewer
-          isOpen={!!activeViewer}
-          onClose={() => setActiveViewer(null)}
-          items={activeViewer.items}
-          initialIndex={0}
-          segmentTitle={activeViewer.rowTitle}
-          mode={activeViewer.type === 'firstFrame' ? 'image' : 'video'}
-          originalPrompt={activeViewer.originalPrompt}
-          referenceItems={activeViewer.referenceItems}
-          onSave={(items) => {
-            handleViewerSave(activeViewer.rowId, activeViewer.type, items);
-            setActiveViewer(null);
-          }}
-          onUploadAsset={(file) => handleViewerUpload(file, activeViewer.type)}
-        />
-      )}
+        {activeViewer && (
+          <StoryboardAssetViewer
+            isOpen={!!activeViewer}
+            onClose={() => setActiveViewer(null)}
+            items={activeViewer.items}
+            initialIndex={0}
+            segmentTitle={activeViewer.rowTitle}
+            mode={activeViewer.type === 'firstFrame' ? 'image' : 'video'}
+            originalPrompt={activeViewer.originalPrompt}
+            referenceItems={activeViewer.referenceItems}
+            onSave={(items) => {
+              handleViewerSave(activeViewer.rowId, activeViewer.type, items);
+              setActiveViewer(null);
+            }}
+            onUploadAsset={(file) => handleViewerUpload(file, activeViewer.type)}
+          />
+        )}
       </div>
     </>
   );

@@ -250,7 +250,7 @@ export default function NewProductPage() {
             type="button"
             onClick={handleAnalyze}
             disabled={analyzing || !name}
-            className="px-4 py-2 bg-primary-soft text-primary rounded hover:bg-primary-hover/20 disabled:opacity-50 flex items-center gap-2"
+            className="btn-openclaw px-4 py-2 text-sm font-semibold flex items-center gap-2"
           >
             {analyzing ? (
               <>

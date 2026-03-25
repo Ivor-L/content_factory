@@ -10,11 +10,13 @@
 import { useTenant } from '@/hooks/useTenant';
 import { cn } from '@/lib/utils';
 import { Sparkles } from 'lucide-react';
+import { useTheme } from 'next-themes';
 
 interface TenantLogoProps {
   className?: string;
   showName?: boolean;
   size?: 'sm' | 'md' | 'lg';
+  forceMonoOnDark?: boolean;
 }
 
 const SIZE_MAP: Record<'sm' | 'md' | 'lg', number> = {
@@ -34,9 +36,13 @@ const FALLBACK_PRIMARY_COLOR = '#007AFF';
 export function TenantLogo({ 
   className, 
   showName = true,
-  size = 'md' 
+  size = 'md',
+  forceMonoOnDark = false
 }: TenantLogoProps) {
   const { tenant, isLoading } = useTenant();
+  const { resolvedTheme } = useTheme();
+  const isDarkMode = resolvedTheme === 'dark';
+  const applyMono = forceMonoOnDark && isDarkMode;
 
   if (isLoading) {
     return (
@@ -46,11 +52,18 @@ export function TenantLogo({
     );
   }
 
+  const resolvedPrimaryColor = tenant.primaryColor || FALLBACK_PRIMARY_COLOR;
+
+  const imageClass = cn(
+    "object-contain",
+    applyMono && "transition brightness-0 invert"
+  );
+
   const content = tenant.logo ? (
     <img 
       src={tenant.logo} 
       alt={tenant.name}
-      className="object-contain"
+      className={imageClass}
       style={{
         height: SIZE_MAP[size],
         width: 'auto',
@@ -62,7 +75,7 @@ export function TenantLogo({
       <div 
         className="flex items-center justify-center rounded-lg"
         style={{ 
-          backgroundColor: tenant.primaryColor || FALLBACK_PRIMARY_COLOR,
+          backgroundColor: resolvedPrimaryColor,
           width: SIZE_MAP[size],
           height: SIZE_MAP[size],
         }}
@@ -72,7 +85,7 @@ export function TenantLogo({
       {showName && (
         <span 
           className={cn("font-bold", SIZE_CLASSES[size])}
-          style={{ color: tenant.primaryColor || FALLBACK_PRIMARY_COLOR }}
+          style={{ color: applyMono ? '#FFFFFF' : resolvedPrimaryColor }}
         >
           {tenant.name}
         </span>

@@ -49,9 +49,9 @@ export const creativeStages: Record<CreativeStageKey, CreativeStageConfig> = {
   "summary": "引用用户关键词的一句话总结",
   "recommendedRoute": "framework 或 mining",
   "audienceNeed": "读者真正关心的矛盾或痛点",
-  "keyQuestions": ["需要用户补充的问题"],
+  "keyQuestions": ["2-3 个最关键的待明确问题，如果输入完整可为空数组"],
   "risks": ["如果不补充信息将导致的风险"],
-  "nextActions": ["按优先级排序的下一步建议"],
+  "nextActions": ["1-3 条建议，格式：'因为[具体原因]，建议[具体行动]'"],
   "notes": "额外提示或语气建议"
 }`,
   },
@@ -104,7 +104,7 @@ export const creativeStages: Record<CreativeStageKey, CreativeStageConfig> = {
     schemaDescription: `{
   "coreTopic": "一句话概括核心命题",
   "promise": "读者可获得的具体收益",
-  "heroSentence": "灵魂句，20 字以内",
+  "heroSentence": "灵魂句，20-30 字（优先简短）",
   "angles": [
     {
       "name": "角度名称",
@@ -136,19 +136,19 @@ export const creativeStages: Record<CreativeStageKey, CreativeStageConfig> = {
   "sections": [
     {
       "order": 1,
-      "functionCue": "内部功能提示，说明本段要实现的观众转变，禁止当成标题",
+      "functionCue": "内部功能提示，必须是'动作+目的'格式（如'用反差案例打破固有认知'），不能是标题",
       "goal": "段落要解决的具体问题或要达成的行动",
       "keyPoints": ["要点 A", "要点 B"],
-      "evidence": ["优先写用户素材 ID 或描述，其次才是历史案例"],
+      "evidence": ["优先级：1.用户素材（写明ID或概述） 2.选题论据 3.历史案例（标注'历史案例：描述'）"],
       "tone": "情绪/语气提示",
       "contentType": "讲故事/演绎冲突/抛出步骤等动作描述",
       "cta": "该段落收尾要落到的行动/思考",
       "storyCue": "必须优先指向用户真实案例，若无再写历史案例"
     }
   ],
-  "transitions": ["段落间过渡句"],
+  "transitions": ["过渡类型标注，如'递进''转折''举例'，不写具体句子"],
   "headline": "最终标题建议",
-  "closingCTA": "收束方式与行动号召",
+  "closingCTA": "明确的行动指令（关注/收藏/评论/购买等）+ 行动理由",
   "styleReminders": ["语气、节奏或格式提示"]
 }`,
   },

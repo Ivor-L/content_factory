@@ -30,7 +30,7 @@ export function Download({ lang }: DownloadProps) {
             <div className="mt-10 flex flex-wrap items-center gap-4">
               <button
                 type="button"
-                className="inline-flex items-center gap-3 rounded-2xl bg-[var(--tenant-primary)] px-6 py-3 text-sm font-semibold text-[var(--tenant-primary-foreground)] shadow-theme-glow transition hover:-translate-y-0.5 hover:bg-[var(--tenant-primary-strong)]"
+                className="btn-openclaw inline-flex items-center gap-3 px-6 py-3 text-sm font-semibold"
               >
                 <DownloadIcon size={18} />
                 {t.mac}

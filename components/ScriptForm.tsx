@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createScript } from "@/app/(main)/scripts/actions";
 import { useLanguage } from '@/contexts/LanguageContext';
+import { cn } from "@/lib/utils";
 
 import { toast } from "react-hot-toast";
 
@@ -15,23 +16,20 @@ interface ScriptFormProps {
     videoUrl: string | null;
     // description isn't in script schema top level anymore, stored in breakdown JSON, but we can pass it if extracted
   };
+  showAssistant?: boolean;
+  assistantLayout?: "inline" | "floating";
 }
 
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY");
-}
-
-// Initialize Supabase client (auth only)
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+import { supabase } from "@/lib/supabase";
 
 const UPLOAD_MODE_STORAGE_KEY = "script_form_upload_mode";
 
-export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
+export function ScriptForm({
+  onSuccess,
+  initialData,
+  showAssistant = true,
+  assistantLayout = "inline",
+}: ScriptFormProps) {
   const router = useRouter();
   const { t } = useLanguage();
   const [loading, setLoading] = useState(false);
@@ -43,6 +41,7 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
   // State initialization
   const [title, setTitle] = useState(initialData?.title || '');
   const [videoUrl, setVideoUrl] = useState(initialData?.videoUrl || '');
+  const [scriptPurpose, setScriptPurpose] = useState<'one-click' | 'storyboard' | 'extract-copy'>('one-click');
 
   const [dragActive, setDragActive] = useState(false);
 
@@ -153,6 +152,9 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
         formData.append('id', initialData.id);
     }
 
+    // Pass script purpose
+    formData.append('scriptPurpose', scriptPurpose);
+
     // Get session for Authorization header
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user?.id) {
@@ -160,58 +162,34 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
     }
 
     try {
-      // 1. Create or Update script in DB
-      // We need to update createScript action to handle ID for update
       const script = await createScript(formData);
 
       if (!script || !script.id) {
         throw new Error("Failed to save script");
       }
 
-      // 2. Call breakdown API (Only if new video or explicitly requested? 
-      // For now always call to re-analyze if updated)
-      
-      // Get session for Authorization header
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const res = await fetch("/api/scripts/breakdown", {
-        method: "POST",
-        headers: { 
-            "Content-Type": "application/json",
-            "Authorization": session?.access_token ? `Bearer ${session.access_token}` : ""
+      toast.success(initialData ? (t.scripts.toastUpdated || "Script updated successfully!") : (t.scripts.toastCreated || "Script created successfully!"), {
+        duration: 2000,
+        icon: '✅',
+        style: {
+          borderRadius: '10px',
+          background: '#f0fdf4',
+          color: '#166534',
+          border: '1px solid #bbf7d0',
         },
-        body: JSON.stringify({ scriptId: script.id }),
       });
 
-      if (!res.ok) {
-        console.error("Breakdown failed", await res.text());
-        toast.error(
-          t.scripts.toastPartial || "Script saved, but breakdown failed."
-        );
-      } else {
-        toast.success(initialData ? (t.scripts.toastUpdated || "Script updated successfully!") : (t.scripts.toastCreated || "Script created successfully!"), {
-            duration: 2000,
-            icon: '✅',
-            style: {
-              borderRadius: '10px',
-              background: '#f0fdf4',
-              color: '#166534',
-              border: '1px solid #bbf7d0',
-            },
-        });
-      }
-
-      // 3. Close modal or Redirect
       if (onSuccess) {
         setTimeout(() => {
-            onSuccess();
-        }, 1000);
+          onSuccess();
+        }, 600);
       } else {
         router.push(`/scripts/${script.id}`);
       }
     } catch (err: any) {
       setError(err.message || "An error occurred");
       toast.error(err.message || "An error occurred");
+    } finally {
       setLoading(false);
     }
   }
@@ -222,13 +200,18 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
     }
   };
 
+  void showAssistant;
+  void assistantLayout;
+
   return (
-    <div className="w-full">
-      {error && (
-        <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 border border-red-100 text-sm">
-          {error}
-        </div>
-      )}
+    <div className={cn("flex flex-col max-w-3xl mx-auto", "gap-6")}>
+      <div className="rounded-[32px] border border-[#f0e9dd] bg-white shadow-sm">
+      <div className="w-full p-6">
+        {error && (
+          <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 border border-red-100 text-sm">
+            {error}
+          </div>
+        )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <div>
@@ -252,10 +235,10 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
             <button
               type="button"
               onClick={() => switchUploadMode('file')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`flex-1 ${
                 uploadMode === 'file' 
-                  ? 'bg-primary text-primary-foreground shadow-theme-glow' 
-                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-primary-soft/60'
+                  ? 'btn-openclaw w-full justify-center py-2 text-sm font-medium'
+                  : 'py-2 rounded-full text-sm font-medium transition-colors bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-primary-soft/60'
               }`}
             >
               {t.scripts.uploadFile}
@@ -263,10 +246,10 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
             <button
               type="button"
               onClick={() => switchUploadMode('url')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`flex-1 ${
                 uploadMode === 'url' 
-                  ? 'bg-primary text-primary-foreground shadow-theme-glow' 
-                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-primary-soft/60'
+                  ? 'btn-openclaw w-full justify-center py-2 text-sm font-medium'
+                  : 'py-2 rounded-full text-sm font-medium transition-colors bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-primary-soft/60'
               }`}
             >
               {t.scripts.tiktokUrl}
@@ -333,16 +316,69 @@ export function ScriptForm({ onSuccess, initialData }: ScriptFormProps) {
           )}
         </div>
 
+        <div>
+          <label className="block text-sm font-medium mb-3 text-gray-700 dark:text-gray-300">脚本用途</label>
+          <div className="grid grid-cols-3 gap-3">
+            <button
+              type="button"
+              onClick={() => setScriptPurpose('one-click')}
+              className={`group relative p-4 rounded-xl border-2 transition-all ${
+                scriptPurpose === 'one-click'
+                  ? 'border-black bg-black/5 dark:border-white dark:bg-white/10'
+                  : 'border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600'
+              }`}
+              title="基于Sora2/seedance2.0模型一键成片"
+            >
+              <div className="text-left">
+                <div className="font-semibold text-gray-900 dark:text-white mb-1">一键复刻</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">基于Sora2/seedance2.0模型一键成片</div>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setScriptPurpose('storyboard')}
+              className={`group relative p-4 rounded-xl border-2 transition-all ${
+                scriptPurpose === 'storyboard'
+                  ? 'border-black bg-black/5 dark:border-white dark:bg-white/10'
+                  : 'border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600'
+              }`}
+              title="基于veo3生成分镜视频，拼接完成复刻"
+            >
+              <div className="text-left">
+                <div className="font-semibold text-gray-900 dark:text-white mb-1">分镜复刻</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">基于veo3生成分镜视频，拼接完成复刻</div>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setScriptPurpose('extract-copy')}
+              className={`group relative p-4 rounded-xl border-2 transition-all ${
+                scriptPurpose === 'extract-copy'
+                  ? 'border-black bg-black/5 dark:border-white dark:bg-white/10'
+                  : 'border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600'
+              }`}
+              title="仅提取视频文案，不生成视频"
+            >
+              <div className="text-left">
+                <div className="font-semibold text-gray-900 dark:text-white mb-1">提取文案</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">仅提取视频文案，不生成视频</div>
+              </div>
+            </button>
+          </div>
+        </div>
+
         <div className="pt-4 border-t border-gray-100 dark:border-gray-700">
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-primary text-primary-foreground py-3 rounded-lg hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold shadow-theme-glow uppercase tracking-wide"
+            className="btn-openclaw w-full py-3 font-bold uppercase tracking-wide"
           >
             {loading ? t.common.loading : t.scripts.createAnalyze}
           </button>
         </div>
       </form>
+    </div>
+      </div>
     </div>
   );
 }

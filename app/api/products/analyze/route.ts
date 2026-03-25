@@ -1,11 +1,25 @@
 import { NextResponse } from 'next/server';
 import { analyzeProduct } from '@/lib/n8n';
 import prisma from '@/lib/prisma';
+import { getRequestUserContext } from '@/lib/authServer';
+
+const PRODUCT_ANALYSIS_WORKFLOW_ID = 'flow_product_dna';
+const PRODUCT_ANALYSIS_WORKFLOW_NAME = '产品分析';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, description, images, productId, apiKey } = body;
+    const { name, description, images, productId } = body;
+    const bodyApiKey: string | null = body?.apiKey ?? null;
+    const context = await getRequestUserContext(request);
+    const apiKey = bodyApiKey || context.apiKey;
+
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: 'Missing API Key. Please configure it in Settings.' },
+        { status: 400 }
+      );
+    }
 
     if (!name) {
       return NextResponse.json(
@@ -13,9 +27,11 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    
+
+    const imageList = Array.isArray(images) ? images : [];
+
     // If productId is provided, it means we want to trigger n8n workflow for this product
-    if (productId && apiKey) {
+    if (productId) {
         // Update status to PROCESSING immediately to show progress
         // Note: createProduct in actions.ts already sets it to PROCESSING/0, but this reinforces it.
         await prisma.product.update({
@@ -32,10 +48,11 @@ export async function POST(request: Request) {
         const analysis = await analyzeProduct({
             name,
             description: description || '',
-            images: images || [],
+            images: imageList,
             productId,
             apiKey,
-            workflowId: 'flow_product_dna'
+            workflowId: PRODUCT_ANALYSIS_WORKFLOW_ID,
+            workflowName: PRODUCT_ANALYSIS_WORKFLOW_NAME,
         });
         
         return NextResponse.json(analysis);
@@ -45,7 +62,10 @@ export async function POST(request: Request) {
     const analysis = await analyzeProduct({
       name,
       description: description || '',
-      images: images || [],
+      images: imageList,
+      apiKey,
+      workflowId: PRODUCT_ANALYSIS_WORKFLOW_ID,
+      workflowName: PRODUCT_ANALYSIS_WORKFLOW_NAME,
     });
 
     return NextResponse.json(analysis);

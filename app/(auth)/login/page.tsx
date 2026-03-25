@@ -6,11 +6,13 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import Link from 'next/link';
 import { TenantLogo } from '@/components/TenantLogo';
-import { AtomXLogo } from '@/components/AtomXLogo';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { Globe, CheckCircle, ArrowRight } from 'lucide-react';
+import { Globe, CheckCircle, ArrowRight, Sun, Moon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTenant } from '@/hooks/useTenant';
+import { syncServerSession } from '@/lib/clientSessionSync';
+import { useTheme } from 'next-themes';
+import { cn } from '@/lib/utils';
 
 const SHORT_COOLDOWN_SECONDS = 60;
 const RATE_LIMIT_COOLDOWN_SECONDS = 60 * 60; // 1 hour default limit on Supabase shared SMTP
@@ -26,11 +28,12 @@ export default function LoginPage() {
   const [cooldown, setCooldown] = useState(0);
   const router = useRouter();
   const { t, language, setLanguage } = useLanguage();
-  const { basePath, tenant } = useTenant();
+  const { basePath, tenant, tenantSlug } = useTenant();
+  const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const tenantDashboardPath = `${basePath || ''}/dashboard`;
   const tenantHomePath = basePath || '/';
-  const brandName = tenant?.name || 'AtomX';
+  const brandName = tenant?.name || 'NexTide';
   const termsText = (t.auth?.termsPrivacy || "By continuing you agree to {{brand}}'s Terms of Service and Privacy Policy.").replace('{{brand}}', brandName);
 
   useEffect(() => {
@@ -138,7 +141,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.verifyOtp({
+      const { data, error } = await supabase.auth.verifyOtp({
         email,
         token: otp,
         type: 'email',
@@ -146,6 +149,7 @@ export default function LoginPage() {
 
       if (error) throw error;
 
+      await syncServerSession(data.session?.access_token ?? null);
       localStorage.setItem('login_timestamp', Date.now().toString());
       toast.success('Login successful');
       router.push(tenantDashboardPath);
@@ -162,13 +166,14 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) throw error;
 
+      await syncServerSession(data.session?.access_token ?? null);
       localStorage.setItem('login_timestamp', Date.now().toString());
       toast.success('Login successful');
       router.push(tenantDashboardPath);
@@ -192,21 +197,46 @@ export default function LoginPage() {
     return '繁體中文';
   };
 
+  const isDarkMode = resolvedTheme === 'dark';
+  const toggleThemeMode = () => {
+    setTheme(isDarkMode ? 'light' : 'dark');
+  };
+
   const getCooldownLabel = () => {
     const template = (t.auth as Record<string, string | undefined> | undefined)?.resendIn;
     return template ? template.replace('{seconds}', String(cooldown)) : `Resend in ${cooldown}s`;
   };
+
+  const isNexTideTenant = tenantSlug === 'nextide' || tenant?.name?.toLowerCase() === 'nextide';
+  const isJubaoPenTenant = tenantSlug === 'jubaopen' || tenant?.name?.includes('聚保盆');
+  const loginLogoWrapperClass = cn(
+    "absolute top-2 left-4 md:top-6 md:left-6 lg:top-8 lg:left-8",
+    isNexTideTenant && "-translate-y-3 lg:-translate-y-4"
+  );
+  const loginLogoScaleClass = cn(
+    "origin-left",
+    isNexTideTenant ? "scale-100" : isJubaoPenTenant ? "scale-[0.25]" : "scale-50"
+  );
+  const loginLogoSize: 'sm' | 'md' | 'lg' = isNexTideTenant ? 'md' : 'sm';
 
   if (!mounted) return null;
 
   return (
     <div className="flex min-h-screen w-full bg-white dark:bg-black font-sans selection:bg-[var(--tenant-primary)] selection:text-[var(--tenant-primary-foreground)]">
       {/* Left Panel - Content */}
-      <div className="w-full lg:w-1/2 flex flex-col justify-center p-8 md:p-12 lg:p-24 relative z-10">
+      <div className="w-full lg:w-3/5 flex flex-col justify-center p-8 md:p-12 lg:p-24 relative z-10 text-black dark:text-white">
         {/* Logo */}
-        <div className="absolute top-2 left-4 md:top-6 md:left-6 lg:top-8 lg:left-8">
-            <Link href={tenantHomePath}>
-                <TenantLogo showName size="md" className="max-w-[160px]" />
+        <div className={loginLogoWrapperClass}>
+            <Link
+              href={tenantHomePath}
+              className="flex items-center gap-3"
+            >
+                <TenantLogo
+                  showName={false}
+                  size={loginLogoSize}
+                  className={loginLogoScaleClass}
+                  forceMonoOnDark
+                />
             </Link>
         </div>
 
@@ -220,16 +250,16 @@ export default function LoginPage() {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
                     >
-                        <h1 className="text-3xl font-medium text-black mb-2 text-center lg:text-left">
+                        <h1 className="text-3xl font-medium text-black dark:text-white mb-2 text-center lg:text-left">
                             {t.auth?.enterCode || 'Enter verification code'}
                         </h1>
-                        <p className="text-gray-500 mb-10 text-center lg:text-left">
-                            {t.auth?.sentTo || 'We sent a code to'} <span className="font-medium text-black">{email}</span>
+                        <p className="text-gray-500 dark:text-gray-300 mb-10 text-center lg:text-left">
+                            {t.auth?.sentTo || 'We sent a code to'} <span className="font-medium text-black dark:text-white">{email}</span>
                         </p>
 
                         <form onSubmit={handleVerifyOtp} className="space-y-6">
                             <div className="space-y-2">
-                                <label htmlFor="otp" className="block text-sm font-medium text-gray-700 ml-1">
+                                <label htmlFor="otp" className="block text-sm font-medium text-gray-700 dark:text-gray-200 ml-1">
                                     {t.auth?.codeLabel || 'Verification Code'}
                                 </label>
                                 <input
@@ -248,7 +278,7 @@ export default function LoginPage() {
                                 <button
                                     type="submit"
                                     disabled={loading}
-                                    className="w-full flex justify-center items-center py-3.5 px-4 border border-transparent rounded-full text-sm font-medium text-primary-foreground bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 transition-all duration-200 shadow-theme-glow"
+                                    className="btn-openclaw w-full justify-center py-3.5 px-4 text-sm"
                                 >
                                     {loading 
                                         ? (t.auth?.verifying || 'Verifying...') 
@@ -273,7 +303,7 @@ export default function LoginPage() {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
                     >
-                        <h1 className="text-3xl font-medium text-black mb-10 text-center lg:text-left">
+                        <h1 className="text-3xl font-medium text-black dark:text-white mb-10 text-center lg:text-left">
                             {loginMethod === 'magic_link' 
                                 ? (t.auth?.signInTitle || 'Sign in with your email')
                                 : (t.auth?.signInWithPassword || 'Sign in with password')
@@ -282,7 +312,7 @@ export default function LoginPage() {
 
                         <form onSubmit={loginMethod === 'magic_link' ? handleSendOtp : handlePasswordLogin} className="space-y-6">
                             <div className="space-y-2">
-                                <label htmlFor="email" className="block text-sm font-medium text-gray-700 ml-1">
+                                <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-200 ml-1">
                                     {t.auth?.emailLabel || 'Email'}
                                 </label>
                                 <input
@@ -298,7 +328,7 @@ export default function LoginPage() {
 
                             {loginMethod === 'password' && (
                                 <div className="space-y-2">
-                                    <label htmlFor="password" className="block text-sm font-medium text-gray-700 ml-1">
+                                    <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-200 ml-1">
                                         {t.auth?.passwordLabel || 'Password'}
                                     </label>
                                     <input
@@ -316,7 +346,7 @@ export default function LoginPage() {
                                 <button
                                     type="submit"
                                     disabled={loading || (loginMethod === 'magic_link' && cooldown > 0)}
-                                    className="w-full flex justify-center items-center py-3.5 px-4 border border-transparent rounded-full text-sm font-medium text-primary-foreground bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 transition-all duration-200 shadow-theme-glow"
+                                    className="btn-openclaw w-full justify-center py-3.5 px-4 text-sm"
                                 >
                                     {loading
                                         ? (t.auth?.sending || 'Sending...')
@@ -339,11 +369,11 @@ export default function LoginPage() {
                         </form>
 
                         <div className="mt-8 flex items-center justify-between text-sm">
-                            <div className="flex items-center gap-1 text-gray-500">
+                            <div className="flex items-center gap-1 text-gray-500 dark:text-gray-300">
                                 {t.auth?.noAccount || 'No account?'} 
                                 <Link
                                     href={`${basePath || ''}/register`}
-                                    className="font-medium text-black hover:underline ml-1"
+                                    className="font-medium text-black dark:text-white hover:underline ml-1"
                                 >
                                     {t.auth?.signUp || 'Sign up'}
                                 </Link>
@@ -351,7 +381,7 @@ export default function LoginPage() {
                             
                             <button
                                 onClick={() => setLoginMethod(loginMethod === 'magic_link' ? 'password' : 'magic_link')}
-                                className="text-gray-400 hover:text-black transition-colors"
+                                className="text-gray-400 dark:text-gray-200 hover:text-black dark:hover:text-white transition-colors"
                             >
                                 {loginMethod === 'magic_link' ? (t.auth?.passwordMode || 'Password') : (t.auth?.emailCodeMode || 'Email Code')}
                             </button>
@@ -362,24 +392,38 @@ export default function LoginPage() {
         </div>
 
         {/* Footer */}
-        <div className="text-xs text-gray-400 text-center lg:text-left mt-8 lg:mt-0 absolute bottom-6 left-0 w-full px-8 md:px-12 lg:px-24">
-            {termsText}
+        <div className="mt-8 w-full max-w-[400px] mx-auto">
+          <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-300 text-left">
+              <button
+                  type="button"
+                  aria-pressed="true"
+                  className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border border-gray-300 bg-[var(--tenant-primary,#111)] text-white shadow-sm"
+              >
+                  <CheckCircle className="h-3 w-3" strokeWidth={3} />
+              </button>
+              <p className="flex-1 leading-relaxed">{termsText}</p>
+          </div>
         </div>
       </div>
 
       {/* Right Panel - Visual */}
-      <div className="hidden lg:flex w-1/2 bg-black items-center justify-center relative overflow-hidden">
-        {/* Background Gradient Effect */}
-        <div className="absolute inset-0 bg-gradient-to-br from-gray-900 via-black to-black opacity-80" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-gradient-to-r from-gray-800/20 to-transparent rounded-full blur-3xl" />
-        
-        {/* Abstract Logo */}
-        <div className="relative z-10 opacity-10 scale-[3.0] blur-sm">
-            <AtomXLogo size={400} showText={false} />
-        </div>
+      <div className="hidden lg:flex lg:w-2/5 items-center justify-center relative overflow-hidden bg-black">
+        <video
+          className="absolute inset-0 h-full w-full object-cover object-center"
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="metadata"
+          poster="/videos/login-hero-poster.jpg"
+        >
+          <source src="/videos/login-hero.webm" type="video/webm" />
+          <source src="/videos/login-hero.mp4" type="video/mp4" />
+        </video>
+        <div className="absolute inset-0 bg-gradient-to-br from-black/60 via-black/30 to-black/70" />
 
         {/* Language Switcher */}
-        <div className="absolute bottom-8 right-8 z-20">
+        <div className="absolute bottom-8 right-8 z-20 flex gap-2">
             <button
                 onClick={toggleLanguage}
                 className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full text-white text-sm font-medium transition-all duration-200 border border-white/10"
@@ -387,16 +431,31 @@ export default function LoginPage() {
                 <Globe size={16} />
                 {getLanguageLabel()}
             </button>
+            <button
+                onClick={toggleThemeMode}
+                className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full text-white text-sm font-medium transition-all duration-200 border border-white/10"
+                aria-label={isDarkMode ? '切换到明亮模式' : '切换到黑暗模式'}
+            >
+                {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
+                {isDarkMode ? '明亮模式' : '黑暗模式'}
+            </button>
         </div>
       </div>
 
       {/* Mobile Language Switcher */}
-      <div className="absolute top-8 right-8 lg:hidden z-20">
+      <div className="absolute top-8 right-8 lg:hidden z-20 flex gap-2">
           <button
               onClick={toggleLanguage}
-              className="p-2 text-gray-500 hover:text-black transition-colors"
+              className="p-2 rounded-full border border-gray-200 text-gray-500 hover:text-black transition-colors bg-white/80"
           >
               <Globe size={20} />
+          </button>
+          <button
+              onClick={toggleThemeMode}
+              className="p-2 rounded-full border border-gray-200 text-gray-500 hover:text-black transition-colors bg-white/80"
+              aria-label={isDarkMode ? '切换到明亮模式' : '切换到黑暗模式'}
+          >
+              {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
           </button>
       </div>
     </div>

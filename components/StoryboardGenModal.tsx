@@ -10,6 +10,7 @@ import { toast } from 'react-hot-toast';
 import { generateStoryboardGrid, breakdownStoryboardGrid } from '@/app/actions/storyboard-gen';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { useTenantPath } from '@/hooks/useTenant';
 
 interface StoryboardGenModalProps {
   onClose: () => void;
@@ -25,6 +26,7 @@ interface StoryboardGenModalProps {
 export function StoryboardGenModal({ onClose, initialValues, onTaskCreated }: StoryboardGenModalProps) {
   const { t } = useLanguage();
   const router = useRouter();
+  const storyboardBasePath = useTenantPath('/storyboard');
   
   // Helper to safely access nested keys
   const getText = (key: keyof typeof t.storyboard.genList, defaultText: string) => {
@@ -186,7 +188,7 @@ export function StoryboardGenModal({ onClose, initialValues, onTaskCreated }: St
       const result = await breakdownStoryboardGrid(formData);
       
       toast.success(getText('breakdownComplete', 'Breakdown complete!'));
-      router.push(`/storyboard/${result.taskId}`);
+      router.push(`${storyboardBasePath}/${result.taskId}`);
       onClose();
     } catch (error) {
       console.error(error);

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { syncTaskToSummary } from "@/lib/taskSummary";
 
 function safeParseJson(payload?: string | null) {
   if (!payload) return {};
@@ -71,6 +72,12 @@ export async function POST(request: Request) {
         status: updateStatus,
         result: JSON.stringify(mergedResult),
       },
+    });
+
+    await syncTaskToSummary({
+      taskType: 'replication',
+      taskId: taskId,
+      operation: 'update',
     });
 
     return NextResponse.json({ success: true });

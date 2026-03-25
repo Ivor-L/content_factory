@@ -14,6 +14,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { useTenant } from '@/hooks/useTenant';
+import { TypewriterHighlight } from '@/app/(site)/components/TypewriterHighlight';
 import { openclawContent, type OpenClawLocale } from '../content';
 
 interface SectionProps {
@@ -28,7 +29,7 @@ const DEFAULT_BRAND_LOGO = '/logo.svg';
 
 function useBrandTokens() {
   const { tenant } = useTenant();
-  const brandName = tenant.name || 'AtomX';
+  const brandName = tenant.name || 'NexTide';
   const brandLogo = tenant.logo || DEFAULT_BRAND_LOGO;
   const replaceBrand = useCallback((value: string) => value.replace(/{{brand}}/g, brandName), [brandName]);
   return { brandName, brandLogo, replaceBrand };
@@ -45,38 +46,14 @@ export function OpenClawHero({ lang }: SectionProps) {
     const enOptions = ['audit winning ads', 'spin Creative Tasks', 'draft Storyboards', 'ship videos'];
     return lang === 'zh' ? zhOptions : enOptions;
   }, [lang]);
-  const [typedIndex, setTypedIndex] = useState(0);
-  const [typedText, setTypedText] = useState('');
   const [activeAudience, setActiveAudience] = useState<AudienceTab>('agent');
   const heroSupporting = replaceBrand(
     t.audienceCopy?.[activeAudience] ?? t.supporting,
   );
-  const currentToken = typedTokens[typedIndex % typedTokens.length];
   const stackTitle = lang === 'zh' ? `${brandName} + OpenClaw 能力栈` : `${brandName} + OpenClaw Stack`;
   const humanLabel = lang === 'zh' ? '我是人类' : "I'm Human";
   const agentLabelText = lang === 'zh' ? '我是智能体' : "I'm an Agent";
   const eyebrowLabel = 'For AI Agents';
-
-  useEffect(() => {
-    const currentToken = typedTokens[typedIndex % typedTokens.length];
-    let timeout: NodeJS.Timeout;
-    if (typedText.length < currentToken.length) {
-      timeout = setTimeout(() => {
-        setTypedText(currentToken.slice(0, typedText.length + 1));
-      }, 80);
-    } else {
-      timeout = setTimeout(() => {
-        setTypedText('');
-        setTypedIndex((prev) => prev + 1);
-      }, 1400);
-    }
-    return () => clearTimeout(timeout);
-  }, [typedText, typedTokens, typedIndex, activeAudience]);
-
-  useEffect(() => {
-    setTypedText('');
-    setTypedIndex(0);
-  }, [lang]);
 
   const typedPrefix = lang === 'zh' ? '让你的 AI 智能体' : 'Let your AI agent';
 
@@ -124,13 +101,7 @@ export function OpenClawHero({ lang }: SectionProps) {
               aria-label={heroDescription}
             >
               <span>{typedPrefix}</span>
-              <span className="relative inline-block text-yellow-200 font-semibold whitespace-nowrap min-w-[12ch] leading-tight">
-                <span className="invisible pointer-events-none select-none">{currentToken}</span>
-                <span className="absolute inset-0 flex items-center justify-center">
-                  <span>{typedText}</span>
-                  <span className="ml-1 inline-block w-0.5 h-6 bg-yellow-200 animate-pulse" />
-                </span>
-              </span>
+              <TypewriterHighlight tokens={typedTokens} />
             </p>
             <p className="text-lg text-white/70">
               {heroSupporting}

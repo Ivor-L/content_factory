@@ -12,7 +12,7 @@ export function Pricing({ lang }: PricingProps) {
   const t = siteContent[lang].pricing;
 
   return (
-    <section id="pricing" className="bg-gradient-to-b from-[#fffdf5] via-[#fff8e1] to-white py-24 dark:from-[#05060b] dark:via-[#0b0f18] dark:to-[#05060b] scroll-mt-32">
+    <section id="pricing" className="bg-gradient-to-b from-[#f8fafc] via-[#f4f5f7] to-white py-24 dark:from-[#05060b] dark:via-[#0b0f18] dark:to-[#05060b] scroll-mt-32">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-3xl text-center">
           <h2 className="text-3xl font-semibold tracking-tight text-gray-900 dark:text-white sm:text-4xl">
@@ -59,7 +59,7 @@ export function Pricing({ lang }: PricingProps) {
 
               <button
                 type="button"
-                className="mt-8 inline-flex items-center justify-center rounded-2xl bg-[var(--tenant-primary)] px-4 py-2.5 text-sm font-semibold text-[var(--tenant-primary-foreground)] shadow-theme-glow transition hover:-translate-y-0.5 hover:bg-[var(--tenant-primary-strong)]"
+                className="btn-openclaw mt-8 inline-flex items-center justify-center px-4 py-2.5 text-sm font-semibold"
               >
                 {t.cta}
               </button>

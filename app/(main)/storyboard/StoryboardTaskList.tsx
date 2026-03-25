@@ -82,7 +82,15 @@ export function StoryboardTaskList({ initialTasks }: StoryboardTaskListProps) {
         if (!item) return null;
         if (typeof item === 'string') return item;
         if (typeof item === 'object') {
-          return item.url || item.image_url || item.imageUrl || null;
+          return (
+            item.url ||
+            item.image_url ||
+            item.imageUrl ||
+            item.public_url ||
+            item.publicUrl ||
+            item.src ||
+            null
+          );
         }
         return null;
       })
@@ -136,8 +144,8 @@ export function StoryboardTaskList({ initialTasks }: StoryboardTaskListProps) {
 
   const getStatusColor = (status: string) => {
     switch (getNormalizedStatus(status)) {
-      case 'ANALYZING': return 'bg-primary-soft text-primary dark:bg-primary/10 dark:text-primary';
-      case 'SCENE_CONFIRMATION': return 'bg-primary-soft text-primary dark:bg-primary/10 dark:text-primary-foreground';
+      case 'ANALYZING': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300';
+      case 'SCENE_CONFIRMATION': return 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-200';
       case 'GENERATING': return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300';
       case 'COMPLETED': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300';
       case 'FAILED': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
@@ -601,7 +609,7 @@ export function StoryboardTaskList({ initialTasks }: StoryboardTaskListProps) {
               <button
                 onClick={handleSplitModalConfirm}
                 disabled={splitModalBusy}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg text-primary-foreground bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-60 disabled:cursor-not-allowed"
+                className="btn-openclaw flex items-center gap-2 px-4 py-2 text-sm font-semibold"
               >
                 {splitModalBusy && <Loader2 size={16} className="animate-spin" />}
                 {t.storyboard.genList?.split || '一键拆解'}

@@ -147,8 +147,8 @@ export const ReferralSharePanel = forwardRef<ReferralSharePanelHandle, Props>(fu
       {showTopBar && (
         <div
           className={cn(
-            'flex flex-wrap items-start gap-4 px-6 pt-6',
-            showHeader ? 'justify-between' : 'justify-end'
+            'flex flex-col gap-4 px-4 pt-4 tablet:flex-row tablet:items-start tablet:px-6 tablet:pt-6',
+            showHeader ? 'tablet:justify-between' : 'tablet:justify-end'
           )}
         >
           {showHeader && (
@@ -161,7 +161,7 @@ export const ReferralSharePanel = forwardRef<ReferralSharePanelHandle, Props>(fu
             <button
               type="button"
               onClick={() => fetchData()}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800 tablet:w-auto tablet:min-w-[160px]"
               aria-label={labels?.userBlock?.referrals?.refresh || '刷新'}
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
@@ -171,12 +171,17 @@ export const ReferralSharePanel = forwardRef<ReferralSharePanelHandle, Props>(fu
         </div>
       )}
 
-      <div className={cn('px-6 pb-6 space-y-6', !showTopBar && 'pt-6')}>
+      <div
+        className={cn(
+          'px-4 pb-4 space-y-6 tablet:px-6 tablet:pb-6',
+          !showTopBar && 'pt-4 tablet:pt-6'
+        )}
+      >
         <div className="space-y-3">
-          <div className="bg-gray-50 dark:bg-gray-800/70 rounded-xl px-4 py-4">
+          <div className="bg-gray-50 dark:bg-gray-800/70 rounded-xl px-3 py-4 tablet:px-4">
             <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">{linkLabel}</p>
-            <div className="mt-2 flex flex-col gap-3 md:flex-row md:items-center">
-              <div className="flex-1 text-sm font-mono break-all text-gray-800 dark:text-gray-100 bg-white dark:bg-gray-900/60 rounded-lg px-3 py-2 border border-gray-200 dark:border-gray-700">
+            <div className="mt-2 flex flex-col gap-3 tablet:flex-row tablet:items-center">
+              <div className="flex-1 w-full text-sm font-mono break-all text-gray-800 dark:text-gray-100 bg-white dark:bg-gray-900/60 rounded-lg px-3 py-2 border border-gray-200 dark:border-gray-700 min-h-[3rem]">
                 {shareLink || labels?.userBlock?.referrals?.linkPlaceholder || '登录后生成链接'}
               </div>
               <button
@@ -184,7 +189,7 @@ export const ReferralSharePanel = forwardRef<ReferralSharePanelHandle, Props>(fu
                 disabled={!shareLink}
                 onClick={handleCopy}
                 className={cn(
-                  'inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                  'inline-flex w-full items-center justify-center gap-2 rounded-lg text-sm font-medium transition-colors min-h-11 tablet:w-auto tablet:min-w-[160px]',
                   shareLink
                     ? 'bg-black text-white hover:bg-gray-900 dark:bg-white dark:text-black'
                     : 'bg-gray-200 text-gray-500 cursor-not-allowed'
@@ -196,7 +201,7 @@ export const ReferralSharePanel = forwardRef<ReferralSharePanelHandle, Props>(fu
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 xs:grid-cols-2">
             <div className="rounded-xl border border-gray-100 dark:border-gray-700 px-4 py-3">
               <p className="text-xs text-gray-500 dark:text-gray-400">{summaryLabels.inviteeCountLabel || '绑定用户'}</p>
               <p className="text-2xl font-semibold text-gray-900 dark:text-white mt-1">
@@ -212,7 +217,7 @@ export const ReferralSharePanel = forwardRef<ReferralSharePanelHandle, Props>(fu
           </div>
         </div>
 
-        <div className="space-y-3 max-h-[420px] overflow-y-auto custom-scrollbar pr-1">
+        <div className="space-y-3 max-h-[60vh] overflow-y-auto custom-scrollbar pr-1 tablet:max-h-[420px]">
           {error ? (
             <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/30 dark:text-red-200 rounded-lg px-4 py-3">
               {error}
@@ -262,17 +267,17 @@ function InviteeRow({ invitee, labels }: { invitee: ReferralInvitee; labels: any
   );
 
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-gray-100 dark:border-gray-700 px-3 py-2">
-      <div className="w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden flex items-center justify-center">
+    <div className="flex flex-col gap-3 rounded-lg border border-gray-100 dark:border-gray-700 px-3 py-2 xs:flex-row xs:items-center">
+      <div className="w-9 h-9 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden flex items-center justify-center self-start xs:self-auto">
         {avatarContent}
       </div>
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 w-full">
         <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{name}</p>
         <p className="text-[11px] text-gray-500 dark:text-gray-400">
           {labels?.boundAtLabel || '绑定于'} {created}
         </p>
       </div>
-      <div className="text-right">
+      <div className="text-left xs:text-right w-full xs:w-auto">
         <p className="text-sm font-semibold text-gray-900 dark:text-white">{consumedText}</p>
         <p className="text-[11px] text-gray-500 dark:text-gray-400">{consumedLabel}</p>
       </div>

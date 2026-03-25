@@ -12,7 +12,7 @@ export function Waitlist({ lang }: WaitlistProps) {
   const t = siteContent[lang].waitingList;
 
   return (
-    <section className="bg-gradient-to-b from-white via-[#fff9e6] to-white py-20 dark:from-black dark:via-[#05070d] dark:to-black">
+    <section className="bg-gradient-to-b from-white via-[#f4f5f7] to-white py-20 dark:from-black dark:via-[#05070d] dark:to-black">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-3xl text-center">
           <h2 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-white sm:text-4xl">

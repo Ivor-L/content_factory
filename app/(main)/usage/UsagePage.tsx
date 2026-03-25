@@ -19,7 +19,7 @@ const getConsumedAmount = (event: UsageEvent): number => {
 };
 
 export default function UsagePage() {
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
   const [events, setEvents] = useState<UsageEvent[]>([]);
   const [pagination, setPagination] = useState<UsagePagination>({
     page: 1,
@@ -35,12 +35,27 @@ export default function UsagePage() {
   const summaryLabels = labels.summary || {};
   const tableLabels = labels.table || {};
   const paginationLabels = labels.pagination || {};
+  const resolvedLocale = useMemo(() => {
+    switch (language) {
+      case 'zh':
+        return 'zh-CN';
+      case 'zh-TW':
+        return 'zh-TW';
+      default:
+        return 'en-US';
+    }
+  }, [language]);
+
   const consumptionStats = useMemo(() => {
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const monthLabel = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'long' }).format(now);
-    const todayLabel = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'long', day: 'numeric' }).format(now);
+    const monthLabel = new Intl.DateTimeFormat(resolvedLocale, { year: 'numeric', month: 'long' }).format(now);
+    const todayLabel = new Intl.DateTimeFormat(resolvedLocale, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    }).format(now);
 
     if (events.length === 0) {
       return {
@@ -83,18 +98,18 @@ export default function UsagePage() {
       monthLabel,
       todayLabel
     };
-  }, [events]);
+  }, [events, resolvedLocale]);
 
   const formatNumber = (value: number | null | undefined) =>
-    typeof value === 'number' ? value.toLocaleString() : '—';
+    typeof value === 'number' ? value.toLocaleString(resolvedLocale) : '—';
 
   const formatEventAmount = (event: UsageEvent) => {
     if (typeof event.delta === 'number') {
       const prefix = event.delta < 0 ? '-' : '+';
-      return `${prefix}${Math.abs(event.delta).toLocaleString()}`;
+      return `${prefix}${Math.abs(event.delta).toLocaleString(resolvedLocale)}`;
     }
     if (typeof event.amount === 'number') {
-      return `-${event.amount.toLocaleString()}`;
+      return `-${event.amount.toLocaleString(resolvedLocale)}`;
     }
     return '—';
   };
@@ -109,7 +124,7 @@ export default function UsagePage() {
   const formatDateTime = (value: string | null | undefined) => {
     if (!value) return '—';
     try {
-      return new Intl.DateTimeFormat(undefined, {
+      return new Intl.DateTimeFormat(resolvedLocale, {
         dateStyle: 'medium',
         timeStyle: 'short'
       }).format(new Date(value));

@@ -1,169 +1,113 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
+import { getRequestUserContext, getApiKeyForUser } from "@/lib/authServer";
+import prisma from "@/lib/prisma";
+import { triggerDHScriptGeneration } from "@/lib/n8n";
 
-import { getRequestUserContext } from '@/lib/authServer';
-import prisma from '@/lib/prisma';
-import { deriveCopyInsights } from '@/lib/copyInsights';
-import { callCloudChat } from '@/lib/cloudLLM';
-import { createDigitalHumanJob } from '@/lib/digitalHumanJob';
-
-const CREATIVE_MODEL =
-  process.env.CLOUD_WRITING_MODEL ||
-  process.env.CLOUD_DEFAULT_MODEL ||
-  'gpt-4o-mini';
-
-function sanitizeWordCount(raw: unknown): number {
-  const parsed = typeof raw === 'string' ? Number(raw) : Number(raw);
-  if (!Number.isFinite(parsed)) return 320;
-  return Math.max(180, Math.min(700, Math.round(parsed)));
-}
-
-function estimateSpeechDuration(text: string): number {
-  const content = String(text || '').trim();
-  if (!content) return 10;
-  const chineseChars = (content.match(/[\u4e00-\u9fa5]/g) || []).length;
-  const englishWords = content
-    .replace(/[\u4e00-\u9fa5]/g, ' ')
-    .split(/\s+/)
-    .filter(Boolean).length;
-  let seconds = 0;
-  if (chineseChars) seconds += chineseChars / 4.2;
-  if (englishWords) seconds += englishWords / 2.5;
-  return Number((seconds + 0.8).toFixed(2));
-}
-
-async function rewriteScript(params: {
-  baseText: string;
-  targetWordCount: number;
-  audience?: string;
-  highlights?: string[];
-  structure?: string[];
-  title?: string;
-}) {
-  const { baseText, targetWordCount, audience, highlights = [], structure = [], title } = params;
-  if (!process.env.CLOUD_API_BASE_URL || !process.env.CLOUD_API_KEY) {
-    return baseText;
-  }
-
-  const instructions = [
-    `请基于以下原始脚本进行二次创作，生成一段可直接用于数字人口播的中文口播稿。`,
-    `- 语气自然、口语化，像真人主播。`,
-    `- 保留原脚本的卖点与冲突，但允许换角度和更强的行动号召。`,
-    `- 目标受众：${audience || '泛兴趣用户'}.`,
-    `- 字数控制在约 ${targetWordCount} 字，允许上下浮动 10%。`,
-    `- 输出纯文本，不要使用列表、标题或 Markdown。`,
-  ];
-
-  if (highlights.length) {
-    instructions.push(`- 卖点参考：${highlights.join('；')}`);
-  }
-  if (structure.length) {
-    instructions.push(`- 可参考的结构节奏：${structure.join(' | ')}`);
-  }
-
-  const prompt = [
-    instructions.join('\n'),
-    '',
-    title ? `【爆款标题】${title}` : null,
-    '【原始脚本】',
-    baseText,
-  ]
-    .filter(Boolean)
-    .join('\n');
-
-  try {
-    const response = await callCloudChat({
-      model: CREATIVE_MODEL,
-      system: '你是一名顶级中文脚本编剧，擅长把产品卖点转成高转化、真诚自然的口播脚本。',
-      user: prompt,
-      temperature: 0.55,
-      maxOutputTokens: Math.min(2400, Math.max(900, targetWordCount * 4)),
-      metadata: { reason: 'replication-digital-human' },
-    });
-    const text = response.text?.trim();
-    if (text) {
-      return text.replace(/^"|"$/g, '').trim();
-    }
-  } catch (error) {
-    console.error('Digital human rewrite failed, falling back to base text', error);
-  }
-  return baseText;
-}
-
+/**
+ * POST /api/replication/digital-human
+ * Stage 1 入口：创建 Replication 记录，触发 n8n 文案生成工作流
+ *
+ * Body: { scriptId, characterId }
+ *
+ * 返回 202：{ data: { replicationId, status: "pending" } }
+ *
+ * Stage 2（用户确认后）：POST /api/replication/digital-human/confirm
+ */
 export async function POST(request: NextRequest) {
-  const { userId } = await getRequestUserContext(request);
+  const { userId, apiKey: requestApiKey } = await getRequestUserContext(request);
   if (!userId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   let body: any;
   try {
     body = await request.json();
-  } catch (error) {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { scriptId, characterId, wordCount, ideaText, audience, title } = body || {};
+  const { scriptId, characterId } = body || {};
   if (!scriptId || !characterId) {
-    return NextResponse.json({ error: 'scriptId and characterId are required' }, { status: 400 });
+    return NextResponse.json(
+      { error: "scriptId and characterId are required" },
+      { status: 400 }
+    );
   }
 
   const [script, character] = await Promise.all([
     prisma.script.findUnique({
       where: { id: scriptId },
-      select: { id: true, title: true, breakdown: true, blueprint: true },
+      select: { id: true, title: true, status: true },
     }),
     prisma.character.findUnique({
       where: { id: characterId },
-      select: { id: true, name: true, avatar: true, voiceId: true },
+      select: { id: true, avatar: true, voiceId: true },
     }),
   ]);
 
   if (!script) {
-    return NextResponse.json({ error: 'Script not found' }, { status: 404 });
+    return NextResponse.json({ error: "Script not found" }, { status: 404 });
   }
   if (!character) {
-    return NextResponse.json({ error: 'Character not found' }, { status: 404 });
+    return NextResponse.json({ error: "Character not found" }, { status: 404 });
   }
   if (!character.avatar) {
-    return NextResponse.json({ error: '角色缺少头像，无法生成数字人视频' }, { status: 400 });
+    return NextResponse.json(
+      { error: "角色缺少头像，无法生成数字人视频" },
+      { status: 400 }
+    );
   }
   if (!character.voiceId) {
-    return NextResponse.json({ error: '角色缺少音色参考，请先上传音色' }, { status: 400 });
+    return NextResponse.json(
+      { error: "角色缺少音色参考，请先上传音色" },
+      { status: 400 }
+    );
   }
 
-  const insights = deriveCopyInsights({ breakdown: script.breakdown, blueprint: script.blueprint });
-  const baseText = (
-    (typeof ideaText === 'string' ? ideaText : '') ||
-    insights.copyText ||
-    insights.coreViewpoint ||
-    script.title ||
-    ''
-  ).trim();
+  // 创建 Replication 记录（DIGITAL_HUMAN 类型），等待文案生成
+  const replication = await prisma.replication.create({
+    data: {
+      status: "pending",
+      result: "{}",
+      type: "DIGITAL_HUMAN",
+      scriptId,
+      inputParams: { characterId, userId },
+    },
+  });
 
-  if (!baseText) {
-    return NextResponse.json({ error: '脚本暂无可用文案，请先完成拆解' }, { status: 400 });
+  const appUrl =
+    process.env.N8N_CALLBACK_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const callbackUrl = `${appUrl}/api/webhook/replication/script`;
+  const apiKey =
+    requestApiKey || (await getApiKeyForUser(userId).catch(() => null));
+
+  try {
+    await triggerDHScriptGeneration({
+      scriptId,
+      replicationId: replication.id,
+      characterId,
+      userId,
+      apiKey: apiKey ?? undefined,
+      callbackUrl,
+      appUrl,
+    });
+  } catch (error) {
+    console.error("[digital-human] failed to trigger script generation", error);
+    await prisma.replication.update({
+      where: { id: replication.id },
+      data: {
+        status: "failed",
+        result: JSON.stringify({ error: String(error) }),
+      },
+    });
+    return NextResponse.json(
+      { error: "触发文案生成失败，请稍后重试" },
+      { status: 500 }
+    );
   }
 
-  const targetWordCount = sanitizeWordCount(wordCount);
-  const rewritten = await rewriteScript({
-    baseText,
-    targetWordCount,
-    audience,
-    highlights: insights.painPoints,
-    structure: insights.structureLogic,
-    title: title || script.title || undefined,
-  });
-
-  const durationSeconds = estimateSpeechDuration(rewritten);
-
-  const job = await createDigitalHumanJob({
-    type: 'VOICE_CLONE',
-    imageUrl: character.avatar,
-    audioUrl: character.voiceId,
-    script: rewritten,
-    durationSeconds,
-    userId,
-  });
-
-  return NextResponse.json({ data: { videoId: job.id } }, { status: 201 });
+  return NextResponse.json(
+    { data: { replicationId: replication.id, status: "pending" } },
+    { status: 202 }
+  );
 }

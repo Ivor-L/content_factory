@@ -1,14 +1,14 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { ProductList } from "@/app/(main)/products/ProductList";
 import { CharacterList } from "@/app/(main)/characters/CharacterList";
-import { AssetLibrary } from "@/components/assets/AssetLibrary";
+import { StyleLibraryHub } from "@/components/assets/StyleLibraryHub";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 
-const TABS = ["characters", "products", "knowledge"] as const;
+const TABS = ["characters", "products", "styleLibrary"] as const;
 type TabKey = (typeof TABS)[number];
 
 type ProductListProps = React.ComponentProps<typeof ProductList>;
@@ -22,11 +22,17 @@ type ResourceTabsProps = {
 export function ResourceTabs({ products, characters }: ResourceTabsProps) {
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<TabKey>("characters");
+  const previousTabRef = useRef<TabKey>("characters");
+  const isTabSwitching = previousTabRef.current !== activeTab;
+
+  useEffect(() => {
+    previousTabRef.current = activeTab;
+  }, [activeTab]);
 
   const tabLabels: Record<TabKey, string> = {
     products: t.products?.title ?? "产品库",
     characters: t.characters?.title ?? "角色库",
-    knowledge: t.assetLibrary?.sidebarLabel ?? "知识库",
+    styleLibrary: "风格库",
   };
 
   const renderContent = useMemo(() => {
@@ -43,9 +49,10 @@ export function ResourceTabs({ products, characters }: ResourceTabsProps) {
             showEmptyGuide={false}
           />
         );
-      case "knowledge":
+      case "styleLibrary":
+        return <StyleLibraryHub showHeader={false} />;
       default:
-        return <AssetLibrary showHeader={false} />;
+        return null;
     }
   }, [activeTab, products, characters]);
 
@@ -76,10 +83,14 @@ export function ResourceTabs({ products, characters }: ResourceTabsProps) {
         <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
-            initial={{ opacity: 0, y: 12 }}
+            initial={isTabSwitching ? { opacity: 0, y: 12 } : false}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.25, ease: [0.22, 0.61, 0.36, 1] }}
+            transition={
+              isTabSwitching
+                ? { duration: 0.25, ease: [0.22, 0.61, 0.36, 1] }
+                : { duration: 0 }
+            }
           >
             {renderContent}
           </motion.div>

@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { syncServerSession } from '@/lib/clientSessionSync';
 
 export default function AuthCallbackPage() {
   const router = useRouter();
@@ -12,6 +13,9 @@ export default function AuthCallbackPage() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' || session) {
         localStorage.setItem('login_timestamp', Date.now().toString());
+        syncServerSession(session?.access_token ?? null).catch((error) => {
+          console.warn('[auth] Failed to sync session after callback', error);
+        });
         router.push('/dashboard');
       }
     });
@@ -20,6 +24,9 @@ export default function AuthCallbackPage() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
         localStorage.setItem('login_timestamp', Date.now().toString());
+        syncServerSession(session.access_token ?? null).catch((error) => {
+          console.warn('[auth] Failed to sync session after getSession', error);
+        });
         router.push('/dashboard');
       }
     });

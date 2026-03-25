@@ -2,47 +2,48 @@ export const dynamic = "force-dynamic";
 
 
 
-import prisma from "@/lib/prisma";
 import { HomeContent } from "./components/HomeContent";
+import { getServerRequestUserContext } from "@/lib/serverRequestContext";
+import type { TaskType } from "@/lib/taskSummary";
+import { formatDashboardTimestamp } from "@/lib/formatDashboardTimestamp";
+import prisma from "@/lib/prisma";
+import { fetchUserTaskSummaries } from "@/lib/taskSummaryQueries";
 
 
 export default async function Home() {
-  // Calculate date 3 days ago
-  const threeDaysAgo = new Date();
-  threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+  const { userId } = await getServerRequestUserContext();
+  if (!userId) {
+    return <div className="p-8 text-gray-600">Unauthorized</div>;
+  }
 
-  type RecentVideo = Awaited<
-    ReturnType<typeof prisma.replication.findMany>
+  type TaskSummaryRecord = Awaited<
+    ReturnType<typeof prisma.taskSummary.findMany>
   >[number];
-  type SerializedVideo = Omit<RecentVideo, "createdAt" | "updatedAt"> & {
+  type SerializedTaskSummary = Omit<TaskSummaryRecord, "createdAt" | "updatedAt" | "metadata"> & {
+    taskType: TaskType;
     createdAt: string;
     updatedAt: string;
+    metadata: Record<string, unknown> | null;
+    updatedAtFormatted: string;
   };
   type ProductSummary = { id: string; name: string };
 
-  let serializedVideos: SerializedVideo[] = [];
+  let serializedTasks: SerializedTaskSummary[] = [];
   let products: ProductSummary[] = [];
 
   try {
-    const recentVideos = await prisma.replication.findMany({
-      where: {
-        createdAt: {
-          gte: threeDaysAgo,
-        },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      take: 5,
-      include: {
-        product: { select: { name: true } },
-      },
+    const { tasks: recentTasks } = await fetchUserTaskSummaries({
+      userId,
+      limit: 5,
     });
 
-    const mappedVideos = recentVideos.map((video: RecentVideo) => ({
-      ...video,
-      createdAt: video.createdAt.toISOString(),
-      updatedAt: video.updatedAt.toISOString(),
+    const mappedTasks = recentTasks.map((task) => ({
+      ...task,
+      taskType: task.taskType as TaskType,
+      metadata: task.metadata ? JSON.parse(JSON.stringify(task.metadata)) : null,
+      createdAt: task.createdAt.toISOString(),
+      updatedAt: task.updatedAt.toISOString(),
+      updatedAtFormatted: formatDashboardTimestamp(task.updatedAt),
     }));
 
     const fetchedProducts = await prisma.product.findMany({
@@ -55,11 +56,11 @@ export default async function Home() {
       },
     });
 
-    serializedVideos = mappedVideos;
+    serializedTasks = mappedTasks;
     products = fetchedProducts;
   } catch (error) {
     console.error("Failed to load dashboard data", error);
   }
 
-  return <HomeContent recentVideos={serializedVideos} products={products} />;
+  return <HomeContent recentTasks={serializedTasks} products={products} />;
 }

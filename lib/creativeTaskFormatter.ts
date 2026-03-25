@@ -1,5 +1,5 @@
 import type { LoadedCreativeTask } from "./creativeTaskService";
-import { parseMetadata } from "./creativeTaskService";
+import { parseMetadata, parseGeneratedImages } from "./creativeTaskService";
 
 export function serializeTaskDetail(task: LoadedCreativeTask) {
   return {
@@ -18,5 +18,6 @@ export function serializeTaskDetail(task: LoadedCreativeTask) {
     styles: task.styles.map((item) => item.style),
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
+    generatedImages: parseGeneratedImages(task.generatedImagesJson),
   };
 }

@@ -9,9 +9,10 @@ interface ModalProps {
   title: React.ReactNode;
   children: React.ReactNode;
   maxWidth?: string;
+  zIndex?: string;
 }
 
-export function Modal({ isOpen, onClose, title, children, maxWidth = "max-w-2xl" }: ModalProps) {
+export function Modal({ isOpen, onClose, title, children, maxWidth = "max-w-2xl", zIndex = "z-50" }: ModalProps) {
   const [mounted, setMounted] = useState(false);
   const [isActive, setIsActive] = useState(false);
   const modalRef = useRef<HTMLDivElement | null>(null);
@@ -36,7 +37,7 @@ export function Modal({ isOpen, onClose, title, children, maxWidth = "max-w-2xl"
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[var(--tenant-primary)]/30 backdrop-blur-xl">
+    <div className={`fixed inset-0 ${zIndex} flex items-center justify-center p-4 bg-[var(--tenant-primary)]/30 backdrop-blur-xl`}>
       <div
         ref={modalRef}
         className={`bg-white/95 dark:bg-gray-900 rounded-2xl w-full ${maxWidth} max-h-[88vh] overflow-y-auto transform transition-all border border-[var(--tenant-primary-muted)] relative flex flex-col shadow-theme-glow ${

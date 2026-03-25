@@ -20,7 +20,7 @@ export function Workflow({ lang }: WorkflowProps) {
   return (
     <section
       id="workflow"
-      className="relative overflow-hidden bg-gradient-to-b from-white via-[#fff9e6] to-white py-24 dark:from-black dark:via-[#0b0d13] dark:to-black scroll-mt-32"
+      className="relative overflow-hidden bg-gradient-to-b from-white via-[#f4f5f7] to-white py-24 dark:from-black dark:via-[#0b0d13] dark:to-black scroll-mt-32"
     >
       <div className="absolute inset-0 -z-10 opacity-60">
         <div className="absolute top-1/4 left-12 h-52 w-52 rounded-full bg-[var(--tenant-primary)]/20 blur-3xl dark:bg-[var(--tenant-primary)]/15" />
@@ -48,7 +48,7 @@ export function Workflow({ lang }: WorkflowProps) {
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{step.title}</h3>
                 <p className="text-sm leading-relaxed text-gray-600 dark:text-gray-300">{step.description}</p>
               </div>
-              <div className="mt-8 h-1 rounded-full bg-gradient-to-r from-[var(--tenant-primary)] via-[#f59e0b] to-[#fcd34d]" />
+              <div className="mt-8 h-1 rounded-full bg-gradient-to-r from-[var(--tenant-primary)] via-[#475569] to-[#94a3b8]" />
             </div>
           ))}
         </div>

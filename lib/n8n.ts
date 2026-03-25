@@ -5,6 +5,7 @@ export interface ProductData {
   productId?: string;
   apiKey?: string;
   workflowId?: string;
+  workflowName?: string;
 }
 
 export interface AnalysisResult {
@@ -35,21 +36,17 @@ export async function analyzeProduct(productData: ProductData): Promise<Analysis
     if (productData.productId) payload.product_id = productData.productId;
     if (productData.apiKey) payload.api_key = productData.apiKey;
     if (productData.workflowId) payload.workflow_id = productData.workflowId;
+    if (productData.workflowName) payload.workflow_name = productData.workflowName;
     
     // Map image url to image_url expected by n8n
     if (productData.images && productData.images.length > 0) {
-        let imageUrl = productData.images[0];
-        // FIX: n8n container cannot resolve api.supabase.atomx.top, so we replace it with the public IP
-        // The server is 47.107.158.233
-        if (imageUrl.includes('api.supabase.atomx.top')) {
-            imageUrl = imageUrl.replace('api.supabase.atomx.top', '47.107.158.233');
-        }
-        payload.image_url = imageUrl;
+        payload.image_url = productData.images[0];
     }
     // Remove internal fields
     delete payload.productId;
     delete payload.apiKey;
     delete payload.workflowId;
+    delete payload.workflowName;
     delete payload.images; // n8n expects image_url
 
     const response = await fetch(webhookUrl, {
@@ -78,27 +75,46 @@ export async function analyzeProduct(productData: ProductData): Promise<Analysis
         console.log('N8N response is not JSON or empty');
         data = {};
     }
-    
+
+    // Unwrap common n8n response patterns:
+    // n8n often returns [{...}] (array) or {data: [...]} wrappers
+    let item: any = data;
+    if (Array.isArray(item) && item.length > 0) {
+      item = item[0];
+    }
+    // Some n8n nodes wrap output in { data: [...] } or { output: {...} }
+    if (item && typeof item === 'object' && !item.marketing_profile) {
+      const inner = item.data ?? item.output ?? item.result;
+      if (inner) {
+        const unwrapped = Array.isArray(inner) ? inner[0] : inner;
+        if (unwrapped && typeof unwrapped === 'object' && unwrapped.marketing_profile) {
+          item = unwrapped;
+        }
+      }
+    }
+
     // Check if the response matches the workflow data structure
     let sellingPoints: string[] = [];
     let detailedDescription = "";
-    
-    if (data.marketing_profile && data.marketing_profile.core_selling_points) {
-       sellingPoints = data.marketing_profile.core_selling_points.map((p: any) => p.description);
-    } else if (data.sellingPoints) {
-       sellingPoints = data.sellingPoints;
+
+    if (item.marketing_profile && item.marketing_profile.core_selling_points) {
+       sellingPoints = item.marketing_profile.core_selling_points.map((p: any) => p.description);
+    } else if (item.sellingPoints) {
+       sellingPoints = item.sellingPoints;
     }
 
-    if (data.visual_description) {
-      detailedDescription = data.visual_description;
-    } else if (data.detailedDescription) {
-      detailedDescription = data.detailedDescription;
+    if (item.visual_description) {
+      detailedDescription = item.visual_description;
+    } else if (item.detailedDescription) {
+      detailedDescription = item.detailedDescription;
     }
+
+    console.log('[analyzeProduct] n8n response item keys:', item ? Object.keys(item) : 'null', '| detailedDescription length:', detailedDescription.length);
 
     return {
       sellingPoints,
       detailedDescription,
-      workflowData: data
+      workflowData: item  // Store unwrapped item, not raw data
     };
   } catch (error) {
     console.error("Error calling N8N webhook:", error);
@@ -110,6 +126,18 @@ export interface ScriptData {
   title: string;
   videoUrl: string;
   description?: string;
+  productName?: string;
+  productDescription?: string;
+  productSellingPoints?: string;
+  scriptContent?: string;
+  callbackUrl?: string;
+  adminToken?: string;
+  workflowId?: string;
+  targetLanguage?: string;
+  targetCountry?: string;
+  supabaseUrl?: string;
+  supabaseApiKey?: string;
+  supabaseBucket?: string;
 }
 
 export interface BreakdownResult {
@@ -117,27 +145,121 @@ export interface BreakdownResult {
   message: string;
 }
 
-export async function breakdownScript(scriptData: ScriptData & { scriptId: string; apiKey?: string }): Promise<BreakdownResult> {
-  const webhookUrl = process.env.N8N_SCRIPT_BREAKDOWN_WEBHOOK;
+export async function breakdownScript(scriptData: ScriptData & { scriptId: string; apiKey?: string; scriptPurpose?: 'one-click' | 'storyboard' | 'extract-copy' }): Promise<BreakdownResult> {
+  const { scriptPurpose = 'one-click' } = scriptData;
+
+  const scriptBreakdownWebhook =
+    process.env.N8N_SCRIPT_BREAKDOWN_WEBHOOK ||
+    'https://hooks.atomx.top/webhook/script_extract_web';
+
+  let webhookUrl: string = scriptBreakdownWebhook;
+  let defaultWorkflowId = 'flow_script_dna';
+
+  if (scriptPurpose === 'storyboard') {
+    webhookUrl =
+      process.env.N8N_STORYBOARD_BREAKDOWN_WEBHOOK ||
+      'https://hooks.atomx.top/webhook/storyboard_disassembly_web';
+    defaultWorkflowId = 'flow_storyboard_disassembly';
+  } else if (scriptPurpose === 'extract-copy') {
+    webhookUrl = process.env.N8N_EXTRACT_COPY_WEBHOOK || 'https://hooks.atomx.top/webhook/extract_copy';
+    defaultWorkflowId = 'flow_extract_copy';
+  }
 
   if (!webhookUrl) {
-    console.warn("N8N_SCRIPT_BREAKDOWN_WEBHOOK not set, returning mock success");
+    console.warn("N8N webhook not set, returning mock success");
     return { success: true, message: "Mock trigger successful" };
   }
 
   try {
-    // Construct payload for n8n
-    // scriptData contains title, videoUrl, scriptId, apiKey
-    const payload = {
-        script_id: scriptData.scriptId,
-        video_url: scriptData.videoUrl,
-        api_key: scriptData.apiKey,
-        workflow_id: 'flow_script_dna'
+    const normalizeText = (value: string | null | undefined): string => String(value ?? '').trim();
+    const normalizeUrl = (value: string | null | undefined): string => normalizeText(value).replace(/\/$/, '');
+
+    const appUrl = normalizeUrl(
+      process.env.N8N_CALLBACK_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    );
+    const callbackPath = scriptPurpose === 'storyboard'
+      ? '/api/webhook/storyboard-breakdown'
+      : '/api/webhook/replication/script';
+    const callbackUrl = normalizeUrl(scriptData.callbackUrl || (appUrl ? `${appUrl}${callbackPath}` : ''));
+    const workflowId = normalizeText(scriptData.workflowId || defaultWorkflowId) || defaultWorkflowId;
+    const targetLanguage =
+      normalizeText(scriptData.targetLanguage || process.env.N8N_DEFAULT_TARGET_LANGUAGE || 'en') || 'en';
+    const targetCountry =
+      normalizeText(scriptData.targetCountry || process.env.N8N_DEFAULT_TARGET_COUNTRY || 'US') || 'US';
+    const supabaseUrl = normalizeUrl(
+      scriptData.supabaseUrl ||
+      process.env.N8N_SUPABASE_URL ||
+      process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      'https://supabase-api.atomx.top'
+    );
+    const supabaseApiKey =
+      normalizeText(
+        scriptData.supabaseApiKey ||
+        process.env.N8N_SUPABASE_API_KEY ||
+        process.env.SUPABASE_SERVICE_ROLE_KEY ||
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+        ''
+      );
+    const supabaseBucket =
+      normalizeText(
+        scriptData.supabaseBucket ||
+        process.env.N8N_SUPABASE_BUCKET ||
+        process.env.NEXT_PUBLIC_SUPABASE_BUCKET ||
+        'uploads'
+      ) || 'uploads';
+    const productName = String(scriptData.productName || scriptData.title || '');
+    const productDescription = String(scriptData.productDescription ?? scriptData.description ?? '');
+    const productSellingPoints = String(scriptData.productSellingPoints ?? '');
+    const scriptContent = String(scriptData.scriptContent ?? '');
+    const adminToken = normalizeText(scriptData.adminToken || process.env.ADMIN_TOKEN || '');
+
+    const payload: Record<string, unknown> = {
+      task_id: scriptData.scriptId,
+      taskId: scriptData.scriptId,
+      record_id: scriptData.scriptId,
+      script_id: scriptData.scriptId,
+      video_url: scriptData.videoUrl,
+      videoUrl: scriptData.videoUrl,
+      product_name: productName,
+      productName,
+      product_description: productDescription,
+      productDescription,
+      product_selling_points: productSellingPoints,
+      productSellingPoints,
+      script_content: scriptContent,
+      scriptContent,
+      callback_url: callbackUrl,
+      callbackUrl,
+      api_key: scriptData.apiKey,
+      apiKey: scriptData.apiKey,
+      admin_token: adminToken,
+      adminToken,
+      workflow_id: workflowId,
+      workflowId,
+      app_url: appUrl,
+      target_language: targetLanguage,
+      targetLanguage,
+      target_country: targetCountry,
+      targetCountry,
+      supabase_url: supabaseUrl,
+      supabaseUrl,
+      supabase_api_key: supabaseApiKey,
+      supabaseApiKey,
+      supabase_bucket: supabaseBucket,
+      supabaseBucket,
     };
 
-    console.log("Triggering n8n breakdown workflow:", payload);
+    const safePayloadLog = {
+      ...payload,
+      api_key: payload.api_key ? '[REDACTED]' : undefined,
+      apiKey: payload.apiKey ? '[REDACTED]' : undefined,
+      admin_token: payload.admin_token ? '[REDACTED]' : undefined,
+      adminToken: payload.adminToken ? '[REDACTED]' : undefined,
+      supabase_api_key: payload.supabase_api_key ? '[REDACTED]' : undefined,
+      supabaseApiKey: payload.supabaseApiKey ? '[REDACTED]' : undefined,
+    };
+    console.log("Triggering n8n breakdown workflow:", safePayloadLog);
 
-    // Fire and forget (async trigger)
     const response = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -147,8 +269,7 @@ export async function breakdownScript(scriptData: ScriptData & { scriptId: strin
     if (!response.ok) {
         throw new Error(`N8N webhook failed with status ${response.status}`);
     }
-    
-    // We don't wait for the full result.
+
     return { success: true, message: "Workflow triggered" };
   } catch (error) {
     console.error("Error calling N8N webhook for script breakdown:", error);
@@ -166,6 +287,23 @@ export interface ReplicationOptions {
   userId?: string;
   replicationId?: string;
   productImageUrl?: string | null;
+  referenceId?: string | null;
+  creatorId?: string | null;
+  referenceSnapshot?: Record<string, unknown> | null;
+  creatorSnapshot?: Record<string, unknown> | null;
+  soraProvider?: 'kie' | 'yunwu';
+  productInfo?: unknown;
+  blueprint?: unknown;
+  productName?: string | null;
+  cityStyle?: string | null;
+  workflowIdForCredits?: string | null;
+  aspectRatio?: string | null;
+  model?: string | null;
+  nFrames?: string | number | null;
+  imageToken?: string | null;
+  promptOverrides?: Record<string, unknown> | null;
+  recipeId?: string | null;
+  recipeVersion?: string | null;
 }
 
 export interface ReplicationResult {
@@ -173,113 +311,25 @@ export interface ReplicationResult {
   videoPrompt: string;
 }
 
-export async function generateOneClickReplication(
+export async function generateReplication(
   product: any,
   script: any,
   options: ReplicationOptions
 ): Promise<{ success: boolean; message: string }> {
-  // Specific webhook for One-Click mode
-  const webhookUrl = "https://hooks.atomx.top/webhook/farm_Prompt_web";
-
-  try {
-    // 1. Extract Product Info (产品信息)
-    // Try to parse sellingPoints as JSON array, take first item, or use raw string
-    let productInfo = "";
-    if (product.sellingPoints) {
-      try {
-        // Attempt to parse if it looks like JSON
-        if (product.sellingPoints.trim().startsWith('[') || product.sellingPoints.trim().startsWith('{')) {
-             const points = JSON.parse(product.sellingPoints);
-             if (Array.isArray(points) && points.length > 0) {
-                 const first = points[0];
-                 // Check if it's an object with 'text' property or just a string
-                 productInfo = typeof first === 'string' ? first : (first.text || JSON.stringify(first));
-             } else {
-                 productInfo = product.sellingPoints;
-             }
-        } else {
-            productInfo = product.sellingPoints;
-        }
-      } catch (e) {
-        productInfo = product.sellingPoints;
-      }
-    }
-
-    // 2. Extract Breakdown Report (爆款视频拆解报告)
-    // Prefer structured blueprint JSON; fallback to legacy breakdown text
-    let breakdownReport = "";
-    if (script.blueprint) {
-        try {
-            breakdownReport = JSON.parse(script.blueprint);
-        } catch (error) {
-            console.warn("Failed to parse blueprint JSON. Falling back to raw string.", error);
-            breakdownReport = script.blueprint;
-        }
-    } else if (script.breakdown) {
-        breakdownReport = script.breakdown;
-    }
-
-    // Construct the payload with specific Chinese keys as requested
-    const payload: Record<string, unknown> = {
-      "产品信息": productInfo,
-      "Target Language": options.targetLanguage,
-      "爆款视频拆解报告": breakdownReport,
-      "时长": options.duration,
-      "国家/地区": options.targetCountry,
-      
-      // Keep some metadata just in case
-      "product_id": product.id,
-      "script_id": script.id,
-      "callback_url": options.callbackUrl,
-      "replication_id": options.replicationId,
-      "user_id": options.userId
-    };
-
-    if (options.apiKey) {
-      payload["api_key"] = options.apiKey;
-    }
-
-    console.log("Triggering One-Click Replication:", JSON.stringify(payload, null, 2));
-
-    const response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => '');
-      throw new Error(
-        `One-Click Webhook failed with status ${response.status}${
-          errorText ? `: ${errorText.slice(0, 500)}` : ''
-        }`
-      );
-    }
-
-    // Log response
-    try {
-        const text = await response.text();
-        console.log("One-Click Webhook response:", text);
-    } catch (e) {}
-
-    return { success: true, message: "One-Click Workflow triggered" };
-  } catch (error) {
-    console.error("Error calling One-Click Webhook:", error);
-    throw error;
-  }
-}
-
-export async function generateReplication(
-  product: any, 
-  script: any, 
-  options: ReplicationOptions
-): Promise<{ success: boolean; message: string }> {
+  const soraProvider = options.soraProvider || 'kie';
   const webhookUrl = process.env.N8N_REPLICATION_WEBHOOK;
+  const toPayloadString = (value: unknown): string => {
+    if (value == null) return '';
+    if (typeof value === 'string') return value;
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  };
 
   if (!webhookUrl) {
     console.warn("N8N_REPLICATION_WEBHOOK not set, simulating async process");
-    // In mock mode, we can't really do async callback easily without a background worker.
-    // So we might just return success and let the caller handle the "pending" state.
     return { success: true, message: "Mock trigger successful" };
   }
 
@@ -288,28 +338,95 @@ export async function generateReplication(
       product_id: product.id,
       script_id: script.id,
       ...options,
-      // Map camelCase to snake_case for n8n
       target_country: options.targetCountry,
       target_language: options.targetLanguage,
       api_key: options.apiKey,
       callback_url: options.callbackUrl,
       replication_id: options.replicationId,
-      flow: "flow_farm_copy"
+      flow: "flow_farm_copy",
+      sora_provider: soraProvider,
+      sora_workflow_id: soraProvider === 'yunwu' ? 'jUuV6hsG464jDTHq' : 'vvc2rzlS2PF4F2Tn',
+      sora_callback_workflow_id: soraProvider === 'yunwu' ? 'dctPumNGHBoSokUx' : 'zPJavUam1LbqiAeg',
     };
+
+    if (options.productInfo) {
+      const serializedProductInfo = toPayloadString(options.productInfo);
+      payload['产品信息'] = serializedProductInfo;
+      payload.product_info = serializedProductInfo;
+    }
+
+    if (options.blueprint) {
+      const serializedBlueprint = toPayloadString(options.blueprint);
+      payload['爆款视频拆解报告'] = serializedBlueprint;
+      payload.blueprint = serializedBlueprint;
+      payload.source_blueprint = serializedBlueprint;
+    }
+
+    payload.country_region = options.targetCountry;
+    if (options.cityStyle) {
+      payload.city_style = options.cityStyle;
+    } else if (!payload.city_style) {
+      payload.city_style = '';
+    }
+
+    payload.product_name = options.productName ?? payload.product_name ?? product.name ?? '';
+    payload.workflow_id_for_credits =
+      options.workflowIdForCredits ?? payload.workflow_id_for_credits ?? 'flow_farm_copy';
+    payload.n_frames = options.nFrames ?? payload.n_frames ?? options.duration;
+    payload.aspect_ratio = options.aspectRatio ?? payload.aspect_ratio ?? 'portrait';
+    payload.model = options.model ?? payload.model ?? 'sora2';
+    payload.image_1_token = options.imageToken ?? payload.image_1_token ?? '';
+
+    if (options.promptOverrides) {
+      payload.prompt_overrides = options.promptOverrides;
+    }
+    if (options.recipeId) {
+      payload.recipe_id = options.recipeId;
+    }
+    if (options.recipeVersion) {
+      payload.recipe_version = options.recipeVersion;
+    }
 
     if (options.productImageUrl) {
       payload.image_url = options.productImageUrl;
       payload.product_image_url = options.productImageUrl;
     }
 
-    // Remove camelCase versions if you want to be strict, or keep them. 
-    // n8n usually prefers snake_case.
+    if (options.referenceSnapshot) {
+      payload.reference = options.referenceSnapshot;
+      payload.reference_id = options.referenceId ?? (options.referenceSnapshot as any)?.id;
+    } else if (options.referenceId) {
+      payload.reference_id = options.referenceId;
+    }
+
+    if (options.creatorSnapshot) {
+      payload.creator = options.creatorSnapshot;
+      payload.creator_id = options.creatorId ?? (options.creatorSnapshot as any)?.id;
+    } else if (options.creatorId) {
+      payload.creator_id = options.creatorId;
+    }
+
     delete (payload as any).targetCountry;
     delete (payload as any).targetLanguage;
     delete (payload as any).apiKey;
     delete (payload as any).callbackUrl;
     delete (payload as any).replicationId;
     delete (payload as any).productImageUrl;
+    delete (payload as any).referenceSnapshot;
+    delete (payload as any).creatorSnapshot;
+    delete (payload as any).soraProvider;
+    delete (payload as any).productInfo;
+    delete (payload as any).blueprint;
+    delete (payload as any).productName;
+    delete (payload as any).cityStyle;
+    delete (payload as any).workflowIdForCredits;
+    delete (payload as any).aspectRatio;
+    delete (payload as any).model;
+    delete (payload as any).nFrames;
+    delete (payload as any).imageToken;
+    delete (payload as any).promptOverrides;
+    delete (payload as any).recipeId;
+    delete (payload as any).recipeVersion;
 
     console.log("Triggering n8n replication workflow:", payload);
 
@@ -416,6 +533,171 @@ export async function generateFromScript(scriptContent: string): Promise<Replica
   }
 }
 
+export interface DHScriptTriggerOptions {
+  scriptId: string;
+  replicationId: string;
+  characterId: string;
+  userId: string;
+  apiKey?: string;
+  callbackUrl: string;
+  appUrl: string;
+}
+
+/**
+ * 触发数字人文案生成工作流（Stage 1）
+ * n8n 工作流：爆款复刻-数字人-文案生成（VLmEBDKfCe3dyNWj）
+ * webhook 路径：replication_dh_script
+ */
+export async function triggerDHScriptGeneration(
+  options: DHScriptTriggerOptions,
+): Promise<{ success: boolean; message: string }> {
+  const webhookUrl =
+    process.env.N8N_DH_SCRIPT_WEBHOOK ||
+    "https://hooks.atomx.top/webhook/replication_dh_script";
+
+  const payload = {
+    script_id: options.scriptId,
+    replication_id: options.replicationId,
+    character_id: options.characterId,
+    user_id: options.userId,
+    api_key: options.apiKey,
+    callback_url: options.callbackUrl,
+    app_url: options.appUrl,
+    admin_token: process.env.ADMIN_TOKEN,
+    workflow_id: "VLmEBDKfCe3dyNWj",
+  };
+
+  console.log("[triggerDHScriptGeneration] triggering:", {
+    replicationId: options.replicationId,
+    scriptId: options.scriptId,
+    characterId: options.characterId,
+  });
+
+  const response = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => response.statusText);
+    throw new Error(`DH Script webhook failed: ${response.status} ${text}`);
+  }
+
+  return { success: true, message: "DH Script workflow triggered" };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 智能创作：文案生成
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CreativeScriptTriggerOptions {
+  replicationId: string;
+  userId: string;
+  ideaText: string;
+  wordCount?: number;
+  styleRules?: Record<string, any> | null;
+  styleId?: string | null;
+  apiKey?: string;
+  callbackUrl: string;
+  appUrl: string;
+}
+
+const CREATIVE_WEBHOOK_FALLBACK = "https://hooks.atomx.top/webhook/chuangzuo_web";
+
+function normalizeCreativeWebhookCandidate(raw: string | null | undefined): string {
+  const trimmed = String(raw ?? "").trim();
+  if (!trimmed) return "";
+  return trimmed
+    .replace(/\/webhook\/creative_script_gen\/?$/i, "/webhook/chuangzuo_web")
+    .replace(/\/webhook\/xhs_text2img_web\/?$/i, "/webhook/chuangzuo_web")
+    .replace(/\/webhook\/xhs_chuangzuo\/?$/i, "/webhook/chuangzuo_web")
+    .replace(/\/webhook\/xhs_chuangzuo_web\/?$/i, "/webhook/chuangzuo_web");
+}
+
+function resolveCreativeWebhookUrl(): string {
+  const candidates = [
+    process.env.N8N_CHUANGZUO_WEBHOOK,
+    process.env.N8N_CREATIVE_SCRIPT_WEBHOOK,
+    process.env.N8N_XHS_CHUANGZUO_WEBHOOK,
+    process.env.N8N_XHS_TEXT2IMG_WEBHOOK,
+    CREATIVE_WEBHOOK_FALLBACK,
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeCreativeWebhookCandidate(candidate);
+    if (normalized) return normalized;
+  }
+  return CREATIVE_WEBHOOK_FALLBACK;
+}
+
+/**
+ * 触发智能创作文案生成工作流
+ * n8n 工作流：0gGQzB4rz5tNYcYF
+ * n8n 内部根据 user_id 自动查询历史文案（HistoryDoc）+ 案例故事（StoryAsset）作为上下文
+ * 结果通过 callback_url 回调 /api/webhook/replication/script
+ */
+export async function triggerCreativeScriptGeneration(
+  options: CreativeScriptTriggerOptions,
+): Promise<{ success: boolean; message: string }> {
+  const webhookUrl = resolveCreativeWebhookUrl();
+  const workflowId =
+    process.env.N8N_CREATIVE_SCRIPT_WORKFLOW_ID?.trim() || "0gGQzB4rz5tNYcYF";
+
+  const payload = {
+    task_id: options.replicationId,
+    replication_id: options.replicationId,
+    user_id: options.userId,
+    idea_text: options.ideaText,
+    word_count: options.wordCount,
+    style_rules: options.styleRules ?? null,
+    style_id: options.styleId ?? null,
+    api_key: options.apiKey,
+    callback_url: options.callbackUrl,
+    app_url: options.appUrl,
+    admin_token: process.env.ADMIN_TOKEN,
+    workflow_id: workflowId,
+  };
+
+  console.log("[triggerCreativeScriptGeneration] triggering:", {
+    replicationId: options.replicationId,
+    userId: options.userId,
+    ideaText: options.ideaText?.slice(0, 50),
+    webhookUrl,
+  });
+
+  let response = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok && webhookUrl !== CREATIVE_WEBHOOK_FALLBACK) {
+    const failText = await response.text().catch(() => response.statusText);
+    console.warn(
+      `[triggerCreativeScriptGeneration] primary webhook failed (${response.status}), retrying fallback`,
+      { primary: webhookUrl, fallback: CREATIVE_WEBHOOK_FALLBACK }
+    );
+    response = await fetch(CREATIVE_WEBHOOK_FALLBACK, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const fallbackText = await response.text().catch(() => response.statusText);
+      throw new Error(
+        `Creative Script webhook failed: primary ${webhookUrl} -> ${failText}; fallback ${response.status} ${fallbackText}`
+      );
+    }
+  }
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => response.statusText);
+    throw new Error(`Creative Script webhook failed: ${response.status} ${text}`);
+  }
+
+  return { success: true, message: "Creative Script workflow triggered" };
+}
+
 export interface SceneImageAsset {
   url?: string | null;
   base64?: string | null;
@@ -505,4 +787,95 @@ export async function triggerReplicationSceneGeneration(
   }
 
   return { success: true, data };
+}
+
+// ─── Image-Text Replication ───────────────────────────────────────────────
+
+export interface ImageTextBreakdownInput {
+  taskId: string;
+  sourceTitle?: string | null;
+  sourceText?: string | null;
+  sourceImages?: string[];
+  sourcePlatform?: string | null;
+  apiKey?: string;
+  callbackUrl: string;
+  adminToken: string;
+}
+
+export async function triggerImageTextBreakdown(
+  input: ImageTextBreakdownInput,
+): Promise<void> {
+  const webhookUrl = process.env.N8N_IMAGE_TEXT_BREAKDOWN_WEBHOOK;
+  if (!webhookUrl) {
+    console.warn("[n8n] N8N_IMAGE_TEXT_BREAKDOWN_WEBHOOK not set — skipping");
+    return;
+  }
+
+  const response = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      task_id: input.taskId,
+      workflow_id: "flow_image_text_breakdown",
+      source_title: input.sourceTitle ?? "",
+      source_text: input.sourceText ?? "",
+      source_images: input.sourceImages ?? [],
+      source_platform: input.sourcePlatform ?? "",
+      api_key: input.apiKey ?? "",
+      apiKey: input.apiKey ?? "",
+      callback_url: input.callbackUrl,
+      admin_token: input.adminToken,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text().catch(() => response.statusText);
+    throw new Error(`[n8n] image-text breakdown trigger failed: ${response.status} ${err}`);
+  }
+}
+
+export interface ImageTextGenerateInput {
+  taskId: string;
+  analysisResult: unknown;
+  stylePresetSpec?: unknown;       // null = replicate original style
+  topicHint?: string | null;
+  imageCount: number;
+  apiKey?: string;
+  callbackUrl: string;
+  adminToken: string;
+  /** Base URL for n8n to upload generated images to Supabase storage */
+  imageUploadUrl?: string;
+}
+
+export async function triggerImageTextGenerate(
+  input: ImageTextGenerateInput,
+): Promise<void> {
+  const webhookUrl = process.env.N8N_IMAGE_TEXT_GENERATE_WEBHOOK;
+  if (!webhookUrl) {
+    console.warn("[n8n] N8N_IMAGE_TEXT_GENERATE_WEBHOOK not set — skipping");
+    return;
+  }
+
+  const response = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      task_id: input.taskId,
+      workflow_id: "h9C7tASreNSsXxaS",
+      analysis_result: input.analysisResult,
+      style_preset_spec: input.stylePresetSpec ?? null,
+      topic_hint: input.topicHint ?? "",
+      image_count: input.imageCount,
+      api_key: input.apiKey ?? "",
+      apiKey: input.apiKey ?? "",
+      callback_url: input.callbackUrl,
+      admin_token: input.adminToken,
+      image_upload_url: input.imageUploadUrl ?? "",
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text().catch(() => response.statusText);
+    throw new Error(`[n8n] image-text generate trigger failed: ${response.status} ${err}`);
+  }
 }

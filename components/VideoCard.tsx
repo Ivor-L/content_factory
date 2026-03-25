@@ -161,8 +161,8 @@ export function VideoCard({ item, onSelect, selected, onClick, onDelete }: Video
         <span className="px-3 py-1 rounded-full text-xs font-medium bg-white/90 dark:bg-black/80 backdrop-blur text-gray-800 dark:text-gray-200 shadow-sm border border-gray-100 dark:border-gray-700">
           {item.type === 'FULL' ? t.replication.viralClone : 
            item.type === 'CHARACTER' ? t.replication.character : 
-           item.type === 'LIP_SYNC' ? t.storyboard.lipSync :
-           item.type === 'VOICE_CLONE' ? t.storyboard.voiceClone :
+           item.type === 'LIP_SYNC' ? (t.replication.audioDriven ?? t.storyboard.lipSync) :
+           item.type === 'VOICE_CLONE' ? (t.replication.textDriven ?? t.storyboard.voiceClone) :
            t.replication.motionSwap}
         </span>
         {promptReady && !isCompleted && (

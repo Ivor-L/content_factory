@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 
 const STORAGE_KEY = 'atomx:chunk-reload-ts';
 const RELOAD_COOLDOWN_MS = 10000;
+const LOG_ENDPOINT = '/api/client-logs';
 
 function isChunkLoadError(input: unknown): boolean {
   if (!input) return false;
@@ -35,6 +36,45 @@ function isChunkLoadError(input: unknown): boolean {
   return false;
 }
 
+function serializeReason(reason: unknown) {
+  if (reason instanceof Error) {
+    return {
+      name: reason.name,
+      message: reason.message,
+      stack: reason.stack,
+    };
+  }
+  if (typeof reason === 'object' && reason !== null) {
+    try {
+      return JSON.parse(JSON.stringify(reason));
+    } catch {
+      return { raw: String(reason) };
+    }
+  }
+  return { raw: String(reason) };
+}
+
+function sendClientLog(payload: Record<string, unknown>) {
+  try {
+    const body = JSON.stringify({
+      source: 'chunk-recovery',
+      ...payload,
+    });
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(LOG_ENDPOINT, body);
+      return;
+    }
+    void fetch(LOG_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      keepalive: true,
+    });
+  } catch (error) {
+    console.error('[ChunkLoadRecovery] Failed to send client log', error);
+  }
+}
+
 function scheduleReload(trigger: string) {
   try {
     const now = Date.now();
@@ -60,6 +100,9 @@ export function ChunkLoadRecovery() {
       if (isChunkLoadError(event.reason)) {
         event.preventDefault?.();
         scheduleReload('unhandledrejection');
+        sendClientLog({ trigger: 'chunk-error', reason: serializeReason(event.reason) });
+      } else {
+        sendClientLog({ trigger: 'unhandledrejection', reason: serializeReason(event.reason) });
       }
     };
 
@@ -68,6 +111,15 @@ export function ChunkLoadRecovery() {
       if (isChunkLoadError(source)) {
         event.preventDefault?.();
         scheduleReload('error');
+        sendClientLog({ trigger: 'chunk-error', reason: serializeReason(source) });
+      } else if (source) {
+        sendClientLog({
+          trigger: 'error',
+          reason: serializeReason(source),
+          filename: event.filename,
+          lineno: event.lineno,
+          colno: event.colno,
+        });
       }
     };
 

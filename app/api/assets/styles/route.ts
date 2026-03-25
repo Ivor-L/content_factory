@@ -9,20 +9,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  await ensureSystemStylePresetsSeeded();
+
   const { searchParams } = new URL(request.url);
   const type = searchParams.get("type") || undefined;
+  const includeShared = searchParams.get("includeShared") !== "0";
   const limitParam = Number(searchParams.get("limit") ?? "50");
   const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 200) : 50;
-
-  await ensureSystemStylePresetsSeeded();
 
   const styles = await prisma.stylePreset.findMany({
     where: {
       ...(type ? { type } : {}),
-      OR: [{ userId }, { userId: null }],
+      ...(includeShared ? { OR: [{ userId }, { userId: null }] } : { userId }),
     },
     orderBy: [
-      { userId: "asc" },
       { createdAt: "desc" },
     ],
     take: limit,

@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
-import { AssetLibrary } from "@/components/assets/AssetLibrary";
+import { StyleLibraryHub } from "@/components/assets/StyleLibraryHub";
 
 export default function AssetLibraryPage() {
-  return <AssetLibrary />;
+  return <StyleLibraryHub />;
 }

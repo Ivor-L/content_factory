@@ -83,10 +83,11 @@ function computeNextStage(
   metadata: CreativeTaskMetadata,
 ): StageTransitionDecision {
   if (stage === "diagnosis") {
-    const clarity = String(aiOutput?.clarity ?? "").toLowerCase();
-    const recommendedRoute = String(aiOutput?.recommendedRoute ?? "").toLowerCase();
+    const clarity = normalizeClarity(aiOutput?.clarity);
+    const routePreference = normalizeRoute(aiOutput?.recommendedRoute);
+
     if (clarity === "clear") {
-      const resolvedRoute = recommendedRoute === "mining" ? "mining" : "framework";
+      const resolvedRoute = routePreference ?? "framework";
       const nextStage = resolvedRoute === "mining" ? ("mining" as CreativeStageKey) : "framework";
       return {
         nextStage,
@@ -96,11 +97,13 @@ function computeNextStage(
         skipStages: resolvedRoute === "framework" ? ["mining", "topic"] : undefined,
       };
     }
+
+    const nextStage: CreativeStageKey = "mining";
     return {
-      nextStage: stage,
-      stageToActivate: stage,
+      nextStage,
+      stageToActivate: nextStage,
       route: "fuzzy",
-      status: "in_progress",
+      status: "completed",
     };
   }
   return {
@@ -109,6 +112,22 @@ function computeNextStage(
     route: metadata.route,
     status: "completed",
   };
+}
+
+function normalizeClarity(value: unknown): "clear" | "fuzzy" {
+  if (typeof value === "string" && value.trim().toLowerCase() === "clear") {
+    return "clear";
+  }
+  return "fuzzy";
+}
+
+function normalizeRoute(value: unknown): "framework" | "mining" | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "framework" || normalized === "mining") {
+    return normalized;
+  }
+  return null;
 }
 
 function updateMetadataWithOutput(

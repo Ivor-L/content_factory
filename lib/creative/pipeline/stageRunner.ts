@@ -11,6 +11,8 @@ import type { StageResult } from "@/types/creativeRuntime";
 import { validateStageResult, type StageValidationOutcome } from "@/lib/creative/validators";
 import type { StageValidationContext } from "@/lib/creative/validators";
 
+// 推荐使用更强大的模型以提升内容质量：gpt-4o, gpt-4-turbo, claude-3-5-sonnet-20241022
+// 可通过环境变量 CLOUD_WRITING_MODEL 配置
 const CREATIVE_MODEL =
   process.env.CLOUD_WRITING_MODEL || process.env.CLOUD_DEFAULT_MODEL || "gpt-4o-mini";
 
@@ -22,8 +24,8 @@ const JSON_STAGE_TOKEN_LIMITS: Partial<Record<CreativeStageKey, number>> = {
 };
 
 const DEFAULT_JSON_TOKEN_LIMIT = 1200;
-const DRAFT_TOKEN_LIMIT = 2800;
-const MAX_ATTEMPTS = 2;
+const DRAFT_TOKEN_LIMIT = 3500;
+const MAX_ATTEMPTS = 3;
 
 export interface StageRunResult {
   stage: CreativeStageKey;
@@ -123,7 +125,7 @@ function resolveJsonTokenLimit(stage: CreativeStageKey) {
 }
 
 const STAGE_TEMPERATURES: Partial<Record<CreativeStageKey, number>> = {
-  diagnosis: 0.2,
+  diagnosis: 0.25,
   mining: 0.3,
   topic: 0.32,
   framework: 0.35,

@@ -15,14 +15,71 @@ const asArray = (value: unknown): string[] => {
       .map((item) => {
         if (typeof item === "string") return item;
         if (typeof item === "object" && item !== null) {
-          return item.name || item.label || item.hex || "";
+          return (item as Record<string, any>).name || item.label || item.hex || "";
         }
         return "";
       })
       .filter((item) => typeof item === "string" && item.trim().length > 0)
       .map((item) => item.trim());
   }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
   return [];
+};
+
+const pickFirstNonEmpty = (...lists: string[][]): string[] => {
+  for (const list of lists) {
+    if (Array.isArray(list) && list.length) {
+      return list;
+    }
+  }
+  return [];
+};
+
+const safeLayoutValue = (value: unknown) =>
+  typeof value === "string" ? value.trim() : "";
+
+const normalizePalette = (colors: string[]) =>
+  colors
+    .map((hex) => `#${hex.replace(/^#/i, "")}`)
+    .filter((entry) => /^#[0-9a-f]{3,8}$/i.test(entry) || entry.length > 1);
+
+const paletteFromColorSystem = (colorSystem: JsonRecord) => {
+  const sections = [
+    { key: "background", label: "background" },
+    { key: "primary_text", label: "primary_text" },
+    { key: "secondary_text", label: "secondary_text" },
+    { key: "accent", label: "accent" },
+    { key: "warning_or_highlight", label: "warning" },
+  ];
+  const colors: string[] = [];
+  for (const entry of sections) {
+    const list = asArray(colorSystem?.[entry.key]);
+    colors.push(...list);
+  }
+  return colors;
+};
+
+const promptsFromGeneration = (generation: JsonRecord) => {
+  const notes = Array.isArray(generation.render_notes)
+    ? generation.render_notes.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean)
+    : [];
+  return [
+    generation.prompt_text2img_universal,
+    generation.prompt_img2img_style_transfer,
+    ...notes,
+  ]
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean);
+};
+
+const negativesFromGeneration = (generation: JsonRecord) => {
+  const base = typeof generation.negative_prompt === "string" ? generation.negative_prompt.trim() : "";
+  return [base, "blurry text", "illegible typography", "overcrowded layout", "low resolution", "watermark"].filter(
+    Boolean
+  );
 };
 
 type XhsImageOptions = {
@@ -56,14 +113,50 @@ function buildPrompt({
   const spec = asRecord(style.spec);
   const metadata = asRecord(style.metadata);
   const analysis = asRecord(metadata.analysis);
-  const palette =
-    asArray(analysis.palette).map((hex) => `#${hex.replace(/^#/, "")}`) ||
-    asArray(spec.palette);
-  const motifs = asArray(spec.elements || spec.motifs);
+  const styleDna = asRecord(analysis.style_dna);
+  const colorSystem = asRecord(styleDna.color_system);
+  const generationPrompts = asRecord(analysis.generation_prompts);
+  const palette = normalizePalette(
+    pickFirstNonEmpty(
+      asArray(analysis.palette),
+      paletteFromColorSystem(colorSystem),
+      asArray(spec.palette)
+    )
+  );
+  const dnaMotifs = (() => {
+    const illustration = asRecord(styleDna.illustration_iconography);
+    const decorations = Array.isArray(illustration.decorations)
+      ? illustration.decorations
+          .map((item) => (typeof item === "string" ? item.trim() : ""))
+          .filter(Boolean)
+      : [];
+    return [illustration.icon_style, illustration.chart_style, ...decorations]
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter(Boolean);
+  })();
+  const motifs = pickFirstNonEmpty(asArray(spec.elements || spec.motifs), dnaMotifs);
   const adjectives = asArray(spec.promptKit?.adjectives);
-  const layout = asRecord(spec.layout || analysis.layout);
-  const positive = asArray(analysis.promptKit?.positive || spec.promptKit?.positive);
-  const negative = asArray(analysis.promptKit?.negative || spec.promptKit?.negative);
+  const layout = {
+    ...asRecord(spec.layout),
+    ...asRecord(analysis.layout),
+    ...{
+      density:
+        safeLayoutValue(styleDna.layout_system?.information_density) ||
+        safeLayoutValue(styleDna.layout_system?.density),
+      composition: safeLayoutValue(styleDna.layout_system?.grid),
+      spacingNotes: safeLayoutValue(styleDna.layout_system?.module_spacing),
+    },
+  };
+  const positive = pickFirstNonEmpty(
+    asArray(analysis.promptKit?.positive),
+    promptsFromGeneration(generationPrompts),
+    asArray(spec.promptKit?.positive)
+  );
+  const negative = pickFirstNonEmpty(
+    asArray(analysis.promptKit?.negative),
+    negativesFromGeneration(generationPrompts),
+    asArray(spec.promptKit?.negative)
+  );
   const extraInstructions =
     typeof spec.promptKit?.instructions === "string" ? spec.promptKit.instructions : "";
 

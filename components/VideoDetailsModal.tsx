@@ -4,11 +4,11 @@
 
 import { useLanguage } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
-import { Download, Share2, Check, ChevronDown, Calendar, Clock, Languages, Monitor, Maximize, Copy, AlertTriangle, Globe } from 'lucide-react';
+import { Download, Share2, Check, ChevronDown, Calendar, Clock, Languages, Monitor, Maximize, Copy, AlertTriangle, Globe, Play } from 'lucide-react';
 import { deleteVideos } from "@/app/actions/video";
 import { useRouter } from "next/navigation";
 import { toast } from "react-hot-toast";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 
 const COUNTRY_LABELS: Record<string, string> = {
   us: 'United States',
@@ -40,6 +40,49 @@ const LANGUAGE_LABELS: Record<string, string> = {
   pt: 'Portuguese',
 };
 
+function resolveMediaUrl(value: unknown): string | null {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const firstChar = trimmed[0];
+    const lastChar = trimmed[trimmed.length - 1];
+    if (
+      (firstChar === '[' && lastChar === ']') ||
+      (firstChar === '{' && lastChar === '}')
+    ) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return resolveMediaUrl(parsed);
+      } catch {
+        // treat as literal URL when JSON parse fails
+      }
+    }
+    return trimmed;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const resolved = resolveMediaUrl(entry);
+      if (resolved) return resolved;
+    }
+    return null;
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return (
+      resolveMediaUrl(record.url) ||
+      resolveMediaUrl(record.imageUrl) ||
+      resolveMediaUrl(record.coverUrl) ||
+      resolveMediaUrl(record.thumbnailUrl) ||
+      resolveMediaUrl(record.previewUrl) ||
+      resolveMediaUrl(record.remoteUrl) ||
+      resolveMediaUrl(record.images) ||
+      null
+    );
+  }
+  return null;
+}
+
 interface VideoDetailsModalProps {
   item: any;
   onClose: () => void;
@@ -49,6 +92,9 @@ export function VideoDetailsModal({ item, onClose }: VideoDetailsModalProps) {
   const { t } = useLanguage();
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState(false);
+  const [hasVideoInteracted, setHasVideoInteracted] = useState(false);
+  const [isVideoReady, setIsVideoReady] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   
   const resultData = useMemo(() => {
     if (!item?.result) return null;
@@ -65,8 +111,10 @@ export function VideoDetailsModal({ item, onClose }: VideoDetailsModalProps) {
     }
     return null;
   }, [item?.result]);
-  const product = item.product || {};
-  const script = item.script || {};
+  const product = useMemo(() => item.product || {}, [item?.product]);
+  const script = useMemo(() => item.script || {}, [item?.script]);
+  const videoUrl = resultData?.videoUrl || item.resultUrl || "";
+  const downloadUrl = videoUrl || null;
 
   const isDigitalHuman = item.type === 'LIP_SYNC' || item.type === 'VOICE_CLONE';
   const promptResult = useMemo(() => {
@@ -112,6 +160,40 @@ export function VideoDetailsModal({ item, onClose }: VideoDetailsModalProps) {
   }, [item?.inputParams]);
   const productSnapshot = inputParams?.productSnapshot;
   const scriptSnapshot = inputParams?.scriptSnapshot;
+  const previewImageUrl = useMemo(() => {
+    return (
+      resolveMediaUrl(resultData?.thumbnailUrl) ||
+      resolveMediaUrl(resultData?.coverUrl) ||
+      resolveMediaUrl(resultData?.coverImage) ||
+      resolveMediaUrl(resultData?.imageUrl) ||
+      resolveMediaUrl(resultData?.images) ||
+      resolveMediaUrl(item.thumbnailUrl) ||
+      resolveMediaUrl(item.imageUrl) ||
+      resolveMediaUrl(productSnapshot?.coverImage) ||
+      resolveMediaUrl(productSnapshot?.thumbnailUrl) ||
+      resolveMediaUrl(productSnapshot?.images) ||
+      resolveMediaUrl(scriptSnapshot?.coverImage) ||
+      resolveMediaUrl(scriptSnapshot?.thumbnailUrl) ||
+      resolveMediaUrl(scriptSnapshot?.images) ||
+      resolveMediaUrl(product.images) ||
+      resolveMediaUrl(script.images) ||
+      null
+    );
+  }, [item.imageUrl, item.thumbnailUrl, productSnapshot, scriptSnapshot, product, script, resultData]);
+
+  useEffect(() => {
+    setHasVideoInteracted(false);
+    setIsVideoReady(false);
+    const videoElement = videoRef.current;
+    if (videoElement) {
+      videoElement.pause();
+      try {
+        videoElement.currentTime = 0;
+      } catch {
+        // Ignore seek errors in some browsers
+      }
+    }
+  }, [item?.id, videoUrl]);
 
   const ratio = resultData?.ratio || "9:16";
   const language =
@@ -150,7 +232,6 @@ export function VideoDetailsModal({ item, onClose }: VideoDetailsModalProps) {
   const promptText = isDigitalHuman
     ? (item.type === 'LIP_SYNC' ? "Lip Sync from audio" : "Voice Clone from text")
     : (resultData?.prompt || "A confident young man, appearing to be in his early 20s, with short brown hair and striking green eyes, wearing a dark casual shirt. Context: A modern, clean kitchen with white countertops and light-colored walls, suggesting a home setting.");
-  const downloadUrl = resultData?.videoUrl || item.resultUrl || "";
 
   const handleDelete = async () => {
     if (!confirm(t.common.confirmDelete)) return;

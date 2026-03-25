@@ -145,7 +145,7 @@ export function CharacterList({
                   <div className="flex items-center gap-2">
                       <button
                           onClick={(e) => handleEdit(e, character)}
-                          className="text-gray-400 hover:text-primary p-1 hover:bg-primary-soft dark:hover:bg-primary/10 rounded transition-colors"
+                          className="text-gray-400 hover:text-primary p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
                           title={t.common.edit}
                       >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 00 2 2h11a2 2 0 00 2-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>

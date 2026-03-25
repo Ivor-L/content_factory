@@ -10,7 +10,7 @@ export function Features({ lang }: FeaturesProps) {
   const t = siteContent[lang].features;
 
   return (
-    <section className="bg-gradient-to-b from-white via-[#fff9e6] to-white py-24 dark:from-black dark:via-[#0a0c14] dark:to-black">
+    <section className="bg-gradient-to-b from-white via-[#f4f5f7] to-white py-24 dark:from-black dark:via-[#0a0c14] dark:to-black">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-3xl text-center">
           <h2 className="text-3xl font-semibold tracking-tight text-gray-900 dark:text-white sm:text-4xl">

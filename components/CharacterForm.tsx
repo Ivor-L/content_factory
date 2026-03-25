@@ -3,7 +3,6 @@
 /* eslint-disable @next/next/no-img-element -- Character avatar previews rely on blob URLs */
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { createCharacter } from "@/app/(main)/characters/actions";
 import { useLanguage } from '@/contexts/LanguageContext';
 import { toast } from 'react-hot-toast';
@@ -19,10 +18,10 @@ interface CharacterFormProps {
 }
 
 export function CharacterForm({ onSuccess, initialData }: CharacterFormProps) {
-  const router = useRouter();
   const { t } = useLanguage();
+  const characterToast = t.characters?.toast || {};
   const [loading, setLoading] = useState(false);
-  
+
   // Form state
   const [id, setId] = useState<string | null>(initialData?.id || null);
   const [name, setName] = useState(initialData?.name || '');
@@ -46,13 +45,13 @@ export function CharacterForm({ onSuccess, initialData }: CharacterFormProps) {
         body: formData,
       });
 
-      if (!res.ok) throw new Error('Upload failed');
+      if (!res.ok) throw new Error(t.common.uploadFailed || 'Upload failed');
 
       const data = await res.json();
       setVoiceId(data.url);
     } catch (error) {
       console.error('Error uploading voice file:', error);
-      toast.error('Failed to upload voice file');
+      toast.error(characterToast.uploadVoiceFailed || t.common.uploadFailed || 'Failed to upload voice file');
     } finally {
       setUploadingVoice(false);
     }
@@ -87,7 +86,7 @@ export function CharacterForm({ onSuccess, initialData }: CharacterFormProps) {
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
       if (!file.type.startsWith('image/')) {
-        return toast.error('Please upload an image file');
+        return toast.error(characterToast.imageTypeError || 'Please upload an image file');
       }
       await uploadFile(file);
     }
@@ -112,7 +111,7 @@ export function CharacterForm({ onSuccess, initialData }: CharacterFormProps) {
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
       if (!file.type.startsWith('audio/')) {
-        return toast.error('Please upload an audio file');
+        return toast.error(characterToast.audioTypeError || 'Please upload an audio file');
       }
       await uploadVoiceFile(file);
     }
@@ -129,13 +128,13 @@ export function CharacterForm({ onSuccess, initialData }: CharacterFormProps) {
         body: formData,
       });
 
-      if (!res.ok) throw new Error('Upload failed');
+      if (!res.ok) throw new Error(t.common.uploadFailed || 'Upload failed');
 
       const data = await res.json();
       setAvatar(data.url);
     } catch (error) {
       console.error('Error uploading file:', error);
-      toast.error('Failed to upload image');
+      toast.error(characterToast.uploadImageFailed || t.common.uploadFailed || 'Failed to upload image');
     } finally {
       setUploadingImage(false);
     }
@@ -154,7 +153,7 @@ export function CharacterForm({ onSuccess, initialData }: CharacterFormProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name) return toast.error('Please enter a character name.');
+    if (!name) return toast.error(characterToast.nameRequired || 'Please enter a character name.');
     
     setLoading(true);
 
@@ -168,7 +167,7 @@ export function CharacterForm({ onSuccess, initialData }: CharacterFormProps) {
       await createCharacter(formData);
       
       toast.dismiss();
-      toast.success('Character saved successfully!', {
+      toast.success(characterToast.savedSuccess || t.common.success || 'Character saved successfully!', {
         duration: 2000,
         icon: '✅',
         style: {
@@ -187,7 +186,7 @@ export function CharacterForm({ onSuccess, initialData }: CharacterFormProps) {
 
     } catch (error) {
       console.error(error);
-      toast.error('Failed to save character');
+      toast.error(characterToast.saveFailed || t.common.error || 'Failed to save character');
     } finally {
       setLoading(false);
     }

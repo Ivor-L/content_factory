@@ -2,11 +2,25 @@
 
 /* eslint-disable @next/next/no-img-element -- Storyboard modal displays uploaded references without Next optimization */
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { toast } from 'react-hot-toast';
 import { getCaretCoordinates } from '@/lib/caret';
 import { normalizeStoryboardSegments } from '@/lib/storyboardTime';
+import {
+  ChevronDown,
+  ChevronUp,
+  Download,
+  Grid3x3,
+  Image as ImageIcon,
+  Languages,
+  Plus,
+  RefreshCcw,
+  Share2,
+  Sparkles,
+  Wand2,
+  X as CloseIcon,
+} from 'lucide-react';
 
 interface Product {
   id: string;
@@ -63,7 +77,8 @@ interface StoryboardModalProps {
 }
 
 export function StoryboardModal({ task: initialTask, isOpen, onClose, products = [], characters = [] }: StoryboardModalProps) {
-  const { t } = useLanguage();
+  const { t: i18nText } = useLanguage();
+  const t = i18nText as any;
   const [task, setTask] = useState<StoryboardTask>(initialTask);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -103,6 +118,45 @@ export function StoryboardModal({ task: initialTask, isOpen, onClose, products =
     if (!isOpen || !currentSegment) return;
     setImagePrompt(currentSegment.imagePrompt || '');
   }, [isOpen, currentSegment]);
+
+  const currentIndex = useMemo(
+    () => normalizedSegments.findIndex((segment) => segment.id === currentSegment?.id),
+    [normalizedSegments, currentSegment?.id]
+  );
+
+  const totalSegments = normalizedSegments.length;
+
+  const getSegmentPreview = useCallback(
+    (segment?: StoryboardSegment | null) =>
+      segment?.generatedImage ||
+      segment?.generatedVideo ||
+      task.sceneImage ||
+      task.coverImage ||
+      null,
+    [task.coverImage, task.sceneImage]
+  );
+
+  const previewImage = getSegmentPreview(currentSegment);
+
+  const sceneDescription =
+    currentSegment?.videoPrompt ||
+    currentSegment?.imagePrompt ||
+    t.storyboard.noVideoPrompt ||
+    t.storyboard.noPrompt;
+
+  const handleSelectAdjacentSegment = useCallback(
+    (direction: 'prev' | 'next') => {
+      if (!normalizedSegments.length) return;
+      const baseIndex = currentIndex >= 0 ? currentIndex : 0;
+      const delta = direction === 'prev' ? -1 : 1;
+      const nextIndex = (baseIndex + delta + normalizedSegments.length) % normalizedSegments.length;
+      const nextSegment = normalizedSegments[nextIndex];
+      if (nextSegment) {
+        setSelectedSegmentId(nextSegment.id);
+      }
+    },
+    [currentIndex, normalizedSegments]
+  );
 
   const handleImagePromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
      const val = e.target.value;
@@ -190,6 +244,60 @@ export function StoryboardModal({ task: initialTask, isOpen, onClose, products =
   const handleGenerateVideo = () => {
     toast.success(t.storyboard.generate + ' (mock)');
   };
+
+  const handleDownloadPreview = () => {
+    if (previewImage) {
+      window.open(previewImage, '_blank', 'noopener,noreferrer');
+    } else {
+      toast.error(t.storyboard.imageNotGenerated);
+    }
+  };
+
+  const leftUtilityButtons = [
+    {
+      key: 'grid',
+      label: t.storyboard.storyboardGen || '九宫格成片',
+      icon: Grid3x3,
+    },
+    {
+      key: 'translate',
+      label: t.storyboard.translate || '多语言',
+      icon: Languages,
+    },
+  ] as const;
+
+  const previewActions = [
+    {
+      key: 'reference',
+      label: t.storyboard.sceneRef || '用作参考图',
+      icon: ImageIcon,
+      onClick: () => toast.success((t.storyboard.sceneRef || '参考图') + ' ✓'),
+    },
+    {
+      key: 'edit',
+      label: t.storyboard.partialEdit || '局部修改',
+      icon: Wand2,
+      onClick: () => toast.success((t.storyboard.partialEdit || '局部修改') + ' ✓'),
+    },
+    {
+      key: 'regenerate',
+      label: t.storyboard.regenerate || t.storyboard.generate || '重新生成',
+      icon: RefreshCcw,
+      onClick: handleGenerateImage,
+    },
+    {
+      key: 'share',
+      label: t.storyboard.share || '分享',
+      icon: Share2,
+      onClick: () => toast.success((t.storyboard.share || '分享') + ' ✓'),
+    },
+    {
+      key: 'download',
+      label: t.storyboard.download || t.storyboard.batchDownload || '下载',
+      icon: Download,
+      onClick: handleDownloadPreview,
+    },
+  ] as const;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">

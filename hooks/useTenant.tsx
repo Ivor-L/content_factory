@@ -18,19 +18,25 @@ interface TenantContextType {
 }
 
 const TenantContext = createContext<TenantContextType>({
-  tenant: getTenantConfig('crossborder'),
-  tenantSlug: 'crossborder',
+  tenant: getTenantConfig('nextide'),
+  tenantSlug: 'nextide',
   isLoading: true,
   basePath: '',
 });
 
 export function TenantProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const [tenant, setTenant] = useState<TenantConfig>(getTenantConfig('crossborder'));
-  const [tenantSlug, setTenantSlug] = useState('crossborder');
+  const [tenant, setTenant] = useState<TenantConfig>(getTenantConfig('nextide'));
+  const [tenantSlug, setTenantSlug] = useState('nextide');
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    if (!pathname) {
+      setTenantSlug('nextide');
+      setTenant(getTenantConfig('nextide'));
+      setIsLoading(false);
+      return;
+    }
     // 从路径解析租户
     const segments = pathname.split('/').filter(Boolean);
     const firstSegment = segments[0];
@@ -40,17 +46,23 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
       setTenantSlug(firstSegment);
       setTenant(getTenantConfig(firstSegment));
     } else {
-      // 默认使用 crossborder
-      setTenantSlug('crossborder');
-      setTenant(getTenantConfig('crossborder'));
+      // 默认使用 nextide
+      setTenantSlug('nextide');
+      setTenant(getTenantConfig('nextide'));
     }
 
     setIsLoading(false);
   }, [pathname]);
 
   const basePath = useMemo(() => {
-    return tenantSlug === 'crossborder' ? '' : `/${tenantSlug}`;
-  }, [tenantSlug]);
+    if (!pathname) return '';
+    const segments = pathname.split('/').filter(Boolean);
+    const firstSegment = segments[0];
+    if (firstSegment && VALID_TENANT_SLUGS.includes(firstSegment)) {
+      return `/${firstSegment}`;
+    }
+    return '';
+  }, [pathname]);
 
   return (
     <TenantContext.Provider value={{ tenant, tenantSlug, isLoading, basePath }}>
@@ -64,8 +76,8 @@ export function useTenant() {
   if (!context) {
     // 如果在 Provider 外使用，返回默认值
     return {
-      tenant: getTenantConfig('crossborder'),
-      tenantSlug: 'crossborder',
+      tenant: getTenantConfig('nextide'),
+      tenantSlug: 'nextide',
       isLoading: false,
       basePath: '',
     };

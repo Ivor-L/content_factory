@@ -97,7 +97,7 @@ export default function NewScriptPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-primary text-primary-foreground py-3 rounded-md hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+          className="btn-openclaw w-full py-3 text-base font-semibold"
         >
           {loading ? "Processing..." : "Create Script & Analyze"}
         </button>

@@ -17,6 +17,12 @@ import { supabase } from "@/lib/supabase";
 import { useTenantPath } from "@/hooks/useTenant";
 import { CharacterForm } from "@/components/CharacterForm";
 import { deriveCopyInsights } from "@/lib/copyInsights";
+import {
+  DIGITAL_HUMAN_CPS,
+  DIGITAL_HUMAN_MAX_SECONDS,
+  DIGITAL_HUMAN_SAFETY,
+} from "@/lib/digitalHumanLimits";
+import { DHScriptPreviewModal, type DHScriptData } from "@/components/DHScriptPreviewModal";
 
 interface ReplicationFormProps {
   products: { id: string; name: string; images?: string }[];
@@ -65,6 +71,11 @@ const LANGUAGES = [
   { id: "pt", en: "Portuguese", zh: "葡萄牙语" }
 ];
 
+const DIGITAL_WORD_MIN = 80;
+const DIGITAL_WORD_LIMIT = Math.floor(
+  DIGITAL_HUMAN_CPS * DIGITAL_HUMAN_MAX_SECONDS * DIGITAL_HUMAN_SAFETY
+);
+
 // Reusable Combobox Component
 function Combobox({ 
     options, 
@@ -107,9 +118,9 @@ function Combobox({
 
     return (
         <div className="relative" ref={containerRef}>
-            <div 
+            <div
                 className={cn(
-                    "w-full px-4 py-2 border rounded-lg flex items-center justify-between cursor-pointer bg-white dark:bg-gray-700 transition-all overflow-hidden",
+                    "w-full px-4 py-2 border rounded-lg flex items-center justify-between cursor-pointer bg-white dark:bg-gray-800 transition-all overflow-hidden",
                     isOpen ? "ring-2 ring-inset ring-black dark:ring-white border-transparent" : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
                 )}
                 onClick={() => setIsOpen(!isOpen)}
@@ -141,7 +152,7 @@ function Combobox({
                     <div className="p-2 border-b border-gray-50 dark:border-gray-700">
                         <div className="relative">
                             <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 w-3 h-3" />
-                            <input 
+                            <input
                                 type="text"
                                 className="w-full pl-7 pr-2 py-1.5 text-sm bg-gray-50 dark:bg-gray-700 rounded-md border-none focus:ring-0 outline-none text-gray-900 dark:text-white placeholder-gray-400"
                                 placeholder={searchPlaceholder}
@@ -155,7 +166,7 @@ function Combobox({
                     <div className="overflow-y-auto flex-1 p-1">
                         {onAddNew && (
                             <div 
-                                className="px-3 py-2 text-sm rounded-md cursor-pointer flex items-center gap-2 text-primary hover:bg-primary-soft dark:hover:bg-primary/10 mb-1"
+                                className="px-3 py-2 text-sm rounded-md cursor-pointer flex items-center gap-2 text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 mb-1"
                                 onClick={() => {
                                     onAddNew();
                                     setIsOpen(false);
@@ -174,7 +185,7 @@ function Combobox({
                                     key={opt.id}
                                     className={cn(
                                         "px-3 py-2 text-sm rounded-md cursor-pointer flex items-center justify-between",
-                                        value === opt.id ? "bg-black/5 dark:bg-white/10 text-black dark:text-white font-medium" : "text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                                        value === opt.id ? "bg-yellow-50 dark:bg-yellow-400/20 text-yellow-700 dark:text-yellow-300 font-medium" : "text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
                                     )}
                                     onClick={() => {
                                         onChange(opt.id);
@@ -185,7 +196,7 @@ function Combobox({
                                     <div className="flex items-center gap-2 truncate">
                                         {renderOption ? renderOption(opt) : opt.label}
                                     </div>
-                                    {value === opt.id && <Check size={14} className="text-black dark:text-white shrink-0 ml-2" />}
+                                    {value === opt.id && <Check size={14} className="text-yellow-600 dark:text-yellow-300 shrink-0 ml-2" />}
                                 </div>
                             ))
                         )}
@@ -227,16 +238,16 @@ function CustomSelect({
 
     return (
         <div className="relative" ref={containerRef}>
-            <div 
+            <div
                 className={cn(
-                    "w-full px-4 py-2 border rounded-lg flex items-center justify-between cursor-pointer bg-white dark:bg-gray-700 transition-all overflow-hidden",
+                    "w-full px-4 py-2 border rounded-lg flex items-center justify-between cursor-pointer bg-white dark:bg-gray-800 transition-all overflow-hidden",
                     isOpen ? "ring-2 ring-inset ring-black dark:ring-white border-transparent" : "border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500"
                 )}
                 onClick={() => setIsOpen(!isOpen)}
             >
                 <span className={cn(
                     "truncate mr-2",
-                    value ? "text-gray-900 dark:text-white" : "text-gray-400 dark:text-gray-400"
+                    value ? "text-gray-900 dark:text-white" : "text-gray-400"
                 )}>
                     {selectedOption ? (language === 'en' ? selectedOption.en : selectedOption.zh) : placeholder}
                 </span>
@@ -246,11 +257,11 @@ function CustomSelect({
             {isOpen && (
                 <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg shadow-lg max-h-60 overflow-y-auto p-1 left-0">
                     {options.map((opt) => (
-                        <div 
+                        <div
                             key={opt.id}
                             className={cn(
                                 "px-3 py-2 text-sm rounded-md cursor-pointer flex items-center justify-between",
-                                value === opt.id ? "bg-black/5 dark:bg-white/10 text-black dark:text-white font-medium" : "text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                                value === opt.id ? "bg-yellow-50 dark:bg-yellow-400/20 text-yellow-700 dark:text-yellow-300 font-medium" : "text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
                             )}
                             onClick={() => {
                                 onChange(opt.id);
@@ -258,7 +269,7 @@ function CustomSelect({
                             }}
                         >
                             {language === 'en' ? opt.en : opt.zh}
-                            {value === opt.id && <Check size={14} className="text-black dark:text-white" />}
+                            {value === opt.id && <Check size={14} className="text-yellow-600 dark:text-yellow-300" />}
                         </div>
                     ))}
                 </div>
@@ -271,7 +282,9 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const { t, language } = useLanguage();
-  const myVideosPath = useTenantPath('/my-videos');
+  const myProjectsReplicationPath = useTenantPath('/my-works?type=replication');
+  const myProjectsDigitalHumanPath = useTenantPath('/my-works?type=digitalHuman');
+  const storyboardBasePath = useTenantPath('/storyboard');
   
   // Form State
   const [selectedProduct, setSelectedProduct] = useState("");
@@ -281,6 +294,9 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
   const [duration, setDuration] = useState(mode === 'storyboard' ? "32" : "15"); // Default based on mode
   const [quantity, setQuantity] = useState("1");
   const [selectedCharacter, setSelectedCharacter] = useState("");
+  const [imageModel, setImageModel] = useState("nanoBananapro"); // Image generation model
+  const [videoModel, setVideoModel] = useState("veo3"); // Video generation model
+  const [soraProvider, setSoraProvider] = useState<'kie' | 'yunwu'>('kie'); // Sora provider for one-click mode
   
   // Modal State
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
@@ -290,14 +306,54 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
   const [digitalTaskTitle, setDigitalTaskTitle] = useState("");
   const [digitalIdea, setDigitalIdea] = useState("");
   const [digitalAudience, setDigitalAudience] = useState("");
-  const [digitalWordCount, setDigitalWordCount] = useState("320");
+  const [digitalWordCount, setDigitalWordCount] = useState(String(DIGITAL_WORD_LIMIT));
   const digitalPrefillRef = useRef<string | null>(null);
+
+  // Two-stage digital human flow
+  const [pendingReplicationId, setPendingReplicationId] = useState<string | null>(null);
+  const [dhScriptData, setDhScriptData] = useState<DHScriptData | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
     });
   }, []);
+
+  // Poll replication status after Stage 1 is triggered
+  useEffect(() => {
+    if (!pendingReplicationId || !isPolling || !session?.access_token) return;
+
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/replication/${pendingReplicationId}`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (!res.ok) return;
+        const { data } = await res.json();
+        if (stopped) return;
+
+        if (data.status === "script_ready") {
+          setIsPolling(false);
+          setLoading(false);
+          setDhScriptData(data.result as DHScriptData);
+        } else if (data.status === "script_failed") {
+          setIsPolling(false);
+          setLoading(false);
+          toast.error(data.result?.error || "文案生成失败，请重试");
+          setPendingReplicationId(null);
+        }
+      } catch {}
+    };
+
+    const interval = setInterval(poll, 3000);
+    poll(); // immediate first check
+    return () => {
+      stopped = true;
+      clearInterval(interval);
+    };
+  }, [pendingReplicationId, isPolling, session?.access_token]);
 
   // Update selectedScript when preselectedScriptId changes
   useEffect(() => {
@@ -353,7 +409,7 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
     const prefix = `replication_${mode}_`;
     localStorage.setItem(`${prefix}${key}`, value);
   };
-  
+
   // Parse blueprint if available
   const currentScript = scripts.find(s => s.id === selectedScript);
   const analysisData = useMemo(() => {
@@ -384,7 +440,14 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
       "Processing..."
     );
   };
-  const isScriptProcessing = Boolean(currentScript?.status && currentScript.status !== "completed");
+  const normalizedScriptStatus = (currentScript?.status || "").toLowerCase();
+  const scriptReadyStatuses = new Set(["completed", "success", "script_ready", "breakdown_completed"]);
+  const scriptFailedStatuses = new Set(["failed", "error", "script_failed", "breakdown_failed"]);
+  const isScriptProcessing = Boolean(
+    normalizedScriptStatus &&
+    !scriptReadyStatuses.has(normalizedScriptStatus) &&
+    !scriptFailedStatuses.has(normalizedScriptStatus)
+  );
   const scriptStatusText = getStatusLabel(currentScript?.status);
   const scriptLockedHint = scriptStatusMessages.ctaLocked;
   useEffect(() => {
@@ -417,8 +480,10 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
     if (!digitalWordCount.trim()) {
       const approxWords = copyInsights?.copyText
         ? Math.round(copyInsights.copyText.replace(/\\s+/g, " ").length / 2)
-        : 320;
-      setDigitalWordCount(String(Math.max(200, Math.min(600, approxWords))));
+        : DIGITAL_WORD_LIMIT;
+      setDigitalWordCount(
+        String(Math.max(DIGITAL_WORD_MIN, Math.min(DIGITAL_WORD_LIMIT, approxWords)))
+      );
     }
     digitalPrefillRef.current = key;
   }, [
@@ -440,58 +505,57 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
         toast.error("Please select a script");
         return;
     }
-    if (mode !== 'digital-human' && !selectedProduct) {
-        toast.error("Please select product and script");
-        return;
-    }
-    
     setLoading(true);
+    let startedPolling = false;
 
     try {
       if (mode === 'storyboard') {
         const formData = new FormData();
-        formData.append('productId', selectedProduct);
-        // We need to pass the video URL from the script. 
-        // Since we only have scriptId here, we might need to fetch script details or pass videoUrl in props.
-        // For now, let's assume the script object in props has videoUrl or we fetch it.
-        // Actually, props.scripts only has id and title.
-        // Let's modify the props to include videoUrl if possible, or fetch it.
-        // BUT, ReplicationForm is used in ScriptList where we have the full script object.
-        // Let's assume we can get the videoUrl from the `scripts` prop if we update the interface.
-        
-        // However, updating the interface might break other usages if not careful.
-        // A better approach for now without changing props structure too much:
-        // We can't easily get videoUrl here without fetching.
-        // Let's try to find the script in the `scripts` array if it has extra data, 
-        // OR we just use the script ID and let the backend handle it?
-        // createStoryboardTask expects videoUrl.
-        
-        // Let's update the interface to allow finding the videoUrl.
-        const script = scripts.find(s => s.id === selectedScript);
-        // We need to cast or ensure scripts has videoUrl.
-        // Let's just pass videoUrl as a hidden field or assume backend can handle scriptId -> videoUrl resolution.
-        // But createStoryboardTask takes videoUrl directly.
-        
-        // Workaround: We'll modify the props in the next step to include videoUrl in the scripts array items.
-        // For now, let's assume we can get it.
-        const selectedScriptObj = scripts.find(s => s.id === selectedScript);
-        // @ts-ignore
-        const videoUrl = selectedScriptObj?.videoUrl || ""; 
+        if (selectedProduct) formData.append('productId', selectedProduct);
+        const selectedScriptObj = scripts.find((s) => s.id === selectedScript);
+        const videoUrl = selectedScriptObj?.videoUrl || "";
+        if (videoUrl) {
+          formData.append('videoUrl', videoUrl);
+        }
 
-        formData.append('videoUrl', videoUrl);
+        const scriptContent =
+          copyInsights?.copyText ||
+          [
+            copyInsights?.segments?.intro,
+            copyInsights?.segments?.body,
+            copyInsights?.segments?.conclusion,
+          ]
+            .filter(Boolean)
+            .join('\n\n');
+        if (scriptContent?.trim()) {
+          formData.append('scriptContent', scriptContent.trim());
+        }
+        formData.append('scriptId', selectedScript);
         
         if (selectedCharacter) {
             formData.append('characterId', selectedCharacter);
         }
-        
-        if (session?.user?.id) {
-          formData.append('userId', session.user.id);
-        }
 
+        const activeSession = session || (await supabase.auth.getSession()).data.session;
+        if (activeSession?.user?.id) {
+          formData.append('userId', activeSession.user.id);
+        }
+        formData.append('imageModel', imageModel);
+        formData.append('videoModel', videoModel);
+
+        // 按模式固定工作流：分镜成片始终走同一条 workflow，不依赖脚本是否已有分析结果
+        const replicationModeForTask = 'viral-clone';
+        if (!videoUrl) {
+          throw new Error("当前脚本缺少视频地址，无法发起分镜拆解。请先重新上传脚本视频。");
+        }
+        formData.append('replicationMode', replicationModeForTask);
+
+        if (targetCountry) formData.append('targetCountry', targetCountry);
+        if (targetLanguage) formData.append('targetLanguage', targetLanguage);
         const result = await createStoryboardTask(formData);
         emitCreditsRefresh();
-        toast.success("Storyboard task created! Redirecting...", { icon: "🚀" });
-        router.push(`/storyboard/${result.taskId}`);
+        toast.success("分镜成片任务已发起，正在跳转...", { icon: "🚀" });
+        router.push(`${storyboardBasePath}/${result.taskId}`);
 
       } else if (mode === 'digital-human') {
         if (!selectedCharacter) {
@@ -521,10 +585,16 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
           copyInsights?.coreViewpoint ||
           undefined;
 
+        const desiredWordCount = (() => {
+          const parsed = Number(digitalWordCount.trim());
+          if (!Number.isFinite(parsed)) return DIGITAL_WORD_LIMIT;
+          return Math.max(DIGITAL_WORD_MIN, Math.min(DIGITAL_WORD_LIMIT, Math.round(parsed)));
+        })();
+
         const payload = {
           scriptId: selectedScript,
           characterId: selectedCharacter,
-          wordCount: digitalWordCount.trim(),
+          wordCount: desiredWordCount,
           ideaText,
           audience: fallbackAudience,
           title: digitalTaskTitle.trim(),
@@ -541,10 +611,16 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
           throw new Error(errorData.error || `Failed with status ${response.status}`);
         }
 
-        await response.json().catch(() => ({}));
-        toast.success(t.replication.digitalHumanSuccess || t.common.success, { icon: "🤖" });
-        onSuccess?.();
-        router.push("/replication?tab=DIGITAL_HUMAN");
+        const resData = await response.json().catch(() => ({}));
+        const replicationId = resData.data?.replicationId;
+        if (!replicationId) throw new Error("未获取到 replicationId");
+
+        // Start polling — keep loading=true, show inline status in button
+        startedPolling = true;
+        setPendingReplicationId(replicationId);
+        setIsPolling(true);
+        // loading stays true until script_ready (handled in polling effect)
+        toast.success("文案生成中，请稍候…", { icon: "🤖", duration: 3000 });
 
       } else {
         // Existing One-Click Logic
@@ -558,14 +634,16 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
         const response = await fetch("/api/replication/generate", {
             method: "POST",
             headers,
-            body: JSON.stringify({ 
-                productId: selectedProduct, 
+            body: JSON.stringify({
+                productId: selectedProduct,
                 scriptId: selectedScript,
                 targetCountry,
                 targetLanguage,
                 duration,
                 quantity,
-                blueprint: currentScript?.blueprint || null
+                soraProvider,
+                blueprint: currentScript?.blueprint || null,
+                videoModel,
             }),
         });
 
@@ -577,143 +655,113 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
         emitCreditsRefresh();
         toast.success(t.replication.toastStarted || t.common.success, { icon: "🚀" });
         onSuccess?.();
-        router.push(myVideosPath);
+        router.push(myProjectsReplicationPath);
       }
     } catch (error: any) {
       console.error(error);
       toast.error(error.message || "Failed to start replication.");
     } finally {
-      setLoading(false);
+      if (!startedPolling) setLoading(false);
     }
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6 h-full flex flex-col">
       <div className="flex-1 space-y-6 overflow-y-auto pr-2 custom-scrollbar">
-          {/* Product Selection */}
-          {mode !== 'digital-human' && (
-          <div>
-            <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">{t.replication.selectProduct}</label>
-            <Combobox 
-                options={products.map(p => {
-                    let image = "";
-                    try {
-                        const images = JSON.parse(p.images || "[]");
-                        if (images.length > 0) image = images[0];
-                    } catch (e) {}
-                    return { id: p.id, label: p.name, image };
-                })}
-                value={selectedProduct}
-                onChange={setSelectedProduct}
-                placeholder={t.replication.selectProduct + "..."}
-                searchPlaceholder={t.common.search}
-                renderOption={(opt) => (
-                    <div className="flex items-center gap-2">
-                        {opt.image ? (
-                            <img src={opt.image} alt={opt.label} className="w-6 h-6 rounded object-cover border border-gray-200 dark:border-gray-600" />
-                        ) : (
-                            <div className="w-6 h-6 rounded bg-gray-100 dark:bg-gray-600 flex items-center justify-center text-[10px] text-gray-500 dark:text-gray-300 font-bold">
-                                {opt.label.charAt(0)}
-                            </div>
-                        )}
-                        <span className="truncate">{opt.label}</span>
-                    </div>
-                )}
-                onAddNew={() => setIsProductModalOpen(true)}
-                addNewLabel={t.products.newProduct}
-            />
-          </div>
-          )}
-
-          {/* Script Selection - Only show if not preselected */}
-          {!preselectedScriptId && (
-          <div>
-            <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">{t.replication.selectScript}</label>
-            <Combobox 
-                options={scripts.map(s => ({ id: s.id, label: s.title }))}
-                value={selectedScript}
-                onChange={setSelectedScript}
-                placeholder={t.replication.selectScript + "..."}
-                searchPlaceholder={t.common.search}
-                onAddNew={() => setIsScriptModalOpen(true)}
-                addNewLabel={t.scripts.newScript}
-                renderOption={(opt) => (
-                    <div className="flex items-center gap-2">
-                        <span className="truncate">{opt.label}</span>
-                    </div>
-                )}
-            />
-          </div>
-          )}
-
-          {/* Analysis Result Display */}
-          {/* Removed Analysis Result from here as it is now in a separate tab in the Modal */}
-
-          {mode === 'digital-human' && (
-            <>
-              <div>
-                <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">{t.replication.digitalHumanForm?.title || "任务名称"}</label>
-                <input
-                  type="text"
-                  value={digitalTaskTitle}
-                  onChange={(e) => setDigitalTaskTitle(e.target.value)}
-                  placeholder={t.replication.digitalHumanForm?.titlePlaceholder || "例如：小红书·数字人口播任务"}
-                  className="w-full px-4 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:ring-inset focus:border-primary outline-none"
-                />
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {t.replication.digitalHumanForm?.helper || "系统会自动注入爆款拆解结果，创作类型固定为口播稿。"}
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">{t.replication.digitalHumanForm?.wordCount || "字数"}</label>
-                <input
-                  type="number"
-                  min={100}
-                  max={800}
-                  value={digitalWordCount}
-                  onChange={(e) => setDigitalWordCount(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:ring-inset focus:border-primary outline-none"
-                />
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {t.replication.digitalHumanForm?.wordCountHelper || "系统自动拉齐口播长度，可在这里微调字数。"}
-                </p>
-              </div>
-            </>
-          )}
-
-          {/* Character Selection - Storyboard & Digital Human */}
-          {(mode === 'storyboard' || mode === 'digital-human') && (
+          {/* 2-column grid: product, character, country, language, quantity */}
+          <div className="grid grid-cols-2 gap-4">
+            {/* Product Selection */}
+            {mode !== 'digital-human' && (
             <div>
-                <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">{t.characters.selectCharacter}</label>
-                <Combobox 
-                    options={characters.map(c => ({ id: c.id, label: c.name, image: c.avatar }))}
-                    value={selectedCharacter}
-                    onChange={setSelectedCharacter}
-                    placeholder={(t.characters.selectCharacter) + "..."}
-                    searchPlaceholder={t.common.search}
-                    renderOption={(opt) => (
-                        <div className="flex items-center gap-2">
-                            {opt.image ? (
-                                <img src={opt.image} alt={opt.label} className="w-6 h-6 rounded-full object-cover border border-gray-200 dark:border-gray-600" />
-                            ) : (
-                                <div className="w-6 h-6 rounded-full bg-gray-100 dark:bg-gray-600 flex items-center justify-center text-[10px] text-gray-500 dark:text-gray-300 font-bold">
-                                    {opt.label.charAt(0)}
-                                </div>
-                            )}
-                            <span className="truncate">{opt.label}</span>
-                        </div>
-                    )}
-                    onAddNew={() => setIsCharacterModalOpen(true)}
-                    addNewLabel={t.characters.newCharacter}
-                />
+              <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">
+                {t.replication.selectProduct}
+                <span className="ml-1 text-xs font-normal text-gray-400 dark:text-gray-500">{language === 'en' ? '(optional)' : '（可选）'}</span>
+              </label>
+              <Combobox
+                  options={products.map(p => {
+                      let image = "";
+                      try {
+                          const images = JSON.parse(p.images || "[]");
+                          if (images.length > 0) image = images[0];
+                      } catch (e) {}
+                      return { id: p.id, label: p.name, image };
+                  })}
+                  value={selectedProduct}
+                  onChange={setSelectedProduct}
+                  placeholder={t.replication.selectProduct + "..."}
+                  searchPlaceholder={t.common.search}
+                  renderOption={(opt) => (
+                      <div className="flex items-center gap-2">
+                          {opt.image ? (
+                              <img src={opt.image} alt={opt.label} className="w-6 h-6 rounded object-cover border border-gray-200 dark:border-gray-600" />
+                          ) : (
+                              <div className="w-6 h-6 rounded bg-gray-100 dark:bg-gray-600 flex items-center justify-center text-[10px] text-gray-500 dark:text-gray-300 font-bold">
+                                  {opt.label.charAt(0)}
+                              </div>
+                          )}
+                          <span className="truncate">{opt.label}</span>
+                      </div>
+                  )}
+                  onAddNew={() => setIsProductModalOpen(true)}
+                  addNewLabel={t.products.newProduct}
+              />
             </div>
-          )}
+            )}
 
-          {mode !== 'digital-human' && (
-            <>
+            {/* Script Selection - Only show if not preselected */}
+            {!preselectedScriptId && (
+            <div>
+              <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">{t.replication.selectScript}</label>
+              <Combobox
+                  options={scripts.map(s => ({ id: s.id, label: s.title }))}
+                  value={selectedScript}
+                  onChange={setSelectedScript}
+                  placeholder={t.replication.selectScript + "..."}
+                  searchPlaceholder={t.common.search}
+                  onAddNew={() => setIsScriptModalOpen(true)}
+                  addNewLabel={t.scripts.newScript}
+                  renderOption={(opt) => (
+                      <div className="flex items-center gap-2">
+                          <span className="truncate">{opt.label}</span>
+                      </div>
+                  )}
+              />
+            </div>
+            )}
+
+            {/* Character Selection - Storyboard & Digital Human */}
+            {(mode === 'storyboard' || mode === 'digital-human') && (
+              <div>
+                  <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">{t.characters.selectCharacter}</label>
+                  <Combobox
+                      options={characters.map(c => ({ id: c.id, label: c.name, image: c.avatar }))}
+                      value={selectedCharacter}
+                      onChange={setSelectedCharacter}
+                      placeholder={(t.characters.selectCharacter) + "..."}
+                      searchPlaceholder={t.common.search}
+                      renderOption={(opt) => (
+                          <div className="flex items-center gap-2">
+                              {opt.image ? (
+                                  <img src={opt.image} alt={opt.label} className="w-6 h-6 rounded-full object-cover border border-gray-200 dark:border-gray-600" />
+                              ) : (
+                                  <div className="w-6 h-6 rounded-full bg-gray-100 dark:bg-gray-600 flex items-center justify-center text-[10px] text-gray-500 dark:text-gray-300 font-bold">
+                                      {opt.label.charAt(0)}
+                                  </div>
+                              )}
+                              <span className="truncate">{opt.label}</span>
+                          </div>
+                      )}
+                      onAddNew={() => setIsCharacterModalOpen(true)}
+                      addNewLabel={t.characters.newCharacter}
+                  />
+              </div>
+            )}
+
+            {/* Target Country */}
+            {mode !== 'digital-human' && (
               <div>
                 <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">{t.replication.targetCountry}</label>
-                <Combobox 
+                <Combobox
                     options={COUNTRIES.map(c => ({ id: c.id, label: language === 'en' ? c.en : c.zh }))}
                     value={targetCountry}
                     onChange={(val) => {
@@ -724,10 +772,13 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
                     searchPlaceholder={t.common.search}
                 />
               </div>
+            )}
 
+            {/* Video Language */}
+            {mode !== 'digital-human' && (
               <div>
                 <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">{t.replication.videoLanguage}</label>
-                <CustomSelect 
+                <CustomSelect
                     options={LANGUAGES}
                     value={targetLanguage}
                     onChange={(val) => {
@@ -738,48 +789,129 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
                     language={language === 'zh' ? 'zh' : 'en'}
                 />
               </div>
-            </>
-          )}
+            )}
+
+            {/* Quantity */}
+            {mode === 'storyboard' && (
+              <div>
+                  <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">{t.replication.quantity}</label>
+                  <input
+                      type="number"
+                      name="quantity"
+                      min="1"
+                      max="10"
+                      value={quantity}
+                      onChange={(e) => {
+                          setQuantity(e.target.value);
+                          savePreference('quantity', e.target.value);
+                      }}
+                      className="w-full px-4 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none h-[38px]"
+                      required
+                  />
+              </div>
+            )}
+          </div>
 
           {mode === 'storyboard' && (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-3">
                 <div>
-                    <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">{t.replication.duration}</label>
-                    <div className="grid grid-cols-3 gap-2">
-                        {['16', '24', '32', '40', '48', '56'].map((d) => (
-                            <div 
-                                key={d}
-                                onClick={() => {
-                                    setDuration(d);
-                                    savePreference('duration', d);
-                                }}
+                    <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">首帧图生成模型</label>
+                    <div className="flex gap-2">
+                        {[
+                          { id: 'nanoBananapro', label: 'Banana Pro', desc: '高质量' },
+                          { id: 'nanoBanana2', label: 'Banana 2', desc: '快速' },
+                        ].map((m) => (
+                            <button
+                                key={m.id}
+                                type="button"
+                                onClick={() => setImageModel(m.id)}
                                 className={cn(
-                                    "text-center py-2 border rounded-lg cursor-pointer transition-all text-sm font-medium",
-                                    duration === d 
-                                        ? "bg-black text-white dark:bg-white dark:text-black border-black dark:border-white" 
+                                    "flex-1 py-2 px-3 border rounded-lg cursor-pointer transition-all text-sm font-medium text-center",
+                                    imageModel === m.id
+                                        ? "bg-black text-white dark:bg-yellow-300 dark:text-black border-black dark:border-yellow-300"
                                         : "border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
                                 )}
                             >
-                                {d}s
-                            </div>
+                                <div>{m.label}</div>
+                                <div className="text-[10px] opacity-60">{m.desc}</div>
+                            </button>
                         ))}
                     </div>
                 </div>
                 <div>
-                    <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">{t.replication.quantity}</label>
-                    <input 
-                        type="number" 
-                        name="quantity" 
-                        min="1" 
-                        max="10" 
-                        value={quantity}
-                        onChange={(e) => {
-                            setQuantity(e.target.value);
-                            savePreference('quantity', e.target.value);
-                        }}
-                        className="w-full px-4 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none h-[38px]" 
-                        required 
-                    />
+                    <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">视频生成模型</label>
+                    <div className="flex gap-2">
+                        {[
+                          { id: 'veo3', label: 'Veo 3', desc: '自然' },
+                          { id: 'grok', label: 'Grok', desc: '创意' },
+                          { id: 'digital-human', label: '数字人', desc: '真人感' },
+                        ].map((m) => (
+                            <button
+                                key={m.id}
+                                type="button"
+                                onClick={() => setVideoModel(m.id)}
+                                className={cn(
+                                    "flex-1 py-2 px-3 border rounded-lg cursor-pointer transition-all text-sm font-medium text-center",
+                                    videoModel === m.id
+                                        ? "bg-black text-white dark:bg-yellow-300 dark:text-black border-black dark:border-yellow-300"
+                                        : "border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
+                                )}
+                            >
+                                <div>{m.label}</div>
+                                <div className="text-[10px] opacity-60">{m.desc}</div>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+          )}
+
+          {mode === 'one-click' && (
+            <div>
+                <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">路线选择</label>
+                <div className="grid grid-cols-2 gap-3">
+                    <button
+                        type="button"
+                        onClick={() => setSoraProvider('kie')}
+                        className={cn(
+                            "p-3 rounded-lg border-2 transition-all text-left",
+                            soraProvider === 'kie'
+                                ? "border-black bg-black/5 dark:border-yellow-300 dark:bg-yellow-300"
+                                : "border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600"
+                        )}
+                    >
+                        <div
+                          className={cn(
+                            "font-semibold",
+                            soraProvider === "kie"
+                              ? "text-gray-900 dark:text-black"
+                              : "text-gray-900 dark:text-white"
+                          )}
+                        >
+                          路线一
+                        </div>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setSoraProvider('yunwu')}
+                        className={cn(
+                            "p-3 rounded-lg border-2 transition-all text-left",
+                            soraProvider === 'yunwu'
+                                ? "border-black bg-black/5 dark:border-yellow-300 dark:bg-yellow-300"
+                                : "border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600"
+                        )}
+                    >
+                        <div
+                          className={cn(
+                            "font-semibold",
+                            soraProvider === "yunwu"
+                              ? "text-gray-900 dark:text-black"
+                              : "text-gray-900 dark:text-white"
+                          )}
+                        >
+                          路线二
+                        </div>
+                    </button>
                 </div>
             </div>
           )}
@@ -799,7 +931,7 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
                                 className={cn(
                                     "flex-1 text-center py-2 border rounded-lg cursor-pointer transition-all text-sm font-medium",
                                     duration === d 
-                                        ? "bg-black text-white dark:bg-white dark:text-black border-black dark:border-white" 
+                                        ? "bg-black text-white dark:bg-yellow-300 dark:text-black border-black dark:border-yellow-300" 
                                         : "border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
                                 )}
                             >
@@ -820,7 +952,7 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
                             setQuantity(e.target.value);
                             savePreference('quantity', e.target.value);
                         }}
-                        className="w-full px-4 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-brand-yellow focus:border-transparent outline-none h-[38px]" 
+                        className="w-full px-4 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none h-[38px]" 
                         required 
                     />
                 </div>
@@ -833,8 +965,8 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
           type="submit"
           disabled={loading || isScriptProcessing}
           className={cn(
-            "w-full py-3 bg-black text-white dark:bg-white dark:text-black font-bold rounded-xl transition-colors shadow-sm uppercase tracking-wide flex items-center justify-center gap-2",
-            "hover:bg-gray-900 dark:hover:bg-gray-100",
+            "w-full py-3 bg-black text-white dark:bg-yellow-300 dark:text-black font-bold rounded-xl transition-colors shadow-sm uppercase tracking-wide flex items-center justify-center gap-2",
+            "hover:bg-gray-900 dark:hover:bg-yellow-200",
             (loading || isScriptProcessing) && "opacity-60 cursor-not-allowed pointer-events-none"
           )}
         >
@@ -844,7 +976,7 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                {t.replication.processing}
+                {isPolling ? "文案生成中…" : t.replication.processing}
             </>
           ) : isScriptProcessing ? (
             <>
@@ -876,7 +1008,8 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
             onSuccess={() => {
                 setIsProductModalOpen(false);
                 router.refresh();
-            }} 
+            }}
+            assistantLayout="floating"
         />
       </Modal>
 
@@ -889,7 +1022,9 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
             onSuccess={() => {
                 setIsScriptModalOpen(false);
                 router.refresh();
-            }} 
+            }}
+            assistantLayout="floating"
+            showAssistant={false}
         />
       </Modal>
       <Modal
@@ -904,6 +1039,24 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
             }} 
         />
       </Modal>
+      {dhScriptData && pendingReplicationId && session?.access_token && (
+        <DHScriptPreviewModal
+          replicationId={pendingReplicationId}
+          scriptData={dhScriptData}
+          authToken={session.access_token}
+          onConfirmed={(videoId) => {
+            setDhScriptData(null);
+            setPendingReplicationId(null);
+            toast.success("视频生成已启动", { icon: "🎬" });
+            onSuccess?.();
+            router.push(myProjectsDigitalHumanPath);
+          }}
+          onClose={() => {
+            setDhScriptData(null);
+            setPendingReplicationId(null);
+          }}
+        />
+      )}
     </form>
   );
 }

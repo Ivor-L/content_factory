@@ -51,11 +51,15 @@ export default async function ScriptDetailPage({ params }: ScriptDetailPageProps
         <div className="lg:col-span-4 h-full flex flex-col">
             <div className="bg-black rounded-2xl overflow-hidden shadow-2xl relative h-full w-full flex items-center justify-center bg-gray-900">
                 {script.videoUrl ? (
-                    <video 
-                        src={script.videoUrl} 
-                        className="w-full h-full object-contain" 
-                        controls 
-                        playsInline 
+                    <video
+                        src={
+                          script.videoUrl.includes("supabase-api.atomx.top")
+                            ? script.videoUrl
+                            : `/api/proxy/download?url=${encodeURIComponent(script.videoUrl)}&filename=${encodeURIComponent((script.title || 'video') + '.mp4')}`
+                        }
+                        className="w-full h-full object-contain"
+                        controls
+                        playsInline
                         loop
                     />
                 ) : (
@@ -88,7 +92,7 @@ export default async function ScriptDetailPage({ params }: ScriptDetailPageProps
                         <div className="p-6 bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
                             <div className="absolute top-0 left-0 w-1 h-full bg-primary"></div>
                             <h3 className="font-bold text-gray-900 mb-3 text-lg flex items-center gap-3">
-                                <span className="bg-primary-soft text-primary text-xs font-bold px-3 py-1 rounded-full border border-primary/30 uppercase tracking-wide">Part 1</span>
+                                <span className="bg-gray-900 text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide">Part 1</span>
                                 Hook & Intro
                             </h3>
                             <div className="pl-4 border-l-2 border-gray-100">

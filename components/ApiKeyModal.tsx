@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'react-hot-toast';
 import { Loader2, Save, Eye, EyeOff } from 'lucide-react';
@@ -21,11 +21,7 @@ export function ApiKeyModal() {
   const { basePath } = useTenant();
   const tenantLoginPath = `${basePath || ''}/login`;
 
-  useEffect(() => {
-    checkApiKey();
-  }, []);
-
-  const checkApiKey = async () => {
+  const checkApiKey = useCallback(async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
@@ -53,7 +49,11 @@ export function ApiKeyModal() {
     } finally {
       setChecking(false);
     }
-  };
+  }, [router, tenantLoginPath]);
+
+  useEffect(() => {
+    checkApiKey();
+  }, [checkApiKey]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,7 +133,7 @@ export function ApiKeyModal() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex justify-center items-center py-3 px-4 bg-primary text-primary-foreground font-bold rounded-lg hover:bg-primary-hover transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed shadow-theme-glow"
+              className="btn-openclaw w-full justify-center py-3 px-4 font-bold"
             >
               {loading ? (
                 <>

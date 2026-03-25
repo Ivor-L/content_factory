@@ -45,7 +45,10 @@ export function ModeTabs<T extends string = "manual" | "bulk">({
   indicatorClassName,
   indicatorTransition,
 }: ModeTabsProps<T>) {
-  const filtered = options.filter((option) => option.label);
+  const filtered = useMemo(
+    () => options.filter((option) => option.label),
+    [options]
+  );
   const hasMultipleTabs = filtered.length > 1;
   const optionSignature = useMemo(
     () => filtered.map((opt) => opt.value).join("|"),
@@ -54,7 +57,13 @@ export function ModeTabs<T extends string = "manual" | "bulk">({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const buttonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
-  const [indicatorRect, setIndicatorRect] = useState({ width: 0, x: 0 });
+  const [indicatorRect, setIndicatorRect] = useState({
+    width: 0,
+    x: 0,
+    offsetLeft: 0,
+    offsetRight: 0,
+    containerHeight: 0,
+  });
 
   const updateIndicator = useCallback(() => {
     if (!hasMultipleTabs) return;
@@ -62,12 +71,33 @@ export function ModeTabs<T extends string = "manual" | "bulk">({
     const activeButton = buttonRefs.current[value];
     if (!container || !activeButton) return;
     const containerRect = container.getBoundingClientRect();
+    const computedStyle = window.getComputedStyle(container);
+    const paddingLeft = parseFloat(computedStyle.paddingLeft) || 0;
+    const paddingRight = parseFloat(computedStyle.paddingRight) || 0;
+    const activeIndex = filtered.findIndex((opt) => opt.value === value);
+    const isFirst = activeIndex === 0;
+    const isLast = activeIndex === filtered.length - 1;
     const activeRect = activeButton.getBoundingClientRect();
-    setIndicatorRect({
+    const nextRect = {
       width: activeRect.width,
       x: activeRect.left - containerRect.left,
+      offsetLeft: isFirst ? paddingLeft : 0,
+      offsetRight: isLast ? paddingRight : 0,
+      containerHeight: containerRect.height,
+    };
+    setIndicatorRect((prev) => {
+      if (
+        prev.width === nextRect.width &&
+        prev.x === nextRect.x &&
+        prev.offsetLeft === nextRect.offsetLeft &&
+        prev.offsetRight === nextRect.offsetRight &&
+        prev.containerHeight === nextRect.containerHeight
+      ) {
+        return prev;
+      }
+      return nextRect;
     });
-  }, [hasMultipleTabs, value]);
+  }, [filtered, hasMultipleTabs, value]);
 
   useLayoutEffect(() => {
     updateIndicator();
@@ -93,13 +123,16 @@ export function ModeTabs<T extends string = "manual" | "bulk">({
         key={layoutId}
         data-indicator-id={layoutId}
         className={cn(
-          "pointer-events-none absolute top-0 bottom-0 rounded-full bg-primary text-primary-foreground shadow-theme-glow dark:bg-primary",
+          "pointer-events-none absolute rounded-full bg-primary text-primary-foreground shadow-theme-glow dark:bg-primary",
           indicatorClassName
         )}
+        style={{ top: 0, left: 0 }}
         initial={false}
         animate={{
-          width: indicatorRect.width,
-          x: indicatorRect.x,
+          width: Math.max(0, indicatorRect.width + indicatorRect.offsetLeft + indicatorRect.offsetRight),
+          x: indicatorRect.x - indicatorRect.offsetLeft,
+          height: Math.max(0, indicatorRect.containerHeight),
+          y: 0,
         }}
         transition={
           indicatorTransition ?? { type: "spring", stiffness: 420, damping: 32, mass: 0.6 }

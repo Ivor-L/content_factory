@@ -13,10 +13,13 @@ interface AddButtonProps {
   loading?: boolean;
   disabled?: boolean;
   className?: string;
+  ariaLabel?: string;
+  labelClassName?: string;
+  hideLabelOnMobile?: boolean;
 }
 
 const baseClass =
-  "inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-theme-glow transition-all hover:-translate-y-0.5 hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-gray-900 disabled:pointer-events-none disabled:opacity-60 dark:bg-primary dark:hover:bg-primary-hover";
+  'btn-openclaw inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold text-gray-900 transition-all hover:-translate-y-0.5 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-60';
 
 export function AddButton({
   label,
@@ -26,19 +29,21 @@ export function AddButton({
   loading = false,
   disabled = false,
   className,
+  ariaLabel,
+  labelClassName,
+  hideLabelOnMobile = false,
 }: AddButtonProps) {
-  const renderIcon = loading ? (
-    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-  ) : (
-    icon ?? <Plus className="h-3.5 w-3.5" strokeWidth={2.5} />
-  );
+  const renderIcon = loading
+    ? <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-900" />
+    : icon ?? <Plus className="h-3.5 w-3.5 text-gray-900" strokeWidth={2.5} />;
+
+  const computedAriaLabel =
+    hideLabelOnMobile ? ariaLabel ?? (typeof label === "string" ? label : undefined) : ariaLabel;
 
   const content = (
     <>
-      <span className="flex h-6 w-6 items-center justify-center rounded-full border border-white/60 bg-white/10 text-primary dark:border-black/20 dark:bg-black/10 dark:text-primary">
-        {renderIcon}
-      </span>
-      <span>{label}</span>
+      <span className="flex h-6 w-6 items-center justify-center text-gray-900">{renderIcon}</span>
+      <span className={cn(hideLabelOnMobile && "hidden sm:inline", labelClassName)}>{label}</span>
     </>
   );
 
@@ -47,6 +52,7 @@ export function AddButton({
       <Link
         href={href}
         className={cn(baseClass, className, (disabled || loading) && "pointer-events-none opacity-60")}
+        aria-label={computedAriaLabel}
       >
         {content}
       </Link>
@@ -59,6 +65,7 @@ export function AddButton({
       onClick={onClick}
       disabled={disabled || loading}
       className={cn(baseClass, className)}
+      aria-label={computedAriaLabel}
     >
       {content}
     </button>

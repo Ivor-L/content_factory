@@ -74,11 +74,11 @@ export function ConfirmModal({
           <button
             onClick={handleConfirm}
             disabled={isLoading}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors disabled:opacity-70 disabled:cursor-not-allowed ${
+            className={
               isDanger
-                ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500'
-                : 'bg-[var(--tenant-primary)] text-[var(--tenant-primary-foreground)] hover:bg-[var(--tenant-primary-strong)] focus:ring-[var(--tenant-primary)]'
-            }`}
+                ? 'flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors disabled:opacity-70 disabled:cursor-not-allowed'
+                : 'btn-openclaw inline-flex items-center gap-2 px-4 py-2 text-sm font-medium'
+            }
           >
             {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
             {confirmText || t.common.delete}

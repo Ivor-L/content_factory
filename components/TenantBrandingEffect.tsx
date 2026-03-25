@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useTenant } from '@/hooks/useTenant';
 
 const DEFAULT_FAVICON = '/favicon-whale.svg';
+const DEFAULT_TITLE = 'NexTide';
 
 function updateFavicon(href: string) {
   if (typeof document === 'undefined') return;
@@ -29,6 +30,15 @@ function updateFavicon(href: string) {
   document.head.appendChild(link);
 }
 
+function updateDocumentTitle(title?: string | null) {
+  if (typeof document === 'undefined') return;
+
+  const normalizedTitle = (title ?? '').trim() || DEFAULT_TITLE;
+  if (document.title !== normalizedTitle) {
+    document.title = normalizedTitle;
+  }
+}
+
 export function TenantBrandingEffect() {
   const { tenant, tenantSlug } = useTenant();
 
@@ -39,6 +49,10 @@ export function TenantBrandingEffect() {
 
     updateFavicon(targetHref);
   }, [tenant.browserLogo, tenantSlug]);
+
+  useEffect(() => {
+    updateDocumentTitle(tenant.name);
+  }, [tenant.name]);
 
   return null;
 }

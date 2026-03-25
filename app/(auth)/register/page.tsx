@@ -6,11 +6,11 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import Link from 'next/link';
 import { TenantLogo } from '@/components/TenantLogo';
-import { AtomXLogo } from '@/components/AtomXLogo';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Globe } from 'lucide-react';
 import { useTenant } from '@/hooks/useTenant';
 import { persistReferralCode } from '@/lib/referrals';
+import { cn } from '@/lib/utils';
 
 export default function RegisterPage() {
   const [email, setEmail] = useState('');
@@ -19,12 +19,12 @@ export default function RegisterPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t, language, setLanguage } = useLanguage();
-  const { basePath, tenant } = useTenant();
+  const { basePath, tenant, tenantSlug } = useTenant();
   const [mounted, setMounted] = useState(false);
-  const referralParam = searchParams.get('ref');
+  const referralParam = searchParams?.get('ref') || null;
   const tenantHomePath = basePath || '/';
   const tenantLoginPath = `${basePath || ''}/login`;
-  const brandName = tenant?.name || 'AtomX';
+  const brandName = tenant?.name || 'NexTide';
   const termsText = (t.auth?.termsPrivacy || "By continuing you agree to {{brand}}'s Terms of Service and Privacy Policy.").replace('{{brand}}', brandName);
 
   useEffect(() => {
@@ -79,6 +79,17 @@ export default function RegisterPage() {
     return '繁體中文';
   };
 
+  const isNexTideTenant = tenantSlug === 'nextide' || tenant?.name?.toLowerCase() === 'nextide';
+  const isJubaoPenTenant = tenantSlug === 'jubaopen' || tenant?.name?.includes('聚保盆');
+  const registerLogoWrapperClass = cn(
+    "absolute top-6 left-6 md:top-10 md:left-10",
+    isNexTideTenant && "-translate-y-4"
+  );
+  const registerLogoScaleClass = cn(
+    "origin-left",
+    isNexTideTenant ? "scale-[1.6]" : isJubaoPenTenant ? "scale-75" : "scale-100"
+  );
+
   if (!mounted) return null;
 
   return (
@@ -86,9 +97,9 @@ export default function RegisterPage() {
       {/* Left Panel - Content */}
       <div className="w-full lg:w-1/2 flex flex-col justify-center p-8 md:p-12 lg:p-24 relative z-10">
         {/* Logo */}
-        <div className="absolute top-6 left-6 md:top-10 md:left-10">
+        <div className={registerLogoWrapperClass}>
             <Link href={tenantHomePath}>
-                <TenantLogo showName size="lg" />
+                <TenantLogo showName={false} size="lg" className={registerLogoScaleClass} />
             </Link>
         </div>
 
@@ -131,7 +142,7 @@ export default function RegisterPage() {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full flex justify-center items-center py-3.5 px-4 border border-transparent rounded-full text-sm font-medium text-primary-foreground bg-primary hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 transition-all duration-200 shadow-theme-glow"
+                        className="btn-openclaw w-full justify-center py-3.5 px-4 text-sm"
                     >
                         {loading 
                             ? (t.auth?.creating || 'Creating account...') 
@@ -173,7 +184,7 @@ export default function RegisterPage() {
         
         {/* Abstract Logo */}
         <div className="relative z-10 opacity-10 scale-[3.0] blur-sm">
-            <AtomXLogo size={400} showText={false} />
+            <TenantLogo size="lg" showName={false} className="origin-center scale-[1.8]" />
         </div>
 
         {/* Language Switcher */}

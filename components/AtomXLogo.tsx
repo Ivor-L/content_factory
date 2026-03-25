@@ -22,7 +22,7 @@ export function AtomXLogo({
     <div className={`flex items-center ${className}`}>
       <img
         src={src}
-        alt="AtomX Logo"
+        alt="NexTide Logo"
         className={`w-auto h-auto ${!isCollapsed && !showText ? 'rounded-full' : ''}`}
         style={{ height: `${size}px` }}
       />

@@ -1,5 +1,7 @@
 export type OpenClawLocale = 'en' | 'zh';
 
+const API_KEY_PLACEHOLDER = "$ATOMX_API_KEY";
+
 export const openclawContent: Record<OpenClawLocale, {
   hero: {
     eyebrow: string;
@@ -174,7 +176,7 @@ export const openclawContent: Record<OpenClawLocale, {
   method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-api-key': ATOMX_API_KEY,
+          'x-user-api-key': API_KEY_PLACEHOLDER,
         },
   body: JSON.stringify({
     ideaText: 'Spring Lobster drop needs a 45s TikTok hook',
@@ -189,7 +191,7 @@ export const openclawContent: Record<OpenClawLocale, {
           description: 'Trigger video creation once the agent approves a winning script.',
           code: `curl -X POST https://your-domain.com/api/replication/generate \
   -H 'Content-Type: application/json' \
-  -H 'x-user-api-key: $ATOMX_KEY' \
+  -H 'x-user-api-key: ${API_KEY_PLACEHOLDER}' \
   -d '{
     "productId": "prod_lobster",
     "scriptId": "script_tiktok",

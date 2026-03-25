@@ -1,20 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getRequestUserContext } from "@/lib/authServer";
+import { getRequestUserContext, getApiKeyForUser } from "@/lib/authServer";
 import {
   createCreativeTaskWithAssets,
   type CreateCreativeTaskPayload,
 } from "@/lib/creativeTaskCreation";
-import { autoGenerateCreativeTask } from "@/lib/creativeTaskAutoRunner";
 import { loadTaskWithAssets } from "@/lib/creativeTaskService";
 import { serializeTaskDetail } from "@/lib/creativeTaskFormatter";
 import type { CreativeStageKey } from "@/lib/creativeStages";
+import { syncTaskToSummary } from "@/lib/taskSummary";
+import { triggerCreativeScriptGeneration } from "@/lib/n8n";
 
 type DirectCreateBody = CreateCreativeTaskPayload & {
   targetStage?: CreativeStageKey;
 };
 
 export async function POST(request: NextRequest) {
-  const { userId } = await getRequestUserContext(request);
+  const { userId, apiKey: requestApiKey } = await getRequestUserContext(request);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -30,10 +31,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "ideaText is required" }, { status: 400 });
   }
 
-  if (!payload.styleIds || payload.styleIds.length === 0) {
-    return NextResponse.json({ error: "styleIds is required" }, { status: 400 });
-  }
-
   const createPayload: CreateCreativeTaskPayload = {
     ...payload,
     channel: payload.channel ?? "xhs",
@@ -43,6 +40,11 @@ export async function POST(request: NextRequest) {
   let task;
   try {
     task = await createCreativeTaskWithAssets({ userId, payload: createPayload });
+    await syncTaskToSummary({
+      taskType: "creative",
+      taskId: task.id,
+      operation: "create",
+    });
   } catch (error) {
     console.error("Failed to create direct creative task", error);
     return NextResponse.json(
@@ -51,19 +53,36 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // 触发 n8n 文案生成工作流（异步，不阻塞响应）
   try {
-    await autoGenerateCreativeTask({
-      taskId: task.id,
+    const appUrl =
+      process.env.N8N_CALLBACK_BASE_URL ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      "http://localhost:3000";
+    const callbackUrl = `${appUrl}/api/webhook/creative-task/script`;
+    const apiKey =
+      requestApiKey || (await getApiKeyForUser(userId).catch(() => null));
+
+    const wordCount =
+      payload.goal && typeof payload.goal === "object" && "targetWordCount" in payload.goal
+        ? (payload.goal as { targetWordCount?: number }).targetWordCount
+        : undefined;
+
+    triggerCreativeScriptGeneration({
+      replicationId: task.id,
       userId,
-      startStage: task.stage as CreativeStageKey,
-      targetStage: payload.targetStage ?? "draft",
+      ideaText: payload.ideaText.trim(),
+      wordCount,
+      styleRules: payload.styleRules as Record<string, any> | null ?? null,
+      apiKey: apiKey ?? undefined,
+      callbackUrl,
+      appUrl,
+    }).catch((err) => {
+      console.error("[creative-tasks/direct] n8n trigger failed", err);
     });
   } catch (error) {
-    console.error("Auto generation failed", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Auto generation failed" },
-      { status: 400 }
-    );
+    // 触发失败不影响任务已创建的事实，仅记录日志
+    console.error("[creative-tasks/direct] failed to trigger n8n webhook", error);
   }
 
   const detail = await loadTaskWithAssets(task.id, userId);

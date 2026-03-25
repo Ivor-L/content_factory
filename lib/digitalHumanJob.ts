@@ -2,6 +2,7 @@ import prisma from '@/lib/prisma';
 import { parseMetadata } from '@/lib/creativeTaskService';
 import { setTaskActionStatus } from '@/lib/creativeTaskUtils';
 import { toInputJson } from '@/lib/jsonUtils';
+import { syncTaskToSummary } from '@/lib/taskSummary';
 
 export type DigitalHumanMode = 'LIP_SYNC' | 'VOICE_CLONE';
 
@@ -114,6 +115,12 @@ export async function createDigitalHumanJob(options: CreateDigitalHumanJobOption
         workflowId: workflowIdForCredits,
         sourceTaskId: sourceTask?.id ?? undefined,
       },
+    });
+
+    await syncTaskToSummary({
+      taskType: 'digitalHuman',
+      taskId: digitalHuman.id,
+      operation: 'create',
     });
 
     if (sourceTask) {

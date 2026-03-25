@@ -4,6 +4,8 @@ import {
   ChangeEvent,
   DragEvent,
   FormEvent,
+  KeyboardEvent,
+  MouseEvent as ReactMouseEvent,
   ReactNode,
   useCallback,
   useEffect,
@@ -34,6 +36,10 @@ import {
   Flag,
   ShieldCheck,
   Bookmark,
+  Type,
+  LayoutDashboard,
+  SunMedium,
+  Shapes,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Modal } from "@/components/Modal";
@@ -130,12 +136,14 @@ type StylePreset = {
   id: string;
   name: string;
   type: string;
+  userId?: string | null;
   description?: string | null;
   previewUrl?: string | null;
   metadata?: Record<string, any> | null;
   spec?: Record<string, any> | null;
   createdAt?: string | null;
   status?: string | null;
+  styleSummary?: string | Record<string, any> | null;
 };
 
 const tabOrder: Tab[] = ["history", "stories", "styles"];
@@ -309,17 +317,31 @@ const getChipColorClass = (value: string, index: number) => {
 
 type AssetLibraryProps = {
   showHeader?: boolean;
+  initialTab?: Tab;
+  tabs?: Tab[];
 };
 
-export function AssetLibrary({ showHeader = true }: AssetLibraryProps) {
+export function AssetLibrary({
+  showHeader = true,
+  initialTab = "history",
+  tabs,
+}: AssetLibraryProps) {
   const { t, language } = useLanguage();
   const copy = t.assetLibrary;
+  const enabledTabs = useMemo(() => {
+    if (!tabs?.length) return tabOrder;
+    const filtered = tabOrder.filter((tab) => tabs.includes(tab));
+    return filtered.length > 0 ? filtered : tabOrder;
+  }, [tabs]);
+  const defaultActiveTab = enabledTabs.includes(initialTab)
+    ? initialTab
+    : enabledTabs[0];
   const channelOptions: { value: string; label: string }[] = useMemo(
     () => (Array.isArray(copy.channelOptions) ? copy.channelOptions : []),
     [copy.channelOptions]
   );
 
-  const [activeTab, setActiveTab] = useState<Tab>("history");
+  const [activeTab, setActiveTab] = useState<Tab>(defaultActiveTab);
   const [historyDocs, setHistoryDocs] = useState<HistoryDoc[]>([]);
   const [stories, setStories] = useState<StoryAsset[]>([]);
   const [styles, setStyles] = useState<StylePreset[]>([]);
@@ -362,6 +384,8 @@ export function AssetLibrary({ showHeader = true }: AssetLibraryProps) {
   const [storyBulkUploading, setStoryBulkUploading] = useState(false);
   const [storyUploading, setStoryUploading] = useState(false);
   const [styleUploading, setStyleUploading] = useState(false);
+  const [isDesktopViewport, setIsDesktopViewport] = useState(false);
+  const [isMobileUploadOpen, setIsMobileUploadOpen] = useState(true);
   const [selectedStyle, setSelectedStyle] = useState<StylePreset | null>(null);
   const [selectedHistoryDoc, setSelectedHistoryDoc] = useState<HistoryDoc | null>(null);
   const [historyDetail, setHistoryDetail] = useState<HistoryDocDetail | null>(null);
@@ -372,16 +396,44 @@ export function AssetLibrary({ showHeader = true }: AssetLibraryProps) {
     status: "idle",
   });
   const originalPreviewSourceRef = useRef<string | null>(null);
+  const originalPreviewStatusRef = useRef<HistoryPreviewState["status"]>("idle");
   const [historyDeletingId, setHistoryDeletingId] = useState<string | null>(null);
   const [historyDeleteTarget, setHistoryDeleteTarget] = useState<HistoryDoc | null>(null);
   const [isHistoryDeleteModalOpen, setIsHistoryDeleteModalOpen] = useState(false);
   const [storyDeletingId, setStoryDeletingId] = useState<string | null>(null);
+  const [styleDeletingId, setStyleDeletingId] = useState<string | null>(null);
+  const [styleDeleteTarget, setStyleDeleteTarget] = useState<StylePreset | null>(null);
+  const [isStyleDeleteModalOpen, setIsStyleDeleteModalOpen] = useState(false);
   const selectedHistoryDocId = selectedHistoryDoc?.id;
+  const selectedStyleId = selectedStyle?.id;
 
   useEffect(() => {
     if (!selectedHistoryDocId) return;
     setHistoryDetailTab("insights");
   }, [selectedHistoryDocId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return;
+    }
+    const mediaQuery = window.matchMedia("(min-width: 640px)");
+    const applyMatch = (matches: boolean) => {
+      setIsDesktopViewport(matches);
+      if (!matches) {
+        setIsMobileUploadOpen(false);
+      }
+    };
+    applyMatch(mediaQuery.matches);
+    const handleChange = (event: MediaQueryListEvent) => {
+      applyMatch(event.matches);
+    };
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", handleChange);
+      return () => mediaQuery.removeEventListener("change", handleChange);
+    }
+    mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener(handleChange);
+  }, []);
 
   const openHistoryDeleteModal = useCallback((doc: HistoryDoc) => {
     setHistoryDeleteTarget(doc);
@@ -401,8 +453,21 @@ export function AssetLibrary({ showHeader = true }: AssetLibraryProps) {
     setSelectedStyle(null);
   }, []);
 
+  const openStyleDeleteModal = useCallback((style: StylePreset) => {
+    setStyleDeleteTarget(style);
+    setIsStyleDeleteModalOpen(true);
+  }, []);
+
+  const closeStyleDeleteModal = useCallback(() => {
+    setIsStyleDeleteModalOpen(false);
+    setStyleDeleteTarget(null);
+  }, []);
+
   const historyDeleteMessage = `${copy.history.deleteConfirm || t.common.confirmDelete}${
     historyDeleteTarget?.title ? ` (${historyDeleteTarget.title})` : ""
+  }`;
+  const styleDeleteMessage = `${copy.styles.deleteConfirm || t.common.confirmDelete || "Delete this style preset?"}${
+    styleDeleteTarget?.name ? ` (${styleDeleteTarget.name})` : ""
   }`;
 
   useEffect(() => {
@@ -433,6 +498,10 @@ export function AssetLibrary({ showHeader = true }: AssetLibraryProps) {
     if (!value) return "-";
     return new Date(value).toLocaleString();
   }, []);
+
+  useEffect(() => {
+    originalPreviewStatusRef.current = originalPreviewState.status;
+  }, [originalPreviewState.status]);
 
   const statusLabel = useCallback(
     (status?: string | null) => {
@@ -563,7 +632,7 @@ export function AssetLibrary({ showHeader = true }: AssetLibraryProps) {
       }
       if (
         originalPreviewSourceRef.current === publicUrl &&
-        originalPreviewState.status === "ready"
+        originalPreviewStatusRef.current === "ready"
       ) {
         return;
       }
@@ -641,7 +710,6 @@ export function AssetLibrary({ showHeader = true }: AssetLibraryProps) {
     },
     [
       copy.history.originalUnavailable,
-      originalPreviewState.status,
       previewMessages.failed,
       previewMessages.unsupported,
     ]
@@ -769,6 +837,53 @@ export function AssetLibrary({ showHeader = true }: AssetLibraryProps) {
     ]
   );
 
+  const handleStyleDelete = useCallback(async () => {
+    const style = styleDeleteTarget;
+    if (!style) return;
+    if (!authToken) {
+      toast.error(copy.common.requiresAuth);
+      return;
+    }
+    if (!style.userId) {
+      return;
+    }
+    const targetId = style.id;
+    setStyleDeletingId(targetId);
+    try {
+      const res = await fetch(`/api/assets/styles/${style.id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload.error || "Delete failed");
+      }
+      setStyles((prev) => prev.filter((item) => item.id !== style.id));
+      if (selectedStyleId === style.id) {
+        closeStyleDetailModal();
+      }
+      toast.success(copy.styles.deleteSuccess || t.common.success);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Delete failed"
+      );
+    } finally {
+      setStyleDeletingId((current) =>
+        current === targetId ? null : current
+      );
+    }
+  }, [
+    authToken,
+    closeStyleDetailModal,
+    copy.common.requiresAuth,
+    copy.styles.deleteSuccess,
+    selectedStyleId,
+    styleDeleteTarget,
+    t.common.success,
+  ]);
+
 
   const fetchTab = useCallback(
     async (tab: Tab) => {
@@ -806,11 +921,11 @@ export function AssetLibrary({ showHeader = true }: AssetLibraryProps) {
     if (!authToken) return;
     setGlobalLoading(true);
     try {
-      await Promise.all(tabOrder.map((tab) => fetchTab(tab)));
+      await Promise.all(enabledTabs.map((tab) => fetchTab(tab)));
     } finally {
       setGlobalLoading(false);
     }
-  }, [authToken, fetchTab]);
+  }, [authToken, enabledTabs, fetchTab]);
 
   useEffect(() => {
     if (!authChecked) return;
@@ -831,6 +946,12 @@ export function AssetLibrary({ showHeader = true }: AssetLibraryProps) {
       setHistoryForm((prev) => ({ ...prev, channel: savedChannel }));
     }
   }, []);
+
+  useEffect(() => {
+    if (!enabledTabs.includes(activeTab)) {
+      setActiveTab(defaultActiveTab);
+    }
+  }, [activeTab, defaultActiveTab, enabledTabs]);
 
   const resolveChannelValue = useCallback(
     (input: string) => {
@@ -1437,30 +1558,38 @@ export function AssetLibrary({ showHeader = true }: AssetLibraryProps) {
     return hasStyles ? (
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {styles.map((style) => {
-          const meta = style.metadata || {};
+          const meta = parseMetadata(style.metadata);
+          const hasAnalysisData =
+            Boolean(meta.analysis) ||
+            Boolean(meta.style_dna) ||
+            (style.spec && Object.keys(style.spec).length > 0);
           const statusValue =
             style.status ||
-            (typeof meta === "object" && meta
-              ? (meta as Record<string, any>).processingStatus
-              : undefined);
+            meta.processingStatus ||
+            (hasAnalysisData ? "READY" : undefined);
           const typeLabel =
             copy.styles.typeOptions[style.type as keyof typeof copy.styles.typeOptions] ??
             style.type;
           const statusText = statusLabel(statusValue);
           const displayName = getLocalizedStyleName(style, language);
-              return (
-                <StyleCard
-                  key={style.id}
-                  style={style}
-                  typeLabel={typeLabel}
-                  statusText={statusText}
-                  statusValue={statusValue}
-                  displayName={displayName}
-                  onSelect={handleStyleSelect}
-                />
-              );
-            })}
-          </div>
+          const isCustomStyle = Boolean(style.userId);
+          return (
+            <StyleCard
+              key={style.id}
+              style={style}
+              typeLabel={typeLabel}
+              statusText={statusText}
+              statusValue={statusValue}
+              displayName={displayName}
+              onSelect={handleStyleSelect}
+              isDeletable={isCustomStyle}
+              onDelete={openStyleDeleteModal}
+              deleteLabel={copy.styles.deleteAction || t.common.delete || "Delete"}
+              isDeleting={styleDeletingId === style.id}
+            />
+          );
+        })}
+      </div>
     ) : (
       <EmptyState icon={Palette} message={copy.styles.empty} />
     );
@@ -1641,17 +1770,25 @@ export function AssetLibrary({ showHeader = true }: AssetLibraryProps) {
 
   const renderStyleDetailModal = () => {
     if (!selectedStyle) return null;
-    const spec = (selectedStyle.spec || {}) as Record<string, any> | null;
+    const spec = isPlainRecord(selectedStyle.spec)
+      ? (selectedStyle.spec as Record<string, any>)
+      : null;
+    const meta = parseMetadata(selectedStyle.metadata);
     const typeLabel =
       copy.styles.typeOptions[selectedStyle.type as keyof typeof copy.styles.typeOptions] ??
       selectedStyle.type;
     const displayName = getLocalizedStyleName(selectedStyle, language) || selectedStyle.name;
-    const statusText = statusLabel(selectedStyle.status);
-    const tags = Array.isArray(selectedStyle.metadata?.tags)
-      ? selectedStyle.metadata?.tags
-      : [];
-    const palettePreview = extractPaletteColors(spec).slice(0, 5);
+    const dna = getStyleDnaFromMetadata(meta);
+    const derivedStatus =
+      selectedStyle.status ||
+      meta.processingStatus ||
+      (meta.analysis || dna || (spec && Object.keys(spec).length > 0) ? "READY" : undefined);
+    const statusText = statusLabel(derivedStatus);
+    const tags = Array.isArray(meta.tags) ? meta.tags : [];
+    const palettePreview = extractPaletteColors(spec, dna).slice(0, 5);
+    const summarySection = buildStyleSummarySection(selectedStyle);
     const detailSections = buildStyleDetailSections(selectedStyle);
+    const combinedSections = summarySection ? [summarySection, ...detailSections] : detailSections;
     const detailEmptyMessage =
       language === "zh"
         ? "暂无可展示的风格要素。"
@@ -1668,7 +1805,7 @@ export function AssetLibrary({ showHeader = true }: AssetLibraryProps) {
             <span>{displayName}</span>
             <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
               <span>{typeLabel}</span>
-              <StatusBadge label={statusText} status={selectedStyle.status} />
+              <StatusBadge label={statusText} status={derivedStatus} />
             </div>
           </div>
         }
@@ -1733,14 +1870,48 @@ export function AssetLibrary({ showHeader = true }: AssetLibraryProps) {
                   key={section.title}
                   className="rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 p-5 shadow-sm"
                 >
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                    {section.title}
-                  </p>
-                  <ul className="mt-3 space-y-2 text-sm text-gray-700 dark:text-gray-200 leading-relaxed">
-                    {section.lines.map((line, index) => (
-                      <li key={`${section.title}-${index}`}>{line}</li>
-                    ))}
-                  </ul>
+                  <div className="flex items-start gap-3">
+                    {section.icon && (
+                      <span className="inline-flex h-8 w-8 flex-none items-center justify-center rounded-full bg-primary/10 text-primary dark:bg-primary/15 dark:text-primary-foreground">
+                        <section.icon className="w-4 h-4" />
+                      </span>
+                    )}
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white leading-tight">
+                      {section.title}
+                    </p>
+                  </div>
+                  {section.lines?.length ? (
+                    <ul className="mt-3 space-y-2 text-sm text-gray-700 dark:text-gray-200 leading-relaxed">
+                      {section.lines.map((line, index) => (
+                        <li key={`${section.title}-${index}`}>{line}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {section.tags?.map((group, groupIndex) => (
+                    <div key={`${section.title}-tags-${groupIndex}`} className="mt-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                        {group.label}
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {group.items.map((item, itemIndex) => {
+                          const tone = group.tone;
+                          const baseClass =
+                            "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium";
+                          const toneClass =
+                            tone === "positive"
+                              ? "bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-200"
+                              : tone === "negative"
+                              ? "bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-200"
+                              : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-200";
+                          return (
+                            <span key={`${group.label}-${itemIndex}`} className={`${baseClass} ${toneClass}`}>
+                              {item}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ))
             ) : (
@@ -1755,6 +1926,61 @@ export function AssetLibrary({ showHeader = true }: AssetLibraryProps) {
   };
 
   const disableUploads = requiresAuth || !authToken;
+
+  const renderModeTabsSection = (className = "") => {
+    if (activeTab !== "history" && activeTab !== "stories") return null;
+    return (
+      <div className={className}>
+        {activeTab === "history" && (
+          <ModeTabs
+            value={historyMode}
+            options={[
+              {
+                value: "manual",
+                label: copy.history.modeTabs?.manual ?? "Manual",
+              },
+              {
+                value: "bulk",
+                label: copy.history.modeTabs?.bulk ?? "Bulk",
+              },
+            ]}
+            onChange={(val) => setHistoryMode(val as "manual" | "bulk")}
+            className="inline-flex rounded-full bg-gray-100 dark:bg-gray-800 p-1"
+            buttonClassName="px-4 py-1.5 text-sm font-semibold"
+            activeClassName="text-white"
+            inactiveClassName="text-gray-600 dark:text-gray-400"
+            indicatorClassName="bg-black dark:bg-white text-white shadow"
+          />
+        )}
+        {activeTab === "stories" && (
+          <ModeTabs
+            value={storyMode}
+            options={[
+              {
+                value: "manual",
+                label: copy.stories.modeTabs?.manual ?? "Manual",
+              },
+              {
+                value: "bulk",
+                label: copy.stories.modeTabs?.bulk ?? "Bulk",
+              },
+            ]}
+            onChange={(val) => setStoryMode(val as "manual" | "bulk")}
+            className="inline-flex rounded-full bg-gray-100 dark:bg-gray-800 p-1"
+            buttonClassName="px-4 py-1.5 text-sm font-semibold"
+            activeClassName="text-white"
+            inactiveClassName="text-gray-600 dark:text-gray-400"
+            indicatorClassName="bg-black dark:bg-white text-white shadow"
+          />
+        )}
+      </div>
+    );
+  };
+
+  const showUploadPanel = isDesktopViewport || isMobileUploadOpen;
+  const uploadPanelId = "asset-upload-panel";
+  const shouldRenderMobileToggle = !isDesktopViewport;
+  const shouldRenderTopTabs = enabledTabs.length > 1;
 
   const containerPadding = showHeader ? "py-10" : "pt-4 pb-8";
 
@@ -1786,75 +2012,62 @@ export function AssetLibrary({ showHeader = true }: AssetLibraryProps) {
       )}
 
       <div className="bg-white dark:bg-gray-900 rounded-3xl border border-gray-100 dark:border-gray-800 shadow-xl overflow-hidden">
-        <div className="px-6 pt-6 flex gap-3 overflow-x-auto">
-          {tabOrder.map((tab) => {
-            const Icon = tabIconMap[tab];
-            const isActive = activeTab === tab;
-            return (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
+        {shouldRenderTopTabs && (
+          <div className="px-6 pt-6 flex gap-3 overflow-x-auto">
+            {enabledTabs.map((tab) => {
+              const Icon = tabIconMap[tab];
+              const isActive = activeTab === tab;
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={cn(
+                    "relative inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-semibold transition-all border overflow-hidden",
+                    isActive
+                      ? "btn-openclaw text-gray-900 border-transparent shadow-none"
+                      : "bg-gray-50 dark:bg-gray-800 border-transparent text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  )}
+                >
+                  <span className="relative flex items-center gap-2">
+                    <Icon className="hidden h-4 w-4 sm:block" aria-hidden="true" />
+                    <span>{copy.tabs[tab]}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {renderModeTabsSection("px-6 pt-4 hidden sm:block")}
+        {shouldRenderMobileToggle && (
+          <div className="px-6 pt-4 flex justify-end sm:hidden">
+            <button
+              type="button"
+              aria-expanded={isMobileUploadOpen}
+              aria-controls={uploadPanelId}
+              onClick={() => setIsMobileUploadOpen((prev) => !prev)}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 shadow-sm transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+              aria-label={isMobileUploadOpen ? "Collapse upload panel" : "Expand upload panel"}
+            >
+              <UploadCloud
                 className={cn(
-                  "relative flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-semibold transition-all border overflow-hidden",
-                  isActive
-                    ? "text-white"
-                    : "bg-gray-50 dark:bg-gray-800 border-transparent text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  "h-5 w-5 transition-transform",
+                  isMobileUploadOpen ? "text-blue-600 rotate-6" : undefined
                 )}
-              >
-                {isActive && (
-                  <motion.div
-                    layoutId="assetTabIndicator"
-                    className="absolute inset-0 rounded-2xl bg-black dark:bg-white border border-transparent"
-                    transition={{ type: "spring", stiffness: 260, damping: 26 }}
-                  />
-                )}
-                <span className="relative flex items-center gap-2">
-                  <Icon className="w-4 h-4" />
-                  <span>{copy.tabs[tab]}</span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        {(activeTab === "history" || activeTab === "stories") && (
-          <div className="px-6 pt-4">
-            {activeTab === "history" && (
-              <ModeTabs
-                value={historyMode}
-                options={[
-                  {
-                    value: "manual",
-                    label: copy.history.modeTabs?.manual ?? "Manual",
-                  },
-                  {
-                    value: "bulk",
-                    label: copy.history.modeTabs?.bulk ?? "Bulk",
-                  },
-                ]}
-                onChange={(val) => setHistoryMode(val as "manual" | "bulk")}
+                aria-hidden="true"
               />
-            )}
-            {activeTab === "stories" && (
-              <ModeTabs
-                value={storyMode}
-                options={[
-                  {
-                    value: "manual",
-                    label: copy.stories.modeTabs?.manual ?? "Manual",
-                  },
-                  {
-                    value: "bulk",
-                    label: copy.stories.modeTabs?.bulk ?? "Bulk",
-                  },
-                ]}
-                onChange={(val) => setStoryMode(val as "manual" | "bulk")}
-              />
-            )}
+            </button>
           </div>
         )}
 
         <div className="px-6 pb-8 pt-6 grid gap-6 lg:grid-cols-[360px,1fr]">
-          <div>
+          <div
+            id={uploadPanelId}
+            className={cn(
+              "space-y-6",
+              showUploadPanel ? "block" : "hidden sm:block"
+            )}
+          >
+            {renderModeTabsSection("mb-4 sm:hidden")}
             {activeTab === "history" && (
               <AnimatePresence mode="wait">
                 {historyMode === "manual" ? (
@@ -1924,7 +2137,7 @@ export function AssetLibrary({ showHeader = true }: AssetLibraryProps) {
                     </p>
                     <a
                       href="/samples/history-doc-batch-template.xlsx"
-                      className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:text-primary-hover"
+                      className="inline-flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                       download
                     >
                       <FileText className="w-4 h-4" />
@@ -2003,7 +2216,7 @@ export function AssetLibrary({ showHeader = true }: AssetLibraryProps) {
                       </p>
                       <a
                         href="/samples/story-batch-template.xlsx"
-                        className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:text-primary-hover"
+                        className="inline-flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                         download
                       >
                         <FileText className="w-4 h-4" />
@@ -2044,9 +2257,6 @@ export function AssetLibrary({ showHeader = true }: AssetLibraryProps) {
                 <p className="text-[11px] text-gray-500 leading-relaxed">
                   {copy.styles.autoAnalyzeNote}
                 </p>
-                <p className="text-[11px] text-gray-500 mb-3">
-                  {copy.styles.typeHint}
-                </p>
                 <FileInput
                   file={styleForm.file}
                   onChange={(file) =>
@@ -2078,6 +2288,13 @@ export function AssetLibrary({ showHeader = true }: AssetLibraryProps) {
       onConfirm={handleHistoryDelete}
       title={copy.history.deleteAction || t.common.delete}
       message={historyDeleteMessage}
+    />
+    <ConfirmModal
+      isOpen={isStyleDeleteModalOpen}
+      onClose={closeStyleDeleteModal}
+      onConfirm={handleStyleDelete}
+      title={copy.styles.deleteAction || t.common.delete}
+      message={styleDeleteMessage}
     />
     {renderHistoryDetailModal()}
     {renderStyleDetailModal()}
@@ -2148,7 +2365,7 @@ function FancySelect({
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const handleClick = (event: MouseEvent) => {
+    const handleClick = (event: globalThis.MouseEvent) => {
       if (!wrapperRef.current) return;
       if (!wrapperRef.current.contains(event.target as Node)) {
         setOpen(false);
@@ -2245,6 +2462,10 @@ function StyleCard({
   statusValue,
   displayName,
   onSelect,
+  isDeletable,
+  onDelete,
+  deleteLabel,
+  isDeleting,
 }: {
   style: StylePreset;
   typeLabel: string;
@@ -2252,21 +2473,43 @@ function StyleCard({
   statusValue?: string | null;
   displayName: string;
   onSelect?: (style: StylePreset) => void;
+  isDeletable?: boolean;
+  onDelete?: (style: StylePreset) => void;
+  deleteLabel?: string;
+  isDeleting?: boolean;
 }) {
   const normalizedStatus = (statusValue ?? "").toString().toUpperCase();
   const showStatus =
     normalizedStatus &&
     normalizedStatus !== "COMPLETED" &&
     normalizedStatus !== "READY";
+  const summaryEntries = extractStyleSummaryEntries(style);
+  const summaryPreview = summaryEntries.slice(0, 4);
+  const hasMoreSummary = summaryEntries.length > summaryPreview.length;
   const handleClick = () => {
     onSelect?.(style);
   };
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onSelect?.(style);
+    }
+  };
+  const handleDeleteClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    event.preventDefault();
+    if (isDeleting) return;
+    onDelete?.(style);
+  };
+  const deletable = Boolean(isDeletable && onDelete);
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={handleClick}
-      className="rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm overflow-hidden flex flex-col transition-shadow hover:border-gray-300 dark:hover:border-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/60 dark:focus-visible:ring-white/60 text-left"
+      onKeyDown={handleKeyDown}
+      className="rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm overflow-hidden flex flex-col transition-shadow hover:border-gray-300 dark:hover:border-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/60 dark:focus-visible:ring-white/60 text-left cursor-pointer"
     >
       <div className="relative w-full aspect-[4/5] bg-gray-100 dark:bg-gray-800 overflow-hidden">
         {style.previewUrl ? (
@@ -2288,15 +2531,58 @@ function StyleCard({
             {displayName || style.name}
           </p>
         </div>
-        {showStatus && (
-          <StatusBadge
-            label={statusText}
-            status={statusValue}
-            className="absolute top-3 right-3 shadow-lg"
-          />
-        )}
+        <div className="absolute top-3 right-3 flex items-center gap-2">
+          {showStatus && (
+            <StatusBadge
+              label={statusText}
+              status={statusValue}
+              className="shadow-lg"
+            />
+          )}
+          {deletable && (
+            <button
+              type="button"
+              disabled={isDeleting}
+              onClick={handleDeleteClick}
+              aria-label={deleteLabel || "Delete"}
+              className={cn(
+                "inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-black/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/60",
+                isDeleting && "opacity-70 cursor-not-allowed"
+              )}
+            >
+              {isDeleting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4" />
+              )}
+            </button>
+          )}
+        </div>
       </div>
-    </button>
+      {summaryPreview.length > 0 && (
+        <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-900">
+          <dl className="space-y-2 text-sm text-gray-700 dark:text-gray-200">
+            {summaryPreview.map((entry, index) => (
+              <div key={`${entry.label ?? "summary"}-${index}`} className="flex gap-2">
+                {entry.label && (
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                    {entry.label}
+                  </dt>
+                )}
+                <dd className="flex-1 text-gray-800 dark:text-gray-100">
+                  {entry.value}
+                </dd>
+              </div>
+            ))}
+            {hasMoreSummary && (
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                …
+              </p>
+            )}
+          </dl>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -2873,42 +3159,101 @@ function StyleRulesPreview({
   );
 }
 
-function extractPaletteColors(spec?: Record<string, any> | null): string[] {
-  if (!spec) return ["#0f172a", "#6366f1", "#f472b6"];
-  const record = spec as Record<string, any>;
-  const paletteSource = record.palette;
-  if (Array.isArray(paletteSource)) {
-    const normalized = paletteSource
-      .map((entry) => {
-        if (typeof entry === "string") return entry;
-        if (entry && typeof entry === "object") {
-          if (typeof entry.hex === "string") return entry.hex;
-          if (typeof entry.color === "string") return entry.color;
-        }
-        return null;
-      })
-      .filter((color): color is string => Boolean(color));
-    if (normalized.length) return normalized;
-  }
-  const fallbackFields = ["primaryColor", "primary", "accent"];
-  for (const field of fallbackFields) {
-    if (typeof record[field] === "string") {
-      return [record[field] as string];
+function extractPaletteColors(
+  spec?: Record<string, any> | null,
+  dna?: Record<string, any> | null
+): string[] {
+  const fromRecord = (record?: Record<string, any> | null): string[] => {
+    if (!record) return [];
+    const paletteSource = record.palette;
+    if (Array.isArray(paletteSource)) {
+      const normalized = paletteSource
+        .map((entry) => {
+          if (typeof entry === "string") return entry.trim();
+          if (entry && typeof entry === "object") {
+            if (typeof entry.hex === "string") return entry.hex.trim();
+            if (typeof entry.color === "string") return entry.color.trim();
+          }
+          return "";
+        })
+        .filter((color): color is string => Boolean(color));
+      if (normalized.length) return normalized;
     }
+    const fallbackFields = ["primaryColor", "primary", "accent"];
+    for (const field of fallbackFields) {
+      if (typeof record[field] === "string" && record[field].trim()) {
+        return [record[field].trim()];
+      }
+    }
+    return [];
+  };
+
+  const fromDna = (styleDna?: Record<string, any> | null): string[] => {
+    if (!styleDna || !isPlainRecord(styleDna.color_system)) return [];
+    const colorSystem = styleDna.color_system as Record<string, any>;
+    const candidates = [
+      colorSystem.background,
+      colorSystem.accent,
+      colorSystem.primary_text,
+      colorSystem.secondary_text,
+      colorSystem.warning_or_highlight,
+    ];
+    return candidates
+      .flatMap((value) => (Array.isArray(value) ? value : []))
+      .filter((color): color is string => typeof color === "string" && color.trim().length > 0)
+      .map((color) => color.trim());
+  };
+
+  const unique = (list: string[]) => Array.from(new Set(list));
+
+  const specColors = unique(fromRecord(spec));
+  if (specColors.length) return specColors;
+
+  const dnaColors = unique(fromDna(dna));
+  if (dnaColors.length) return dnaColors;
+
+  if (isPlainRecord(spec?.analysis) && isPlainRecord(spec?.analysis?.style_dna)) {
+    const analysisDnaColors = unique(fromDna(spec?.analysis?.style_dna as Record<string, any>));
+    if (analysisDnaColors.length) return analysisDnaColors;
   }
+
   return ["#0f172a", "#6366f1", "#f472b6"];
 }
 
+type StyleDetailSectionTagGroup = {
+  label: string;
+  items: string[];
+  tone?: "positive" | "negative";
+};
+
 type StyleDetailSection = {
   title: string;
-  lines: string[];
+  icon?: LucideIcon;
+  lines?: string[];
+  tags?: StyleDetailSectionTagGroup[];
 };
 
 function buildStyleDetailSections(style: StylePreset): StyleDetailSection[] {
   const spec = (style.spec || {}) as Record<string, any> | null;
-  if (!spec) return [];
+  const meta = parseMetadata(style.metadata);
+  const dna = getStyleDnaFromMetadata(meta);
+  const generationPrompts = isPlainRecord(meta.generation_prompts)
+    ? meta.generation_prompts
+    : isPlainRecord(meta.analysis?.generation_prompts)
+    ? (meta.analysis?.generation_prompts as Record<string, any>)
+    : null;
+  const hasSpec = !!(spec && Object.keys(spec).length);
+  if (!hasSpec && dna) {
+    return buildSectionsFromStyleDna(dna, generationPrompts);
+  }
+  if (!hasSpec) return [];
   const sections: StyleDetailSection[] = [];
   const isLayout = style.type.includes("layout");
+  const analysis =
+    (spec.analysis && typeof spec.analysis === "object" && !Array.isArray(spec.analysis)
+      ? (spec.analysis as Record<string, any>)
+      : null) ||
+    (isPlainRecord(meta.analysis) ? meta.analysis : null);
 
   if (!isLayout) {
     const toneLines: string[] = [];
@@ -2923,9 +3268,16 @@ function buildStyleDetailSections(style: StylePreset): StyleDetailSection[] {
     if (adjectives.length) {
       toneLines.push(`关键词：${adjectives.join(" / ")}`);
     }
+    if (!toneLines.length && analysis) {
+      const analysisAdjectives = toStringList(analysis.adjectives);
+      if (analysisAdjectives.length) {
+        toneLines.push(`关键词：${analysisAdjectives.join(" / ")}`);
+      }
+    }
     if (toneLines.length) {
       sections.push({
         title: "核心调性",
+        icon: Sparkles,
         lines: toneLines,
       });
     }
@@ -2943,15 +3295,37 @@ function buildStyleDetailSections(style: StylePreset): StyleDetailSection[] {
     if (accents.length) {
       colorLines.push(`强调色：${accents.join("、")}`);
     }
+    if (!colorLines.length && analysis?.palette) {
+      const analysisPalette = analysis.palette
+        .map((entry: any) => {
+          if (!entry) return "";
+          if (typeof entry === "string") return entry;
+          if (typeof entry.hex === "string" && typeof entry.usage === "string") {
+            return `${entry.usage}：${entry.hex}`;
+          }
+          if (typeof entry.hex === "string") return entry.hex;
+          return "";
+        })
+        .filter(Boolean) as string[];
+      if (analysisPalette.length) {
+        colorLines.push(...analysisPalette);
+      }
+    }
     if (colorLines.length) {
       sections.push({
         title: "色彩与背景",
+        icon: Palette,
         lines: colorLines,
       });
     }
 
     const elementLines: string[] = [];
-    const elements = toStringList(spec.elements);
+    const elements = Array.from(
+      new Set([
+        ...toStringList(spec.elements),
+        ...toStringList((analysis as any)?.motifs),
+      ])
+    );
     if (elements.length) {
       elementLines.push(`视觉元素：${elements.join("、")}`);
     }
@@ -2962,6 +3336,7 @@ function buildStyleDetailSections(style: StylePreset): StyleDetailSection[] {
     if (elementLines.length) {
       sections.push({
         title: "视觉元素",
+        icon: Shapes,
         lines: elementLines,
       });
     }
@@ -2977,7 +3352,43 @@ function buildStyleDetailSections(style: StylePreset): StyleDetailSection[] {
     if (typographyLines.length) {
       sections.push({
         title: "字体与排版",
+        icon: Type,
         lines: typographyLines,
+      });
+    }
+
+    const layoutRecord =
+      spec.layout && typeof spec.layout === "object" && !Array.isArray(spec.layout)
+        ? (spec.layout as Record<string, any>)
+        : analysis?.layout && typeof analysis.layout === "object" && !Array.isArray(analysis.layout)
+        ? (analysis.layout as Record<string, any>)
+        : null;
+    if (layoutRecord) {
+      const layoutLines: string[] = [];
+      if (layoutRecord.density) layoutLines.push(`信息密度：${layoutRecord.density}`);
+      if (layoutRecord.composition) layoutLines.push(`构图：${layoutRecord.composition}`);
+      if (layoutRecord.spacingNotes) layoutLines.push(`间距说明：${layoutRecord.spacingNotes}`);
+      sections.push({
+        title: "布局与间距",
+        icon: LayoutDashboard,
+        lines: layoutLines,
+      });
+    }
+
+    const environmentLines: string[] = [];
+    const lighting = spec.lighting || analysis?.lighting;
+    if (typeof lighting === "string" && lighting.trim()) {
+      environmentLines.push(`光照：${lighting.trim()}`);
+    }
+    const texture = spec.texture || analysis?.texture;
+    if (typeof texture === "string" && texture.trim()) {
+      environmentLines.push(`材质：${texture.trim()}`);
+    }
+    if (environmentLines.length) {
+      sections.push({
+        title: "光照与材质",
+        icon: SunMedium,
+        lines: environmentLines,
       });
     }
 
@@ -2985,13 +3396,35 @@ function buildStyleDetailSections(style: StylePreset): StyleDetailSection[] {
     if (typeof spec.promptKit?.instructions === "string") {
       promptLines.push(spec.promptKit.instructions);
     }
-    if (typeof spec.instructions === "string" && spec.instructions !== spec.promptKit?.instructions) {
+    if (
+      typeof spec.instructions === "string" &&
+      spec.instructions !== spec.promptKit?.instructions
+    ) {
       promptLines.push(spec.instructions);
     }
-    if (promptLines.length) {
+    const positivePrompts = toStringList(spec.promptKit?.positive ?? analysis?.promptKit?.positive);
+    const negativePrompts = toStringList(spec.promptKit?.negative ?? analysis?.promptKit?.negative);
+    const tagGroups: StyleDetailSectionTagGroup[] = [];
+    if (positivePrompts.length) {
+      tagGroups.push({
+        label: "正向提示",
+        tone: "positive",
+        items: positivePrompts.slice(0, 12),
+      });
+    }
+    if (negativePrompts.length) {
+      tagGroups.push({
+        label: "负向提示",
+        tone: "negative",
+        items: negativePrompts.slice(0, 12),
+      });
+    }
+    if (promptLines.length || tagGroups.length) {
       sections.push({
         title: "生成提示",
+        icon: Sparkles,
         lines: promptLines,
+        tags: tagGroups,
       });
     }
   } else {
@@ -3044,7 +3477,189 @@ function buildStyleDetailSections(style: StylePreset): StyleDetailSection[] {
     }
   }
 
+  if (!sections.length && dna) {
+    return buildSectionsFromStyleDna(dna, generationPrompts);
+  }
   return sections;
+}
+
+function buildSectionsFromStyleDna(
+  dna: Record<string, any>,
+  generation?: Record<string, any> | null
+): StyleDetailSection[] {
+  const sections: StyleDetailSection[] = [];
+  if (typeof dna.one_sentence_definition === "string") {
+    sections.push({
+      title: "风格定义",
+      icon: Sparkles,
+      lines: [dna.one_sentence_definition],
+    });
+  }
+
+  const colorLines: string[] = [];
+  const colorSystem = dna.color_system || {};
+  const toHexList = (list: unknown): string[] =>
+    Array.isArray(list)
+      ? (list.filter((item) => typeof item === "string") as string[])
+      : [];
+  const backgroundColors = toHexList(colorSystem.background);
+  if (backgroundColors.length) {
+    colorLines.push(`背景：${backgroundColors.join("、")}`);
+  }
+  const accentColors = toHexList(colorSystem.accent);
+  if (accentColors.length) {
+    colorLines.push(`强调色：${accentColors.join("、")}`);
+  }
+  const primaryTextColors = toHexList(colorSystem.primary_text);
+  if (primaryTextColors.length) {
+    colorLines.push(`正文字体颜色：${primaryTextColors.join("、")}`);
+  }
+  const usageRules = toStringList(colorSystem.color_usage_rules);
+  if (usageRules.length) {
+    colorLines.push(...usageRules);
+  }
+  if (colorLines.length) {
+    sections.push({
+      title: "色彩系统",
+      icon: Palette,
+      lines: colorLines,
+    });
+  }
+
+  if (dna.typography) {
+    const typoLines: string[] = [];
+    if (dna.typography.title_font_vibe) {
+      typoLines.push(`标题：${dna.typography.title_font_vibe}`);
+    }
+    if (dna.typography.body_font_vibe) {
+      typoLines.push(`正文：${dna.typography.body_font_vibe}`);
+    }
+    const hierarchy = dna.typography.hierarchy;
+    if (hierarchy && typeof hierarchy === "object") {
+      Object.entries(hierarchy).forEach(([key, value]) => {
+        if (value && typeof value === "object") {
+          const entry = value as Record<string, unknown>;
+          const line = [`${key.toUpperCase()}`];
+          if (typeof entry.size_ratio === "string" || typeof entry.size_ratio === "number") {
+            line.push(`比例 ${entry.size_ratio}`);
+          }
+          if (typeof entry.max_chars === "string" || typeof entry.max_chars === "number") {
+            line.push(`字数<=${entry.max_chars}`);
+          }
+          typoLines.push(line.join(" · "));
+        }
+      });
+    }
+    if (Array.isArray(dna.typography.emphasis_methods)) {
+      typoLines.push(...dna.typography.emphasis_methods);
+    }
+    if (typoLines.length) {
+      sections.push({
+        title: "字体系统",
+        icon: Type,
+        lines: typoLines,
+      });
+    }
+  }
+
+  if (dna.layout_system) {
+    const layoutLines: string[] = [];
+    if (dna.layout_system.grid) layoutLines.push(`网格：${dna.layout_system.grid}`);
+    if (dna.layout_system.safe_margin)
+      layoutLines.push(`安全边距：${dna.layout_system.safe_margin}`);
+    if (dna.layout_system.module_spacing)
+      layoutLines.push(`模块间距：${dna.layout_system.module_spacing}`);
+    if (dna.layout_system.alignment)
+      layoutLines.push(`对齐：${dna.layout_system.alignment}`);
+    if (dna.layout_system.information_density)
+      layoutLines.push(`信息密度：${dna.layout_system.information_density}`);
+    if (Array.isArray(dna.layout_system.common_structures) && dna.layout_system.common_structures.length) {
+      layoutLines.push(`常见结构：${dna.layout_system.common_structures.join(" / ")}`);
+    }
+    sections.push({
+      title: "布局蓝图",
+      icon: LayoutDashboard,
+      lines: layoutLines.filter(Boolean),
+    });
+  }
+
+  if (dna.illustration_iconography) {
+    const illustrationLines: string[] = [];
+    if (dna.illustration_iconography.icon_style) {
+      illustrationLines.push(`图标风格：${dna.illustration_iconography.icon_style}`);
+    }
+    if (Array.isArray(dna.illustration_iconography.decorations)) {
+      illustrationLines.push(
+        `装饰：${dna.illustration_iconography.decorations.join("、")}`
+      );
+    }
+    if (dna.illustration_iconography.chart_style) {
+      illustrationLines.push(`图表：${dna.illustration_iconography.chart_style}`);
+    }
+    if (illustrationLines.length) {
+      sections.push({
+        title: "图形/插画",
+        icon: Shapes,
+        lines: illustrationLines,
+      });
+    }
+  }
+
+  if (dna.texture_and_background) {
+    const textureLines: string[] = [];
+    if (dna.texture_and_background.background_texture) {
+      textureLines.push(`背景质感：${dna.texture_and_background.background_texture}`);
+    }
+    if (dna.texture_and_background.shadow_and_depth) {
+      textureLines.push(`阴影与层次：${dna.texture_and_background.shadow_and_depth}`);
+    }
+    if (textureLines.length) {
+      sections.push({
+        title: "材质与光影",
+        icon: SunMedium,
+        lines: textureLines,
+      });
+    }
+  }
+
+  if (Array.isArray(dna.quality_bar) && dna.quality_bar.length) {
+    sections.push({
+      title: "质检要点",
+      icon: ShieldCheck,
+      lines: dna.quality_bar,
+    });
+  }
+
+  if (generation) {
+    const promptLines: string[] = [];
+    if (typeof generation.prompt_text2img_universal === "string") {
+      promptLines.push(generation.prompt_text2img_universal);
+    }
+    const tagGroups: StyleDetailSectionTagGroup[] = [];
+    if (typeof generation.negative_prompt === "string") {
+      const negativeItems = generation.negative_prompt
+        .split(/[,，]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      if (negativeItems.length) {
+        tagGroups.push({
+          label: "Negative Prompt",
+          tone: "negative",
+          items: negativeItems,
+        });
+      }
+    }
+    if (promptLines.length || tagGroups.length) {
+      sections.push({
+        title: "生成提示",
+        icon: Sparkles,
+        lines: promptLines,
+        tags: tagGroups.length ? tagGroups : undefined,
+      });
+    }
+  }
+
+  return sections.filter((section) => section.lines?.length || section.tags?.length);
 }
 
 function toStringList(value: unknown): string[] {
@@ -3112,3 +3727,94 @@ function EmptyState({
     </div>
   );
 }
+const isPlainRecord = (value: unknown): value is Record<string, any> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const parseMetadata = (value: unknown): Record<string, any> => {
+  if (isPlainRecord(value)) return value;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (isPlainRecord(parsed)) return parsed;
+    } catch {
+      return {};
+    }
+  }
+  return {};
+};
+
+function getStyleDnaFromMetadata(meta: Record<string, any>): Record<string, any> | null {
+  if (isPlainRecord(meta.style_dna)) {
+    return meta.style_dna;
+  }
+  if (isPlainRecord(meta.analysis) && isPlainRecord(meta.analysis.style_dna)) {
+    return meta.analysis.style_dna as Record<string, any>;
+  }
+  if (isPlainRecord(meta.style_json) && isPlainRecord(meta.style_json.style_dna)) {
+    return meta.style_json.style_dna as Record<string, any>;
+  }
+  if (
+    isPlainRecord(meta.style_profile_json) &&
+    isPlainRecord(meta.style_profile_json.style_dna)
+  ) {
+    return meta.style_profile_json.style_dna as Record<string, any>;
+  }
+  return null;
+}
+
+type StyleSummaryEntry = {
+  label?: string;
+  value: string;
+};
+
+const normalizeSummaryText = (source: unknown): string | null => {
+  if (typeof source === "string") {
+    const trimmed = source.trim();
+    return trimmed.length ? trimmed : null;
+  }
+  if (Array.isArray(source)) {
+    const joined = source
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter(Boolean)
+      .join("\n");
+    return joined || null;
+  }
+  return null;
+};
+
+const extractStyleSummaryEntries = (style: StylePreset): StyleSummaryEntry[] => {
+  const meta = parseMetadata(style.metadata);
+  const candidates: Array<unknown> = [style.styleSummary, meta.styleSummary, meta.style_summary];
+  const summaryText =
+    candidates
+      .map((candidate) => normalizeSummaryText(candidate))
+      .find((text) => Boolean(text)) ?? null;
+  if (!summaryText) return [];
+  return summaryText
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split(/[:：]/);
+      if (parts.length > 1) {
+        const [label, ...rest] = parts;
+        return {
+          label: label.trim(),
+          value: rest.join("：").trim(),
+        };
+      }
+      return { value: line };
+    });
+};
+
+const buildStyleSummarySection = (style: StylePreset): StyleDetailSection | null => {
+  const entries = extractStyleSummaryEntries(style);
+  if (!entries.length) return null;
+  return {
+    title: "风格概览",
+    icon: FileText,
+    lines: entries.map((entry) =>
+      entry.label ? `${entry.label}：${entry.value}` : entry.value
+    ),
+  };
+};

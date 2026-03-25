@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- Storyboard viewer renders remote previews without optimization */
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useLanguage } from "@/contexts/LanguageContext";
 import {
   AlertCircle,
@@ -59,6 +60,7 @@ export function StoryboardAssetViewer({
   const [model, setModel] = useState("nano");
   const [ratio, setRatio] = useState<"landscape" | "portrait">("landscape");
   const [quality, setQuality] = useState("standard");
+  const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const allowUpload = Boolean(onUploadAsset);
@@ -124,7 +126,12 @@ export function StoryboardAssetViewer({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [referenceMenuOpen]);
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
+
+  if (!isOpen || !mounted) return null;
 
   const generateId = () => {
     if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -273,29 +280,30 @@ export function StoryboardAssetViewer({
     ? originalPrompt
     : viewerText.noPrompt || "暂无提示词";
 
-  return (
-    <div className="fixed inset-0 z-[70] bg-black/85 backdrop-blur-sm flex flex-col relative">
-      <div className="flex items-center justify-between px-6 py-4 text-white border-b border-white/10">
-        <div>
-          <p className="text-xs uppercase tracking-widest text-white/60">
-            {viewerText.label || "Storyboard Asset"}
-          </p>
-          <h2 className="text-2xl font-semibold">{segmentTitle || viewerText.defaultScene || "Scene"}</h2>
-        </div>
-        <button
-          onClick={onClose}
-          className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"
-        >
-          <X className="w-5 h-5" />
-        </button>
-      </div>
-      <div className="flex-1 flex overflow-hidden">
-        <aside className="w-32 bg-black/40 border-r border-white/10 px-3 py-4 flex flex-col gap-4">
+  const viewerNode = (
+    <div className="fixed inset-0 z-[1200] bg-black/85 backdrop-blur-sm">
+      <div className="flex h-full flex-col relative">
+        <div className="flex items-center justify-between px-6 py-4 text-white border-b border-white/10">
+          <div>
+            <p className="text-xs uppercase tracking-widest text-white/60">
+              {viewerText.label || "Storyboard Asset"}
+            </p>
+            <h2 className="text-2xl font-semibold">{segmentTitle || viewerText.defaultScene || "Scene"}</h2>
+          </div>
           <button
-            onClick={handleAddAsset}
-            disabled={!allowUpload}
-            className={`aspect-[2/3] rounded-2xl border-2 border-dashed ${
-              allowUpload
+            onClick={onClose}
+            className="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="flex-1 flex overflow-hidden">
+          <aside className="w-32 bg-black/40 border-r border-white/10 px-3 py-4 flex flex-col gap-4">
+            <button
+              onClick={handleAddAsset}
+              disabled={!allowUpload}
+              className={`aspect-[2/3] rounded-2xl border-2 border-dashed ${
+                allowUpload
                 ? "border-white/20 text-white hover:border-white/60"
                 : "border-white/5 text-white/20 cursor-not-allowed"
             } flex items-center justify-center transition`}
@@ -541,67 +549,72 @@ export function StoryboardAssetViewer({
               </button>
             </div>
           </section>
-        </aside>
-      </div>
-      {allowUpload && (
+          </aside>
+        </div>
+        {allowUpload && (
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={mode === "video" ? "video/*" : "image/*"}
+            className="hidden"
+            onChange={handleFileChange}
+          />
+        )}
         <input
-          ref={fileInputRef}
+          ref={referenceFileInputRef}
           type="file"
           accept={mode === "video" ? "video/*" : "image/*"}
           className="hidden"
-          onChange={handleFileChange}
+          onChange={handleReferenceFileChange}
         />
-      )}
-      <input
-        ref={referenceFileInputRef}
-        type="file"
-        accept={mode === "video" ? "video/*" : "image/*"}
-        className="hidden"
-        onChange={handleReferenceFileChange}
-      />
 
-      {showExistingPicker && (
-        <div className="absolute inset-0 z-[80] bg-black/70 flex items-center justify-center px-4">
-          <div className="w-full max-w-3xl rounded-[32px] border border-white/10 bg-[#0b0b0c] p-6 space-y-4">
-            <div className="flex items-center justify-between text-white">
-              <div>
-                <p className="text-lg font-semibold">
-                  {viewerText.chooseExisting || "从已有素材中选择"}
-                </p>
-                <p className="text-sm text-white/60">
-                  {viewerText.chooseExistingHint || "点击一张素材作为参考"}
-                </p>
-              </div>
-              <button
-                className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"
-                onClick={() => setShowExistingPicker(false)}
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="grid grid-cols-3 md:grid-cols-4 gap-4 max-h-[60vh] overflow-y-auto pr-2">
-              {assetList.length === 0 && (
-                <p className="col-span-full text-center text-white/60 py-12">
-                  {viewerText.noExistingAssets || "暂无可选素材"}
-                </p>
-              )}
-              {assetList.map((asset) => (
+        {showExistingPicker && (
+          <div className="absolute inset-0 z-[80] bg-black/70 flex items-center justify-center px-4">
+            <div className="w-full max-w-3xl rounded-[32px] border border-white/10 bg-[#0b0b0c] p-6 space-y-4">
+              <div className="flex items-center justify-between text-white">
+                <div>
+                  <p className="text-lg font-semibold">
+                    {viewerText.chooseExisting || "从已有素材中选择"}
+                  </p>
+                  <p className="text-sm text-white/60">
+                    {viewerText.chooseExistingHint || "点击一张素材作为参考"}
+                  </p>
+                </div>
                 <button
-                  key={`picker-${asset.id}`}
-                  className="rounded-2xl border border-white/15 overflow-hidden hover:border-white/50"
-                  onClick={() => handleSelectExisting(asset)}
+                  className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"
+                  onClick={() => setShowExistingPicker(false)}
                 >
-                  {asset.type === "video" ? (
-                    <video src={asset.url} className="w-full h-32 object-cover" muted />
-                  ) : (
-                    <img src={asset.url} alt="asset" className="w-full h-32 object-cover" />
-                  )}
+                  <X className="w-4 h-4" />
                 </button>
-              ))}
+              </div>
+              <div className="grid grid-cols-3 md:grid-cols-4 gap-4 max-h-[60vh] overflow-y-auto pr-2">
+                {assetList.length === 0 && (
+                  <p className="col-span-full text-center text-white/60 py-12">
+                    {viewerText.noExistingAssets || "暂无可选素材"}
+                  </p>
+                )}
+                {assetList.map((asset) => (
+                  <button
+                    key={`picker-${asset.id}`}
+                    className="rounded-2xl border border-white/15 overflow-hidden hover:border-white/50"
+                    onClick={() => handleSelectExisting(asset)}
+                  >
+                    {asset.type === "video" ? (
+                      <video src={asset.url} className="w-full h-32 object-cover" muted />
+                    ) : (
+                      <img src={asset.url} alt="asset" className="w-full h-32 object-cover" />
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
+
+  const portalTarget = typeof document !== "undefined" ? document.body : null;
+  if (!portalTarget) return null;
+  return createPortal(viewerNode, portalTarget);
 }

@@ -1,6 +1,6 @@
 const DEFAULT_BUCKET = process.env.NEXT_PUBLIC_SUPABASE_BUCKET ?? "uploads";
 
-type AssetKind = "history" | "stories" | "styles";
+type AssetKind = "history" | "stories" | "styles" | "writing-styles";
 
 function sanitizeFilename(filename: string) {
   return filename.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/-+/g, "-");
@@ -33,6 +33,10 @@ export function storyAssetPath(userId: string, filename: string) {
 
 export function stylePreviewPath(userId: string, filename: string) {
   return composePath("styles", userId, filename);
+}
+
+export function writingStyleAssetPath(userId: string, filename: string) {
+  return composePath("writing-styles", userId, filename);
 }
 
 export function historyInsightsPath(userId: string | null | undefined, historyDocId: string) {

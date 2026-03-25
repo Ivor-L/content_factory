@@ -3,11 +3,9 @@
 /* eslint-disable @next/next/no-img-element -- Product form previews rely on temporary blob URLs */
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { createProduct, createDraftProduct } from '@/app/(main)/products/actions';
+import { saveProductWithAnalysis } from '@/app/(main)/products/actions';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { emitCreditsRefresh } from '@/lib/creditsBus';
-import { supabase } from '@/lib/supabase';
 
 import { toast } from 'react-hot-toast';
 
@@ -20,10 +18,11 @@ interface ProductFormProps {
     images: string;
     sellingPoints: string;
   };
+  showAssistant?: boolean;
+  assistantLayout?: "inline" | "floating";
 }
 
-export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
-  const router = useRouter();
+export function ProductForm({ onSuccess, initialData, showAssistant = true, assistantLayout = "inline" }: ProductFormProps) {
   const { t } = useLanguage();
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -87,7 +86,7 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await fetch('/api/upload', {
+      const res = await fetch('/api/upload/image', {
         method: 'POST',
         body: formData,
       });
@@ -121,14 +120,9 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
 
   const handleAnalyzeAndSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name) return alert(t.products.enterNameError);
-    
-    // Check API Key
-    const apiKey = localStorage.getItem('user_api_key');
-    if (!apiKey) {
-        alert(t.settings.apiKeyRequired);
-        router.push('/settings');
-        return;
+    if (!name) {
+      toast.error(t.products.enterNameError);
+      return;
     }
 
     setLoading(true);
@@ -136,58 +130,19 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
     setAnalysisStatus('analyzing');
 
     try {
-      // Get session
-      const { data: { session } } = await supabase.auth.getSession();
-      const userId = session?.user?.id;
-
-      // 1. Create Draft Product if not exists
-      let productId = id;
-      if (!productId) {
-          const formData = new FormData();
-          formData.append('name', name);
-          formData.append('images', JSON.stringify(images));
-          if (userId) formData.append('userId', userId);
-          productId = await createDraftProduct(formData);
-          setId(productId);
-      }
-
-      // 2. Save Product State as ANALYZING immediately
       const formData = new FormData();
-      formData.append('id', productId);
+      if (id) {
+        formData.append('id', id);
+      }
       formData.append('name', name);
       formData.append('description', description);
-      
-      // Clear previous analysis results to show progress immediately
       formData.append('sellingPoints', '[]');
       formData.append('sellingPointsText', '');
-      
       formData.append('images', JSON.stringify(images));
-      // Mark as ANALYZING
-      formData.append('analysisResult', JSON.stringify({ status: 'ANALYZING' }));
-      formData.append('status', 'PROCESSING');
-      formData.append('progress', '0');
-      if (userId) formData.append('userId', userId);
-      
-      await createProduct(formData);
 
-      // 3. Trigger Analysis (Async)
-      // We don't await the result to close the modal, but we trigger it
-      fetch('/api/products/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            productId,
-            apiKey,
-            name, 
-            description, 
-            images 
-        }),
-      }).then(async (res) => {
-        if (!res.ok) console.error('Analysis trigger failed');
-        // If successful, n8n will update the DB eventually
-      }).catch(err => console.error('Analysis trigger error:', err));
-      
-      // 4. Immediate feedback to user
+      const productId = await saveProductWithAnalysis(formData);
+      setId(productId);
+
       toast.dismiss();
       toast.success(t.products.savedSuccess, {
         duration: 2000,
@@ -199,20 +154,26 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
           border: '1px solid #bbf7d0',
         },
       });
+      setAnalysisStatus('complete');
       emitCreditsRefresh();
 
       if (onSuccess) {
-        onSuccess(); // Close immediately
+        onSuccess();
       }
-
     } catch (error) {
       console.error(error);
-      toast.error(t.products.analysisFailed);
+      const message =
+        error instanceof Error ? error.message : (t.products.analysisFailed || 'Analysis failed');
+      toast.error(message);
       setAnalysisStatus('failed');
+    } finally {
       setAnalyzing(false);
       setLoading(false);
     }
   };
+
+  void showAssistant;
+  void assistantLayout;
 
   return (
     <form onSubmit={handleAnalyzeAndSave} className="space-y-6">
@@ -302,16 +263,20 @@ export function ProductForm({ onSuccess, initialData }: ProductFormProps) {
       </div>
 
       {workflowData && (
-        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-          <h3 className="text-sm font-medium text-gray-900 mb-2">{t.products.analysisResult}</h3>
-          <pre className="text-xs text-gray-600 whitespace-pre-wrap bg-white p-3 rounded border border-gray-200 max-h-48 overflow-y-auto font-mono">
+        <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 dark:bg-gray-900/40 dark:border-white/10">
+          <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-2">{t.products.analysisResult}</h3>
+          <pre className="text-xs text-gray-600 whitespace-pre-wrap bg-white p-3 rounded border border-gray-200 max-h-48 overflow-y-auto font-mono dark:bg-gray-950/40 dark:text-gray-200 dark:border-white/5">
             {JSON.stringify(workflowData, null, 2)}
           </pre>
         </div>
       )}
 
       {/* Submit & Analyze (Sticky Bottom) */}
-      <div className="sticky bottom-0 pt-4 pb-2 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700 mt-auto">
+      <div className="sticky bottom-0 mt-6 pt-6 pb-2 relative">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 bottom-full h-16 bg-gradient-to-t from-white via-white/40 to-transparent dark:from-gray-950 dark:via-gray-950/60"
+        />
         <button
           type="submit"
           disabled={loading || analyzing}

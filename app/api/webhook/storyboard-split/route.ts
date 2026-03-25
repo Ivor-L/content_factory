@@ -10,8 +10,17 @@ function normalizeTaskId(payload: any, queryTaskId?: string | null): string | nu
     payload?.task_id ||
     payload?.taskId ||
     payload?.taskID ||
+    payload?.record_id ||
+    payload?.recordId ||
+    payload?.id ||
     payload?.data?.task_id ||
+    payload?.data?.taskId ||
+    payload?.data?.record_id ||
+    payload?.data?.recordId ||
     payload?.body?.task_id ||
+    payload?.body?.taskId ||
+    payload?.body?.record_id ||
+    payload?.body?.recordId ||
     null
   );
 }
@@ -23,6 +32,8 @@ export async function POST(request: Request) {
       url.searchParams.get('task_id') ||
       url.searchParams.get('taskId') ||
       url.searchParams.get('taskID') ||
+      url.searchParams.get('record_id') ||
+      url.searchParams.get('recordId') ||
       null;
     const rawBody = await request.json().catch(() => ({}));
     const taskId = normalizeTaskId(rawBody, queryTaskId);
@@ -44,11 +55,18 @@ export async function POST(request: Request) {
       return value;
     };
 
+    const eventData = parseJsonValue(rawBody.eventData || rawBody.event_data);
+    const bodyData = rawBody.data && typeof rawBody.data === 'object' ? rawBody.data : null;
+
     const storyboardStructure = parseJsonValue(
       rawBody.storyboard_structure ||
         rawBody.storyboardStructure ||
-        rawBody.data?.storyboard_structure ||
-        rawBody.data?.storyboardStructure ||
+        bodyData?.storyboard_structure ||
+        bodyData?.storyboardStructure ||
+        eventData?.storyboard_structure ||
+        eventData?.storyboardStructure ||
+        eventData?.data?.storyboard_structure ||
+        eventData?.data?.storyboardStructure ||
         rawBody.results ||
         null
     );
@@ -57,7 +75,13 @@ export async function POST(request: Request) {
       const rawImages =
         rawBody.storyboard_images ||
         rawBody.storyboardImages ||
-        rawBody.data?.storyboard_images ||
+        bodyData?.storyboard_images ||
+        bodyData?.storyboardImages ||
+        eventData?.storyboard_images ||
+        eventData?.storyboardImages ||
+        eventData?.data?.storyboard_images ||
+        eventData?.data?.storyboardImages ||
+        eventData?.results ||
         rawBody.storyboard_image_urls ||
         null;
       const parsed = parseJsonValue(rawImages) ?? parseJsonValue(rawBody.results);
@@ -86,13 +110,29 @@ export async function POST(request: Request) {
       rawBody.storyboard_image_url ||
       rawBody.storyboardImageUrl ||
       rawBody.image_url ||
-      rawBody.data?.storyboard_image_url ||
+      bodyData?.storyboard_image_url ||
+      bodyData?.storyboardImageUrl ||
+      eventData?.storyboard_image_url ||
+      eventData?.storyboardImageUrl ||
+      eventData?.data?.storyboard_image_url ||
+      eventData?.data?.storyboardImageUrl ||
       (Array.isArray(storyboardImages) ? storyboardImages[0]?.url : null) ||
       rawBody.results?.[0]?.url ||
       null;
 
-    const statusString = String(rawBody.status || rawBody.event || '').toUpperCase();
-    const isSuccess = statusString === 'SUCCESS' || rawBody.code === 0;
+    const statusString = String(
+      rawBody.status || rawBody.event || bodyData?.status || eventData?.status || eventData?.event || ''
+    ).toUpperCase();
+    const codeCandidate = Number(rawBody.code ?? bodyData?.code ?? eventData?.code);
+    const hasResultPayload = Boolean(storyboardStructure) || (Array.isArray(storyboardImages) && storyboardImages.length > 0) || Boolean(imageUrl);
+    const isSuccess =
+      statusString === 'SUCCESS' ||
+      statusString === 'COMPLETED' ||
+      statusString === 'SUCCEEDED' ||
+      statusString === 'DONE' ||
+      statusString === 'TASK_END' ||
+      codeCandidate === 0 ||
+      (!statusString && hasResultPayload);
 
     const existingTask = await prisma.storyboardTask.findUnique({
       where: { id: taskId },

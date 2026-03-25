@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRequestUserContext } from "@/lib/authServer";
 import prisma from "@/lib/prisma";
 import { serializeKnowledgeVideoTask } from "@/lib/knowledgeVideos";
+import { syncTaskToSummary } from "@/lib/taskSummary";
 
 const normalizeId = (value?: string | null) => {
   if (!value) return null;
@@ -101,6 +102,12 @@ export async function PATCH(
   const updated = await prisma.knowledgeVideoTask.update({
     where: { id: taskId, userId },
     data,
+  });
+
+  await syncTaskToSummary({
+    taskType: 'knowledgeVideo',
+    taskId: taskId,
+    operation: 'update',
   });
 
   return NextResponse.json({ data: serializeKnowledgeVideoTask(updated) });

@@ -2,9 +2,16 @@ export const dynamic = "force-dynamic";
 
 import prisma from "@/lib/prisma";
 import { ScriptList } from "./ScriptList";
+import { getServerRequestUserContext } from "@/lib/serverRequestContext";
 
 export default async function ScriptsPage() {
+  const { userId } = await getServerRequestUserContext();
+  if (!userId) {
+    return <div className="p-8">Unauthorized</div>;
+  }
+
   const scripts = await prisma.script.findMany({
+    where: { userId },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
@@ -21,11 +28,13 @@ export default async function ScriptsPage() {
   });
 
   const products = await prisma.product.findMany({
+    where: { userId },
     orderBy: { createdAt: "desc" },
     select: { id: true, name: true, images: true },
   });
 
   const characters = await prisma.character.findMany({
+    where: { userId },
     orderBy: { createdAt: "desc" },
     select: { id: true, name: true, avatar: true },
   });

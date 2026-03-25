@@ -3,6 +3,8 @@
 import prisma from '@/lib/prisma';
 import { emitStoryboardTaskUpsert } from '@/lib/storyboardEvents';
 import { normalizeStoryboardSegments } from '@/lib/storyboardTime';
+import { hydrateViralReferenceMedia } from '@/lib/viralReferenceMedia';
+import { syncTaskToSummary } from '@/lib/taskSummary';
 import { Prisma } from '@prisma/client';
 
 const STORYBOARD_WORKFLOW_ID = 'flow_storyboard';
@@ -109,11 +111,17 @@ export async function createManualStoryboardTask(payload: ManualStoryboardPayloa
     })),
   });
 
+  await syncTaskToSummary({
+    taskType: 'storyboard',
+    taskId: task.id,
+    operation: 'create',
+  });
+
   return { success: true, taskId: task.id };
 }
 
 export async function createStoryboardTask(formData: FormData) {
-  const productId = formData.get('productId') as string;
+  const productId = (formData.get('productId') as string) || null;
   const videoUrl = (formData.get('videoUrl') as string) || '';
   const characterId = (formData.get('characterId') as string) || null;
   const userId = (formData.get('userId') as string) || null;
@@ -126,48 +134,98 @@ export async function createStoryboardTask(formData: FormData) {
   const rawLanguage =
     (formData.get('videoLanguage') as string) || (formData.get('language') as string) || '';
   const duration = (formData.get('duration') as string) || (formData.get('videoDuration') as string) || '';
+  const imageModel = (formData.get('imageModel') as string) || 'nanoBananapro';
+  const videoModel = (formData.get('videoModel') as string) || 'veo_3_1-fast';
+  const replicationMode = (formData.get('replicationMode') as string) || 'manual';
+  const referenceId = (formData.get('referenceId') as string) || null;
+  const creatorId = (formData.get('creatorId') as string) || null;
 
-  if (!productId) throw new Error('Product is required');
+  // productId is optional – only look up if provided
+  const product = productId
+    ? await prisma.product.findUnique({ where: { id: productId } })
+    : null;
+  if (productId && !product) throw new Error('Product not found');
 
-  const product = await prisma.product.findUnique({
-    where: { id: productId },
-  });
+  const sellingPoints = product ? buildSellingPoints(product) : '';
+  let referenceRecord = null;
+  if (referenceId) {
+    referenceRecord = await prisma.viralReferenceItem.findUnique({
+      where: { id: referenceId },
+      include: { creator: true },
+    });
+  }
 
-  if (!product) throw new Error('Product not found');
+  const hydratedReferenceRecord = referenceRecord
+    ? hydrateViralReferenceMedia(referenceRecord)
+    : null;
 
-  const sellingPoints = buildSellingPoints(product);
+  let creatorRecord = hydratedReferenceRecord?.creator ?? null;
+  if (!creatorRecord && creatorId) {
+    creatorRecord = await prisma.viralCreator.findUnique({ where: { id: creatorId } });
+  }
+
+  const referenceSnapshot = hydratedReferenceRecord
+    ? {
+        id: hydratedReferenceRecord.id,
+        platform: hydratedReferenceRecord.platform,
+        sourceId: hydratedReferenceRecord.sourceId,
+        title: hydratedReferenceRecord.title,
+        coverUrl: hydratedReferenceRecord.coverUrl,
+        videoUrl: hydratedReferenceRecord.videoUrl,
+        mediaUrls: hydratedReferenceRecord.mediaUrls,
+        sourceUrl: hydratedReferenceRecord.sourceUrl,
+        stats: hydratedReferenceRecord.stats,
+        category: hydratedReferenceRecord.category,
+      }
+    : null;
+
+  const creatorSnapshot = creatorRecord
+    ? {
+        id: creatorRecord.id,
+        creatorHandle: creatorRecord.creatorHandle,
+        displayName: creatorRecord.displayName,
+        avatarUrl: creatorRecord.avatarUrl,
+        profileUrl: creatorRecord.profileUrl,
+        stats: creatorRecord.stats,
+        platform: creatorRecord.platform,
+      }
+    : null;
 
   const scriptContent = buildScriptContent({
-    productName: product.name,
-    productDescription: product.description,
+    productName: product?.name || '',
+    productDescription: product?.description,
     sellingPoints,
     script: scriptFromForm,
   });
 
   const referenceImage =
-    referenceImageFromForm || extractPrimaryImage(product.images) || DEFAULT_REFERENCE_IMAGE;
+    referenceImageFromForm || (product ? extractPrimaryImage(product.images) : null) || DEFAULT_REFERENCE_IMAGE;
 
   if (!referenceImage) {
     throw new Error('A reference image is required to start storyboard generation.');
   }
 
-  const webhookUrl =
-    process.env.N8N_STORYBOARD_GEN_WEBHOOK ||
-    process.env.N8N_STORYBOARD_PLOT_WEBHOOK ||
-    'https://n8n.atomx.top/webhook/storyboard_Plot_web';
+  const webhookUrl = replicationMode === 'viral-clone'
+    ? (process.env.N8N_STORYBOARD_BREAKDOWN_WEBHOOK || 'https://hooks.atomx.top/webhook/storyboard_disassembly_web')
+    : (process.env.N8N_STORYBOARD_GEN_WEBHOOK ||
+       process.env.N8N_STORYBOARD_PLOT_WEBHOOK ||
+       'https://n8n.atomx.top/webhook/storyboard_Plot_web');
 
   const apiKey = await resolveApiKey(userId);
 
   const task = await prisma.storyboardTask.create({
     data: {
-      status: 'GENERATING_GRID',
+      status: replicationMode === 'viral-clone' ? 'BREAKDOWN_PENDING' : 'GENERATING_GRID',
       videoUrl,
       coverImage: null,
-      productId,
+      productId: productId || null,
       characterId,
       userId,
       scriptContent,
       referenceImage,
+      replicationMode,
+      imageModel,
+      videoModel,
     } as any,
   });
   emitStoryboardTaskUpsert(task);
@@ -178,30 +236,74 @@ export async function createStoryboardTask(formData: FormData) {
   });
   emitStoryboardTaskUpsert(syncedTask);
 
+  void syncTaskToSummary({
+    taskType: 'storyboard',
+    taskId: syncedTask.id,
+    operation: 'create',
+  });
+
   const payload: Record<string, any> = {
     taskId: task.id,
+    task_id: task.id,
     record_id: task.id,
     api_key: apiKey,
-    workflow_id: STORYBOARD_WORKFLOW_ID,
-    workflow_name: STORYBOARD_WORKFLOW_NAME,
-    productId,
-    productName: product.name,
+    admin_token: process.env.ADMIN_TOKEN,
+    app_url: process.env.N8N_CALLBACK_BASE_URL || process.env.NEXT_PUBLIC_APP_URL,
+    productId: productId || null,
+    product_id: productId || null,
+    productName: product?.name || '',
+    product_name: product?.name || '',
+    product_description: product?.description || '',
     productSellingPoints: sellingPoints,
+    product_selling_points: sellingPoints,
     script: scriptContent,
     scriptContent,
+    script_content: scriptContent,
     referenceImage,
     imageUrl: referenceImage,
     videoUrl,
+    video_url: videoUrl,
     userId,
+    user_id: userId,
     characterId,
-    content_type: rawContentType || 'ugc带货',
+    character_id: characterId,
+    replicationMode,
+    imageModel,
+    videoModel,
   };
+  if (referenceSnapshot) {
+    payload.reference = referenceSnapshot;
+  }
+  if (creatorSnapshot) {
+    payload.creator = creatorSnapshot;
+  }
 
-  if (rawCountry) payload.country = rawCountry;
-  if (rawLanguage) payload.videoLanguage = rawLanguage;
-  if (duration) payload.videoDuration = duration;
+  if (replicationMode === 'viral-clone') {
+    const appUrl = process.env.N8N_CALLBACK_BASE_URL || process.env.NEXT_PUBLIC_APP_URL;
+    payload.callback_url = `${appUrl}/api/webhook/storyboard-breakdown`;
+    payload.workflow_id = 'flow_storyboard_disassembly';
+    payload.workflow_name = '分镜拆解';
+    if (rawCountry) payload.target_country = rawCountry;
+    if (rawLanguage) payload.target_language = rawLanguage;
+  } else {
+    payload.workflow_id = STORYBOARD_WORKFLOW_ID;
+    payload.workflow_name = STORYBOARD_WORKFLOW_NAME;
+    payload.content_type = rawContentType || 'ugc带货';
+    if (rawCountry) payload.country = rawCountry;
+    if (rawLanguage) payload.videoLanguage = rawLanguage;
+    if (duration) payload.videoDuration = duration;
+  }
 
   try {
+    console.log('[storyboard] Triggering workflow', {
+      taskId: task.id,
+      replicationMode,
+      webhookUrl,
+      workflowId: payload.workflow_id,
+      hasVideoUrl: Boolean(videoUrl),
+      hasScriptContent: Boolean(scriptContent),
+    });
+
     const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: {

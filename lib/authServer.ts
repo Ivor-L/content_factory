@@ -66,6 +66,7 @@ function extractBearerToken(request: Request): string | null {
 
   const cookies = parseCookies(request.headers.get('cookie'));
   const cookieCandidates = [
+    'canvas-auth-token',
     'sb-access-token',
     'sb:access-token',
     'sb_access_token',
@@ -92,7 +93,11 @@ export interface RequestUserContext {
   apiKey: string | null;
 }
 
-export async function getRequestUserContext(request: Request): Promise<RequestUserContext> {
+export async function getRequestUserContext(
+  request: Request,
+  options: { allowDefaultApiKey?: boolean; useSystemApiKey?: boolean } = {}
+): Promise<RequestUserContext> {
+  const { allowDefaultApiKey = true, useSystemApiKey = false } = options;
   const headerApiKey = request.headers.get('x-user-api-key')?.trim() ?? null;
   const token = extractBearerToken(request);
   if (!token) {
@@ -129,23 +134,26 @@ export async function getRequestUserContext(request: Request): Promise<RequestUs
     return { userId: null, token: null, apiKey: null };
   }
 
-  let apiKey: string | null = headerApiKey ?? null;
-  const profileClient = supabaseAdminClient ?? createAuthedClient(token);
-  try {
-    const { data: profile } = await profileClient
-      .from('profiles')
-      .select('api_key')
-      .eq('id', resolvedUserId)
-      .maybeSingle();
+  let apiKey: string | null = null;
+  if (!useSystemApiKey) {
+    const profileClient = supabaseAdminClient ?? createAuthedClient(token);
+    try {
+      const { data: profile } = await profileClient
+        .from('profiles')
+        .select('api_key')
+        .eq('id', resolvedUserId)
+        .maybeSingle();
 
-    if (!apiKey && profile?.api_key) {
-      apiKey = profile.api_key;
+      // Prefer the user's stored api_key when authenticated to avoid stale local keys.
+      if (profile?.api_key) {
+        apiKey = profile.api_key;
+      }
+    } catch (profileError) {
+      console.error('Failed to read profile api_key', profileError);
     }
-  } catch (profileError) {
-    console.error('Failed to read profile api_key', profileError);
   }
 
-  if (!apiKey && process.env.DEFAULT_USER_API_KEY) {
+  if (!apiKey && allowDefaultApiKey && process.env.DEFAULT_USER_API_KEY) {
     apiKey = process.env.DEFAULT_USER_API_KEY;
   }
 
@@ -163,9 +171,24 @@ async function findUserIdByApiKey(apiKey: string | null): Promise<string | null>
       .maybeSingle();
 
     if (error) {
+      // Supabase 在多行或无行时会报 JSON object 错误，此时 fallback 查询第一行即可
+      if (/JSON object requested/.test(error.message)) {
+        const { data: matches, error: listError } = await client
+          .from('profiles')
+          .select('id')
+          .eq('api_key', apiKey)
+          .limit(1);
+        if (listError) {
+          console.error('Failed to resolve user via api_key fallback', { message: listError.message });
+          return null;
+        }
+        return matches?.[0]?.id ?? null;
+      }
+
       console.error('Failed to resolve user via api_key', { message: error.message });
       return null;
     }
+
     return data?.id ?? null;
   } catch (error) {
     console.error('Failed to resolve user via api_key lookup', error);

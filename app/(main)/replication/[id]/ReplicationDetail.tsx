@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { supabase } from "@/lib/supabaseClient";
 
 interface ReplicationDetailProps {
   replication: {
@@ -19,13 +20,24 @@ export default function ReplicationDetail({ replication }: ReplicationDetailProp
   const router = useRouter();
 
   useEffect(() => {
-    if (replication.status === "pending") {
-      const interval = setInterval(() => {
-        router.refresh();
-      }, 2000);
-      return () => clearInterval(interval);
-    }
-  }, [replication.status, router]);
+    if (replication.status !== "pending") return;
+
+    const channel = supabase
+      .channel(`replication-${replication.id}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "replications", filter: `id=eq.${replication.id}` },
+        (payload) => {
+          const data = payload.new as { status: string };
+          if (data.status !== "pending") {
+            router.refresh();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [replication.id, replication.status, router]);
 
   const result = replication.result ? JSON.parse(replication.result) : null;
 

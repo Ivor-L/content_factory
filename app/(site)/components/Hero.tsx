@@ -1,9 +1,11 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useMemo, useState } from 'react';
 import { ArrowRight, Download, Github, Video } from 'lucide-react';
 
 import { siteContent } from '../content';
+import { TypewriterHighlight } from './TypewriterHighlight';
+import { useTenant } from '@/hooks/useTenant';
 
 interface HeroProps {
   lang: 'en' | 'zh';
@@ -14,6 +16,15 @@ export function Hero({ lang }: HeroProps) {
   const hero = content.hero;
   const promo = content.promoBanner;
   const [idea, setIdea] = useState('');
+  const { tenant } = useTenant();
+  const brandName = tenant.name || 'NexTide';
+  const typedTokens = useMemo(() => {
+    if (lang === 'zh') {
+      return ['拆解爆款', '撰写脚本', '生成图文', '制作视频'];
+    }
+    return ['deconstruct winning ads,', 'draft scripts,', 'generate copy & visuals,', 'produce videos'];
+  }, [lang]);
+  const typedPrefix = lang === 'zh' ? '让你的 AI 智能体' : 'Let your AI agent';
   const subtitleLines = hero.subtitle.split('\n');
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -26,10 +37,8 @@ export function Hero({ lang }: HeroProps) {
   return (
     <section
       id="hero"
-      className="relative overflow-hidden bg-[#040410] text-white scroll-mt-32"
+      className="relative overflow-hidden bg-[#050505] text-white scroll-mt-32"
     >
-      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top,_rgba(252,211,77,0.35),_transparent_55%)]" />
-      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_bottom,_rgba(245,158,11,0.25),_transparent_60%)]" />
       <div className="max-w-6xl mx-auto grid grid-cols-1 gap-16 px-4 pb-24 pt-36 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:px-8 lg:pb-28 lg:pt-40">
         <div className="space-y-8">
           {promo && (
@@ -51,8 +60,12 @@ export function Hero({ lang }: HeroProps) {
             <span className="inline-flex items-center gap-2 rounded-full bg-[var(--tenant-primary)]/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--tenant-primary-foreground)]">
               ● {hero.eyebrow}
             </span>
-            <h1 className="text-4xl font-bold leading-tight tracking-tight sm:text-5xl lg:text-[3.5rem]">
-              {hero.title}
+            <h1 className="text-4xl font-semibold leading-tight tracking-tight sm:text-5xl lg:text-[3.5rem]">
+              <span className="flex flex-wrap items-baseline gap-2">
+                <span className="text-white">{brandName}</span>
+                <span className="text-white">{typedPrefix}</span>
+                <TypewriterHighlight tokens={typedTokens} />
+              </span>
             </h1>
             <p className="text-lg text-white/80 sm:text-xl">
               {subtitleLines.map((line, index) => (
@@ -82,7 +95,7 @@ export function Hero({ lang }: HeroProps) {
             </div>
             <button
               type="submit"
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[var(--tenant-primary)] px-6 py-3 text-sm font-semibold text-[var(--tenant-primary-foreground)] shadow-theme-glow transition hover:-translate-y-0.5 hover:bg-[var(--tenant-primary-strong)] sm:text-base"
+              className="btn-openclaw inline-flex items-center justify-center gap-2 px-6 py-3 text-sm font-semibold sm:text-base"
             >
               {hero.primaryCta}
               <ArrowRight size={18} />
@@ -147,8 +160,8 @@ export function Hero({ lang }: HeroProps) {
         </div>
 
         <div className="relative overflow-hidden rounded-[32px] border border-[var(--tenant-primary)]/25 bg-white/5 p-6 backdrop-blur">
-          <div className="absolute -top-20 -right-16 h-64 w-64 rounded-full bg-gradient-to-br from-[var(--tenant-primary)] to-[#f59e0b] opacity-30 blur-3xl" />
-          <div className="absolute -bottom-24 -left-12 h-56 w-56 rounded-full bg-gradient-to-tr from-[#fff3c4] via-[var(--tenant-primary)] to-[#f59e0b] opacity-30 blur-3xl" />
+          <div className="absolute -top-20 -right-16 h-64 w-64 rounded-full bg-gradient-to-br from-[var(--tenant-primary)] to-[#0f172a] opacity-30 blur-3xl" />
+          <div className="absolute -bottom-24 -left-12 h-56 w-56 rounded-full bg-gradient-to-tr from-[#e2e8f0] via-[var(--tenant-primary)] to-[#0f172a] opacity-30 blur-3xl" />
 
           <div className="relative space-y-6">
             <div className="rounded-3xl border border-white/10 bg-black/40 p-5 shadow-lg">

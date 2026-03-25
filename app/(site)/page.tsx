@@ -2,16 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { SiteHeader } from './components/SiteHeader';
-import { Hero } from './components/Hero';
-import { Waitlist } from './components/Waitlist';
-import { DirectorAgent } from './components/DirectorAgent';
-import { SeedanceHighlight } from './components/SeedanceHighlight';
-import { Workflow } from './components/Workflow';
-import { Templates } from './components/Templates';
-import { Features } from './components/Features';
-import { Pricing } from './components/Pricing';
-import { Download } from './components/Download';
 import { SiteFooter } from './components/SiteFooter';
+import { NexTideLanding } from './components/NexTideLanding';
 
 export default function SiteHome() {
   const [lang, setLang] = useState<'en' | 'zh'>('en');
@@ -34,15 +26,7 @@ export default function SiteHome() {
       <SiteHeader lang={lang} setLang={setLang} />
       
       <main className="relative">
-        <Hero lang={lang} />
-        <Waitlist lang={lang} />
-        <DirectorAgent lang={lang} />
-        <SeedanceHighlight lang={lang} />
-        <Workflow lang={lang} />
-        <Templates lang={lang} />
-        <Features lang={lang} />
-        <Pricing lang={lang} />
-        <Download lang={lang} />
+        <NexTideLanding lang={lang} />
       </main>
 
       <SiteFooter lang={lang} />

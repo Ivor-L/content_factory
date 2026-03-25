@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { supabase } from "@/lib/supabaseClient";
 
 interface ScriptStatusPollerProps {
   scriptId: string;
@@ -19,33 +20,26 @@ export default function ScriptStatusPoller({ scriptId, initialStatus, initialPro
   const [progress, setProgress] = useState(initialProgress);
 
   useEffect(() => {
-    if (status === "completed" || status === "failed") {
-      return;
-    }
+    if (status === "completed" || status === "failed") return;
 
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/scripts/${scriptId}/status`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.status !== status) {
-            setStatus(data.status);
-          }
-          if (data.progress !== undefined && data.progress !== progress) {
-            setProgress(data.progress);
-          }
-          
+    const channel = supabase
+      .channel(`script-${scriptId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "scripts", filter: `id=eq.${scriptId}` },
+        (payload) => {
+          const data = payload.new as { status: string; progress?: number };
+          setStatus(data.status);
+          if (data.progress !== undefined) setProgress(data.progress);
           if (data.status === "completed" || data.status === "failed") {
             router.refresh();
           }
         }
-      } catch (e) {
-        console.error("Polling error", e);
-      }
-    }, 3000); // Poll every 3 seconds
+      )
+      .subscribe();
 
-    return () => clearInterval(interval);
-  }, [scriptId, status, progress, router]);
+    return () => { supabase.removeChannel(channel); };
+  }, [scriptId, status, router]);
 
   if (status === "completed") {
     return null;
@@ -79,7 +73,7 @@ export default function ScriptStatusPoller({ scriptId, initialStatus, initialPro
       <div className="relative w-full max-w-md">
         <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-white/70 via-white/50 to-white/20 dark:from-gray-900/80 dark:via-gray-900/60 dark:to-gray-900/30 blur-xl"></div>
         <div className="relative rounded-3xl border border-white/80 dark:border-gray-700 bg-white/80 dark:bg-gray-900/70 backdrop-blur-xl shadow-2xl px-8 py-10 flex flex-col items-center gap-6 text-center">
-          <div className={`w-16 h-16 rounded-2xl border ${status === 'failed' ? 'border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-950/30' : 'border-primary/30 bg-primary-soft dark:border-primary/20 dark:bg-primary/15'} flex items-center justify-center`}>
+          <div className={`w-16 h-16 rounded-2xl border ${status === 'failed' ? 'border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-950/30' : 'border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50'} flex items-center justify-center`}>
             {status === "failed" ? (
               <span className="text-2xl">❌</span>
             ) : (

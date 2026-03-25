@@ -12,6 +12,12 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Modal } from '@/components/Modal';
 import { CharacterForm } from '@/components/CharacterForm';
+import { useTenantPath } from '@/hooks/useTenant';
+import {
+  DIGITAL_HUMAN_MAX_SECONDS,
+  analyzeScriptDuration,
+  formatScriptDurationMessage,
+} from '@/lib/digitalHumanLimits';
 
 interface DigitalHumanModalProps {
   onClose: () => void;
@@ -20,6 +26,7 @@ interface DigitalHumanModalProps {
   disableAutoRedirect?: boolean;
   onSuccess?: () => void | Promise<void>;
   hideInternalTitle?: boolean;
+  showAssistant?: boolean;
 }
 
 interface CharacterOption {
@@ -36,8 +43,9 @@ export function DigitalHumanModal({
   disableAutoRedirect = false,
   onSuccess,
   hideInternalTitle = false,
+  showAssistant = true,
 }: DigitalHumanModalProps) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const digitalCopy = t.contentCreation?.newTask?.digitalHuman;
   const voiceModeCopy = digitalCopy?.modes?.voice;
   const lipModeCopy = digitalCopy?.modes?.lip;
@@ -66,6 +74,7 @@ export function DigitalHumanModal({
   const audioRequiredMessage = digitalCopy?.audioRequired ?? t.characters.uploadVoice;
   const scriptRequiredMessage = digitalCopy?.scriptRequired ?? t.storyboard.voiceoverScript;
   const router = useRouter();
+  const myProjectsPath = useTenantPath('/my-works?type=digitalHuman');
   const containerRef = useRef<HTMLDivElement | null>(null);
   const audioInputRef = useRef<HTMLInputElement | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -116,11 +125,15 @@ export function DigitalHumanModal({
   }, []);
 
   const fetchCharacters = useCallback(async () => {
-    const res = await fetch('/api/characters');
+    const token = await supabase.auth.getSession().then(({ data: { session } }) => session?.access_token);
+    const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+    const res = await fetch('/api/characters', { headers });
     if (!res.ok) throw new Error('Failed to load characters');
     const data: CharacterOption[] = await res.json();
     return data;
   }, []);
+
+  const charactersFetchErrorMessage = t.characters.fetchError;
 
   useEffect(() => {
     let isMounted = true;
@@ -133,7 +146,7 @@ export function DigitalHumanModal({
       })
       .catch((error) => {
         console.error('Failed to load characters', error);
-        if (isMounted) toast.error(t.characters.fetchError);
+        if (isMounted) toast.error(charactersFetchErrorMessage);
       })
       .finally(() => {
         if (isMounted) setCharactersLoading(false);
@@ -141,7 +154,7 @@ export function DigitalHumanModal({
     return () => {
       isMounted = false;
     };
-  }, [fetchCharacters, t.characters.fetchError]);
+  }, [fetchCharacters, charactersFetchErrorMessage]);
 
   useEffect(() => {
     if (!selectedCharacter) {
@@ -182,7 +195,7 @@ export function DigitalHumanModal({
       cancelled = true;
     };
   }, [selectedCharacter, mode]);
-  
+
   const handleCharacterModalSuccess = async () => {
     setIsCharacterModalOpen(false);
     setCharactersLoading(true);
@@ -201,7 +214,6 @@ export function DigitalHumanModal({
   };
   
   const [loading, setLoading] = useState(false);
-  const [showGuide, setShowGuide] = useState(true);
   
   const [imageUrl, setImageUrl] = useState('');
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -226,6 +238,34 @@ export function DigitalHumanModal({
   const shouldSplitAudioUploads = shouldShowVoiceUpload && shouldShowEmoUpload;
   const voicePlaceholder = audioPlaceholderCopy;
   const emoPlaceholder = t.storyboard.emoRefPlaceholder;
+  const scriptStats = useMemo(() => analyzeScriptDuration(script), [script]);
+  const scriptMessage = useMemo(
+    () => formatScriptDurationMessage(scriptStats, { locale: language }),
+    [language, scriptStats]
+  );
+  const scriptHasContent = script.trim().length > 0;
+  const scriptTooLong = mode === 'VOICE_CLONE' && scriptHasContent && scriptStats.needSplit;
+  const audioLimitSeconds = DIGITAL_HUMAN_MAX_SECONDS;
+  const audioTooLong = audioDuration > audioLimitSeconds;
+  const audioLimitReminder = useMemo(() => {
+    if (language.toLowerCase().startsWith('zh')) {
+      return `音频需控制在 ${audioLimitSeconds}s 内，超出请拆分后上传。`;
+    }
+    return `Audio must be ≤ ${audioLimitSeconds}s. Please split longer clips.`;
+  }, [audioLimitSeconds, language]);
+
+  useEffect(() => {
+    if (mode !== 'LIP_SYNC') return;
+    if (!selectedCharacter?.voiceId) return;
+    if (audioFile) return;
+    if (!audioUrl) return;
+    if (audioUrl !== selectedCharacter.voiceId) return;
+
+    // Ensure lip-sync mode never falls back to the character's default voice; user must upload audio.
+    setAudioFile(null);
+    setAudioUrl('');
+    setAudioDuration(0);
+  }, [mode, selectedCharacter, audioFile, audioUrl]);
 
   const getDuration = (source: File | string): Promise<number> => {
     return new Promise((resolve) => {
@@ -268,8 +308,8 @@ export function DigitalHumanModal({
         
         const duration = await getDuration(file);
         setAudioDuration(duration);
-        if (duration > 32) {
-          toast.error(t.storyboard.digitalHumanNote);
+        if (duration > audioLimitSeconds) {
+          toast.error(audioLimitReminder);
         }
       } else if (type === 'emo_audio') {
         setEmoAudioUrl(data.url);
@@ -331,10 +371,23 @@ export function DigitalHumanModal({
     setAudioDuration(0);
   };
 
+  const handleEmoAudioRemove = () => {
+    setEmoAudioUrl('');
+    setEmoAudioFile(null);
+  };
+
   const handleSubmit = async () => {
     if (!selectedCharacter || !imageUrl) return toast.error(characterRequiredMessage);
     if (!audioUrl) return toast.error(audioRequiredMessage || 'Please upload audio');
     if (mode === 'VOICE_CLONE' && !script) return toast.error(scriptRequiredMessage || 'Please enter script');
+    if (mode === 'VOICE_CLONE' && scriptHasContent && scriptStats.needSplit) {
+      toast.error(scriptMessage);
+      return;
+    }
+    if (audioDuration > audioLimitSeconds && audioDuration > 0) {
+      toast.error(audioLimitReminder);
+      return;
+    }
 
     setLoading(true);
     try {
@@ -363,7 +416,7 @@ export function DigitalHumanModal({
         await onSuccess();
       }
       if (!disableAutoRedirect) {
-        router.push('/replication?tab=DIGITAL_HUMAN'); // Redirect to Replication page with Digital Human tab
+        router.push(myProjectsPath); // Redirect to tenant-scoped My Projects page
       }
       onClose();
     } catch (error) {
@@ -374,29 +427,18 @@ export function DigitalHumanModal({
     }
   };
 
+  const layoutClass = showAssistant
+    ? isCompactLayout
+      ? 'flex flex-col gap-6'
+      : 'grid grid-cols-[minmax(0,1fr)_360px] items-start gap-6'
+    : 'flex flex-col gap-6';
+
   return (
     <>
     <div
       ref={containerRef}
-      className={cn(
-        'relative h-full bg-white dark:bg-gray-900',
-        isCompactLayout
-          ? 'flex flex-col gap-6'
-          : showGuide
-            ? 'grid grid-cols-[minmax(0,1fr)_320px] items-start gap-6'
-            : 'flex flex-col gap-6'
-      )}
+      className={cn('relative h-full bg-white dark:bg-gray-900', layoutClass)}
     >
-      {!showGuide && (
-        <button
-          type="button"
-          onClick={() => setShowGuide(true)}
-          className="absolute top-3 right-3 md:top-4 md:right-4 z-10 inline-flex items-center gap-2 rounded-full border border-gray-200/80 dark:border-gray-700/70 bg-white/80 dark:bg-gray-900/80 px-3 py-1.5 text-xs font-semibold text-gray-600 dark:text-gray-100 shadow-sm backdrop-blur"
-        >
-          <Info size={14} />
-          {t.storyboard.guide}
-        </button>
-      )}
       {/* Left Content */}
       <div
         className={cn(
@@ -481,14 +523,6 @@ export function DigitalHumanModal({
                       {t.characters.clearSelection}
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => setIsCharacterModalOpen(true)}
-                    className="inline-flex items-center gap-1 rounded-full border border-gray-900 text-gray-900 px-3 py-1.5 text-xs font-semibold dark:border-gray-100 dark:text-gray-100"
-                  >
-                    <PlusCircle className="w-3.5 h-3.5" />
-                    {characterCreateLabel}
-                  </button>
                 </div>
               </div>
 
@@ -727,8 +761,22 @@ export function DigitalHumanModal({
                           accept="audio/*"
                         />
                       </label>
+                      {emoAudioUrl && (
+                        <div className="mt-2 flex flex-wrap items-center justify-end gap-3 text-xs text-gray-600 dark:text-gray-300">
+                          <button
+                            type="button"
+                            onClick={handleEmoAudioRemove}
+                            className="font-semibold underline text-red-600 dark:text-red-400"
+                          >
+                            {removeAudioLabel}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
+                )}
+                {audioTooLong && (
+                  <p className="text-xs text-rose-600 dark:text-rose-400">{audioLimitReminder}</p>
                 )}
               </div>
             )}
@@ -745,6 +793,18 @@ export function DigitalHumanModal({
                 placeholder={scriptPlaceholder}
                 className="w-full h-32 p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-primary outline-none resize-none"
                 />
+                {scriptHasContent && (
+                  <p
+                    className={cn(
+                      "mt-2 text-xs",
+                      scriptTooLong
+                        ? "text-rose-600 dark:text-rose-400"
+                        : "text-gray-500 dark:text-gray-400"
+                    )}
+                  >
+                    {scriptMessage}
+                  </p>
+                )}
             </div>
             )}
         </div>
@@ -753,8 +813,8 @@ export function DigitalHumanModal({
       <div className="p-6 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 rounded-b-xl">
         <button
           onClick={handleSubmit}
-          disabled={loading || uploading}
-          className="w-full py-3 bg-primary text-primary-foreground font-bold rounded-lg hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-theme-glow"
+          disabled={loading || uploading || scriptTooLong || audioTooLong}
+          className="btn-openclaw w-full py-3 font-bold flex items-center justify-center gap-2"
         >
           {loading ? <Loader2 className="animate-spin" /> : <Check size={20} />}
           {loading ? generatingLabel : submitLabel}
@@ -762,58 +822,50 @@ export function DigitalHumanModal({
       </div>
       </div>
 
-      {/* Right Guide Panel */}
-      {showGuide && (
+      {/* Right Panel */}
+      {showAssistant && (
         <aside
           className={cn(
-            'bg-gray-50 dark:bg-gray-800/70 p-6 flex flex-col gap-6 relative rounded-2xl border border-gray-200/70 dark:border-gray-800/70 text-gray-800 dark:text-gray-100',
+            'flex flex-col gap-6',
             isCompactLayout
               ? 'mt-0'
               : 'sticky top-0 min-h-0 max-h-[calc(88vh-4rem)] overflow-y-auto'
           )}
         >
-          <button
-            type="button"
-            onClick={() => setShowGuide(false)}
-            className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-          >
-              <X size={18} />
-          </button>
-          
-          <div>
-              <h3 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                  <Info size={18} className="text-gray-600 dark:text-gray-200" />
-                  {t.storyboard.guide}
-              </h3>
-              
-              <div className="space-y-6 text-gray-600 dark:text-gray-300">
-                  <div>
-                      <h4 className="text-sm font-bold text-gray-800 dark:text-gray-100 mb-2 flex items-center gap-2">
-                          <Mic size={14} /> {lipModeCopy?.label ?? t.storyboard.lipSync}
-                      </h4>
-                      <p className="text-xs leading-relaxed">
-                          {lipModeCopy?.description ?? t.storyboard.lipSyncDesc}
-                      </p>
-                  </div>
-
-                  <div>
-                      <h4 className="text-sm font-bold text-gray-800 dark:text-gray-100 mb-2 flex items-center gap-2">
-                          <User size={14} /> {voiceModeCopy?.label ?? t.storyboard.voiceClone}
-                      </h4>
-                      <p className="text-xs leading-relaxed">
-                          {voiceModeCopy?.description ?? t.storyboard.voiceCloneDesc}
-                      </p>
-                  </div>
-
-                  <div className="bg-white/80 dark:bg-gray-900/60 p-3 rounded-lg border border-gray-200/70 dark:border-gray-700/60 space-y-2 text-gray-700 dark:text-gray-200">
-                      <p className="text-xs font-medium">
-                          {stickyNote}
-                      </p>
-                      <p className="text-xs font-medium">
-                          {t.storyboard.highQualityNote}
-                      </p>
-                  </div>
+          <div className="bg-gray-50 dark:bg-gray-800/70 p-6 rounded-2xl border border-gray-200/70 dark:border-gray-800/70 text-gray-800 dark:text-gray-100">
+            <h3 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+              <Info size={18} className="text-gray-600 dark:text-gray-200" />
+              {t.storyboard.guide}
+            </h3>
+            
+            <div className="space-y-6 text-gray-600 dark:text-gray-300">
+              <div>
+                <h4 className="text-sm font-bold text-gray-800 dark:text-gray-100 mb-2 flex items-center gap-2">
+                  <Mic size={14} /> {lipModeCopy?.label ?? t.storyboard.lipSync}
+                </h4>
+                <p className="text-xs leading-relaxed">
+                  {lipModeCopy?.description ?? t.storyboard.lipSyncDesc}
+                </p>
               </div>
+
+              <div>
+                <h4 className="text-sm font-bold text-gray-800 dark:text-gray-100 mb-2 flex items-center gap-2">
+                  <User size={14} /> {voiceModeCopy?.label ?? t.storyboard.voiceClone}
+                </h4>
+                <p className="text-xs leading-relaxed">
+                  {voiceModeCopy?.description ?? t.storyboard.voiceCloneDesc}
+                </p>
+              </div>
+
+              <div className="bg-white/80 dark:bg-gray-900/60 p-3 rounded-lg border border-gray-200/70 dark:border-gray-700/60 space-y-2 text-gray-700 dark:text-gray-200">
+                <p className="text-xs font-medium">
+                  {stickyNote}
+                </p>
+                <p className="text-xs font-medium">
+                  {t.storyboard.highQualityNote}
+                </p>
+              </div>
+            </div>
           </div>
         </aside>
       )}

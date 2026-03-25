@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { syncTaskToSummary } from "@/lib/taskSummary";
 
 export async function POST(request: NextRequest) {
   let payload: any;
@@ -40,6 +41,12 @@ export async function POST(request: NextRequest) {
         error: status && status.toUpperCase() === "FAILED" ? (payload.error as string | null) : null,
         updatedAt: new Date(),
       },
+    });
+
+    await syncTaskToSummary({
+      taskType: 'knowledgeVideo',
+      taskId: taskId,
+      operation: 'update',
     });
 
     return NextResponse.json({ data: updated });

@@ -14,6 +14,10 @@ interface SiteHeaderProps {
   setLang: (lang: 'en' | 'zh') => void;
 }
 
+const SITE_ONLY_MODE = process.env.NEXT_PUBLIC_SITE_ONLY === 'true';
+const SITE_ONLY_DASHBOARD_URL =
+  process.env.NEXT_PUBLIC_DASHBOARD_URL?.trim() || 'https://atomx.top/dashboard';
+
 export function SiteHeader({ lang, setLang }: SiteHeaderProps) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -24,6 +28,7 @@ export function SiteHeader({ lang, setLang }: SiteHeaderProps) {
   const brandName = tenant.name || 'PolyWhale Studio';
   const homePath = useTenantPath('/');
   const dashboardPath = useTenantPath('/dashboard');
+  const dashboardHref = SITE_ONLY_MODE ? SITE_ONLY_DASHBOARD_URL : dashboardPath;
   const openClawPath = useTenantPath('/openclaw');
   const shouldUseWhiteLogo = isNextideTenant && !isScrolled;
   const brandLogoStyle = shouldUseWhiteLogo ? { filter: 'brightness(0) invert(1)' } : undefined;
@@ -66,7 +71,8 @@ export function SiteHeader({ lang, setLang }: SiteHeaderProps) {
     ? 'text-gray-600 hover:text-[var(--tenant-primary-strong)] dark:text-gray-300 dark:hover:text-[var(--tenant-primary)]'
     : 'text-white/70 hover:text-[var(--tenant-primary)]';
 
-  const primaryButtonClass = 'px-5 py-2 rounded-full bg-[var(--tenant-primary)] text-[var(--tenant-primary-foreground)] font-semibold shadow-theme-glow hover:-translate-y-0.5 transition-transform';
+  const primaryButtonClass =
+    'inline-flex items-center justify-center rounded-full border border-[#101522]/80 bg-[#101522] px-5 py-2 text-sm font-semibold text-[#f8f7f3] shadow-[0_10px_24px_-18px_rgba(16,21,34,0.8)] transition-transform hover:-translate-y-0.5';
 
   return (
     <header
@@ -123,7 +129,7 @@ export function SiteHeader({ lang, setLang }: SiteHeaderProps) {
             {lang === 'en' ? '中文' : 'EN'}
           </button>
 
-          <Link href={dashboardPath} target="_blank" rel="noopener noreferrer" className={primaryButtonClass}>
+          <Link href={dashboardHref} target="_blank" rel="noopener noreferrer" className={primaryButtonClass}>
             {t.dashboard}
           </Link>
         </div>
@@ -141,7 +147,7 @@ export function SiteHeader({ lang, setLang }: SiteHeaderProps) {
       </div>
 
       {mobileOpen && (
-        <div className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-8 bg-gradient-to-b from-[var(--tenant-primary-soft)] via-white to-white px-6 text-center dark:from-gray-900 dark:via-black dark:to-black">
+        <div className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-8 bg-[rgba(244,243,239,0.96)] px-6 text-center backdrop-blur-xl dark:bg-[rgba(5,7,12,0.92)]">
           {navAnchors.map((item) => (
             <a
               key={item.href}
@@ -173,10 +179,10 @@ export function SiteHeader({ lang, setLang }: SiteHeaderProps) {
             {lang === 'en' ? '切换到中文' : 'Switch to English'}
           </button>
           <Link
-            href={dashboardPath}
+            href={dashboardHref}
             target="_blank"
             rel="noopener noreferrer"
-            className="rounded-full bg-[var(--tenant-primary)] px-8 py-3 text-lg font-semibold text-[var(--tenant-primary-foreground)] transition-transform hover:-translate-y-0.5 shadow-theme-glow"
+            className="inline-flex items-center justify-center rounded-full border border-[#101522]/80 bg-[#101522] px-8 py-3 text-lg font-semibold text-[#f8f7f3] transition-transform hover:-translate-y-0.5"
             onClick={() => setMobileOpen(false)}
           >
             {t.dashboard}

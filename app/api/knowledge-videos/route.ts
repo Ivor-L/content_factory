@@ -3,6 +3,7 @@ import { getRequestUserContext } from "@/lib/authServer";
 import prisma from "@/lib/prisma";
 import { createKnowledgeVideoTask } from "@/lib/knowledgeVideos";
 import { enqueueKnowledgeVideoJob } from "@/lib/knowledgeVideoQueue";
+import { syncTaskToSummary } from "@/lib/taskSummary";
 
 export async function GET(request: NextRequest) {
   const { userId } = await getRequestUserContext(request);
@@ -65,6 +66,13 @@ export async function POST(request: NextRequest) {
       metadata: payload.metadata && typeof payload.metadata === "object" ? payload.metadata : null,
       sourceTaskId: typeof payload.sourceTaskId === "string" ? payload.sourceTaskId : undefined,
     });
+
+    await syncTaskToSummary({
+      taskType: 'knowledgeVideo',
+      taskId: task.id,
+      operation: 'create',
+    });
+
     await enqueueKnowledgeVideoJob(task.id);
     return NextResponse.json({ data: task }, { status: 201 });
   } catch (error) {

@@ -21,7 +21,7 @@ export const siteContent = {
       title: "Launch campaign-ready videos in hours",
       subtitle: "Product storytelling, multi-language scripts,\nshoppable edits generated in one place.",
       description:
-        "AtomX connects script intelligence, digital humans, and motion replication so growth teams can brief once and deliver region-ready assets the same day.",
+        "NexTide connects script intelligence, digital humans, and motion replication so growth teams can brief once and deliver region-ready assets the same day.",
       inputPlaceholder: "Describe your SKU, target market, and core offer...",
       primaryCta: "Request Private Beta",
       secondaryCta: "Watch product tour",
@@ -57,7 +57,7 @@ export const siteContent = {
           cta: "Schedule strategy review"
         }
       ],
-      footer: "Need a quick product tour? Email hello@polywhale.ai and we’ll reply within 12 hours."
+      footer: "Need a quick product tour? Email hello@nextide.ai and we’ll reply within 12 hours."
     },
     director: {
       eyebrow: "Campaign Director Agent",
@@ -156,7 +156,7 @@ export const siteContent = {
       ]
     },
     features: {
-      title: "Why teams choose AtomX Content Factory",
+      title: "Why teams choose NexTide",
       subtitle: "An AI-native workspace that speaks commerce.",
       items: [
         {
@@ -239,17 +239,17 @@ export const siteContent = {
     download: {
       title: "Resources & integrations",
       description:
-        "Everything you need to bring AtomX into your stack—no PDF hunting required.",
+        "Everything you need to bring NexTide into your stack—no PDF hunting required.",
       mac: "Capability deck (PDF)",
       windows: "Sample data pipeline export",
       github: "Integration & API docs",
-      contact: "Need bespoke onboarding? enterprise@polywhale.ai"
+      contact: "Need bespoke onboarding? enterprise@nextide.ai"
     },
     footer: {
       about:
-        "PolyWhale Tech builds AI-native creative tooling that helps commerce brands launch, iterate, and scale high-performing campaigns.",
+        "NexTide builds AI-native creative infrastructure that helps commerce teams launch, iterate, and scale high-performing campaigns.",
       links: ["Terms", "Privacy", "Contact"],
-      copyright: "© 2026 PolyWhale Tech. All rights reserved."
+      copyright: "© 2026 NexTide. All rights reserved."
     }
   },
   zh: {
@@ -274,7 +274,7 @@ export const siteContent = {
       title: "几个小时内生成可投放的视频素材",
       subtitle: "产品故事、多语言脚本、可购物剪辑\n一次配置即可自动产出。",
       description:
-        "AtomX 将脚本文案、数字人和动作复刻统一在一个工作区，让增长团队一次提报，数小时内完成多地区投放素材。",
+        "NexTide 将脚本文案、数字人和动作复刻统一在一个工作区，让增长团队一次提报，数小时内完成多地区投放素材。",
       inputPlaceholder: "填写 SKU、目标市场与主打卖点...",
       primaryCta: "申请私测名额",
       secondaryCta: "观看产品演示",
@@ -310,7 +310,7 @@ export const siteContent = {
           cta: "安排策略评估"
         }
       ],
-      footer: "需要快速演示？写信至 hello@polywhale.ai，我们 12 小时内回复。"
+      footer: "需要快速演示？写信至 hello@nextide.ai，我们 12 小时内回复。"
     },
     director: {
       eyebrow: "营销导演智能体",
@@ -409,7 +409,7 @@ export const siteContent = {
       ]
     },
     features: {
-      title: "为什么选择 AtomX 内容工厂",
+      title: "为什么选择 NexTide",
       subtitle: "为电商而生的 AI 协同工作台。",
       items: [
         {
@@ -496,12 +496,12 @@ export const siteContent = {
       mac: "下载能力白皮书",
       windows: "获取示例数据管道",
       github: "查看集成与 API 文档",
-      contact: "需要定制化部署？enterprise@polywhale.ai"
+      contact: "需要定制化部署？enterprise@nextide.ai"
     },
     footer: {
-      about: "PolyWhale Tech 专注于构建 AI 原生创意工具，帮助品牌快速上线、迭代与放大营销内容效果。",
+      about: "NexTide 专注于构建 AI 原生创意基础设施，帮助品牌快速上线、迭代与放大营销内容效果。",
       links: ["服务条款", "隐私政策", "联系我们"],
-      copyright: "© 2026 PolyWhale Tech. 保留所有权利。"
+      copyright: "© 2026 NexTide. 保留所有权利。"
     }
   }
 } as const;

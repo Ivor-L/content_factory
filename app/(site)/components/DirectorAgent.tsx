@@ -56,7 +56,7 @@ export function DirectorAgent({ lang }: DirectorAgentProps) {
 
           <button
             type="button"
-            className="inline-flex items-center gap-2 rounded-full bg-[var(--tenant-primary)] px-6 py-3 text-sm font-semibold text-[var(--tenant-primary-foreground)] shadow-theme-glow transition hover:-translate-y-0.5 hover:bg-[var(--tenant-primary-strong)]"
+            className="btn-openclaw inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold"
           >
             {t.cta}
           </button>

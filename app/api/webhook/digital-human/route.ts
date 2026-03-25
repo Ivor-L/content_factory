@@ -5,6 +5,7 @@ import { getApiKeyForUser } from "@/lib/authServer";
 import { deductCredits } from "@/lib/credits";
 import { parseMetadata } from "@/lib/creativeTaskService";
 import { setTaskActionStatus } from "@/lib/creativeTaskUtils";
+import { syncTaskToSummary } from "@/lib/taskSummary";
 
 type ResultEntry = {
   fileUrl?: string;
@@ -201,40 +202,149 @@ const parseJsonIfNeeded = (value: unknown) => {
   return value;
 };
 
+const tryParseJsonString = (value: string): unknown => {
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    return null;
+  }
+};
+
+const coerceFormBody = (raw: string) => {
+  const params = new URLSearchParams(raw);
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of params.entries()) {
+    if (Object.prototype.hasOwnProperty.call(result, key)) {
+      const current = result[key];
+      if (Array.isArray(current)) {
+        current.push(value);
+      } else {
+        result[key] = [current, value];
+      }
+    } else {
+      result[key] = value;
+    }
+  }
+  for (const [key, value] of Object.entries(result)) {
+    if (typeof value === "string") {
+      const parsed = tryParseJsonString(value);
+      if (parsed !== null) {
+        result[key] = parsed;
+      }
+    }
+  }
+  return result;
+};
+
+async function readRequestBody(request: Request): Promise<unknown> {
+  const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
+  const rawBody = await request.text();
+  if (!rawBody) {
+    return {};
+  }
+
+  const trimmed = rawBody.trim();
+  const parsedJson = tryParseJsonString(trimmed);
+
+  if (contentType.includes("application/json")) {
+    if (parsedJson === null) {
+      throw new Error("Invalid JSON payload");
+    }
+    return parsedJson;
+  }
+
+  if (contentType.includes("application/x-www-form-urlencoded")) {
+    return coerceFormBody(rawBody);
+  }
+
+  if (parsedJson !== null) {
+    return parsedJson;
+  }
+
+  const fallbackForm = coerceFormBody(rawBody);
+  if (Object.keys(fallbackForm).length > 0) {
+    return fallbackForm;
+  }
+
+  throw new Error("Unsupported request body format");
+}
+
+const pickFirstString = (
+  source: Record<string, unknown>,
+  keys: string[]
+): string | undefined => {
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
+    const value = source[key];
+    if (value === null || value === undefined) continue;
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) return trimmed;
+    } else if (typeof value === "number" || typeof value === "bigint") {
+      return String(value);
+    }
+  }
+  return undefined;
+};
+
 export async function POST(request: Request) {
   try {
     const requestUrl = new URL(request.url);
-    let body = await request.json();
+    let body: unknown;
+    try {
+      body = await readRequestBody(request);
+    } catch (parseError) {
+      console.error("Digital Human webhook received invalid body", parseError);
+      return NextResponse.json(
+        { error: "Invalid request body" },
+        { status: 400 }
+      );
+    }
+
     console.log("Digital Human Webhook received:", body);
 
     if (Array.isArray(body) && body.length > 0) {
       body = body[0];
     }
 
-    const payload = body.body || body;
+    if (!body || typeof body !== "object") {
+      console.error("Webhook body must be an object", { body });
+      return NextResponse.json(
+        { error: "Invalid body payload" },
+        { status: 400 }
+      );
+    }
+
+    const bodyRecord = body as Record<string, unknown>;
+    let payloadCandidate = bodyRecord.body ?? bodyRecord;
+    payloadCandidate = parseJsonIfNeeded(payloadCandidate);
+
+    if (!payloadCandidate || typeof payloadCandidate !== "object") {
+      console.error("Webhook payload must be an object", {
+        payload: payloadCandidate,
+      });
+      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+    }
+
+    const payload = payloadCandidate as Record<string, unknown>;
     const queryTaskId =
       requestUrl.searchParams.get("task_id") ||
       requestUrl.searchParams.get("taskId");
     const clientId =
-      payload.clientId ||
-      payload.client_id ||
-      payload.clientID ||
-      body.clientId ||
-      body.client_id ||
-      body.clientID;
+      pickFirstString(payload, ["clientId", "client_id", "clientID"]) ??
+      pickFirstString(bodyRecord, ["clientId", "client_id", "clientID"]);
     const fallbackTaskId =
-      payload.taskId ||
-      payload.task_id ||
-      payload.id ||
-      body.taskId ||
-      body.task_id ||
-      body.id;
+      pickFirstString(payload, ["taskId", "task_id", "id"]) ??
+      pickFirstString(bodyRecord, ["taskId", "task_id", "id"]);
     const taskId = queryTaskId || clientId || fallbackTaskId;
 
     if (!taskId) {
-      console.error("Webhook missing task_id", body);
+      console.error("Webhook missing task_id", bodyRecord);
       return NextResponse.json({ error: "Missing task_id" }, { status: 400 });
     }
+
+    const payloadData = payload as Record<string, any>;
+    const bodyData = bodyRecord as Record<string, any>;
 
     const task = await prisma.digitalHumanVideo.findUnique({
       where: { id: taskId },
@@ -257,30 +367,30 @@ export async function POST(request: Request) {
     let updateStatus = "COMPLETED";
     let videoUrl: string | null = null;
     const statusString = String(
-      payload.status || body.status || ""
+      payloadData.status || bodyData.status || ""
     ).toLowerCase();
     if (
       statusString.includes("fail") ||
       statusString.includes("error") ||
-      payload.error ||
-      body.error
+      payloadData.error ||
+      bodyData.error
     ) {
       updateStatus = "FAILED";
     }
 
     const resultSources: unknown[] = [];
 
-    if (payload.event && payload.eventData) {
-      if (payload.event !== "TASK_END") {
-        console.log(`Received non-completion event: ${payload.event}`);
+    if (payloadData.event && payloadData.eventData) {
+      if (payloadData.event !== "TASK_END") {
+        console.log(`Received non-completion event: ${payloadData.event}`);
         return NextResponse.json({ message: "Event ignored" });
       }
 
-      const eventData = parseJsonIfNeeded(payload.eventData);
+      const eventData = parseJsonIfNeeded(payloadData.eventData);
 
       if (!eventData) {
         console.warn(
-          `Digital Human webhook ${taskId} provided event ${payload.event} without eventData; falling back to results array.`
+          `Digital Human webhook ${taskId} provided event ${payloadData.event} without eventData; falling back to results array.`
         );
       } else {
         const { code, msg, data } = eventData as {
@@ -299,29 +409,29 @@ export async function POST(request: Request) {
     }
 
     resultSources.push(
-      payload.results,
-      payload.result,
-      payload.data?.results,
-      payload.videoFiles,
-      payload.media?.videos,
-      payload.media?.videoFiles,
-      body.results,
-      body.data?.results,
-      body.videoFiles,
-      body.media?.videos,
-      body.media?.videoFiles
+      payloadData.results,
+      payloadData.result,
+      payloadData.data?.results,
+      payloadData.videoFiles,
+      payloadData.media?.videos,
+      payloadData.media?.videoFiles,
+      bodyData.results,
+      bodyData.data?.results,
+      bodyData.videoFiles,
+      bodyData.media?.videos,
+      bodyData.media?.videoFiles
     );
 
     videoUrl = pickMp4Url(...resultSources);
 
     if (!videoUrl) {
       videoUrl =
-        payload.video_url ||
-        payload.videoUrl ||
-        payload.result_url ||
-        payload.resultUrl ||
-        body.video_url ||
-        body.videoUrl ||
+        payloadData.video_url ||
+        payloadData.videoUrl ||
+        payloadData.result_url ||
+        payloadData.resultUrl ||
+        bodyData.video_url ||
+        bodyData.videoUrl ||
         null;
     }
 
@@ -344,6 +454,12 @@ export async function POST(request: Request) {
       },
     });
 
+    await syncTaskToSummary({
+      taskType: 'digitalHuman',
+      taskId: taskId,
+      operation: 'update',
+    });
+
     if (task.sourceTaskId) {
       const creativeTask = await prisma.creativeTask.findUnique({
         where: { id: task.sourceTaskId },
@@ -360,8 +476,8 @@ export async function POST(request: Request) {
               error:
                 updateStatus === "COMPLETED"
                   ? undefined
-                  : (payload.error as string | undefined) ??
-                    (body.error as string | undefined) ??
+                  : (payloadData.error as string | undefined) ??
+                    (bodyData.error as string | undefined) ??
                     undefined,
             }
           );

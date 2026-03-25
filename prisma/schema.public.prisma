@@ -43,6 +43,20 @@ model Product {
   @@schema("public")
 }
 
+model CanvasProject {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id") @db.Uuid
+  name       String   @default("")
+  thumbnail  String?  @db.Text
+  canvasData Json?    @map("canvas_data")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([userId], map: "canvas_projects_user_id_idx")
+  @@map("canvas_projects")
+  @@schema("public")
+}
+
 model Replication {
   id          String   @id @default(cuid())
   status      String
@@ -163,6 +177,10 @@ model CreativeTask {
   stage              String                   @default("diagnosis")
   status             String                   @default("active")
   goal               Json?
+  progress           Int                      @default(0)
+  layoutResultJson   Json?                    @map("layout_result_json")
+  generatedImagesJson Json?                   @map("generated_images_json")
+  errorMessage       String?                  @map("error_message")
   metadata           Json?
   outlinePath        String?                  @map("outline_path")
   draftPath          String?                  @map("draft_path")
@@ -386,6 +404,68 @@ model ReplicationShotTask {
   character            Character? @relation(fields: [characterId], references: [id])
 
   @@map("replication_shot_tasks")
+  @@schema("public")
+}
+
+model ViralCreator {
+  id             String               @id @default(uuid())
+  platform       String               @default("xiaohongshu")
+  creatorHandle  String?              @map("creator_handle")
+  displayName    String?              @map("display_name")
+  avatarUrl      String?              @map("avatar_url")
+  coverUrl       String?              @map("cover_url")
+  profileUrl     String?              @map("profile_url")
+  stats          Json?
+  bio            String?
+  tags           Json?
+  rawPayload     Json?                @map("raw_payload")
+  ingestedBy     String?              @map("ingested_by")
+  ingestedAt     DateTime?            @map("ingested_at")
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+  referenceItems ViralReferenceItem[]
+
+  @@unique([platform, creatorHandle], map: "viral_creators_platform_handle_key")
+  @@index([platform], map: "viral_creators_platform_idx")
+  @@map("viral_creators")
+  @@schema("public")
+}
+
+model ViralReferenceItem {
+  id               String        @id @default(uuid())
+  platform         String        @default("xiaohongshu")
+  sourceType       String        @map("source_type")
+  sourceId         String        @map("source_id")
+  sourceUrl        String?       @map("source_url")
+  title            String?
+  description      String?
+  coverUrl         String?       @map("cover_url")
+  videoUrl         String?       @map("video_url")
+  mediaUrls        Json?         @map("media_urls")
+  stats            Json?
+  author           Json?
+  userTags         Json?         @map("user_tags")
+  collectorVersion String?       @map("collector_version")
+  rawPayload       Json?         @map("raw_payload")
+  referenceHash    String?       @map("reference_hash")
+  category         String?
+  rankLabel        String?       @map("rank_label")
+  benchmarkScore   Int?          @map("benchmark_score")
+  remark           String?
+  flagged          Boolean       @default(false)
+  publishedAt      DateTime?     @map("published_at")
+  ingestedBy       String?       @map("ingested_by")
+  ingestedAt       DateTime?     @map("ingested_at")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+  creatorId        String?       @map("creator_id")
+  creator          ViralCreator? @relation(fields: [creatorId], references: [id])
+
+  @@unique([platform, sourceId], map: "viral_reference_items_platform_source_id_key")
+  @@index([platform, sourceType], map: "viral_reference_items_platform_type_idx")
+  @@index([category], map: "viral_reference_items_category_idx")
+  @@index([publishedAt], map: "viral_reference_items_published_idx")
+  @@map("viral_reference_items")
   @@schema("public")
 }
 

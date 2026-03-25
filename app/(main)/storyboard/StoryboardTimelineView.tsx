@@ -1,13 +1,14 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element -- timeline view shows user-provided remote previews */
+/* eslint-disable @next/next/no-img-element */
 
-import { useMemo, useState, useTransition, useCallback } from "react";
-import { RefreshCcw, Save, RotateCcw, Clock3, Loader2 } from "lucide-react";
-import { motion } from "framer-motion";
+import { useState, useMemo, useCallback, useRef, useEffect, useTransition } from "react";
+import { Save, RotateCcw, RefreshCcw, Play, Pause, Volume2, VolumeX, Film, ChevronDown } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { cn } from "@/lib/utils";
+import { useSidebarAutoCollapse } from "@/hooks/useSidebarAutoCollapse";
+import { StoryboardPageHeader } from "./[id]/components/StoryboardPageHeader";
 import {
   buildTimelineFromSegments,
   cloneTimeline,
@@ -18,7 +19,6 @@ import {
   type StoryboardTimelineClip,
   type StoryboardTimelineData,
 } from "@/lib/storyboardTimeline";
-import { formatStoryboardRange, formatStoryboardTimestamp } from "@/lib/storyboardTime";
 import { saveStoryboardTimeline } from "@/app/actions/storyboard-timeline";
 
 type StoryboardSegment = {
@@ -40,17 +40,32 @@ type StoryboardTimelineViewProps = {
     segments: StoryboardSegment[];
     timeline?: unknown;
   };
+  mode?: 'page' | 'embedded';
 };
 
 const MIN_DURATION = 0.5;
+const SNAP_THRESHOLD = 0.1;
 
 const clampStart = (value: number) => (Number.isFinite(value) && value >= 0 ? value : 0);
 const clampDuration = (value: number) => {
   if (!Number.isFinite(value) || value <= 0) return MIN_DURATION;
   return Math.max(MIN_DURATION, value);
 };
-
 const roundSeconds = (value: number) => Math.round(value * 1000) / 1000;
+
+const snapValue = (value: number, targets: Array<number | undefined>) => {
+  let snapped = value;
+  let bestDiff = SNAP_THRESHOLD + 0.00001;
+  targets.forEach((target) => {
+    if (target == null || !Number.isFinite(target)) return;
+    const diff = Math.abs(value - target);
+    if (diff <= bestDiff) {
+      bestDiff = diff;
+      snapped = target;
+    }
+  });
+  return snapped;
+};
 
 const getAssetUrl = (segment?: SegmentForTimeline, clip?: StoryboardTimelineClip) => {
   if (segment?.generatedVideo) return segment.generatedVideo;
@@ -58,9 +73,18 @@ const getAssetUrl = (segment?: SegmentForTimeline, clip?: StoryboardTimelineClip
   return clip?.assetUrl ?? null;
 };
 
-export function StoryboardTimelineView({ initialTask }: StoryboardTimelineViewProps) {
+const formatTime = (seconds: number): string => {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  const ms = Math.floor((seconds % 1) * 10);
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms}`;
+};
+
+export function StoryboardTimelineView({ initialTask, mode = 'page' }: StoryboardTimelineViewProps) {
   const { t } = useLanguage();
   const storyboardCopy = t.storyboard?.manual;
+  const isEmbedded = mode === 'embedded';
+  useSidebarAutoCollapse(mode === 'page', true);
 
   const orderedSegments = useMemo<SegmentForTimeline[]>(() => {
     return [...initialTask.segments]
@@ -89,17 +113,227 @@ export function StoryboardTimelineView({ initialTask }: StoryboardTimelineViewPr
   const [savedSnapshot, setSavedSnapshot] = useState<StoryboardTimelineData>(hydratedTimeline);
   const [isPending, startTransition] = useTransition();
   const [dirty, setDirty] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
+  const [isDraggingClip, setIsDraggingClip] = useState<string | null>(null);
+  const [isResizingClip, setIsResizingClip] = useState<{ clipId: string; edge: 'left' | 'right' } | null>(null);
+  const [dragStartX, setDragStartX] = useState(0);
+  const [dragStartValue, setDragStartValue] = useState(0);
+  const [dragStartDuration, setDragStartDuration] = useState(0);
+  const [isPortraitPreview, setIsPortraitPreview] = useState(false);
+  const [volume, setVolume] = useState(0.7);
 
-  const refreshFromServer = useCallback(() => {
-    setTimeline(savedSnapshot);
-    setDirty(false);
-  }, [savedSnapshot]);
+  const timelineRef = useRef<HTMLDivElement>(null);
+  const playIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const clipDragMovedRef = useRef(false);
 
-  const rebuildFromSegments = useCallback(() => {
-    const rebuilt = buildTimelineFromSegments(orderedSegments);
-    setTimeline(rebuilt);
-    setDirty(true);
-  }, [orderedSegments]);
+  const videoTrack = useMemo(() => findVideoTrack(timeline), [timeline]);
+  const orderedClips = useMemo(() => {
+    return [...(videoTrack?.clips ?? [])].sort((a, b) =>
+      a.start === b.start ? a.id.localeCompare(b.id) : a.start - b.start
+    );
+  }, [videoTrack]);
+
+  const currentClip = useMemo(() => {
+    return orderedClips.find(clip =>
+      currentTime >= clip.start && currentTime < clip.start + clip.duration
+    );
+  }, [currentTime, orderedClips]);
+  const currentSegment = currentClip ? segmentMap.get(currentClip.segmentId) : undefined;
+  const currentClipIndex = currentClip ? orderedClips.findIndex((clip) => clip.id === currentClip.id) : -1;
+  const currentPrompt =
+    currentSegment?.videoPrompt ||
+    currentSegment?.imagePrompt ||
+    currentClip?.prompt ||
+    "暂无提示词";
+
+  useEffect(() => {
+    setIsPortraitPreview(false);
+  }, [currentClip?.id]);
+
+  const getClipById = useCallback(
+    (clipId: string) => orderedClips.find((clip) => clip.id === clipId),
+    [orderedClips]
+  );
+
+  const getNeighborTimes = useCallback(
+    (clipId: string) => {
+      const index = orderedClips.findIndex((clip) => clip.id === clipId);
+      if (index < 0) {
+        return { prevEnd: 0, nextStart: Infinity };
+      }
+      const prev = index > 0 ? orderedClips[index - 1] : null;
+      const next = index < orderedClips.length - 1 ? orderedClips[index + 1] : null;
+      return {
+        prevEnd: prev ? roundSeconds(prev.start + prev.duration) : 0,
+        nextStart: next ? roundSeconds(next.start) : Infinity,
+      };
+    },
+    [orderedClips]
+  );
+
+  const getSegmentDurationLimit = useCallback(
+    (clipId: string) => {
+      const clip = getClipById(clipId);
+      if (!clip) return Infinity;
+      const segment = segmentMap.get(clip.segmentId);
+      const raw = Number(segment?.duration);
+      if (Number.isFinite(raw) && raw > 0) {
+        return raw;
+      }
+      return Infinity;
+    },
+    [getClipById, segmentMap]
+  );
+
+  const constrainClipStart = useCallback(
+    (clipId: string, proposedStart: number, durationOverride?: number) => {
+      const clip = getClipById(clipId);
+      if (!clip) return clampStart(proposedStart);
+      const duration = durationOverride ?? clip.duration;
+      const { prevEnd, nextStart } = getNeighborTimes(clipId);
+      let minStart = prevEnd;
+      let maxStart = Number.isFinite(nextStart) ? nextStart - duration : Infinity;
+      if (Number.isFinite(maxStart) && maxStart < minStart) {
+        maxStart = minStart;
+      }
+      let nextValue = clampStart(proposedStart);
+      if (Number.isFinite(maxStart)) {
+        nextValue = Math.min(nextValue, maxStart);
+      }
+      nextValue = Math.max(nextValue, minStart);
+      const timelineSnapTarget = Number.isFinite(timeline.totalDuration)
+        ? roundSeconds(Math.max(0, timeline.totalDuration - duration))
+        : undefined;
+      nextValue = snapValue(nextValue, [minStart, Number.isFinite(maxStart) ? maxStart : undefined, 0, timelineSnapTarget]);
+      return roundSeconds(nextValue);
+    },
+    [getClipById, getNeighborTimes, timeline.totalDuration]
+  );
+
+  const constrainClipDuration = useCallback(
+    (clipId: string, proposedDuration: number, startOverride?: number) => {
+      const clip = getClipById(clipId);
+      if (!clip) return clampDuration(proposedDuration);
+      const start = startOverride ?? clip.start;
+      const { nextStart } = getNeighborTimes(clipId);
+      const segmentLimit = getSegmentDurationLimit(clipId);
+      const maxByNeighbor = Number.isFinite(nextStart) ? Math.max(0, nextStart - start) : Infinity;
+      let allowedMax = Math.min(segmentLimit, maxByNeighbor);
+      if (!Number.isFinite(allowedMax)) {
+        allowedMax = Number.isFinite(segmentLimit) ? segmentLimit : maxByNeighbor;
+      }
+      if (!Number.isFinite(allowedMax)) {
+        allowedMax = Infinity;
+      }
+      allowedMax = Math.max(allowedMax, MIN_DURATION);
+      let duration = clampDuration(proposedDuration);
+      if (Number.isFinite(allowedMax)) {
+        duration = Math.min(duration, allowedMax);
+      }
+      const end = start + duration;
+      const snapTargets = [
+        Number.isFinite(nextStart) ? nextStart : undefined,
+        Number.isFinite(segmentLimit) ? start + segmentLimit : undefined,
+      ];
+      const snappedEnd = snapValue(end, snapTargets);
+      if (snappedEnd > start) {
+        const snappedDuration = clampDuration(snappedEnd - start);
+        duration = Number.isFinite(allowedMax) ? Math.min(snappedDuration, allowedMax) : snappedDuration;
+      }
+      duration = Math.min(duration, allowedMax);
+      duration = Math.max(duration, MIN_DURATION);
+      return roundSeconds(duration);
+    },
+    [getClipById, getNeighborTimes, getSegmentDurationLimit]
+  );
+
+  useEffect(() => {
+    if (isPlaying) {
+      playIntervalRef.current = setInterval(() => {
+        setCurrentTime(prev => {
+          const next = prev + 0.1;
+          if (next >= timeline.totalDuration) {
+            setIsPlaying(false);
+            return 0;
+          }
+          return next;
+        });
+      }, 100);
+    } else {
+      if (playIntervalRef.current) {
+        clearInterval(playIntervalRef.current);
+        playIntervalRef.current = null;
+      }
+    }
+    return () => {
+      if (playIntervalRef.current) {
+        clearInterval(playIntervalRef.current);
+      }
+    };
+  }, [isPlaying, timeline.totalDuration]);
+
+  const pixelsToTime = useCallback((pixels: number) => {
+    if (!timelineRef.current) return 0;
+    const rect = timelineRef.current.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, pixels / rect.width));
+    return ratio * timeline.totalDuration;
+  }, [timeline.totalDuration]);
+
+  const handleClipMouseUp = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    if (clipDragMovedRef.current) {
+      clipDragMovedRef.current = false;
+      return;
+    }
+    if (isResizingClip || isDraggingPlayhead) return;
+    if (!timelineRef.current) return;
+    const rect = timelineRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const time = Math.max(0, Math.min(timeline.totalDuration, pixelsToTime(x)));
+    setCurrentTime(time);
+    clipDragMovedRef.current = false;
+  }, [isResizingClip, isDraggingPlayhead, pixelsToTime, timeline.totalDuration]);
+
+  const handleTimelineClick = useCallback((e: React.MouseEvent) => {
+    if (isDraggingPlayhead || isDraggingClip || isResizingClip) return;
+    if (!timelineRef.current) return;
+    const rect = timelineRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const time = pixelsToTime(x);
+    setCurrentTime(time);
+  }, [isDraggingPlayhead, isDraggingClip, isResizingClip, pixelsToTime]);
+
+  const handlePlayheadMouseDown = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsDraggingPlayhead(true);
+    setIsPlaying(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isDraggingPlayhead) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!timelineRef.current) return;
+      const rect = timelineRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const time = Math.max(0, Math.min(timeline.totalDuration, pixelsToTime(x)));
+      setCurrentTime(time);
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingPlayhead(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDraggingPlayhead, pixelsToTime, timeline.totalDuration]);
 
   const recalcDuration = useCallback((draft: StoryboardTimelineData) => {
     const maxEnd = Math.max(
@@ -109,6 +343,40 @@ export function StoryboardTimelineView({ initialTask }: StoryboardTimelineViewPr
       MIN_DURATION
     );
     draft.totalDuration = maxEnd;
+  }, []);
+
+  const snapFollowingClips = useCallback((draft: StoryboardTimelineData, changedClipId: string) => {
+    const videoTrack = findVideoTrack(draft);
+    if (!videoTrack) return;
+    const sorted = [...videoTrack.clips].sort((a, b) =>
+      a.start === b.start ? a.id.localeCompare(b.id) : a.start - b.start
+    );
+    const startIndex = sorted.findIndex((clip) => clip.id === changedClipId);
+    if (startIndex < 0) return;
+    let cursor = roundSeconds(sorted[startIndex].start + sorted[startIndex].duration);
+    const updates = new Map<string, number>();
+    for (let i = startIndex + 1; i < sorted.length; i++) {
+      const clip = sorted[i];
+      if (Math.abs(clip.start - cursor) > SNAP_THRESHOLD) {
+        updates.set(clip.id, roundSeconds(cursor));
+      }
+      cursor = roundSeconds(cursor + clip.duration);
+    }
+    if (!updates.size) return;
+    draft.tracks = draft.tracks.map((track) => {
+      if (track.id !== videoTrack.id) return track;
+      return {
+        ...track,
+        clips: track.clips.map((clip) => {
+          const nextStart = updates.get(clip.id);
+          if (nextStart == null) return clip;
+          return {
+            ...clip,
+            start: nextStart,
+          };
+        }),
+      };
+    });
   }, []);
 
   const updateClip = useCallback(
@@ -125,70 +393,127 @@ export function StoryboardTimelineView({ initialTask }: StoryboardTimelineViewPr
           return { ...track, clips };
         });
         if (updated) {
+          snapFollowingClips(next, clipId);
           recalcDuration(next);
           setDirty(true);
         }
         return updated ? next : current;
       });
     },
-    [recalcDuration]
+    [recalcDuration, snapFollowingClips]
   );
 
-  const handleNumericChange = useCallback(
-    (clipId: string, field: "start" | "duration", value: number) => {
-      updateClip(clipId, (clip) => {
-        if (field === "start") {
-          return { ...clip, start: clampStart(value) };
+  const handleClipMouseDown = useCallback((clipId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    clipDragMovedRef.current = false;
+    setIsDraggingClip(clipId);
+    setDragStartX(e.clientX);
+    const clip = orderedClips.find(c => c.id === clipId);
+    if (clip) {
+      setDragStartValue(clip.start);
+    }
+  }, [orderedClips]);
+
+  useEffect(() => {
+    if (!isDraggingClip) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!timelineRef.current) return;
+      const rect = timelineRef.current.getBoundingClientRect();
+      const deltaX = e.clientX - dragStartX;
+      const deltaTime = (deltaX / rect.width) * timeline.totalDuration;
+      if (!clipDragMovedRef.current && Math.abs(deltaTime) > 0.0005) {
+        clipDragMovedRef.current = true;
+      }
+      const newStart = Math.max(0, dragStartValue + deltaTime);
+      const safeStart = constrainClipStart(isDraggingClip, newStart);
+
+      updateClip(isDraggingClip, (clip) => ({
+        ...clip,
+        start: safeStart,
+      }));
+    };
+
+    const handleMouseUp = () => {
+      clipDragMovedRef.current = false;
+      setIsDraggingClip(null);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDraggingClip, dragStartX, dragStartValue, timeline.totalDuration, updateClip, constrainClipStart]);
+
+  const handleResizeMouseDown = useCallback((clipId: string, edge: 'left' | 'right', e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsResizingClip({ clipId, edge });
+    setDragStartX(e.clientX);
+    const clip = orderedClips.find(c => c.id === clipId);
+    if (clip) {
+      setDragStartValue(clip.start);
+      setDragStartDuration(clip.duration);
+    }
+  }, [orderedClips]);
+
+  useEffect(() => {
+    if (!isResizingClip) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!timelineRef.current) return;
+      const rect = timelineRef.current.getBoundingClientRect();
+      const deltaX = e.clientX - dragStartX;
+      const deltaTime = (deltaX / rect.width) * timeline.totalDuration;
+      updateClip(isResizingClip.clipId, (clip) => {
+        if (isResizingClip.edge === 'left') {
+          const endTime = dragStartValue + dragStartDuration;
+          const tentativeStart = Math.max(0, dragStartValue + deltaTime);
+          const tentativeDuration = clampDuration(roundSeconds(endTime - tentativeStart));
+          const safeStart = constrainClipStart(isResizingClip.clipId, tentativeStart, tentativeDuration);
+          const durationAfterStart = clampDuration(roundSeconds(endTime - safeStart));
+          const safeDuration = constrainClipDuration(isResizingClip.clipId, durationAfterStart, safeStart);
+          return {
+            ...clip,
+            start: safeStart,
+            duration: safeDuration,
+          };
+        } else {
+          const tentativeDuration = clampDuration(roundSeconds(dragStartDuration + deltaTime));
+          const safeDuration = constrainClipDuration(isResizingClip.clipId, tentativeDuration, clip.start);
+          return {
+            ...clip,
+            duration: safeDuration,
+          };
         }
-        return { ...clip, duration: clampDuration(value) };
       });
-    },
-    [updateClip]
-  );
+    };
 
-  const handleLabelChange = useCallback(
-    (clipId: string, label: string) => {
-      updateClip(clipId, (clip) => ({ ...clip, label: label.trim().slice(0, 80) || clip.label }));
-    },
-    [updateClip]
-  );
+    const handleMouseUp = () => {
+      setIsResizingClip(null);
+    };
 
-  const handlePromptChange = useCallback(
-    (clipId: string, prompt: string) => {
-      updateClip(clipId, (clip) => ({ ...clip, prompt }));
-    },
-    [updateClip]
-  );
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
 
-  const snapToPrevious = useCallback(
-    (clipId: string) => {
-      const track = findVideoTrack(timeline);
-      if (!track) return;
-      const sorted = [...track.clips].sort((a, b) => (a.start === b.start ? a.id.localeCompare(b.id) : a.start - b.start));
-      const index = sorted.findIndex((clip) => clip.id === clipId);
-      if (index <= 0) return;
-      const prev = sorted[index - 1];
-      handleNumericChange(clipId, "start", roundSeconds(prev.start + prev.duration));
-    },
-    [timeline, handleNumericChange]
-  );
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizingClip, dragStartX, dragStartValue, dragStartDuration, timeline.totalDuration, updateClip, constrainClipStart, constrainClipDuration]);
 
-  const videoTrack = useMemo(() => findVideoTrack(timeline), [timeline]);
-  const orderedClips = useMemo(() => {
-    return [...(videoTrack?.clips ?? [])].sort((a, b) => (a.start === b.start ? a.id.localeCompare(b.id) : a.start - b.start));
-  }, [videoTrack]);
+  const refreshFromServer = useCallback(() => {
+    setTimeline(savedSnapshot);
+    setDirty(false);
+  }, [savedSnapshot]);
 
-  const timelineBars = useMemo(() => {
-    return orderedClips.map((clip) => {
-      const left = (clip.start / timeline.totalDuration) * 100;
-      const width = (clip.duration / timeline.totalDuration) * 100;
-      return {
-        clip,
-        left: Math.min(Math.max(left, 0), 100),
-        width: Math.max(width, 4),
-      };
-    });
-  }, [orderedClips, timeline.totalDuration]);
+  const rebuildFromSegments = useCallback(() => {
+    const rebuilt = buildTimelineFromSegments(orderedSegments);
+    setTimeline(rebuilt);
+    setDirty(true);
+  }, [orderedSegments]);
 
   const handleSave = useCallback(() => {
     startTransition(async () => {
@@ -209,195 +534,509 @@ export function StoryboardTimelineView({ initialTask }: StoryboardTimelineViewPr
     });
   }, [initialTask.id, timeline, t.common.success, t.common.error]);
 
+  // Merge / stitch video
+  const [mergeLoading, setMergeLoading] = useState(false);
+  const [showMergeMenu, setShowMergeMenu] = useState(false);
+  const [enableSubtitles, setEnableSubtitles] = useState(true);
+  const [subtitleTemplate, setSubtitleTemplate] = useState("jianying");
+
+  const hasVideos = orderedSegments.some((s) => s.generatedVideo);
+  const SUBTITLE_OPTIONS = [
+    { id: "jianying", label: "剪映风格" },
+    { id: "minimal", label: "简约风格" },
+    { id: "dramatic", label: "戏剧风格" },
+    { id: "modern", label: "现代风格" },
+    { id: "elegant", label: "优雅风格" },
+  ];
+
+  const handleMerge = useCallback(async () => {
+    setMergeLoading(true);
+    setShowMergeMenu(false);
+    try {
+      const videoTrack = findVideoTrack(timeline);
+      const segmentIds = (videoTrack?.clips || [])
+        .map((clip) => clip.segmentId)
+        .filter(Boolean) as string[];
+
+      const res = await fetch(`/api/storyboard/${initialTask.id}/merge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          segmentIds: segmentIds.length > 0 ? segmentIds : undefined,
+          enableSubtitles,
+          subtitleTemplate: enableSubtitles ? subtitleTemplate : undefined,
+        }),
+      });
+      if (!res.ok) throw new Error("Merge failed");
+      toast.success("视频拼接已开始，完成后将自动通知");
+    } catch {
+      toast.error("拼接失败，请重试");
+    } finally {
+      setMergeLoading(false);
+    }
+  }, [initialTask.id, timeline, enableSubtitles, subtitleTemplate]);
+
   const headerTitle = initialTask.product?.name || storyboardCopy?.timelinePreviewTitle || "Timeline";
 
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-gray-400">
-            {storyboardCopy?.timelinePreviewTitle || "Timeline preview"}
-          </p>
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">{headerTitle}</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            {storyboardCopy?.subtitle || "Adjust clip timing before rendering."}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-3">
+  const containerClass = isEmbedded
+    ? 'rounded-3xl bg-white text-gray-900 shadow-[0_20px_60px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-transparent dark:text-white'
+    : 'min-h-screen bg-[#f5f6fa] text-gray-900';
+  const mainWrapper = isEmbedded
+    ? 'px-4 pb-4 -mt-1.5'
+    : 'mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-8 -mt-1.5';
+  const contentTextClass = isEmbedded ? 'text-gray-900 dark:text-white' : 'text-gray-900';
+
+  // Timeline action buttons rendered in shared header's rightExtra slot
+  const timelineActions = mode === 'page' ? (
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={rebuildFromSegments}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-gray-600 dark:text-white/70 hover:bg-gray-50 dark:hover:bg-white/10 transition-colors"
+      >
+        <RefreshCcw className="h-3.5 w-3.5" />
+        重置
+      </button>
+      <button
+        type="button"
+        onClick={refreshFromServer}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-gray-600 dark:text-white/70 hover:bg-gray-50 dark:hover:bg-white/10 transition-colors"
+      >
+        <RotateCcw className="h-3.5 w-3.5" />
+        撤回
+      </button>
+      <button
+        type="button"
+        onClick={handleSave}
+        disabled={isPending || !dirty}
+        className={cn(
+          "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors",
+          dirty && !isPending
+            ? "border-blue-200 dark:border-blue-500/30 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20"
+            : "border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-gray-400 dark:text-white/30 cursor-not-allowed opacity-50"
+        )}
+      >
+        <Save className="h-3.5 w-3.5" />
+        {isPending ? "保存中..." : "保存"}
+      </button>
+
+      {/* Merge button */}
+      <div className="relative">
+        <div className="inline-flex rounded-lg border border-gray-200 dark:border-white/10 overflow-hidden">
           <button
             type="button"
-            onClick={rebuildFromSegments}
-            className="inline-flex items-center gap-2 rounded-full border border-gray-200 dark:border-gray-700 px-4 py-2 text-sm font-semibold text-gray-700 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800"
-          >
-            <RefreshCcw className="h-4 w-4" />
-            {storyboardCopy?.viewTimeline || "Auto rebuild"}
-          </button>
-          <button
-            type="button"
-            onClick={refreshFromServer}
-            className="inline-flex items-center gap-2 rounded-full border border-gray-200 dark:border-gray-700 px-4 py-2 text-sm font-semibold text-gray-700 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800"
-          >
-            <RotateCcw className="h-4 w-4" />
-            {storyboardCopy?.closeTimeline || "Reset to saved"}
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={isPending || orderedClips.length === 0 || !dirty}
+            onClick={handleMerge}
+            disabled={!hasVideos || mergeLoading}
             className={cn(
-              "inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold text-white",
-              isPending || orderedClips.length === 0 || !dirty
-                ? "bg-gray-400/70 cursor-not-allowed"
-                : "bg-gray-900 hover:bg-black"
+              "inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors",
+              hasVideos && !mergeLoading
+                ? "bg-white dark:bg-white/5 text-gray-600 dark:text-white/70 hover:bg-gray-50 dark:hover:bg-white/10"
+                : "bg-white dark:bg-white/5 text-gray-400 dark:text-white/30 cursor-not-allowed opacity-50"
             )}
           >
-            {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {isPending ? t.common.loading : t.common.save ?? "Save"}
+            <Film className="h-3.5 w-3.5" />
+            {mergeLoading ? "拼接中..." : "拼接成片"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowMergeMenu((v) => !v)}
+            disabled={!hasVideos || mergeLoading}
+            className={cn(
+              "flex items-center px-2 py-1.5 border-l border-gray-200 dark:border-white/10 transition-colors",
+              hasVideos && !mergeLoading
+                ? "text-gray-400 dark:text-white/40 hover:bg-gray-50 dark:hover:bg-white/10"
+                : "text-gray-300 dark:text-white/20 cursor-not-allowed opacity-50"
+            )}
+          >
+            <ChevronDown className="h-3.5 w-3.5" />
           </button>
         </div>
-      </div>
 
-      <div className="rounded-3xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900/40 p-6 space-y-4">
-        <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-300">
-          <span>{videoTrack?.clips.length || 0} clips</span>
-          <span>
-            {formatStoryboardTimestamp(0)} – {formatStoryboardTimestamp(timeline.totalDuration)}
-          </span>
-        </div>
-        <div className="relative h-20 rounded-2xl bg-gray-50 dark:bg-gray-800 overflow-hidden">
-          {timelineBars.map(({ clip, left, width }) => (
-            <motion.div
-              key={clip.id}
-              className="absolute top-3 bottom-3 rounded-xl bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-200 text-xs text-white dark:text-black px-3 py-2 flex flex-col justify-between"
-              style={{ left: `${left}%`, width: `${width}%`, minWidth: "80px" }}
-              layout
-            >
-              <span className="font-semibold truncate">{clip.label || `Clip ${clip.id.slice(-4)}`}</span>
-              <span className="text-[11px] opacity-80">
-                {roundSeconds(clip.start).toFixed(2)}s – {roundSeconds(clip.start + clip.duration).toFixed(2)}s
-              </span>
-            </motion.div>
-          ))}
-          <div className="absolute bottom-1 left-0 right-0 flex justify-between px-4 text-[11px] text-gray-500 dark:text-gray-400">
-            <span>0s</span>
-            <span>{timeline.totalDuration.toFixed(2)}s</span>
-          </div>
-        </div>
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          Drag handles are coming soon. For now, edit numeric fields below to fine-tune start times and durations.
-        </p>
-      </div>
-
-      <div className="space-y-4">
-        {orderedClips.map((clip, index) => {
-          const segment = segmentMap.get(clip.segmentId);
-          const assetUrl = getAssetUrl(segment, clip);
-          const displayRange = formatStoryboardRange(clip.start, clip.start + clip.duration);
-          return (
-            <div
-              key={clip.id}
-              className="rounded-3xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900/60 p-5 space-y-4"
-            >
-              <div className="flex items-start gap-4">
-                <div className="flex flex-col items-center gap-2">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-900 text-white dark:bg-white dark:text-black font-semibold">
-                    {index + 1}
-                  </span>
-                  {index < orderedClips.length - 1 && (
-                    <span className="w-px flex-1 bg-gray-200 dark:bg-gray-700" />
-                  )}
-                </div>
-                <div className="flex-1 space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                        {storyboardCopy?.prompt || "Scene"}
-                      </p>
-                      <p className="font-medium text-gray-900 dark:text-gray-100">
-                        {clip.label || segment?.videoPrompt || segment?.imagePrompt || `Shot ${index + 1}`}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{displayRange}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => snapToPrevious(clip.id)}
-                      disabled={index === 0}
-                      className="inline-flex items-center gap-2 rounded-full border border-gray-200 dark:border-gray-700 px-3 py-1 text-xs font-semibold text-gray-600 dark:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <Clock3 className="h-4 w-4" />
-                      Snap to previous
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-4">
-                    <div className="w-32 h-32 rounded-2xl bg-gray-50 dark:bg-gray-800 overflow-hidden flex items-center justify-center text-xs text-gray-400">
-                      {assetUrl ? (
-                        <img src={assetUrl} alt={clip.label || `clip-${index + 1}`} className="h-full w-full object-cover" />
-                      ) : (
-                        <span>No asset</span>
-                      )}
-                    </div>
-                    <div className="flex-1 grid gap-4 md:grid-cols-2">
-                      <label className="text-sm text-gray-500 dark:text-gray-400 space-y-1">
-                        <span>Label</span>
-                        <input
-                          type="text"
-                          value={clip.label || ""}
-                          onChange={(event) => handleLabelChange(clip.id, event.target.value)}
-                          className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent px-3 py-2 text-sm"
-                          placeholder={`Shot ${index + 1}`}
-                        />
-                      </label>
-                      <label className="text-sm text-gray-500 dark:text-gray-400 space-y-1">
-                        <span>Prompt hint</span>
-                        <textarea
-                          value={clip.prompt || segment?.videoPrompt || segment?.imagePrompt || ""}
-                          onChange={(event) => handlePromptChange(clip.id, event.target.value)}
-                          className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent px-3 py-2 text-sm min-h-[80px]"
-                          placeholder="Camera notes, shot idea…"
-                        />
-                      </label>
-                    </div>
-                  </div>
-                </div>
+        {showMergeMenu && (
+          <div className="absolute right-0 top-full mt-2 w-56 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-2xl p-3 z-50 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">添加字幕</span>
+              <button
+                type="button"
+                onClick={() => setEnableSubtitles((v) => !v)}
+                className={cn(
+                  "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                  enableSubtitles ? "bg-blue-500" : "bg-gray-300 dark:bg-gray-600"
+                )}
+              >
+                <span className={cn(
+                  "inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform",
+                  enableSubtitles ? "translate-x-4" : "translate-x-0.5"
+                )} />
+              </button>
+            </div>
+            {enableSubtitles && (
+              <div className="space-y-1">
+                <p className="text-xs text-gray-500 dark:text-gray-400">字幕样式</p>
+                {SUBTITLE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setSubtitleTemplate(opt.id)}
+                    className={cn(
+                      "w-full text-left px-3 py-1.5 rounded-lg text-xs transition-colors",
+                      subtitleTemplate === opt.id
+                        ? "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400 font-medium"
+                        : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
               </div>
+            )}
+            <button
+              type="button"
+              onClick={handleMerge}
+              disabled={mergeLoading}
+              className="w-full py-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-xs font-medium rounded-lg transition hover:bg-gray-700 dark:hover:bg-gray-100"
+            >
+              确认拼接
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  ) : null;
 
-              <div className="grid gap-4 md:grid-cols-3">
-                <label className="text-sm text-gray-500 dark:text-gray-400 space-y-1">
-                  <span>Start (s)</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.1"
-                    value={roundSeconds(clip.start)}
-                    onChange={(event) => handleNumericChange(clip.id, "start", Number(event.target.value))}
-                    className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent px-3 py-2 text-sm"
-                  />
-                </label>
-                <label className="text-sm text-gray-500 dark:text-gray-400 space-y-1">
-                  <span>Duration (s)</span>
-                  <input
-                    type="number"
-                    min={MIN_DURATION}
-                    step="0.1"
-                    value={roundSeconds(clip.duration)}
-                    onChange={(event) => handleNumericChange(clip.id, "duration", Number(event.target.value))}
-                    className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-transparent px-3 py-2 text-sm"
-                  />
-                </label>
-                <label className="text-sm text-gray-500 dark:text-gray-400 space-y-1">
-                  <span>Asset type</span>
-                  <input
-                    type="text"
-                    value={clip.assetType}
-                    readOnly
-                    className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 px-3 py-2 text-sm cursor-not-allowed"
-                  />
-                </label>
+  return (
+    <div className={containerClass}>
+      {mode !== 'embedded' && (
+        <StoryboardPageHeader
+          taskId={initialTask.id}
+          taskName={headerTitle}
+          activeTab="timeline"
+          isTerminal={true}
+          rightExtra={timelineActions}
+        />
+      )}
+
+      <main className={`${mainWrapper} space-y-6 ${contentTextClass}`}>
+        <section className="grid gap-6 lg:grid-cols-[minmax(260px,320px)_1fr]">
+          <div className={cn(
+            'flex flex-col gap-4 p-2',
+            isEmbedded ? 'text-gray-900 dark:text-white' : 'text-gray-900'
+          )}>
+            <p className={cn('text-xs uppercase tracking-[0.3em]', isEmbedded ? 'text-gray-500 dark:text-white/60' : 'text-gray-400')}>当前片段</p>
+            <h2 className="mt-2 text-xl font-semibold">
+              {currentClip ? currentClip.label || `片段 ${currentClipIndex + 1}` : "尚未选择片段"}
+            </h2>
+            <p className={cn('text-xs mt-1', isEmbedded ? 'text-gray-500 dark:text-white/60' : 'text-gray-500')}>
+              {currentClip
+                ? `${formatTime(currentClip.start)} - ${formatTime(currentClip.start + currentClip.duration)}`
+                : "00:00.0 - 00:00.0"}
+            </p>
+            <div className={cn('mt-4 grid grid-cols-2 gap-3 text-xs', isEmbedded ? 'text-gray-500 dark:text-white/60' : 'text-gray-500')}>
+              <div>
+                <p className="uppercase tracking-[0.2em]">序号</p>
+                <p className={cn('mt-1 text-sm', isEmbedded ? 'text-gray-900 dark:text-white' : 'text-gray-900')}>
+                  {currentClipIndex >= 0 ? `分镜 ${currentClipIndex + 1}` : "--"}
+                </p>
+              </div>
+              <div>
+                <p className="uppercase tracking-[0.2em]">时长</p>
+                <p className={cn('mt-1 text-sm', isEmbedded ? 'text-gray-900 dark:text-white' : 'text-gray-900')}>
+                  {currentClip ? `${currentClip.duration.toFixed(1)}s` : "--"}
+                </p>
               </div>
             </div>
-          );
-        })}
-      </div>
+            <div className={cn('mt-2 rounded-xl text-sm leading-relaxed p-4 flex-1 overflow-y-auto max-h-64', isEmbedded ? 'bg-white/70 text-gray-900 dark:bg-white/5 dark:text-white/90' : 'bg-gray-100 text-gray-800')}>
+              {currentPrompt}
+            </div>
+          </div>
+          <div className={cn(
+            'relative w-full overflow-hidden h-[220px] sm:h-[280px] lg:h-[340px] xl[h-[400px]] flex items-center justify-center rounded-xl bg-black text-white'
+          )}>
+            {currentClip ? (
+              <PreviewContent
+                clip={currentClip}
+                segment={currentSegment}
+                currentTime={currentTime}
+                volume={volume}
+                onRatioChange={(portrait) => setIsPortraitPreview(portrait)}
+              />
+            ) : (
+              <div className={cn('text-lg', isEmbedded || isPortraitPreview ? 'text-white' : 'text-gray-500')}>无内容</div>
+            )}
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <div
+            className={cn(
+              "flex flex-wrap items-center justify-between gap-4 px-2 text-sm",
+              isEmbedded ? "text-gray-900 dark:text-white" : "text-[var(--tenant-primary-strong,#1f1600)]"
+            )}
+          >
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsPlaying(!isPlaying)}
+                className={cn(
+                  "flex h-11 w-11 items-center justify-center rounded-full transition",
+                  isEmbedded
+                    ? "bg-[var(--tenant-primary)]/15 text-[var(--tenant-primary-strong,#1f1600)] hover:bg-[var(--tenant-primary)]/25 dark:bg-white/10 dark:text-white"
+                    : "bg-[var(--tenant-primary,#facc15)] text-[var(--tenant-primary-foreground,#1f1600)] hover:bg-[var(--tenant-primary-hover,#f1c40f)]"
+                )}
+              >
+                {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+              </button>
+              <div className="flex flex-col">
+                <span
+                  className={cn(
+                    "font-mono text-xl tracking-tight",
+                    "text-[var(--tenant-primary-strong,#1f1600)]",
+                    isEmbedded ? "dark:text-white" : "opacity-100"
+                  )}
+                >
+                  {formatTime(currentTime)}
+                </span>
+                <span
+                  className={cn(
+                    "font-mono text-xs opacity-70",
+                    isEmbedded ? "text-gray-500 dark:text-white/70" : "text-[var(--tenant-primary-strong,#1f1600)]"
+                  )}
+                >
+                  {formatTime(timeline.totalDuration)}
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {volume <= 0.01 ? (
+                <VolumeX
+                  className={cn(
+                    "h-4 w-4 text-[var(--tenant-primary-strong,#1f1600)] opacity-70",
+                    isEmbedded && "dark:text-white/70"
+                  )}
+                />
+              ) : (
+                <Volume2
+                  className={cn(
+                    "h-4 w-4 text-[var(--tenant-primary-strong,#1f1600)]",
+                    isEmbedded && "dark:text-white"
+                  )}
+                />
+              )}
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={volume}
+                onChange={(event) => setVolume(Number(event.target.value))}
+                className="w-32"
+                style={{ accentColor: "var(--tenant-primary, #facc15)" }}
+              />
+              <span
+                className={cn(
+                  "w-10 text-right font-mono text-xs",
+                  isEmbedded ? "text-gray-600 dark:text-white/70" : "text-[var(--tenant-primary-strong,#1f1600)]"
+                )}
+              >
+                {Math.round(volume * 100)}%
+              </span>
+            </div>
+          </div>
+
+          <div className="relative h-5">
+            {Array.from({ length: Math.ceil(timeline.totalDuration / 5) + 1 }).map((_, i) => {
+              const time = i * 5;
+              if (time > timeline.totalDuration) return null;
+              return (
+                <div
+                  key={i}
+                  className="absolute top-0 flex flex-col items-center"
+                  style={{ left: `${(time / timeline.totalDuration) * 100}%` }}
+                >
+                  <div className={cn('w-px h-2', isEmbedded ? 'bg-gray-300 dark:bg-white/30' : 'bg-gray-300 dark:bg-gray-700')} />
+                  <span className={cn('text-xs mt-1', isEmbedded ? 'text-gray-500 dark:text-white/60' : 'text-gray-500 dark:text-gray-400')}>
+                    {formatTime(time)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          <div
+            ref={timelineRef}
+            className={cn(
+              'relative h-20 rounded-2xl cursor-pointer select-none',
+              isEmbedded ? 'bg-gray-100 dark:bg-white/5' : 'bg-white border border-white/60 shadow-[0_10px_25px_rgba(15,23,42,0.08)]'
+            )}
+            onClick={handleTimelineClick}
+          >
+            {orderedClips.map((clip) => {
+              const left = (clip.start / timeline.totalDuration) * 100;
+              const width = (clip.duration / timeline.totalDuration) * 100;
+              const segment = segmentMap.get(clip.segmentId);
+              const assetUrl = getAssetUrl(segment, clip);
+
+              return (
+                <div
+                  key={clip.id}
+                  className={cn(
+                    "absolute top-1 bottom-1 rounded overflow-hidden cursor-move group",
+                    isEmbedded
+                      ? 'border border-gray-300 bg-white shadow-sm dark:border-white/30 dark:bg-white/10'
+                      : 'border border-gray-200 bg-white shadow-[0_8px_18px_rgba(15,23,42,0.08)]'
+                  )}
+                  style={{
+                    left: `${Math.max(0, left)}%`,
+                    width: `${Math.max(2, width)}%`,
+                    minWidth: '40px'
+                  }}
+                  onMouseDown={(e) => handleClipMouseDown(clip.id, e)}
+                  onMouseUp={handleClipMouseUp}
+                >
+                  <div
+                    className={cn(
+                      "absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity z-10",
+                      isEmbedded ? 'bg-gray-400 dark:bg-white/70' : 'bg-gray-400'
+                    )}
+                    onMouseDown={(e) => handleResizeMouseDown(clip.id, 'left', e)}
+                  />
+                  <div
+                    className={cn(
+                      "absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity z-10",
+                      isEmbedded ? 'bg-gray-400 dark:bg-white/70' : 'bg-gray-400'
+                    )}
+                    onMouseDown={(e) => handleResizeMouseDown(clip.id, 'right', e)}
+                  />
+
+                  {assetUrl && (
+                    <img
+                      src={assetUrl}
+                      alt=""
+                      className="w-full h-full object-cover pointer-events-none"
+                    />
+                  )}
+
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent flex flex-col justify-end p-2 pointer-events-none">
+                    <div className="text-white text-xs font-medium truncate">
+                      {clip.label || `片段 ${clip.id.slice(-4)}`}
+                    </div>
+                    <div className="text-white/80 text-xs">
+                      {clip.duration.toFixed(1)}s
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            <div
+              className={cn('absolute top-0 bottom-0 w-0.5 z-20 pointer-events-none', isEmbedded ? 'bg-gray-700 dark:bg-white' : 'bg-red-500')}
+              style={{ left: `${(currentTime / timeline.totalDuration) * 100}%` }}
+            >
+              <div
+                className="absolute top-0 left-1/2 -translate-x-1/2 w-4 h-4 bg-red-500 rounded-full cursor-ew-resize pointer-events-auto"
+                onMouseDown={handlePlayheadMouseDown}
+              />
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-red-500 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
+                {formatTime(currentTime)}
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  );
+}
+
+function PreviewContent({
+  clip,
+  segment,
+  currentTime,
+  volume,
+  onRatioChange,
+}: {
+  clip: StoryboardTimelineClip;
+  segment?: SegmentForTimeline;
+  currentTime: number;
+  volume: number;
+  onRatioChange?: (isPortrait: boolean) => void;
+}) {
+  const assetUrl = getAssetUrl(segment, clip);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const derivedAssetType = useMemo<'image' | 'video' | null>(() => {
+    if (segment?.generatedVideo) return 'video';
+    if (segment?.generatedImage) return 'image';
+    if (clip.assetUrl) return clip.assetType || 'image';
+    return null;
+  }, [clip.assetType, clip.assetUrl, segment?.generatedImage, segment?.generatedVideo]);
+  const reportRatio = useCallback(
+    (width: number, height: number) => {
+      if (!width || !height) return;
+      onRatioChange?.(height >= width);
+    },
+    [onRatioChange]
+  );
+
+  useEffect(() => {
+    if (videoRef.current && derivedAssetType === 'video') {
+      const clipTime = currentTime - clip.start;
+      if (Math.abs(videoRef.current.currentTime - clipTime) > 0.5) {
+        videoRef.current.currentTime = Math.max(0, clipTime);
+      }
+    }
+  }, [currentTime, clip.start, derivedAssetType]);
+
+  useEffect(() => {
+    if (!videoRef.current) return;
+    videoRef.current.volume = volume;
+    videoRef.current.muted = volume <= 0.001;
+  }, [volume]);
+
+  useEffect(() => {
+    onRatioChange?.(false);
+  }, [assetUrl, onRatioChange]);
+
+  const handleVideoMetadata = useCallback(() => {
+    if (!videoRef.current) return;
+    reportRatio(videoRef.current.videoWidth, videoRef.current.videoHeight);
+  }, [reportRatio]);
+
+  const handleImageLoad = useCallback(
+    (event: React.SyntheticEvent<HTMLImageElement>) => {
+      reportRatio(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight);
+    },
+    [reportRatio]
+  );
+
+  if (assetUrl && derivedAssetType === 'video') {
+    return (
+      <video
+        ref={videoRef}
+        src={assetUrl}
+        className="w-full h-full object-contain"
+        muted={volume <= 0.001}
+        onLoadedMetadata={handleVideoMetadata}
+      />
+    );
+  }
+
+  if (assetUrl && derivedAssetType === 'image') {
+    return (
+      <img
+        src={assetUrl}
+        alt=""
+        className="w-full h-full object-contain"
+        onLoad={handleImageLoad}
+      />
+    );
+  }
+
+  const prompt = segment?.videoPrompt || segment?.imagePrompt || clip.prompt;
+  return (
+    <div className="w-full h-full flex items-center justify-center p-12">
+      <p className="text-white text-3xl text-center leading-relaxed">
+        {prompt || "无内容"}
+      </p>
     </div>
   );
 }

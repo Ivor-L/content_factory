@@ -96,18 +96,23 @@ export default function ReplicationContent({
   const [pendingDeleteType, setPendingDeleteType] = useState<'video' | 'graphic'>('video');
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [requiresAuth, setRequiresAuth] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [posterJobs, setPosterJobs] = useState<PosterJob[]>([]);
+  const [posterReloadToken, setPosterReloadToken] = useState(0);
   const [posterLoading, setPosterLoading] = useState(false);
   const [posterError, setPosterError] = useState<string | null>(null);
   const [selectedPosterJob, setSelectedPosterJob] = useState<PosterJob | null>(null);
   const [isPosterModalOpen, setIsPosterModalOpen] = useState(false);
+
+  // Digital human videos client state (initialized from server-side prop, then kept live via Supabase realtime)
+  const [dhVideos, setDhVideos] = useState(digitalHumanVideos);
   
   // New Modals
   const [isStoryboardGenOpen, setIsStoryboardGenOpen] = useState(false);
   const [isDigitalHumanOpen, setIsDigitalHumanOpen] = useState(false);
 
   useEffect(() => {
-    if (context !== 'myVideos') return;
+    if (context !== 'myVideos' && context !== 'replication') return;
     let mounted = true;
 
     supabase.auth.getSession().then(({ data }) => {
@@ -115,6 +120,7 @@ export default function ReplicationContent({
       const token = data.session?.access_token ?? null;
       setAuthToken(token);
       setRequiresAuth(!token);
+      setCurrentUserId(data.session?.user?.id ?? null);
     });
 
     const {
@@ -123,6 +129,7 @@ export default function ReplicationContent({
       const token = session?.access_token ?? null;
       setAuthToken(token);
       setRequiresAuth(!token);
+      setCurrentUserId(session?.user?.id ?? null);
     });
 
     return () => {
@@ -132,7 +139,7 @@ export default function ReplicationContent({
   }, [context]);
 
   useEffect(() => {
-    const tab = searchParams.get('tab');
+    const tab = searchParams?.get('tab');
     if (!tab || !hasMediaTabs) return;
 
     let normalizedTab: MediaTab = 'VIDEO';
@@ -152,7 +159,7 @@ export default function ReplicationContent({
   }, [isImageTabEnabled, activeMediaTab]);
 
   useEffect(() => {
-    if (context !== 'myVideos') return;
+    if (context !== 'myVideos' && context !== 'replication') return;
     if (!authToken) {
       setPosterJobs([]);
       setPosterError(null);
@@ -191,7 +198,99 @@ export default function ReplicationContent({
     return () => {
       cancelled = true;
     };
-  }, [authToken, context, t.common.error]);
+  }, [authToken, context, t.common.error, posterReloadToken]);
+
+  const requestPosterReload = useCallback(() => {
+    setPosterReloadToken((token) => token + 1);
+  }, []);
+
+  useEffect(() => {
+    if (context !== 'myVideos') return;
+    if (!authToken || !currentUserId) return;
+
+    const channel = supabase
+      .channel(`poster-jobs-${currentUserId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'xhs_poster_jobs',
+          filter: `user_id=eq.${currentUserId}`,
+        },
+        () => {
+          requestPosterReload();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [authToken, context, currentUserId, requestPosterReload]);
+
+  useEffect(() => {
+    if (context !== 'myVideos') return;
+    if (typeof document === 'undefined') return;
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        requestPosterReload();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [context, requestPosterReload]);
+
+  // ── Digital human video real-time updates ────────────────────────────────
+  const fetchDhVideos = useCallback(async () => {
+    if (!authToken) return;
+    try {
+      const res = await fetch('/api/digital-human/videos?limit=50', {
+        headers: { Authorization: `Bearer ${authToken}` },
+        cache: 'no-store',
+      });
+      if (!res.ok) return;
+      const payload = await res.json().catch(() => null);
+      if (Array.isArray(payload?.data)) {
+        setDhVideos(payload.data);
+      }
+    } catch {
+      // silently ignore
+    }
+  }, [authToken]);
+
+  useEffect(() => {
+    if (context !== 'myVideos' && context !== 'replication') return;
+    if (!authToken || !currentUserId) return;
+
+    // Subscribe to digital_human_videos changes for this user.
+    // When n8n webhook updates the record (COMPLETED/FAILED), Supabase pushes
+    // the change here and we re-fetch the list — no polling needed.
+    const channel = supabase
+      .channel(`digital-human-videos-${currentUserId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'digital_human_videos',
+          filter: `user_id=eq.${currentUserId}`,
+        },
+        () => {
+          void fetchDhVideos();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [authToken, context, currentUserId, fetchDhVideos]);
+  // ─────────────────────────────────────────────────────────────────────────
 
   const handleMediaTabChange = (tabId: MediaTab) => {
     if (tabId === 'IMAGE' && !isImageTabEnabled) return;
@@ -199,7 +298,7 @@ export default function ReplicationContent({
   };
 
   // Map Digital Human videos to match VideoCard expectation
-  const mappedDigitalHumanVideos = digitalHumanVideos.map(v => ({
+  const mappedDigitalHumanVideos = dhVideos.map((v: any) => ({
     ...v,
     result: { videoUrl: v.resultUrl }
   }));
@@ -214,7 +313,7 @@ export default function ReplicationContent({
     t.replication?.emptyState?.title ||
     t.replication?.title ||
     t.sidebar?.myVideos ||
-    "My Videos";
+    "My Projects";
   const emptyStateDescription =
     t.replication?.emptyState?.description ||
     t.replication?.history ||
@@ -862,7 +961,13 @@ export default function ReplicationContent({
         title="" // Custom header in component
         maxWidth="max-w-2xl"
       >
-        <StoryboardGenModal onClose={() => setIsStoryboardGenOpen(false)} />
+        <StoryboardGenModal
+          onClose={() => setIsStoryboardGenOpen(false)}
+          onTaskCreated={(taskId) => {
+            setIsStoryboardGenOpen(false);
+            router.push(`/storyboard/${taskId}`);
+          }}
+        />
       </Modal>
 
       {/* Digital Human Modal */}

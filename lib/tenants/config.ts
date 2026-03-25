@@ -26,6 +26,7 @@ export interface TenantFeature {
   upload: boolean;
   settings: boolean;
   dashboard: boolean;
+  canvas: boolean;
 }
 
 export interface TenantNavItem {
@@ -45,14 +46,15 @@ export interface TenantConfig {
 }
 
 export const tenants: Record<string, TenantConfig> = {
-  // 租户 1：跨境出海（默认）
+  // 租户 1：历史兼容别名（默认展示统一为 NexTide）
   crossborder: {
     slug: 'crossborder',
-    name: 'AtomX',
-    logo: '/logo-full.svg',
-    primaryColor: '#FCD34D',
+    name: 'NexTide',
+    logo: '/logo/nextide_logo.svg',
+    primaryColor: '#1890FF',
     features: {
       dashboard: true,
+      canvas: true,
       products: true,
       scripts: true,
       contentCreation: true,
@@ -72,10 +74,9 @@ export const tenants: Record<string, TenantConfig> = {
       { label: '首页', href: '/dashboard', icon: 'Home' },
       { label: '产品库', href: '/products', icon: 'Package' },
       { label: '脚本库', href: '/scripts', icon: 'FileText' },
-      { label: '内容创作', href: '/content', icon: 'PenSquare' },
       { label: '爆款复刻', href: '/replication', icon: 'Video' },
       { label: '故事板', href: '/storyboard', icon: 'Clapperboard' },
-      { label: '我的作品', href: '/my-videos', icon: 'History' },
+      { label: '我的项目', href: '/my-works', icon: 'History' },
       { label: '素材上传', href: '/upload', icon: 'Upload' },
       { label: '设置', href: '/settings', icon: 'Settings' },
     ],
@@ -89,6 +90,7 @@ export const tenants: Record<string, TenantConfig> = {
     primaryColor: '#52C41A',
     features: {
       dashboard: true,
+      canvas: true,
       products: true,
       scripts: true,
       contentCreation: true,
@@ -108,9 +110,8 @@ export const tenants: Record<string, TenantConfig> = {
       { label: '首页', href: '/dashboard', icon: 'Home' },
       { label: '产品库', href: '/products', icon: 'Package' },
       { label: '脚本库', href: '/scripts', icon: 'FileText' },
-      { label: '内容创作', href: '/content', icon: 'PenSquare' },
       { label: '爆款复刻', href: '/replication', icon: 'Video' },
-      { label: '我的作品', href: '/my-videos', icon: 'History' },
+      { label: '我的项目', href: '/my-works', icon: 'History' },
       { label: '素材上传', href: '/upload', icon: 'Upload' },
       { label: '设置', href: '/settings', icon: 'Settings' },
     ],
@@ -124,6 +125,7 @@ export const tenants: Record<string, TenantConfig> = {
     primaryColor: '#1890FF',
     features: {
       dashboard: true,
+      canvas: true,
       products: true,
       scripts: true,
       contentCreation: true,
@@ -143,10 +145,9 @@ export const tenants: Record<string, TenantConfig> = {
       { label: '首页', href: '/dashboard', icon: 'Home' },
       { label: '产品库', href: '/products', icon: 'Package' },
       { label: '脚本库', href: '/scripts', icon: 'FileText' },
-      { label: '内容创作', href: '/content', icon: 'PenSquare' },
       { label: '爆款复刻', href: '/replication', icon: 'Video' },
       { label: '故事板', href: '/storyboard', icon: 'Clapperboard' },
-      { label: '我的作品', href: '/my-videos', icon: 'History' },
+      { label: '我的项目', href: '/my-works', icon: 'History' },
       { label: '素材上传', href: '/upload', icon: 'Upload' },
       { label: '设置', href: '/settings', icon: 'Settings' },
     ],
@@ -160,6 +161,7 @@ export const tenants: Record<string, TenantConfig> = {
     primaryColor: '#722ED1',
     features: {
       dashboard: true,
+      canvas: true,
       products: true,
       scripts: true,
       contentCreation: true,
@@ -179,10 +181,9 @@ export const tenants: Record<string, TenantConfig> = {
       { label: '首页', href: '/dashboard', icon: 'Home' },
       { label: '产品库', href: '/products', icon: 'Package' },
       { label: '脚本库', href: '/scripts', icon: 'FileText' },
-      { label: '内容创作', href: '/content', icon: 'PenSquare' },
       { label: '爆款复刻', href: '/replication', icon: 'Video' },
       { label: '故事板', href: '/storyboard', icon: 'Clapperboard' },
-      { label: '我的作品', href: '/my-videos', icon: 'History' },
+      { label: '我的项目', href: '/my-works', icon: 'History' },
       { label: '素材上传', href: '/upload', icon: 'Upload' },
       { label: '设置', href: '/settings', icon: 'Settings' },
     ],
@@ -197,6 +198,7 @@ export const tenants: Record<string, TenantConfig> = {
     primaryColor: '#333333',
     features: {
       dashboard: true,
+      canvas: true,
       products: true,
       scripts: true,
       contentCreation: true,
@@ -216,10 +218,9 @@ export const tenants: Record<string, TenantConfig> = {
       { label: '首页', href: '/dashboard', icon: 'Home' },
       { label: '产品库', href: '/products', icon: 'Package' },
       { label: '脚本库', href: '/scripts', icon: 'FileText' },
-      { label: '内容创作', href: '/content', icon: 'PenSquare' },
       { label: '爆款复刻', href: '/replication', icon: 'Video' },
       { label: '故事板', href: '/storyboard', icon: 'Clapperboard' },
-      { label: '我的作品', href: '/my-videos', icon: 'History' },
+      { label: '我的项目', href: '/my-works', icon: 'History' },
       { label: '素材上传', href: '/upload', icon: 'Upload' },
       { label: '设置', href: '/settings', icon: 'Settings' },
     ],
@@ -233,12 +234,12 @@ export const VALID_TENANT_SLUGS = Object.keys(tenants);
  * 根据 slug 获取租户配置
  */
 export function getTenantConfig(slug: string): TenantConfig {
-  return tenants[slug] || tenants.crossborder;
+  return tenants[slug] || tenants.nextide;
 }
 
 /**
  * 获取默认租户配置
  */
 export function getDefaultTenant(): TenantConfig {
-  return tenants.crossborder;
+  return tenants.nextide;
 }

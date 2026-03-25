@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- Product imagery is user-provided and may reside on arbitrary remote hosts */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useTransition } from 'react';
 import { Modal } from '@/components/Modal';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { ProductForm } from '@/components/ProductForm';
@@ -13,9 +13,9 @@ import { toast } from 'react-hot-toast';
 import { deleteProduct } from './actions';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Package } from 'lucide-react';
+import { supabase } from '@/lib/supabaseClient';
 
 const ANALYSIS_TIMEOUT_MS = 10 * 60 * 1000;
-const POLLING_INTERVAL_MS = 2000;
 const TIME_TRACK_INTERVAL_MS = 30_000;
 
 type ProductStatusMeta = {
@@ -43,8 +43,245 @@ interface ProductListProps {
   showHeader?: boolean;
 }
 
+type StructuredPoint = {
+  type?: string;
+  description: string;
+  proof?: string;
+};
+
+type StructuredAnalysis = {
+  productName?: string;
+  targetAudience?: string;
+  idealScene?: string;
+  visualDescription?: string;
+  coreSellingPoints: StructuredPoint[];
+  extras?: string[];
+};
+
+const safeText = (value: unknown): string => {
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value).trim();
+  return '';
+};
+
+const normalizeCoreSellingPoints = (points: unknown): StructuredPoint[] => {
+  if (!Array.isArray(points)) return [];
+
+  return points.reduce<StructuredPoint[]>((acc, point) => {
+    if (typeof point === 'string') {
+      const description = safeText(point);
+      if (description) {
+        acc.push({ description });
+      }
+      return acc;
+    }
+
+    if (point && typeof point === 'object') {
+      const candidate = point as Record<string, unknown>;
+      const description = safeText(candidate.description ?? candidate.text ?? candidate.value);
+      if (!description) return acc;
+
+      const normalized: StructuredPoint = { description };
+      const type = safeText(candidate.type ?? candidate.title ?? candidate.category);
+      const proof = safeText(candidate.visual_proof ?? candidate.proof ?? candidate.evidence);
+
+      if (type) normalized.type = type;
+      if (proof) normalized.proof = proof;
+      acc.push(normalized);
+    }
+
+    return acc;
+  }, []);
+};
+
+const buildStructuredAnalysisFromJson = (raw: unknown): StructuredAnalysis | null => {
+  if (!raw || typeof raw !== 'object') return null;
+  const data = raw as Record<string, unknown>;
+
+  const marketingProfile =
+    (data.marketing_profile as Record<string, unknown> | undefined) ||
+    (data.marketingProfile as Record<string, unknown> | undefined) ||
+    undefined;
+
+  const corePointsSource =
+    (marketingProfile?.core_selling_points as unknown) ??
+    (marketingProfile?.coreSellingPoints as unknown) ??
+    (data.selling_points as unknown) ??
+    (data.sellingPoints as unknown);
+
+  const structured: StructuredAnalysis = {
+    productName: safeText(data.product_name ?? data.productName),
+    targetAudience: safeText(
+      marketingProfile?.target_audience_vibe ?? marketingProfile?.targetAudienceVibe
+    ),
+    idealScene: safeText(
+      marketingProfile?.ideal_environment ?? marketingProfile?.idealEnvironment
+    ),
+    visualDescription: safeText(data.visual_description ?? data.visualDescription),
+    coreSellingPoints: normalizeCoreSellingPoints(corePointsSource),
+  };
+
+  const hasContent =
+    Boolean(structured.productName) ||
+    Boolean(structured.targetAudience) ||
+    Boolean(structured.idealScene) ||
+    Boolean(structured.visualDescription) ||
+    structured.coreSellingPoints.length > 0;
+
+  return hasContent ? structured : null;
+};
+
+const parsePointLine = (line: string): StructuredPoint | null => {
+  if (!line) return null;
+
+  let working = line.trim();
+  const bulletPattern = /^([-–—•*]|-\s|\d+\.|\d+、)/;
+  if (!bulletPattern.test(working)) return null;
+
+  working = working.replace(/^[-–—•*]+\s*/, '');
+  working = working.replace(/^\d+[.\-、]\s*/, '').trim();
+  if (!working) return null;
+
+  let proof: string | undefined;
+  const proofMatch =
+    working.match(/[（(]\s*(?:画面证明|证明|Proof)[:：]\s*([^（）()]+)[）)]/) ||
+    working.match(/\((?:Proof|Evidence)[:：]\s*([^()]+)\)/i);
+  if (proofMatch) {
+    proof = proofMatch[1]?.trim();
+    working = working.replace(proofMatch[0], '').trim();
+  }
+
+  let type: string | undefined;
+  const typeMatch = working.match(/【([^】]+)】/);
+  if (typeMatch) {
+    type = typeMatch[1]?.trim();
+    working = working.replace(typeMatch[0], '').trim();
+  }
+
+  const description = working.trim();
+  if (!description) return null;
+
+  const result: StructuredPoint = { description };
+  if (type) result.type = type;
+  if (proof) result.proof = proof;
+  return result;
+};
+
+const parseSellingPointsText = (text: string | null | undefined): StructuredAnalysis | null => {
+  if (typeof text !== 'string') return null;
+
+  const lines = text.split(/\r?\n/);
+  const structured: StructuredAnalysis = {
+    coreSellingPoints: [],
+  };
+  const extras: string[] = [];
+
+  let inPoints = false;
+  let hasAny = false;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const handleField = (pattern: RegExp, assign: (value: string) => void) => {
+      const match = line.match(pattern);
+      if (match) {
+        const value = safeText(match[1]);
+        if (value) {
+          assign(value);
+          hasAny = true;
+        }
+        return true;
+      }
+      return false;
+    };
+
+    if (
+      handleField(/^产品名称[:：]\s*(.*)$/i, (value) => {
+        structured.productName = value;
+      })
+    ) {
+      continue;
+    }
+
+    if (
+      handleField(/^目标人群[:：]\s*(.*)$/i, (value) => {
+        structured.targetAudience = value;
+      })
+    ) {
+      continue;
+    }
+
+    if (
+      handleField(/^(?:核心场景|场景|使用场景)[:：]\s*(.*)$/i, (value) => {
+        structured.idealScene = value;
+      })
+    ) {
+      continue;
+    }
+
+    if (
+      handleField(/^(?:视觉描述|画面描述)[:：]\s*(.*)$/i, (value) => {
+        structured.visualDescription = value;
+      })
+    ) {
+      continue;
+    }
+
+    const coreIntroMatch = line.match(/^核心卖点[:：]\s*(.*)$/i);
+    if (coreIntroMatch) {
+      inPoints = true;
+      const inline = safeText(coreIntroMatch[1]);
+      if (inline) {
+        const inlinePoint = parsePointLine(inline);
+        if (inlinePoint) {
+          structured.coreSellingPoints.push(inlinePoint);
+          hasAny = true;
+        } else {
+          extras.push(inline);
+        }
+      }
+      continue;
+    }
+
+    const pointCandidate = parsePointLine(line);
+    if (pointCandidate) {
+      structured.coreSellingPoints.push(pointCandidate);
+      hasAny = true;
+      inPoints = true;
+      continue;
+    }
+
+    if (inPoints && structured.coreSellingPoints.length > 0) {
+      const last = structured.coreSellingPoints[structured.coreSellingPoints.length - 1];
+      last.description = `${last.description} ${line}`.trim();
+      continue;
+    }
+
+    extras.push(line);
+  }
+
+  if (extras.length > 0) {
+    structured.extras = extras;
+  }
+
+  const hasStructuredPoints = structured.coreSellingPoints.length > 0;
+  const hasStructuredFields =
+    Boolean(structured.productName) ||
+    Boolean(structured.targetAudience) ||
+    Boolean(structured.idealScene) ||
+    Boolean(structured.visualDescription) ||
+    hasStructuredPoints;
+
+  if (hasStructuredFields || hasAny) {
+    return structured;
+  }
+
+  return null;
+};
 export function ProductList({ initialProducts, showHeader = true }: ProductListProps) {
   const router = useRouter();
+  const [, startTransition] = useTransition();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -106,13 +343,154 @@ export function ProductList({ initialProducts, showHeader = true }: ProductListP
     });
   }, [initialProducts, productStatusMap]);
 
+  const renderStructuredAnalysis = (structured: StructuredAnalysis) => {
+    const {
+      productName,
+      visualDescription,
+      targetAudience,
+      idealScene,
+      coreSellingPoints,
+      extras,
+    } = structured;
+
+    return (
+      <div className="space-y-8">
+        <div className="space-y-4">
+          {productName && (
+            <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{productName}</h3>
+          )}
+
+          {visualDescription && (
+            <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl text-gray-600 dark:text-gray-300 text-sm leading-relaxed border border-gray-100 dark:border-gray-700">
+              <div className="flex items-center gap-2 mb-2 text-gray-900 dark:text-white font-semibold text-xs uppercase tracking-wider">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                </svg>
+                {t.products.visualDescription}
+              </div>
+              {visualDescription}
+            </div>
+          )}
+        </div>
+
+        {(targetAudience || idealScene) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {targetAudience && (
+              <div className="bg-gray-50 dark:bg-gray-800/60 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-2 mb-2 text-primary font-bold text-xs uppercase tracking-wider">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                  </svg>
+                  {t.products.targetAudience}
+                </div>
+                <p className="text-gray-700 dark:text-gray-300 text-sm">{targetAudience}</p>
+              </div>
+            )}
+            {idealScene && (
+              <div className="bg-purple-50 dark:bg-purple-900/10 p-4 rounded-xl border border-purple-100 dark:border-purple-900/30">
+                <div className="flex items-center gap-2 mb-2 text-purple-700 dark:text-purple-300 font-bold text-xs uppercase tracking-wider">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
+                  </svg>
+                  {t.products.idealScene}
+                </div>
+                <p className="text-gray-700 dark:text-gray-300 text-sm">{idealScene}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {coreSellingPoints && coreSellingPoints.length > 0 && (
+          <div>
+            <div className="flex items-center gap-2 mb-4 text-gray-900 dark:text-white font-bold text-lg">
+              <span className="w-1.5 h-6 bg-black dark:bg-white rounded-full"></span>
+              {t.products.coreSellingPoints}
+            </div>
+            <div className="space-y-4">
+              {coreSellingPoints.map((point, idx) => {
+                const { type, description, proof } = point;
+                return (
+                  <div
+                    key={`core-point-${idx}`}
+                    className="group bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 hover:border-black/10 dark:hover:border-white/10 hover:shadow-md transition-all duration-300 overflow-hidden"
+                  >
+                    <div className="p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-900 dark:text-white font-bold text-sm">
+                          {idx + 1}
+                        </div>
+                        <div className="flex-1">
+                          {type && (
+                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-gray-900 text-white dark:bg-white dark:text-black mb-2">
+                              {type}
+                            </span>
+                          )}
+                          <p className="text-gray-800 dark:text-gray-200 text-base leading-relaxed font-medium">
+                            {description}
+                          </p>
+                          {proof && (
+                            <div className="mt-3 pl-3 border-l-2 border-gray-200 dark:border-gray-600">
+                              <p className="text-xs text-gray-500 dark:text-gray-400 italic">
+                                <span className="not-italic font-semibold mr-1">{t.products.visualProof}:</span>
+                                {proof}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {extras && extras.length > 0 && (
+          <div className="space-y-2">
+            {extras.map((extra, idx) => (
+              <p key={`extra-line-${idx}`} className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+                {extra}
+              </p>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Subscribe to Supabase Realtime — when any product in the list changes,
+  // refresh the server component once to pick up the new status.
+  // This replaces polling: the DB push triggers exactly one refresh per change.
   useEffect(() => {
     if (!shouldPoll) return;
-    const interval = setInterval(() => {
-      router.refresh();
-    }, POLLING_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [router, shouldPoll]);
+
+    const processingIds = new Set(
+      initialProducts
+        .filter((p) => productStatusMap[p.id]?.isAnalyzing && !productStatusMap[p.id]?.isTimedOut)
+        .map((p) => p.id)
+    );
+    if (processingIds.size === 0) return;
+
+    const channel = supabase
+      .channel('product-status-watch')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'products' },
+        (payload) => {
+          const updatedId = (payload.new as { id?: string })?.id;
+          if (updatedId && processingIds.has(updatedId)) {
+            startTransition(() => { router.refresh(); });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [shouldPoll, initialProducts, productStatusMap, router]);
 
   useEffect(() => {
     if (!shouldPoll) return;
@@ -120,10 +498,37 @@ export function ProductList({ initialProducts, showHeader = true }: ProductListP
     return () => clearInterval(timer);
   }, [shouldPoll]);
 
+  // Sync viewingProduct from initialProducts when data refreshes
+  useEffect(() => {
+    if (!viewingProduct || !isDetailOpen) return;
+    const updated = initialProducts.find((p) => p.id === viewingProduct.id);
+    if (updated) setViewingProduct(updated);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialProducts]);
+
+  // Subscribe to the specific product being viewed — independent of shouldPoll.
+  // This catches updates that arrive AFTER the main subscription tears down
+  // (e.g. n8n writes analysis content asynchronously after returning the initial response).
+  useEffect(() => {
+    if (!viewingProduct || !isDetailOpen) return;
+    const productId = viewingProduct.id;
+    const channel = supabase
+      .channel(`product-detail-${productId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'products', filter: `id=eq.${productId}` },
+        () => {
+          startTransition(() => { router.refresh(); });
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [viewingProduct?.id, isDetailOpen, router, startTransition]);
+
   const handleProductCreated = () => {
     setIsModalOpen(false);
     setEditingProduct(null);
-    router.refresh(); // Refresh the server component to get new data
+    startTransition(() => { router.refresh(); });
   };
 
   const handleDeleteClick = (e: React.MouseEvent, id: string) => {
@@ -138,7 +543,7 @@ export function ProductList({ initialProducts, showHeader = true }: ProductListP
     try {
         await deleteProduct(productToDelete);
         toast.success(t.common.success);
-        router.refresh();
+        startTransition(() => { router.refresh(); });
     } catch (error) {
         console.error(error);
         toast.error(t.common.error);
@@ -301,7 +706,7 @@ export function ProductList({ initialProducts, showHeader = true }: ProductListP
                     <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                         <button
                             onClick={(e) => handleEdit(e, product)}
-                            className="text-gray-400 hover:text-primary p-1 hover:bg-primary-soft dark:hover:bg-primary/10 rounded transition-colors"
+                            className="text-gray-400 hover:text-primary p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
                             title={t.common.edit}
                         >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 00 2 2h11a2 2 0 00 2-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
@@ -384,7 +789,7 @@ export function ProductList({ initialProducts, showHeader = true }: ProductListP
                                 {t.products.status.timeout}
                             </span>
                         ) : viewingProductIsAnalyzing ? (
-                            <span className="ml-auto px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-soft text-primary dark:bg-primary/15 dark:text-primary-foreground animate-pulse">
+                            <span className="ml-auto px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200 animate-pulse">
                                 {viewingProduct.progress && viewingProduct.progress > 0 ? `${viewingProduct.progress}%` : t.products.status.analyzing}
                             </span>
                         ) : (
@@ -396,130 +801,64 @@ export function ProductList({ initialProducts, showHeader = true }: ProductListP
 
                     <div className="flex-1 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-6 overflow-y-auto shadow-sm custom-scrollbar">
                         {(() => {
-                            // Try parsing sellingPoints JSON
-                            let productData: any = null;
-                            try {
-                                const parsed = JSON.parse(viewingProduct.sellingPoints);
-                                // Check if it's the new object structure (has marketing_profile)
-                                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.marketing_profile) {
-                                    productData = parsed;
-                                } else if (Array.isArray(parsed)) {
-                                    // Fallback for old array format
-                                    productData = { marketing_profile: { core_selling_points: parsed } };
-                                }
-                            } catch (e) {
-                                // Ignore
-                            }
-
-                            // Render Structured Data
-                            if (productData) {
-                                const { product_name, visual_description, marketing_profile } = productData;
-                                const { target_audience_vibe, ideal_environment, core_selling_points } = marketing_profile || {};
-
-                                return (
-                                    <div className="space-y-8">
-                                        {/* 1. Header Info */}
-                                        <div className="space-y-4">
-                                            {product_name && (
-                                                <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
-                                                    {product_name}
-                                                </h3>
-                                            )}
-                                            
-                                            {visual_description && (
-                                                <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl text-gray-600 dark:text-gray-300 text-sm leading-relaxed border border-gray-100 dark:border-gray-700">
-                                                    <div className="flex items-center gap-2 mb-2 text-gray-900 dark:text-white font-semibold text-xs uppercase tracking-wider">
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
-                                                        {t.products.visualDescription}
-                                                    </div>
-                                                    {visual_description}
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* 2. Target & Scene Grid */}
-                                        {(target_audience_vibe || ideal_environment) && (
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                {target_audience_vibe && (
-                                                    <div className="bg-primary-soft/70 dark:bg-primary/15 p-4 rounded-xl border border-primary/30">
-                                                        <div className="flex items-center gap-2 mb-2 text-primary font-bold text-xs uppercase tracking-wider">
-                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
-                                                            {t.products.targetAudience}
-                                                        </div>
-                                                        <p className="text-gray-700 dark:text-gray-300 text-sm">{target_audience_vibe}</p>
-                                                    </div>
-                                                )}
-                                                {ideal_environment && (
-                                                    <div className="bg-purple-50 dark:bg-purple-900/10 p-4 rounded-xl border border-purple-100 dark:border-purple-900/30">
-                                                        <div className="flex items-center gap-2 mb-2 text-purple-700 dark:text-purple-300 font-bold text-xs uppercase tracking-wider">
-                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
-                                                            {t.products.idealScene}
-                                                        </div>
-                                                        <p className="text-gray-700 dark:text-gray-300 text-sm">{ideal_environment}</p>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-
-                                        {/* 3. Selling Points List */}
-                                        {core_selling_points && core_selling_points.length > 0 && (
-                                            <div>
-                                                <div className="flex items-center gap-2 mb-4 text-gray-900 dark:text-white font-bold text-lg">
-                                                    <span className="w-1.5 h-6 bg-black dark:bg-white rounded-full"></span>
-                                                    {t.products.coreSellingPoints}
-                                                </div>
-                                                <div className="space-y-4">
-                                                    {core_selling_points.map((point: any, idx: number) => {
-                                                        // Handle both string format (legacy) and object format
-                                                        const isObj = typeof point === 'object';
-                                                        const type = isObj ? point.type : t.products.feature;
-                                                        const desc = isObj ? point.description : point;
-                                                        const proof = isObj ? point.visual_proof : null;
-
-                                                        return (
-                                                            <div key={idx} className="group bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 hover:border-black/10 dark:hover:border-white/10 hover:shadow-md transition-all duration-300 overflow-hidden">
-                                                                <div className="p-4">
-                                                                    <div className="flex items-start gap-3">
-                                                                        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-900 dark:text-white font-bold text-sm">
-                                                                            {idx + 1}
-                                                                        </div>
-                                                                        <div className="flex-1">
-                                                                            {isObj && type && (
-                                                                                <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-gray-900 text-white dark:bg-white dark:text-black mb-2">
-                                                                                    {type}
-                                                                                </span>
-                                                                            )}
-                                                                            <p className="text-gray-800 dark:text-gray-200 text-base leading-relaxed font-medium">
-                                                                                {desc}
-                                                                            </p>
-                                                                            {proof && (
-                                                                                <div className="mt-3 pl-3 border-l-2 border-gray-200 dark:border-gray-600">
-                                                                                    <p className="text-xs text-gray-500 dark:text-gray-400 italic">
-                                                        <span className="not-italic font-semibold mr-1">{t.products.visualProof}:</span>
-                                                        {proof}
-                                                    </p>
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            }
-
-                            // Fallback to Markdown (sellingPointsText) or Loading
+                            // 1. sellingPointsText takes priority — try to visualize it first
                             if (viewingProduct.sellingPointsText) {
+                                const structuredFromText = parseSellingPointsText(
+                                    viewingProduct.sellingPointsText
+                                );
+                                if (structuredFromText) {
+                                    return renderStructuredAnalysis(structuredFromText);
+                                }
+
                                 return (
                                     <div className="prose prose-sm md:prose-base dark:prose-invert max-w-none">
                                         <div className="whitespace-pre-wrap text-gray-600 dark:text-gray-300 leading-relaxed space-y-4">
                                             {viewingProduct.sellingPointsText}
                                         </div>
+                                    </div>
+                                );
+                            }
+
+                            // 2. Try parsing sellingPoints for structured rendering
+                            let productData: unknown = null;
+                            try {
+                                const parsed = JSON.parse(viewingProduct.sellingPoints);
+                                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && (parsed as Record<string, unknown>).marketing_profile) {
+                                    productData = parsed;
+                                } else if (Array.isArray(parsed) && parsed.length > 0) {
+                                    productData = { marketing_profile: { core_selling_points: parsed } };
+                                } else if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                                    const record = parsed as Record<string, unknown>;
+                                    const corePoints = (record.core_selling_points ?? record.selling_points) as unknown;
+                                    if (Array.isArray(corePoints) && corePoints.length > 0) {
+                                        productData = { ...record, marketing_profile: { core_selling_points: corePoints } };
+                                    }
+                                }
+                            } catch {
+                                // Ignore parse errors and fall back below
+                            }
+
+                            if (productData) {
+                                const structuredFromJson = buildStructuredAnalysisFromJson(productData);
+                                if (structuredFromJson) {
+                                    return renderStructuredAnalysis(structuredFromJson);
+                                }
+                            }
+
+                            // If hasAnalysis is true but no structured/text content could be parsed,
+                            // show raw sellingPoints JSON so data is never invisible
+                            if (viewingProductHasAnalysis) {
+                                let rawContent = viewingProduct.sellingPoints;
+                                try {
+                                    const parsed = JSON.parse(rawContent);
+                                    rawContent = JSON.stringify(parsed, null, 2);
+                                } catch { /* use as-is */ }
+                                return (
+                                    <div className="space-y-3">
+                                        <p className="text-xs text-gray-400 dark:text-gray-500">{t.products.analysisResult}</p>
+                                        <pre className="text-xs text-gray-600 dark:text-gray-300 whitespace-pre-wrap bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700 overflow-auto max-h-96 font-mono">
+                                            {rawContent}
+                                        </pre>
                                     </div>
                                 );
                             }
@@ -579,6 +918,8 @@ export function ProductList({ initialProducts, showHeader = true }: ProductListP
             onSuccess={handleProductCreated} 
             initialData={editingProduct || undefined}
             key={editingProduct?.id || 'new'} // Force re-render on switch
+            assistantLayout="floating"
+            showAssistant={false}
         />
       </Modal>
 

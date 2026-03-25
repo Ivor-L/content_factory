@@ -4,7 +4,7 @@
 import prisma from '@/lib/prisma';
 import { emitStoryboardTaskDelete, emitStoryboardTaskUpsert } from '@/lib/storyboardEvents';
 import { normalizeStoryboardSegments } from '@/lib/storyboardTime';
-import { requireEnv } from '@/lib/env';
+import { syncTaskToSummary } from '@/lib/taskSummary';
 
 export async function generateStoryboardGrid(formData: FormData) {
   const imageUrl = formData.get('imageUrl') as string;
@@ -38,12 +38,14 @@ export async function generateStoryboardGrid(formData: FormData) {
     data: { taskId: task.id }
   });
   emitStoryboardTaskUpsert(syncedTask);
+  void syncTaskToSummary({ taskType: 'storyboard', taskId: syncedTask.id, operation: 'create' });
 
   // revalidatePath('/storyboard-gen'); // Removed to avoid lock issues, frontend polls instead
 
   // Call N8N Webhook
   try {
-    const webhookUrl = requireEnv('N8N_STORYBOARD_GEN_WEBHOOK');
+    const webhookUrl = process.env.N8N_STORYBOARD_GEN_WEBHOOK?.trim() ||
+      'https://hooks.atomx.top/webhook/storyboard_Plot_web';
     const payload = {
       script,
       imageUrl,
@@ -73,7 +75,7 @@ export async function generateStoryboardGrid(formData: FormData) {
             data: { status: 'FAILED' } as any
         });
         emitStoryboardTaskUpsert(failedTask);
-        throw new Error(`Failed to start generation workflow: ${response.status} ${errorText}`);
+        throw new Error(`Failed to start generation workflow: ${response.status} ${errorText.slice(0, 200)}`);
     }
     
     console.log('N8N Webhook success');
@@ -84,7 +86,7 @@ export async function generateStoryboardGrid(formData: FormData) {
         data: { status: 'FAILED' } as any
     });
     emitStoryboardTaskUpsert(failedTask);
-    throw error;
+    throw new Error(error instanceof Error ? error.message : String(error));
   }
 
   // The workflow will update the task status to GRID_COMPLETED
@@ -174,6 +176,7 @@ export async function deleteStoryboardTask(taskId: string) {
       where: { id: taskId }
     });
     emitStoryboardTaskDelete(taskId);
+    void syncTaskToSummary({ taskType: 'storyboard', taskId, operation: 'delete' });
     return { success: true };
   } catch (error) {
     console.error('Error deleting task:', error);
@@ -191,6 +194,7 @@ export async function deleteStoryboardTasks(taskIds: string[]) {
       }
     });
     taskIds.forEach((id) => emitStoryboardTaskDelete(id));
+    taskIds.forEach((id) => void syncTaskToSummary({ taskType: 'storyboard', taskId: id, operation: 'delete' }));
     return { success: true };
   } catch (error) {
     console.error('Error deleting tasks:', error);
