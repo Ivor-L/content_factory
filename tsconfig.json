@@ -35,6 +35,15 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "workflows/**",
+    "public/extensions/**",
+    "nextide0323/**",
+    "nextide-site/**",
+    "digital_human_miniapp/**",
+    "scripts/**",
+    "workers/**",
+    "runs/**",
+    "modules/**"
   ]
 }

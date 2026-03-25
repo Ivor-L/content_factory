@@ -1,8 +1,17 @@
 import type { CreativeStageKey } from "@/lib/creativeStages";
 
-export type CreativeStageStatus = "pending" | "in_progress" | "completed" | "blocked";
+export type CreativeStageStatus = "pending" | "in_progress" | "completed" | "blocked" | "failed";
 
 export type StyleRules = Record<string, any>;
+
+export interface PosterImageAsset {
+  id?: string | null;
+  url: string;
+  fileName?: string | null;
+  prompt?: string | null;
+  mimeType?: string | null;
+  index?: number | null;
+}
 
 export interface StageMetaEntry {
   key: CreativeStageKey;
@@ -59,6 +68,7 @@ export interface CreativeTaskSummary {
     stories: number;
     styles: number;
   };
+  generatedImages?: PosterImageAsset[] | null;
 }
 
 export interface HistoryDocDerivativeLite {
