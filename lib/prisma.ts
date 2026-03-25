@@ -39,7 +39,7 @@ function createLazyPrismaClient() {
       if (!client) {
         client = prismaClientSingleton();
       }
-      return (client as Record<string | symbol, unknown>)[prop];
+      return (client as unknown as Record<string | symbol, unknown>)[prop];
     },
   });
 }
