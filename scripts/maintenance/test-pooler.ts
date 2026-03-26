@@ -1,10 +1,16 @@
 import { Client } from 'pg';
 import 'dotenv/config';
 
-// Server Config
-const host = process.env.PG_HOST || '127.0.0.1';
-const port = Number(process.env.PG_PORT || 54322); // Host port that maps to supabase_db:5432
-const password = process.env.POSTGRES_PASSWORD || '';
+// Server Config (prefers hosted Supabase defaults)
+const host =
+  process.env.PG_HOST ||
+  process.env.SUPABASE_DB_HOST ||
+  'db.<project-ref>.supabase.co';
+const port = Number(process.env.PG_PORT || process.env.SUPABASE_DB_PORT || 5432);
+const password =
+  process.env.POSTGRES_PASSWORD ||
+  process.env.SUPABASE_DB_PASSWORD ||
+  '';
 
 async function testPooler(username: string) {
   console.log(`\nTesting Pooler with user: ${username} on ${host}:${port}...`);
@@ -12,7 +18,13 @@ async function testPooler(username: string) {
   
   const client = new Client({
     connectionString,
-    ssl: false, // Try NO SSL
+    ssl:
+      process.env.PG_SSL_MODE === 'disable'
+        ? false
+        : {
+            rejectUnauthorized:
+              process.env.PG_SSL_REJECT_UNAUTHORIZED !== 'false',
+          },
     connectionTimeoutMillis: 5000,
   });
 
@@ -34,8 +46,8 @@ async function main() {
   
   // Try common username patterns for Supavisor
   const usernames = [
-    'postgres.your-tenant-id',  // Tenant.User (Confirmed tenant ID)
-    'postgres.stub',            // Alternative tenant ID
+    'postgres.<project-ref>',  // Main Supabase user
+    'postgres.stub',           // Alternative tenant ID (if you renamed the project)
   ];
 
   for (const user of usernames) {

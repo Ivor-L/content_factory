@@ -364,11 +364,11 @@ export function Text2ImageClient({ searchParams }: Text2ImageClientProps) {
               />
             </div>
             <div className="w-full max-w-xs">
-              <label className="text-sm font-medium text-gray-700">生成张数（1-5）</label>
+              <label className="text-sm font-medium text-gray-700">生成张数（1-6）</label>
               <input
                 type="number"
                 min={1}
-                max={5}
+                max={6}
                 value={imageCount}
                 onChange={(event) => setImageCount(clampImageCount(Number(event.target.value)))}
                 className="mt-1 w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:border-primary focus:bg-white focus:outline-none focus:ring-1 focus:ring-primary"
@@ -551,7 +551,7 @@ function isJsonLike(value: string) {
 
 function clampImageCount(value?: number) {
   if (!Number.isFinite(value)) return 3;
-  return Math.min(Math.max(Math.round(value!), 1), 5);
+  return Math.min(Math.max(Math.round(value!), 1), 6);
 }
 
 function extractStyleProfileJson(style: StylePresetSummary): string | null {

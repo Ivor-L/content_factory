@@ -370,11 +370,13 @@ export async function POST(req: NextRequest) {
             toText(seg.time_range) ||
             (startSec !== null && endSec !== null ? `${startSec}-${endSec}s` : undefined),
           imagePrompt:
+            toText(seg.final_image_prompt) ||
             toText(seg.image_prompt) ||
             toText(seg.imagePrompt) ||
             toText(seg.prompt_text) ||
             toText(seg.scene_prompt),
           videoPrompt:
+            toText(seg.final_video_prompt) ||
             toText(seg.video_prompt) ||
             toText(seg.videoPrompt) ||
             toText(seg.visual_content_description),

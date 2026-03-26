@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createScript } from "@/app/(main)/scripts/actions";
 import { useLanguage } from '@/contexts/LanguageContext';
-import { cn } from "@/lib/utils";
 
 import { toast } from "react-hot-toast";
 
@@ -204,15 +203,12 @@ export function ScriptForm({
   void assistantLayout;
 
   return (
-    <div className={cn("flex flex-col max-w-3xl mx-auto", "gap-6")}>
-      <div className="rounded-[32px] border border-[#f0e9dd] bg-white shadow-sm">
-      <div className="w-full p-6">
-        {error && (
-          <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 border border-red-100 text-sm">
-            {error}
-          </div>
-        )}
-
+    <div className="flex flex-col gap-6">
+      {error && (
+        <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-4 rounded-lg border border-red-100 dark:border-red-800 text-sm">
+          {error}
+        </div>
+      )}
       <form onSubmit={handleSubmit} className="space-y-6">
         <div>
           <label htmlFor="title" className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">{t.scripts.scriptTitle}</label>
@@ -324,7 +320,7 @@ export function ScriptForm({
               onClick={() => setScriptPurpose('one-click')}
               className={`group relative p-4 rounded-xl border-2 transition-all ${
                 scriptPurpose === 'one-click'
-                  ? 'border-black bg-black/5 dark:border-white dark:bg-white/10'
+                  ? 'border-[var(--tenant-primary)] bg-[var(--tenant-primary-muted)]'
                   : 'border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600'
               }`}
               title="基于Sora2/seedance2.0模型一键成片"
@@ -339,7 +335,7 @@ export function ScriptForm({
               onClick={() => setScriptPurpose('storyboard')}
               className={`group relative p-4 rounded-xl border-2 transition-all ${
                 scriptPurpose === 'storyboard'
-                  ? 'border-black bg-black/5 dark:border-white dark:bg-white/10'
+                  ? 'border-[var(--tenant-primary)] bg-[var(--tenant-primary-muted)]'
                   : 'border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600'
               }`}
               title="基于veo3生成分镜视频，拼接完成复刻"
@@ -354,7 +350,7 @@ export function ScriptForm({
               onClick={() => setScriptPurpose('extract-copy')}
               className={`group relative p-4 rounded-xl border-2 transition-all ${
                 scriptPurpose === 'extract-copy'
-                  ? 'border-black bg-black/5 dark:border-white dark:bg-white/10'
+                  ? 'border-[var(--tenant-primary)] bg-[var(--tenant-primary-muted)]'
                   : 'border-gray-200 hover:border-gray-300 dark:border-gray-700 dark:hover:border-gray-600'
               }`}
               title="仅提取视频文案，不生成视频"
@@ -377,8 +373,6 @@ export function ScriptForm({
           </button>
         </div>
       </form>
-    </div>
-      </div>
     </div>
   );
 }

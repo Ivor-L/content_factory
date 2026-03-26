@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabaseClient";
-import type { StyleOption } from "../types";
+import type { CanvasProjectRecord, StyleOption } from "../types";
 
 type CreativeTaskResponse = {
   data?: {
@@ -118,19 +118,6 @@ export async function getVideoReplicationTask(taskId: string) {
   });
   return payload.data ?? null;
 }
-
-export type CanvasProjectRecord = {
-  id: string;
-  name: string;
-  thumbnail: string;
-  createdAt: string;
-  updatedAt: string;
-  canvasData?: {
-    nodes?: unknown[];
-    edges?: unknown[];
-    viewport?: { x: number; y: number; zoom: number };
-  };
-};
 
 type CanvasProjectListPayload = {
   data?: CanvasProjectRecord[];

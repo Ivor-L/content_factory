@@ -1,0 +1,56 @@
+{
+  "manifest_version": 3,
+  "name": "薯小智助手",
+  "version": "0.1.5",
+  "description": "薯小智助手是专为内容创作者设计的浏览器伴侣。它打破了浏览器与桌面创作工具之间的壁垒，帮助您在浏览社媒网页时，快速捕捉灵感，结合 AI 进行创作。",
+  "icons": {
+    "16": "images/icon.png",
+    "48": "images/icon.png",
+    "128": "images/icon.png"
+  },
+  "permissions": [
+    "scripting",
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "*://xiaohongshu.com/*",
+    "*://*.xiaohongshu.com/*",
+    "*://*/api/*",
+    "http://127.0.0.1:19527/*",
+    "http://localhost:19527/*",
+    "http://localhost:3333/*"
+  ],
+  "options_page": "options.html",
+  "action": {
+    "default_title": "薯小智助手 v0.1.5",
+    "default_icon": "images/icon.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.xiaohongshu.com/*",
+        "*://creator.xiaohongshu.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_end",
+      "world": "ISOLATED"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "style.css",
+        "images/*.png"
+      ],
+      "matches": [
+        "*://*.xiaohongshu.com/*"
+      ]
+    }
+  ]
+}

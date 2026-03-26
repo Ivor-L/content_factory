@@ -9,9 +9,12 @@ dotenv.config({ path: path.join(__dirname, '..', '..', '.vibe', 'credentials.env
 const N8N_HOST = process.env.N8N_BASE_URL || 'https://n8n.atomx.top';
 const API_KEY = process.env.N8N_API_KEY;
 const WORKFLOW_ID = 'yNIjqrlSnTeWDFIx';
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
-// Use IP directly to bypass DNS issues in n8n container
-const SUPABASE_IP = process.env.SUPABASE_IP || '47.107.158.233';
+const SUPABASE_ANON_KEY =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+const SUPABASE_REST_URL =
+  process.env.SUPABASE_REST_URL ||
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  'https://supabase-api.atomx.top';
 
 async function fixDnsIssue() {
   try {
@@ -28,18 +31,16 @@ async function fixDnsIssue() {
       return;
     }
 
-    console.log('Updating node to use IP address...');
+    console.log('Updating node to use hosted Supabase REST endpoint...');
     
-    // We update the code to use IP and Host header
+    // We update the code to use the HTTPS endpoint directly
     workflow.nodes[nodeIndex].parameters.jsCode = `
 const productId = $input.item.json.product_id;
 const sellingPoints = $input.item.json.selling_points;
 const sellingPointsText = $input.item.json.selling_points_text;
 
 // Supabase Configuration
-// Using IP directly to avoid ENOTFOUND
-// Port 8000 is usually the API gateway (Kong)
-const url = 'http://${SUPABASE_IP}:8000/rest/v1/Product?id=eq.' + productId;
+const url = '${SUPABASE_REST_URL}/rest/v1/Product?id=eq.' + productId;
 const apiKey = '${SUPABASE_ANON_KEY}';
 
 try {
@@ -50,8 +51,7 @@ try {
           'apikey': apiKey,
           'Authorization': 'Bearer ' + apiKey,
           'Content-Type': 'application/json',
-          'Prefer': 'return=representation',
-          'Host': 'api.supabase.atomx.top' // Keep Host header just in case, though Kong might not need it if default
+          'Prefer': 'return=representation'
       },
       body: {
           selling_points: sellingPoints,

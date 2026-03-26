@@ -2,10 +2,11 @@
 
 /* eslint-disable @next/next/no-img-element -- Storyboard creation page renders direct previews */
 
-import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback, useTransition } from 'react';
 import clsx from 'clsx';
 import type { DragEvent, SyntheticEvent } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import {
   Loader2,
@@ -29,6 +30,8 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useTenant } from '@/hooks/useTenant';
 import { StoryboardAssetViewer, ViewerItem } from './StoryboardAssetViewer';
 import { useSidebarAutoCollapse } from '@/hooks/useSidebarAutoCollapse';
+import { createManualStoryboardTask, type ManualStoryboardSegmentInput } from '@/app/actions/storyboard';
+import { supabase } from '@/lib/supabaseClient';
 
 type FrameType = 'firstFrame' | 'lastFrame';
 
@@ -285,8 +288,10 @@ export function StoryboardCreationPage({
   const manualText = t.storyboard.manual;
   const storyboardTabLabel = manualText?.storyboardTab || '分镜板';
   const timelineTabLabel = manualText?.timelineTab || '时间轴';
-  const { tenantSlug, isLoading: tenantLoading } = useTenant();
+  const { tenantSlug, isLoading: tenantLoading, basePath } = useTenant();
+  const router = useRouter();
   useSidebarAutoCollapse(true, true);
+  const [isSubmitting, startSubmitTransition] = useTransition();
   const initialRowsRef = useRef<StoryboardRow[] | null>(null);
   if (!initialRowsRef.current) {
     initialRowsRef.current = hydrateRowsFromPrefill(initialData);
@@ -294,6 +299,7 @@ export function StoryboardCreationPage({
   const initialRows = initialRowsRef.current ?? createInitialRows();
   const [rows, setRows] = useState<StoryboardRow[]>(initialRows);
   const [taskName, setTaskName] = useState(() => initialData?.taskName || '新的任务');
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(initialRows[0]?.id ?? null);
   const previewUrlsRef = useRef(new Set<string>());
   const [draggingTarget, setDraggingTarget] = useState<string | null>(null);
@@ -502,6 +508,12 @@ export function StoryboardCreationPage({
       setSelectedRowId(rows[0].id);
     }
   }, [rows, selectedRowId]);
+
+  useEffect(() => {
+    if (submissionError) {
+      setSubmissionError(null);
+    }
+  }, [rows, taskName, submissionError]);
 
   const renderViewTabs = () => (
     <div className="inline-flex items-center gap-2 rounded-full bg-white/10 p-1">
@@ -987,6 +999,80 @@ export function StoryboardCreationPage({
     );
   };
 
+  const buildSubmissionSegments = (): ManualStoryboardSegmentInput[] =>
+    rows
+      .map((row) => {
+        const prompt = row.prompt?.trim() || '';
+        const fallbackFirst = row.firstGallery?.[0];
+        const fallbackLast = row.lastGallery?.[0];
+        const firstFrameUrl = sanitizePersistableUrl(
+          row.firstFrame?.remoteUrl ||
+            row.firstFrame?.previewUrl ||
+            fallbackFirst?.remoteUrl ||
+            fallbackFirst?.previewUrl
+        );
+        const lastFrameUrl = sanitizePersistableUrl(
+          row.lastFrame?.remoteUrl ||
+            row.lastFrame?.previewUrl ||
+            fallbackLast?.remoteUrl ||
+            fallbackLast?.previewUrl
+        );
+        const timeRange = typeof row.timeRange === 'string' ? row.timeRange.trim() : '';
+
+        if (!prompt && !firstFrameUrl && !lastFrameUrl) {
+          return null;
+        }
+
+        const segment: ManualStoryboardSegmentInput = {
+          prompt,
+          firstFrameUrl,
+          lastFrameUrl,
+        };
+        if (timeRange) {
+          segment.timeRange = timeRange;
+        }
+        return segment;
+      })
+      .filter((segment): segment is ManualStoryboardSegmentInput => Boolean(segment));
+
+  const handleSubmitStoryboard = () => {
+    if (isSubmitting) return;
+    if (activeUploads) {
+      toast.error(manualText?.waitUpload || '请等待所有文件上传完成。');
+      return;
+    }
+    const segments = buildSubmissionSegments();
+    if (!segments.length) {
+      toast.error(manualText?.needOneRow || '至少保留一行分镜。');
+      return;
+    }
+
+    startSubmitTransition(async () => {
+      try {
+        setSubmissionError(null);
+        const { data } = await supabase.auth.getSession();
+        const userId = data.session?.user?.id ?? null;
+        const trimmedTitle = taskName?.trim() || manualText?.taskName || '手工分镜任务';
+        const result = await createManualStoryboardTask({
+          title: trimmedTitle,
+          userId,
+          segments,
+        });
+        toast.success(manualText?.success || '手工分镜已创建');
+        clearDraftStorage();
+        cleanupPreviews();
+        const targetTaskId = result?.taskId;
+        const destination =
+          targetTaskId != null ? `${basePath || ''}/storyboard/${targetTaskId}` : `${basePath || ''}/storyboard`;
+        router.push(destination);
+      } catch (error: any) {
+        const message = error?.message || manualText?.failed || '提交失败，请稍后再试。';
+        setSubmissionError(message);
+        toast.error(message);
+      }
+    });
+  };
+
   const handleExcelImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -1435,6 +1521,28 @@ export function StoryboardCreationPage({
                     </div>
                   )}
                 </div>
+                <button
+                  type="button"
+                  onClick={handleSubmitStoryboard}
+                  disabled={isSubmitting || activeUploads}
+                  className={clsx(
+                    'inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/90 px-4 py-1.5 text-xs font-semibold text-gray-900 shadow-theme-glow transition hover:scale-[1.01] hover:bg-white',
+                    (isSubmitting || activeUploads) && 'cursor-not-allowed opacity-60 hover:scale-100'
+                  )}
+                  aria-busy={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      {manualText?.creating || '提交中...'}
+                    </>
+                  ) : (
+                    <>
+                      <Clapperboard className="h-3.5 w-3.5" />
+                      {manualText?.create || manualText?.createTask || '提交手工分镜'}
+                    </>
+                  )}
+                </button>
                 {timelineLink && (
                   <Link
                     href={timelineLink.href}
@@ -1657,9 +1765,13 @@ export function StoryboardCreationPage({
                   </div>
 
                   <div className="rounded-[28px] border border-white/10 bg-white/5 p-4 text-xs text-white/60">
-                    {activeUploads
-                      ? manualText?.uploading || '图片上传中…'
-                      : manualText?.footerHint || '填写内容会自动保存，无需额外操作。'}
+                    {submissionError ? (
+                      <span className="text-red-300">{submissionError}</span>
+                    ) : activeUploads ? (
+                      manualText?.uploading || '图片上传中…'
+                    ) : (
+                      manualText?.footerHint || '填写内容会自动保存，无需额外操作。'
+                    )}
                   </div>
                 </aside>
               </div>

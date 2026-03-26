@@ -298,12 +298,18 @@ export function VideoDetailsModal({ item, onClose }: VideoDetailsModalProps) {
           {/* Left: Video Preview */}
           <div className="bg-gray-100 dark:bg-gray-800 rounded-2xl overflow-hidden flex items-center justify-center relative min-h-[400px] lg:h-full">
             {resultData?.videoUrl ? (
-              <video 
-                src={resultData.videoUrl} 
-                className="w-full h-full object-contain" 
-                controls 
+              <video
+                src={resultData.videoUrl}
+                className="w-full h-full object-contain"
+                controls
                 autoPlay
                 loop
+              />
+            ) : previewImageUrl ? (
+              <img
+                src={previewImageUrl}
+                alt="preview"
+                className="w-full h-full object-contain"
               />
             ) : (
               <div className="text-gray-400 text-center">
@@ -490,14 +496,23 @@ export function VideoDetailsModal({ item, onClose }: VideoDetailsModalProps) {
                       </div>
                     </div>
 
-                    <div>
-                      <div className="flex items-center gap-2 text-gray-400 text-[10px] uppercase font-bold mb-2">
-                        <Share2 size={12} /> {t.replication.prompt}
+                    {resultData?.prompt && (
+                      <div>
+                        <div className="flex items-center justify-between gap-2 text-gray-400 text-[10px] uppercase font-bold mb-2">
+                          <span className="flex items-center gap-2">
+                            <Share2 size={12} /> 生图提示词
+                          </span>
+                          <button
+                            type="button"
+                            className="flex items-center gap-1 text-xs font-semibold text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white"
+                            onClick={() => handleCopy(resultData.prompt)}
+                          >
+                            <Copy size={12} /> {t.common.copy}
+                          </button>
+                        </div>
+                        <pre className="bg-white dark:bg-gray-900 p-4 rounded-xl border border-gray-100 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto custom-scrollbar">{resultData.prompt}</pre>
                       </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
-                        {promptText}
-                      </div>
-                    </div>
+                    )}
 
                     {promptReady && (
                       <div className="text-xs font-semibold text-amber-600 dark:text-amber-300">

@@ -9,7 +9,8 @@ export const siteContent = {
       download: "Resources",
       dashboard: "Launch Console",
       login: "Login",
-      openclaw: "Agency Portal"
+      openclaw: "Agency Portal",
+      nexapi: "NexAPI"
     },
     promoBanner: {
       title: "Spring Launch Credits",
@@ -262,7 +263,8 @@ export const siteContent = {
       download: "资源",
       dashboard: "进入工作台",
       login: "登录",
-      openclaw: "代理渠道"
+      openclaw: "代理渠道",
+      nexapi: "NexAPI"
     },
     promoBanner: {
       title: "春季积分加赠",

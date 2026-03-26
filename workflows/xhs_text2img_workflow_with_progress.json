@@ -1,0 +1,1274 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "xhs_text2img_web",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "03137678-8373-4bb8-9ce9-0a62d2e807c7",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        960,
+        -192
+      ],
+      "webhookId": "xhs-text2img-webhook"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"ok\": true,\n  \"status\": \"started\",\n  \"message\": \"text2img workflow started\",\n  \"task_id\": {{ JSON.stringify($json.body.task_id || $json.body.taskId || $json.body.id || null) }}\n}",
+        "options": {}
+      },
+      "id": "5c32652a-6f65-4b9c-ae0e-627178d3bab1",
+      "name": "Respond Immediate",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1184,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function pickFirst(...vals) {\n  for (const v of vals) {\n    if (v !== undefined && v !== null && String(v).trim() !== '') return v;\n  }\n  return undefined;\n}\n\nfunction toStringSafe(v) {\n  if (v == null) return '';\n  if (typeof v === 'string') return v;\n  if (typeof v === 'number' || typeof v === 'boolean') return String(v);\n  try { return JSON.stringify(v); } catch { return String(v); }\n}\n\nconst wh = $json.body ?? $json ?? {};\n\nlet image_count = Number(\n  pickFirst(wh.image_count, wh.imageCount, wh.image_count_user, 3)\n);\nif (!Number.isFinite(image_count) || image_count < 1) image_count = 3;\nimage_count = Math.max(1, Math.min(6, Math.floor(image_count)));\n\nconst supabase_url = String(\n  pickFirst(wh.supabase_url, wh.supabaseUrl, 'https://supabase-api.atomx.top')\n).trim().replace(/\\/$/, '');\n\nconst supabase_api_key = String(\n  pickFirst(wh.supabase_api_key, wh.supabaseApiKey, 'sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz')\n).trim();\n\nconst supabase_bucket = String(\n  pickFirst(wh.supabase_bucket, wh.supabaseBucket, 'uploads')\n).trim();\n\nconst task_id = pickFirst(wh.task_id, wh.taskId, wh.id, null);\nif (!task_id) {\n  throw new Error('task_id is required (normalized input)');\n}\n\nreturn [{\n  json: {\n    task_id,\n    api_key: pickFirst(wh.api_key, wh.apiKey, null),\n    workflow_id: pickFirst(wh.workflow_id, wh.workflowId, 'flow_xhs_text2img'),\n    workflow_name: pickFirst(wh.workflow_name, wh.workflowName, '图文排版生图'),\n    title: toStringSafe(pickFirst(wh.title, wh.clean_title, '')),\n    text: toStringSafe(pickFirst(wh.text, wh.content, '')),\n    style_profile_json: toStringSafe(\n      pickFirst(wh.style_profile_json, wh.style_json, wh['图文排版风格JSON'], '')\n    ),\n    image_count_user: image_count,\n\n    supabase_url,\n    supabase_api_key,\n    supabase_bucket,\n\n    raw_body: wh\n  }\n}];"
+      },
+      "id": "5f07f7c7-2905-427c-ae4b-2e92e9306f83",
+      "name": "标准化输入",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1184,
+        -288
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.atomx.top/workflow-credits/query",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "workflow_id",
+              "value": "={{ $('标准化输入').item.json.workflow_id }}"
+            },
+            {
+              "name": "workflow_name",
+              "value": "={{ $('标准化输入').item.json.workflow_name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7527f44d-89da-4fe4-bba5-10420a0095bc",
+      "name": "查询工作流积分",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1408,
+        -288
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.atomx.top/api/balance/check",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "={{ $('标准化输入').item.json.api_key }}"
+            },
+            {
+              "name": "required",
+              "value": "={{ Number($('查询工作流积分').item.json.data.credit_cost || 0) * Number($('标准化输入').item.json.image_count_user || 3) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "733cd355-c015-4e96-ac5f-56c618bd3669",
+      "name": "验证api-key",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1632,
+        -288
+      ],
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok }}",
+                    "rightValue": "false",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    },
+                    "id": "switch_invalid_key"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "apikey_invalid"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === false }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    },
+                    "id": "switch_insufficient"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "insufficient"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === true }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    },
+                    "id": "switch_pass"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pass"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "2c5b8f1e-8480-4699-981b-57760d4848c8",
+      "name": "Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1856,
+        -304
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "creative_tasks",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('标准化输入').item.json.task_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "FAILED"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "0"
+            },
+            {
+              "fieldId": "error_message",
+              "fieldValue": "api_key_invalid"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "5116dee7-2307-42a5-ad38-6f21c9daf184",
+      "name": "Update Failed - Key Invalid",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2080,
+        -480
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "creative_tasks",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('标准化输入').item.json.task_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "FAILED"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "0"
+            },
+            {
+              "fieldId": "error_message",
+              "fieldValue": "={{ 'insufficient_credits, required=' + (Number($('查询工作流积分').item.json.data.credit_cost || 0) * Number($('标准化输入').item.json.image_count_user || 3)) }}"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "733dedc3-02c7-4115-a66b-cddf842c1164",
+      "name": "Update Failed - Credits",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2080,
+        -288
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "name": "text",
+              "value": "={{ $('标准化输入').item.json.text }}",
+              "type": "string"
+            },
+            {
+              "name": "title",
+              "value": "={{ $('标准化输入').item.json.title }}",
+              "type": "string"
+            },
+            {
+              "name": "图文排版风格JSON",
+              "value": "={{ $('标准化输入').item.json.style_profile_json }}",
+              "type": "string"
+            },
+            {
+              "name": "image_count_user",
+              "value": "={{ $('标准化输入').item.json.image_count_user }}",
+              "type": "string"
+            },
+            {
+              "name": "task_id",
+              "value": "={{ $('标准化输入').item.json.task_id }}",
+              "type": "string"
+            },
+            {
+              "name": "api_key",
+              "value": "={{ $('标准化输入').item.json.api_key }}",
+              "type": "string"
+            },
+            {
+              "name": "workflow_id",
+              "value": "={{ $('标准化输入').item.json.workflow_id }}",
+              "type": "string"
+            },
+            {
+              "name": "workflow_name",
+              "value": "={{ $('标准化输入').item.json.workflow_name }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8688ea11-3cbe-41c8-83db-91a51cbca929",
+      "name": "整理数据",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2304,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function toText(v) {\n  if (v == null) return '';\n  if (Array.isArray(v)) {\n    return v.map(x => {\n      if (x == null) return '';\n      if (typeof x === 'string') return x;\n      if (typeof x === 'number') return String(x);\n      if (typeof x === 'object' && x.text) return String(x.text);\n      return '';\n    }).join('');\n  }\n  if (typeof v === 'object' && v.text) return String(v.text);\n  return String(v);\n}\n\nfunction extractJsonObjects(s) {\n  s = String(s || '');\n  const objs = [];\n  let start = -1, depth = 0, inStr = false, esc = false;\n  for (let i = 0; i < s.length; i++) {\n    const ch = s[i];\n    if (inStr) {\n      if (esc) esc = false;\n      else if (ch === '\\\\') esc = true;\n      else if (ch === '\"') inStr = false;\n      continue;\n    } else {\n      if (ch === '\"') { inStr = true; continue; }\n    }\n    if (ch === '{') {\n      if (depth === 0) start = i;\n      depth++;\n    } else if (ch === '}') {\n      depth--;\n      if (depth === 0 && start >= 0) {\n        objs.push(s.slice(start, i + 1));\n        start = -1;\n      }\n    }\n  }\n  return objs;\n}\n\nfunction pickBestStyle(parsedList) {\n  const scored = parsedList.map(o => {\n    const styleName = o?.style_dna?.style_name ? 2 : 0;\n    const hasPrompt = o?.generation_prompts?.prompt_text2img_universal ? 2 : 0;\n    const hasLayout = o?.layout_blueprint?.modules ? 1 : 0;\n    return { o, score: styleName + hasPrompt + hasLayout };\n  }).sort((a,b) => b.score - a.score);\n  return scored[0]?.o || null;\n}\n\nconst item = $input.first().json || {};\nlet s = toText(item['图文排版风格JSON']).trim();\n\nif (s.startsWith('[') && s.includes('\"text\"')) {\n  try {\n    const arr = JSON.parse(s);\n    if (Array.isArray(arr)) {\n      s = arr.map(x => (x && typeof x === 'object' && x.text) ? String(x.text) : '').join('').trim();\n    }\n  } catch (e) {}\n}\n\nconst candidates = extractJsonObjects(s);\nconst parsed = [];\nfor (const c of candidates) {\n  try { parsed.push(JSON.parse(c)); } catch (e) {}\n}\n\nconst best = pickBestStyle(parsed);\nlet style_json_obj = best || { style_dna:{}, layout_blueprint:{}, generation_prompts:{}, content_mapping:{} };\nlet style_json_str = JSON.stringify(style_json_obj);\n\nconst sd = style_json_obj.style_dna || {};\nconst cs = sd.color_system || {};\nconst ty = sd.typography || {};\nconst ls = sd.layout_system || {};\nconst ic = sd.illustration_iconography || {};\nconst tx = sd.texture_and_background || {};\n\nconst style_summary = {\n  style_name: sd.style_name || '',\n  one_sentence_definition: sd.one_sentence_definition || '',\n  colors: {\n    background: cs.background || [],\n    primary_text: cs.primary_text || [],\n    secondary_text: cs.secondary_text || [],\n    accent: cs.accent || [],\n    highlight: cs.warning_or_highlight || [],\n    rules: cs.color_usage_rules || []\n  },\n  typography: {\n    title_font_vibe: ty.title_font_vibe || '',\n    body_font_vibe: ty.body_font_vibe || '',\n    hierarchy: ty.hierarchy || {},\n    emphasis_methods: ty.emphasis_methods || []\n  },\n  layout: {\n    grid: ls.grid || '',\n    safe_margin: ls.safe_margin || '',\n    module_spacing: ls.module_spacing || '',\n    alignment: ls.alignment || '',\n    density: ls.information_density || '',\n    common_structures: ls.common_structures || []\n  },\n  iconography: {\n    icon_style: ic.icon_style || '',\n    stroke_weight: ic.stroke_weight || '',\n    decorations: ic.decorations || [],\n    chart_style: ic.chart_style || ''\n  },\n  texture: {\n    background_texture: tx.background_texture || '',\n    shadow_and_depth: tx.shadow_and_depth || ''\n  },\n  quality_bar: sd.quality_bar || [],\n  module_visual_rules: (style_json_obj.layout_blueprint?.modules || []).flatMap(m => m.visual_rules || [])\n};\n\nreturn [{\n  json: {\n    ...item,\n    style_json_obj,\n    style_json_str,\n    style_mode: 'summary',\n    style_summary\n  }\n}];"
+      },
+      "id": "f181a468-0bb0-4f8b-ba13-95e8db7d9531",
+      "name": "解析风格JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2528,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "gpt-4o"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        2832,
+        256
+      ],
+      "id": "48549529-b1f8-4ff0-a1e3-1fb428aa223a",
+      "name": "gpt4o",
+      "credentials": {
+        "openAiApi": {
+          "id": "135VogulxeCGwJaN",
+          "name": "聚保盆-云雾通用api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=title={{$json.title}}\ntext={{$json.text}}\nstyle_json={{$json.style_json_str}}\nimage_count_user={{$json.image_count_user}}",
+        "options": {
+          "systemMessage": "=你是“知识图文解说策划 + 多页知识卡分镜编辑”。\n\n输入字段：\n- title: 标题(string)\n- text: 正文(string)\n- style_json: 图文排版风格JSON(string，JSON或JSON字符串)\n\n目标：\nA) 先把正文整理成“知识解说型”结构：每个要点必须包含【结论一句】+【解释一句】（解释要具体，不要空话）\nB) 图文张数由用户指定（image_count_user，1~6；若缺失/为空默认3）：\n   - 你必须严格使用用户指定的张数，禁止自行增减。\n   - image_plan.count 必须等于 image_count_user（默认3）\n   - image_plan.images 数组长度必须等于 image_count_user，且 index 必须是 1..image_count_user 连续不缺号\n   - 若正文太短，也必须按张数拆分：每张仍建议 3~5 条；实在不足可允许 2 条，但不得为 0 条\nC) 明确排除互动/引导类内容，不做成图片：\n   - 任何包含“留言/评论/私信/关注/点赞/转发/领取/加我/获取方案/找我/规划”等互动CTA句子，都归类为 interaction，只用于文案结尾，不进入 images。\nD) 必须中文直出：所有 text_blocks 的中文必须精确渲染（不改字、不加字、不出现英文乱码）\nE) 只输出严格 JSON，不要 markdown，不要解释\n\n输出 JSON Schema（必须严格一致）：\n{\n  \"content_plan\": {\n    \"clean_title\": \"\",\n    \"knowledge_sections\": [\n      {\n        \"section_title\": \"\",\n        \"points\": [\n          { \"point\": \"\", \"explain\": \"\" }\n        ]\n      }\n    ],\n    \"interaction_lines\": [\"...\"]\n  },\n  \"image_plan\": {\n    \"aspect_ratio\": \"3:4\",\n    \"count\": 1,\n    \"reason\": \"\",\n    \"images\": [\n      {\n        \"index\": 1,\n        \"purpose\": \"cover|section|summary\",\n        \"layout_hint\": \"知识解说图文（point+explain，两行结构）\",\n        \"text_blocks\": {\n          \"title\": \"\",\n          \"subtitle\": \"\",\n          \"items\": [\n            { \"point\": \"\", \"explain\": \"\" }\n          ]\n        },\n        \"prompt\": \"\",\n        \"negative_prompt\": \"\"\n      }\n    ]\n  }\n}\n\n排版硬约束（必须遵守）：\n- title <= 18字（可两行）\n- 每张图 items 3~5条\n- point <= 14字；explain <= 26字\n- 禁止出现互动CTA在 items 里\n- prompt 必须包含：EXACT Chinese text, sharp, high-contrast, print-like typography\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        2752,
+        32
+      ],
+      "id": "95b6d02f-ac3d-4d53-bf63-85197c41667b",
+      "name": "内容梳理"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        3104,
+        -96
+      ],
+      "id": "01e32771-9806-4ddb-bcd2-4c288ad5b3be",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "function stripFence(s) {\n  return (s || '').replace(/```json\\s*/i, '').replace(/```/g, '').trim();\n}\nfunction safeParse(s) { try { return JSON.parse(s); } catch { return null; } }\nfunction asArray(v) { return Array.isArray(v) ? v : (v == null ? [] : [v]); }\nfunction ensureTextBlocks(tb) {\n  const out = tb && typeof tb === 'object' ? tb : {};\n  if (!out.items && out.bullets) out.items = out.bullets;\n  if (!Array.isArray(out.items)) out.items = [];\n  out.title = (out.title ?? '').toString();\n  out.subtitle = (out.subtitle ?? '').toString();\n  return out;\n}\nfunction normalizeOneImage(img, indexFallback) {\n  const o = img && typeof img === 'object' ? img : {};\n  const idx = Number(o.index ?? indexFallback ?? 1) || 1;\n  const tb = ensureTextBlocks(o.text_blocks);\n  tb.items = tb.items.map(it => {\n    if (!it || typeof it !== 'object') return { point: '', explain: '' };\n    return {\n      point: (it.point ?? it.text ?? it.name ?? '').toString().trim(),\n      explain: (it.explain ?? it.caption ?? it.desc ?? '').toString().trim()\n    };\n  }).filter(x => x.point || x.explain);\n  return {\n    index: idx,\n    purpose: (o.purpose ?? '').toString() || (idx === 1 ? 'cover' : 'section'),\n    layout_hint: (o.layout_hint ?? '知识解说图文（point+explain，两行结构）').toString(),\n    text_blocks: tb,\n    prompt: (o.prompt ?? '').toString(),\n    negative_prompt: (o.negative_prompt ?? '').toString()\n  };\n}\n\nconst raw = $json.output;\nif (!raw) throw new Error('缺少 output（内容梳理节点没有输出）');\nconst cleaned = stripFence(String(raw));\nconst obj = safeParse(cleaned);\nif (!obj || typeof obj !== 'object') {\n  throw new Error('内容梳理 output 不是合法 JSON');\n}\n\nconst merged = { ...$json, ...obj };\nif (!merged.content_plan || typeof merged.content_plan !== 'object') {\n  merged.content_plan = { clean_title: '', knowledge_sections: [], interaction_lines: [] };\n}\nif (!merged.image_plan || typeof merged.image_plan !== 'object') {\n  merged.image_plan = { aspect_ratio: '3:4', count: 3, reason: '', images: [] };\n}\n\nconst plan = merged.image_plan;\nplan.aspect_ratio = (plan.aspect_ratio ?? '3:4').toString().trim() || '3:4';\nplan.reason = (plan.reason ?? '').toString();\nplan.images = asArray(plan.images).map((img, i) => normalizeOneImage(img, i + 1));\n\nlet userCount = Number(merged.image_count_user ?? merged.user_image_count);\nif (!Number.isFinite(userCount) || userCount < 1) userCount = 3;\nuserCount = Math.max(1, Math.min(6, Math.floor(userCount)));\nplan.count = userCount;\n\nplan.images.sort((a, b) => Number(a.index) - Number(b.index));\nconst byIndex = new Map();\nfor (const im of plan.images) {\n  const idx = Number(im.index);\n  if (!byIndex.has(idx)) byIndex.set(idx, im);\n}\n\nconst filled = [];\nfor (let i = 1; i <= userCount; i++) {\n  if (byIndex.has(i)) {\n    const im = byIndex.get(i);\n    im.index = i;\n    filled.push(im);\n    continue;\n  }\n  filled.push(normalizeOneImage({\n    index: i,\n    purpose: i === 1 ? 'cover' : 'section',\n    layout_hint: '知识解说图文（point+explain，两行结构）',\n    text_blocks: {\n      title: i === 1 ? (merged.content_plan?.clean_title || merged.title || '') : '',\n      subtitle: '',\n      items: []\n    },\n    prompt: 'EXACT Chinese text, sharp, high-contrast, print-like typography.',\n    negative_prompt: ''\n  }, i));\n}\n\nconst sections = asArray(merged.content_plan?.knowledge_sections);\nconst allPoints = sections.flatMap(s => asArray(s?.points)).map(p => ({\n  point: (p?.point ?? '').toString().trim(),\n  explain: (p?.explain ?? '').toString().trim()\n})).filter(x => x.point || x.explain);\n\nconst perPage = Math.max(2, Math.min(5, Math.ceil(allPoints.length / Math.max(1, userCount))));\nlet cursor = 0;\nfor (const im of filled) {\n  const items = asArray(im.text_blocks?.items);\n  if (items.length >= 2) continue;\n  const slice = allPoints.slice(cursor, cursor + perPage);\n  if (slice.length) {\n    im.text_blocks.items = slice.slice(0, 5);\n    cursor += slice.length;\n  }\n}\n\nplan.images = filled;\nif (!plan.reason) plan.reason = `按用户指定张数 ${userCount} 张输出（未填默认3）。`;\n\nreturn [{ json: merged }];"
+      },
+      "id": "f1c14a7e-8e96-44d8-aa28-ad4bcd725a6a",
+      "name": "解析内容梳理输出",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3328,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function s(v){ return v == null ? '' : String(v); }\nfunction asArray(v){ return Array.isArray(v) ? v : (v == null ? [] : [v]); }\n\nconst root = $input.first().json || {};\nconst imagePlan = root.image_plan || {};\nconst images = asArray(imagePlan.images);\nif (!images.length) throw new Error('image_plan.images 为空');\n\nconst style_json_obj = (root.style_json_obj && typeof root.style_json_obj === 'object') ? root.style_json_obj : null;\nconst style_json_str = s(root.style_json_str);\nconst aspect_ratio = s(imagePlan.aspect_ratio || '3:4').trim() || '3:4';\n\nlet user_image_count = Number(root.image_count_user ?? imagePlan.count);\nif (!Number.isFinite(user_image_count) || user_image_count < 1) user_image_count = 3;\nuser_image_count = Math.max(1, Math.min(6, Math.floor(user_image_count)));\n\nconst out = images.map((img, idx) => {\n  const o = (img && typeof img === 'object') ? img : {};\n  const image_index = Number(o.index ?? (idx + 1)) || (idx + 1);\n  const text_blocks = o.text_blocks && typeof o.text_blocks === 'object' ? o.text_blocks : { title: '', subtitle: '', items: [] };\n  return {\n    json: {\n      ...root,\n      user_image_count,\n      aspect_ratio,\n      image_index,\n      purpose: s(o.purpose || 'section'),\n      layout_hint: s(o.layout_hint),\n      text_blocks,\n      prompt_base: s(o.prompt).trim(),\n      negative_prompt: s(o.negative_prompt).trim(),\n      style_json_obj,\n      style_json_str\n    }\n  };\n});\n\nfor (const item of out) {\n  delete item.json.image_plan;\n  delete item.json.content_plan;\n  delete item.json.output;\n}\nreturn out;"
+      },
+      "id": "66412ed9-eb0e-4cff-a5aa-8524ad7a10e6",
+      "name": "拆分图片任务",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3552,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function s(v){ return v == null ? '' : String(v); }\nfunction asArray(v){ return Array.isArray(v) ? v : (v == null ? [] : [v]); }\nconst GLOBAL_STYLE_MODE = 'summary';\n\nfunction normalizeBlocks(tb){\n  const o = tb && typeof tb === 'object' ? tb : {};\n  const items = asArray(o.items).map(x => ({\n    point: s(x?.point).trim(),\n    explain: s(x?.explain).trim(),\n  })).filter(x => x.point || x.explain);\n  return {\n    title: s(o.title).trim(),\n    subtitle: s(o.subtitle).trim(),\n    items,\n  };\n}\n\nfunction buildExactTextBlock(tb){\n  const lines = [];\n  lines.push('[EXACT_TEXT_BLOCKS]');\n  lines.push(`TITLE: \"${tb.title}\"`);\n  if (tb.subtitle) lines.push(`SUBTITLE: \"${tb.subtitle}\"`);\n  tb.items.forEach((it, idx) => {\n    const i = idx + 1;\n    lines.push(`POINT_${i}: \"${it.point}\"`);\n    lines.push(`EXPLAIN_${i}: \"${it.explain}\"`);\n  });\n  lines.push('[/EXACT_TEXT_BLOCKS]');\n  return lines.join('\\n');\n}\n\nfunction pickStyleSummary(styleObj){\n  const dna = styleObj?.style_dna || {};\n  const cs = dna?.color_system || {};\n  const typo = dna?.typography || {};\n  const layout = dna?.layout_system || {};\n  const icon = dna?.illustration_iconography || {};\n  const tex = dna?.texture_and_background || {};\n  const moduleRules = asArray(styleObj?.layout_blueprint?.modules)\n    .flatMap(m => asArray(m?.visual_rules).map(r => s(r).trim()))\n    .filter(Boolean);\n  return {\n    style_name: s(dna.style_name).trim(),\n    one_sentence_definition: s(dna.one_sentence_definition).trim(),\n    colors: {\n      background: asArray(cs.background).slice(0, 3),\n      primary_text: asArray(cs.primary_text).slice(0, 2),\n      secondary_text: asArray(cs.secondary_text).slice(0, 2),\n      accent: asArray(cs.accent).slice(0, 6),\n      highlight: asArray(cs.warning_or_highlight).slice(0, 3),\n      rules: asArray(cs.color_usage_rules).slice(0, 6),\n    },\n    typography: {\n      title_font_vibe: s(typo.title_font_vibe).trim(),\n      body_font_vibe: s(typo.body_font_vibe).trim(),\n      hierarchy: typo.hierarchy || {},\n      emphasis_methods: asArray(typo.emphasis_methods).slice(0, 6),\n    },\n    layout: {\n      grid: s(layout.grid).trim(),\n      safe_margin: s(layout.safe_margin).trim(),\n      module_spacing: s(layout.module_spacing).trim(),\n      alignment: s(layout.alignment).trim(),\n      density: s(layout.information_density).trim(),\n      common_structures: asArray(layout.common_structures).slice(0, 3),\n    },\n    iconography: {\n      icon_style: s(icon.icon_style).trim(),\n      stroke_weight: s(icon.stroke_weight).trim(),\n      decorations: asArray(icon.decorations).slice(0, 6),\n      chart_style: s(icon.chart_style).trim(),\n    },\n    texture: {\n      background_texture: s(tex.background_texture).trim(),\n      shadow_and_depth: s(tex.shadow_and_depth).trim(),\n    },\n    quality_bar: asArray(dna.quality_bar).slice(0, 6),\n    module_visual_rules: moduleRules.slice(0, 10),\n  };\n}\n\nfunction buildStyleBlock(styleMode, styleObj){\n  if (!styleObj || typeof styleObj !== 'object') return '';\n  if (styleMode === 'off') return '';\n  const st = pickStyleSummary(styleObj);\n  const lines = [];\n  lines.push('[STYLE_GUIDE]');\n  if (st.style_name) lines.push(`style_name: ${st.style_name}`);\n  if (st.one_sentence_definition) lines.push(`definition: ${st.one_sentence_definition}`);\n  const c = st.colors || {};\n  if (c.background?.length) lines.push(`background_colors: ${c.background.join(', ')}`);\n  if (c.primary_text?.length) lines.push(`primary_text_colors: ${c.primary_text.join(', ')}`);\n  if (c.secondary_text?.length) lines.push(`secondary_text_colors: ${c.secondary_text.join(', ')}`);\n  if (c.accent?.length) lines.push(`accent_colors: ${c.accent.join(', ')}`);\n  if (c.highlight?.length) lines.push(`highlight_colors: ${c.highlight.join(', ')}`);\n  if (c.rules?.length) lines.push(`color_usage_rules: ${c.rules.join(' | ')}`);\n  const t = st.typography || {};\n  if (t.title_font_vibe) lines.push(`title_font_vibe: ${t.title_font_vibe}`);\n  if (t.body_font_vibe) lines.push(`body_font_vibe: ${t.body_font_vibe}`);\n  if (t.emphasis_methods?.length) lines.push(`emphasis_methods: ${t.emphasis_methods.join(' | ')}`);\n  const l = st.layout || {};\n  if (l.grid) lines.push(`layout_grid: ${l.grid}`);\n  if (l.safe_margin) lines.push(`safe_margin: ${l.safe_margin}`);\n  if (l.module_spacing) lines.push(`module_spacing: ${l.module_spacing}`);\n  if (l.alignment) lines.push(`alignment: ${l.alignment}`);\n  if (l.density) lines.push(`information_density: ${l.density}`);\n  if (l.common_structures?.length) lines.push(`common_structures: ${l.common_structures.join(' | ')}`);\n  const ic = st.iconography || {};\n  if (ic.icon_style) lines.push(`icon_style: ${ic.icon_style}`);\n  if (ic.stroke_weight) lines.push(`stroke_weight: ${ic.stroke_weight}`);\n  if (ic.decorations?.length) lines.push(`decorations: ${ic.decorations.join(' | ')}`);\n  if (ic.chart_style) lines.push(`chart_style: ${ic.chart_style}`);\n  const tx = st.texture || {};\n  if (tx.background_texture) lines.push(`background_texture: ${tx.background_texture}`);\n  if (tx.shadow_and_depth) lines.push(`shadow_and_depth: ${tx.shadow_and_depth}`);\n  if (st.quality_bar?.length) lines.push(`quality_bar: ${st.quality_bar.join(' | ')}`);\n  if (st.module_visual_rules?.length) lines.push(`module_visual_rules: ${st.module_visual_rules.join(' | ')}`);\n  lines.push('[/STYLE_GUIDE]');\n  return lines.join('\\n');\n}\n\nfunction buildTextRules(){\n  return [\n    'Render EXACT Chinese text as provided. Do NOT change any character.',\n    'Do NOT add extra text. No English letters, no pinyin, no random symbols.',\n    'Text must be sharp, high-contrast, clean edges; legible on mobile; no blur; no broken strokes.',\n    'Keep generous margins and spacing; do not crowd text; no overlapping.',\n    'Each item uses two-line structure: point (short) + explain (one sentence).',\n  ].join(' ');\n}\n\nfunction buildPrompt({ promptBase, tb, styleBlock, layoutHint }){\n  const avoid = 'Avoid: wrong Chinese characters, missing strokes, extra text, English letters, garbled words, watermark, low resolution, cluttered layout, overlapping text, distorted characters, messy.';\n  const exact = buildExactTextBlock(tb);\n  const base = s(promptBase).trim();\n  return [\n    base || '',\n    buildTextRules(),\n    layoutHint ? `Layout hint: ${layoutHint}` : '',\n    styleBlock || '',\n    avoid,\n    '',\n    exact\n  ].filter(Boolean).join('\\n\\n');\n}\n\nfunction buildNegativePrompt(styleObj, userNeg){\n  const baseNeg = s(styleObj?.generation_prompts?.negative_prompt || '').trim();\n  const extraNeg = s(userNeg).trim();\n  return [baseNeg, extraNeg].filter(Boolean).join(', ');\n}\n\nfunction buildRequestBody({ aspectRatio, promptText, negativePrompt }){\n  const ratioHintMap = {\n    '3:4': 'portrait 3:4 layout, vertical knowledge poster',\n    '4:5': 'portrait 4:5 layout, vertical knowledge poster',\n    '1:1': 'square layout',\n    '16:9': 'landscape 16:9 layout',\n    '9:16': 'vertical 9:16 layout'\n  };\n\n  const ratioHint = ratioHintMap[aspectRatio] || `layout ratio ${aspectRatio}`;\n\n  const finalPrompt = [\n    promptText,\n    '',\n    '[LAYOUT_RATIO]',\n    ratioHint,\n    negativePrompt ? '' : null,\n    negativePrompt ? '[NEGATIVE_PROMPT]' : null,\n    negativePrompt || null\n  ].filter(v => v !== null && v !== '').join('\\n');\n\n  return {\n    contents: [\n      {\n        role: 'user',\n        parts: [\n          {\n            text: finalPrompt\n          }\n        ]\n      }\n    ],\n    generationConfig: {\n      responseModalities: ['IMAGE']\n    }\n  };\n}\n\nconst items = $input.all();\nif (!items.length) throw new Error('没有输入数据');\n\nconst normalized = items.map((it) => {\n  const j = it.json || {};\n  const aspect_ratio = s(j.aspect_ratio || '3:4').trim() || '3:4';\n  const image_index = Number(j.image_index || j.index || 1) || 1;\n  const layout_hint = s(j.layout_hint).trim();\n  const purpose = s(j.purpose || 'section').trim();\n  const tb = normalizeBlocks(j.text_blocks);\n  const style_mode = s(j.style_mode || GLOBAL_STYLE_MODE).trim() || GLOBAL_STYLE_MODE;\n  const styleObj = (j.style_json_obj && typeof j.style_json_obj === 'object') ? j.style_json_obj : null;\n  const styleBlock = buildStyleBlock(style_mode, styleObj);\n  const promptText = buildPrompt({ promptBase: j.prompt_base, tb, styleBlock, layoutHint: layout_hint });\n  const negativePrompt = buildNegativePrompt(styleObj, j.negative_prompt);\n  const request_body = buildRequestBody({ aspectRatio: aspect_ratio, promptText, negativePrompt });\n\n  return {\n    ...j,\n    aspect_ratio,\n    image_index,\n    purpose,\n    layout_hint,\n    text_blocks: tb,\n    style_mode,\n    style_summary: styleObj ? pickStyleSummary(styleObj) : null,\n    request_body\n  };\n});\n\nfunction hashForDedup(x){\n  const tb = x.text_blocks || {};\n  const key = {\n    title: tb.title,\n    subtitle: tb.subtitle,\n    items: (tb.items || []).map(i => [i.point, i.explain]),\n    aspect_ratio: x.aspect_ratio,\n    layout_hint: x.layout_hint,\n    style_name: x.style_summary?.style_name || ''\n  };\n  return JSON.stringify(key);\n}\n\nconst seen = new Map();\nconst deduped = [];\nfor (const x of normalized) {\n  const h = hashForDedup(x);\n  if (!seen.has(h)) {\n    seen.set(h, x.image_index);\n    deduped.push(x);\n  } else {\n    const keptIndex = seen.get(h);\n    if (x.image_index < keptIndex) {\n      const idx = deduped.findIndex(d => hashForDedup(d) === h);\n      if (idx >= 0) deduped[idx] = x;\n      seen.set(h, x.image_index);\n    }\n  }\n}\n\ndeduped.sort((a,b)=> (a.image_index||0) - (b.image_index||0));\nreturn deduped.map(x => ({ json: x }));"
+      },
+      "id": "afbffd6f-5233-4f06-b03a-269c4791f3a7",
+      "name": "组装生图请求体",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3776,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://yunwu.ai/v1beta/models/gemini-3.1-flash-image-preview:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.request_body }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4000,
+        -96
+      ],
+      "id": "bf0c9267-b93c-471f-b112-d8d0da5f29af",
+      "name": "生图请求",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "bJpI0nVbCobY1peu",
+          "name": "聚保盆通用api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function unwrapRoot(x) {\n  if (x && typeof x === 'object' && x.body && typeof x.body === 'object') return x.body;\n  return x;\n}\n\nfunction stripDataPrefix(b64) {\n  return String(b64 || '').replace(/^data:.*;base64,/, '').trim();\n}\n\nfunction findInlineImageParts(root) {\n  const candidates = root?.candidates;\n  if (!Array.isArray(candidates) || !candidates.length) return [];\n\n  const imgs = [];\n  for (const c of candidates) {\n    const parts = c?.content?.parts;\n    if (!Array.isArray(parts)) continue;\n\n    for (const p of parts) {\n      const inline = p?.inline_data || p?.inlineData;\n      if (inline?.data) {\n        imgs.push({\n          b64: inline.data,\n          mimeType: inline.mime_type || inline.mimeType || 'image/png'\n        });\n      }\n    }\n  }\n  return imgs;\n}\n\nconst items = $input.all();\nconst output = [];\n\nfor (let itemIndex = 0; itemIndex < items.length; itemIndex++) {\n  const raw = items[itemIndex].json || {};\n  const root = unwrapRoot(raw);\n  const imgs = findInlineImageParts(root);\n\n  if (!imgs.length) continue;\n\n  for (let i = 0; i < imgs.length; i++) {\n    const img = imgs[i];\n    const mimeType = img.mimeType || 'image/png';\n    const ext = /jpe?g/i.test(mimeType) ? 'jpg' : 'png';\n    const b64 = stripDataPrefix(img.b64);\n\n    if (!b64) continue;\n\n    const globalIndex = output.length + 1;\n    const localIndex = i + 1;\n\n    output.push({\n      json: {\n        ...raw,\n        task_id: raw.task_id || raw.taskId || '',\n        image_upload_url: raw.image_upload_url || '',\n        admin_token: raw.admin_token || '',\n        image_index: globalIndex,\n        image_payload: {\n          global_index: globalIndex,\n          local_index: localIndex,\n          source_item_index: itemIndex + 1,\n          mimeType,\n          fileName: `knowledge_card_${globalIndex}.${ext}`,\n          base64: b64\n        }\n      }\n    });\n  }\n}\n\nif (!output.length) {\n  throw new Error('没有在任何输入项中找到图片 base64');\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4224,
+        -96
+      ],
+      "id": "addabca2-e621-48a2-a0cb-f5574f00b39c",
+      "name": "提取图片Payload",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "creative_tasks",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('标准化输入').first().json.task_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "layout_result_json",
+              "fieldValue": "={{ $('聚合图片URL').item.json.layout_result_json }}"
+            },
+            {
+              "fieldId": "generated_images_json",
+              "fieldValue": "={{ $('聚合图片URL').item.json.generated_images_json }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "COMPLETED"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": 100
+            },
+            {
+              "fieldId": "error_message"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "886f2988-32a4-4044-a6c0-ad11cc927658",
+      "name": "Supabase Update Final",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        5120,
+        -192
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.atomx.top/api/credits/deduct",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "={{ $('标准化输入').first().json.api_key }}"
+            },
+            {
+              "name": "amount",
+              "value": "={{ Number($('查询工作流积分').first().json.data.credit_cost || 0) * Number($('标准化输入').first().json.image_count_user || 3) }}"
+            },
+            {
+              "name": "reason",
+              "value": "={{ $('查询工作流积分').first().json.data.workflow_name }}"
+            },
+            {
+              "name": "workflow_id",
+              "value": "={{ $('查询工作流积分').first().json.data.workflow_id }}"
+            },
+            {
+              "name": "workflow_name",
+              "value": "={{ $('查询工作流积分').first().json.data.workflow_name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "592fd297-07de-4fc0-97fd-3a3c0304bd6f",
+      "name": "扣除积分",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        5568,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "creative_tasks",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('标准化输入').item.json.task_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "FAILED"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "60"
+            },
+            {
+              "fieldId": "error_message",
+              "fieldValue": "image_generate_or_upload_failed"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "75e9ee19-b773-4dfa-8f7a-8cfe2ffac3a5",
+      "name": "Update Failed - Generate",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        4448,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "creative_tasks",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('标准化输入').first().json.task_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "PROCESSING"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "90"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "3aa32adc-6075-4cbc-8e93-f398b152b6f5",
+      "name": "Update Progress 90%",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        4896,
+        -192
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "creative_tasks",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('标准化输入').item.json.task_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "PROCESSING"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "20"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "9b4b5273-c54e-410c-9dee-13b255787b80",
+      "name": "Update Progress 20%",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2080,
+        -96
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "task_summaries",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "task_id",
+              "condition": "eq",
+              "keyValue": "={{ $('标准化输入').first().json.task_id }}"
+            },
+            {
+              "keyName": "task_type",
+              "condition": "eq",
+              "keyValue": "poster"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "COMPLETED"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": 100
+            },
+            {
+              "fieldId": "thumbnail_url",
+              "fieldValue": "={{ $('聚合图片URL').first().json.publicUrl || '' }}"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Update Task Summary - Completed",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        5344,
+        -192
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "task_summaries",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "task_id",
+              "condition": "eq",
+              "keyValue": "={{ $('标准化输入').item.json.task_id }}"
+            },
+            {
+              "keyName": "task_type",
+              "condition": "eq",
+              "keyValue": "poster"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "FAILED"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "name": "Update Task Summary - Failed (Key)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2304,
+        -480
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "task_summaries",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "task_id",
+              "condition": "eq",
+              "keyValue": "={{ $('标准化输入').item.json.task_id }}"
+            },
+            {
+              "keyName": "task_type",
+              "condition": "eq",
+              "keyValue": "poster"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "FAILED"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "name": "Update Task Summary - Failed (Credits)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2304,
+        -288
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "task_summaries",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "task_id",
+              "condition": "eq",
+              "keyValue": "={{ $('标准化输入').item.json.task_id }}"
+            },
+            {
+              "keyName": "task_type",
+              "condition": "eq",
+              "keyValue": "poster"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "FAILED"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "id": "d4e5f6a7-b8c9-0123-def0-234567890123",
+      "name": "Update Task Summary - Failed (Generate)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        4672,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nif (!items.length) {\n  throw new Error('没有可聚合的 OSS 图片结果');\n}\n\nconst first = items[0].json || {};\nconst images = items\n  .map(it => {\n    const j = it.json || {};\n    return {\n      index: Number(j.image_index || 0) || 0,\n      url: j.publicUrl || '',\n      fileName: j.fileName || '',\n      mimeType: j.mimeType || ''\n    };\n  })\n  .filter(x => x.url)\n  .sort((a, b) => a.index - b.index);\n\nif (!images.length) {\n  throw new Error('publicUrl 为空，无法生成图片 URL 数组');\n}\n\nreturn [{\n  json: {\n    ...first,\n    generated_images_json: JSON.stringify(images),\n    layout_result_json: JSON.stringify({\n      content_plan: first.content_plan || {},\n      image_plan: first.image_plan || {}\n    })\n  }\n}];"
+      },
+      "id": "d606901b-2ac8-4733-a264-b5a76dffea1f",
+      "name": "聚合图片URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4672,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.item;\nconst j = item.json || {};\n\nfunction pickFirst(...vals) {\n  for (const v of vals) {\n    if (v !== undefined && v !== null && String(v).trim() !== '') return v;\n  }\n  return '';\n}\n\nfunction normalizeBase64(v) {\n  const s = String(v || '').trim();\n  if (!s) return '';\n  const m = s.match(/^data:[^;]+;base64,(.+)$/);\n  return m ? m[1] : s;\n}\n\nconst taskId = pickFirst(j.task_id, j.taskId, $('标准化输入').first().json.task_id);\nconst imagePayload = j.image_payload || {};\n\nconst rawBase64 = pickFirst(\n  imagePayload.base64,\n  j.base64\n);\nconst base64 = normalizeBase64(rawBase64);\n\nconst mimeType = pickFirst(\n  j.mimeType,\n  imagePayload.mimeType,\n  'image/png'\n);\n\nconst fileName = pickFirst(\n  j.fileName,\n  imagePayload.fileName,\n  `image_${Number(j.image_index || 0)}.png`\n);\n\nconst imageIndex = Number(j.image_index || 0);\n\nconst supabaseUrl = String(pickFirst(j.supabase_url, j.supabaseUrl, $('标准化输入').first().json.supabase_url)).trim().replace(/\\/+$/, '');\nconst supabaseApiKey = String(pickFirst(j.supabase_api_key, j.supabaseApiKey, $('标准化输入').first().json.supabase_api_key)).trim();\nconst supabaseBucket = String(pickFirst(j.supabase_bucket, j.supabaseBucket, $('标准化输入').first().json.supabase_bucket, 'uploads')).trim();\n\nif (!taskId) {\n  throw new Error('task_id is required for upload');\n}\nif (!base64) {\n  throw new Error('No base64 image data to upload');\n}\nif (!supabaseUrl) {\n  throw new Error('supabase_url not provided');\n}\nif (!supabaseApiKey) {\n  throw new Error('supabase_api_key not provided');\n}\nif (!supabaseBucket) {\n  throw new Error('supabase_bucket not provided');\n}\n\nconst uploadUrl = `${supabaseUrl}/storage/v1/object/${supabaseBucket}/${taskId}/${fileName}`;\n\nconst fileBuffer = Buffer.from(base64, 'base64');\n\nconst response = await $helpers.httpRequest({\n  method: 'POST',\n  url: uploadUrl,\n  headers: {\n    Authorization: `Bearer ${supabaseApiKey}`,\n    apikey: supabaseApiKey,\n    'Content-Type': mimeType,\n    'x-upsert': 'true',\n  },\n  body: fileBuffer,\n  encoding: null,\n  json: false,\n});\n\nconst publicUrl = `${supabaseUrl}/storage/v1/object/public/${supabaseBucket}/${taskId}/${fileName}`;\n\nreturn {\n  json: {\n    ...j,\n    publicUrl,\n    supabasePath: `${taskId}/${fileName}`,\n    image_index: imageIndex,\n    fileName,\n    mimeType,\n    uploadResponse: response ?? null\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4464,
+        -192
+      ],
+      "id": "aca91e83-084b-45a5-b54d-3e467d09f54c",
+      "name": "上传supabase"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "标准化输入",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Respond Immediate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "标准化输入": {
+      "main": [
+        [
+          {
+            "node": "查询工作流积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "查询工作流积分": {
+      "main": [
+        [
+          {
+            "node": "验证api-key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "验证api-key": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Update Failed - Key Invalid",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Failed - Credits",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Progress 20%",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Failed - Key Invalid": {
+      "main": [
+        [
+          {
+            "node": "Update Task Summary - Failed (Key)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Failed - Credits": {
+      "main": [
+        [
+          {
+            "node": "Update Task Summary - Failed (Credits)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "整理数据": {
+      "main": [
+        [
+          {
+            "node": "解析风格JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析风格JSON": {
+      "main": [
+        [
+          {
+            "node": "内容梳理",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gpt4o": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "内容梳理",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "内容梳理": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "解析内容梳理输出",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析内容梳理输出": {
+      "main": [
+        [
+          {
+            "node": "拆分图片任务",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "拆分图片任务": {
+      "main": [
+        [
+          {
+            "node": "组装生图请求体",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装生图请求体": {
+      "main": [
+        [
+          {
+            "node": "生图请求",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "生图请求": {
+      "main": [
+        [
+          {
+            "node": "提取图片Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提取图片Payload": {
+      "main": [
+        [
+          {
+            "node": "上传supabase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Failed - Generate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Update Final": {
+      "main": [
+        [
+          {
+            "node": "Update Task Summary - Completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Failed - Generate": {
+      "main": [
+        [
+          {
+            "node": "Update Task Summary - Failed (Generate)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Progress 90%": {
+      "main": [
+        [
+          {
+            "node": "Supabase Update Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Progress 20%": {
+      "main": [
+        [
+          {
+            "node": "整理数据",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Task Summary - Completed": {
+      "main": [
+        [
+          {
+            "node": "扣除积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "聚合图片URL": {
+      "main": [
+        [
+          {
+            "node": "Update Progress 90%",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "上传supabase": {
+      "main": [
+        [
+          {
+            "node": "聚合图片URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
+  }
+}

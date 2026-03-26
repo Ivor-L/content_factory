@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import React from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Home, Image as ImageIcon, History, ChevronLeft, Users, User } from 'lucide-react';

@@ -135,7 +135,6 @@ export async function createDigitalHumanJob(options: CreateDigitalHumanJobOption
       type,
       image_url: imageUrl,
       timestamp: new Date().toISOString(),
-      flow: 'flow_Digital_Human',
       api_key: apiKey,
       workflow_id: workflowIdForCredits,
       audio_duration: audioDuration,

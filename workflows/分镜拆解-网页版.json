@@ -1,0 +1,656 @@
+{
+  "name": "分镜拆解-网页版",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "storyboard_disassembly_web",
+        "options": {}
+      },
+      "id": "50146697-c1bd-4381-84c2-0f7efcf09d86",
+      "name": "Webhook",
+      "position": [
+        6656,
+        -832
+      ],
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "34bcd0ec-a8b7-48cd-a6fd-27a25e4b4e6b"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const body = $json.body || $json;\n\nconst taskId = String(body.task_id || body.taskId || '').trim();\nconst videoUrl = String(body.video_url || body.videoUrl || '').trim();\nconst productName = String(body.product_name || body.productName || '');\nconst productDescription = String(body.product_description || body.productDescription || '');\nconst productSellingPoints = String(body.product_selling_points || body.productSellingPoints || '');\nconst scriptContent = String(body.script_content || body.scriptContent || '');\nconst callbackUrl = String(body.callback_url || body.callbackUrl || '').trim().replace(/\\/$/, '');\nconst apiKey = String(body.api_key || body.apiKey || '').trim();\nconst adminToken = String(body.admin_token || body.adminToken || '').trim();\nconst workflowId = String(body.workflow_id || body.workflowId || 'flow_storyboard_disassembly').trim();\nconst targetLanguage = String(body.target_language || body.targetLanguage || 'en').trim();\nconst targetCountry = String(body.target_country || body.targetCountry || 'US').trim();\n\nconst SUPABASE_DEFAULT_URL = 'https://supabase-api.atomx.top';\nfunction normalizeSupabaseUrl(url) {\n  if (!url) return '';\n  let normalized = String(url).trim();\n  normalized = normalized.replace(/\\/+$/, '');\n  const suffixes = ['/rest/v1', '/storage/v1', '/realtime/v1', '/auth/v1', '/functions/v1'];\n  for (const suffix of suffixes) {\n    if (normalized.toLowerCase().endsWith(suffix)) {\n      normalized = normalized.slice(0, -suffix.length);\n      normalized = normalized.replace(/\\/+$/, '');\n    }\n  }\n  return normalized;\n}\n\nfunction normalizeSourceUrl(value, supabaseBase) {\n  if (!value) return '';\n  let trimmed = String(value).trim();\n  if (!trimmed) return '';\n  if (/^https?:\\/\\//i.test(trimmed)) return trimmed;\n  if (trimmed.startsWith('//')) return `https:${trimmed}`;\n\n  const base = supabaseBase || SUPABASE_DEFAULT_URL;\n  const join = (path) => `${base}/${path.replace(/^\\/+/, '')}`;\n\n  if (trimmed.startsWith('/')) {\n    return `${base}${trimmed}`;\n  }\n  if (trimmed.startsWith('storage/')) {\n    return join(trimmed);\n  }\n  if (trimmed.startsWith('uploads/')) {\n    return join(`storage/v1/object/${trimmed}`);\n  }\n  if (/^[\\w.-]+\\.[\\w.-]+(?:\\/|$)/.test(trimmed)) {\n    return `https://${trimmed}`;\n  }\n  return trimmed;\n}\n\nconst supabaseUrl = normalizeSupabaseUrl(\n  body.supabase_url || body.supabaseUrl || ''\n) || SUPABASE_DEFAULT_URL;\n\nconst supabaseApiKey = String(\n  body.supabase_api_key || body.supabaseApiKey || 'sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz'\n).trim();\n\nconst supabaseBucket = String(\n  body.supabase_bucket || body.supabaseBucket || 'uploads'\n).trim();\n\nconst normalizedVideoUrl = normalizeSourceUrl(videoUrl, supabaseUrl);\n\nif (!taskId) throw new Error('task_id is required');\nif (!videoUrl) throw new Error('video_url is required');\nif (!callbackUrl) throw new Error('callback_url is required');\nif (!apiKey) throw new Error('api_key is required');\nif (!normalizedVideoUrl || !/^https?:\\/\\//i.test(normalizedVideoUrl)) {\n  throw new Error('video_url must be an absolute HTTP(S) URL after normalization');\n}\n\nconst workDir = `/tmp/sb_bd_${taskId}`;\n\nreturn {\n  json: {\n    taskId, productName, productDescription, productSellingPoints,\n    scriptContent, callbackUrl, apiKey, adminToken, workflowId, workDir,\n    targetLanguage, targetCountry,\n    original_video_url: videoUrl,\n    videoUrl: normalizedVideoUrl,\n    supabase_url: supabaseUrl,\n    supabase_api_key: supabaseApiKey,\n    supabase_bucket: supabaseBucket\n  }\n};"
+      },
+      "id": "21f3ccb9-3333-4dcd-931a-a4e6dfdea05f",
+      "name": "准备参数",
+      "position": [
+        6880,
+        -832
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "command": "WORK_DIR=\"{{ $json.workDir }}\"\nVIDEO_URL=\"{{ $json.videoUrl }}\"\nLOCAL_VIDEO_PATH=\"$WORK_DIR/input.mp4\"\nTASK_ID=\"{{ $json.taskId }}\"\n\nmkdir -p \"$WORK_DIR\" || exit 1\nexport WORK_DIR VIDEO_URL LOCAL_VIDEO_PATH TASK_ID\n\nnode <<'NODE'\nconst fs = require('fs');\nconst http = require('http');\nconst https = require('https');\nconst { URL } = require('url');\n\nconst videoUrl = process.env.VIDEO_URL;\nconst outputPath = process.env.LOCAL_VIDEO_PATH;\nconst taskId = process.env.TASK_ID;\n\nif (!videoUrl) { console.error('{\"success\":false,\"message\":\"VIDEO_URL is empty\"}'); process.exit(1); }\n\nfunction download(url, dest, redirects = 0) {\n  return new Promise((resolve, reject) => {\n    if (redirects > 5) return reject(new Error('too many redirects'));\n    const parsed = new URL(url);\n    const client = parsed.protocol === 'https:' ? https : http;\n    const req = client.get(url, (res) => {\n      const code = res.statusCode || 0;\n      if ([301,302,303,307,308].includes(code) && res.headers.location) {\n        const nextUrl = new URL(res.headers.location, url).toString();\n        res.resume();\n        return resolve(download(nextUrl, dest, redirects + 1));\n      }\n      if (code < 200 || code >= 300) { res.resume(); return reject(new Error(`download failed with status ${code}`)); }\n      const file = fs.createWriteStream(dest);\n      res.pipe(file);\n      file.on('finish', () => {\n        file.close(() => {\n          try {\n            const stat = fs.statSync(dest);\n            if (!stat.size) return reject(new Error('empty file'));\n            process.stdout.write(JSON.stringify({ taskId, localVideoPath: dest }) + '\\n');\n            resolve();\n          } catch(e) { reject(e); }\n        });\n      });\n      file.on('error', (err) => { file.destroy(); reject(err); });\n    });\n    req.on('error', reject);\n    req.setTimeout(120000, () => req.destroy(new Error('download timeout')));\n  });\n}\n\ndownload(videoUrl, outputPath).catch((err) => {\n  console.error(JSON.stringify({ success: false, message: err.message }));\n  process.exit(1);\n});\nNODE"
+      },
+      "id": "7908e599-162f-441b-9635-e638deebf9fd",
+      "name": "下载视频到本地",
+      "position": [
+        7104,
+        -832
+      ],
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = String($json.stdout || '').trim();\nif (!raw) throw new Error('下载视频到本地没有返回 stdout');\n\nlet parsed;\ntry { parsed = JSON.parse(raw); }\ncatch (e) { throw new Error(`解析下载视频结果失败: ${e.message}; 原始输出: ${raw}`); }\n\nif (!parsed.localVideoPath) throw new Error('下载视频成功后仍缺少 localVideoPath');\n\nconst base = $('准备参数').first().json;\nreturn { json: { ...base, localVideoPath: parsed.localVideoPath } };"
+      },
+      "id": "75016500-5b74-4bb9-82e1-866632dd5062",
+      "name": "解析下载结果",
+      "position": [
+        7328,
+        -832
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $json.localVideoPath }}",
+        "options": {}
+      },
+      "id": "132de73c-10c8-4c33-ae2f-91c01e94a6fa",
+      "name": "读取视频文件",
+      "position": [
+        7552,
+        -832
+      ],
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "jsCode": "function pickFirst(...vals) {\n  for (const v of vals) {\n    if (v !== undefined && v !== null && String(v).trim() !== '') return v;\n  }\n  return '';\n}\nfunction pickBinaryKey(bin) {\n  if (!bin || typeof bin !== 'object') return '';\n  if (bin.data) return 'data';\n  if (bin.video) return 'video';\n  const keys = Object.keys(bin);\n  return keys.length ? keys[0] : '';\n}\n\nconst items = $input.all();\nconst output = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const item = items[i];\n  const j = item.json || {};\n  const bin = item.binary || {};\n  const binaryKey = pickBinaryKey(bin);\n  if (!binaryKey) throw new Error(`缺少视频binary字段，可用binary keys: ${Object.keys(bin||{}).join(', ')}`);\n\n  const buffer = await this.helpers.getBinaryDataBuffer(i, binaryKey);\n  if (!buffer || !buffer.length) throw new Error(`视频binary读取失败，binaryKey=${binaryKey}`);\n  const base64 = buffer.toString('base64');\n\n  const productName = pickFirst(j.productName, j.product_name, 'Unknown Product');\n  const productDescription = pickFirst(j.productDescription, j.product_description, 'N/A');\n  const productSellingPoints = pickFirst(j.productSellingPoints, j.product_selling_points, 'N/A');\n  const scriptContent = pickFirst(j.scriptContent, j.script_content, '');\n  const targetLanguage = pickFirst(j.targetLanguage, j.target_language, 'Chinese');\n  const targetCountry = pickFirst(j.targetCountry, j.target_country, 'China');\n\n  const promptText = `You are analyzing a complete source commercial video for viral-video cloning.\n\nYour job is NOT to invent a new ad.\nYour job is to reverse-engineer the original video into downstream production-ready shot data.\nThe full video must be read as a whole first, then segmented according to actual visual shot changes, action beats, product beats, and editing rhythm.\nDo not segment only by equal time intervals.\n\nProduct Context:\n- Product Name: ${productName}\n- Description: ${productDescription}\n- Selling Points: ${productSellingPoints}\n${scriptContent ? `- Reference Script: ${scriptContent}` : ''}\n\nTarget Audience:\n- Language: ${targetLanguage}\n- Country/Region: ${targetCountry}\n\nGlobal rules:\n1. Read the ENTIRE video first, then decide segmentation.\n2. Segment by real shot boundary, visual narrative beat, action change, camera change, or meaningful product emphasis change.\n3. Generate ALL descriptive business fields in ${targetLanguage} for ${targetCountry} audience, except image_prompt and video_prompt, which MUST be in English.\n4. The goal is downstream cloning: image_prompt must preserve original shot design and only replace person/product identity.\n5. video_prompt must be detailed enough for downstream video generation, preserving original camera grammar, staging logic, action rhythm, and product role.\n6. Output ONLY valid JSON. Do not output markdown. Do not wrap JSON in code fences. Do not explain anything outside the JSON.\n\nFor each scene/shot, you must output these fields:\n- order, time_range, duration, start_time, shot_goal, visual_content_description, location_setting\n- character_desc, emotion_state, action_blocking, product_desc, must_show, on_screen_text_graphics\n- camera_shot_size, camera_angle, camera_movement, composition_notes\n- lighting_atmosphere, color_grading\n- original_script, rewritten_script, language_style, emphasis_notes\n- audio_bgm, audio_sfx, ambient_sound\n- editing_transition, pacing_notes\n- constraints_real_shoot, constraints_compliance\n- image_prompt, video_prompt\n- visual_description, camera_notes, lighting_notes\n- has_person, has_product\n- locked_elements, replaceable_elements, character_continuity_rules, product_continuity_rules, video_motion_plan\n\nOutput JSON schema:\n{\n  \"total_duration\": 0,\n  \"scene_count\": 0,\n  \"scenes\": [\n    {\n      \"order\": 1,\n      \"time_range\": \"00:00-00:03\",\n      \"duration\": 3,\n      \"start_time\": \"00:00\",\n      \"shot_goal\": \"...\",\n      \"visual_content_description\": \"...\",\n      \"location_setting\": \"...\",\n      \"character_desc\": \"...\",\n      \"emotion_state\": \"...\",\n      \"action_blocking\": \"...\",\n      \"product_desc\": \"...\",\n      \"must_show\": \"...\",\n      \"on_screen_text_graphics\": \"...\",\n      \"camera_shot_size\": \"...\",\n      \"camera_angle\": \"...\",\n      \"camera_movement\": \"...\",\n      \"composition_notes\": \"...\",\n      \"lighting_atmosphere\": \"...\",\n      \"color_grading\": \"...\",\n      \"original_script\": \"...\",\n      \"rewritten_script\": \"...\",\n      \"language_style\": \"...\",\n      \"emphasis_notes\": \"...\",\n      \"audio_bgm\": \"...\",\n      \"audio_sfx\": \"...\",\n      \"ambient_sound\": \"...\",\n      \"editing_transition\": \"...\",\n      \"pacing_notes\": \"...\",\n      \"locked_elements\": { \"composition\": \"...\", \"camera_language\": \"...\", \"scene_layout\": \"...\", \"lighting_logic\": \"...\", \"mood\": \"...\" },\n      \"replaceable_elements\": { \"character_identity\": true, \"product_identity\": true },\n      \"character_continuity_rules\": { \"pose_anchor\": \"...\", \"gaze_direction\": \"...\", \"gesture_logic\": \"...\", \"wardrobe_logic\": \"...\" },\n      \"product_continuity_rules\": { \"scale_in_frame\": \"...\", \"orientation\": \"...\", \"interaction_logic\": \"...\", \"hero_priority\": \"...\" },\n      \"video_motion_plan\": { \"start_state\": \"...\", \"motion_beat_1\": \"...\", \"motion_beat_2\": \"...\", \"motion_beat_3\": \"...\", \"end_state\": \"...\" },\n      \"constraints_real_shoot\": \"...\",\n      \"constraints_compliance\": \"...\",\n      \"image_prompt\": \"English controlled reconstruction prompt.\",\n      \"video_prompt\": \"English detailed controlled shot reconstruction prompt.\",\n      \"visual_description\": \"...\",\n      \"camera_notes\": \"...\",\n      \"lighting_notes\": \"...\",\n      \"has_person\": true,\n      \"has_product\": true\n    }\n  ]\n}`;\n\n  output.push({\n    json: {\n      ...j,\n      gemini_body: {\n        contents: [{ role: 'user', parts: [{ text: promptText }, { inline_data: { mime_type: 'video/mp4', data: base64 } }] }],\n        generation_config: { response_mime_type: 'application/json', temperature: 0.3 }\n      },\n      _debug_binary: { binaryKey, buffer_length: buffer.length, base64_length: base64.length }\n    },\n    binary: item.binary\n  });\n}\nreturn output;"
+      },
+      "id": "c0df917e-1df8-4cf8-8da7-bddec589b39f",
+      "name": "组装 gemini_body",
+      "position": [
+        7776,
+        -832
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://yunwu.ai/v1beta/models/gemini-2.5-pro:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.gemini_body }}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "id": "e9474469-8a22-4310-a44f-c5fd6d4e0c2a",
+      "name": "Gemini视频分析",
+      "position": [
+        8000,
+        -832
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mMIH382GnJoMSu4L",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const downloaded = $('解析下载结果').first().json || {};\nconst current = $json || {};\n\nfunction getAllText(root) {\n  const r = Array.isArray(root) ? root[0] : root;\n  const parts = r?.candidates?.[0]?.content?.parts || [];\n  return parts.map(p => p?.text || '').join('\\n').trim();\n}\nfunction stripCodeFence(text) {\n  return String(text || '').replace(/^```json\\s*/i,'').replace(/^```\\s*/i,'').replace(/\\s*```$/i,'').trim();\n}\nfunction tryParseJsonWithFixes(text) {\n  const errs = [];\n  try { return { obj: JSON.parse(text), fixedText: text, errs }; } catch(e) { errs.push('direct: '+e.message); }\n  let fixed = text;\n  fixed = fixed.replace(/(\\\"time_range\\\"\\s*:\\s*)([^\\\"\\s][^,\\n}]*)/g,(m,p1,p2)=>`${p1}\"${String(p2).trim().replace(/^\\\"+|\\\"+$/g,'')}\"`);\n  fixed = fixed.replace(/,\\s*([}\\]])/g,'$1');\n  try { return { obj: JSON.parse(fixed), fixedText: fixed, errs }; } catch(e) { errs.push('fixed: '+e.message); }\n  return { obj: null, fixedText: fixed, errs };\n}\n\nconst rawText = getAllText(current);\nif (!rawText) throw new Error(`Gemini返回格式异常: ${JSON.stringify(current).slice(0,1500)}`);\n\nconst cleanText = stripCodeFence(rawText);\nconst { obj: parsed, fixedText, errs } = tryParseJsonWithFixes(cleanText);\nif (!parsed) throw new Error(`Gemini返回JSON解析失败: ${errs.join(' | ')}; 原始文本: ${cleanText.slice(0,2000)}`);\nif (!parsed.scenes || !Array.isArray(parsed.scenes)) throw new Error('Gemini未返回scenes数组');\n\nreturn {\n  json: { ...downloaded, ...current, scenes: parsed.scenes, totalDuration: parsed.total_duration ?? 0, sceneCount: parsed.scene_count ?? parsed.scenes.length, gemini_raw_text: fixedText },\n  binary: $binary\n};"
+      },
+      "id": "73c9fe63-7a44-4fba-a5b7-86cda0808f4c",
+      "name": "解析拆解结果",
+      "position": [
+        8224,
+        -832
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "const root = $input.first().json || {};\nconst downloaded = $('解析下载结果').first().json || {};\n\nconst scenes = root.scenes || [];\nconst localVideoPath = root.localVideoPath || downloaded.localVideoPath;\nconst taskId = root.taskId || downloaded.taskId;\nconst workDir = root.workDir || downloaded.workDir;\n\nif (!Array.isArray(scenes) || !scenes.length) throw new Error('No scenes from Gemini');\nif (!localVideoPath) throw new Error('缺少 localVideoPath');\nif (!workDir) throw new Error('缺少 workDir');\n\nreturn scenes.map((scene, i) => {\n  const order = Number(scene.order || (i + 1));\n  const timestamp = String(scene.start_time || scene.time_range?.split('-')[0] || '00:00').trim() || '00:00';\n  const fileName = `frame_${String(order).padStart(3,'0')}.png`;\n  const outputPath = `${workDir}/${fileName}`;\n  const sceneDataBase64 = Buffer.from(JSON.stringify(scene),'utf8').toString('base64');\n  return {\n    json: {\n      ...root, taskId, localVideoPath, workDir, order, timestamp, fileName, outputPath,\n      supabase_url: root.supabase_url || downloaded.supabase_url,\n      supabase_api_key: root.supabase_api_key || downloaded.supabase_api_key,\n      supabase_bucket: root.supabase_bucket || downloaded.supabase_bucket || 'uploads',\n      sceneDataBase64\n    }\n  };\n});"
+      },
+      "id": "438f9676-6e83-4b32-bc3b-88c0257d24eb",
+      "name": "提取场景关键帧",
+      "position": [
+        8448,
+        -832
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "executeOnce": false,
+        "command": "WORK_DIR=\"{{ $json.workDir }}\"\nLOCAL_VIDEO_PATH=\"{{ $json.localVideoPath }}\"\nVIDEO_URL=\"{{ $json.videoUrl || $json.video_url || $('准备参数').first().json.videoUrl || $('准备参数').first().json.video_url }}\"\nTIMESTAMP=\"{{ $json.timestamp }}\"\nOUTPUT_PATH=\"{{ $json.outputPath }}\"\nTASK_ID=\"{{ $json.taskId }}\"\nORDER=\"{{ $json.order }}\"\nFILE_NAME=\"{{ $json.fileName }}\"\nSCENE_B64=\"{{ $json.sceneDataBase64 }}\"\n\nmkdir -p \"$WORK_DIR\" || exit 1\n\nif [ ! -s \"$LOCAL_VIDEO_PATH\" ]; then\n  node -e \"\nconst fs=require('fs'),http=require('http'),https=require('https');\nconst url=process.argv[1],out=process.argv[2];\nif(!url){console.error('missing video url');process.exit(1);}\nconst client=url.startsWith('https')?https:http;\nconst file=fs.createWriteStream(out);\nclient.get(url,(res)=>{\n  if(res.statusCode>=300&&res.statusCode<400&&res.headers.location){\n    const rc=res.headers.location.startsWith('https')?https:http;\n    rc.get(res.headers.location,(r2)=>{if(r2.statusCode!==200){console.error('redirect failed '+r2.statusCode);process.exit(1);}r2.pipe(file);file.on('finish',()=>file.close());}).on('error',(e)=>{console.error(e.message);process.exit(1);});return;\n  }\n  if(res.statusCode!==200){console.error('download failed '+res.statusCode);process.exit(1);}\n  res.pipe(file);file.on('finish',()=>file.close());\n}).on('error',(e)=>{console.error(e.message);process.exit(1);});\n\" \"$VIDEO_URL\" \"$LOCAL_VIDEO_PATH\"\nfi\n\nif [ ! -s \"$LOCAL_VIDEO_PATH\" ]; then\n  echo '{\"success\":false,\"message\":\"local video file not found after re-download\"}' >&2\n  exit 1\nfi\n\nffmpeg -nostats -loglevel error -y -ss \"$TIMESTAMP\" -i \"$LOCAL_VIDEO_PATH\" -frames:v 1 \"$OUTPUT_PATH\" >/dev/null 2>&1\n\nif [ ! -f \"$OUTPUT_PATH\" ]; then\n  ffmpeg -nostats -loglevel error -y -sseof -1 -i \"$LOCAL_VIDEO_PATH\" -frames:v 1 \"$OUTPUT_PATH\" >/dev/null 2>&1\nfi\n\nif [ ! -f \"$OUTPUT_PATH\" ]; then\n  echo '{\"success\":false,\"message\":\"frame file not found after ffmpeg\"}' >&2\n  exit 1\nfi\n\nprintf '{\"taskId\":\"%s\",\"order\":%s,\"fileName\":\"%s\",\"outputPath\":\"%s\",\"sceneDataBase64\":\"%s\"}\\n' \\\n  \"$TASK_ID\" \"$ORDER\" \"$FILE_NAME\" \"$OUTPUT_PATH\" \"$SCENE_B64\" "
+      },
+      "id": "c3951ebe-15bc-44e6-9541-f0d6616bddee",
+      "name": "FFmpeg提取单帧",
+      "position": [
+        8672,
+        -832
+      ],
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = String($json.stdout || '').trim();\nif (!raw) throw new Error('FFmpeg提取单帧没有返回 stdout');\n\nlet parsed;\ntry { parsed = JSON.parse(raw); }\ncatch(e) { throw new Error(`解析抽帧结果失败: ${e.message}; 原始输出: ${raw}`); }\n\nconst sceneDataBase64 = parsed.sceneDataBase64 || '';\nif (!sceneDataBase64) throw new Error('缺少 sceneDataBase64');\n\nlet sceneData;\ntry { sceneData = JSON.parse(Buffer.from(sceneDataBase64,'base64').toString('utf8')); }\ncatch(e) { throw new Error(`sceneDataBase64 解码失败: ${e.message}`); }\n\nconst base = $('提取场景关键帧').item.json;\nreturn {\n  json: {\n    taskId: parsed.taskId, order: parsed.order, fileName: parsed.fileName, outputPath: parsed.outputPath,\n    supabase_url: base.supabase_url, supabase_api_key: base.supabase_api_key, supabase_bucket: base.supabase_bucket || 'uploads',\n    sceneDataBase64, sceneData, ...sceneData\n  }\n};"
+      },
+      "id": "f7c84a7f-5925-4e5e-bf9e-752c010149ca",
+      "name": "解析抽帧结果",
+      "position": [
+        8896,
+        -832
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $json.outputPath }}",
+        "options": {}
+      },
+      "id": "7072b25d-a2df-4987-8566-c64e75ebeedc",
+      "name": "读取单帧文件",
+      "position": [
+        9120,
+        -832
+      ],
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('准备参数').item.json.supabase_url }}/storage/v1/object/{{ $json.supabase_bucket || 'uploads' }}/{{ $('准备参数').item.json.taskId }}/{{ $json.fileName }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $('准备参数').item.json.supabase_api_key }}"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $('准备参数').item.json.supabase_api_key }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "={{$binary.data?.mimeType || 'image/png'}}"
+            },
+            {
+              "name": "x-upsert",
+              "value": "true"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "id": "760aac7f-83b3-43de-96f5-9f3accdd6a10",
+      "name": "HTTP上传到SupabaseStorage",
+      "position": [
+        9344,
+        -832
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "function text(v) { return v == null ? '' : String(v).trim(); }\nfunction getNameFromPath(value) {\n  const raw = text(value);\n  if (!raw) return '';\n  const clean = raw.split('?')[0].replace(/\\\\+/g, '/');\n  const parts = clean.split('/').filter(Boolean);\n  if (!parts.length) return clean;\n  return parts[parts.length - 1];\n}\nfunction toPretty(value) {\n  if (value == null) return '';\n  if (typeof value === 'string') return value.trim();\n  try { return JSON.stringify(value, null, 2); } catch { return String(value); }\n}\nfunction joinBlocks(blocks) { return blocks.filter(Boolean).join('\\n\\n').trim(); }\nfunction getFileName(meta) {\n  const direct = getNameFromPath(meta.fileName) || getNameFromPath(meta.filename) || getNameFromPath(meta.file_name) ||\n    getNameFromPath(meta.name) || getNameFromPath(meta.Key) || getNameFromPath(meta.key);\n  if (direct) return direct;\n  const op = getNameFromPath(meta.outputPath || meta.output_path || meta.path);\n  if (op) return op;\n  const url = getNameFromPath(meta.publicUrl || meta.public_url || meta.url);\n  if (url) return url;\n  return '';\n}\n\nconst meta = $json || {};\nconst sceneData = meta.sceneData || {};\nconst base = $('准备参数').first().json || {};\n\nconst supabaseUrl = text(meta.supabase_url || base.supabase_url);\nconst bucket = text(meta.supabase_bucket || base.supabase_bucket || 'uploads');\nconst taskId = text(meta.taskId || meta.task_id || base.taskId || base.task_id);\nconst fileName = getFileName(meta);\nconst publicUrl = supabaseUrl && taskId && fileName\n  ? `${supabaseUrl}/storage/v1/object/public/${bucket}/${taskId}/${fileName}` : '';\n\nconst productName = text(base.productName || base.product_name);\nconst productDescription = text(base.productDescription || base.product_description);\nconst productSellingPoints = text(base.productSellingPoints || base.product_selling_points);\nconst characterName = text(base.characterName||base.character_name||base.characterId||base.character_id);\n\nconst shotGoal = text(sceneData.shot_goal);\nconst visualContentDescription = text(sceneData.visual_content_description);\nconst locationSetting = text(sceneData.location_setting);\nconst characterDesc = text(sceneData.character_desc);\nconst emotionState = text(sceneData.emotion_state);\nconst actionBlocking = text(sceneData.action_blocking);\nconst productDesc = text(sceneData.product_desc);\nconst mustShow = text(sceneData.must_show);\nconst onScreenTextGraphics = text(sceneData.on_screen_text_graphics);\nconst cameraShotSize = text(sceneData.camera_shot_size);\nconst cameraAngle = text(sceneData.camera_angle);\nconst cameraMovement = text(sceneData.camera_movement);\nconst compositionNotes = text(sceneData.composition_notes);\nconst lightingAtmosphere = text(sceneData.lighting_atmosphere);\nconst colorGrading = text(sceneData.color_grading);\nconst pacingNotes = text(sceneData.pacing_notes);\nconst editingTransition = text(sceneData.editing_transition);\nconst cameraNotes = text(sceneData.camera_notes);\nconst lightingNotes = text(sceneData.lighting_notes);\nconst lockedElements = toPretty(sceneData.locked_elements);\nconst replaceableElements = toPretty(sceneData.replaceable_elements);\nconst characterContinuityRules = toPretty(sceneData.character_continuity_rules);\nconst productContinuityRules = toPretty(sceneData.product_continuity_rules);\nconst videoMotionPlan = toPretty(sceneData.video_motion_plan);\nconst hasPerson = sceneData.has_person === true;\nconst hasProduct = sceneData.has_product === true;\n\nconst finalImagePrompt = joinBlocks([\n  `You are rebuilding a commercial still from a source-video shot for viral-clone production.`,\n  `Core rule:\\nPreserve the original shot design, composition, camera logic, scene structure, lighting logic, emotional purpose, and action staging.\\nOnly replace subject identity where applicable.\\nDo not redesign the shot.`,\n  `Reference image usage rules:\\n- The reference frame image is the primary anchor for composition, crop, perspective, camera height, subject placement, scene layout, background structure, lighting direction, shadow logic, and storytelling purpose.\\n- The character reference image, if provided, is only for replacing and locking character identity.\\n- The product reference image, if provided, is only for replacing and locking product identity.\\n- Do not let the character reference image change the shot design.\\n- Do not let the product reference image change the shot design.\\n- Do not print or describe any image URLs in the output.`,\n  `Character identity:\\n- character_name: ${characterName||'N/A'}\\n- shot_has_person: ${hasPerson?'true':'false'}\\n- character_desc: ${characterDesc||'N/A'}`,\n  `Product identity:\\n- product_name: ${productName||'N/A'}\\n- product_description: ${productDescription||'N/A'}\\n- product_selling_points: ${productSellingPoints||'N/A'}\\n- shot_has_product: ${hasProduct?'true':'false'}\\n- product_desc_in_shot: ${productDesc||'N/A'}`,\n  `Shot purpose and visual anchor:\\n- shot_goal: ${shotGoal||'N/A'}\\n- visual_content_description: ${visualContentDescription||'N/A'}\\n- location_setting: ${locationSetting||'N/A'}\\n- emotion_state: ${emotionState||'N/A'}\\n- action_blocking: ${actionBlocking||'N/A'}\\n- must_show: ${mustShow||'N/A'}\\n- on_screen_text_graphics: ${onScreenTextGraphics||'none'}`,\n  `Camera and composition:\\n- camera_shot_size: ${cameraShotSize||'N/A'}\\n- camera_angle: ${cameraAngle||'N/A'}\\n- camera_movement: ${cameraMovement||'N/A'}\\n- composition_notes: ${compositionNotes||'N/A'}\\n- camera_notes: ${cameraNotes||'N/A'}`,\n  `Lighting and color:\\n- lighting_atmosphere: ${lightingAtmosphere||'N/A'}\\n- color_grading: ${colorGrading||'N/A'}\\n- lighting_notes: ${lightingNotes||'N/A'}`,\n  lockedElements ? `Locked elements to preserve exactly:\\n${lockedElements}` : '',\n  replaceableElements ? `Replaceable elements:\\n${replaceableElements}` : '',\n  characterContinuityRules ? `Character continuity rules:\\n${characterContinuityRules}` : '',\n  productContinuityRules ? `Product continuity rules:\\n${productContinuityRules}` : '',\n  `Negative rules:\\n- no new composition\\n- no new camera angle\\n- no new scene concept\\n- no extra people\\n- no extra products\\n- no subtitles\\n- no UI overlays\\n- no watermark\\n- no border\\n- no collage\\n- no product deformation\\n- no off-model face`,\n  `Output target:\\nA photorealistic commercial still that looks like the same original shot, with only the character identity and/or product identity replaced when applicable.`\n]);\n\nconst finalVideoPrompt = joinBlocks([\n  `Create a short commercial video shot that faithfully reconstructs the original source-video shot logic.`,\n  `Core rule:\\nThis is not a new concept. This is a controlled shot reconstruction.\\nPreserve the original shot design, camera grammar, staging logic, reveal logic, product role, emotional purpose, and pacing.\\nOnly replace subject identity where applicable.`,\n  `Character:\\n- character_name: ${characterName||'N/A'}\\n- shot_has_person: ${hasPerson?'true':'false'}\\n- character_desc: ${characterDesc||'N/A'}`,\n  `Product:\\n- product_name: ${productName||'N/A'}\\n- product_description: ${productDescription||'N/A'}\\n- product_selling_points: ${productSellingPoints||'N/A'}\\n- shot_has_product: ${hasProduct?'true':'false'}\\n- product_desc_in_shot: ${productDesc||'N/A'}`,\n  `Shot purpose:\\n- shot_goal: ${shotGoal||'N/A'}\\n- emotion_state: ${emotionState||'N/A'}\\n- must_show: ${mustShow||'N/A'}`,\n  `Visual anchor:\\n- visual_content_description: ${visualContentDescription||'N/A'}\\n- location_setting: ${locationSetting||'N/A'}\\n- action_blocking: ${actionBlocking||'N/A'}`,\n  `Camera direction:\\n- camera_shot_size: ${cameraShotSize||'N/A'}\\n- camera_angle: ${cameraAngle||'N/A'}\\n- camera_movement: ${cameraMovement||'N/A'}\\n- composition_notes: ${compositionNotes||'N/A'}\\n- camera_notes: ${cameraNotes||'N/A'}`,\n  `Scene and light:\\n- lighting_atmosphere: ${lightingAtmosphere||'N/A'}\\n- color_grading: ${colorGrading||'N/A'}\\n- lighting_notes: ${lightingNotes||'N/A'}`,\n  `Editing and pace:\\n- pacing_notes: ${pacingNotes||'N/A'}\\n- editing_transition: ${editingTransition||'N/A'}`,\n  lockedElements ? `Locked elements to preserve:\\n${lockedElements}` : '',\n  replaceableElements ? `Replaceable elements:\\n${replaceableElements}` : '',\n  characterContinuityRules ? `Character continuity rules:\\n${characterContinuityRules}` : '',\n  productContinuityRules ? `Product continuity rules:\\n${productContinuityRules}` : '',\n  videoMotionPlan ? `Motion plan:\\n${videoMotionPlan}` : '',\n  `Negative rules:\\n- no extra characters\\n- no extra products\\n- no subtitle text\\n- no UI overlays\\n- no random decorative props\\n- no scene redesign\\n- no exaggerated fantasy motion\\n- no product deformation\\n- no logo corruption\\n- no off-model faces`,\n  `Output target:\\nA photorealistic ad shot video that preserves the original shot design and only replaces the character identity and/or product identity where applicable.`\n]);\n\nreturn {\n  json: {\n    ...sceneData, ...meta, taskId, order: meta.order,\n    file_name: fileName || '', reference_frame_url: publicUrl || '',\n    final_image_prompt: finalImagePrompt, final_video_prompt: finalVideoPrompt\n  }\n};"
+      },
+      "id": "0056da3a-35ae-4e5b-8674-6b66da6f0d52",
+      "name": "组装参考帧URL",
+      "position": [
+        9568,
+        -832
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const meta = $json || {};\nconst sceneData = meta.sceneData || {};\nconst base = $('准备参数').first().json || {};\n\nconst taskId = String(meta.taskId || base.taskId || '');\nconst order = Number(meta.order || 0);\n\nconst cameraList = [\n  sceneData.camera_shot_size, sceneData.camera_angle, sceneData.camera_movement\n].filter(Boolean).join(' / ');\n\nconst segmentId = 'seg_' + taskId + '_' + String(order).padStart(4, '0');\n\nreturn {\n  json: {\n    ...meta,\n    _supabase_url: base.supabase_url,\n    _supabase_api_key: base.supabase_api_key,\n    _segment_body: {\n      id: segmentId,\n      task_id: taskId,\n      order: order,\n      duration: Number(sceneData.duration || meta.duration || 8),\n      time_range: sceneData.time_range || meta.time_range || null,\n      image_prompt: meta.final_image_prompt || null,\n      video_prompt: meta.final_video_prompt || null,\n      original_script: sceneData.original_script || null,\n      rewritten_script: sceneData.rewritten_script || null,\n      visual_description: sceneData.visual_description || sceneData.visual_content_description || null,\n      camera_notes: sceneData.camera_notes || cameraList || null,\n      lighting_notes: sceneData.lighting_notes || sceneData.lighting_atmosphere || null,\n      status: 'PENDING_IMAGE',\n      updated_at: new Date().toISOString(),\n      generation_params: {\n        reference_frame_url: meta.reference_frame_url || null,\n        has_person: sceneData.has_person ?? true,\n        has_product: sceneData.has_product ?? true,\n        subject_refs: [],\n        image_history: []\n      }\n    }\n  }\n};"
+      },
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "准备分镜写入数据",
+      "position": [
+        9792,
+        -832
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json._supabase_url }}/rest/v1/storyboard_segments",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $json._supabase_api_key }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $json._supabase_api_key }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json._segment_body }}",
+        "options": {}
+      },
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "name": "写入分镜-Supabase",
+      "position": [
+        10016,
+        -832
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 从组装参考帧URL节点读取所有已处理的分镜\n// 这样即使 写入分镜-Supabase 节点出现错误，汇总逻辑也不受影响\nconst items = $('组装参考帧URL').all();\nif (!items.length) throw new Error('No uploaded frame items to aggregate');\n\nconst base = $('准备参数').first().json;\nconst parsed = $('解析拆解结果').first().json;\n\nconst segments = items\n  .map(item => item.json)\n  .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));\n\nreturn [{\n  json: {\n    taskId: base.taskId, callbackUrl: base.callbackUrl,\n    apiKey: base.apiKey, workflowId: base.workflowId, workDir: base.workDir,\n    totalDuration: parsed.totalDuration, sceneCount: parsed.sceneCount, segments\n  }\n}];"
+      },
+      "id": "6ba586a8-1abe-4701-8501-ef7433c3ddeb",
+      "name": "汇总全部分镜",
+      "position": [
+        10240,
+        -832
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id={{ $json.workflowId }}",
+        "options": {}
+      },
+      "id": "5102dc1f-21fe-4ab9-8545-95fc7e1076b6",
+      "name": "查询积分配置",
+      "position": [
+        10464,
+        -832
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://47.107.158.233:8080/api/credits/deduct",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "={{ $('汇总全部分镜').first().json.apiKey }}"
+            },
+            {
+              "name": "workflow_id",
+              "value": "={{ $('汇总全部分镜').first().json.workflowId }}"
+            },
+            {
+              "name": "amount",
+              "value": "={{ $json.credits || $json.data?.credits || $json.amount || 10 }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5050036d-ade6-4575-b763-9bc6ef9cf36d",
+      "name": "扣除积分",
+      "position": [
+        10688,
+        -832
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('准备参数').first().json.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-admin-token",
+              "value": "={{ $('准备参数').first().json.adminToken }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "task_id",
+              "value": "={{ $('汇总全部分镜').first().json.taskId }}"
+            },
+            {
+              "name": "status",
+              "value": "completed"
+            },
+            {
+              "name": "segments",
+              "value": "={{ JSON.stringify($('汇总全部分镜').first().json.segments) }}"
+            },
+            {
+              "name": "workflow_data",
+              "value": "={{ JSON.stringify({ total_duration: $('汇总全部分镜').first().json.totalDuration, scene_count: $('汇总全部分镜').first().json.sceneCount, analysis_model: 'gemini-2.5-pro' }) }}"
+            },
+            {
+              "name": "api_key",
+              "value": "={{ $('准备参数').first().json.apiKey }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "01813ae0-6d81-484d-806b-4131f80df0a2",
+      "name": "回调App-拆解完成",
+      "position": [
+        10912,
+        -832
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "parameters": {
+        "command": "=rm -rf {{ $('汇总全部分镜').first().json.workDir }}"
+      },
+      "id": "f982e442-c99b-4580-b617-4e7b7b5083b0",
+      "name": "清理缓存",
+      "position": [
+        11136,
+        -832
+      ],
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "准备参数",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "准备参数": {
+      "main": [
+        [
+          {
+            "node": "下载视频到本地",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "下载视频到本地": {
+      "main": [
+        [
+          {
+            "node": "解析下载结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析下载结果": {
+      "main": [
+        [
+          {
+            "node": "读取视频文件",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读取视频文件": {
+      "main": [
+        [
+          {
+            "node": "组装 gemini_body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装 gemini_body": {
+      "main": [
+        [
+          {
+            "node": "Gemini视频分析",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini视频分析": {
+      "main": [
+        [
+          {
+            "node": "解析拆解结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析拆解结果": {
+      "main": [
+        [
+          {
+            "node": "提取场景关键帧",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提取场景关键帧": {
+      "main": [
+        [
+          {
+            "node": "FFmpeg提取单帧",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FFmpeg提取单帧": {
+      "main": [
+        [
+          {
+            "node": "解析抽帧结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析抽帧结果": {
+      "main": [
+        [
+          {
+            "node": "读取单帧文件",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读取单帧文件": {
+      "main": [
+        [
+          {
+            "node": "HTTP上传到SupabaseStorage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP上传到SupabaseStorage": {
+      "main": [
+        [
+          {
+            "node": "组装参考帧URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装参考帧URL": {
+      "main": [
+        [
+          {
+            "node": "准备分镜写入数据",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "准备分镜写入数据": {
+      "main": [
+        [
+          {
+            "node": "写入分镜-Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "写入分镜-Supabase": {
+      "main": [
+        [
+          {
+            "node": "汇总全部分镜",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "汇总全部分镜": {
+      "main": [
+        [
+          {
+            "node": "查询积分配置",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "查询积分配置": {
+      "main": [
+        [
+          {
+            "node": "扣除积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "扣除积分": {
+      "main": [
+        [
+          {
+            "node": "回调App-拆解完成",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "回调App-拆解完成": {
+      "main": [
+        [
+          {
+            "node": "清理缓存",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
+  }
+}

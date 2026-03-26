@@ -316,8 +316,12 @@ export async function generateReplication(
   script: any,
   options: ReplicationOptions
 ): Promise<{ success: boolean; message: string }> {
-  const soraProvider = options.soraProvider || 'kie';
+  const soraProvider = 'kie';
   const webhookUrl = process.env.N8N_REPLICATION_WEBHOOK;
+  const normalizedWorkflowIdForCredits =
+    typeof options.workflowIdForCredits === 'string' && options.workflowIdForCredits.trim()
+      ? options.workflowIdForCredits.trim()
+      : 'flow_farm_copy';
   const toPayloadString = (value: unknown): string => {
     if (value == null) return '';
     if (typeof value === 'string') return value;
@@ -343,7 +347,7 @@ export async function generateReplication(
       api_key: options.apiKey,
       callback_url: options.callbackUrl,
       replication_id: options.replicationId,
-      flow: "flow_farm_copy",
+      workflow_id: normalizedWorkflowIdForCredits,
       sora_provider: soraProvider,
       sora_workflow_id: soraProvider === 'yunwu' ? 'jUuV6hsG464jDTHq' : 'vvc2rzlS2PF4F2Tn',
       sora_callback_workflow_id: soraProvider === 'yunwu' ? 'dctPumNGHBoSokUx' : 'zPJavUam1LbqiAeg',
@@ -371,10 +375,10 @@ export async function generateReplication(
 
     payload.product_name = options.productName ?? payload.product_name ?? product.name ?? '';
     payload.workflow_id_for_credits =
-      options.workflowIdForCredits ?? payload.workflow_id_for_credits ?? 'flow_farm_copy';
+      options.workflowIdForCredits ?? payload.workflow_id_for_credits ?? normalizedWorkflowIdForCredits;
     payload.n_frames = options.nFrames ?? payload.n_frames ?? options.duration;
     payload.aspect_ratio = options.aspectRatio ?? payload.aspect_ratio ?? 'portrait';
-    payload.model = options.model ?? payload.model ?? 'sora2';
+    payload.model = options.model ?? payload.model ?? 'veo_3_1-fast';
     payload.image_1_token = options.imageToken ?? payload.image_1_token ?? '';
 
     if (options.promptOverrides) {
@@ -475,7 +479,7 @@ export async function generateFromSellingPoints(sellingPoints: string): Promise<
     const response = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sellingPoints, flow: "flow_farm_md" }),
+      body: JSON.stringify({ sellingPoints, workflow_id: "flow_farm_md" }),
     });
 
     if (!response.ok) {
@@ -512,7 +516,7 @@ export async function generateFromScript(scriptContent: string): Promise<Replica
     const response = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scriptContent, flow: "flow_farm_zy" }),
+      body: JSON.stringify({ scriptContent, workflow_id: "flow_farm_zy" }),
     });
 
     if (!response.ok) {
@@ -640,8 +644,8 @@ export async function triggerCreativeScriptGeneration(
   options: CreativeScriptTriggerOptions,
 ): Promise<{ success: boolean; message: string }> {
   const webhookUrl = resolveCreativeWebhookUrl();
-  const workflowId =
-    process.env.N8N_CREATIVE_SCRIPT_WORKFLOW_ID?.trim() || "0gGQzB4rz5tNYcYF";
+  const billingWorkflowId =
+    process.env.N8N_CREATIVE_SCRIPT_WORKFLOW_ID?.trim() || "flow_writing";
 
   const payload = {
     task_id: options.replicationId,
@@ -655,7 +659,7 @@ export async function triggerCreativeScriptGeneration(
     callback_url: options.callbackUrl,
     app_url: options.appUrl,
     admin_token: process.env.ADMIN_TOKEN,
-    workflow_id: workflowId,
+    workflow_id: billingWorkflowId,
   };
 
   console.log("[triggerCreativeScriptGeneration] triggering:", {

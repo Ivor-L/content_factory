@@ -27,6 +27,7 @@ export interface TenantFeature {
   settings: boolean;
   dashboard: boolean;
   canvas: boolean;
+  nexapi: boolean;
 }
 
 export interface TenantNavItem {
@@ -69,6 +70,7 @@ export const tenants: Record<string, TenantConfig> = {
       myVideos: true,
       upload: true,
       settings: true,
+      nexapi: true,
     },
       navItems: [
       { label: '首页', href: '/dashboard', icon: 'Home' },
@@ -105,6 +107,7 @@ export const tenants: Record<string, TenantConfig> = {
       myVideos: true,
       upload: true,
       settings: true,
+      nexapi: false,
     },
       navItems: [
       { label: '首页', href: '/dashboard', icon: 'Home' },
@@ -140,6 +143,7 @@ export const tenants: Record<string, TenantConfig> = {
       myVideos: true,
       upload: true,
       settings: true,
+      nexapi: true,
     },
       navItems: [
       { label: '首页', href: '/dashboard', icon: 'Home' },
@@ -176,6 +180,7 @@ export const tenants: Record<string, TenantConfig> = {
       myVideos: true,
       upload: true,
       settings: true,
+      nexapi: false,
     },
       navItems: [
       { label: '首页', href: '/dashboard', icon: 'Home' },
@@ -213,6 +218,7 @@ export const tenants: Record<string, TenantConfig> = {
       myVideos: true,
       upload: true,
       settings: true,
+      nexapi: false,
     },
       navItems: [
       { label: '首页', href: '/dashboard', icon: 'Home' },

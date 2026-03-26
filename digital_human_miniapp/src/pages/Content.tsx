@@ -524,11 +524,7 @@ useEffect(() => {
             <button
               onClick={() => currentStage && handleStageGenerate(currentStage)}
               disabled={!currentStage || stageGenerating === currentStage || apiKeyMissing}
-              className={`w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 ${
-                !currentStage || stageGenerating === currentStage
-                  ? 'bg-white text-text-secondary'
-                  : 'bg-primary text-white hover:bg-black/80'
-              }`}
+              className="btn-openclaw w-full py-3 text-sm font-bold flex items-center justify-center gap-2"
             >
               {stageGenerating === currentStage ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
               {stageGenerating === currentStage ? '生成中...' : 'AI 生成当前阶段'}
@@ -541,7 +537,7 @@ useEffect(() => {
         <div className="fixed right-6 bottom-32 z-30">
           <button
             onClick={() => setCreateModalOpen(true)}
-            className="w-14 h-14 rounded-full bg-primary text-white soft-shadow flex items-center justify-center hover:bg-black/80 transition-colors"
+            className="btn-openclaw w-14 h-14 text-xl soft-shadow flex items-center justify-center"
           >
             <Plus size={24} />
           </button>
@@ -606,9 +602,7 @@ useEffect(() => {
               <button
                 onClick={() => void handleCreateTask()}
                 disabled={creating}
-                className={`w-full py-3 rounded-xl font-bold text-white flex items-center justify-center gap-2 ${
-                  creating ? 'bg-secondary text-text-secondary' : 'bg-primary hover:bg-black/80'
-                }`}
+                className="btn-openclaw w-full py-3 font-bold flex items-center justify-center gap-2 text-base"
               >
                 {creating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
                 {creating ? '创建中...' : '开始创作'}

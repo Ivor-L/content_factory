@@ -1,0 +1,653 @@
+{
+  "name": "内容工厂-提示词子流程-网页版",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "farm_Prompt_web",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "7020153e-ea4e-478c-8201-d2ad846fdfca",
+      "name": "Webhook-父入口",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -4704,
+        -1072
+      ],
+      "webhookId": "111b8634-3d09-45f0-bad3-18a376681b7f"
+    },
+    {
+      "parameters": {
+        "jsCode": "const root = $json || {};\nconst body = root.body || root || {};\n\nfunction asString(v) {\n  if (v === undefined || v === null) return '';\n  if (typeof v === 'string') return v.trim();\n  try { return JSON.stringify(v, null, 2); } catch { return String(v); }\n}\n\nfunction parseMaybeJson(v) {\n  if (v === undefined || v === null) return null;\n  if (typeof v === 'object') return v;\n  const s = String(v).trim();\n  if (!s) return null;\n  try { return JSON.parse(s); } catch { return null; }\n}\n\nfunction renderTemplate(template, vars) {\n  return String(template || '').replace(/\\{\\{\\s*([a-zA-Z0-9_]+)\\s*\\}\\}/g, (_, key) => {\n    const val = vars[key];\n    return val === undefined || val === null ? '' : String(val);\n  });\n}\n\nconst RECIPE_REGISTRY = {\n  'hot_clone@v1': {\n    defaults: {\n      workflow_id_for_credits: 'flow_farm_copy',\n      model: 'sora2',\n      aspect_ratio: 'portrait',\n      n_frames: '15'\n    },\n    routes: {\n      prompt_callback_url: 'https://www.atomx.top/api/webhook/replication/prompt',\n      sora_start_webhook: 'https://hooks.atomx.top/webhook/sora_web'\n    },\n    prompts: {\n      clone_system: `Role\n\n你是一位世界级的 AI 视频创意总监（AI Video Director）。\n你擅长把产品信息嵌入“爆款分镜逻辑”，并输出可直接用于 Sora2 的分镜提示词。\n\nInputs\n\n1. Source Blueprint（爆款拆解，包含 visual_specs 和 abstract_logic）\n2. Target Product Info（新产品信息）\n3. Target Duration = {{duration}} 秒\n4. Locale Config\n   - Target Country/Region = {{country_region}}\n   - Target City/Style = {{city_style_fallback}}\n   - Target Language = {{target_language}}\n\nTask\n\n阅读 Source Blueprint 每个分镜，使用 abstract_logic 的 universal_instruction，\n将 Target Product 填入分镜，生成一份全新的、逻辑自洽的“{{target_language}}”视频生成提示词，\n总时长严格为 {{duration}} 秒，并且场景必须发生在 {{country_region}}（及其城市风格）。\n\nLocale Hard Rules\n\nA) Country/Region Scene Lock\n- 所有场景必须符合目标国家/地区的真实生活语境（建筑、室内陈设、街景、服饰、道具、光线氛围）。\n- 如果提供了城市/风格，则优先贴近该城市的风格元素。\n- 禁止出现与目标国家明显冲突的符号。\n\nB) Language Lock\n- 所有口播/对白（如果存在）必须是 Target Language。\n- 画风不受语言影响，只有声音内容受语言约束。\n\nC) No On-Screen Text Lock\n- 画面中禁止出现任何形式的文字或字符，包括字幕、贴纸字、标题卡、价格牌、包装文字、标签文字、UI 文字、路牌文字、门店招牌文字、衣物字母、书籍报纸文字、屏幕弹窗文字、水印、LOGO 文字、社媒界面文字。\n- 若现实环境中不可避免出现文字，必须改写为无法识别的抽象图形、色块或模糊纹理。\n- 禁止使用“后期叠字/加字幕/屏幕文字/标题卡/贴纸文字”等任何形式的指令。\n- 如需表达卖点、价格、CTA、步骤，只能通过动作、道具对比、表情、镜头语言、环境音、口播完成。\n\nTransformation Logic\n\n对每个分镜必须执行：\n1. 读取 abstract_logic\n2. 用新产品完成同一逻辑\n3. 保留原片运镜与节奏，但画面元素必须符合目标国家/地区\n\nPacing Adaptation\n\n你必须根据 Source Blueprint 的总时长与 Target Duration 做适配：\n- 误差 ±2 秒：不改分镜结构\n- 需要压缩：保留 Hook / Core Benefit / End，压缩弱镜头\n- 需要延展：延长高光时刻、空镜细节、慢动作、动作节奏\n\nConstraints\n- 优先保持原有分镜顺序与镜头逻辑\n- 描写必须镜头友好、动作可执行、画面细节明确\n- 情绪基调与叙事节奏保持一致\n- 最终输出必须完全使用 Target Language，包括结构标签和镜头术语\n- 不允许混用多种语言\n- 不得包含任何将显示在画面上的文字内容\n\nOutput Format\n\n只输出一段完整提示词，不要解释，不要输出 JSON，不要输出额外说明。\n输出必须是一个单独的文本块，并遵守下面结构（结构标题也必须使用 Target Language）：\n\n【Style Tags】\nArt style / Type:\nImage quality:\nMood / Atmosphere:\nScene country / city:\n\n【Storyboard】\nShot 1 (00:00 - 00:XX):\nCamera movement:\nMain subject action:\nProduct presentation:\nEnvironment / set dressing:\nLighting:\nVoiceover / ambient sound:\n\nShot 2 (00:XX - 00:XX):\n... 按 Source Blueprint 顺序输出直到结束。`,\n      clone_user: `产品信息：\n{{product_info_text}}\n\nTarget Language: {{target_language}}\n\n爆款视频拆解报告：\n{{blueprint_text}}\n\n时长：{{duration}}\n国家/地区：{{country_region}}\n城市/风格：{{city_style_fallback}}`\n    }\n  }\n};\n\nconst productInfoRaw = body['产品信息'] ?? body.product_info ?? body.productInfo ?? '';\nconst productInfoObj = parseMaybeJson(productInfoRaw);\nconst blueprintRaw = body['爆款视频拆解报告'] ?? body.blueprint ?? body.source_blueprint ?? {};\nconst blueprintObj = parseMaybeJson(blueprintRaw) || blueprintRaw || {};\n\nconst targetLanguage = asString(body['Target Language'] ?? body.target_language ?? body.language ?? 'en');\nconst duration = asString(body['时长'] ?? body.duration ?? body.target_duration ?? '15');\nconst countryRegion = asString(body['国家/地区'] ?? body.country_region ?? body.country ?? 'us');\nconst cityStyle = asString(body['城市/风格'] ?? body.city_style ?? body.city ?? '');\nconst productName = asString(\n  body.product_name ??\n  body['产品名称'] ??\n  productInfoObj?.product_name ??\n  productInfoObj?.name ??\n  ''\n);\n\nconst recipeId = asString(body.recipe_id ?? 'hot_clone');\nconst recipeVersion = asString(body.recipe_version ?? 'v1');\nconst recipeKey = `${recipeId}@${recipeVersion}`;\nconst recipe = RECIPE_REGISTRY[recipeKey] || RECIPE_REGISTRY['hot_clone@v1'];\n\nconst promptOverrides = parseMaybeJson(body.prompt_overrides) || {};\nconst recipeVars = {\n  product_info_text: productInfoObj ? JSON.stringify(productInfoObj, null, 2) : asString(productInfoRaw),\n  blueprint_text: typeof blueprintObj === 'string' ? blueprintObj : JSON.stringify(blueprintObj, null, 2),\n  target_language: targetLanguage,\n  duration,\n  country_region: countryRegion,\n  city_style: cityStyle,\n  city_style_fallback: cityStyle || 'auto'\n};\n\nconst cloneSystemTemplate = asString(\n  promptOverrides.clone_system ??\n  body.clone_system_prompt ??\n  recipe.prompts.clone_system\n);\nconst cloneUserTemplate = asString(\n  promptOverrides.clone_user ??\n  body.clone_user_prompt ??\n  recipe.prompts.clone_user\n);\n\nconst cloneSystemPrompt = renderTemplate(cloneSystemTemplate, recipeVars);\nconst cloneUserPrompt = renderTemplate(cloneUserTemplate, recipeVars);\n\nconst normalized = {\n  ...root,\n  body,\n  product_info_text: recipeVars.product_info_text,\n  product_info_obj: productInfoObj || {},\n  blueprint_text: recipeVars.blueprint_text,\n  blueprint_obj: typeof blueprintObj === 'object' && blueprintObj ? blueprintObj : {},\n  target_language: targetLanguage,\n  duration,\n  country_region: countryRegion,\n  city_style: cityStyle,\n  product_name: productName,\n\n  recipe_id: recipeId,\n  recipe_version: recipeVersion,\n  recipe_key: recipeKey,\n  recipe_found: !!RECIPE_REGISTRY[recipeKey],\n  prompt_overrides: promptOverrides,\n  clone_system_prompt: cloneSystemPrompt,\n  clone_user_prompt: cloneUserPrompt,\n\n  callback_url: asString(body.callback_url ?? body.callbackUrl ?? ''),\n  prompt_callback_url: body.prompt_callback_url\n    ? asString(body.prompt_callback_url)\n    : (body.callback_url || body.callbackUrl\n        ? asString(body.callback_url ?? body.callbackUrl ?? '') + '/prompt'\n        : asString(recipe.routes.prompt_callback_url ?? '')),\n  sora_provider: asString(body.sora_provider ?? 'kie'),\n  replication_id: asString(body.replication_id ?? body.task_id ?? body.taskId ?? ''),\n  product_id: asString(body.product_id ?? ''),\n  script_id: asString(body.script_id ?? ''),\n  user_id: asString(body.user_id ?? ''),\n  image_1_token: asString(body.image_1_token ?? ''),\n  image_url: asString(body.image_url ?? body.product_image_url ?? ''),\n  api_key: asString(body.api_key ?? ''),\n  workflow_id_for_credits: asString(body.workflow_id_for_credits ?? recipe.defaults.workflow_id_for_credits ?? 'flow_prompt_farm'),\n  n_frames: asString(body.n_frames ?? recipe.defaults.n_frames ?? ''),\n  aspect_ratio: asString(body.aspect_ratio ?? recipe.defaults.aspect_ratio ?? 'portrait'),\n  model: asString(body.model ?? recipe.defaults.model ?? 'sora2')\n};\n\nreturn [{ json: normalized }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4480,
+        -1072
+      ],
+      "id": "a9c31353-2d4c-4f34-97b8-d982273fae3c",
+      "name": "标准化输入"
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://api.atomx.top/workflow-credits/query?workflow_id=' + $json.workflow_id_for_credits }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -4256,
+        -1072
+      ],
+      "id": "310e707e-6942-4172-b1c8-0c1e375c78e0",
+      "name": "查询工作流积分",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.atomx.top/api/balance/check",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "required",
+              "value": "={{ $('查询工作流积分').item.json.data.credit_cost }}"
+            },
+            {
+              "name": "api_key",
+              "value": "={{ $('标准化输入').item.json.api_key }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -4032,
+        -1072
+      ],
+      "id": "b6aaa413-84d2-4f81-8335-4011f93fb18c",
+      "name": "验证api-key",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok === false }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "apikey_invalid"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok === true && $json.data && $json.data.sufficient === false }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "insufficient_points"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok === true && $json.data && $json.data.sufficient === true }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pass"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -3808,
+        -1088
+      ],
+      "id": "fbe2acb8-11f7-4528-8e83-fdd81ec198c1",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok:false, code:'API_KEY_INVALID', message:'api_key无效' } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -3584,
+        -1264
+      ],
+      "id": "94195db3-ffe0-4b73-8bb5-c2ebf9d19293",
+      "name": "Respond-api_key错误"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok:false, code:'INSUFFICIENT_POINTS', message:'积分不足' } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -3584,
+        -1072
+      ],
+      "id": "d063b3a6-3cb9-4e81-87c7-9a4dcebb01a5",
+      "name": "Respond-积分不足"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok:true, message:'Started', replication_id:$('标准化输入').item.json.replication_id, script_id:$('标准化输入').item.json.script_id, product_id:$('标准化输入').item.json.product_id } }}",
+        "options": {}
+      },
+      "id": "6c05d030-a92b-4c83-a599-9f96768e4f6e",
+      "name": "Respond-Started",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -3584,
+        -880
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('标准化输入').item.json.clone_user_prompt }}",
+        "options": {
+          "systemMessage": "={{ $('标准化输入').item.json.clone_system_prompt }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        -3360,
+        -880
+      ],
+      "id": "d9e0896c-7f03-4437-bc53-1a9d4750b600",
+      "name": "脚本生成器",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "gpt-4o"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -3296,
+        -656
+      ],
+      "id": "f00ea2b5-96e9-4f15-adda-03ac1dc44825",
+      "name": "gpt",
+      "credentials": {
+        "openAiApi": {
+          "id": "TVs8cHigrdXKUMDJ",
+          "name": "云雾api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const std = $('标准化输入').first()?.json || {};\nconst j = { ...std, ...$input.first()?.json || {} };\nconst raw = String(j.output || '').replace(/\\r\\n/g, '\\n').replace(/\\r/g, '\\n');\n\nif (!raw.trim()) throw new Error('没有找到 output 文本');\n\nconst productName = String(j.product_name || j['产品名称'] || '').trim();\nconst language = String(j.target_language || j.language || j['视频语言'] || '').trim();\n\nfunction cleanBlock(s) {\n  return String(s || '')\n    .replace(/\\r\\n/g, '\\n')\n    .replace(/\\r/g, '\\n')\n    .replace(/[ \\t]+\\n/g, '\\n')\n    .trim();\n}\n\nlet art = '';\nlet render = '';\nlet mood = '';\n\nconst lines = raw.split('\\n');\nconst metaLine = lines\n  .map(l => l.trim())\n  .filter(Boolean)\n  .find(l => /Art Style/i.test(l) && /Image quality|Render Quality/i.test(l) && /Mood/i.test(l)) || '';\n\nif (metaLine) {\n  const artMatch = metaLine.match(/Art Style\\s*\\/\\s*Type\\s*:\\s*([^\\n,]+)/i) || metaLine.match(/Art Style\\]\\*{0,2}\\s*([^,]+)\\s*,/i);\n  const rqMatch  = metaLine.match(/Image quality\\s*:\\s*([^\\n,]+)/i) || metaLine.match(/Render Quality\\]\\*{0,2}\\s*([^,]+)\\s*,/i);\n  const moodMatch= metaLine.match(/Mood\\s*\\/\\s*Atmosphere\\s*:\\s*([^\\n]+)/i) || metaLine.match(/Mood\\]\\*{0,2}\\s*([^.\\n]+)\\.?/i);\n  art = cleanBlock(artMatch?.[1]);\n  render = cleanBlock(rqMatch?.[1]);\n  mood = cleanBlock(moodMatch?.[1]);\n} else {\n  const txt = raw;\n  const artCn = txt.match(/画风\\/类型：\\s*([^\\n]+)/);\n  const rqCn  = txt.match(/画质：\\s*([^\\n]+)/);\n  const moodCn= txt.match(/氛围：\\s*([^\\n]+)/);\n  art = cleanBlock(artCn?.[1]);\n  render = cleanBlock(rqCn?.[1]);\n  mood = cleanBlock(moodCn?.[1]);\n}\n\nconst shots = [];\n\nconst shotEnRegex = /\\*{0,2}Shot\\s+(\\d+)\\s*\\(([^)]+)\\)\\s*:?\\*{0,2}\\s*([\\s\\S]*?)(?=(?:\\n\\s*\\n)?\\*{0,2}Shot\\s+\\d+\\s*\\(|$)/gi;\nconst shotCnRegex = /镜头\\s*(\\d+)\\s*[（(]([^）)]+)[）)]\\s*[:：]\\s*([\\s\\S]*?)(?=\\n\\s*镜头\\s*\\d+\\s*[（(]|$)/g;\n\nfunction normalizeTimeRange(t) {\n  const timeRange = cleanBlock(t);\n  if (!timeRange) return '';\n  return timeRange.includes('-') ? timeRange : `${timeRange} - ${timeRange}`;\n}\n\nfunction replacePlaceholders(body) {\n  let b = body;\n  if (productName) b = b.replace(/\\b\\[HERO_PRODUCT\\]\\b/g, productName);\n  b = b.replace(/\\b\\[USER\\/MODEL\\]\\b/g, 'a relatable on-camera creator');\n  return b;\n}\n\nfunction collectByRegex(regex) {\n  let m;\n  while ((m = regex.exec(raw)) !== null) {\n    const no = Number(m[1]);\n    const timeRange = normalizeTimeRange(m[2]);\n    let body = cleanBlock(m[3]);\n    body = replacePlaceholders(body);\n    shots.push(`**Shot ${no} (${timeRange}):**\\n${body}`);\n  }\n}\n\ncollectByRegex(shotEnRegex);\nif (shots.length === 0) collectByRegex(shotCnRegex);\n\nconst headerParts = [];\nif (art) headerParts.push(`[Art Style] ${art}`);\nif (render) headerParts.push(`[Render Quality] ${render}`);\nif (mood) headerParts.push(`[Mood] ${mood}`);\n\nconst header = headerParts.length\n  ? `${headerParts.join(', ')}.`\n  : `[Art Style] UGC handheld, [Render Quality] mobile phone portrait 9:16, [Mood] authentic and persuasive.`;\n\nconst baseRules = cleanBlock(`\n${header}\n${language ? `Language: ${language}.` : ''}\n\nCinematic but authentic UGC pacing. Keep camera moves, timing, and beat order exactly as the shot list.\nNo watermark, no UI icons, no subtitles unless explicitly specified in the shot text.\nVertical 9:16, handheld realism, natural lighting.\n`);\n\nconst soraBody = shots.length\n  ? shots.join('\\n\\n')\n  : cleanBlock(`(Fallback: could not parse shot blocks, using original content)\\n\\n${raw}`);\n\nconst soraPrompt = cleanBlock(`${baseRules}\\n\\n${soraBody}`);\nconst soraPromptCompact = cleanBlock(`\n${header}\nVertical 9:16 UGC handheld realism. Keep timing and shot order.\n${shots.length ? shots.join('\\n') : raw}\n`);\n\nreturn [{\n  json: {\n    ...j,\n    sora_prompt: soraPrompt,\n    sora_prompt_compact: soraPromptCompact,\n    shots_count: shots.length\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3008,
+        -880
+      ],
+      "id": "02a41435-3057-4342-9671-719b9dd5d312",
+      "name": "解析数据"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.prompt_callback_url || \"https://www.atomx.top/api/webhook/replication/prompt\" }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"task_id\": $json.replication_id || '',\n  \"status\": \"prompt_completed\",\n  \"stage\": \"prompt_ready\",\n  \"result\": {\n    \"generatedScript\": $json.sora_prompt || '',\n    \"videoPrompt\": $json.sora_prompt_compact || '',\n    \"shots_count\": $json.shots_count || 0,\n    \"product_id\": $json.product_id || '',\n    \"script_id\": $json.script_id || '',\n    \"user_id\": $json.user_id || ''\n  }\n} }}",
+        "options": {}
+      },
+      "id": "31712d82-3d11-4abf-a3cf-b06a917cea3b",
+      "name": "回调前端-提示词完成",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2784,
+        -976
+      ],
+      "alwaysOutputData": true,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "record_id",
+              "type": "string",
+              "value": "={{ $json.body.record_id || '' }}"
+            },
+            {
+              "id": "a2",
+              "name": "prompt",
+              "type": "string",
+              "value": "={{ $json.sora_prompt_compact }}"
+            },
+            {
+              "id": "a3",
+              "name": "aspect_ratio",
+              "type": "string",
+              "value": "={{ $json.aspect_ratio || 'portrait' }}"
+            },
+            {
+              "id": "a4",
+              "name": "image_1_token",
+              "type": "string",
+              "value": "={{ $json.image_1_token || '' }}"
+            },
+            {
+              "id": "a5",
+              "name": "model",
+              "type": "string",
+              "value": "={{ $json.model || 'sora2' }}"
+            },
+            {
+              "id": "a6",
+              "name": "workflow_id_for_credits",
+              "type": "string",
+              "value": "={{ $json.workflow_id_for_credits || '' }}"
+            },
+            {
+              "id": "a7",
+              "name": "api_key",
+              "type": "string",
+              "value": "={{ $json.api_key || '' }}"
+            },
+            {
+              "id": "a8",
+              "name": "n_frames",
+              "type": "string",
+              "value": "={{ $json.n_frames || '' }}"
+            },
+            {
+              "id": "a9",
+              "name": "callback_url",
+              "type": "string",
+              "value": "={{ $json.callback_url || '' }}"
+            },
+            {
+              "id": "a10",
+              "name": "replication_id",
+              "type": "string",
+              "value": "={{ $json.replication_id || '' }}"
+            },
+            {
+              "id": "a11",
+              "name": "product_id",
+              "type": "string",
+              "value": "={{ $json.product_id || '' }}"
+            },
+            {
+              "id": "a12",
+              "name": "script_id",
+              "type": "string",
+              "value": "={{ $json.script_id || '' }}"
+            },
+            {
+              "id": "a13",
+              "name": "user_id",
+              "type": "string",
+              "value": "={{ $json.user_id || '' }}"
+            },
+            {
+              "id": "a14",
+              "name": "generatedScript",
+              "type": "string",
+              "value": "={{ $json.sora_prompt || '' }}"
+            },
+            {
+              "id": "a15",
+              "name": "videoPrompt",
+              "type": "string",
+              "value": "={{ $json.sora_prompt_compact || '' }}"
+            },
+            {
+              "id": "a16",
+              "name": "sora_provider",
+              "type": "string",
+              "value": "={{ $json.sora_provider || 'kie' }}"
+            },
+            {
+              "id": "a17",
+              "name": "image_url",
+              "type": "string",
+              "value": "={{ $json.image_url || '' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "813db6b6-25f6-40e1-9166-200ffee45db9",
+      "name": "构造子流程payload-全段",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -2784,
+        -784
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.sora_provider === 'yunwu' ? 'https://hooks.atomx.top/webhook/3f8a843d-0544-4ffb-97f1-1f749261d73e' : 'https://hooks.atomx.top/webhook/sora_web' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "ea956a7a-b9fe-4957-90e5-d5e1ec6455f9",
+      "name": "下发子流程-全段",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -2560,
+        -784
+      ],
+      "alwaysOutputData": true
+    }
+  ],
+  "pinData": {
+    "Webhook-父入口": [
+      {
+        "json": {
+          "headers": {
+            "host": "hooks.atomx.top",
+            "x-real-ip": "221.192.237.82",
+            "x-forwarded-for": "221.192.237.82",
+            "x-forwarded-proto": "https",
+            "connection": "close",
+            "content-length": "5167",
+            "content-type": "application/json",
+            "accept": "*/*",
+            "accept-language": "*",
+            "sec-fetch-mode": "cors",
+            "user-agent": "node",
+            "accept-encoding": "br, gzip, deflate"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "产品信息": "{\n  \"product_name\": \"手持式高温蒸汽清洗机\",\n  \"visual_description\": \"一个现代简约设计的手持蒸汽清洗机。主体为哑光白色，底座和手柄部分为中性灰色，顶部安全阀和喷嘴为黑色。整体造型类似一个时尚的电水壶，线条流畅，握感舒适。机身有红色和绿色的LED指示灯。最关键的视觉元素是从黑色长喷嘴中喷射出的强劲、高温的白色蒸汽，充满力量感。整体质感是坚固的塑料材质，给人一种可靠、高效的印象。\",\n  \"marketing_profile\": {\n    \"target_audience_vibe\": \"注重生活品质与家庭健康的现代都市人。他们追求高效、深度的清洁方式，对家居环境的卫生有较高要求，尤其是有儿童或宠物的家庭，对化学清洁剂敏感。\",\n    \"ideal_environment\": \"充满顽固污渍的厨房灶台、油烟机滤网，浴室的瓷砖缝隙、水龙头死角，以及需要消毒的儿童玩具和宠物用品区域。\",\n    \"core_selling_points\": [\n      {\n        \"type\": \"Physical\",\n        \"description\": \"105℃高温高压蒸汽，无需化学清洁剂，即可强力瓦解顽固油污、杀灭99.9%的细菌和螨虫，实现物理方式的深度清洁与消毒。\",\n        \"visual_proof\": \"特写镜头：白色蒸汽喷射到油腻的灶台或发霉的瓷砖缝隙上，污渍瞬间被冲刷、溶解。用抹布轻轻一擦，表面立即恢复光亮如新。通过分屏或快速切换展示清洁前后的巨大反差。\"\n      },\n      {\n        \"type\": \"Emotional\",\n        \"description\": \"告别费力擦洗的烦恼和化学残留的担忧。享受“指哪打哪”的精准清洁带来的快感与成就感，为家人创造一个真正洁净、安全的居住环境，收获满满的安心。\",\n        \"visual_proof\": \"用户面带微笑、姿态轻松地操作清洗机，看着污垢被蒸汽轻松瓦解。镜头切换到孩子在地板上放心玩耍，或家人在焕然一新的厨房里享受美食的温馨画面，营造出健康、幸福的家庭氛围。\"\n      }\n    ]\n  }\n}",
+            "Target Language": "en",
+            "爆款视频拆解报告": {
+              "meta": {
+                "art_style": "UGC (User-Generated Content) Style",
+                "render_quality": "Standard HD",
+                "mood_atmosphere": "Upbeat, Satisfying, Energetic",
+                "total_duration": "00:15"
+              },
+              "scene_breakdown": [
+                {
+                  "id": 1,
+                  "time_range": "00:00 - 00:06",
+                  "visual_specs": {
+                    "camera": "Medium shot, static, slightly high angle. The camera follows the cleaning motion across the sofa surface.",
+                    "subject_action": "A person is actively using a handheld steam cleaner on a grey fabric sofa. The device is moved back and forth, emitting a large, visible cloud of steam that envelops the cleaning area.",
+                    "lighting_environment": "Warm, even indoor lighting, characteristic of a modern living room. The background features the sofa and a textured wall.",
+                    "auxiliary_elements": "Abundant white steam, upbeat and light guitar background music, sequential on-screen text with a red background highlighting the product's function."
+                  },
+                  "abstract_logic": {
+                    "narrative_role": "Visual Hook & Problem/Solution Demonstration. Immediately showcases the product's power and primary function in a visually satisfying way to capture attention.",
+                    "universal_instruction": "Begin with a dynamic medium shot demonstrating the [HERO_PRODUCT] in its primary use case. Visually emphasize its effectiveness (e.g., steam, scrubbing power). Use upbeat music and overlay text that clearly states what the product does."
+                  }
+                },
+                {
+                  "id": 2,
+                  "time_range": "00:06 - 00:15",
+                  "visual_specs": {
+                    "camera": "The shot widens slightly to a medium shot, framing the presenter from the waist up as she sits comfortably on the sofa.",
+                    "subject_action": "The presenter stops cleaning, turns to the camera, and speaks with an energetic and friendly expression. She holds and gestures with the steam cleaner while delivering her sales pitch.",
+                    "lighting_environment": "Consistent with the previous scene; warm indoor lighting.",
+                    "auxiliary_elements": "The product remains the central prop. The music continues. Sequential on-screen text with a red background reinforces the presenter's key talking points: benefits, discount offer, and a final call to action."
+                  },
+                  "abstract_logic": {
+                    "narrative_role": "Benefit Articulation & Call to Action. The presenter builds a personal connection, explains the value proposition (e.g., 'perfect for spring cleaning'), creates urgency with a special offer, and directs the viewer to the point of sale.",
+                    "universal_instruction": "Transition to a friendly presenter who directly addresses the camera while holding the [HERO_PRODUCT]. The presenter should state a key benefit, announce a limited-time offer, and end with a clear Call to Action. Synchronize on-screen text with the speech to maximize message retention."
+                  }
+                }
+              ]
+            },
+            "时长": "15",
+            "国家/地区": "us",
+            "product_id": "cmmfwa5q000025rq2nfhp491c",
+            "script_id": "cmmmyafed0001dt5rwh12tvn8",
+            "callback_url": "https://www.atomx.top/api/webhook/replication",
+            "replication_id": "cmmnhgfwb0001jp5rjgjv9y5t",
+            "user_id": "e6df9b49-88ce-48e0-a5cd-62758910a9df",
+            "api_key": "sk_S-XJvpVKGGwnac1AlEFs3avCWZpqdOGaMMW27Y8iSPY"
+          },
+          "webhookUrl": "http://localhost:5678/webhook/farm_Prompt_web",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook-父入口": {
+      "main": [
+        [
+          {
+            "node": "标准化输入",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "标准化输入": {
+      "main": [
+        [
+          {
+            "node": "查询工作流积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "查询工作流积分": {
+      "main": [
+        [
+          {
+            "node": "验证api-key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "验证api-key": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Respond-api_key错误",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond-积分不足",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond-Started",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond-Started": {
+      "main": [
+        [
+          {
+            "node": "脚本生成器",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "脚本生成器": {
+      "main": [
+        [
+          {
+            "node": "解析数据",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gpt": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "脚本生成器",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析数据": {
+      "main": [
+        [
+          {
+            "node": "回调前端-提示词完成",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "构造子流程payload-全段",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "构造子流程payload-全段": {
+      "main": [
+        [
+          {
+            "node": "下发子流程-全段",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "1b06b904-7241-480d-980d-9f918f37a7b2",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
+  },
+  "id": "e9Q0InRVbw3mcRzk",
+  "tags": []
+}

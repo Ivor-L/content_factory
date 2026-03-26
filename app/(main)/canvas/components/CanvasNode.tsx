@@ -135,7 +135,7 @@ function ImageConfigNodeBody({
         <input
           type="number"
           min={1}
-          max={5}
+          max={6}
           value={data.imageCount}
           onChange={(event) =>
             data.onPatch?.(id, {
@@ -284,14 +284,14 @@ export const CanvasNode = memo(function CanvasNode({
         <Handle
           type="target"
           position={Position.Left}
-          className="!h-3 !w-3 !border-2 !border-[var(--tenant-primary)] !bg-white"
+          className="!h-4 !w-4 !border-2 !border-[var(--tenant-primary)] !bg-white !-translate-x-1/2"
         />
       )}
       {hasOutput && (
         <Handle
           type="source"
           position={Position.Right}
-          className="!h-3 !w-3 !border-2 !border-[var(--tenant-primary)] !bg-white"
+          className="!h-4 !w-4 !border-2 !border-[var(--tenant-primary)] !bg-white !translate-x-1/2"
         />
       )}
 

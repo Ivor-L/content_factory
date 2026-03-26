@@ -40,6 +40,7 @@ import {
   Pause,
   Volume2,
   VolumeX,
+  Copy,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { toast } from "react-hot-toast";
@@ -62,6 +63,50 @@ type TaskSummary = {
   createdAt: string;
   updatedAt: string;
 };
+
+type ReplicationDetailPayload = {
+  id: string;
+  status: string;
+  type: string;
+  updatedAt: string;
+  result: Record<string, unknown> | null;
+};
+
+function toRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function parseRecordLike(value: unknown): Record<string, unknown> | null {
+  if (typeof value === "string") {
+    try {
+      return toRecord(JSON.parse(value));
+    } catch {
+      return null;
+    }
+  }
+  return toRecord(value);
+}
+
+function readStringField(
+  record: Record<string, unknown> | null | undefined,
+  key: string,
+): string | null {
+  if (!record) return null;
+  const raw = record[key];
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  return null;
+}
+
+function normalizeHttpUrl(raw: string | null): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : null;
+}
 
 // Routes relative to basePath (no leading slash except for the leading basePath)
 const TASK_TYPE_ROUTE_PATHS: Record<TaskType, (taskId: string) => string> = {
@@ -265,11 +310,6 @@ const TYPE_LABEL_COPY: CopyMap = {
 };
 
 const DATE_LABEL_COPY = {
-  updated: {
-    en: "Updated",
-    zh: "更新时间",
-    "zh-TW": "更新時間",
-  },
   created: {
     en: "Created",
     zh: "创建时间",
@@ -1204,20 +1244,107 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
   const statusKey = (task.status || "").toUpperCase();
   const statusLabel = pickCopy(STATUS_LABELS[statusKey] || { en: task.status || "Unknown", zh: task.status || "未识别", "zh-TW": task.status || "未識別" }, langKey);
   const metadataVideoUrl = getMetadataString(task.metadata, "videoUrl") || getMetadataString(task.metadata, "resultUrl") || null;
-  const fallbackVideoUrl = looksLikeVideoUrl(task.thumbnailUrl) ? task.thumbnailUrl : null;
-  const primaryVideoUrl =
-    metadataVideoUrl && metadataVideoUrl.startsWith("http") ? metadataVideoUrl : fallbackVideoUrl;
-  const hasVideo = Boolean(primaryVideoUrl && primaryVideoUrl.startsWith("http"));
+  const fallbackVideoUrlFromThumbnail = looksLikeVideoUrl(task.thumbnailUrl) ? task.thumbnailUrl : null;
 
+  const isReplication = task.taskType === "replication";
   const isCreative = task.taskType === "creative";
   const isPoster = task.taskType === "poster";
   const isDigitalHuman = task.taskType === "digitalHuman";
   const isText2ImagePoster = isText2ImagePosterTask(task);
   const behavesLikeCreative = isCreative || isText2ImagePoster;
 
+  const shouldFetchReplicationDetail = isReplication;
+  const [replicationDetail, setReplicationDetail] = useState<ReplicationDetailPayload | null>(null);
+  const [replicationDetailLoading, setReplicationDetailLoading] = useState(false);
+  const [replicationDetailError, setReplicationDetailError] = useState<string | null>(null);
+  const [downloadingOverride, setDownloadingOverride] = useState(false);
+
+  useEffect(() => {
+    if (!shouldFetchReplicationDetail) {
+      setReplicationDetail(null);
+      setReplicationDetailError(null);
+      setReplicationDetailLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setReplicationDetailLoading(true);
+    setReplicationDetailError(null);
+    supabase.auth
+      .getSession()
+      .then(({ data: sessionData }) => sessionData.session?.access_token)
+      .then(async (token) => {
+        const response = await fetch(`/api/replication/${task.taskId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          cache: "no-store",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload?.error || "加载复刻结果失败");
+        }
+        if (cancelled) return;
+        const data = payload?.data as ReplicationDetailPayload | undefined;
+        setReplicationDetail(
+          data
+            ? {
+                ...data,
+                result: parseRecordLike(data.result) ?? null,
+              }
+            : null,
+        );
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setReplicationDetail(null);
+        setReplicationDetailError(error instanceof Error ? error.message : "加载复刻结果失败");
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setReplicationDetailLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldFetchReplicationDetail, task.taskId]);
+
+  const replicationResultRecord = shouldFetchReplicationDetail
+    ? toRecord(replicationDetail?.result)
+    : null;
+  const replicationFinalResult = shouldFetchReplicationDetail
+    ? parseRecordLike(replicationResultRecord?.finalResult)
+    : null;
+
+  const replicationVideoUrl =
+    normalizeHttpUrl(
+      readStringField(replicationResultRecord, "videoUrl") ||
+        readStringField(replicationResultRecord, "resultUrl") ||
+        readStringField(replicationResultRecord, "result_url"),
+    ) || normalizeHttpUrl(readStringField(replicationFinalResult, "videoUrl"));
+
+  const replicationThumbnailUrl =
+    normalizeHttpUrl(
+      readStringField(replicationResultRecord, "thumbnailUrl") ||
+        readStringField(replicationResultRecord, "coverUrl"),
+    ) || normalizeHttpUrl(readStringField(replicationFinalResult, "thumbnailUrl"));
+
+  const replicationGeneratedScript =
+    readStringField(replicationFinalResult, "generatedScript") ||
+    readStringField(replicationResultRecord, "generatedScript");
+  const replicationPromptText =
+    readStringField(replicationFinalResult, "videoPrompt") ||
+    readStringField(replicationResultRecord, "videoPrompt") ||
+    readStringField(replicationResultRecord, "prompt");
+  const replicationPromptReady = Boolean(replicationGeneratedScript || replicationPromptText);
+
+  const normalizedMetadataVideo = metadataVideoUrl && metadataVideoUrl.startsWith("http") ? metadataVideoUrl : null;
+  const primaryVideoUrl = normalizedMetadataVideo || replicationVideoUrl || fallbackVideoUrlFromThumbnail;
+  const hasVideo = Boolean(primaryVideoUrl);
+
+  const previewImageUrl = replicationThumbnailUrl || task.thumbnailUrl || null;
+
   // Load images for creative (text2image) tasks
   const [images, setImages] = useState<string[]>(() =>
-    task.thumbnailUrl ? [task.thumbnailUrl] : []
+    (previewImageUrl ? [previewImageUrl] : (task.thumbnailUrl ? [task.thumbnailUrl] : []))
   );
   const [imageIndex, setImageIndex] = useState(0);
   const [imageLoading, setImageLoading] = useState(false);
@@ -1258,7 +1385,7 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
           if (cancelled) return;
           setCreativeDetail(null);
           setCreativeDetailError(error instanceof Error ? error.message : "创作任务数据获取失败");
-          setImages(task.thumbnailUrl ? [task.thumbnailUrl] : []);
+          setImages(previewImageUrl ? [previewImageUrl] : task.thumbnailUrl ? [task.thumbnailUrl] : []);
         })
         .finally(() => {
           if (!cancelled) {
@@ -1282,20 +1409,25 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
           setImageIndex(0);
         })
         .catch(() => {
-          if (!cancelled) setImages(task.thumbnailUrl ? [task.thumbnailUrl] : []);
+          if (!cancelled) setImages(previewImageUrl ? [previewImageUrl] : task.thumbnailUrl ? [task.thumbnailUrl] : []);
         })
         .finally(() => { if (!cancelled) setImageLoading(false); });
       return () => { cancelled = true; };
     }
-    setImages(task.thumbnailUrl ? [task.thumbnailUrl] : []);
+    setImages(previewImageUrl ? [previewImageUrl] : task.thumbnailUrl ? [task.thumbnailUrl] : []);
     setImageIndex(0);
     setImageLoading(false);
     setCreativeDetail(null);
     setCreativeDetailError(null);
     setCreativeDetailLoading(false);
-  }, [behavesLikeCreative, isPoster, isText2ImagePoster, task]);
+  }, [behavesLikeCreative, isPoster, isText2ImagePoster, task, previewImageUrl]);
 
   const showImageGallery = (behavesLikeCreative || (isPoster && !isText2ImagePoster)) && !hasVideo;
+  const primaryActionLabel = showImageGallery && images.length > 1
+    ? `下载全部 (${images.length})`
+    : isReplication && replicationVideoUrl
+      ? "下载视频"
+      : "下载";
 
   const detailStatusClass = (() => {
     if (["COMPLETED", "READY", "ACTIVE", "PUBLISHED"].includes(statusKey)) {
@@ -1397,6 +1529,72 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
       return;
     }
     onDigitalHumanLaunch?.(scriptText, task.taskId);
+  };
+
+  const handleCopyText = async (text?: string | null) => {
+    if (!text) return;
+    try {
+      if (typeof navigator === "undefined" || !navigator.clipboard) {
+        throw new Error("Clipboard unavailable");
+      }
+      await navigator.clipboard.writeText(text);
+      toast.success("已复制");
+    } catch (error) {
+      console.error(error);
+      toast.error("复制失败");
+    }
+  };
+
+  const saveVideoToDisk = async (url: string, filename: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = blobUrl;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      try {
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.target = "_blank";
+        anchor.download = filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      } catch (fallbackError) {
+        console.error(fallbackError || error);
+        throw fallbackError || error;
+      }
+    }
+  };
+
+  const handlePrimaryButtonClick = async () => {
+    if (isStoryboard) {
+      onOpen();
+      return;
+    }
+    if (showImageGallery) {
+      onDownload(images);
+      return;
+    }
+    if (isReplication && replicationVideoUrl) {
+      setDownloadingOverride(true);
+      try {
+        const safeName = (task.title || "replication").replace(/\s+/g, "_");
+        await saveVideoToDisk(replicationVideoUrl, `${safeName}.mp4`);
+      } catch {
+        toast.error("下载失败，请稍后再试");
+      } finally {
+        setDownloadingOverride(false);
+      }
+      return;
+    }
+    onDownload();
   };
 
   return (
@@ -1502,9 +1700,9 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
                 {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
               </button>
             </div>
-          ) : task.thumbnailUrl ? (
+          ) : previewImageUrl ? (
             <img
-              src={task.thumbnailUrl}
+              src={previewImageUrl}
               alt="thumbnail"
               className="max-h-full max-w-full object-contain"
               style={{ maxHeight: "90vh" }}
@@ -1541,20 +1739,16 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
               )}
             </div>
 
-            {/* Key info: only title, status, created, updated (+ type-specific) */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-2xl border border-gray-100 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900/60">
+            {/* Key info: created date (+ type-specific) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-gray-100 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900/60 sm:col-span-2">
                 <p className="text-xs font-medium text-gray-400 dark:text-gray-500">{pickCopy(DATE_LABEL_COPY.created, langKey)}</p>
                 <p className="mt-0.5 text-sm font-semibold text-gray-900 dark:text-white">{formatTimestamp(task.createdAt, LANGUAGE_LOCALES[langKey])}</p>
-              </div>
-              <div className="rounded-2xl border border-gray-100 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900/60">
-                <p className="text-xs font-medium text-gray-400 dark:text-gray-500">{pickCopy(DATE_LABEL_COPY.updated, langKey)}</p>
-                <p className="mt-0.5 text-sm font-semibold text-gray-900 dark:text-white">{formatTimestamp(task.updatedAt, LANGUAGE_LOCALES[langKey])}</p>
               </div>
 
               {/* Digital human: show drive type */}
               {isDigitalHuman && digitalHumanType && (
-                <div className="col-span-2 rounded-2xl border border-gray-100 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900/60">
+                <div className="sm:col-span-2 rounded-2xl border border-gray-100 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900/60">
                   <p className="text-xs font-medium text-gray-400 dark:text-gray-500">驱动形式</p>
                   <p className="mt-0.5 text-sm font-semibold text-gray-900 dark:text-white">{digitalHumanType}</p>
                 </div>
@@ -1562,12 +1756,96 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
 
               {/* Image count for creative/poster */}
               {showImageGallery && images.length > 0 && (
-                <div className="col-span-2 rounded-2xl border border-gray-100 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900/60">
+                <div className="sm:col-span-2 rounded-2xl border border-gray-100 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900/60">
                   <p className="text-xs font-medium text-gray-400 dark:text-gray-500">图片数量</p>
                   <p className="mt-0.5 text-sm font-semibold text-gray-900 dark:text-white">共 {images.length} 张</p>
                 </div>
               )}
             </div>
+
+            {isReplication && (
+              <div className="rounded-3xl border border-gray-100 bg-gray-50/80 p-4 space-y-4 dark:border-gray-800 dark:bg-gray-900/40">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">生成提示词</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {replicationDetailLoading
+                        ? "从 Supabase 获取中..."
+                        : replicationPromptReady
+                          ? "可复制视频提示词与改写脚本"
+                          : replicationDetailError
+                            ? ""
+                            : "提示词尚未写回，请稍后刷新"}
+                    </p>
+                  </div>
+                  {replicationPromptReady && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleCopyText(
+                          [replicationGeneratedScript, replicationPromptText].filter(Boolean).join("\n\n")
+                        )
+                      }
+                      className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-600 transition hover:bg-white dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      复制全部
+                    </button>
+                  )}
+                </div>
+                {replicationDetailLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    正在载入提示词...
+                  </div>
+                ) : replicationDetailError ? (
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50/70 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
+                    {replicationDetailError}
+                  </div>
+                ) : replicationPromptReady ? (
+                  <>
+                    {replicationGeneratedScript && (
+                      <div className="rounded-2xl bg-white/80 px-4 py-3 dark:bg-gray-900/80">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">脚本</p>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyText(replicationGeneratedScript)}
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                            复制
+                          </button>
+                        </div>
+                        <p className="text-sm text-gray-800 dark:text-gray-100 whitespace-pre-wrap leading-relaxed">
+                          {replicationGeneratedScript}
+                        </p>
+                      </div>
+                    )}
+                    {replicationPromptText && (
+                      <div className="rounded-2xl bg-white/80 px-4 py-3 dark:bg-gray-900/80">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">视频提示词</p>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyText(replicationPromptText)}
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                            复制
+                          </button>
+                        </div>
+                        <pre className="max-h-72 overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-gray-800 dark:text-gray-100 custom-scrollbar">
+                          {replicationPromptText}
+                        </pre>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">提示词尚未写回，请稍后刷新。</p>
+                )}
+              </div>
+            )}
 
             {isCreative && (
               <div className="rounded-3xl border border-gray-100 bg-gray-50/80 p-4 space-y-3 dark:border-gray-800 dark:bg-gray-900/40">
@@ -1683,11 +1961,12 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
               ) : (
                 <button
                   type="button"
-                  onClick={() => onDownload(showImageGallery ? images : undefined)}
-                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-full bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100"
+                  onClick={handlePrimaryButtonClick}
+                  disabled={downloadingOverride}
+                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-full bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100"
                 >
-                  <Download className="h-4 w-4" />
-                  下载{showImageGallery && images.length > 1 ? `全部 (${images.length})` : ""}
+                  <Download className={cn("h-4 w-4", downloadingOverride && "animate-spin")} />
+                  {downloadingOverride ? "准备中..." : primaryActionLabel}
                 </button>
               )}
               <button

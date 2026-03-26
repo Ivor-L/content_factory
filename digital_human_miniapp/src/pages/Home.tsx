@@ -26,7 +26,7 @@ export default function Home() {
             </p>
             <button 
               onClick={() => navigate('/generate')}
-              className="bg-primary text-white px-6 py-3 rounded-full font-semibold text-sm flex items-center justify-center gap-2 w-full hover:bg-black/80 transition-colors"
+              className="btn-openclaw w-full px-6 py-3 text-sm font-semibold gap-2 flex items-center justify-center"
             >
               立即开始 <ArrowRight size={16} />
             </button>
@@ -52,7 +52,7 @@ export default function Home() {
           icon={<PenSquare size={24} className="text-green-500" />}
           title="内容创作"
           desc="阶段式AI写作"
-          onClick={() => navigate('/content')}
+          onClick={() => navigate('/dashboard#creative')}
           fullWidth
         />
       </div>

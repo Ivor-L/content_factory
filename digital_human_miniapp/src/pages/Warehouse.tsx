@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import React, { useState, useEffect, useRef } from 'react';
 import { Mic, Trash2, Plus, X, Upload, Loader2, PlayCircle, Sparkles, Camera, Smile } from 'lucide-react';
 import { api, type DigitalHumanCharacter } from '../utils/api';
@@ -400,11 +401,7 @@ export default function Warehouse() {
               <button
                 disabled={!newName.trim() || !newImageUrl || !newVoiceUrl || isSubmitting}
                 onClick={() => void handleCreate()}
-                className={`w-full py-4 rounded-full font-bold text-white flex items-center justify-center gap-2 transition-all mt-6 ${
-                  !newName.trim() || !newImageUrl || !newVoiceUrl || isSubmitting
-                    ? 'bg-secondary text-text-secondary cursor-not-allowed'
-                    : 'bg-primary soft-shadow hover:scale-[1.02] active:scale-[0.98]'
-                }`}
+                className="btn-openclaw w-full py-4 font-bold flex items-center justify-center gap-2 text-base mt-6"
               >
                 {isSubmitting ? '创建中...' : '确认创建'}
               </button>

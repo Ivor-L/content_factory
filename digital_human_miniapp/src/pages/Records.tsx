@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, PlayCircle, AlertCircle, Clock, Camera } from 'lucide-react';
 import { api, MissingApiKeyError, type DigitalHumanVideoRecord } from '../utils/api';
@@ -72,9 +73,11 @@ export default function Records() {
           <button
             key={key}
             onClick={() => setFilter(key)}
-            className={`px-5 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all ${
-              filter === key ? 'bg-primary text-white' : 'bg-white text-text-secondary soft-shadow'
-            }`}
+            className={
+              filter === key
+                ? 'btn-openclaw px-5 py-2 text-sm font-bold whitespace-nowrap'
+                : 'px-5 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-all bg-white text-text-secondary soft-shadow'
+            }
           >
             {STATUS_LABEL[key]}
           </button>
@@ -142,7 +145,7 @@ export default function Records() {
       <div className="fixed bottom-28 w-full max-w-[480px] pointer-events-none flex justify-end px-6 z-10">
         <button
           onClick={() => void fetchRecords()}
-          className="w-12 h-12 bg-primary rounded-full soft-shadow flex items-center justify-center text-white hover:bg-black/80 transition-colors active:scale-95 pointer-events-auto"
+          className="btn-openclaw w-12 h-12 text-base soft-shadow flex items-center justify-center pointer-events-auto"
         >
           <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
         </button>

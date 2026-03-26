@@ -10,11 +10,20 @@ const N8N_HOST = process.env.N8N_BASE_URL || 'https://n8n.atomx.top';
 const API_KEY = process.env.N8N_API_KEY;
 const WORKFLOW_ID = 'yNIjqrlSnTeWDFIx';
 
-const PG_HOST = process.env.PG_HOST || "47.107.158.233";
-const PG_PORT = Number(process.env.PG_PORT || 54322);
+const PG_HOST =
+  process.env.PG_HOST ||
+  process.env.SUPABASE_DB_HOST ||
+  "db.<project-ref>.supabase.co";
+const PG_PORT = Number(process.env.PG_PORT || process.env.SUPABASE_DB_PORT || 5432);
 const PG_DATABASE = process.env.PG_DATABASE || "postgres";
-const PG_USER = process.env.PG_USER || "postgres";
-const PG_PASSWORD = process.env.PG_PASSWORD || "";
+const PG_USER =
+  process.env.PG_USER ||
+  process.env.SUPABASE_DB_USER ||
+  "postgres.<project-ref>";
+const PG_PASSWORD =
+  process.env.PG_PASSWORD ||
+  process.env.SUPABASE_DB_PASSWORD ||
+  "";
 
 async function fixWorkflow() {
   try {
@@ -29,7 +38,7 @@ async function fixWorkflow() {
         database: PG_DATABASE,
         user: PG_USER,
         password: PG_PASSWORD,
-        ssl: "disable", // Try string format
+        ssl: process.env.PG_SSL_MODE || "require",
         // Satisfy schema validation with empty/default values
         sshTunnel: false,
         sshAuthenticateWith: "password",

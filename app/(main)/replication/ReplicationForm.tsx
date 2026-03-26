@@ -295,7 +295,7 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
   const [quantity, setQuantity] = useState("1");
   const [selectedCharacter, setSelectedCharacter] = useState("");
   const [imageModel, setImageModel] = useState("nanoBananapro"); // Image generation model
-  const [videoModel, setVideoModel] = useState("veo3"); // Video generation model
+  const [videoModel, setVideoModel] = useState("veo_3_1-fast"); // Video generation model
   const [soraProvider, setSoraProvider] = useState<'kie' | 'yunwu'>('kie'); // Sora provider for one-click mode
   
   // Modal State
@@ -842,7 +842,7 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
                     <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">视频生成模型</label>
                     <div className="flex gap-2">
                         {[
-                          { id: 'veo3', label: 'Veo 3', desc: '自然' },
+                          { id: 'veo_3_1-fast', label: 'Veo 3.1 Fast', desc: '自然' },
                           { id: 'grok', label: 'Grok', desc: '创意' },
                           { id: 'digital-human', label: '数字人', desc: '真人感' },
                         ].map((m) => (
@@ -1017,6 +1017,7 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
         isOpen={isScriptModalOpen}
         onClose={() => setIsScriptModalOpen(false)}
         title={t.scripts.formTitle}
+        zIndex="z-[60]"
       >
         <ScriptForm 
             onSuccess={() => {

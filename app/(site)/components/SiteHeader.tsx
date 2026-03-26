@@ -16,7 +16,7 @@ interface SiteHeaderProps {
 
 const SITE_ONLY_MODE = process.env.NEXT_PUBLIC_SITE_ONLY === 'true';
 const SITE_ONLY_DASHBOARD_URL =
-  process.env.NEXT_PUBLIC_DASHBOARD_URL?.trim() || 'https://atomx.top/dashboard';
+  process.env.NEXT_PUBLIC_DASHBOARD_URL?.trim() || 'https://atomx.top/login';
 
 export function SiteHeader({ lang, setLang }: SiteHeaderProps) {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -30,6 +30,7 @@ export function SiteHeader({ lang, setLang }: SiteHeaderProps) {
   const dashboardPath = useTenantPath('/dashboard');
   const dashboardHref = SITE_ONLY_MODE ? SITE_ONLY_DASHBOARD_URL : dashboardPath;
   const openClawPath = useTenantPath('/openclaw');
+  const nexapiPath = useTenantPath('/nexapi');
   const shouldUseWhiteLogo = isNextideTenant && !isScrolled;
   const brandLogoStyle = shouldUseWhiteLogo ? { filter: 'brightness(0) invert(1)' } : undefined;
   const brandLogoClass = `${
@@ -118,6 +119,9 @@ export function SiteHeader({ lang, setLang }: SiteHeaderProps) {
           <Link href={openClawPath} className={navLinkClass}>
             {t.openclaw}
           </Link>
+          <Link href={nexapiPath} className={navLinkClass}>
+            {t.nexapi}
+          </Link>
         </nav>
 
         <div className="hidden items-center gap-4 md:flex">
@@ -168,6 +172,13 @@ export function SiteHeader({ lang, setLang }: SiteHeaderProps) {
             onClick={() => setMobileOpen(false)}
           >
             {t.openclaw}
+          </Link>
+          <Link
+            href={nexapiPath}
+            className="text-2xl font-semibold text-gray-900 transition-colors hover:text-primary dark:text-white"
+            onClick={() => setMobileOpen(false)}
+          >
+            {t.nexapi}
           </Link>
           <button
             onClick={() => {

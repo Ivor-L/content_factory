@@ -136,7 +136,6 @@ export async function POST(request: Request) {
         blueprint,
         referenceId,
         creatorId,
-        soraProvider,
         videoModel,
         aspectRatio,
         cityStyle,
@@ -209,15 +208,7 @@ export async function POST(request: Request) {
         }
       : null;
 
-    const replication = await prisma.replication.create({
-      data: {
-        status: "pending",
-        result: "{}",
-        type: "FULL",
-        product: { connect: { id: productId } },
-        script: { connect: { id: scriptId } },
-      },
-    });
+    const resolvedQuantity = Math.min(Math.max(parseInt(String(quantity || '1'), 10) || 1, 1), 10);
 
     const productSnapshot = {
       id: product.id,
@@ -244,73 +235,111 @@ export async function POST(request: Request) {
     const workflowIdForCredits =
       process.env.N8N_REPLICATION_WORKFLOW_ID_FOR_CREDITS?.trim() || "flow_farm_copy";
 
-    await prisma.replication.update({
-      where: { id: replication.id },
-      data: {
-        inputParams: {
-          targetCountry: targetCountry || 'us',
-          targetLanguage: targetLanguage || 'en',
-          duration: duration || '15',
-          quantity: quantity || '1',
-          blueprint: blueprint || null,
-          userId,
-          productSnapshot,
-          scriptSnapshot,
-          reference: referenceSnapshot,
-          creator: creatorSnapshot,
-        },
-      },
-    });
-
-    await syncTaskToSummary({
-      taskType: 'replication',
-      taskId: replication.id,
-      operation: 'create',
-    });
-
     const callbackUrl = `${process.env.N8N_CALLBACK_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/webhook/replication`;
     const productImageUrl = resolvePrimaryProductImage(product.images);
-
     const scriptForTrigger = blueprint ? { ...script, blueprint } : script;
 
-    const triggerOptions = {
+    const inputParams = {
       targetCountry: targetCountry || 'us',
       targetLanguage: targetLanguage || 'en',
       duration: duration || '15',
-      quantity: quantity || '1',
-      apiKey,
-      userId: userId ?? undefined,
-      callbackUrl,
-      replicationId: replication.id,
-      productImageUrl,
-      referenceId: referenceSnapshot?.id,
-      creatorId: creatorSnapshot?.id,
-      referenceSnapshot,
-      creatorSnapshot,
-      soraProvider: soraProvider || 'kie',
-      productInfo: productInfoPayload,
-      blueprint: blueprintPayload ?? undefined,
-      productName: product.name,
-      cityStyle: resolvedCityStyle || undefined,
-      workflowIdForCredits,
-      aspectRatio: resolvedAspectRatio || 'portrait',
-      model: resolvedVideoModel || undefined,
-      nFrames: duration || '15',
+      quantity: String(resolvedQuantity),
+      blueprint: blueprint || null,
+      userId,
+      productSnapshot,
+      scriptSnapshot,
+      reference: referenceSnapshot,
+      creator: creatorSnapshot,
     };
 
-    try {
-      await generateReplication(product, scriptForTrigger, triggerOptions);
-    } catch (error) {
-      const normalizedError = error instanceof Error ? error : new Error(String(error));
-      console.error("Replication workflow trigger failed", normalizedError);
-      await prisma.replication.update({
-        where: { id: replication.id },
-        data: { status: "failed", result: JSON.stringify({ error: normalizedError.message }) }
-      });
-      return NextResponse.json({ error: normalizedError.message }, { status: 500 });
+    // Create N replication records and trigger N workflows (max 10)
+    const replications = await Promise.all(
+      Array.from({ length: resolvedQuantity }, () =>
+        prisma.replication.create({
+          data: {
+            status: "pending",
+            result: "{}",
+            type: "FULL",
+            product: { connect: { id: productId } },
+            script: { connect: { id: scriptId } },
+          },
+        })
+      )
+    );
+
+    await Promise.all(
+      replications.map(rep =>
+        prisma.replication.update({
+          where: { id: rep.id },
+          data: { inputParams },
+        })
+      )
+    );
+
+    await Promise.all(
+      replications.map(rep =>
+        syncTaskToSummary({ taskType: 'replication', taskId: rep.id, operation: 'create' })
+      )
+    );
+
+    // Trigger sequentially with 2s delay between each to avoid API rate limiting
+    const TRIGGER_INTERVAL_MS = 2000;
+    const triggerResults: PromiseSettledResult<{ success: boolean; message: string }>[] = [];
+    for (let i = 0; i < replications.length; i++) {
+      if (i > 0) await new Promise(resolve => setTimeout(resolve, TRIGGER_INTERVAL_MS));
+      try {
+        const result = await generateReplication(product, scriptForTrigger, {
+          targetCountry: targetCountry || 'us',
+          targetLanguage: targetLanguage || 'en',
+          duration: duration || '15',
+          quantity: '1',
+          apiKey,
+          userId: userId ?? undefined,
+          callbackUrl,
+          replicationId: replications[i].id,
+          productImageUrl,
+          referenceId: referenceSnapshot?.id,
+          creatorId: creatorSnapshot?.id,
+          referenceSnapshot,
+          creatorSnapshot,
+          soraProvider: 'kie',
+          productInfo: productInfoPayload,
+          blueprint: blueprintPayload ?? undefined,
+          productName: product.name,
+          cityStyle: resolvedCityStyle || undefined,
+          workflowIdForCredits,
+          aspectRatio: resolvedAspectRatio || 'portrait',
+          model: resolvedVideoModel || undefined,
+          nFrames: duration || '15',
+        });
+        triggerResults.push({ status: 'fulfilled', value: result });
+      } catch (err) {
+        triggerResults.push({ status: 'rejected', reason: err });
+      }
     }
 
-    return NextResponse.json({ id: replication.id, status: "pending" });
+    const failedIndices = triggerResults
+      .map((r, i) => (r.status === 'rejected' ? i : -1))
+      .filter(i => i >= 0);
+
+    if (failedIndices.length > 0) {
+      console.error("Some replication workflow triggers failed", failedIndices.map(i => (triggerResults[i] as PromiseRejectedResult).reason));
+      await Promise.all(
+        failedIndices.map(i =>
+          prisma.replication.update({
+            where: { id: replications[i].id },
+            data: { status: "failed", result: JSON.stringify({ error: String((triggerResults[i] as PromiseRejectedResult).reason) }) },
+          })
+        )
+      );
+    }
+
+    if (failedIndices.length === resolvedQuantity) {
+      return NextResponse.json({ error: "All workflow triggers failed" }, { status: 500 });
+    }
+
+    const ids = replications.map(r => r.id);
+    return NextResponse.json({ id: ids[0], ids, status: "pending", quantity: resolvedQuantity });
   } catch (error) {
     console.error("Error creating replication:", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

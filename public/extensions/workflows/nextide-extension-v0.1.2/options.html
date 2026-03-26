@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>NexTide 助手 - 采集器设置</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        padding: 24px;
+        background: #f7f7f9;
+        color: #111;
+      }
+      .panel {
+        max-width: 520px;
+        margin: 0 auto;
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+        padding: 24px;
+      }
+      label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid #d1d5db;
+        margin-bottom: 4px;
+        font-size: 14px;
+      }
+      .hint {
+        font-size: 12px;
+        color: #6b7280;
+        margin-bottom: 16px;
+        margin-top: 2px;
+      }
+      .hint a {
+        color: #2563eb;
+        text-decoration: underline;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-top: 8px;
+        flex-wrap: wrap;
+      }
+      button {
+        background: #111827;
+        color: #fff;
+        border: none;
+        border-radius: 999px;
+        padding: 10px 18px;
+        font-weight: 600;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      #testBtn {
+        background: #2563eb;
+      }
+      .success {
+        color: #059669;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .error {
+        color: #dc2626;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      #testResult {
+        font-size: 13px;
+        margin-top: 8px;
+        padding: 8px 12px;
+        border-radius: 8px;
+        display: none;
+      }
+      #testResult.ok {
+        background: #d1fae5;
+        color: #065f46;
+      }
+      #testResult.fail {
+        background: #fee2e2;
+        color: #991b1b;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="panel">
+      <h2 id="panel-title">助手配置</h2>
+      <form id="options-form">
+        <label for="apiBase">API Base URL</label>
+        <input id="apiBase" type="text" placeholder="https://app.example.com" required />
+        <p class="hint">填写对应域名，含协议（如 https://nextide.cpolar.top/nextide）</p>
+
+        <label for="apiKey">API Key</label>
+        <input id="apiKey" type="password" placeholder="从「设置」页面复制" required />
+        <p class="hint">
+          在 App 中点击左下角头像 → <strong>设置</strong>，找到「API Key」字段，复制后粘贴到此处。
+        </p>
+
+        <div class="actions">
+          <button type="submit">保存设置</button>
+          <button type="button" id="testBtn">测试连接</button>
+          <span id="saveStatus" class="success" style="display:none;">已保存 ✓</span>
+        </div>
+        <div id="testResult"></div>
+      </form>
+    </div>
+
+    <script>
+      const DEFAULT_BASE = "https://app.atomx.top";
+      const apiBaseInput = document.getElementById("apiBase");
+      const apiKeyInput = document.getElementById("apiKey");
+      const saveStatusEl = document.getElementById("saveStatus");
+      const testResultEl = document.getElementById("testResult");
+      const testBtn = document.getElementById("testBtn");
+
+      function getTenantName(url) {
+        const u = (url || "").toLowerCase();
+        if (u.includes("jubaopen")) return "聚保盆";
+        if (u.includes("nextide") || u.includes("atomx")) return "NexTide";
+        return "平台";
+      }
+
+      function updateApiKeyPlaceholder() {
+        const name = getTenantName(apiBaseInput.value);
+        apiKeyInput.placeholder = `从 ${name} 「设置」页面复制`;
+        document.getElementById("panel-title").textContent = `${name} 助手配置`;
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        chrome.storage.sync.get(["apiBaseUrl", "apiKey"], (data) => {
+          apiBaseInput.value = data.apiBaseUrl || DEFAULT_BASE;
+          apiKeyInput.value = data.apiKey || "";
+          updateApiKeyPlaceholder();
+        });
+      });
+
+      apiBaseInput.addEventListener("input", updateApiKeyPlaceholder);
+
+      document.getElementById("options-form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        chrome.storage.sync.set(
+          {
+            apiBaseUrl: apiBaseInput.value.trim() || DEFAULT_BASE,
+            apiKey: apiKeyInput.value.trim(),
+          },
+          () => {
+            saveStatusEl.style.display = "inline";
+            testResultEl.style.display = "none";
+            setTimeout(() => {
+              saveStatusEl.style.display = "none";
+            }, 2500);
+          }
+        );
+      });
+
+      testBtn.addEventListener("click", async () => {
+        const base = (apiBaseInput.value.trim() || DEFAULT_BASE).replace(/\/$/, "");
+        const key = apiKeyInput.value.trim();
+        if (!key) {
+          showTestResult(false, "请先填写 API Key");
+          return;
+        }
+
+        testBtn.disabled = true;
+        testBtn.textContent = "测试中…";
+        testResultEl.style.display = "none";
+
+        // Send a minimal test payload to check auth
+        const url = `${base}/api/viral-references/import`;
+        const payload = [{
+          sourceType: "note",
+          data: { noteId: "__test__", title: "连接测试" }
+        }];
+
+        try {
+          // Use background proxy to avoid CORS issues from options page
+          const response = await new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage({
+              type: "PROXY_REQ",
+              payload: {
+                url,
+                options: {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "x-user-api-key": key,
+                  },
+                  body: JSON.stringify(payload),
+                },
+              },
+            }, (resp) => {
+              if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+              } else {
+                resolve(resp);
+              }
+            });
+          });
+
+          if (!response || !response.success) {
+            showTestResult(false, `无法连接到服务器，请检查 API Base URL 是否正确`);
+          } else {
+            const { status, data } = response.response;
+            if (status === 401) {
+              let detail = "API Key 不正确或未在系统中配置";
+              try {
+                const json = JSON.parse(data);
+                if (json.error) detail = json.error;
+              } catch {}
+              showTestResult(false, `认证失败 (401): ${detail}`);
+            } else if (status < 500) {
+              // 200 or 400 both mean auth passed
+              showTestResult(true, "连接成功 ✓ API Key 有效");
+            } else {
+              showTestResult(false, `服务器错误 (${status})`);
+            }
+          }
+        } catch (e) {
+          showTestResult(false, `连接失败: ${e.message}`);
+        } finally {
+          testBtn.disabled = false;
+          testBtn.textContent = "测试连接";
+        }
+      });
+
+      function showTestResult(ok, msg) {
+        testResultEl.className = ok ? "ok" : "fail";
+        testResultEl.textContent = msg;
+        testResultEl.style.display = "block";
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,330 @@
+{
+  "name": "sora2视频生成-发起-网页版kie",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sora_web",
+        "options": {}
+      },
+      "id": "9ef83a92-598a-486a-80b0-b3f74307a40a",
+      "name": "子流程入口-sora",
+      "position": [
+        -240,
+        64
+      ],
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "7f6ac4fc-12b3-4ff2-b151-6e46821dd37f"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "209a4c87-e355-447d-91d4-6e7d476e2951",
+              "leftValue": "={{ !!$json.body.image_url && String($json.body.image_url).trim() !== '' }}",
+              "operator": {
+                "operation": "true",
+                "singleValue": true,
+                "type": "boolean"
+              },
+              "rightValue": ""
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          }
+        },
+        "options": {}
+      },
+      "id": "b859b73e-72cb-4203-962c-9f02a8805d12",
+      "name": "判断是否上传图片",
+      "position": [
+        -16,
+        64
+      ],
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $('子流程入口-sora').item.json.body || {};\nconst imageUrl = String(payload.image_url || '').trim();\n\nif (!imageUrl) {\n  throw new Error('image_url 为空，图生视频需要传 image_url');\n}\n\nconst requestBody = {\n  model: 'sora-2-image-to-video',\n  input: {\n    prompt: payload.prompt || '',\n    image_urls: [imageUrl],\n    aspect_ratio: payload.aspect_ratio || 'portrait',\n    n_frames: String(payload.n_frames || '15'),\n    remove_watermark: true\n  }\n};\n\nreturn {\n  json: {\n    requestBody,\n    imageUrl,\n    replication_id: payload.replication_id,\n    api_key: payload.api_key,\n    workflow_id_for_credits: payload.workflow_id_for_credits,\n    callback_url: payload.callback_url,\n    admin_token: payload.admin_token,\n  }\n};\n"
+      },
+      "id": "35c094df-603b-4441-8668-79c30a7cfe21",
+      "name": "准备图生视频参数-sora",
+      "position": [
+        240,
+        -32
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $('子流程入口-sora').item.json.body || {};\n\nconst requestBody = {\n  model: 'sora-2-text-to-video',\n  input: {\n    prompt: payload.prompt || '',\n    aspect_ratio: payload.aspect_ratio || 'portrait',\n    n_frames: String(payload.n_frames || '15'),\n    remove_watermark: true\n  }\n};\n\nreturn {\n  json: {\n    requestBody,\n    replication_id: payload.replication_id,\n    api_key: payload.api_key,\n    workflow_id_for_credits: payload.workflow_id_for_credits,\n    callback_url: payload.callback_url,\n    admin_token: payload.admin_token,\n  }\n};\n"
+      },
+      "id": "ed98982f-da76-47f8-9723-7be9aa57ffa0",
+      "name": "准备文生视频参数-sora",
+      "position": [
+        240,
+        160
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "function buildQS(obj) {\n  return Object.entries(obj)\n    .filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== '')\n    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)\n    .join('&');\n}\n\nfunction cleanPrompt(raw) {\n  let p = raw ?? '';\n  if (Array.isArray(p)) p = p.join(' ');\n  if (typeof p !== 'string') p = String(p);\n  p = p.replace(/\\r?\\n+/g, ' ').replace(/\\s{2,}/g, ' ').trim();\n  const negIdx = p.indexOf('Negative prompt:');\n  if (negIdx >= 0) p = p.slice(0, negIdx).trim();\n  return p;\n}\n\nfunction normalizeAspect(v) {\n  const s = String(v ?? 'portrait').trim().toLowerCase();\n  if (['portrait', '9:16', '9/16'].includes(s)) return 'portrait';\n  if (['landscape', '16:9', '16/9'].includes(s)) return 'landscape';\n  return 'portrait';\n}\n\nfunction normalizeFrames(v) {\n  const s = String(v ?? '15').trim();\n  return (s === '10' || s === '15') ? s : '15';\n}\n\nreturn $input.all().map(item => {\n  const json = item.json || {};\n  const req = json.requestBody || {};\n  const input = req.input || {};\n\n  const prompt = cleanPrompt(input.prompt);\n  if (!prompt) throw new Error('prompt 为空');\n\n  const aspectRatio = normalizeAspect(input.aspect_ratio);\n  const nFramesStr = normalizeFrames(input.n_frames);\n  const imageUrls = Array.isArray(input.image_urls) ? input.image_urls.filter(Boolean) : [];\n  const hasImage = imageUrls.length > 0;\n  const model = hasImage ? 'sora-2-image-to-video' : 'sora-2-text-to-video';\n\n  // kie.ai 回调到 sora_kie_callback，上下文通过 QS 传递\n  const callbackBase = 'https://hooks.atomx.top/webhook/sora_kie_callback';\n\n  const qs = buildQS({\n    replication_id: json.replication_id,\n    api_key: json.api_key,\n    workflow_id_for_credits: json.workflow_id_for_credits,\n    admin_token: json.admin_token,\n    callback_url: json.callback_url,\n  });\n\n  const callBackUrl = qs ? `${callbackBase}?${qs}` : callbackBase;\n\n  const outInput = {\n    prompt,\n    aspect_ratio: aspectRatio,\n    n_frames: nFramesStr,\n    remove_watermark: true\n  };\n\n  if (hasImage) outInput.image_urls = imageUrls;\n\n  json.soraCreateTaskBody = {\n    model,\n    callBackUrl,\n    input: outInput\n  };\n\n  json.requestBody = {\n    model,\n    input: outInput\n  };\n\n  json.debug = {\n    hasImage,\n    model,\n    aspect_ratio: aspectRatio,\n    n_frames: nFramesStr,\n    callbackBase,\n    callback: callBackUrl\n  };\n\n  return { json };\n});\n"
+      },
+      "id": "d2fcd370-0f7d-4383-9ba4-a90423840d75",
+      "name": "清洗提示词",
+      "position": [
+        496,
+        64
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.kie.ai/api/v1/jobs/createTask",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer aec828e826dbb39195077b37f2c08aa2"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.soraCreateTaskBody }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "alwaysOutputData": true,
+      "id": "65e7d95f-96e0-4f80-af47-e8458d3613cb",
+      "maxTries": 3,
+      "name": "调用sora创建任务",
+      "position": [
+        752,
+        64
+      ],
+      "retryOnFail": true,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "const res = $input.first().json || {};\nconst taskId = res.taskId || res.task_id || res.data?.taskId || res.data?.task_id ||\n  (Array.isArray(res.data) ? (res.data[0]?.taskId || res.data[0]?.task_id) : undefined);\n\nif (!taskId) throw new Error(`上一个节点里没有找到 taskId，响应为：${JSON.stringify(res).slice(0, 500)}`);\n\nconst ctx = $('清洗提示词').item.json || {};\nreturn {\n  json: {\n    id: ctx.replication_id,\n    taskId,\n    replication_id: ctx.replication_id,\n    api_key: ctx.api_key,\n    workflow_id_for_credits: ctx.workflow_id_for_credits,\n    admin_token: ctx.admin_token,\n    callback_url: ctx.callback_url,\n    startTime: Date.now()\n  }\n};\n"
+      },
+      "id": "add9177f-4306-43c4-8165-fb7b3e605440",
+      "name": "提取任务ID",
+      "position": [
+        1008,
+        64
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "replications",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.replication_id }}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "status", "fieldValue": "processing" },
+            { "fieldId": "result", "fieldValue": "={{ JSON.stringify({taskId: $json.taskId, provider: 'kie', prompt: $('清洗提示词').item.json.soraCreateTaskBody?.input?.prompt || ''}) }}" }
+          ]
+        }
+      },
+      "continueOnFail": true,
+      "alwaysOutputData": true,
+      "id": "c8f3a912-7d45-4e21-b6c9-0a23d8e4f517",
+      "name": "写入任务ID-生成中",
+      "position": [
+        1264,
+        64
+      ],
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "credentials": {
+        "supabaseApi": {
+          "id": "5XGJWMLxSG8cgpYd",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "子流程入口-sora": [
+      {
+        "json": {
+          "headers": {
+            "host": "hooks.atomx.top",
+            "x-real-ip": "47.107.155.228",
+            "x-forwarded-for": "47.107.155.228",
+            "x-forwarded-proto": "https",
+            "connection": "close",
+            "content-length": "5485",
+            "accept": "application/json,text/html,application/xhtml+xml,application/xml,text/*;q=0.9, image/*;q=0.8, */*;q=0.7",
+            "content-type": "application/json",
+            "user-agent": "axios/1.12.0",
+            "accept-encoding": "gzip, compress, deflate, br"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "record_id": null,
+            "prompt": "[Art Style] UGC handheld, [Render Quality] mobile phone portrait 9:16, [Mood] authentic and persuasive.\nVertical 9:16 UGC handheld realism. Keep timing and shot order.\n**Shot 1 (00:00 - 00:06):**\nCamera movement: Medium shot, static, slightly high angle.\nMain subject action: A person is actively using the handheld steam cleaner on a kitchen counter covered in visible grime. The device emits a strong stream of white steam that envelops the area, quickly dissolving the dirt.\nProduct presentation: Show the steam cleaner's sleek design and powerful steam emission from the nozzle.\nEnvironment / set dressing: Modern kitchen setting, featuring stainless steel appliances and clean lines.\nLighting: Warm, even indoor lighting, characteristic of a modern kitchen.\nVoiceover / ambient sound: Upbeat and light guitar music; sound of steam.\n**Shot 2 (00:06 - 00:15):**\nCamera movement: The shot widens slightly to a medium shot, framing the presenter from the waist up as she stands confidently in the kitchen.\nMain subject action: The presenter stops cleaning, turns to the camera, and speaks with an energetic and friendly expression. She holds the steam cleaner and gestures with it while delivering her sales pitch.\nProduct presentation: The steam cleaner is prominently displayed in her hands, emphasizing its modern design and efficiency.\nEnvironment / set dressing: Consistent kitchen setting; clean and inviting atmosphere.\nLighting: Warm indoor lighting.\nVoiceover / ambient sound: Presenter speaks enthusiastically about the cleaner’s ability to disinfect without chemicals, perfect for families. Ambient sounds of the kitchen and continued upbeat music.",
+            "aspect_ratio": "portrait",
+            "image_1_token": "",
+            "model": "sora2",
+            "workflow_id_for_credits": "",
+            "api_key": "",
+            "n_frames": "",
+            "callback_url": "",
+            "replication_id": "",
+            "product_id": "",
+            "script_id": "",
+            "user_id": "",
+            "generatedScript": "[Art Style] UGC handheld, [Render Quality] mobile phone portrait 9:16, [Mood] authentic and persuasive.\n\n\nCinematic but authentic UGC pacing. Keep camera moves, timing, and beat order exactly as the shot list.\nNo watermark, no UI icons, no subtitles unless explicitly specified in the shot text.\nVertical 9:16, handheld realism, natural lighting.\n\n**Shot 1 (00:00 - 00:06):**\nCamera movement: Medium shot, static, slightly high angle.\nMain subject action: A person is actively using the handheld steam cleaner on a kitchen counter covered in visible grime. The device emits a strong stream of white steam that envelops the area, quickly dissolving the dirt.\nProduct presentation: Show the steam cleaner's sleek design and powerful steam emission from the nozzle.\nEnvironment / set dressing: Modern kitchen setting, featuring stainless steel appliances and clean lines.\nLighting: Warm, even indoor lighting, characteristic of a modern kitchen.\nVoiceover / ambient sound: Upbeat and light guitar music; sound of steam.\n\n**Shot 2 (00:06 - 00:15):**\nCamera movement: The shot widens slightly to a medium shot, framing the presenter from the waist up as she stands confidently in the kitchen.\nMain subject action: The presenter stops cleaning, turns to the camera, and speaks with an energetic and friendly expression. She holds the steam cleaner and gestures with it while delivering her sales pitch.\nProduct presentation: The steam cleaner is prominently displayed in her hands, emphasizing its modern design and efficiency.\nEnvironment / set dressing: Consistent kitchen setting; clean and inviting atmosphere.\nLighting: Warm indoor lighting.\nVoiceover / ambient sound: Presenter speaks enthusiastically about the cleaner’s ability to disinfect without chemicals, perfect for families. Ambient sounds of the kitchen and continued upbeat music.",
+            "videoPrompt": "[Art Style] UGC handheld, [Render Quality] mobile phone portrait 9:16, [Mood] authentic and persuasive.\nVertical 9:16 UGC handheld realism. Keep timing and shot order.\n**Shot 1 (00:00 - 00:06):**\nCamera movement: Medium shot, static, slightly high angle.\nMain subject action: A person is actively using the handheld steam cleaner on a kitchen counter covered in visible grime. The device emits a strong stream of white steam that envelops the area, quickly dissolving the dirt.\nProduct presentation: Show the steam cleaner's sleek design and powerful steam emission from the nozzle.\nEnvironment / set dressing: Modern kitchen setting, featuring stainless steel appliances and clean lines.\nLighting: Warm, even indoor lighting, characteristic of a modern kitchen.\nVoiceover / ambient sound: Upbeat and light guitar music; sound of steam.\n**Shot 2 (00:06 - 00:15):**\nCamera movement: The shot widens slightly to a medium shot, framing the presenter from the waist up as she stands confidently in the kitchen.\nMain subject action: The presenter stops cleaning, turns to the camera, and speaks with an energetic and friendly expression. She holds the steam cleaner and gestures with it while delivering her sales pitch.\nProduct presentation: The steam cleaner is prominently displayed in her hands, emphasizing its modern design and efficiency.\nEnvironment / set dressing: Consistent kitchen setting; clean and inviting atmosphere.\nLighting: Warm indoor lighting.\nVoiceover / ambient sound: Presenter speaks enthusiastically about the cleaner’s ability to disinfect without chemicals, perfect for families. Ambient sounds of the kitchen and continued upbeat music."
+          },
+          "webhookUrl": "http://localhost:5678/webhook/sora_web",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "子流程入口-sora": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "判断是否上传图片",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "判断是否上传图片": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "准备图生视频参数-sora",
+            "type": "main"
+          }
+        ],
+        [
+          {
+            "index": 0,
+            "node": "准备文生视频参数-sora",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "准备图生视频参数-sora": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "清洗提示词",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "准备文生视频参数-sora": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "清洗提示词",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "清洗提示词": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "调用sora创建任务",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "调用sora创建任务": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "提取任务ID",
+            "type": "main"
+          }
+        ]
+      ]
+    },
+    "提取任务ID": {
+      "main": [
+        [
+          {
+            "index": 0,
+            "node": "写入任务ID-生成中",
+            "type": "main"
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "c2d76bab-3564-4100-95e4-ff5d9186cf39",
+  "meta": {
+    "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
+  },
+  "id": "vvc2rzlS2PF4F2Tn",
+  "tags": []
+}

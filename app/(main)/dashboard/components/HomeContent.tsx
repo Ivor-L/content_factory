@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- Dashboard cards render remote task thumbnails with mixed dimensions */
 
 import { useCallback, useEffect, useState, type KeyboardEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { ArrowRight, User, Clock, Clapperboard, SendHorizontal, Sparkles, Image } from 'lucide-react';
 import Link from 'next/link';
@@ -90,6 +90,7 @@ export function HomeContent({ recentTasks, products: _products }: HomeContentPro
   const { t, language } = useLanguage();
   const { tenant, tenantSlug, basePath } = useTenant();
   const router = useRouter();
+  const pathname = usePathname();
   const [showReplicationModal, setShowReplicationModal] = useState(false);
   const [showPosterModal, setShowPosterModal] = useState(false);
   const [showCreativeModal, setShowCreativeModal] = useState(false);
@@ -172,14 +173,17 @@ export function HomeContent({ recentTasks, products: _products }: HomeContentPro
       if (prompt) {
         search.set('prompt', prompt);
       }
-      search.set('returnTo', getTenantPath('/dashboard'));
+      const currentReturnTo = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('returnTo') : null;
+      if (!currentReturnTo && pathname !== getTenantPath('/canvas')) {
+        search.set('returnTo', pathname || getTenantPath('/dashboard'));
+      }
       const targetUrl = `${getTenantPath('/canvas')}?${search.toString()}`;
       router.push(targetUrl);
       setCanvasPrompt('');
     } catch (error) {
       console.error('Failed to create canvas project', error);
     }
-  }, [canvasPrompt, getTenantPath, router]);
+  }, [canvasPrompt, getTenantPath, router, pathname]);
 
   const handleCanvasPromptKeyDown = useCallback(
     (event: KeyboardEvent<HTMLTextAreaElement>) => {

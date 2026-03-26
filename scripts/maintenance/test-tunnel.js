@@ -1,23 +1,31 @@
 import pg from 'pg';
 const { Client } = pg;
 
-// Explicitly disable SSL
-const connectionString = "postgresql://postgres:<password>@127.0.0.1:54320/postgres";
+const connectionString =
+  process.env.PG_CONNECTION_STRING ||
+  process.env.DATABASE_URL ||
+  "postgresql://postgres.<project-ref>:<database-password>@db.<project-ref>.supabase.co:5432/postgres?sslmode=require";
 
 async function check() {
   console.log("----------------------------------------------------------------");
-  console.log("Testing connection to SSH Tunnel (127.0.0.1:54320) -> Remote DB");
+  console.log("Testing connection to hosted Supabase/Postgres");
   console.log("----------------------------------------------------------------");
 
   const client = new Client({
     connectionString,
-    ssl: false // Force disable SSL
+    ssl:
+      process.env.PG_SSL_MODE === 'disable'
+        ? false
+        : {
+            rejectUnauthorized:
+              process.env.PG_SSL_REJECT_UNAUTHORIZED !== 'false',
+          },
   });
 
   try {
     await client.connect();
     console.log("✅ SUCCESS: Connection established!");
-    console.log("   The tunnel is working correctly.");
+    console.log("   Credentials + TLS settings are valid.");
     
     const res = await client.query('SELECT version()');
     console.log("   Database Version:", res.rows[0].version);
@@ -29,12 +37,9 @@ async function check() {
     console.log("----------------------------------------------------------------");
     console.log("Diagnosis:");
     if (err.message.includes('Connection terminated unexpectedly')) {
-        console.log("   The SSH tunnel is connected, BUT the remote server closed the connection.");
-        console.log("   Likely Cause: The SSH tunnel is pointing to 'localhost' (IPv6 ::1)");
-        console.log("                 but the database is listening on IPv4 (127.0.0.1).");
-        console.log("   FIX: Restart the tunnel using '127.0.0.1' instead of 'localhost'.");
+    console.log("   Confirm the host/port in DATABASE_URL. Supabase Cloud uses db.<project-ref>.supabase.co:5432.");
     } else if (err.code === 'ECONNREFUSED') {
-        console.log("   The SSH tunnel is NOT running locally on port 54320.");
+        console.log("   Cannot reach the database host. Check VPN/firewall or SSH tunnel settings.");
     }
     console.log("----------------------------------------------------------------");
   }

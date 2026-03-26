@@ -169,6 +169,75 @@ async function reconcilePosterSummaries(
   return reconciled;
 }
 
+function toMetadataRecord(value: Prisma.JsonValue | null | undefined): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  return { ...(value as Record<string, unknown>) };
+}
+
+function safeParseResult(payload?: string | null): Record<string, unknown> | null {
+  if (!payload) return null;
+  try {
+    const parsed = JSON.parse(payload);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch (error) {
+    console.warn('[taskSummaryQueries] Failed to parse replication result JSON', error);
+  }
+  return null;
+}
+
+async function attachReplicationResults(
+  tasks: TaskSummaryRecord[],
+): Promise<TaskSummaryRecord[]> {
+  const replicationTasks = tasks.filter(
+    (task) => task.taskType === 'replication' && typeof task.taskId === 'string' && task.taskId,
+  );
+  if (replicationTasks.length === 0) return tasks;
+
+  const replicationIds = Array.from(new Set(replicationTasks.map((task) => task.taskId)));
+  const replicationRows = await prisma.replication.findMany({
+    where: { id: { in: replicationIds } },
+    select: {
+      id: true,
+      status: true,
+      type: true,
+      result: true,
+    },
+  });
+  if (replicationRows.length === 0) return tasks;
+
+  const replicationMap = new Map(replicationRows.map((row) => [row.id, row]));
+
+  return tasks.map((task) => {
+    if (task.taskType !== 'replication') return task;
+    const row = replicationMap.get(task.taskId);
+    if (!row) return task;
+
+    const parsedResult = safeParseResult(row.result);
+    const metadataRecord = toMetadataRecord(task.metadata);
+    if (parsedResult) {
+      metadataRecord.replicationResult = parsedResult;
+    }
+    if (row.status) {
+      metadataRecord.replicationStatus = row.status;
+    }
+    if (row.type) {
+      metadataRecord.replicationType = row.type;
+    }
+
+    const nextMetadata: Prisma.JsonValue | null =
+      Object.keys(metadataRecord).length > 0 ? metadataRecord : task.metadata;
+
+    return {
+      ...task,
+      metadata: nextMetadata,
+    };
+  });
+}
+
 export type FetchUserTaskSummariesParams = {
   userId: string;
   taskType?: TaskType | null;
@@ -232,12 +301,13 @@ export async function fetchUserTaskSummaries({
   ]);
 
   const reconciledTasks = await reconcilePosterSummaries(tasks) as TaskSummaryRecord[];
+  const tasksWithReplication = await attachReplicationResults(reconciledTasks) as TaskSummaryRecord[];
 
   return {
-    tasks: reconciledTasks,
+    tasks: tasksWithReplication,
     total,
     limit,
     offset,
-    hasMore: offset + reconciledTasks.length < total,
+    hasMore: offset + tasksWithReplication.length < total,
   };
 }

@@ -569,7 +569,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
   const selectedCreatorId = selectedCreator?.id ?? null;
   
   // Replication Mode
-  const [replicationMode, setReplicationMode] = useState<'one-click' | 'storyboard' | 'digital-human'>('storyboard');
+  const [replicationMode, setReplicationMode] = useState<'one-click' | 'storyboard' | 'digital-human'>('one-click');
   const [analysisTab, setAnalysisTab] = useState<'replication' | 'breakdown' | 'storyboard' | 'copy'>('replication');
 
   const [mounted, setMounted] = useState(false);
@@ -2073,7 +2073,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
         onClose={() => {
             setIsReplicationModalOpen(false);
             setSelectedReplicationScript(null);
-            setReplicationMode('storyboard');
+            setReplicationMode('one-click');
             setAnalysisTab('replication');
         }}
         title={
@@ -2102,6 +2102,25 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                         爆款复刻
                     </button>
                     {/* 爆款拆解 tab hidden – only used by one-click mode */}
+                    <button
+                        onClick={() => setAnalysisTab('breakdown')}
+                        className={cn(
+                            "px-6 py-1.5 rounded-full text-sm font-bold transition-all flex items-center gap-2 relative z-10",
+                            analysisTab === 'breakdown'
+                                ? "text-white dark:text-black"
+                                : "text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white"
+                        )}
+                    >
+                        {analysisTab === 'breakdown' && (
+                            <motion.div
+                                layoutId="analysis-tab-bg"
+                                className="absolute inset-0 bg-black dark:bg-yellow-300 rounded-full -z-10 shadow-sm"
+                                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                            />
+                        )}
+                        <FileJson size={16} />
+                        爆款拆解
+                    </button>
                     <button
                         onClick={() => setAnalysisTab('storyboard')}
                         className={cn(
@@ -2148,7 +2167,68 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
         <div className="flex flex-col h-[75vh] relative">
             {/* Mode Tabs - Top Right Absolute (Sub-modes only) */}
             <div className="absolute top-0 right-0 z-10 flex gap-2">
-                {/* Mode tab switcher hidden – only storyboard mode is active */}
+                {/* Sub-modes for Replication (only show when Replication tab is active AND a script is selected) */}
+                {analysisTab === 'replication' && selectedReplicationScript && (
+                    <div className="bg-gray-100 dark:bg-gray-800/50 p-1 rounded-full inline-flex animate-in fade-in slide-in-from-left-2 duration-300 relative">
+                        <button
+                            onClick={() => setReplicationMode('one-click')}
+                            className={cn(
+                                "px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-2 relative z-10",
+                                replicationMode === 'one-click'
+                                    ? "text-black dark:text-white"
+                                    : "text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white"
+                            )}
+                        >
+                            {replicationMode === 'one-click' && (
+                                <motion.div
+                                    layoutId="replication-mode-bg"
+                                    className="absolute inset-0 bg-white dark:bg-gray-700 rounded-full -z-10 shadow-sm"
+                                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                />
+                            )}
+                            <Zap size={14} />
+                            {replicationModeLabels['one-click']}
+                        </button>
+                        <button
+                            onClick={() => setReplicationMode('storyboard')}
+                            className={cn(
+                                "px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-2 relative z-10",
+                                replicationMode === 'storyboard'
+                                    ? "text-black dark:text-white"
+                                    : "text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white"
+                            )}
+                        >
+                            {replicationMode === 'storyboard' && (
+                                <motion.div
+                                    layoutId="replication-mode-bg"
+                                    className="absolute inset-0 bg-white dark:bg-gray-700 rounded-full -z-10 shadow-sm"
+                                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                />
+                            )}
+                            <Layers size={14} />
+                            {replicationModeLabels['storyboard']}
+                        </button>
+                        <button
+                            onClick={() => setReplicationMode('digital-human')}
+                            className={cn(
+                                "px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-2 relative z-10",
+                                replicationMode === 'digital-human'
+                                    ? "text-black dark:text-white"
+                                    : "text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white"
+                            )}
+                        >
+                            {replicationMode === 'digital-human' && (
+                                <motion.div
+                                    layoutId="replication-mode-bg"
+                                    className="absolute inset-0 bg-white dark:bg-gray-700 rounded-full -z-10 shadow-sm"
+                                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                                />
+                            )}
+                            <User size={14} />
+                            {replicationModeLabels['digital-human']}
+                        </button>
+                    </div>
+                )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 flex-1 min-h-0 lg:pt-0">

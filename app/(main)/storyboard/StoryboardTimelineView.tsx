@@ -18,6 +18,7 @@ import {
   type SegmentForTimeline,
   type StoryboardTimelineClip,
   type StoryboardTimelineData,
+  type StoryboardTimelineTrack,
 } from "@/lib/storyboardTimeline";
 import { saveStoryboardTimeline } from "@/app/actions/storyboard-timeline";
 
@@ -128,20 +129,41 @@ export function StoryboardTimelineView({ initialTask, mode = 'page' }: Storyboar
   const playIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const clipDragMovedRef = useRef(false);
 
-  const videoTrack = useMemo(() => findVideoTrack(timeline), [timeline]);
-  const orderedClips = useMemo(() => {
-    return [...(videoTrack?.clips ?? [])].sort((a, b) =>
-      a.start === b.start ? a.id.localeCompare(b.id) : a.start - b.start
-    );
-  }, [videoTrack]);
+  const orderedTrackEntries = useMemo(() => {
+    return timeline.tracks.map((track) => ({
+      track,
+      orderedClips: [...(track?.clips ?? [])].sort((a, b) =>
+        a.start === b.start ? a.id.localeCompare(b.id) : a.start - b.start
+      ),
+    }));
+  }, [timeline.tracks]);
+
+  const videoTrackEntry =
+    orderedTrackEntries.find((entry) => entry.track.type === 'video') ?? orderedTrackEntries[0];
+  const orderedVideoClips = videoTrackEntry?.orderedClips ?? [];
+
+  const clipContextMap = useMemo(() => {
+    const map = new Map<
+      string,
+      { trackId: string; trackType: StoryboardTimelineTrack['type']; orderedClips: StoryboardTimelineClip[]; index: number }
+    >();
+    orderedTrackEntries.forEach(({ track, orderedClips }) => {
+      orderedClips.forEach((clip, index) => {
+        map.set(clip.id, { trackId: track.id, trackType: track.type, orderedClips, index });
+      });
+    });
+    return map;
+  }, [orderedTrackEntries]);
 
   const currentClip = useMemo(() => {
-    return orderedClips.find(clip =>
-      currentTime >= clip.start && currentTime < clip.start + clip.duration
+    return orderedVideoClips.find(
+      (clip) => currentTime >= clip.start && currentTime < clip.start + clip.duration
     );
-  }, [currentTime, orderedClips]);
+  }, [currentTime, orderedVideoClips]);
   const currentSegment = currentClip ? segmentMap.get(currentClip.segmentId) : undefined;
-  const currentClipIndex = currentClip ? orderedClips.findIndex((clip) => clip.id === currentClip.id) : -1;
+  const currentClipIndex = currentClip
+    ? orderedVideoClips.findIndex((clip) => clip.id === currentClip.id)
+    : -1;
   const currentPrompt =
     currentSegment?.videoPrompt ||
     currentSegment?.imagePrompt ||
@@ -153,24 +175,31 @@ export function StoryboardTimelineView({ initialTask, mode = 'page' }: Storyboar
   }, [currentClip?.id]);
 
   const getClipById = useCallback(
-    (clipId: string) => orderedClips.find((clip) => clip.id === clipId),
-    [orderedClips]
+    (clipId: string) => {
+      const context = clipContextMap.get(clipId);
+      if (!context) return undefined;
+      return context.orderedClips[context.index];
+    },
+    [clipContextMap]
   );
 
   const getNeighborTimes = useCallback(
     (clipId: string) => {
-      const index = orderedClips.findIndex((clip) => clip.id === clipId);
-      if (index < 0) {
+      const context = clipContextMap.get(clipId);
+      if (!context) {
         return { prevEnd: 0, nextStart: Infinity };
       }
-      const prev = index > 0 ? orderedClips[index - 1] : null;
-      const next = index < orderedClips.length - 1 ? orderedClips[index + 1] : null;
+      const prev = context.index > 0 ? context.orderedClips[context.index - 1] : null;
+      const next =
+        context.index < context.orderedClips.length - 1
+          ? context.orderedClips[context.index + 1]
+          : null;
       return {
         prevEnd: prev ? roundSeconds(prev.start + prev.duration) : 0,
         nextStart: next ? roundSeconds(next.start) : Infinity,
       };
     },
-    [orderedClips]
+    [clipContextMap]
   );
 
   const getSegmentDurationLimit = useCallback(
@@ -346,16 +375,18 @@ export function StoryboardTimelineView({ initialTask, mode = 'page' }: Storyboar
   }, []);
 
   const snapFollowingClips = useCallback((draft: StoryboardTimelineData, changedClipId: string) => {
-    const videoTrack = findVideoTrack(draft);
-    if (!videoTrack) return;
-    const sorted = [...videoTrack.clips].sort((a, b) =>
+    const targetTrack = draft.tracks.find((track) =>
+      track.clips.some((clip) => clip.id === changedClipId)
+    );
+    if (!targetTrack || targetTrack.type !== 'video') return;
+    const sorted = [...targetTrack.clips].sort((a, b) =>
       a.start === b.start ? a.id.localeCompare(b.id) : a.start - b.start
     );
     const startIndex = sorted.findIndex((clip) => clip.id === changedClipId);
     if (startIndex < 0) return;
     let cursor = roundSeconds(sorted[startIndex].start + sorted[startIndex].duration);
     const updates = new Map<string, number>();
-    for (let i = startIndex + 1; i < sorted.length; i++) {
+    for (let i = startIndex + 1; i < sorted.length; i += 1) {
       const clip = sorted[i];
       if (Math.abs(clip.start - cursor) > SNAP_THRESHOLD) {
         updates.set(clip.id, roundSeconds(cursor));
@@ -364,7 +395,7 @@ export function StoryboardTimelineView({ initialTask, mode = 'page' }: Storyboar
     }
     if (!updates.size) return;
     draft.tracks = draft.tracks.map((track) => {
-      if (track.id !== videoTrack.id) return track;
+      if (track.id !== targetTrack.id) return track;
       return {
         ...track,
         clips: track.clips.map((clip) => {
@@ -408,11 +439,11 @@ export function StoryboardTimelineView({ initialTask, mode = 'page' }: Storyboar
     clipDragMovedRef.current = false;
     setIsDraggingClip(clipId);
     setDragStartX(e.clientX);
-    const clip = orderedClips.find(c => c.id === clipId);
+    const clip = getClipById(clipId);
     if (clip) {
       setDragStartValue(clip.start);
     }
-  }, [orderedClips]);
+  }, [getClipById]);
 
   useEffect(() => {
     if (!isDraggingClip) return;
@@ -452,12 +483,12 @@ export function StoryboardTimelineView({ initialTask, mode = 'page' }: Storyboar
     e.stopPropagation();
     setIsResizingClip({ clipId, edge });
     setDragStartX(e.clientX);
-    const clip = orderedClips.find(c => c.id === clipId);
+    const clip = getClipById(clipId);
     if (clip) {
       setDragStartValue(clip.start);
       setDragStartDuration(clip.duration);
     }
-  }, [orderedClips]);
+  }, [getClipById]);
 
   useEffect(() => {
     if (!isResizingClip) return;
@@ -865,68 +896,100 @@ export function StoryboardTimelineView({ initialTask, mode = 'page' }: Storyboar
           <div
             ref={timelineRef}
             className={cn(
-              'relative h-20 rounded-2xl cursor-pointer select-none',
+              'relative rounded-2xl cursor-pointer select-none',
               isEmbedded ? 'bg-gray-100 dark:bg-white/5' : 'bg-white border border-white/60 shadow-[0_10px_25px_rgba(15,23,42,0.08)]'
             )}
             onClick={handleTimelineClick}
           >
-            {orderedClips.map((clip) => {
-              const left = (clip.start / timeline.totalDuration) * 100;
-              const width = (clip.duration / timeline.totalDuration) * 100;
-              const segment = segmentMap.get(clip.segmentId);
-              const assetUrl = getAssetUrl(segment, clip);
-
-              return (
-                <div
-                  key={clip.id}
-                  className={cn(
-                    "absolute top-1 bottom-1 rounded overflow-hidden cursor-move group",
-                    isEmbedded
-                      ? 'border border-gray-300 bg-white shadow-sm dark:border-white/30 dark:bg-white/10'
-                      : 'border border-gray-200 bg-white shadow-[0_8px_18px_rgba(15,23,42,0.08)]'
-                  )}
-                  style={{
-                    left: `${Math.max(0, left)}%`,
-                    width: `${Math.max(2, width)}%`,
-                    minWidth: '40px'
-                  }}
-                  onMouseDown={(e) => handleClipMouseDown(clip.id, e)}
-                  onMouseUp={handleClipMouseUp}
-                >
-                  <div
-                    className={cn(
-                      "absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity z-10",
-                      isEmbedded ? 'bg-gray-400 dark:bg-white/70' : 'bg-gray-400'
-                    )}
-                    onMouseDown={(e) => handleResizeMouseDown(clip.id, 'left', e)}
-                  />
-                  <div
-                    className={cn(
-                      "absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity z-10",
-                      isEmbedded ? 'bg-gray-400 dark:bg-white/70' : 'bg-gray-400'
-                    )}
-                    onMouseDown={(e) => handleResizeMouseDown(clip.id, 'right', e)}
-                  />
-
-                  {assetUrl && (
-                    <img
-                      src={assetUrl}
-                      alt=""
-                      className="w-full h-full object-cover pointer-events-none"
-                    />
-                  )}
-
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent flex flex-col justify-end p-2 pointer-events-none">
-                    <div className="text-white text-xs font-medium truncate">
-                      {clip.label || `片段 ${clip.id.slice(-4)}`}
-                    </div>
-                    <div className="text-white/80 text-xs">
-                      {clip.duration.toFixed(1)}s
-                    </div>
-                  </div>
+            <div className="flex flex-col gap-3 p-3">
+              {orderedTrackEntries.length === 0 && (
+                <div className="rounded-xl border border-dashed border-gray-300 bg-white/70 py-6 text-center text-xs text-gray-500 dark:border-white/10 dark:bg-white/5 dark:text-white/60">
+                  暂无轨道
                 </div>
-              );
-            })}
+              )}
+              {orderedTrackEntries.map(({ track, orderedClips }) => (
+                <div
+                  key={track.id}
+                  className={cn(
+                    'relative h-20 rounded-xl border overflow-hidden',
+                    track.type === 'video'
+                      ? 'bg-white border-gray-200 dark:border-white/20 dark:bg-white/10'
+                      : 'bg-gray-50 border-gray-200 dark:border-white/10 dark:bg-white/5'
+                  )}
+                >
+                  <div className="absolute left-3 top-2 z-10 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-white/50">
+                    {track.name ||
+                      (track.type === 'video'
+                        ? '视频轨道'
+                        : track.type === 'audio'
+                        ? '音频轨道'
+                        : '叠加轨道')}
+                  </div>
+                  {orderedClips.map((clip) => {
+                    const left = timeline.totalDuration
+                      ? (clip.start / timeline.totalDuration) * 100
+                      : 0;
+                    const width = timeline.totalDuration
+                      ? (clip.duration / timeline.totalDuration) * 100
+                      : 0;
+                    const segment = segmentMap.get(clip.segmentId);
+                    const assetUrl = getAssetUrl(segment, clip);
+                    return (
+                      <div
+                        key={clip.id}
+                        className={cn(
+                          "absolute top-4 bottom-2 rounded overflow-hidden cursor-move group",
+                          track.type === 'video'
+                            ? isEmbedded
+                              ? 'border border-gray-300 bg-white shadow-sm dark:border-white/30 dark:bg-white/10'
+                              : 'border border-gray-200 bg-white shadow-[0_8px_18px_rgba(15,23,42,0.08)]'
+                            : 'border border-dashed border-gray-300 bg-gray-200/50 dark:border-white/20 dark:bg-white/5'
+                        )}
+                        style={{
+                          left: `${Math.max(0, left)}%`,
+                          width: `${Math.max(2, width)}%`,
+                          minWidth: '32px'
+                        }}
+                        onMouseDown={(e) => handleClipMouseDown(clip.id, e)}
+                        onMouseUp={handleClipMouseUp}
+                      >
+                        <div
+                          className={cn(
+                            "absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity z-10",
+                            isEmbedded ? 'bg-gray-400 dark:bg-white/70' : 'bg-gray-400'
+                          )}
+                          onMouseDown={(e) => handleResizeMouseDown(clip.id, 'left', e)}
+                        />
+                        <div
+                          className={cn(
+                            "absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize opacity-0 group-hover:opacity-100 transition-opacity z-10",
+                            isEmbedded ? 'bg-gray-400 dark:bg-white/70' : 'bg-gray-400'
+                          )}
+                          onMouseDown={(e) => handleResizeMouseDown(clip.id, 'right', e)}
+                        />
+
+                        {assetUrl && (
+                          <img
+                            src={assetUrl}
+                            alt=""
+                            className="w-full h-full object-cover pointer-events-none"
+                          />
+                        )}
+
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent flex flex-col justify-end p-2 pointer-events-none">
+                          <div className="text-white text-xs font-medium truncate">
+                            {clip.label || `片段 ${clip.id.slice(-4)}`}
+                          </div>
+                          <div className="text-white/80 text-xs">
+                            {clip.duration.toFixed(1)}s
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
 
             <div
               className={cn('absolute top-0 bottom-0 w-0.5 z-20 pointer-events-none', isEmbedded ? 'bg-gray-700 dark:bg-white' : 'bg-red-500')}

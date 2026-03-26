@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'react-hot-toast';
-import { Loader2, Save, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Save, Eye, EyeOff, CheckCircle, XCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import Image from 'next/image';
@@ -14,8 +14,11 @@ export function ApiKeyModal() {
   const [isOpen, setIsOpen] = useState(false);
   const [apiKey, setApiKey] = useState('');
   const [loading, setLoading] = useState(false);
+  const [validating, setValidating] = useState(false);
   const [checking, setChecking] = useState(true);
   const [isVisible, setIsVisible] = useState(false);
+  const [validationState, setValidationState] = useState<'idle' | 'valid' | 'invalid' | 'bound'>('idle');
+  const [balance, setBalance] = useState<number | null>(null);
   const { t } = useLanguage();
   const router = useRouter();
   const { basePath } = useTenant();
@@ -63,9 +66,39 @@ export function ApiKeyModal() {
     }
 
     setLoading(true);
+    setValidating(true);
+    setValidationState('idle');
+    setBalance(null);
+
     try {
+      // 校验：是否已被绑定 + 是否有效
+      const validateRes = await fetch('/api/user/validate-api-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: apiKey.trim() }),
+      });
+      const validateData = await validateRes.json();
+
+      setValidating(false);
+
+      if (validateData.reason === 'already_bound') {
+        setValidationState('bound');
+        toast.error('该 API Key 已被其他账号绑定');
+        return;
+      }
+
+      if (!validateData.valid) {
+        setValidationState('invalid');
+        toast.error('API Key 无效，请检查后重试');
+        return;
+      }
+
+      setValidationState('valid');
+      if (typeof validateData.balance === 'number') {
+        setBalance(validateData.balance);
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
-      
       if (!user) {
         toast.error(t.apiKeyModal.toast.userMissing);
         return;
@@ -73,7 +106,7 @@ export function ApiKeyModal() {
 
       const { error } = await supabase
         .from('profiles')
-        .upsert({ 
+        .upsert({
           id: user.id,
           api_key: apiKey.trim(),
           updated_at: new Date().toISOString()
@@ -89,6 +122,7 @@ export function ApiKeyModal() {
       toast.error(error.message || t.apiKeyModal.toast.error);
     } finally {
       setLoading(false);
+      setValidating(false);
     }
   };
 
@@ -128,6 +162,24 @@ export function ApiKeyModal() {
                   {isVisible ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
+              {validationState === 'valid' && (
+                <p className="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400 mt-1.5">
+                  <CheckCircle size={14} />
+                  Key 有效{balance !== null ? `，余额 ${balance}` : ''}
+                </p>
+              )}
+              {validationState === 'bound' && (
+                <p className="flex items-center gap-1.5 text-sm text-red-500 mt-1.5">
+                  <XCircle size={14} />
+                  该 API Key 已被其他账号绑定
+                </p>
+              )}
+              {validationState === 'invalid' && (
+                <p className="flex items-center gap-1.5 text-sm text-red-500 mt-1.5">
+                  <XCircle size={14} />
+                  API Key 无效，请检查后重试
+                </p>
+              )}
             </div>
 
             <button
@@ -135,7 +187,12 @@ export function ApiKeyModal() {
               disabled={loading}
               className="btn-openclaw w-full justify-center py-3 px-4 font-bold"
             >
-              {loading ? (
+              {validating ? (
+                <>
+                  <Loader2 size={18} className="animate-spin mr-2" />
+                  校验中...
+                </>
+              ) : loading ? (
                 <>
                   <Loader2 size={18} className="animate-spin mr-2" />
                   {t.apiKeyModal.saving}

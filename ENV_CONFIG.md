@@ -4,40 +4,35 @@ This document outlines the necessary configuration and setup steps for the Conte
 
 ## 1. Prerequisites
 
-### Direct Supabase Connectivity
-Supabase is exposed only through the host loopback interface. You must run the app on the same server (or create an SSH tunnel / VPN) to reach it.
+### Hosted Supabase Connectivity
+The project now uses Supabase Cloud (or another remotely hosted Supabase stack). Obtain the official connection string from the Supabase Dashboard and keep TLS enabled.
 
-*   **Host:** `127.0.0.1`
-*   **Port:** `54322` (host port that maps to `supabase_db:5432`)
+*   **Host:** `db.<project-ref>.supabase.co`
+*   **Port:** `5432`
 *   **Database:** `postgres`
-*   **User:** `postgres.your-tenant-id`
-*   **SSL:** Disabled (`sslmode=disable` or `PGSSLMODE=disable`)
+*   **User:** `postgres.<project-ref>`
+*   **SSL:** Required (`sslmode=require` / `PGSSLMODE=require`)
 
-> Public IP `47.107.158.233` currently drops/blocks 5432/5433/54321/54322, so remote direct access fails unless you open the firewall or forward ports manually.
-
-> If you rotate credentials in Supabase, update the `DATABASE_URL`/`DIRECT_URL` values accordingly.
+> Replace `<project-ref>` and `<database-password>` with your actual values. You can find them under **Project Settings → Database** in the Supabase dashboard.
 
 ## 2. Environment Variables (.env / .env.local)
 
-These variables are configured in `.env` and `.env.local`.
-
-*   `.env` —— 部署/服务器环境使用，连接 `127.0.0.1:54322`（Docker 宿主访问 supabase_db）。
-*   `.env.local` —— 本地开发使用，如果你在自己电脑运行，需要把 host 改成 `47.107.158.233`（或你自己建立的隧道地址）。
+These variables are configured in `.env` (production/servers) and `.env.local` (local development).
 
 ### Database Configuration
-Use the Supabase connection string exposed on `127.0.0.1:54322` (replace credentials with the ones from your Supabase project if they change).
+Use the managed Supabase connection string (TLS required). Example:
 
 *   **DATABASE_URL:**
     ```
-    postgresql://postgres.your-tenant-id:<password>@127.0.0.1:54322/postgres?sslmode=disable
+    postgresql://postgres.<project-ref>:<database-password>@db.<project-ref>.supabase.co:5432/postgres?sslmode=require
     ```
 *   **DIRECT_URL:**
     ```
-    postgresql://postgres.your-tenant-id:<password>@127.0.0.1:54322/postgres?sslmode=disable
+    postgresql://postgres.<project-ref>:<database-password>@db.<project-ref>.supabase.co:5432/postgres?sslmode=require
     ```
 *   **PGSSLMODE:**
     ```
-    disable
+    require
     ```
 
 ### Supabase API Configuration
@@ -62,14 +57,30 @@ Endpoints for various automation workflows.
 *   **Product Analysis:** `https://hook.atomx.top/webhook/product_dna_web`
 *   **Script Breakdown:** `https://hook.atomx.top/webhook/script_extract_web`
 *   **Replication/Generation:** `https://hook.atomx.top/webhook/Getway_web`
+*   **Storyboard (Draft → Board):** `N8N_STORYBOARD_SCRIPT_WEBHOOK` (default fallback: `https://n8n.atomx.top/webhook/897bb7fb-b878-4135-9aaf-d60beba1dbef`)
+*   **XHS Text2Image:** `N8N_XHS_TEXT2IMG_WEBHOOK` (default fallback: `https://hooks.atomx.top/webhook/xhs_text2img_web`)
+*   **Creator Reference Sync:** `VIRAL_CREATOR_SYNC_WEBHOOK_URL` — optional webhook endpoint that fetches the latest notes for a selected creator when用户在前端点击“同步最新笔记”。若不配置，系统会默认调用本应用的 `/api/webhook/creator-sync` stub（按钮始终可用）；如需接入真实采集器，可将其设置为前端应用内的相对路径或任意完整 URL，后台会POST创作者信息并附带 `x-user-api-key`（如存在）。
 
 ### Credit System Configuration
 *   **POINTS_API_BASE:** Base URL for the external credit system API.
     *   Default: `https://api.atomx.top`
 
+### NexAPI Routing & Proxy
+These variables drive the NexAPI gateway (frontend console + `/api/nexapi/proxy/*` routes).
+
+*   **NEXAPI_UPSTREAM_KEY** *(required)* — Upstream vendor key used when forwarding chat/responses requests.
+*   **NEXAPI_ROUTE_MAIN** *(optional)* — Primary base URL for NexAPI traffic. Default: `https://aiapi.atomx.top`.
+*   **NEXAPI_ROUTE_BACKUP** *(optional)* — Backup base URL. Default: `https://aiapi.nextide.top`.
+*   **NEXAPI_EXTRA_ROUTES** *(optional)* — Comma-separated list of additional routes using the format  
+    `id|label|https://base.url|origin`. Example:  
+    ```
+    NEXAPI_EXTRA_ROUTES=hk-pop|香港 POP|https://hk.aiapi.atomx.top|apac,edge-cdn|Edge CDN|https://edge.aiapi.atomx.top|global
+    ```
+    When configured, these routes automatically appear in the API Console health table and are available via the `X-NexAPI-Route` header.
+
 ## 3. Running the Application
 
-1.  **Confirm loopback connectivity:** Make sure your container/host can reach `127.0.0.1:54322` (or set up SSH tunneling if running off-box).
+1.  **Configure Supabase env vars:** Ensure `.env.local` / `.env` include the hosted Supabase credentials shown above.
 2.  **Start Development Server:**
     ```bash
     npm run dev
@@ -80,9 +91,9 @@ Endpoints for various automation workflows.
 ## 4. Troubleshooting
 
 *   **"Tenant or user not found" / DB Connection Error:**
-    *   Confirm the credentials in `.env.local` match the Supabase project settings.
-    *   Ensure the process reaches `127.0.0.1:54322`. If the app runs on a different machine, create an SSH tunnel (`ssh -L 54322:127.0.0.1:54322 user@server`) or open the firewall.
-    *   Verify `PGSSLMODE=disable`; otherwise Prisma forces TLS and the server rejects the handshake.
+    *   Confirm the credentials in `.env*` match the Supabase project settings.
+    *   Ensure outbound traffic to `db.<project-ref>.supabase.co:5432` is allowed (VPN / firewall).
+    *   `PGSSLMODE` **must** be `require`; Supabase Cloud enforces TLS.
 *   **"ERR_NAME_NOT_RESOLVED" for `supabase-api.atomx.top`:**
     *   Ensure your DNS can resolve this domain. If on a restricted network, you may need to add a hosts entry or fix DNS settings.
 *   **"Connection Refused" on localhost:3000:**

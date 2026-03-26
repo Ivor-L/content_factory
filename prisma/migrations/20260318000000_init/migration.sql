@@ -1,5 +1,11 @@
 -- CreateSchema
+CREATE SCHEMA IF NOT EXISTS "auth";
 CREATE SCHEMA IF NOT EXISTS "public";
+
+-- Ensure auth.users exists for Supabase-linked FKs
+CREATE TABLE IF NOT EXISTS "auth"."users" (
+    "id" UUID PRIMARY KEY
+);
 
 -- CreateTable
 CREATE TABLE "characters" (

@@ -4,6 +4,7 @@ export interface StoryboardShot {
   label: string;
   title: string | null;
   description: string | null;
+  imagePrompt?: string | null;
   videoPrompt: string | null;
   timeRange: string | null;
   duration: number | null;

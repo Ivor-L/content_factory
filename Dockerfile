@@ -12,10 +12,12 @@ RUN apk add --no-cache libc6-compat python3 make g++
 
 # Install dependencies based on the preferred package manager
 COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* ./
+# Copy Prisma schema before install so `prisma generate` in postinstall can locate it
+COPY prisma ./prisma
 RUN \
-  if [ -f yarn.lock ]; then yarn install --frozen-lockfile --production --registry=https://registry.npmmirror.com; \
-  elif [ -f package-lock.json ]; then npm ci --omit=dev --registry=https://registry.npmmirror.com; \
-  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm i --frozen-lockfile --prod --registry=https://registry.npmmirror.com; \
+  if [ -f package-lock.json ]; then npm ci --registry=https://registry.npmmirror.com; \
+  elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm i --frozen-lockfile --registry=https://registry.npmmirror.com; \
+  elif [ -f yarn.lock ]; then yarn install --frozen-lockfile --registry=https://registry.npmmirror.com; \
   else echo "Lockfile not found." && exit 1; fi
 
 COPY . .

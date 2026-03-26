@@ -103,6 +103,93 @@ function parseTriggerResults(raw: unknown): { successIds: Set<string>; failed: T
   return { successIds, failed };
 }
 
+const BREAKDOWN_LOADING_MESSAGES = [
+  "AI 正在读取视频...",
+  "AI 正在拆解分镜...",
+  "AI 正在学习构图...",
+  "AI 正在改写文案...",
+  "AI 正在撰写图片提示词...",
+  "AI 正在撰写视频提示词...",
+];
+
+type TypewriterPhase = "typing" | "pausing" | "deleting";
+
+interface TypewriterOptions {
+  typeDelay?: number;
+  deleteDelay?: number;
+  holdDelay?: number;
+  gapDelay?: number;
+}
+
+function useTypewriterLoop(messages: readonly string[], options?: TypewriterOptions) {
+  const { typeDelay = 70, deleteDelay = 28, holdDelay = 1400, gapDelay = 250 } = options ?? {};
+  const [state, setState] = useState<{ index: number; length: number; phase: TypewriterPhase }>({
+    index: 0,
+    length: 0,
+    phase: "typing",
+  });
+
+  useEffect(() => {
+    if (!messages.length) return;
+    setState({ index: 0, length: 0, phase: "typing" });
+  }, [messages.length]);
+
+  const displayText = messages.length ? messages[state.index]?.slice(0, state.length) ?? "" : "";
+
+  useEffect(() => {
+    if (!messages.length) return;
+    const current = messages[state.index] ?? "";
+    let timer: number | undefined;
+
+    if (state.phase === "typing") {
+      if (state.length < current.length) {
+        timer = window.setTimeout(() => {
+          setState((prev) => ({ ...prev, length: prev.length + 1 }));
+        }, typeDelay);
+      } else {
+        timer = window.setTimeout(() => {
+          setState((prev) => ({ ...prev, phase: "pausing" }));
+        }, holdDelay);
+      }
+    } else if (state.phase === "pausing") {
+      timer = window.setTimeout(() => {
+        setState((prev) => ({ ...prev, phase: "deleting" }));
+      }, gapDelay);
+    } else {
+      if (state.length > 0) {
+        timer = window.setTimeout(() => {
+          setState((prev) => ({ ...prev, length: Math.max(0, prev.length - 1) }));
+        }, deleteDelay);
+      } else {
+        timer = window.setTimeout(() => {
+          setState((prev) => ({
+            index: messages.length ? (prev.index + 1) % messages.length : 0,
+            length: 0,
+            phase: "typing",
+          }));
+        }, gapDelay);
+      }
+    }
+
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [messages, state, typeDelay, deleteDelay, holdDelay, gapDelay]);
+
+  return displayText;
+}
+
+function BreakdownLoadingMessage() {
+  const text = useTypewriterLoop(BREAKDOWN_LOADING_MESSAGES);
+  const safeText = text || "\u00A0";
+  return (
+    <p className="mt-1 flex min-h-[1.25rem] items-center justify-center gap-1 text-sm text-gray-500 dark:text-white/40">
+      <span>{safeText}</span>
+      <span className="h-4 w-0.5 animate-pulse bg-current" />
+    </p>
+  );
+}
+
 export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryboardPageProps) {
   const router = useRouter();
   const [task, setTask] = useState(initialTask);
@@ -392,14 +479,9 @@ export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryb
 
       {/* Breakdown pending state */}
       {(task.status === "BREAKDOWN_PENDING" || task.status === "BREAKDOWN_PROCESSING") && (
-        <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
+        <div className="flex flex-col items-center justify-center py-24 gap-3 text-center">
           <AiGlowSpinner size={64} />
-          <div>
-            <p className="text-lg font-semibold text-gray-900 dark:text-white">正在详细拆解视频</p>
-            <p className="text-sm text-gray-500 dark:text-white/40 mt-1">
-              AI 正在分析视频并结合产品信息改写口播文案，请稍候…
-            </p>
-          </div>
+          <BreakdownLoadingMessage />
         </div>
       )}
 

@@ -8,19 +8,37 @@ const config: Config = {
   ],
   darkMode: 'class',
   theme: {
+    container: {
+      center: true,
+      padding: {
+        DEFAULT: '1.5rem',
+        xs: '1rem',
+        tablet: '2rem'
+      }
+    },
     extend: {
+      screens: {
+        xs: '375px',
+        tablet: '768px',
+        laptop: '1200px'
+      },
       colors: {
         brand: {
           black: '#000000',
           blue: '#1DA1F2',
-          yellow: '#FCD34D',
-          yellowStrong: '#F59E0B',
+          yellow: '#1F2937',
+          yellowStrong: '#111827',
           gray: {
-            50: '#F9FAFB',
-            100: '#F3F4F6',
-            800: '#1F2937',
-            900: '#111827',
+            50: '#F7F7F7',
+            100: '#F0F0F0',
+            800: '#202022',
+            900: '#18181b',
           }
+        },
+        gray: {
+          800: '#202022',
+          900: '#18181b',
+          950: '#0d0d10',
         },
         primary: {
           DEFAULT: 'var(--tenant-primary)',
@@ -32,7 +50,9 @@ const config: Config = {
           border: 'var(--tenant-primary-border)',
           ring: 'var(--tenant-primary-ring)',
           glow: 'var(--tenant-primary-glow)',
-        }
+        },
+        'surface-dark': '#1f2026',
+        'surface-dark-border': '#2b2d33',
       },
       ringColor: {
         primary: 'var(--tenant-primary-ring)',

@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import React, { useState, useEffect, useRef } from 'react';
 import { User, Key, Zap, Save, CheckCircle2, Edit2, X, Camera } from 'lucide-react';
 import { useUser } from '../contexts/UserContext';
@@ -136,7 +137,7 @@ export default function Profile() {
                 <button
                   onClick={handleSaveProfile}
                   disabled={!editName.trim()}
-                  className="w-full py-3 bg-primary text-white rounded-xl font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+                  className="btn-openclaw w-full py-3 text-sm font-bold"
                 >
                   保存修改
                 </button>
@@ -157,8 +158,8 @@ export default function Profile() {
       {/* Points Usage */}
       <div className="bg-white rounded-[2rem] p-6 soft-shadow space-y-4">
         <div className="flex items-center gap-2 mb-2">
-          <div className="w-10 h-10 bg-yellow-50 rounded-full flex items-center justify-center">
-            <Zap size={20} className="text-yellow-500" />
+          <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
+            <Zap size={20} className="text-gray-600" />
           </div>
           <div>
             <h3 className="font-bold text-primary">积分使用情况</h3>
@@ -219,12 +220,8 @@ export default function Profile() {
           <button
             onClick={handleSaveKey}
             disabled={!apiKey || !isKeyEditing}
-            className={`w-full py-3.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 transition-all ${
-              !apiKey || !isKeyEditing
-                ? 'bg-secondary text-text-secondary cursor-not-allowed' 
-                : isSaved 
-                  ? 'bg-green-500' 
-                  : 'bg-primary hover:opacity-90 active:scale-[0.98]'
+            className={`w-full py-3.5 font-bold flex items-center justify-center gap-2 text-base transition-all ${
+              isSaved ? 'rounded-full bg-green-500 text-white shadow-lg' : 'btn-openclaw'
             }`}
           >
             {isSaved ? (

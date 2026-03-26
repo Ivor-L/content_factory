@@ -1,12 +1,10 @@
 # Supabase Integration Guide
 
 ## Overview
-This project uses a self-hosted Supabase instance.
-- **API URL**: `https://api.supabase.atomx.top`
-- **Database Host (loopback)**: `127.0.0.1`
-- **Exposed Port**: `54322` → maps to `supabase_db:5432`
-- **Remote Access**: Public IP `47.107.158.233` currently blocks 5432/5433/54322; use SSH tunneling/VPN before pointing clients there.
-- **Storage**: Supabase Storage (Bucket: `uploads`, exposed via `NEXT_PUBLIC_SUPABASE_BUCKET`, defaulting to this value)
+This project now targets the hosted Supabase deployment (cloud or managed stack).
+- **API URL**: `https://supabase-api.atomx.top`
+- **Postgres**: `db.<project-ref>.supabase.co:5432` (`postgres.<project-ref>` user, TLS required)
+- **Storage**: Bucket `uploads` (public) served by the same Supabase domain.
 
 ## 🚀 Manual Database Setup (Recommended)
 
@@ -23,10 +21,10 @@ Since automated migration encountered network issues, you can manually create th
 This will create all the necessary tables (`Product`, `Script`, `Character`, etc.) and relationships.
 
 ### Step 2: Connect Your Application
-Run the app on the same host (or tunnel) and use the loopback connection string (update the password/user if your project rotates credentials):
+Run the app anywhere with outbound access to Supabase using the managed connection string (replace placeholders).
 
 ```
-postgresql://postgres.your-tenant-id:<password>@127.0.0.1:54322/postgres?sslmode=disable
+postgresql://postgres.<project-ref>:<database-password>@db.<project-ref>.supabase.co:5432/postgres?sslmode=require
 ```
 
 Add this value to both `DATABASE_URL` and `DIRECT_URL`, then start the dev server:
@@ -35,11 +33,11 @@ Add this value to both `DATABASE_URL` and `DIRECT_URL`, then start the dev serve
 npm run dev
 ```
 
-> If you still can’t connect, double-check that the process can reach `127.0.0.1:54322` (or that your SSH tunnel is active). Prisma must run with `PGSSLMODE=disable`.
+> 如果连接失败，请确认 `.env*` 中的 `DATABASE_URL` / `DIRECT_URL` 已更新为云端地址，并保持 `sslmode=require`。
 
 ### Step 2.5: 推荐的环境变量文件分工
-- `.env`：用于服务器部署，保持 `host=127.0.0.1 port=54322`，供 Docker/PM2 直接连本机 Supabase。
-- `.env.local`：用于本地开发；如果没有 SSH 隧道，就把 `host` 改成 `47.107.158.233`（或你的跳板 IP）。Next.js 在 `npm run dev` 时会优先读取 `.env.local`。
+- `.env`：服务器/容器部署使用，填入云端 Supabase 的正式凭证。
+- `.env.local`：本地开发使用，可填入同一套凭证或使用受限服务角色。
 
 ### Step 3: Configure Storage
 1. Go to **Storage** in Supabase Dashboard.
@@ -47,8 +45,8 @@ npm run dev
 3. Make it **Public**.
 4. Add a policy to allow uploads (e.g., for `INSERT` operations).
 
-## 🛠 本地 Supabase CLI 快速同步（自建环境）
-当你需要把服务器上的自建 Supabase 同步到本地 CLI 环境时，按下面的顺序操作可以避免迁移脚本顺序导致的报错：
+## 🛠 （可选）本地 Supabase CLI 快速同步
+如需在本地通过 Supabase CLI 运行一个「离线沙箱」用于开发，可参考以下步骤（适用于自建 CLI 环境；不影响线上数据库）：
 
 1. **在服务器导出业务 schema**
    ```bash
@@ -99,5 +97,5 @@ npm run dev
    如返回 `db connected`，即可 `npm run dev`，应用会使用 `.env.local` 中的本地 CLI 凭证。
 
 ## Troubleshooting
-- **App cannot connect?** Ensure the process reaches `127.0.0.1:54322` (or enable a tunnel) and the credentials plus `PGSSLMODE=disable` are set.
+- **App cannot connect?** 确认连接字符串指向云端 Supabase (`db.<project-ref>.supabase.co:5432`) 且 `sslmode=require`。
 - **"Relation does not exist"?** Ensure you ran the SQL script successfully in Step 1.

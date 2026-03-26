@@ -1,8 +1,7 @@
-import { headers } from 'next/headers'
-import { getTenantConfig, VALID_TENANT_SLUGS } from '@/lib/tenants/config'
-import { CanvasAuthBridge } from './components/CanvasAuthBridge'
-
-const NEXTIDE_CANVAS_LOGO = '/logo/黑底白色鲸鱼logo_SVG.svg'
+import { ReactCanvasRoot } from './components/ReactCanvasRoot'
+import { listCanvasProjects } from '@/lib/canvasProjects'
+import { getServerRequestUserContext } from '@/lib/serverRequestContext'
+import type { CanvasProjectRecord } from './types'
 
 type SearchParamValue = string | string[] | undefined
 
@@ -16,50 +15,8 @@ function pickFirstQueryValue(value: SearchParamValue): string {
   return ''
 }
 
-function resolveTenantSlugFromHeaders(raw: string | null): string {
-  const fallback = 'nextide'
-  if (!raw) return fallback
-  const normalized = raw.trim().toLowerCase()
-  if (!normalized) return fallback
-  return VALID_TENANT_SLUGS.includes(normalized) ? normalized : fallback
-}
-
-function buildCanvasRuntimeUrl({
-  projectId,
-  prompt,
-  returnTo,
-  view,
-  brandName,
-  tenantLogo,
-  browserLogo,
-}: {
-  projectId: string
-  prompt: string
-  returnTo: string
-  view?: string
-  brandName?: string
-  tenantLogo?: string
-  browserLogo?: string
-}): string {
-  const runtimePath = projectId
-    ? `/canvas-runtime/canvas/${encodeURIComponent(projectId)}`
-    : '/canvas-runtime'
-
-  const url = new URL(runtimePath, 'https://canvas-runtime.local')
-
-  if (prompt) url.searchParams.set('prompt', prompt)
-  if (returnTo) url.searchParams.set('returnTo', returnTo)
-  if (view) url.searchParams.set('view', view)
-  if (brandName) url.searchParams.set('brandName', brandName)
-  if (tenantLogo) url.searchParams.set('tenantLogo', tenantLogo)
-  if (browserLogo) url.searchParams.set('browserLogo', browserLogo)
-
-  return `${url.pathname}${url.search}${url.hash}`
-}
-
 export default async function CanvasPage({ searchParams }: CanvasPageProps) {
   const params = await searchParams
-  const requestHeaders = await headers()
 
   const view = pickFirstQueryValue(params.view).toLowerCase()
   const forceProjectList = view === 'projects' || view === 'list'
@@ -67,28 +24,31 @@ export default async function CanvasPage({ searchParams }: CanvasPageProps) {
   const prompt = pickFirstQueryValue(params.prompt)
   const effectiveProjectId = forceProjectList ? '' : projectId
   const effectivePrompt = forceProjectList ? '' : prompt
-  const returnToFromQuery = pickFirstQueryValue(params.returnTo)
 
-  const tenantSlug = resolveTenantSlugFromHeaders(requestHeaders.get('x-tenant-slug'))
-  const tenant = getTenantConfig(tenantSlug)
-  const tenantBasePath = tenantSlug === 'nextide' ? '' : `/${tenantSlug}`
-  const defaultReturnTo = `${tenantBasePath}/dashboard`
-  const canvasTenantLogo = tenantSlug === 'nextide'
-    ? NEXTIDE_CANVAS_LOGO
-    : (tenant.logo || tenant.browserLogo)
-  const canvasBrowserLogo = tenantSlug === 'nextide'
-    ? NEXTIDE_CANVAS_LOGO
-    : (tenant.browserLogo || tenant.logo)
+  const { userId } = await getServerRequestUserContext()
+  let initialProjects: CanvasProjectRecord[] = []
+  if (userId) {
+    try {
+      const projects = await listCanvasProjects(userId, 200)
+      initialProjects = projects.map((project) => ({
+        id: project.id,
+        name: project.name,
+        thumbnail: project.thumbnail,
+        canvasData: project.canvasData,
+        createdAt: project.createdAt,
+        updatedAt: project.updatedAt,
+      }))
+    } catch (error) {
+      console.error('[canvas] Failed to preload canvas projects', error)
+    }
+  }
 
-  const targetUrl = buildCanvasRuntimeUrl({
-    projectId: effectiveProjectId,
-    prompt: effectivePrompt,
-    returnTo: returnToFromQuery || defaultReturnTo,
-    view: forceProjectList ? 'projects' : '',
-    brandName: tenant.name,
-    tenantLogo: canvasTenantLogo,
-    browserLogo: canvasBrowserLogo,
-  })
-
-  return <CanvasAuthBridge targetUrl={targetUrl} />
+  return (
+    <ReactCanvasRoot
+      initialProjectId={effectiveProjectId || undefined}
+      initialPrompt={effectivePrompt || undefined}
+      forceProjectList={forceProjectList}
+      initialProjects={initialProjects}
+    />
+  )
 }

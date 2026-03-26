@@ -12,7 +12,7 @@ interface NexTideLandingProps {
 }
 
 const DASHBOARD_URL =
-  process.env.NEXT_PUBLIC_DASHBOARD_URL?.trim() || 'https://atomx.top/dashboard';
+  process.env.NEXT_PUBLIC_DASHBOARD_URL?.trim() || 'https://atomx.top/login';
 
 const copy = {
   en: {

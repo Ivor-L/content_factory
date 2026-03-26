@@ -1,0 +1,298 @@
+{
+  "name": "内容工厂-回调异步-复刻-web-kie",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sora_kie_callback",
+        "options": {}
+      },
+      "name": "kie回调入口",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-960, 0],
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234560001",
+      "webhookId": "b2c3d4e5-f6a7-8901-bcde-f12345670001"
+    },
+    {
+      "parameters": {
+        "jsCode": "const root = $json || {};\nconst query = (root.query && typeof root.query === 'object') ? root.query : {};\nconst body = (root.body && typeof root.body === 'object') ? root.body : root;\nconst data = (body.data && typeof body.data === 'object') ? body.data : {};\n\nconst state = String(data.state ?? '').toLowerCase();\nconst ok = state === 'success' || state === 'completed' || Number(body.code) === 200;\n\nconst taskId = data.taskId || null;\n\nlet resultUrl = null;\nif (data.resultJson) {\n  try {\n    const parsed = typeof data.resultJson === 'string' ? JSON.parse(data.resultJson) : data.resultJson;\n    if (Array.isArray(parsed.resultUrls) && parsed.resultUrls[0]) {\n      resultUrl = parsed.resultUrls[0];\n    }\n  } catch(e) {}\n}\n\nconst failMsg = data.failMsg || body.msg || '';\n\nreturn {\n  json: {\n    code: ok ? 200 : 500,\n    codeStr: ok ? '200' : '500',\n    msg: ok ? 'success' : (failMsg || 'failed'),\n    taskId,\n    resultUrl,\n    failMsg,\n    replication_id: query.replication_id || null,\n    callback_url: query.callback_url || null,\n    api_key: query.api_key || null,\n    workflow_id_for_credits: query.workflow_id_for_credits || null\n  }\n};\n"
+      },
+      "name": "解析kie回调",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-712, 0],
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234560002"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "success",
+              "leftValue": "={{ $('解析kie回调').item.json.codeStr }}",
+              "rightValue": "200",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "是否生成成功",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-464, 0],
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234560003"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('解析kie回调').item.json || {};\nreturn {\n  json: {\n    id: ctx.replication_id,\n    replication_id: ctx.replication_id || '',\n    callback_url: ctx.callback_url || '',\n    api_key: ctx.api_key || '',\n    workflow_id_for_credits: ctx.workflow_id_for_credits || '',\n    videoUrl: ctx.resultUrl || '',\n    taskId: ctx.taskId || ''\n  }\n};\n"
+      },
+      "name": "准备写回数据",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-216, -100],
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234560004"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "replications",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.replication_id }}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "status", "fieldValue": "completed" },
+            { "fieldId": "result", "fieldValue": "={{ JSON.stringify({videoUrl: $json.videoUrl, provider: 'kie', taskId: $json.taskId}) }}" }
+          ]
+        }
+      },
+      "continueOnFail": true,
+      "alwaysOutputData": true,
+      "name": "写回Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [32, -100],
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234560005",
+      "credentials": {
+        "supabaseApi": {
+          "id": "5XGJWMLxSG8cgpYd",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('准备写回数据').item.json.callback_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ task_id: $('准备写回数据').item.json.replication_id, status: 'completed', videoUrl: $('准备写回数据').item.json.videoUrl, result: { videoUrl: $('准备写回数据').item.json.videoUrl, provider: 'kie', taskId: $('准备写回数据').item.json.taskId } }) }}",
+        "options": {}
+      },
+      "continueOnFail": true,
+      "alwaysOutputData": true,
+      "name": "通知App回调",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [280, -100],
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234560006"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.atomx.top/workflow-credits/query?workflow_id={{ $('解析kie回调').item.json.workflow_id_for_credits }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [528, -100],
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234560007",
+      "name": "查询工作流积分-子流程"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.atomx.top/api/credits/deduct",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "={{ $('解析kie回调').item.json.api_key }}"
+            },
+            {
+              "name": "amount",
+              "value": "={{ $json.data.credit_cost }}"
+            },
+            {
+              "name": "reason",
+              "value": "kie_sora2_video"
+            },
+            {
+              "name": "workflow_id",
+              "value": "={{ $json.data.workflow_id }}"
+            },
+            {
+              "name": "workflow_name",
+              "value": "={{ $json.data.workflow_name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234560008",
+      "name": "扣除积分",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [776, -100]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "replications",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('解析kie回调').item.json.replication_id }}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "status", "fieldValue": "failed" },
+            { "fieldId": "result", "fieldValue": "={{ JSON.stringify({error: $('解析kie回调').item.json.failMsg, provider: 'kie'}) }}" }
+          ]
+        }
+      },
+      "continueOnFail": true,
+      "alwaysOutputData": true,
+      "name": "写回Supabase-失败",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [-216, 150],
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234560009",
+      "credentials": {
+        "supabaseApi": {
+          "id": "5XGJWMLxSG8cgpYd",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('解析kie回调').item.json.callback_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ task_id: $('解析kie回调').item.json.replication_id, status: 'failed', result: { error: $('解析kie回调').item.json.failMsg, provider: 'kie' } }) }}",
+        "options": {}
+      },
+      "continueOnFail": true,
+      "alwaysOutputData": true,
+      "name": "通知App回调-失败",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [32, 150],
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234560010"
+    }
+  ],
+  "pinData": {
+    "kie回调入口": [
+      {
+        "json": {
+          "headers": {
+            "host": "hooks.atomx.top",
+            "content-type": "application/json; charset=utf-8",
+            "user-agent": "okhttp/3.14.9"
+          },
+          "params": {},
+          "query": {
+            "replication_id": "cmn7stwhr0002qaq2fasbiioi",
+            "api_key": "sk_aLO8hb0hNm2PYMJ07Loak8Fzjm3Q-KEuWIPLTDQUu_8",
+            "workflow_id_for_credits": "flow_farm_copy",
+            "callback_url": "https://nextide.cpolar.top/api/webhook/replication"
+          },
+          "body": {
+            "code": 200,
+            "data": {
+              "state": "success",
+              "taskId": "2558b4595d9ea78fb020260aa5b4e343",
+              "resultJson": "{\"resultUrls\":[\"https://tempfile.aiquickdraw.com/f/2558b4595d9ea78fb020260aa5b4e343/4b437655-ed3d-478a-897c-3933a22cca7c.mp4\"]}",
+              "model": "sora-2-image-to-video"
+            },
+            "msg": "Playground task completed successfully."
+          },
+          "webhookUrl": "http://localhost:5678/webhook/sora_kie_callback",
+          "executionMode": "production"
+        },
+        "pairedItem": { "item": 0 }
+      }
+    ]
+  },
+  "connections": {
+    "kie回调入口": {
+      "main": [[{ "node": "解析kie回调", "type": "main", "index": 0 }]]
+    },
+    "解析kie回调": {
+      "main": [[{ "node": "是否生成成功", "type": "main", "index": 0 }]]
+    },
+    "是否生成成功": {
+      "main": [
+        [{ "node": "准备写回数据", "type": "main", "index": 0 }],
+        [{ "node": "写回Supabase-失败", "type": "main", "index": 0 }]
+      ]
+    },
+    "准备写回数据": {
+      "main": [[{ "node": "写回Supabase", "type": "main", "index": 0 }]]
+    },
+    "写回Supabase": {
+      "main": [[{ "node": "通知App回调", "type": "main", "index": 0 }]]
+    },
+    "通知App回调": {
+      "main": [[{ "node": "查询工作流积分-子流程", "type": "main", "index": 0 }]]
+    },
+    "查询工作流积分-子流程": {
+      "main": [[{ "node": "扣除积分", "type": "main", "index": 0 }]]
+    },
+    "写回Supabase-失败": {
+      "main": [[{ "node": "通知App回调-失败", "type": "main", "index": 0 }]]
+    },
+    "通知App回调-失败": {
+      "main": [[]]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
+  },
+  "tags": []
+}

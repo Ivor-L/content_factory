@@ -5,7 +5,7 @@ import { Timer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCountdown } from "@/hooks/useCountdown";
 
-const DEFAULT_DURATION_MS = 20 * 60 * 1000;
+const DEFAULT_DURATION_MS = 30 * 60 * 1000;
 
 type Variant = "light" | "dark";
 

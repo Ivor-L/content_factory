@@ -1,0 +1,423 @@
+{
+  "name": "提取创作风格",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "style_web",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1424,
+        -768
+      ],
+      "id": "b01b7363-2df6-4aa4-8e98-5412294afc94",
+      "name": "Webhook",
+      "webhookId": "38b9a137-584e-4410-a08c-9955c1555456"
+    },
+    {
+      "parameters": {
+        "jsCode": "const batchSize = 10;\n\nconst root = $input.first()?.json ?? {};\nconst body = root.body ?? {};\n\nconst style_type = body.style_type ?? root.style_type ?? null;\nconst style_keywords = body.style_keywords ?? root.style_keywords ?? [];\nconst banned = body.banned ?? root.banned ?? [];\n\nfunction textValue(v) {\n  if (v == null) return '';\n  if (Array.isArray(v)) {\n    const first = v[0];\n    if (typeof first === 'string') return first;\n    if (first && typeof first === 'object') return String(first.text ?? first.value ?? first.url ?? '');\n  }\n  if (typeof v === 'object') return String(v.text ?? v.value ?? v.url ?? '');\n  return String(v);\n}\n\nconst fromCards = Array.isArray(body.cards)\n  ? body.cards.map((card) => ({\n      record_id: card.record_id,\n      created_at: card.created_at ?? null,\n      content: textValue(card.content),\n      card_type: card.card_type ?? '其他',\n      tags: Array.isArray(card.tags) ? card.tags : [],\n      status: card.status ?? '生效',\n      risk: card.risk ?? '低',\n    }))\n  : [];\n\nconst fromItemsRaw = Array.isArray(body?.data?.items) ? body.data.items : [];\nconst fromItems = fromItemsRaw.map((rec) => {\n  const f = rec.fields ?? {};\n  return {\n    record_id: rec.record_id,\n    created_at: textValue(f['创建时间']) || null,\n    content: textValue(f['卡片内容']),\n    card_type: textValue(f['卡片类型']) || '其他',\n    tags: Array.isArray(f['标签']) ? f['标签'] : [],\n    status: textValue(f['生效状态']) || '生效',\n    risk: textValue(f['风险等级']) || '低',\n  };\n});\n\nconst list = [...fromCards, ...fromItems].filter((x) => x.record_id && x.content);\n\nif (!list.length) {\n  return [{\n    json: {\n      batch_index: 0,\n      batch_cards: [],\n      warning: 'cards / body.data.items 为空，无法提炼风格',\n      debug_keys: Object.keys(root),\n    },\n  }];\n}\n\nconst out = [];\nfor (let i = 0; i < list.length; i += batchSize) {\n  out.push({\n    json: {\n      batch_index: out.length,\n      batch_cards: list.slice(i, i + batchSize),\n      style_type,\n      style_keywords,\n      banned,\n      total_cards: list.length,\n    },\n  });\n}\n\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        816,
+        -528
+      ],
+      "id": "700cae2a-1646-47b8-8e8f-1bf517ab8bbc",
+      "name": "分批处理1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=风格类型：{{ $json.style_type }}\n写法特征关键词：{{ $json.style_keywords }}\n禁用项：{{ $json.banned }}\n\n待评分卡片列表（JSON数组）：\n{{ JSON.stringify($json.batch_cards) }}\n\n要求：只输出 JSON（不要解释、不要 markdown、不要多余字符）\n输出格式：\n{\n  \"batch_index\": <number>,\n  \"results\": [\n    { \"record_id\": \"<string>\", \"score\": <0-100>, \"hit_features\": [\"...\"], \"reason\": \"<string>\" }\n  ]\n}\n",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=你是“写作风格相似度打分器”。你要根据“写法特征”而非主题内容，为每条卡片打分。\n\n\n评分标准：\n- 0-100 分，只看“写法风格”是否匹配，不看内容主题。\n- 命中写法特征越多分越高；出现禁用项要扣分。\n- 必须严格输出 JSON（不要 markdown，不要代码块）。\n\n输出 JSON 格式必须如下：\n{\n  \"batch_index\": <number>,\n  \"results\": [\n    {\"record_id\":\"...\", \"score\": 0-100, \"hit_features\":[\"...\"], \"reason\":\"一句话理由\"}\n  ]\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        1040,
+        -400
+      ],
+      "id": "8564cca6-1e4f-4b63-9580-8626c5e7c744",
+      "name": "内容打分1"
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"batch_index\": 0,\n  \"results\": [\n    {\n      \"record_id\": \"recv_xxx\",\n      \"score\": 80,\n      \"hit_features\": [\"feature_a\", \"feature_b\"],\n      \"reason\": \"命中原因说明\"\n    }\n  ]\n}\n"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1184,
+        -176
+      ],
+      "id": "a08e03dc-68b2-4e86-b090-e118a08503d5",
+      "name": "Structured Output Parser1"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "gpt-4o"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1056,
+        -176
+      ],
+      "id": "11bd818f-e004-4cad-a22f-24d79438506f",
+      "name": "gpt4o",
+      "credentials": {
+        "openAiApi": {
+          "id": "135VogulxeCGwJaN",
+          "name": "聚保盆-云雾通用api"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1392,
+        -528
+      ],
+      "id": "67ee7632-905a-4fb2-b812-1d8ffb95bd8c",
+      "name": "Merge1"
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * 合并原卡片 + 打分结果（record_id 对齐）+ 按类型配比筛选风格样本（只输出 content/score/card_type）\n * ✅ 运行模式：Run Once for All Items\n * ✅ 输出：samples[{content, score, card_type}] + samples_count + debug\n *\n * 兼容：\n * - batch_cards 批次输入（任意上游命名）\n * - score 结果 carrier：results / data.results / output(results|data.results) / output为JSON字符串/数组字符串\n * - card_type 统一：价值 -> Value\n */\n\nconst items = $input.all().map(i => i.json ?? {});\n\n// ---------- helpers ----------\nfunction stripCodeFence(s) {\n  if (!s || typeof s !== 'string') return '';\n  return s\n    .replace(/^\\s*```(?:json)?\\s*/i, '')\n    .replace(/\\s*```\\s*$/i, '')\n    .trim();\n}\n\nfunction safeJsonParse(s) {\n  try { return JSON.parse(s); } catch (e) { return null; }\n}\n\n/**\n * 从任意 carrier 抽 results 数组\n */\nfunction extractResultsFromCarrier(carrier) {\n  const raw = carrier?.output ?? carrier;\n\n  // 1) 直接结构化 results\n  if (Array.isArray(raw?.results)) return raw.results;\n  if (Array.isArray(raw?.data?.results)) return raw.data.results;\n\n  // 2) output 里再套一层\n  if (Array.isArray(raw?.output?.results)) return raw.output.results;\n  if (Array.isArray(raw?.output?.data?.results)) return raw.output.data.results;\n\n  // 3) output 是字符串（常见：```json ... ``` 或 \"{...}\" 或 \"[...]\"）\n  const maybeStr =\n    typeof raw?.output === 'string' ? raw.output :\n    typeof raw === 'string' ? raw :\n    null;\n\n  if (maybeStr) {\n    const txt = stripCodeFence(maybeStr);\n    const parsed = safeJsonParse(txt);\n    if (Array.isArray(parsed)) return parsed;\n    if (Array.isArray(parsed?.results)) return parsed.results;\n    if (Array.isArray(parsed?.data?.results)) return parsed.data.results;\n  }\n\n  // 4) 有些节点直接把 results 放在顶层 carrier.results\n  if (Array.isArray(carrier?.results)) return carrier.results;\n\n  return [];\n}\n\nfunction normType(t) {\n  if (!t) return '其他';\n  const s = String(t).trim();\n  if (!s) return '其他';\n  if (s === '价值') return 'Value';\n  return s;\n}\n\nfunction toScore(v) {\n  const n = typeof v === 'number' ? v : Number(v);\n  return Number.isFinite(n) ? n : null;\n}\n\nfunction clampLenText(s, maxLen = 3000) {\n  if (s == null) return '';\n  const t = String(s);\n  return t.length > maxLen ? t.slice(0, maxLen) : t;\n}\n\n// ---------- 1) 找 batches（含 batch_cards） ----------\nconst batches = items.filter(x => Array.isArray(x.batch_cards));\n\n// 如果上游不是 batch_cards，也可能已经是卡片数组，做个兜底：\n// 例如某节点直接输出 cards:[...] 或 merged_all:[...]\nfunction fallbackCardsFromItems(all) {\n  for (const it of all) {\n    if (Array.isArray(it.cards)) return it.cards;\n    if (Array.isArray(it.merged_all)) return it.merged_all;\n    if (Array.isArray(it.scored_all)) return it.scored_all;\n  }\n  return null;\n}\nconst fallbackCards = fallbackCardsFromItems(items);\n\n// ---------- 2) 找 score carriers ----------\nconst scoreCarriers = items.filter(x => extractResultsFromCarrier(x).length > 0);\n\n// ---------- 3) 抽出所有 score rows ----------\nconst scoreRows = [];\nfor (const it of scoreCarriers) {\n  const batchIndex =\n    it?.batch_index ??\n    it?.output?.batch_index ??\n    it?.output?.data?.batch_index ??\n    null;\n\n  const results = extractResultsFromCarrier(it);\n  for (const r of results) {\n    const rid = r?.record_id ?? r?.recordId;\n    if (!rid) continue;\n    const score = toScore(r?.score);\n    if (score == null) continue;\n    scoreRows.push({\n      record_id: String(rid),\n      score,\n      scored_batch_index: batchIndex,\n    });\n  }\n}\n\n// ---------- 4) record_id -> score（同一个record多次出现，取最高分） ----------\nconst scoreMap = new Map();\nfor (const r of scoreRows) {\n  const prev = scoreMap.get(r.record_id);\n  if (prev == null || r.score > prev) scoreMap.set(r.record_id, r.score);\n}\n\n// ---------- 5) 合并：给每张卡补 score ----------\nconst merged = [];\n\n// 优先用 batches.batch_cards\nif (batches.length) {\n  for (const b of batches) {\n    const cards = Array.isArray(b.batch_cards) ? b.batch_cards : [];\n    for (const c of cards) {\n      const rid = c?.record_id ?? c?.recordId;\n      if (!rid) continue;\n      const score = scoreMap.has(String(rid)) ? scoreMap.get(String(rid)) : null;\n      merged.push({\n        record_id: String(rid),\n        content: clampLenText(c?.content ?? ''),\n        card_type: normType(c?.card_type ?? c?.cardType ?? ''),\n        score,\n      });\n    }\n  }\n} else if (Array.isArray(fallbackCards)) {\n  // 兜底：如果没有 batch_cards，就尝试从 cards/merged_all/scored_all 读\n  for (const c of fallbackCards) {\n    const rid = c?.record_id ?? c?.recordId;\n    if (!rid) continue;\n    const score = scoreMap.has(String(rid)) ? scoreMap.get(String(rid)) : toScore(c?.score);\n    merged.push({\n      record_id: String(rid),\n      content: clampLenText(c?.content ?? ''),\n      card_type: normType(c?.card_type ?? c?.cardType ?? ''),\n      score,\n    });\n  }\n}\n\n// ---------- 6) 筛选池（基础质量） ----------\nconst THRESHOLD = 70;     // 可调：80 更严，60 更松\nconst MAX_STYLE = 24;     // 可调：12-30\nconst EXCLUDE_TYPES = new Set(['CTA']);\n\nfunction okItem(x) {\n  if (!x?.content || !x.content.trim()) return false;\n  if (EXCLUDE_TYPES.has(x.card_type)) return false;\n  if (typeof x.score !== 'number' || !Number.isFinite(x.score)) return false;\n  if (x.score < THRESHOLD) return false;\n\n  // 长度筛选：金句/口播片段一般不宜过长\n  const len = x.content.trim().length;\n  if (len < 15) return false;\n  if (len > 220) return false;\n\n  return true;\n}\n\nconst pool = merged\n  .filter(okItem)\n  .map(x => ({ ...x, card_type: normType(x.card_type) }))\n  .sort((a, b) => b.score - a.score);\n\n// ---------- 7) 类型配比抽样 + 去重（避免全是金句导致风格贫瘠） ----------\nconst quota = [\n  ['金句', 8],\n  ['Value', 6],\n  ['Hook', 4],\n  ['案例', 3],\n  ['术语', 2],\n  ['其他', 1],\n];\n\n// 去重：完全一致 + 近似（粗暴版：归一化后前80字）\nfunction normKey(content) {\n  return content\n    .trim()\n    .replace(/\\s+/g, '')      // 去空白\n    .replace(/[“”\"']/g, '')   // 去引号\n    .slice(0, 80);\n}\n\nconst picked = [];\nconst used = new Set();\n\nfunction countType(type) {\n  return picked.reduce((n, it) => n + (it.card_type === type ? 1 : 0), 0);\n}\n\nfunction pickByType(type, n) {\n  for (const x of pool) {\n    if (picked.length >= MAX_STYLE) break;\n    if (countType(type) >= n) break;\n    if (x.card_type !== type) continue;\n\n    const key = normKey(x.content);\n    if (used.has(key)) continue;\n\n    used.add(key);\n    picked.push(x);\n  }\n}\n\n// 先按配额拿\nfor (const [t, n] of quota) pickByType(t, n);\n\n// 再补齐：优先补缺口类型（Hook/案例优先），最后再按高分补\nconst priorityTypes = ['Hook', '案例', 'Value', '金句', '术语', '其他'];\nfor (const t of priorityTypes) {\n  if (picked.length >= MAX_STYLE) break;\n  // 如果某类型明显不足，继续补一些\n  pickByType(t, Math.min(MAX_STYLE, countType(t) + 2));\n}\n\n// 还不够就纯高分补\nfor (const x of pool) {\n  if (picked.length >= MAX_STYLE) break;\n  const key = normKey(x.content);\n  if (used.has(key)) continue;\n  used.add(key);\n  picked.push(x);\n}\n\n// ✅ 最终只输出 content / score / card_type\nconst samples = picked.slice(0, MAX_STYLE).map(x => ({\n  content: x.content,\n  score: x.score,\n  card_type: x.card_type,\n}));\n\n// 统计每种类型数量（方便你看是不是又全变金句了）\nconst typeStats = {};\nfor (const s of samples) {\n  typeStats[s.card_type] = (typeStats[s.card_type] || 0) + 1;\n}\n\nreturn [{\n  json: {\n    samples,\n    samples_count: samples.length,\n    debug: {\n      input_items: items.length,\n      batches_count: batches.length,\n      score_carriers_count: scoreCarriers.length,\n      score_rows_count: scoreRows.length,\n      merged_count: merged.length,\n      pool_count: pool.length,\n      threshold: THRESHOLD,\n      max_style: MAX_STYLE,\n      type_stats: typeStats,\n      warn_if_overfit:\n        (typeStats['金句'] || 0) / Math.max(1, samples.length) > 0.7\n          ? '样本里“金句”占比>70%，风格会贫瘠：建议在上游补Hook/案例/实操类样本或降低Hook/案例阈值'\n          : '',\n    }\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1616,
+        -528
+      ],
+      "id": "f6f4b75a-841b-4d39-b56e-da31858ceb83",
+      "name": "合并打分 + 筛选样本1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=article_samples:\n{{ JSON.stringify($json.samples) }}\n\n补充信息（可能为空）：\n- 期望内容用途：小红书图文长文\n",
+        "options": {
+          "systemMessage": "=你是“文章写法风格 Playbook 提炼器”。你只根据“写法/结构/节奏/排版/措辞习惯”提炼规则，不根据主题内容做判断。\n\n输入：article_samples[]，每条包含：\n- content: 文章片段或整段\n- type: 卡片类型（可选）\n- tags: 标签（可选）\n\n目标：\n1) 提炼可复用、可执行、可检查的“文章写法风格规则”，用于后续自动写同风格图文长文。\n2) 输出必须是【严格 JSON】（不要 markdown、不要代码块、不要解释性废话）。\n3) 规则必须“可落地”：用“必须/禁止/上限/下限/当…就…”表达；尽量量化。\n\n硬规则：\n- 只输出 JSON，且必须能被 JSON.parse 解析。\n- 不要泄露或重复输入里的敏感信息（例如 api_key、app_secret 等）。\n- 若样本不足（太短/同质化），必须在 domain_inference.gaps 写清楚缺口，并在 domain_inference.adaptation_strategy 给出补样本建议。\n- 必须区分：文章首屏规则、段落节奏规则、小标题规则、列表/重点框规则、结尾 CTA 规则。\n- 必须输出可填空模板（templates），否则后续无法复用。\n\n输出 JSON schema（字段名固定，不可增删）：\n{\n  \"domain_inference\": {\n    \"topics\": [\"...\"],\n    \"content_goal\": \"...\",\n    \"target_audience_guess\": \"...\",\n    \"dominant_card_types\": [\"...\"],\n    \"gaps\": \"...\",\n    \"adaptation_strategy\": \"...\"\n  },\n  \"style_core\": {\n    \"persona\": \"...\",\n    \"pov\": \"...\",\n    \"tone\": {\n      \"core\": [\"...\"],\n      \"limits\": \"...\"\n    },\n    \"rhythm\": {\n      \"paragraph_rule\": \"...\",\n      \"short_sentence_ratio\": 0.0,\n      \"max_sentence_chars\": 0,\n      \"highlight_line_every_n_paragraphs\": 0\n    },\n    \"lexical_signature\": {\n      \"high_frequency_words\": [\"...\"],\n      \"avoid_words\": [\"...\"],\n      \"banned_words\": [\"...\"]\n    }\n  },\n  \"structure_bank\": {\n    \"blueprints\": [\n      {\n        \"name\": \"...\",\n        \"sections\": [\"...\"],\n        \"notes\": \"...\"\n      }\n    ],\n    \"subtitle_patterns\": [\"...\"],\n    \"transition_patterns\": [\"...\"]\n  },\n  \"opening_rules\": {\n    \"first_screen_constraints\": [\"...\"],\n    \"hook_templates\": [\"...\"]\n  },\n  \"paragraph_and_layout_rules\": {\n    \"paragraph_length_rules\": [\"...\"],\n    \"list_rules\": [\"...\"],\n    \"emphasis_box_rules\": [\"...\"],\n    \"examples_rules\": [\"...\"]\n  },\n  \"cta_rules\": {\n    \"cta_templates\": [\"...\"],\n    \"comment_keyword_rules\": [\"...\"]\n  },\n  \"guardrails\": {\n    \"claims_and_risk\": [\"...\"],\n    \"exaggeration_limits\": {\n      \"max_per_chars\": 0,\n      \"replacement_suggestions\": [{\"from\":\"...\",\"to\":\"...\"}]\n    }\n  },\n  \"quality_checklist\": [\"...\"],\n  \"failure_modes_and_fixes\": [\n    {\"failure\":\"...\",\"fix\":\"...\"}\n  ],\n  \"evidence\": {\n    \"sample_count\": 0,\n    \"representative_snippets\": [\n      {\"note\":\"...\",\"snippet\":\"...\"}\n    ]\n  }\n}\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        1856,
+        -512
+      ],
+      "id": "e1f82061-92c9-4b83-a79d-6e0a679bce03",
+      "name": "风格提炼1"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "gpt-4o"
+        },
+        "responsesApiEnabled": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1792,
+        -272
+      ],
+      "id": "2e92fe1c-835e-4e3c-a397-71d7237091d3",
+      "name": "gpt5.",
+      "credentials": {
+        "openAiApi": {
+          "id": "135VogulxeCGwJaN",
+          "name": "聚保盆-云雾通用api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * 清洗“风格提炼”输出：把字符串 output 解析为真正 JSON 对象\n * + 额外输出：样本缺失点 / 改进方向 等，便于回调后端\n */\n\nconst items = $input.all();\n\n// ------- helpers -------\nfunction stripCodeFence(s) {\n  return String(s ?? '')\n    .trim()\n    .replace(/^\\s*```(?:json)?\\s*/i, '')\n    .replace(/\\s*```\\s*$/i, '')\n    .trim();\n}\n\nfunction tryParse(s) {\n  try { return JSON.parse(s); } catch (e) { return null; }\n}\n\nfunction deepParseJsonString(maybe) {\n  let obj = tryParse(maybe);\n  if (obj && typeof obj === 'object') return obj;\n\n  let raw = stripCodeFence(maybe);\n\n  if (\n    (raw.startsWith('\"') && raw.endsWith('\"')) ||\n    (raw.startsWith(\"'\") && raw.endsWith(\"'\"))\n  ) raw = raw.slice(1, -1);\n\n  const unescaped = raw\n    .replace(/\\\\n/g, '\\n')\n    .replace(/\\\\t/g, '\\t')\n    .replace(/\\\\r/g, '\\r')\n    .replace(/\\\\\"/g, '\"')\n    .replace(/\\\\'/g, \"'\")\n    .trim();\n\n  obj = tryParse(unescaped);\n  if (obj && typeof obj === 'object') return obj;\n\n  const maybeStrObj = tryParse(`\"${unescaped.replace(/\\\\/g, '\\\\\\\\').replace(/\"/g, '\\\\\"')}\"`);\n  if (typeof maybeStrObj === 'string') {\n    const again = tryParse(maybeStrObj);\n    if (again && typeof again === 'object') return again;\n  }\n\n  const m1 = unescaped.match(/\\{[\\s\\S]*\\}/);\n  const m2 = unescaped.match(/\\[[\\s\\S]*\\]/);\n  const candidate = (m1 && m1[0]) || (m2 && m2[0]) || '';\n  if (candidate) {\n    const picked = tryParse(candidate);\n    if (picked && typeof picked === 'object') return picked;\n  }\n\n  return null;\n}\n\nfunction pickRawFromItem(j) {\n  const candidates = [\n    j?.output,\n    j?.text,\n    j?.raw_output,\n    j?.raw,\n    j?.style,\n    j?.style_json_string,\n    j?.['风格规则json'],\n    j?.['风格规则JSON'],\n    j?.['风格规则'],\n  ];\n\n  for (const c of candidates) {\n    if (typeof c === 'string' && c.trim()) return c;\n    if (c && typeof c === 'object') return JSON.stringify(c);\n  }\n  return JSON.stringify(j ?? {});\n}\n\nfunction toText(v) {\n  if (v == null) return '';\n  if (Array.isArray(v)) return v.map(x => String(x)).filter(Boolean).join('、');\n  if (typeof v === 'object') return JSON.stringify(v);\n  return String(v);\n}\n\n// ------- main -------\nconst out = items.map((it, idx) => {\n  const j = it.json ?? {};\n  const raw0 = pickRawFromItem(j);\n  const raw = stripCodeFence(raw0);\n\n  const parsed = deepParseJsonString(raw);\n\n  if (!parsed || typeof parsed !== 'object') {\n    throw new Error(\n      `第 ${idx + 1} 条风格提炼 output 无法解析为 JSON。raw(前800)：` + raw.slice(0, 800)\n    );\n  }\n\n  const style_json = Array.isArray(parsed) ? (parsed[0] ?? {}) : parsed;\n\n  // ✅ 抽取“样本缺失点 / 改进方向”（从 domain_inference）\n  const di = style_json.domain_inference ?? {};\n  const sample_gaps = toText(di.gaps);\n  const sample_improvement = toText(di.adaptation_strategy);\n\n  // ✅ 可选：顺手把“主题/偏科”也拆出来（做前端分析面板很有用）\n  const sample_topics_arr = Array.isArray(di.topics) ? di.topics : [];\n  const sample_topics = sample_topics_arr.join('、');\n\n  const dominant_card_types_arr = Array.isArray(di.dominant_card_types) ? di.dominant_card_types : [];\n  const sample_dominant_card_types = dominant_card_types_arr.join('、');\n\n  return {\n    json: {\n      ...j, // ✅ 保留上游全部字段\n      style_json,\n      style_json_string: JSON.stringify(style_json, null, 2),\n      raw_output: raw,\n\n      // ✅ 新增：回调后端用（字段名可按需调整）\n      sample_gaps,                 // 样本缺失点（文本）\n      sample_improvement,          // 改进方向（文本）\n      sample_topics,               // 主题标签（文本）\n      sample_topics_arr,           // 主题标签（数组）\n      sample_dominant_card_types,  // 偏科类型（文本）\n      dominant_card_types_arr,     // 偏科类型（数组）\n    },\n  };\n});\n\nreturn out;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2192,
+        -528
+      ],
+      "id": "a7e21c05-2764-402d-ac46-38abe7609624",
+      "name": "代码清洗1"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first()?.json ?? {};\nconst body = $('Webhook').first()?.json?.body ?? {};\n\nconst styleId =\n  input.style_id ||\n  input.record_id ||\n  input.style_record_id ||\n  body.style_id ||\n  body.task_id ||\n  body.record_id ||\n  body.style_record_id ||\n  '';\n\nif (!styleId) {\n  throw new Error('style_id 缺失，无法回调后端');\n}\n\nlet style = input.style_json;\nif (!style || typeof style !== 'object') {\n  const raw = input.style_json_string || input.output || '';\n  if (typeof raw === 'string' && raw.trim()) {\n    const cleaned = raw\n      .trim()\n      .replace(/^\\s*```(?:json)?\\s*/i, '')\n      .replace(/\\s*```\\s*$/i, '')\n      .trim();\n    style = JSON.parse(cleaned);\n  }\n}\n\nif (!style || typeof style !== 'object') {\n  throw new Error('缺少 style_json，无法回调后端');\n}\n\nconst di = style.domain_inference ?? {};\nconst sampleGaps =\n  (typeof input.sample_gaps === 'string' && input.sample_gaps.trim())\n    ? input.sample_gaps.trim()\n    : (di.gaps != null ? String(di.gaps).trim() : '');\nconst sampleImprovement =\n  (typeof input.sample_improvement === 'string' && input.sample_improvement.trim())\n    ? input.sample_improvement.trim()\n    : (di.adaptation_strategy != null ? String(di.adaptation_strategy).trim() : '');\n\nreturn [{\n  json: {\n    style_id: styleId,\n    status: 'COMPLETED',\n    style_json: style,\n    sample_gaps: sampleGaps || null,\n    sample_improvement: sampleImprovement || null,\n    workflow_id: body.workflow_id || 'flow_writing_style_extract',\n    workflow_name: body.workflow_name || '提取创作风格',\n    callback_url: body.callback_url || '',\n    api_key: body.api_key || '',\n  },\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2416,
+        -528
+      ],
+      "id": "4977c479-b560-4682-a466-4215407244fb",
+      "name": "组装入库字段1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url || $('Webhook').first().json.body.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-workflow-secret",
+              "value": "={{ $env.WRITING_STYLE_EXTRACT_WEBHOOK_SECRET || \"\" }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({ style_id: $json.style_id, status: $json.status || \"COMPLETED\", style_json: $json.style_json, sample_gaps: $json.sample_gaps, sample_improvement: $json.sample_improvement, workflow_id: $json.workflow_id, workflow_name: $json.workflow_name }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        -528
+      ],
+      "id": "5afa5fa0-3991-4a7f-9f79-cde197a1c325",
+      "name": "更新进度-已入库1"
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id={{ $('Webhook').item.json.body.workflow_id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3216,
+        -736
+      ],
+      "id": "e4e0a2d9-80a8-4b9e-a855-54c64389e512",
+      "name": "查询工作流积分"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://47.107.158.233:8080/api/credits/deduct",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"api_key\": \"{{ $('Webhook').item.json.body.api_key }}\",\n  \"amount\":  \"{{ $json.data.credit_cost }}\",\n  \"reason\": \"{{ $json.data.workflow_name }}\",\n  \"workflow_id\": \"{{ $json.data.workflow_id }}\",\n  \"workflow_name\": \"{{ $json.data.workflow_name }}\"\n}\n",
+        "options": {}
+      },
+      "id": "e50e39a0-46b0-4e81-91a8-fb24b3b1be07",
+      "name": "扣除积分",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3440,
+        -736
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "分批处理1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "分批处理1": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "内容打分1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "内容打分1": {
+      "main": [
+        [
+          {
+            "node": "Merge1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser1": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "内容打分1",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gpt4o": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "内容打分1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge1": {
+      "main": [
+        [
+          {
+            "node": "合并打分 + 筛选样本1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "合并打分 + 筛选样本1": {
+      "main": [
+        [
+          {
+            "node": "风格提炼1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gpt5.": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "风格提炼1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "风格提炼1": {
+      "main": [
+        [
+          {
+            "node": "代码清洗1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "代码清洗1": {
+      "main": [
+        [
+          {
+            "node": "组装入库字段1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装入库字段1": {
+      "main": [
+        [
+          {
+            "node": "更新进度-已入库1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "更新进度-已入库1": {
+      "main": [
+        [
+          {
+            "node": "查询工作流积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "查询工作流积分": {
+      "main": [
+        [
+          {
+            "node": "扣除积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "f98881af-64aa-46f6-b25e-95e02498b419",
+  "meta": {
+    "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
+  },
+  "id": "a5Ky2yvifF891rWz",
+  "tags": []
+}

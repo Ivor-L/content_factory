@@ -912,7 +912,8 @@ export const translations = {
       upgradeText: "Unlock advanced AI analysis and unlimited generation.",
       upgradeBtn: "Upgrade Now",
       assets: "Resources",
-      canvas: "Infinite Canvas"
+      canvas: "Infinite Canvas",
+      nexapi: "NexAPI"
     },
     common: {
       loading: "Loading...",
@@ -1626,7 +1627,8 @@ export const translations = {
       upgradeText: "解锁高级AI分析和无限生成次数。",
       upgradeBtn: "立即升级",
       assets: "资源库",
-      canvas: "无限画布"
+      canvas: "无限画布",
+      nexapi: "NexAPI 控制台"
     },
     common: {
       loading: "加载中...",
@@ -1656,7 +1658,7 @@ export const translations = {
     },
     apiKeyModal: {
       title: "绑定 API Key",
-      subtitle: "保存 RunningHub / NexTide 的 API Key，自动调用付费工作流。",
+      subtitle: "",
       label: "API Key",
       placeholder: "请输入 API Key",
       save: "保存 API Key",
@@ -2339,7 +2341,8 @@ export const translations = {
       upgradeText: "解鎖高級AI分析和無限生成次數。",
       upgradeBtn: "立即升級",
       assets: "資源庫",
-      canvas: "無限畫布"
+      canvas: "無限畫布",
+      nexapi: "NexAPI 控制台"
     },
     common: {
       loading: "加載中...",
@@ -2368,7 +2371,7 @@ export const translations = {
     },
     apiKeyModal: {
       title: "綁定 API Key",
-      subtitle: "保存 RunningHub / NexTide 的 API Key，讓付費流程自動執行。",
+      subtitle: "",
       label: "API Key",
       placeholder: "請輸入 API Key",
       save: "保存 API Key",

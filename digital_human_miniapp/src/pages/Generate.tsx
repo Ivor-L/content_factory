@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 import React, { useState, useEffect, useRef } from 'react';
 import { Upload, Mic, Users, Play, FileAudio, X, AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -133,7 +134,7 @@ export default function Generate() {
   const voiceReady =
     mode === 'LIP_SYNC'
       ? Boolean(audioUrl)
-      : Boolean(selectedHuman?.voiceUrl);
+      : Boolean(audioUrl || selectedHuman?.voiceUrl);
   const textReady = mode === 'VOICE_CLONE' ? text.trim().length > 0 : true;
   const isFormValid = Boolean(selectedHuman && voiceReady && textReady);
 
@@ -337,15 +338,11 @@ export default function Generate() {
       </div>
 
       {/* Submit Button */}
-      <button
-        disabled={!isFormValid || submitLoading}
-        onClick={() => void handleSubmit()}
-        className={`w-full py-4 rounded-full font-bold text-white flex items-center justify-center gap-2 transition-all ${
-          isFormValid && !submitLoading
-            ? 'bg-primary soft-shadow hover:scale-[1.02] active:scale-[0.98]'
-            : 'bg-secondary text-text-secondary cursor-not-allowed'
-        }`}
-      >
+<button
+  disabled={!isFormValid || submitLoading}
+  onClick={() => void handleSubmit()}
+  className="btn-openclaw w-full py-4 font-bold text-base flex items-center justify-center gap-2 transition-all"
+>
         {submitLoading ? <Mic size={20} className="animate-spin" /> : <Play size={20} fill="currentColor" />}
         {submitLoading ? '提交中...' : '开始生成'}
       </button>

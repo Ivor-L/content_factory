@@ -1,0 +1,410 @@
+{
+  "name": "小红书文案创作-web",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chuangzuo_web",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        0
+      ],
+      "id": "07f905b0-5197-4d2a-9232-6adb64747e64",
+      "name": "Webhook",
+      "webhookId": "1d96fef1-09de-4b7e-bc17-a9d49a6cd45f"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"ok\": true,\n  \"status\": \"accepted\",\n  \"workflow_id\": {{ JSON.stringify(($json.body && ($json.body.workflow_id || $json.body.workflowId)) || 'flow_creative_script') }},\n  \"task_id\": {{ JSON.stringify(($json.body && ($json.body.task_id || $json.body.taskId || $json.body.replication_id || $json.body.replicationId)) || null) }}\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -704,
+        -200
+      ],
+      "id": "745ff04c-308c-426e-8ec3-94a253ee7881",
+      "name": "Respond Ack"
+    },
+    {
+      "parameters": {
+        "jsCode": "const incoming = ($json && typeof $json === 'object') ? $json : {};\nconst root = incoming.body && typeof incoming.body === 'object' && Object.keys(incoming.body).length\n  ? incoming.body\n  : incoming;\n\nconst CR = String.fromCharCode(13);\n\nfunction pickFirst(...vals) {\n  for (const v of vals) {\n    if (v === undefined || v === null) continue;\n    const str = typeof v === 'string' ? v.trim() : v;\n    if (typeof str === 'string' && str.length === 0) continue;\n    return str;\n  }\n  return undefined;\n}\n\nfunction toCleanString(value) {\n  if (value === undefined || value === null) return '';\n  if (typeof value === 'string') {\n    const normalized = value.split(CR).join(' ');\n    return normalized.replace(/\\s+/g, ' ').trim();\n  }\n  if (typeof value === 'object') {\n    try { return JSON.stringify(value); } catch { return String(value); }\n  }\n  return String(value);\n}\n\nfunction safeParseObject(value) {\n  if (value === undefined || value === null) return null;\n  if (typeof value === 'object' && !Array.isArray(value)) return value;\n  if (typeof value === 'string') {\n    const trimmed = value.trim();\n    if (!trimmed) return null;\n    try {\n      const parsed = JSON.parse(trimmed);\n      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;\n    } catch {}\n  }\n  return null;\n}\n\nfunction clampWordCount(value, fallback = 600) {\n  if (!Number.isFinite(value)) return fallback;\n  return Math.max(120, Math.min(1600, Math.round(value)));\n}\n\nfunction normalizeUrl(value) {\n  if (!value || typeof value !== 'string') return '';\n  return value.trim().replace(/\\/+$/, '');\n}\n\nfunction parseIdList(value) {\n  if (!value) return [];\n  if (Array.isArray(value)) {\n    return value.map(v => String(v)).filter(Boolean);\n  }\n  if (typeof value === 'string') {\n    try {\n      const parsed = JSON.parse(value);\n      if (Array.isArray(parsed)) {\n        return parsed.map(v => String(v)).filter(Boolean);\n      }\n    } catch {}\n    return value\n      .split(/[\\s,]+/)\n      .map(v => v.trim())\n      .filter(Boolean);\n  }\n  return [];\n}\n\nconst workflowId = pickFirst(root.workflow_id, root.workflowId, 'flow_creative_script');\nconst workflowName = pickFirst(root.workflow_name, root.workflowName, '首页智能创作');\nconst taskId = pickFirst(root.task_id, root.taskId, root.replication_id, root.replicationId);\nif (!taskId) {\n  throw new Error('task_id is required');\n}\nconst userId = pickFirst(root.user_id, root.userId);\nif (!userId) {\n  throw new Error('user_id is required');\n}\nconst ideaText = toCleanString(pickFirst(root.idea_text, root.ideaText, root.text, root.content, root.topic, root.prompt));\nif (!ideaText) {\n  throw new Error('idea_text is required');\n}\nconst requestedWordCount = clampWordCount(Number(pickFirst(root.word_count, root.wordCount, root.target_word_count, root.targetWordCount)));\nconst appUrl = normalizeUrl(pickFirst(root.app_url, root.appUrl, root.base_url, root.baseUrl, ''));\nconst callbackUrlRaw = pickFirst(root.callback_url, root.callbackUrl, '');\nconst callbackUrl = callbackUrlRaw || (appUrl ? `${appUrl}/api/webhook/replication/script` : '');\n\nreturn [{\n  json: {\n    task_id: taskId,\n    replication_id: pickFirst(root.replication_id, root.replicationId, taskId),\n    user_id: userId,\n    idea_text: ideaText,\n    idea_summary: ideaText.slice(0, 160),\n    target_word_count: requestedWordCount,\n    workflow_id: workflowId,\n    workflow_name: workflowName,\n    api_key: pickFirst(root.api_key, root.apiKey, ''),\n    callback_url: callbackUrl,\n    app_url: appUrl,\n    admin_token: pickFirst(root.admin_token, root.adminToken, ''),\n    source: pickFirst(root.source, 'creative_workspace'),\n    tenant: pickFirst(root.tenant, ''),\n    style_rules: safeParseObject(root.style_rules ?? root.styleRules ?? null),\n    history_doc_ids: parseIdList(root.history_doc_ids ?? root.historyDocIds),\n    story_ids: parseIdList(root.story_ids ?? root.storyIds),\n    style_ids: parseIdList(root.style_ids ?? root.styleIds),\n    raw_body: root\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -704,
+        40
+      ],
+      "id": "24396b6c-76cd-4728-a4b7-7ba4ceba46d9",
+      "name": "标准化输入"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json || {};\nconst adminToken = typeof input.admin_token === 'string' ? input.admin_token.trim() : '';\nconst appUrl = typeof input.app_url === 'string' ? input.app_url.trim() : '';\nconst userId = input.user_id;\n\nfunction ensureArray(value) {\n  if (Array.isArray(value)) return value;\n  if (value === undefined || value === null) return [];\n  return [value];\n}\n\nfunction limitArray(arr, limit) {\n  return arr.slice(0, limit);\n}\n\nfunction normalizeText(value, max = 400) {\n  if (value === undefined || value === null) return '';\n  const str = String(value).replace(/\\s+/g, ' ').trim();\n  return str.length > max ? str.slice(0, max) + '…' : str;\n}\n\nasync function fetchUserStyle() {\n  if (!adminToken || !appUrl || !userId) {\n    return {\n      source: null,\n      hasData: false,\n      isInsufficient: true,\n      docCount: 0,\n      caseCount: 0,\n      styleSummaries: [],\n      writingBlocks: [],\n      caseBanks: [],\n      rawTextExcerpts: []\n    };\n  }\n  try {\n    const response = await $helpers.httpRequest({\n      method: 'GET',\n      url: `${appUrl}/api/internal/user-style`,\n      qs: { user_id: userId },\n      headers: { 'x-admin-token': adminToken },\n      json: true,\n      timeout: 20000\n    });\n    const data = response?.data || {};\n    const styleSummaries = limitArray(ensureArray(data.styleSummaries).map((entry) => ({\n      docTitle: normalizeText(entry?.docTitle || entry?.title || ''),\n      domain: normalizeText(entry?.domain || entry?.domain_inference || ''),\n      tone: normalizeText(entry?.tone || entry?.tone_profile || ''),\n      keyMoves: normalizeText(entry?.key_moves || entry?.keyMoves || entry?.punchline || ''),\n      raw: entry\n    })), 4);\n\n    const writingBlocks = limitArray(ensureArray(data.writingBlocks).map((entry) => ({\n      label: normalizeText(entry?.label || entry?.purpose || ''),\n      pattern: normalizeText(entry?.pattern || entry?.template || entry?.text || ''),\n      raw: entry\n    })), 6);\n\n    const caseBanks = limitArray(ensureArray(data.caseBanks).map((entry) => ({\n      id: entry?.id || null,\n      type: normalizeText(entry?.type || entry?.cardType || ''),\n      score: entry?.score ?? null,\n      risk: entry?.risk || entry?.riskLevel || null,\n      raw_text: normalizeText(entry?.raw_text || entry?.text || entry?.content || '', 320),\n      raw: entry\n    })), 6);\n\n    const rawTextExcerpts = limitArray(ensureArray(data.rawTextExcerpts).map((entry) => ({\n      docTitle: normalizeText(entry?.docTitle || ''),\n      text: normalizeText(entry?.text || '', 320)\n    })), 4);\n\n    return {\n      source: data.source || null,\n      hasData: data.hasData === true,\n      isInsufficient: data.isInsufficient === true,\n      docCount: Number(data.docCount || 0),\n      caseCount: Number(data.caseCount || 0),\n      styleSummaries,\n      writingBlocks,\n      caseBanks,\n      rawTextExcerpts\n    };\n  } catch (error) {\n    return {\n      source: null,\n      hasData: false,\n      isInsufficient: true,\n      docCount: 0,\n      caseCount: 0,\n      styleSummaries: [],\n      writingBlocks: [],\n      caseBanks: [],\n      rawTextExcerpts: [],\n      fetchError: error?.message || String(error)\n    };\n  }\n}\n\nconst styleContext = await fetchUserStyle();\n\nreturn [{\n  json: {\n    ...input,\n    style_context: styleContext\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        40
+      ],
+      "id": "cfb8eeaa-ac4d-43f7-b4aa-dc76ac9b40c8",
+      "name": "拉取用户风格"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $json || {};\nconst style = input.style_context || {};\n\nfunction ensureArray(value) {\n  if (Array.isArray(value)) return value;\n  if (value === undefined || value === null) return [];\n  return [value];\n}\n\nfunction summarizeList(label, items, pick) {\n  if (!items.length) return '';\n  const lines = items\n    .map((item, idx) => `${idx + 1}. ${pick(item)}`.trim())\n    .filter(Boolean);\n  if (!lines.length) return '';\n  return `${label}:\n- ` + lines.join('\n- ');\n}\n\nconst summaryParts = [];\nif (style.source) summaryParts.push(`来源：${style.source}`);\nsummaryParts.push(`样本文档：${style.docCount || 0} 篇`);\nsummaryParts.push(`案例片段：${style.caseCount || 0} 条`);\nif (style.isInsufficient) summaryParts.push('⚠️ 历史文案偏少，建议补充');\n\nconst summaries = summarizeList('风格提炼', ensureArray(style.styleSummaries), (item) => {\n  const domain = item.domain || item.domain_inference || '';\n  const tone = item.tone || item.tone_profile || '';\n  const moves = item.keyMoves || item.key_moves || '';\n  return `${item.docTitle || ''}｜领域：${domain}｜口吻：${tone}｜招式：${moves}`\n    .replace(/\\s+/g, ' ')\n    .trim();\n});\nif (summaries) summaryParts.push(summaries);\n\nconst blockSummary = summarizeList('结构模板', ensureArray(style.writingBlocks), (item) => {\n  return `${item.label || item.purpose || ''} → ${item.pattern || item.template || item.text || ''}`\n    .replace(/\\s+/g, ' ')\n    .trim();\n});\nif (blockSummary) summaryParts.push(blockSummary);\n\nconst caseSummary = summarizeList('案例语料', ensureArray(style.rawTextExcerpts), (item) => {\n  return `${item.docTitle || ''}: ${item.text || ''}`.trim();\n});\nif (caseSummary) summaryParts.push(caseSummary);\n\nconst styleSummaryText = summaryParts.join('\n\n');\n\nconst planPayload = {\n  idea: input.idea_text,\n  target_word_count: input.target_word_count,\n  style_rules: input.style_rules,\n  style_context: style,\n  warnings: {\n    insufficient_history: style.isInsufficient === true,\n    fetch_error: style.fetchError || null\n  }\n};\n\nreturn [{\n  json: {\n    ...input,\n    plan_payload: planPayload,\n    style_summary_text: styleSummaryText,\n    history_warning: style.isInsufficient === true\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        40
+      ],
+      "id": "7ce01a61-2aa0-4908-b4f5-87aabca0e7d0",
+      "name": "构建创作上下文"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "gpt-4o"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -240,
+        240
+      ],
+      "id": "a7ee764f-b025-4f43-b643-8f430bb55896",
+      "name": "gpt5",
+      "credentials": {
+        "openAiApi": {
+          "id": "135VogulxeCGwJaN",
+          "name": "聚保盆-云雾通用api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "gpt-4o"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        480,
+        240
+      ],
+      "id": "ab2e602b-52c3-4845-b9b5-a49adf20bbc9",
+      "name": "gpt7",
+      "credentials": {
+        "openAiApi": {
+          "id": "135VogulxeCGwJaN",
+          "name": "聚保盆-云雾通用api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={\n  \"idea\": {{ JSON.stringify($('构建创作上下文').item.json.idea_text) }},\n  \"target_word_count\": {{ $('构建创作上下文').item.json.target_word_count || 600 }},\n  \"style_summary_text\": {{ JSON.stringify($('构建创作上下文').item.json.style_summary_text || '') }},\n  \"style_rules\": {{ JSON.stringify($('构建创作上下文').item.json.style_rules ?? null, null, 2) }},\n  \"style_context\": {{ JSON.stringify($('构建创作上下文').item.json.style_context ?? {}, null, 2) }},\n  \"plan_payload\": {{ JSON.stringify($('构建创作上下文').item.json.plan_payload ?? {}, null, 2) }}\n}",
+        "options": {
+          "systemMessage": "=你是“创作策划官”，需要把用户想法转化成结构化的创作策划案。\n请严格输出 JSON，字段：\n- angle: string，覆盖观点与切入角度\n- hook_options: array(3) of strings，分别给出不同开场（包含情绪/反问/对比等）\n- outline: array，元素为 { section, purpose, bullets }，覆盖 Hook→矛盾→洞察→方法→案例→CTA\n- claims_to_verify: array of { claim, risk_level, safe_rewrite }，列出需要模糊化或补充数据的说法\n- search_keywords: array(5-8) of短语，供后续检索\n- style_constraints: array，总结 tone / 节奏 / 禁忌\n- cta_templates: array(1-2)，给出可复用 CTA 模板\n若 style_summary_text 或 style_rules 为空，也要给出合理默认。严格 JSON 输出，勿添加额外文字。"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        0,
+        40
+      ],
+      "id": "e57c4168-9601-48db-81f6-9fac97daea0f",
+      "name": "AI-策划/扩写提纲"
+    },
+    {
+      "parameters": {
+        "jsCode": "function stripFence(s) {\n  s = String(s ?? '').trim();\n  if (s.startsWith('```')) {\n    s = s.replace(/^```[a-zA-Z]*\n?/, '').replace(/```$/, '').trim();\n  }\n  return s;\n}\nfunction extractJsonObjectString(s) {\n  s = String(s ?? '');\n  const first = s.indexOf('{');\n  const last = s.lastIndexOf('}');\n  if (first === -1 || last === -1 || last <= first) return '';\n  return s.slice(first, last + 1);\n}\nfunction safeParseJson(raw) {\n  if (raw == null) return {};\n  if (typeof raw === 'object') return raw;\n  let text = stripFence(raw);\n  if (!text.trim().startsWith('{')) {\n    const cut = extractJsonObjectString(text);\n    if (cut) text = cut;\n  }\n  try {\n    return JSON.parse(text);\n  } catch (err) {\n    const cut = extractJsonObjectString(text);\n    if (cut && cut !== text) {\n      try { return JSON.parse(cut); } catch {}\n    }\n    throw new Error('无法解析策划结果 JSON');\n  }\n}\nconst raw = $json.output ?? $json.result ?? $json.text ?? $json.content ?? $json;\nconst plan = safeParseJson(raw);\nreturn [{ json: { plan } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        40
+      ],
+      "id": "6e503ff8-90f8-4134-9160-2aa944fd6cb8",
+      "name": "解析策划结果"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={\n  \"idea\": {{ JSON.stringify($('构建创作上下文').item.json.idea_text) }},\n  \"target_word_count\": {{ $('构建创作上下文').item.json.target_word_count || 600 }},\n  \"history_warning\": {{ $('构建创作上下文').item.json.history_warning ? '\"insufficient\"' : '\"ok\"' }},\n  \"style_summary_text\": {{ JSON.stringify($('构建创作上下文').item.json.style_summary_text || '') }},\n  \"style_rules\": {{ JSON.stringify($('构建创作上下文').item.json.style_rules ?? null, null, 2) }},\n  \"style_context\": {{ JSON.stringify($('构建创作上下文').item.json.style_context ?? {}, null, 2) }},\n  \"plan\": {{ JSON.stringify($json.plan ?? {}, null, 2) }}\n}",
+        "options": {
+          "systemMessage": "=你是“小红书图文生成器”。根据策划 plan、style_rules 与历史风格数据输出严格 JSON：\n{\n  \"title\": string (18-22字，含差异化钩子),\n  \"script_content\": string (分段、口语化，≈ target_word_count),\n  \"duration_estimate\": string (如 \"约55秒\"),\n  \"viral_logic\": string，解释结构/爆点,\n  \"style_applied\": string，说明如何呼应 style,\n  \"needs_more_history\": boolean (若 plan/warnings 提示不足则 true),\n  \"data_suggestion\": string (当 needs_more_history=true 时给出建议),\n  \"hashtags\": array(8-10) 以 # 开头。\n规则：\n- 结构遵循策划 outline（Hook→矛盾→方法→案例→CTA），自然过渡。\n- 若 plan.claims_to_verify 中存在高风险主张，要用模糊表达或体验替代。\n- CTA 要可执行：评论关键词/收藏/关注等。\n- script_content 使用 Markdown 风格段落（不要列表符号），每段2-3句。\n- hashtags 根据内容语义生成，避免重复泛词。\n- 若 history_warning=\"insufficient\"，needs_more_history 默认 true 并提示上传历史文案。\n输出必须是合法 JSON，勿添加其他文字。"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        480,
+        40
+      ],
+      "id": "c8d8f953-f73f-412c-9771-2e61dc40ed63",
+      "name": "AI小红书正文及标题撰写"
+    },
+    {
+      "parameters": {
+        "jsCode": "function stripFence(s) {\n  s = String(s ?? '').trim();\n  if (s.startsWith('```')) {\n    s = s.replace(/^```[a-zA-Z]*\n?/, '').replace(/```$/, '').trim();\n  }\n  return s;\n}\nfunction extractJsonObjectString(s) {\n  s = String(s ?? '');\n  const first = s.indexOf('{');\n  const last = s.lastIndexOf('}');\n  if (first === -1 || last === -1 || last <= first) return '';\n  return s.slice(first, last + 1);\n}\nfunction safeParseJson(raw) {\n  if (raw == null) return {};\n  if (typeof raw === 'object') return raw;\n  let text = stripFence(raw);\n  if (!text.trim().startsWith('{')) {\n    const cut = extractJsonObjectString(text);\n    if (cut) text = cut;\n  }\n  try {\n    return JSON.parse(text);\n  } catch (err) {\n    const cut = extractJsonObjectString(text);\n    if (cut && cut !== text) {\n      try { return JSON.parse(cut); } catch {}\n    }\n    throw new Error('AI 输出无法解析为 JSON');\n  }\n}\nfunction ensureArray(value) {\n  if (Array.isArray(value)) return value;\n  if (value === undefined || value === null) return [];\n  return [value];\n}\nconst context = $('构建创作上下文').item.json;\nconst raw = $json.output ?? $json.result ?? $json.text ?? $json.content ?? $json;\nconst obj = safeParseJson(raw);\nconst script = String(obj.script_content ?? obj.content ?? obj.text ?? '').trim();\nconst title = String(obj.title ?? '').trim() || context.idea_summary?.slice(0, 18) || '智能创作洞察';\nconst charCount = script.length || context.target_word_count || 0;\nconst durationSeconds = Math.max(30, Math.min(120, Math.round((charCount || 320) / 3.6)));\nconst durationEstimate = String(obj.duration_estimate ?? obj.durationEstimate ?? `约${durationSeconds}秒`);\nconst needsMore = typeof obj.needs_more_history === 'boolean' ? obj.needs_more_history : Boolean(context.history_warning);\nconst hashtags = ensureArray(obj.hashtags ?? obj.tags).map((tag) => {\n  const clean = String(tag || '').trim();\n  if (!clean) return null;\n  return clean.startsWith('#') ? clean : `#${clean}`;\n}).filter(Boolean).slice(0, 10);\nconst dataSuggestion = needsMore\n  ? (obj.data_suggestion || '建议上传更多历史文案，AI 才能更好模仿你的语气。')\n  : (obj.data_suggestion || obj.dataSuggestion || '');\nconst styleApplied = obj.style_applied || obj.styleApplied || (context.style_summary_text || '参考用户既有风格与策划结构生成');\nconst viralLogic = obj.viral_logic || obj.viralLogic || '';\nreturn [{\n  json: {\n    title,\n    script_content: script,\n    duration_estimate: durationEstimate,\n    viral_logic: viralLogic,\n    style_applied: styleApplied,\n    needs_more_history: needsMore,\n    data_suggestion: dataSuggestion,\n    hashtags\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        40
+      ],
+      "id": "8a955ee7-3fb1-476e-82d7-7136143bc48e",
+      "name": "整理输出"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('构建创作上下文').item.json.callback_url || ($('构建创作上下文').item.json.app_url ? $('构建创作上下文').item.json.app_url + '/api/webhook/replication/script' : '') }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  replication_id: $('标准化输入').item.json.replication_id,\n  task_id: $('标准化输入').item.json.task_id,\n  status: 'script_ready',\n  script_content: $json.script_content,\n  title: $json.title,\n  duration_estimate: $json.duration_estimate,\n  viral_logic: $json.viral_logic,\n  style_applied: $json.style_applied,\n  needs_more_history: $json.needs_more_history,\n  data_suggestion: $json.data_suggestion,\n  hashtags: $json.hashtags,\n  workflow_id: $('标准化输入').item.json.workflow_id,\n  workflow_name: $('标准化输入').item.json.workflow_name,\n  user_id: $('标准化输入').item.json.user_id,\n  source: $('标准化输入').item.json.source\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        40
+      ],
+      "id": "f2a1dffc-f457-46bb-91be-bea9430f1674",
+      "name": "回调系统"
+    },
+    {
+      "parameters": {
+        "url": "https://api.atomx.top/workflow-credits/query",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "workflow_id",
+              "value": "={{ $('标准化输入').item.json.workflow_id }}"
+            },
+            {
+              "name": "workflow_name",
+              "value": "={{ $('标准化输入').item.json.workflow_name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        40
+      ],
+      "id": "52394f69-3720-41c1-a36c-28a785391022",
+      "name": "查询工作流积分"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.atomx.top/api/credits/deduct",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  api_key: $('标准化输入').item.json.api_key,\n  amount: Number($json.data?.credit_cost || 0) || 1,\n  reason: $('标准化输入').item.json.workflow_name || '智能创作',\n  workflow_id: $('标准化输入').item.json.workflow_id,\n  workflow_name: $('标准化输入').item.json.workflow_name,\n  workflow_task_id: $('标准化输入').item.json.task_id\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        40
+      ],
+      "id": "fdffeba1-3ad7-4876-90e3-429bff92ef71",
+      "name": "扣除积分"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "标准化输入",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Respond Ack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "标准化输入": {
+      "main": [
+        [
+          {
+            "node": "拉取用户风格",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "拉取用户风格": {
+      "main": [
+        [
+          {
+            "node": "构建创作上下文",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "构建创作上下文": {
+      "main": [
+        [
+          {
+            "node": "AI-策划/扩写提纲",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI-策划/扩写提纲": {
+      "main": [
+        [
+          {
+            "node": "解析策划结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析策划结果": {
+      "main": [
+        [
+          {
+            "node": "AI小红书正文及标题撰写",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI小红书正文及标题撰写": {
+      "main": [
+        [
+          {
+            "node": "整理输出",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "整理输出": {
+      "main": [
+        [
+          {
+            "node": "回调系统",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "回调系统": {
+      "main": [
+        [
+          {
+            "node": "查询工作流积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "查询工作流积分": {
+      "main": [
+        [
+          {
+            "node": "扣除积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gpt5": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI-策划/扩写提纲",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gpt7": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI小红书正文及标题撰写",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "2dd002c0-3e5f-4ee2-ae8b-12d44fd47a30",
+  "meta": {
+    "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
+  },
+  "id": "OpazR00sYuW8vblm",
+  "tags": []
+}

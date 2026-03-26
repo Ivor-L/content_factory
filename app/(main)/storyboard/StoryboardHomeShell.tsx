@@ -6,14 +6,15 @@ import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import { toast } from 'react-hot-toast';
-import { Download, Clock3, Film, Video, Mic, Pencil } from 'lucide-react';
+import { Download, Clock3, Film, Video, Mic, Pencil, ChevronDown, FolderOpen, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { read, utils } from 'xlsx';
-import type { ChangeEvent } from 'react';
+import type { ChangeEvent, MouseEvent as ReactMouseEvent } from 'react';
 import { EmptyState } from '@/components/EmptyState';
 import { useTenant } from '@/hooks/useTenant';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useSidebarAutoCollapse } from '@/hooks/useSidebarAutoCollapse';
+import { supabase } from '@/lib/supabaseClient';
 import type {
   StoryboardHomeStats,
   StoryboardHomeTask,
@@ -40,9 +41,18 @@ export function StoryboardHomeShell({ tasks, stats: _stats }: StoryboardHomeShel
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [lastInsertedShotId, setLastInsertedShotId] = useState<string | null>(null);
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
   const promptFileInputRef = useRef<HTMLInputElement>(null);
-  const imageFileInputRef = useRef<HTMLInputElement>(null);
+  const imageFolderInputRef = useRef<HTMLInputElement>(null);
+  const importMenuRef = useRef<HTMLDivElement | null>(null);
+  const promptImportTargetRef = useRef<'video' | 'image'>('video');
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
+  const downloadMenuRef = useRef<HTMLDivElement | null>(null);
+  const [titleSaving, setTitleSaving] = useState(false);
+  const [importingPrompts, setImportingPrompts] = useState(false);
+  const [assigningImages, setAssigningImages] = useState(false);
+  const [insertingShot, setInsertingShot] = useState(false);
 
   const activeTask = useMemo(
     () => taskCollection.find((task) => task.id === activeTaskId),
@@ -84,12 +94,98 @@ export function StoryboardHomeShell({ tasks, stats: _stats }: StoryboardHomeShel
   }, [activeTaskId]);
 
   useEffect(() => {
+    if (activeTab !== 'board') {
+      setImportMenuOpen(false);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
     return () => {
       if (highlightTimerRef.current) {
         clearTimeout(highlightTimerRef.current);
       }
     };
   }, []);
+
+  useEffect(() => {
+    setDownloadMenuOpen(false);
+  }, [activeTaskId]);
+
+  const authedFetch = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const { data } = await supabase.auth.getSession();
+    const accessToken = data.session?.access_token;
+    if (!accessToken) {
+      throw new Error('请先登录后再执行此操作');
+    }
+    const headers = new Headers(init?.headers || {});
+    if (!(init?.body instanceof FormData) && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+    headers.set('Authorization', `Bearer ${accessToken}`);
+    const response = await fetch(input, { ...init, headers });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      const message = payload?.error || payload?.message || `请求失败（${response.status}）`;
+      throw new Error(message);
+    }
+    return response.json();
+  }, []);
+
+  const uploadAsset = useCallback(async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch('/api/upload', {
+      method: 'POST',
+      body: formData,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload?.url) {
+      throw new Error(payload?.error || '上传失败，请重试');
+    }
+    return payload.url as string;
+  }, []);
+
+  useEffect(() => {
+    if (!importMenuOpen) return undefined;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!importMenuRef.current) return;
+      if (!importMenuRef.current.contains(event.target as Node)) {
+        setImportMenuOpen(false);
+      }
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setImportMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [importMenuOpen]);
+
+  useEffect(() => {
+    if (!downloadMenuOpen) return undefined;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!downloadMenuRef.current) return;
+      if (!downloadMenuRef.current.contains(event.target as Node)) {
+        setDownloadMenuOpen(false);
+      }
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setDownloadMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [downloadMenuOpen]);
 
   const handleCreateTask = () => {
     const path = `${basePath}/storyboard/create`;
@@ -104,8 +200,52 @@ export function StoryboardHomeShell({ tasks, stats: _stats }: StoryboardHomeShel
     setActiveTab('timeline');
   };
 
-  const handleBatchDownload = () => {
-    toast('批量下载功能即将上线，敬请期待');
+  const gatherDownloadAssets = useCallback(
+    (scope: 'images' | 'videos') => {
+      if (!activeTask) return [];
+      const seen = new Set<string>();
+      return activeTask.shots
+        .map((shot, index) => {
+          const candidate = scope === 'images' ? shot.imageUrl : shot.videoUrl;
+          if (!candidate || candidate.startsWith('data:') || seen.has(candidate)) {
+            return null;
+          }
+          seen.add(candidate);
+          return {
+            url: candidate,
+            filename: buildAssetFilename(index, scope, candidate),
+          };
+        })
+        .filter((asset): asset is { url: string; filename: string } => Boolean(asset));
+    },
+    [activeTask]
+  );
+
+  const handleBatchDownload = (scope: 'images' | 'videos') => {
+    if (!activeTask) {
+      toast.error('请选择一个分镜任务');
+      return;
+    }
+    setDownloadMenuOpen(false);
+    const assets = gatherDownloadAssets(scope);
+    if (!assets.length) {
+      toast.error(scope === 'images' ? '暂无可下载图片' : '暂无可下载视频');
+      return;
+    }
+    assets.forEach(({ url, filename }) => triggerBrowserDownload(url, filename));
+    toast.success(scope === 'images' ? '已开始下载图片' : '已开始下载视频');
+  };
+
+  const handleImportOptionClick = (option: 'videoPrompts' | 'imagePrompts' | 'images') => {
+    if (option === 'images' && assigningImages) return;
+    if (option !== 'images' && importingPrompts) return;
+    setImportMenuOpen(false);
+    if (option === 'images') {
+      imageFolderInputRef.current?.click();
+      return;
+    }
+    promptImportTargetRef.current = option === 'videoPrompts' ? 'video' : 'image';
+    promptFileInputRef.current?.click();
   };
 
   const parseTextLines = (text: string) =>
@@ -143,138 +283,139 @@ export function StoryboardHomeShell({ tasks, stats: _stats }: StoryboardHomeShel
   };
 
   const handleTitleSave = () => {
-    if (!activeTask) return;
+    if (!activeTask || titleSaving) return;
     const trimmed = titleDraft.trim();
     if (!trimmed) {
       toast.error('名称不能为空');
       return;
     }
-    setTitleOverrides((prev) => ({ ...prev, [activeTask.id]: trimmed }));
-    setIsEditingTitle(false);
-    toast.success('名称已更新（暂存于当前会话）');
+    setTitleSaving(true);
+    void authedFetch(`/api/storyboard/${activeTask.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ title: trimmed }),
+    })
+      .then(() => {
+        setTitleOverrides((prev) => ({ ...prev, [activeTask.id]: trimmed }));
+        setIsEditingTitle(false);
+        toast.success('名称已更新');
+      })
+      .catch((error: unknown) => {
+        toast.error(error instanceof Error ? error.message : '名称更新失败');
+        setTitleDraft(displayTitle);
+      })
+      .finally(() => {
+        setTitleSaving(false);
+      });
   };
 
   const handleInsertShot = useCallback(
-    (position: number) => {
-      if (!activeTaskId) return;
-      const insertedId = `temp-${Date.now()}`;
-      setTaskCollection((prev) =>
-        prev.map((task) => {
-          if (task.id !== activeTaskId) return task;
-
-          const baseDuration =
-            (task.shots[position - 1]?.duration ?? task.shots[position]?.duration) ?? 8;
-          const newShot: StoryboardShot = {
-            id: insertedId,
-            order: position + 1,
-            label: '新增分镜',
-            title: '新增分镜',
-            description: null,
-            videoPrompt: null,
-            timeRange: null,
-            duration: baseDuration,
-            imageUrl: null,
-            videoUrl: null,
-            referenceThumbs: task.referenceThumbs || [],
-            voiceover: null,
-            status: 'DRAFT',
-            tags: [],
-            cameraNotes: null,
-            lightingNotes: null,
-          };
-
-          const updatedShots = [...task.shots];
-          updatedShots.splice(position, 0, newShot);
-          const normalizedShots = updatedShots.map((shot, index) => ({
-            ...shot,
-            order: index + 1,
-          }));
-          const totalDuration = normalizedShots.reduce(
-            (sum, shot) => sum + (shot.duration ?? 0),
-            0
-          );
-          return {
-            ...task,
-            shots: normalizedShots,
-            totalShots: normalizedShots.length,
-            estimatedDuration: totalDuration,
-          };
-        })
-      );
-      triggerInsertHighlight(insertedId);
+    async (position: number) => {
+      if (!activeTaskId || insertingShot) return;
+      setInsertingShot(true);
+      try {
+        const response = await authedFetch(`/api/storyboard/${activeTaskId}/segments`, {
+          method: 'POST',
+          body: JSON.stringify({
+            insertAt: position,
+            segments: [{}],
+          }),
+        });
+        const createdSegment: StoryboardSegmentResponse | undefined = response?.segments?.[0];
+        if (!createdSegment) {
+          throw new Error('未能创建新的分镜');
+        }
+        setTaskCollection((prev) =>
+          prev.map((task) => {
+            if (task.id !== activeTaskId) return task;
+            const updatedShots = [...task.shots];
+            const newShot = segmentToShot(createdSegment, task.referenceThumbs || []);
+            updatedShots.splice(position, 0, newShot);
+            const normalizedShots = recalcShots(updatedShots);
+            const totalDuration = normalizedShots.reduce(
+              (sum, shot) => sum + (shot.duration ?? 0),
+              0
+            );
+            return {
+              ...task,
+              shots: normalizedShots,
+              totalShots: normalizedShots.length,
+              estimatedDuration: totalDuration,
+              timelineSegments: mergeTimelineSegments(task.timelineSegments, [createdSegment], position),
+            };
+          })
+        );
+        triggerInsertHighlight(createdSegment.id);
+        toast.success('已新增分镜');
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : '新增分镜失败');
+      } finally {
+        setInsertingShot(false);
+      }
     },
-    [activeTaskId, triggerInsertHighlight]
+    [activeTaskId, authedFetch, insertingShot, triggerInsertHighlight]
   );
 
   const appendShotsFromPrompts = useCallback(
-    (prompts: string[]) => {
-      if (!activeTaskId) {
+    async (prompts: string[], { target }: { target: 'video' | 'image' }) => {
+      if (!activeTaskId || !activeTask) {
         toast.error('请选择一个分镜任务后再导入提示词');
         return;
       }
-      let addedCount = 0;
-      let lastId: string | null = null;
-      setTaskCollection((prev) =>
-        prev.map((task) => {
-          if (task.id !== activeTaskId) return task;
-          const updatedShots = [...task.shots];
-          prompts.forEach((prompt, index) => {
-            const trimmed = prompt.trim();
-            if (!trimmed) return;
-            const id = `import-${Date.now()}-${addedCount}-${index}`;
-            addedCount += 1;
-            lastId = id;
-            const baseTitle = trimmed.slice(0, 18) || '导入分镜';
-            updatedShots.push({
-              id,
-              order: updatedShots.length + 1,
-              label: baseTitle,
-              title: baseTitle,
-              description: trimmed,
-              videoPrompt: trimmed,
-              timeRange: null,
-              duration: (updatedShots[updatedShots.length - 1]?.duration ?? 8) || 8,
-              imageUrl: null,
-              videoUrl: null,
-              referenceThumbs: task.referenceThumbs || [],
-              voiceover: null,
-              status: 'DRAFT',
-              tags: [],
-              cameraNotes: null,
-              lightingNotes: null,
-            });
-          });
-          const normalizedShots = updatedShots.map((shot, index) => ({
-            ...shot,
-            order: index + 1,
-          }));
-          const totalDuration = normalizedShots.reduce(
-            (sum, shot) => sum + (shot.duration ?? 0),
-            0
-          );
-          return {
-            ...task,
-            shots: normalizedShots,
-            totalShots: normalizedShots.length,
-            estimatedDuration: totalDuration,
-          };
-        })
-      );
-      if (addedCount) {
-        toast.success(`已导入 ${addedCount} 条提示词`);
-        triggerInsertHighlight(lastId);
-      } else {
+      const sanitizedPrompts = prompts.map((prompt) => prompt.trim()).filter(Boolean);
+      if (!sanitizedPrompts.length) {
         toast.error('未解析到有效的提示词内容');
+        return;
+      }
+      setImportingPrompts(true);
+      try {
+        const response = await authedFetch(`/api/storyboard/${activeTaskId}/segments`, {
+          method: 'POST',
+          body: JSON.stringify({
+            segments: sanitizedPrompts.map((prompt) => ({
+              videoPrompt: target === 'video' ? prompt : undefined,
+              imagePrompt: target === 'image' ? prompt : undefined,
+            })),
+            insertAt: activeTask.shots.length,
+          }),
+        });
+        const createdSegments: StoryboardSegmentResponse[] = response?.segments ?? [];
+        if (!createdSegments.length) {
+          throw new Error('服务器未返回新增的分镜');
+        }
+        setTaskCollection((prev) =>
+          prev.map((task) => {
+            if (task.id !== activeTaskId) return task;
+            const appendedShots = createdSegments.map((segment) =>
+              segmentToShot(segment, task.referenceThumbs || [])
+            );
+            const updatedShots = recalcShots([...task.shots, ...appendedShots]);
+            const totalDuration = updatedShots.reduce((sum, shot) => sum + (shot.duration ?? 0), 0);
+            return {
+              ...task,
+              shots: updatedShots,
+              totalShots: updatedShots.length,
+              estimatedDuration: totalDuration,
+              timelineSegments: mergeTimelineSegments(task.timelineSegments, createdSegments),
+            };
+          })
+        );
+        triggerInsertHighlight(createdSegments[createdSegments.length - 1]?.id ?? null);
+        toast.success(`已导入 ${createdSegments.length} 条${target === 'video' ? '视频' : '图片'}提示词`);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : '导入提示词失败，请重试');
+      } finally {
+        setImportingPrompts(false);
       }
     },
-    [activeTaskId, triggerInsertHighlight]
+    [activeTask, activeTaskId, authedFetch, triggerInsertHighlight]
   );
 
   const handlePromptFilesChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files?.length) return;
+    const target = promptImportTargetRef.current;
+    const prompts: string[] = [];
     try {
-      const prompts: string[] = [];
       for (const file of Array.from(files)) {
         if (/\.xlsx?$/i.test(file.name)) {
           const buffer = await file.arrayBuffer();
@@ -299,62 +440,84 @@ export function StoryboardHomeShell({ tasks, stats: _stats }: StoryboardHomeShel
         toast.error('未解析到任何提示词');
         return;
       }
-      appendShotsFromPrompts(prompts);
     } catch (error) {
       console.error(error);
       toast.error('导入提示词失败，请重试');
-    } finally {
       event.target.value = '';
+      return;
     }
+    event.target.value = '';
+    await appendShotsFromPrompts(prompts, { target });
   };
-
-  const fileToDataUrl = (file: File) =>
-    new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(file);
-    });
 
   const handleImageFilesChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files?.length) return;
-    if (!activeTaskId) {
+    event.target.value = '';
+    if (!activeTask) {
       toast.error('请选择一个分镜任务后再导入图片');
-      event.target.value = '';
       return;
     }
+    if (assigningImages) return;
     try {
-      const dataUrls = await Promise.all(Array.from(files).map((file) => fileToDataUrl(file)));
-      let appliedCount = 0;
+      const imageFiles = Array.from(files).filter((file) => {
+        if (file.type) return file.type.startsWith('image/');
+        return /\.(png|jpe?g|gif|bmp|webp|heic|heif)$/i.test(file.name);
+      });
+      if (!imageFiles.length) {
+        toast.error('选中的文件夹中没有图片文件');
+        return;
+      }
+      const sorted = imageFiles.sort((a, b) => {
+        const aPath = (a as File & { webkitRelativePath?: string }).webkitRelativePath || a.name;
+        const bPath = (b as File & { webkitRelativePath?: string }).webkitRelativePath || b.name;
+        return aPath.localeCompare(bPath, undefined, { numeric: true });
+      });
+      const targetShots = activeTask.shots.slice(0, sorted.length);
+      if (!targetShots.length) {
+        toast.error('当前分镜任务没有可更新的镜头');
+        return;
+      }
+      setAssigningImages(true);
+      const uploadedUrls = await Promise.all(sorted.slice(0, targetShots.length).map((file) => uploadAsset(file)));
+      await Promise.all(
+        targetShots.slice(0, uploadedUrls.length).map((shot, index) =>
+          authedFetch(`/api/storyboard/segments/${shot.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ generatedImage: uploadedUrls[index] }),
+          })
+        )
+      );
+      const shotUrlMap = new Map<string, string>();
+      targetShots.slice(0, uploadedUrls.length).forEach((shot, index) => {
+        shotUrlMap.set(shot.id, uploadedUrls[index]);
+      });
       setTaskCollection((prev) =>
         prev.map((task) => {
-          if (task.id !== activeTaskId) return task;
-          const updatedShots = task.shots.map((shot, index) => {
-            const dataUrl = dataUrls[index];
-            if (!dataUrl) return shot;
-            appliedCount += 1;
-            return {
-              ...shot,
-              imageUrl: dataUrl,
-            };
-          });
+          if (task.id !== activeTask.id) return task;
+          const updatedShots = task.shots.map((shot) =>
+            shotUrlMap.has(shot.id) ? { ...shot, imageUrl: shotUrlMap.get(shot.id) || null } : shot
+          );
+          const updatedTimeline = task.timelineSegments
+            ? task.timelineSegments.map((segment) =>
+                shotUrlMap.has(segment.id)
+                  ? { ...segment, generatedImage: shotUrlMap.get(segment.id) || null }
+                  : segment
+              )
+            : task.timelineSegments;
           return {
             ...task,
             shots: updatedShots,
+            timelineSegments: updatedTimeline,
           };
         })
       );
-      if (appliedCount) {
-        toast.success(`已导入 ${appliedCount} 张图片`);
-      } else {
-        toast.error('图片数量不足，未进行导入');
-      }
+      toast.success(`已导入 ${shotUrlMap.size} 张图片`);
     } catch (error) {
       console.error(error);
-      toast.error('导入图片失败，请重试');
+      toast.error(error instanceof Error ? error.message : '导入图片失败，请重试');
     } finally {
-      event.target.value = '';
+      setAssigningImages(false);
     }
   };
 
@@ -409,21 +572,58 @@ export function StoryboardHomeShell({ tasks, stats: _stats }: StoryboardHomeShel
                   className="group flex min-w-0 items-center gap-2 text-left text-gray-900 transition hover:text-gray-600 dark:text-white dark:hover:text-white/90"
                 >
                   <span className="truncate text-lg font-semibold sm:text-xl">{displayTitle || '未命名分镜'}</span>
-                  <Pencil size={16} className="text-gray-500 transition group-hover:text-gray-700 dark:text-white/60 dark:group-hover:text-white" />
+                  {titleSaving ? (
+                    <Loader2 size={16} className="text-gray-500 animate-spin dark:text-white/70" />
+                  ) : (
+                    <Pencil size={16} className="text-gray-500 transition group-hover:text-gray-700 dark:text-white/60 dark:group-hover:text-white" />
+                  )}
                 </button>
               </div>
             )}
           </div>
 
           <div className="flex items-center justify-end gap-2 pr-20">
-            <button
-              type="button"
-              onClick={handleBatchDownload}
-              className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-100 px-4 py-2 text-sm text-gray-700 transition hover:border-[var(--tenant-primary)] hover:text-[var(--tenant-primary)] dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:text-white"
-            >
-              <Download size={16} />
-              批量下载
-            </button>
+            <div className="relative" ref={downloadMenuRef}>
+              <button
+                type="button"
+                onClick={() => setDownloadMenuOpen((prev) => !prev)}
+                disabled={!activeTask?.shots.length}
+                aria-expanded={downloadMenuOpen}
+                className={clsx(
+                  'inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-100 px-4 py-2 text-sm text-gray-700 transition hover:border-[var(--tenant-primary)] hover:text-[var(--tenant-primary)] dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:text-white',
+                  !activeTask?.shots.length && 'cursor-not-allowed opacity-60 hover:border-gray-200 hover:text-gray-700 dark:hover:text-white/80'
+                )}
+              >
+                <Download size={16} />
+                批量下载
+                <ChevronDown
+                  className={clsx(
+                    'h-4 w-4 transition-transform duration-200',
+                    downloadMenuOpen ? 'rotate-180' : 'rotate-0'
+                  )}
+                />
+              </button>
+              {downloadMenuOpen && (
+                <div className="absolute right-0 z-20 mt-2 w-48 space-y-1 rounded-2xl border border-gray-200 bg-white/95 p-2 text-sm text-gray-800 shadow-2xl dark:border-white/10 dark:bg-gray-900/95 dark:text-white">
+                  <button
+                    type="button"
+                    onClick={() => handleBatchDownload('images')}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 transition hover:bg-gray-100 dark:hover:bg-white/10"
+                  >
+                    <ImageIcon className="h-4 w-4" />
+                    下载首帧图
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleBatchDownload('videos')}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 transition hover:bg-gray-100 dark:hover:bg-white/10"
+                  >
+                    <Film className="h-4 w-4" />
+                    下载视频
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="pointer-events-auto absolute left-1/2 top-1/2 flex h-11 w-[13rem] -translate-x-1/2 -translate-y-1/2 items-center justify-center">
@@ -504,20 +704,56 @@ export function StoryboardHomeShell({ tasks, stats: _stats }: StoryboardHomeShel
           <div className="p-2">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-base font-semibold text-gray-900 dark:text-white">
               <div className="flex flex-wrap gap-2 text-sm">
-                <button
-                  type="button"
-                  onClick={() => promptFileInputRef.current?.click()}
-                  className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-100 px-4 py-2 text-gray-700 transition hover:border-[var(--tenant-primary)] hover:text-[var(--tenant-primary)] dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:text-white"
-                >
-                  导入提示词
-                </button>
-                <button
-                  type="button"
-                  onClick={() => imageFileInputRef.current?.click()}
-                  className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-100 px-4 py-2 text-gray-700 transition hover:border-[var(--tenant-primary)] hover:text-[var(--tenant-primary)] dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:text-white"
-                >
-                  导入图片
-                </button>
+                <div className="relative" ref={importMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setImportMenuOpen((prev) => !prev)}
+                    disabled={importingPrompts}
+                    className={clsx(
+                      'inline-flex items-center gap-2 rounded-full border px-4 py-2 transition',
+                      'border-gray-200 bg-gray-100 text-gray-700 hover:border-[var(--tenant-primary)] hover:text-[var(--tenant-primary)]',
+                      'dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:text-white',
+                      importingPrompts && 'cursor-not-allowed opacity-60 hover:border-gray-200 hover:text-gray-700 dark:hover:text-white/80'
+                    )}
+                  >
+                    批量导入
+                    {importingPrompts && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    <ChevronDown
+                      className={clsx(
+                        'h-4 w-4 transition-transform duration-200',
+                        importMenuOpen ? 'rotate-180' : 'rotate-0'
+                      )}
+                    />
+                  </button>
+                  {importMenuOpen && (
+                    <div className="absolute z-20 mt-2 w-56 space-y-1 rounded-2xl border border-gray-200 bg-white/95 p-2 text-sm text-gray-800 shadow-2xl dark:border-white/10 dark:bg-gray-900/95 dark:text-white">
+                      <button
+                        type="button"
+                        onClick={() => handleImportOptionClick('videoPrompts')}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 transition hover:bg-gray-100 dark:hover:bg-white/10"
+                      >
+                        <Film className="h-4 w-4" />
+                        导入视频提示词
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleImportOptionClick('imagePrompts')}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 transition hover:bg-gray-100 dark:hover:bg-white/10"
+                      >
+                        <ImageIcon className="h-4 w-4" />
+                        导入图片提示词
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleImportOptionClick('images')}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 transition hover:bg-gray-100 dark:hover:bg-white/10"
+                      >
+                        <FolderOpen className="h-4 w-4" />
+                        导入图片
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="flex flex-wrap gap-2 text-xs text-gray-500 dark:text-white/60">
                 <span>总镜头：{activeTask?.totalShots || 0}</span>
@@ -530,7 +766,12 @@ export function StoryboardHomeShell({ tasks, stats: _stats }: StoryboardHomeShel
               </div>
             </div>
             {activeTask ? (
-              <ShotsTable task={activeTask} onInsert={handleInsertShot} recentInsertedId={lastInsertedShotId} />
+              <ShotsTable
+                task={activeTask}
+                onInsert={handleInsertShot}
+                recentInsertedId={lastInsertedShotId}
+                disableInsert={insertingShot}
+              />
             ) : (
               <EmptyState
                 title="请选择一个分镜任务"
@@ -549,14 +790,24 @@ export function StoryboardHomeShell({ tasks, stats: _stats }: StoryboardHomeShel
         accept=".txt,.md,.csv,.tsv,.xlsx,.xls"
         className="hidden"
         multiple
+        disabled={importingPrompts}
         onChange={handlePromptFilesChange}
       />
       <input
-        ref={imageFileInputRef}
+        ref={(node) => {
+          if (node) {
+            node.setAttribute('webkitdirectory', 'true');
+            node.setAttribute('directory', 'true');
+            imageFolderInputRef.current = node;
+          } else {
+            imageFolderInputRef.current = null;
+          }
+        }}
         type="file"
         accept="image/*"
         className="hidden"
         multiple
+        disabled={assigningImages}
         onChange={handleImageFilesChange}
       />
     </div>
@@ -570,10 +821,12 @@ function ShotsTable({
   task,
   onInsert,
   recentInsertedId,
+  disableInsert = false,
 }: {
   task: StoryboardHomeTask;
-  onInsert: (position: number) => void;
+  onInsert: (position: number) => void | Promise<void>;
   recentInsertedId?: string | null;
+  disableInsert?: boolean;
 }) {
   const [activeShotId, setActiveShotId] = useState<string | null>(null);
 
@@ -605,9 +858,9 @@ function ShotsTable({
       </div>
       <div>
         <InsertShotDivider
-          positionLabel={`在分镜 ${task.shots[0]?.order ?? 1} 之前，新增一个分镜`}
+          positionLabel={`在分镜 ${task.shots[0]?.order ?? 1} 之前增加一行`}
           onInsert={() => onInsert(0)}
-          showLine={false}
+          disabled={disableInsert}
         />
         <AnimatePresence initial={false}>
           {task.shots.map((shot, index) => (
@@ -617,7 +870,11 @@ function ShotsTable({
               initial={{ opacity: 0, y: 18 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -18 }}
-              transition={{ duration: 0.25, ease: 'easeOut' }}
+              transition={{
+                duration: 0.22,
+                ease: 'easeOut',
+                layout: { type: 'spring', stiffness: 320, damping: 32 },
+              }}
             >
               <ShotRow
                 shot={shot}
@@ -628,11 +885,11 @@ function ShotsTable({
               <InsertShotDivider
                 positionLabel={
                   task.shots[index + 1]
-                    ? `在分镜 ${shot.order} 和分镜 ${task.shots[index + 1].order} 之间，新增一个分镜`
-                    : `在分镜 ${shot.order} 之后，新增一个分镜`
+                    ? `在分镜 ${shot.order} 和分镜 ${task.shots[index + 1].order} 之间增加一行`
+                    : `在分镜 ${shot.order} 之后增加一行`
                 }
                 onInsert={() => onInsert(index + 1)}
-                showLine={Boolean(task.shots[index + 1])}
+                disabled={disableInsert}
               />
             </motion.div>
           ))}
@@ -777,44 +1034,192 @@ function InsertShotDivider({
   positionLabel,
   onInsert,
   showLine = true,
+  disabled = false,
 }: {
   positionLabel: string;
   onInsert: () => void;
   showLine?: boolean;
+  disabled?: boolean;
 }) {
+  const [cursorRatio, setCursorRatio] = useState(0.5);
+  const [isHovered, setIsHovered] = useState(false);
+  const trackRef = useRef<HTMLDivElement>(null);
+
+  const clampRatio = (value: number) => Math.min(0.96, Math.max(0.04, value));
+
+  const updateCursorRatio = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!trackRef.current) return;
+    const rect = trackRef.current.getBoundingClientRect();
+    if (!rect?.width) return;
+    const next = (event.clientX - rect.left) / rect.width;
+    setCursorRatio(clampRatio(Number.isFinite(next) ? next : 0.5));
+  };
+
+  const resetDividerState = () => {
+    setIsHovered(false);
+    setCursorRatio(0.5);
+  };
+
   return (
     <div
-      className={clsx(
-        'group/insert relative flex w-full justify-center',
-        showLine ? 'my-1 py-1' : 'my-1 py-1'
-      )}
+      ref={trackRef}
+      className="relative isolate my-1 flex w-full items-center justify-center py-3"
+      onMouseEnter={(event) => {
+        setIsHovered(true);
+        updateCursorRatio(event);
+      }}
+      onMouseMove={updateCursorRatio}
+      onMouseLeave={resetDividerState}
+      onFocus={() => setIsHovered(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          resetDividerState();
+        }
+      }}
     >
       {showLine && (
         <>
           <div
-            className="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-gray-200 dark:bg-white/15"
-            style={{ marginTop: '-2px' }}
+            className={clsx(
+              'pointer-events-none absolute inset-x-5 top-1/2 h-px -translate-y-1/2 rounded-full transition-colors duration-300',
+              isHovered ? 'bg-[#FFE45E]' : 'bg-gray-200 dark:bg-white/15'
+            )}
           />
           <div
-            className="pointer-events-none absolute inset-x-8 top-1/2 h-px -translate-y-1/2"
-            style={{ marginTop: '-2px' }}
-          >
-            <div className="h-px w-full origin-center scale-x-0 bg-yellow-300 transition-transform duration-500 ease-out group-hover/insert:scale-x-100" />
-          </div>
+            className={clsx(
+              'pointer-events-none absolute inset-x-10 top-1/2 h-[3px] -translate-y-1/2 rounded-full blur-lg transition-opacity duration-500',
+              isHovered ? 'bg-[#FFE45E]/70 opacity-100' : 'bg-[#FFE45E]/20 opacity-0'
+            )}
+          />
         </>
       )}
-      <div className="relative z-[1] -translate-y-[2px] flex flex-col items-center gap-2 text-center">
-        <div className="max-w-[220px] rounded-full bg-gray-900/85 px-3 py-1 text-[11px] text-white shadow-sm opacity-0 transition group-hover/insert:-translate-y-0.5 group-hover/insert:opacity-100">
+      <div className="relative z-10 flex w-full flex-col items-center gap-2 px-6 text-center">
+        <div
+          className={clsx(
+            'max-w-[260px] rounded-full bg-gray-900/85 px-3 py-1 text-[11px] text-white shadow-sm transition-all duration-200',
+            isHovered ? '-translate-y-0.5 opacity-100' : 'translate-y-0 opacity-0'
+          )}
+        >
           {positionLabel}
         </div>
         <button
           type="button"
           onClick={onInsert}
-          className="pointer-events-none flex h-11 w-11 items-center justify-center rounded-full bg-[#FFD84D] text-base font-semibold text-gray-900 shadow-md opacity-0 transition hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#FFD84D] group-hover/insert:pointer-events-auto group-hover/insert:opacity-100 group-hover/insert:shadow-lg -translate-y-[2px]"
+          aria-label={positionLabel}
+          onFocus={() => setIsHovered(true)}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              resetDividerState();
+            }
+          }}
+          style={{ left: `${cursorRatio * 100}%` }}
+          disabled={disabled}
+          className={clsx(
+            'absolute top-1/2 h-11 w-11 -translate-y-1/2 -translate-x-1/2 rounded-full bg-[#FFD84D] text-base font-semibold text-gray-900 shadow-md transition-all duration-200 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FFD84D] focus-visible:ring-offset-2 focus-visible:ring-offset-white dark:focus-visible:ring-offset-black',
+            isHovered ? 'opacity-100 shadow-[0_4px_16px_rgba(255,216,77,0.45)]' : 'opacity-0 shadow-none',
+            disabled && 'cursor-not-allowed opacity-40 hover:scale-100'
+          )}
         >
           +
         </button>
       </div>
     </div>
   );
+}
+
+interface StoryboardSegmentResponse {
+  id: string;
+  order: number;
+  duration: number;
+  timeRange: string | null;
+  imagePrompt: string | null;
+  videoPrompt: string | null;
+  generatedImage: string | null;
+  generatedVideo: string | null;
+  status?: string | null;
+}
+
+function segmentToShot(segment: StoryboardSegmentResponse, referenceThumbs: string[]): StoryboardShot {
+  const baseTitle =
+    segment.videoPrompt?.slice(0, 18) ||
+    segment.imagePrompt?.slice(0, 18) ||
+    `分镜 ${segment.order + 1}`;
+  return {
+    id: segment.id,
+    order: segment.order + 1,
+    label: baseTitle,
+    title: baseTitle,
+    description: segment.videoPrompt || segment.imagePrompt || null,
+    imagePrompt: segment.imagePrompt,
+    videoPrompt: segment.videoPrompt,
+    timeRange: segment.timeRange,
+    duration: segment.duration ?? null,
+    imageUrl: segment.generatedImage,
+    videoUrl: segment.generatedVideo,
+    referenceThumbs,
+    voiceover: null,
+    status: segment.status || 'DRAFT',
+    tags: [],
+    cameraNotes: null,
+    lightingNotes: null,
+  };
+}
+
+function segmentToTimelineSegment(segment: StoryboardSegmentResponse): StoryboardTimelineSegment {
+  return {
+    id: segment.id,
+    order: segment.order,
+    duration: segment.duration,
+    timeRange: segment.timeRange,
+    imagePrompt: segment.imagePrompt,
+    videoPrompt: segment.videoPrompt,
+    generatedImage: segment.generatedImage,
+    generatedVideo: segment.generatedVideo,
+  };
+}
+
+function recalcShots(shots: StoryboardShot[]): StoryboardShot[] {
+  return shots.map((shot, index) => ({
+    ...shot,
+    order: index + 1,
+  }));
+}
+
+function mergeTimelineSegments(
+  existing: StoryboardTimelineSegment[] | undefined,
+  created: StoryboardSegmentResponse[],
+  insertIndex?: number
+): StoryboardTimelineSegment[] {
+  if (!created.length) {
+    return existing ? existing.map((segment, index) => ({ ...segment, order: index })) : [];
+  }
+  const base = Array.isArray(existing) ? [...existing] : [];
+  const mapped = created.map(segmentToTimelineSegment);
+  const index =
+    typeof insertIndex === 'number' ? Math.max(0, Math.min(insertIndex, base.length)) : base.length;
+  base.splice(index, 0, ...mapped);
+  return base.map((segment, order) => ({ ...segment, order }));
+}
+
+function buildAssetFilename(index: number, scope: 'images' | 'videos', source?: string) {
+  const paddedIndex = String(index + 1).padStart(2, '0');
+  const baseName = scope === 'images' ? `storyboard-image-${paddedIndex}` : `storyboard-video-${paddedIndex}`;
+  const cleanSource = source?.split(/[?#]/)[0] ?? '';
+  const ext =
+    cleanSource.includes('.')
+      ? cleanSource.split('.').pop()?.replace(/[^a-zA-Z0-9]/g, '')
+      : undefined;
+  const fallback = scope === 'images' ? 'png' : 'mp4';
+  return `${baseName}.${ext || fallback}`;
+}
+
+function triggerBrowserDownload(url: string, filename: string) {
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.setAttribute('download', filename);
+  anchor.setAttribute('target', '_blank');
+  anchor.setAttribute('rel', 'noopener noreferrer');
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
 }

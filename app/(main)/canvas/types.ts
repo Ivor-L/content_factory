@@ -84,3 +84,17 @@ export type CanvasSnapshot = {
   nodes: AppCanvasNode[];
   edges: AppCanvasEdge[];
 };
+
+export type CanvasProjectRecord = {
+  id: string;
+  name: string;
+  thumbnail: string;
+  createdAt: string;
+  updatedAt: string;
+  canvasData?: {
+    nodes?: unknown[];
+    edges?: unknown[];
+    viewport?: { x: number; y: number; zoom: number };
+    resources?: unknown[];
+  };
+};

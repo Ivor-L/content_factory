@@ -1,0 +1,409 @@
+{
+  "name": "内容工厂-回调异步-复刻-web-云雾",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sora_web_callback",
+        "options": {}
+      },
+      "name": "sora2回调入口",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1968, 0],
+      "id": "21a45eb0-13a7-45d0-9e0e-826d1ff12946",
+      "webhookId": "1bfaf756-d0ec-4c99-9c43-6116bd0fe83d"
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Webhook 一般输入是 { headers, params, query, body, ... }\nconst root = $json || {};\n\n// 1) 拿到 body（回调内容）\nconst body = (root.body && typeof root.body === 'object') ? root.body : root;\n\n// 2) 新格式：body.context；旧格式：root.query（callbackUrl 参数）\nconst query = (root.query && typeof root.query === 'object') ? root.query : {};\nconst context = (body.context && typeof body.context === 'object') ? body.context : {};\n\n// ---------- 统一取字段 ----------\nconst status = String(body.status ?? body.data?.status ?? '').toLowerCase();\nconst ok =\n  status === 'success' ||\n  status === 'completed' ||\n  status === 'succeeded' ||\n  String(body.data?.status ?? '').toLowerCase() === 'completed' ||\n  String(body.data?.status ?? '').toLowerCase() === 'success';\n\nconst taskId =\n  body.task_id ||\n  body.taskId ||\n  body.data?.id ||\n  body.data?.taskId ||\n  null;\n\nlet resultUrl =\n  body.video_url ||\n  body.data?.video_url ||\n  body.data?.result_url ||\n  null;\n\nif (!resultUrl && body.data && typeof body.data.resultJson === 'string') {\n  try {\n    const parsed = JSON.parse(body.data.resultJson);\n    if (Array.isArray(parsed.resultUrls) && parsed.resultUrls[0]) {\n      resultUrl = parsed.resultUrls[0];\n    }\n  } catch (e) {}\n}\n\nconst failMsg =\n  body.failMsg ||\n  body.data?.failMsg ||\n  body.error?.message ||\n  body.error_message ||\n  body.message ||\n  body.msg ||\n  '';\n\nconst msg = ok ? 'success' : (failMsg || 'failed');\n\nconst pick = (...args) => {\n  for (const v of args) {\n    if (v != null && String(v).trim() !== '') return v;\n  }\n  return null;\n};\n\nreturn {\n  json: {\n    code: ok ? 200 : 500,\n    codeStr: ok ? '200' : '500',\n    msg,\n    status: body.status ?? body.data?.status ?? null,\n    taskId,\n    resultUrl,\n    failMsg,\n\n    // web 字段（从 context 取，兼容 query）\n    replication_id: pick(context.replication_id, context.record_id, query.replication_id, query.record_id),\n    callback_url:   pick(context.callback_url,   query.callback_url),\n    api_key:        pick(context.api_key,         query.api_key),\n    workflow_id_for_credits: pick(context.workflow_id_for_credits, query.workflow_id_for_credits),\n\n    // 保留飞书字段（兼容旧 Feishu 调用，web 场景为空）\n    record_id:            pick(context.record_id,            query.record_id),\n    app_token:            pick(context.app_token,            query.app_token),\n    table_id:             pick(context.table_id,             query.table_id),\n    out_app_token:        pick(context.out_app_token,        query.out_app_token),\n    out_table_id:         pick(context.out_table_id,         query.out_table_id),\n    tenant_access_token:  pick(context.tenant_access_token,  query.tenant_access_token),\n\n    debug_raw_keys: Object.keys(body || {})\n  }\n};\n"
+      },
+      "name": "解析回调+上下文",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1720, 0],
+      "id": "bc08bdf4-ab0a-43db-bd96-91e3296b0830"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "success",
+              "leftValue": "={{ $('解析回调+上下文').item.json.codeStr }}",
+              "rightValue": "200",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "是否生成成功",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-1472, 0],
+      "id": "128ec069-35bc-4cb4-8283-dbccfda120f5"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('解析回调+上下文').item.json.resultUrl }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "video_data"
+            }
+          }
+        }
+      },
+      "name": "下载视频",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [-1224, -100],
+      "id": "8fca9fa2-586a-4130-a233-0b66dfa70c2c"
+    },
+    {
+      "parameters": {
+        "jsCode": "const taskId = $json.taskId || `t${Date.now()}`;\nreturn {\n  json: {\n    ...$json,\n    taskId,\n    ff_inPath: `/tmp/${taskId}.mp4`,\n    ff_outPath: `/tmp/${taskId}_drop1.mp4`,\n    ff_outFileName: `sora_video_${taskId}_drop1.mp4`,\n  },\n  binary: $binary,\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-976, -100],
+      "id": "4d989c2e-03ca-4c8a-8cba-7f1fc65e47de",
+      "name": "生成FFmpeg路径"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $json.ff_inPath }}",
+        "dataPropertyName": "video_data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [-728, -100],
+      "id": "9280f6eb-255a-4371-b613-05e6b053691c",
+      "name": "落盘输入视频"
+    },
+    {
+      "parameters": {
+        "command": "=ffmpeg -y -i \"{{$json.ff_inPath}}\" \\\n-vf \"trim=start=1,setpts=PTS-STARTPTS\" \\\n-af \"atrim=start=1,asetpts=PTS-STARTPTS\" \\\n-c:v libx264 -crf 20 -preset veryfast \\\n-c:a aac -b:a 128k \\\n-movflags +faststart \\\n\"{{$json.ff_outPath}}\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [-480, -100],
+      "id": "bf186f8d-3267-4ee2-bb3a-24fb34bc453c",
+      "name": "FFmpeg 去首帧"
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $('生成FFmpeg路径').item.json.ff_outPath }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [-232, -100],
+      "id": "c03f943b-cdaa-4827-a65c-4e83b3884cbc",
+      "name": "读回处理后视频"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.item;\nconst base = item.json;\n\nreturn {\n  json: {\n    taskId: base.taskId,\n    record_id: base.record_id,\n    app_token: base.app_token,\n    table_id: base.table_id,\n    tenant_access_token: base.tenant_access_token,\n    api_key: base.api_key,\n    workflow_id_for_credits: base.workflow_id_for_credits,\n    fileName: `sora_video_${base.taskId}.mp4`\n  },\n  binary: item.binary\n};\n"
+      },
+      "name": "准备上传参数",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [16, -100],
+      "id": "da5934e3-091e-43ac-8686-de8ff041d755"
+    },
+    {
+      "parameters": {
+        "bucket": "flowonn",
+        "pathname": "/n8n_data",
+        "name": "=data"
+      },
+      "name": "OSSClient",
+      "type": "n8n-nodes-oss.OSSClient",
+      "typeVersion": 1,
+      "position": [264, -100],
+      "id": "9b9d91cf-6d06-43a9-ad8b-4f5e3b04c607",
+      "credentials": {
+        "OSSClientApi": {
+          "id": "MPvkbfHzbiJJqg7q",
+          "name": "OSSClient account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const keyRaw = $json.name || $json.objectKey || '';\nconst key = String(keyRaw).replace(/^\\/+/, '');\n\nconst cdnHost = 'https://oss.flowonn.com';\nconst publicUrl = `${cdnHost}/${encodeURI(key)}`;\n\nreturn {\n  json: {\n    publicUrl,\n    record_id: $json.record_id,\n    app_token: $json.app_token,\n    table_id: $json.table_id,\n    tenant_access_token: $json.tenant_access_token,\n    api_key: $json.api_key,\n    workflow_id_for_credits: $json.workflow_id_for_credits\n  }\n};\n"
+      },
+      "name": "网址转换",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [512, -100],
+      "id": "a23c940e-10d4-4252-98eb-239cb96d1be4"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('解析回调+上下文').item.json || {};\nconst publicUrl = $json.publicUrl || '';\nreturn {\n  json: {\n    id: ctx.replication_id,\n    replication_id: ctx.replication_id || '',\n    callback_url: ctx.callback_url || '',\n    api_key: ctx.api_key || '',\n    workflow_id_for_credits: ctx.workflow_id_for_credits || '',\n    videoUrl: publicUrl,\n    taskId: ctx.taskId || ''\n  }\n};\n"
+      },
+      "name": "准备写回数据",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [760, -100],
+      "id": "f1a2b3c4-d5e6-7890-abcd-ef1234567890"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "replications",
+        "filterType": "manual",
+        "matchType": "allFilters",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.replication_id }}"
+            }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "status", "fieldValue": "completed" },
+            { "fieldId": "result", "fieldValue": "={{ JSON.stringify({videoUrl: $json.videoUrl, provider: 'yunwu', taskId: $json.taskId}) }}" }
+          ]
+        }
+      },
+      "continueOnFail": true,
+      "alwaysOutputData": true,
+      "name": "写回Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1008, -100],
+      "id": "a2b3c4d5-e6f7-8901-bcde-f12345678901",
+      "credentials": {
+        "supabaseApi": {
+          "id": "5XGJWMLxSG8cgpYd",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('准备写回数据').item.json.callback_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ task_id: $('准备写回数据').item.json.replication_id, status: 'completed', videoUrl: $('准备写回数据').item.json.videoUrl, result: { videoUrl: $('准备写回数据').item.json.videoUrl, provider: 'yunwu', taskId: $('准备写回数据').item.json.taskId } }) }}",
+        "options": {}
+      },
+      "continueOnFail": true,
+      "alwaysOutputData": true,
+      "name": "通知App回调",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1256, -100],
+      "id": "b3c4d5e6-f7a8-9012-cdef-123456789012"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.atomx.top/workflow-credits/query?workflow_id={{ $('解析回调+上下文').item.json.workflow_id_for_credits }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1504, -100],
+      "id": "cde9d113-3982-4025-bc0c-1bbd52c9117d",
+      "name": "查询工作流积分-子流程"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.atomx.top/api/credits/deduct",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "={{ $('解析回调+上下文').item.json.api_key }}"
+            },
+            {
+              "name": "amount",
+              "value": "={{ $json.data.credit_cost }}"
+            },
+            {
+              "name": "reason",
+              "value": "yunwu_sora2_video"
+            },
+            {
+              "name": "workflow_id",
+              "value": "={{ $json.data.workflow_id }}"
+            },
+            {
+              "name": "workflow_name",
+              "value": "={{ $json.data.workflow_name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c1a9f0d3-0365-4c1b-aaa6-72b8d8246a12",
+      "name": "扣除积分",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1752, -100]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "function safeTmpMp4(p, name) {\n  if (!p) return null;\n  if (typeof p !== 'string') throw new Error(`${name} 不是字符串`);\n  if (!p.startsWith('/tmp/')) throw new Error(`${name} 非 /tmp 路径，拒绝删除：${p}`);\n  if (!p.endsWith('.mp4')) throw new Error(`${name} 非 mp4，拒绝删除：${p}`);\n  if (p.includes('..')) throw new Error(`${name} 包含 ..，拒绝删除：${p}`);\n  return p;\n}\n\nconst inPath = safeTmpMp4($json.ff_inPath, 'ff_inPath');\nconst outPath = safeTmpMp4($json.ff_outPath, 'ff_outPath');\n\nconst paths = [inPath, outPath].filter(Boolean);\nconst quoted = paths.map(p => `\"${p.replace(/\"/g, '\\\\\"')}\"`).join(' ');\nconst cleanup_cmd = paths.length\n  ? `rm -f ${quoted} || true`\n  : `echo \"no tmp files to delete\"`;\n\nreturn {\n  json: { ...$json, cleanup_cmd, cleanup_paths: paths },\n  binary: $binary\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [16, 100],
+      "id": "a94e00a8-e5f5-4c94-b18e-2732c2055255",
+      "name": "清理/tmp临时视频"
+    },
+    {
+      "parameters": {
+        "command": "={{ $json.cleanup_cmd }}"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [264, 100],
+      "id": "9bedfcae-b4a0-4417-8bd1-022de0cc8351",
+      "name": "删除/tmp文件"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('解析回调+上下文').item.json.callback_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ task_id: $('解析回调+上下文').item.json.replication_id, status: 'failed', result: { error: $('解析回调+上下文').item.json.failMsg, provider: 'yunwu' } }) }}",
+        "options": {}
+      },
+      "continueOnFail": true,
+      "alwaysOutputData": true,
+      "name": "通知App回调-失败",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-1224, 150],
+      "id": "c4d5e6f7-a8b9-0123-def0-234567890123"
+    }
+  ],
+  "pinData": {
+    "sora2回调入口": [
+      {
+        "json": {
+          "headers": {
+            "host": "hooks.atomx.top",
+            "content-type": "application/json",
+            "user-agent": "python-httpx/0.28.1"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "status": "success",
+            "task_id": "video_6481ef4f-ea45-43f4-adc9-807b8c341a9d",
+            "video_url": "https://cdn.yunwu.ai/xxx.mp4",
+            "context": {
+              "replication_id": "clxxx123",
+              "callback_url": "https://your-app.com/api/webhook/replication",
+              "api_key": "sk_xxx",
+              "workflow_id_for_credits": "flow_farm_copy"
+            }
+          },
+          "webhookUrl": "http://localhost:5678/webhook/sora_web_callback",
+          "executionMode": "production"
+        },
+        "pairedItem": { "item": 0 }
+      }
+    ]
+  },
+  "connections": {
+    "sora2回调入口": {
+      "main": [[{ "node": "解析回调+上下文", "type": "main", "index": 0 }]]
+    },
+    "解析回调+上下文": {
+      "main": [[{ "node": "是否生成成功", "type": "main", "index": 0 }]]
+    },
+    "是否生成成功": {
+      "main": [
+        [{ "node": "下载视频", "type": "main", "index": 0 }],
+        [{ "node": "通知App回调-失败", "type": "main", "index": 0 }]
+      ]
+    },
+    "下载视频": {
+      "main": [[{ "node": "生成FFmpeg路径", "type": "main", "index": 0 }]]
+    },
+    "生成FFmpeg路径": {
+      "main": [[{ "node": "落盘输入视频", "type": "main", "index": 0 }]]
+    },
+    "落盘输入视频": {
+      "main": [[{ "node": "FFmpeg 去首帧", "type": "main", "index": 0 }]]
+    },
+    "FFmpeg 去首帧": {
+      "main": [[{ "node": "读回处理后视频", "type": "main", "index": 0 }]]
+    },
+    "读回处理后视频": {
+      "main": [
+        [
+          { "node": "准备上传参数", "type": "main", "index": 0 },
+          { "node": "清理/tmp临时视频", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "准备上传参数": {
+      "main": [[{ "node": "OSSClient", "type": "main", "index": 0 }]]
+    },
+    "OSSClient": {
+      "main": [[{ "node": "网址转换", "type": "main", "index": 0 }]]
+    },
+    "网址转换": {
+      "main": [[{ "node": "准备写回数据", "type": "main", "index": 0 }]]
+    },
+    "准备写回数据": {
+      "main": [[{ "node": "写回Supabase", "type": "main", "index": 0 }]]
+    },
+    "写回Supabase": {
+      "main": [[{ "node": "通知App回调", "type": "main", "index": 0 }]]
+    },
+    "通知App回调": {
+      "main": [[{ "node": "查询工作流积分-子流程", "type": "main", "index": 0 }]]
+    },
+    "查询工作流积分-子流程": {
+      "main": [[{ "node": "扣除积分", "type": "main", "index": 0 }]]
+    },
+    "清理/tmp临时视频": {
+      "main": [[{ "node": "删除/tmp文件", "type": "main", "index": 0 }]]
+    },
+    "删除/tmp文件": {
+      "main": [[]]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "ccd0e528-d4e9-49b9-bd8e-0e8876f9df89",
+  "meta": {
+    "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
+  },
+  "id": "dctPumNGHBoSokUx",
+  "tags": []
+}

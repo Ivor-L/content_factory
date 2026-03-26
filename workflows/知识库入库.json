@@ -1,0 +1,84 @@
+{
+  "name": "知识库入库",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "knowledge-ingest",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        200,
+        300
+      ],
+      "id": "webhook-knowledge-ingest",
+      "name": "Webhook",
+      "webhookId": "knowledge-ingest-backend-only"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? {};\nreturn [{ json: { ok: true, message: '切片逻辑已迁移到后端，请调用 /api/assets/writing-styles/:id/upload', received: { style_id: body.style_id || body.record_id || null, has_file: Boolean(body.file), has_content: Boolean(body.contentText || body.text) } } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ],
+      "id": "code-knowledge-info",
+      "name": "提示后端已接管切片"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        700,
+        300
+      ],
+      "id": "respond-knowledge-ingest",
+      "name": "Respond"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "提示后端已接管切片",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提示后端已接管切片": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "f98881af-64aa-46f6-b25e-95e02498b419",
+  "meta": {
+    "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
+  },
+  "id": "knowledge-ingest-backend-only",
+  "tags": []
+}
