@@ -65,16 +65,30 @@ function MainLayoutChrome({ children }: { children: ReactNode }) {
         }
       }
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         router.push(tenantLoginPath);
+        return;
+      }
+
+      // 检查会员是否过期（free 用户不受限制）
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('plan, plan_expires_at')
+        .eq('id', session.user.id)
+        .maybeSingle();
+
+      if (profile && profile.plan !== 'free' && profile.plan_expires_at) {
+        const isExpired = new Date(profile.plan_expires_at) < new Date();
+        if (isExpired) {
+          router.push(`${basePath || ''}/expired`);
+          return;
+        }
       }
     };
 
     checkSession();
-  }, [router, tenantLoginPath]);
+  }, [router, tenantLoginPath, basePath]);
 
   useEffect(() => {
     if (!pathname?.includes("/canvas")) {

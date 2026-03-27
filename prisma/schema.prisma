@@ -1016,14 +1016,19 @@ model ViralReferenceItem {
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model profiles {
-  id         String    @id @db.Uuid
-  updated_at DateTime? @db.Timestamptz(6)
-  username   String?
-  full_name  String?
-  avatar_url String?
-  website    String?
-  api_key    String?   @unique
-  users      users     @relation(fields: [id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  id              String    @id @db.Uuid
+  updated_at      DateTime? @db.Timestamptz(6)
+  username        String?
+  full_name       String?
+  avatar_url      String?
+  website         String?
+  api_key         String?   @unique
+  user_no         BigInt?   @unique
+  role            String    @default("free")
+  plan            String    @default("free")
+  plan_expires_at DateTime? @db.Timestamptz(6)
+  is_admin        Boolean   @default(false)
+  users           users     @relation(fields: [id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@schema("public")
 }
