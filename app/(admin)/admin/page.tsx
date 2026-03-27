@@ -9,10 +9,10 @@ import {
 } from 'lucide-react';
 
 const PLAN_OPTIONS = [
-  { value: 'free',       label: 'Free',    desc: '免费版' },
-  { value: 'pro',        label: 'Pro',     desc: '专业版' },
-  { value: 'studio',     label: 'Studio',  desc: '工作室' },
-  { value: 'enterprise', label: 'Enterprise', desc: '企业版' },
+  { value: 'free',       label: 'Free',       desc: 'Basic access' },
+  { value: 'pro',        label: 'Pro',        desc: 'Professional' },
+  { value: 'studio',     label: 'Studio',     desc: 'Studio team' },
+  { value: 'enterprise', label: 'Enterprise', desc: 'Enterprise' },
 ];
 const PLAN_COLORS: Record<string, string> = {
   free:       'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
@@ -588,7 +588,6 @@ export default function AdminUsersPage() {
                                   : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-400'
                               }`}>
                               <p className="text-xs font-bold">{o.label}</p>
-                              <p className={`text-[10px] mt-0.5 ${plan === o.value ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400'}`}>{o.desc}</p>
                             </button>
                           ))}
                         </div>
