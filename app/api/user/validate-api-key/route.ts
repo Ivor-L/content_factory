@@ -27,13 +27,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ valid: false, reason: 'already_bound' });
   }
 
-  // 2. 验证 key 是否有效（积分消耗记录接口）
+  // 2. 验证 key 是否有效（余额查询接口）
   for (const base of POINTS_API_BASES) {
     try {
-      const url = new URL('/usage/events', base);
+      const url = new URL('/balance', base);
       url.searchParams.set('apiKey', apiKey);
-      url.searchParams.set('page', '1');
-      url.searchParams.set('size', '1');
 
       const res = await fetch(url.toString(), { method: 'GET', cache: 'no-store' });
 
@@ -45,9 +43,7 @@ export async function POST(request: Request) {
       const data = text ? JSON.parse(text) : null;
       if (!data?.ok) continue;
 
-      const balance = typeof data?.data?.data?.[0]?.balanceAfter === 'number'
-        ? data.data.data[0].balanceAfter
-        : null;
+      const balance = typeof data?.data?.balance === 'number' ? data.data.balance : null;
 
       return NextResponse.json({ valid: true, balance });
     } catch {
