@@ -27,23 +27,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ valid: false, reason: 'already_bound' });
   }
 
-  // 2. 验证 key 是否有效（余额接口）
+  // 2. 验证 key 是否有效（积分消耗记录接口）
   for (const base of POINTS_API_BASES) {
     try {
-      const url = new URL('/api/balance/check', base);
-      url.searchParams.set('api_key', apiKey);
-      url.searchParams.set('amount', '0');
+      const url = new URL('/usage/events/all', base);
+      url.searchParams.set('apiKey', apiKey);
 
-      let res = await fetch(url.toString(), { method: 'GET', cache: 'no-store' });
-
-      if (res.status === 405) {
-        res = await fetch(new URL('/api/balance/check', base).toString(), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ api_key: apiKey, amount: 0 }),
-          cache: 'no-store',
-        });
-      }
+      const res = await fetch(url.toString(), { method: 'GET', cache: 'no-store' });
 
       if (!res.ok) continue;
 
@@ -51,16 +41,11 @@ export async function POST(request: Request) {
       if (looksLikeHtml(res, text)) continue;
 
       const data = text ? JSON.parse(text) : null;
-      const balanceRaw = [
-        data?.balance, data?.data?.balance, data?.data?.credits,
-        data?.credits, data?.remaining, data?.data?.remaining,
-      ].find((v) => typeof v === 'number' || typeof v === 'string');
+      if (!data?.ok) continue;
 
-      const balance = typeof balanceRaw === 'number'
-        ? balanceRaw
-        : typeof balanceRaw === 'string' && Number.isFinite(Number(balanceRaw))
-          ? Number(balanceRaw)
-          : null;
+      // 从最近一条消耗记录取余额
+      const events = Array.isArray(data?.data) ? data.data : [];
+      const balance = typeof events[0]?.balanceAfter === 'number' ? events[0].balanceAfter : null;
 
       return NextResponse.json({ valid: true, balance });
     } catch {
