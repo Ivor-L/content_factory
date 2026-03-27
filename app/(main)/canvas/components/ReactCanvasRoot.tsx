@@ -1335,6 +1335,7 @@ export function ReactCanvasRoot({
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const rfInstanceRef = useRef<{ screenToFlowPosition: (p: { x: number; y: number }) => { x: number; y: number } } | null>(null);
   const hydratingRef = useRef(false);
+  const lastHydratedRef = useRef<{ projectId: string; hasData: boolean } | null>(null);
   const nodesRef = useRef<Node<MinimalFlowNodeData>[]>(nodes);
   useEffect(() => {
     nodesRef.current = nodes;
@@ -1474,7 +1475,16 @@ export function ReactCanvasRoot({
   }, [currentProjectId]);
 
   useEffect(() => {
-    if (!currentProject) return;
+    if (!currentProject) {
+      lastHydratedRef.current = null;
+      return;
+    }
+    const last = lastHydratedRef.current;
+    const hasData = !!currentProject.canvasData;
+    // Skip re-hydrate if same project AND (already loaded with data, OR data still hasn't arrived).
+    // This prevents auto-save from resetting canvas by updating currentProject reference.
+    if (last?.projectId === currentProject.id && (last.hasData || !hasData)) return;
+    lastHydratedRef.current = { projectId: currentProject.id, hasData };
     hydratingRef.current = true;
     const normalized = normalizeRuntimeCanvasData(currentProject.canvasData, initialPrompt);
     setNodes(runtimeToFlowNodes(normalized.nodes));

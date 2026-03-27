@@ -179,7 +179,8 @@ export function CanvasAgentDrawer() {
         "pointer-events-none fixed inset-0 z-40 flex justify-end",
         isOpen && state.active ? "pointer-events-auto" : "pointer-events-none",
       )}
-      aria-hidden={!isOpen}
+      aria-hidden={!isOpen || undefined}
+      inert={!isOpen || undefined}
     >
       <div
         className={clsx(
