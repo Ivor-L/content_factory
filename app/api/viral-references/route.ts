@@ -28,7 +28,10 @@ export async function GET(request: Request) {
   const publishedAfter = parseDate(searchParams.get("publishedAfter"));
   const contentType = safeTrim(searchParams.get("contentType")); // 'video' | 'image' | null
 
-  const where: Prisma.ViralReferenceItemWhereInput = {};
+  const currentOwner = userId ?? apiKey!;
+  const where: Prisma.ViralReferenceItemWhereInput = {
+    ingestedBy: currentOwner,
+  };
   if (platformList.length > 0) {
     where.platform = { in: platformList };
   }
@@ -113,8 +116,9 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Missing ids" }, { status: 400 });
   }
 
+  const currentOwner = userId ?? apiKey!;
   const result = await prisma.viralReferenceItem.deleteMany({
-    where: { id: { in: ids } },
+    where: { id: { in: ids }, ingestedBy: currentOwner },
   });
 
   return NextResponse.json({
