@@ -3,7 +3,7 @@ import { getRequestUserContext } from '@/lib/authServer';
 import {
   CanvasProjectInput,
   createCanvasProject,
-  listCanvasProjects,
+  listCanvasProjectsMeta,
 } from '@/lib/canvasProjects';
 
 export async function GET(request: NextRequest) {
@@ -17,10 +17,10 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const limitParam = Number(searchParams.get('limit'));
-  const limit = Number.isFinite(limitParam) ? limitParam : undefined;
+  const limit = Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 50;
 
   try {
-    const projects = await listCanvasProjects(userId, limit ?? 100);
+    const projects = await listCanvasProjectsMeta(userId, limit);
     return NextResponse.json({ data: projects });
   } catch (error) {
     return NextResponse.json(

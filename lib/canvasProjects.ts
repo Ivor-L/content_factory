@@ -254,6 +254,17 @@ async function rawListCanvasProjects(userId: string, limit: number): Promise<Can
   return rows.map(toRowFromSql);
 }
 
+async function rawListCanvasProjectsMeta(userId: string, limit: number): Promise<CanvasProjectRow[]> {
+  const rows = await prisma.$queryRaw<CanvasProjectTableRow[]>`
+    SELECT id, user_id, name, thumbnail, NULL::jsonb AS canvas_data, created_at, updated_at
+    FROM public.canvas_projects
+    WHERE user_id = ${userId}
+    ORDER BY updated_at DESC
+    LIMIT ${limit}
+  `;
+  return rows.map(toRowFromSql);
+}
+
 async function rawGetCanvasProject(userId: string, projectId: string): Promise<CanvasProjectRow | null> {
   const rows = await prisma.$queryRaw<CanvasProjectTableRow[]>`
     SELECT id, user_id, name, thumbnail, canvas_data, created_at, updated_at
@@ -331,6 +342,37 @@ export async function listCanvasProjects(userId: string, limit = 100): Promise<C
     }
     const rows = await rawListCanvasProjects(userId, take);
     return rows.map(toResponse);
+  });
+}
+
+export async function listCanvasProjectsMeta(userId: string, limit = 50): Promise<CanvasProjectResponse[]> {
+  const take = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 200) : 50;
+  return withCanvasProjectsTable(async () => {
+    if (canvasProjectDelegate) {
+      const rows = await canvasProjectDelegate.findMany({
+        where: { userId },
+        orderBy: { updatedAt: 'desc' },
+        take,
+        select: { id: true, userId: true, name: true, thumbnail: true, createdAt: true, updatedAt: true },
+      });
+      return (rows as CanvasProjectRow[]).map((r) => ({
+        id: r.id,
+        name: r.name,
+        thumbnail: r.thumbnail ?? '',
+        canvasData: { nodes: [], edges: [], viewport: DEFAULT_CANVAS_VIEWPORT },
+        createdAt: r.createdAt.toISOString(),
+        updatedAt: r.updatedAt.toISOString(),
+      }));
+    }
+    const rows = await rawListCanvasProjectsMeta(userId, take);
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      thumbnail: r.thumbnail ?? '',
+      canvasData: { nodes: [], edges: [], viewport: DEFAULT_CANVAS_VIEWPORT },
+      createdAt: r.createdAt.toISOString(),
+      updatedAt: r.updatedAt.toISOString(),
+    }));
   });
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { supabase } from "@/lib/supabaseClient";
 import type { CanvasProjectRecord } from "../types";
 
 export type { CanvasProjectRecord } from "../types";
@@ -15,8 +16,14 @@ type UseCanvasProjectsOptions = {
 };
 
 const DEFAULT_TIMEOUT_MS =
-  Number(process.env.NEXT_PUBLIC_CANVAS_FETCH_TIMEOUT_MS ?? "60000") || 60000;
+  Number(process.env.NEXT_PUBLIC_CANVAS_FETCH_TIMEOUT_MS ?? "30000") || 30000;
 const MAX_RETRIES = 2;
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 async function fetchWithTimeout(
   input: RequestInfo,
@@ -39,6 +46,7 @@ async function requestJson(
   input: RequestInfo,
   init?: RequestInit,
 ): Promise<CanvasProjectResponse> {
+  const authHeaders = await getAuthHeaders();
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
@@ -48,11 +56,12 @@ async function requestJson(
           credentials: "include",
           headers: {
             "Content-Type": "application/json",
+            ...authHeaders,
             ...(init?.headers as Record<string, string> | undefined),
           },
           ...init,
         },
-        DEFAULT_TIMEOUT_MS + attempt * 15000, // back off slightly each retry
+        DEFAULT_TIMEOUT_MS + attempt * 10000,
       );
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -66,7 +75,6 @@ async function requestJson(
       return payload;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      // AbortError -> treat as timeout, retry unless last attempt
       if (attempt === MAX_RETRIES - 1) {
         break;
       }
@@ -118,7 +126,7 @@ export function useCanvasProjects(
       if (!silent) setLoading(true);
       setError(null);
       try {
-        const payload = await requestJson("/api/canvas/projects?limit=200");
+        const payload = await requestJson("/api/canvas/projects?limit=50");
         const rows = Array.isArray(payload.data) ? payload.data : [];
         setProjects(rows);
         const previousSelection = currentProjectIdRef.current;
