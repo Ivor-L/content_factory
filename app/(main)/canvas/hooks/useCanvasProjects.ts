@@ -235,8 +235,18 @@ export function useCanvasProjects(
   }, [projects, currentProjectId]);
 
   const selectProject = useCallback((projectId: string | null) => {
-    setCurrentProjectId(projectId);
-  }, []);
+    if (!projectId) {
+      setCurrentProjectId(null);
+      return;
+    }
+    const existing = projects.find((item) => item.id === projectId);
+    if (existing?.canvasData) {
+      setCurrentProjectId(projectId);
+      return;
+    }
+    // canvasData not loaded yet — fetch full project
+    void fetchProjectById(projectId, false);
+  }, [projects, fetchProjectById]);
 
   return {
     projects,
