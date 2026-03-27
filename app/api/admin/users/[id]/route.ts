@@ -30,7 +30,13 @@ export async function GET(
 
   const { data: { user } } = await supabaseAdmin.auth.admin.getUserById(params.id);
 
-  return NextResponse.json({ data: { ...profile, email: user?.email ?? null } });
+  return NextResponse.json({
+    data: {
+      ...profile,
+      email: user?.email ?? null,
+      created_at: user?.created_at ?? null,
+    },
+  });
 }
 
 export async function PATCH(
