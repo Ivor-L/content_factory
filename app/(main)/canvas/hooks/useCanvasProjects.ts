@@ -234,19 +234,25 @@ export function useCanvasProjects(
     return projects.find((item) => item.id === currentProjectId) ?? null;
   }, [projects, currentProjectId]);
 
+  // When currentProjectId changes and canvasData is not loaded, silently fetch it
+  const projectsRef = useRef<CanvasProjectRecord[]>([]);
+  useEffect(() => { projectsRef.current = projects; }, [projects]);
+
+  useEffect(() => {
+    if (!currentProjectId) return;
+    const project = projectsRef.current.find((p) => p.id === currentProjectId);
+    if (!project || project.canvasData) return;
+    // Silently fetch full canvas data in the background
+    requestJson(`/api/canvas/projects/${currentProjectId}`)
+      .then((payload) => {
+        if (payload.data) upsertProject(payload.data as CanvasProjectRecord);
+      })
+      .catch(() => {});
+  }, [currentProjectId, upsertProject]);
+
   const selectProject = useCallback((projectId: string | null) => {
-    if (!projectId) {
-      setCurrentProjectId(null);
-      return;
-    }
-    const existing = projects.find((item) => item.id === projectId);
-    if (existing?.canvasData) {
-      setCurrentProjectId(projectId);
-      return;
-    }
-    // canvasData not loaded yet — fetch full project
-    void fetchProjectById(projectId, false);
-  }, [projects, fetchProjectById]);
+    setCurrentProjectId(projectId);
+  }, []);
 
   return {
     projects,
