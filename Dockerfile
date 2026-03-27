@@ -14,6 +14,8 @@ RUN apk add --no-cache libc6-compat python3 make g++
 COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* ./
 # Copy Prisma schema before install so `prisma generate` in postinstall can locate it
 COPY prisma ./prisma
+# Use npmmirror for Prisma engine binaries to avoid CN network issues
+ENV PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma
 RUN \
   if [ -f package-lock.json ]; then npm ci --registry=https://registry.npmmirror.com; \
   elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm i --frozen-lockfile --registry=https://registry.npmmirror.com; \
