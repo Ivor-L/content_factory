@@ -15,15 +15,16 @@ async function requireAdmin(request: Request) {
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const adminId = await requireAdmin(request);
   if (!adminId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { data: rows } = await supabaseAdmin
     .from("user_referrals")
     .select("id, invitee_id, created_at, source")
-    .eq("referrer_id", params.id)
+    .eq("referrer_id", id)
     .order("created_at", { ascending: false });
 
   if (!rows || rows.length === 0) {

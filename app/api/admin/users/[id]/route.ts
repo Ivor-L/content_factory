@@ -15,33 +15,34 @@ async function requireAdmin(request: Request) {
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const adminId = await requireAdmin(request);
   if (!adminId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { data: profile } = await supabaseAdmin
     .from("profiles")
     .select("id, user_no, plan, role, plan_expires_at, is_admin, is_banned, api_key, updated_at, notes, referred_by")
-    .eq("id", params.id)
+    .eq("id", id)
     .maybeSingle();
 
   if (!profile) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const { data: { user } } = await supabaseAdmin.auth.admin.getUserById(params.id);
+  const { data: { user } } = await supabaseAdmin.auth.admin.getUserById(id);
 
   // Referral count from user_referrals table
   const { count: referralCount } = await supabaseAdmin
     .from("user_referrals")
     .select("*", { count: "exact", head: true })
-    .eq("referrer_id", params.id);
+    .eq("referrer_id", id);
 
   // Referrer info from user_referrals
   let referrer: { id: string; user_no: number | null; email: string | null } | null = null;
   const { data: boundRow } = await supabaseAdmin
     .from("user_referrals")
     .select("referrer_id")
-    .eq("invitee_id", params.id)
+    .eq("invitee_id", id)
     .maybeSingle();
 
   if (boundRow?.referrer_id) {
@@ -64,7 +65,7 @@ export async function GET(
   const { data: logs } = await supabaseAdmin
     .from("admin_operation_logs")
     .select("id, admin_id, action, changes, created_at")
-    .eq("target_user_id", params.id)
+    .eq("target_user_id", id)
     .order("created_at", { ascending: false })
     .limit(10);
 
@@ -100,8 +101,9 @@ async function writeLog(
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const adminId = await requireAdmin(request);
   if (!adminId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
@@ -129,7 +131,7 @@ export async function PATCH(
   const { data, error } = await supabaseAdmin
     .from("profiles")
     .update(updates)
-    .eq("id", params.id)
+    .eq("id", id)
     .select()
     .maybeSingle();
 
@@ -140,7 +142,7 @@ export async function PATCH(
   for (const key of allowed) {
     if (key in body) logChanges[key] = body[key];
   }
-  await writeLog(adminId, params.id, "update_profile", logChanges);
+  await writeLog(adminId, id, "update_profile", logChanges);
 
   return NextResponse.json({ data });
 }

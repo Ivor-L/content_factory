@@ -62,15 +62,16 @@ async function fetchUsageStats(
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const adminId = await requireAdmin(request);
   if (!adminId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { data: profile } = await supabaseAdmin
     .from("profiles")
     .select("api_key")
-    .eq("id", params.id)
+    .eq("id", id)
     .maybeSingle();
 
   if (!profile?.api_key) {
