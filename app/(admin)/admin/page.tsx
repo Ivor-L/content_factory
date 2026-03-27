@@ -9,10 +9,10 @@ import {
 } from 'lucide-react';
 
 const PLAN_OPTIONS = [
-  { value: 'free',       label: 'Free',       desc: 'Basic access' },
-  { value: 'pro',        label: 'Pro',        desc: 'Professional' },
-  { value: 'studio',     label: 'Studio',     desc: 'Studio team' },
-  { value: 'enterprise', label: 'Enterprise', desc: 'Enterprise' },
+  { value: 'free',       label: 'Free' },
+  { value: 'pro',        label: 'Pro' },
+  { value: 'studio',     label: 'Studio' },
+  { value: 'enterprise', label: 'Enterprise' },
 ];
 const PLAN_COLORS: Record<string, string> = {
   free:       'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
