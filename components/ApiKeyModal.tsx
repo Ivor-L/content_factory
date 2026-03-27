@@ -27,7 +27,7 @@ export function ApiKeyModal() {
   const checkApiKey = useCallback(async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      
+
       if (!session) {
         router.replace(tenantLoginPath);
         setChecking(false);
@@ -45,6 +45,19 @@ export function ApiKeyModal() {
       }
 
       if (!profile?.api_key) {
+        // 先尝试自动绑定，成功则无需弹窗
+        try {
+          const res = await fetch('/api/auth/provision-credits', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.ok) return; // 自动绑定成功，不弹窗
+          }
+        } catch {
+          // 自动绑定失败，降级到手动弹窗
+        }
         setIsOpen(true);
       }
     } catch (error) {
