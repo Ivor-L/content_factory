@@ -131,7 +131,7 @@ export function useCanvasProjects(
         setProjects(rows);
         const previousSelection = currentProjectIdRef.current;
         if (!previousSelection && autoSelectFirstProject && rows.length > 0) {
-          setCurrentProjectId(rows[0].id);
+          // autoSelectFirstProject disabled — user should choose manually
         } else if (
           previousSelection &&
           rows.every((item) => item.id !== previousSelection)
