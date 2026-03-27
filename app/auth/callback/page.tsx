@@ -16,6 +16,13 @@ export default function AuthCallbackPage() {
         syncServerSession(session?.access_token ?? null).catch((error) => {
           console.warn('[auth] Failed to sync session after callback', error);
         });
+        // 自动为新用户绑定积分账户
+        if (session?.access_token) {
+          fetch('/api/auth/provision-credits', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          }).catch(() => {});
+        }
         router.push('/dashboard');
       }
     });
@@ -27,6 +34,11 @@ export default function AuthCallbackPage() {
         syncServerSession(session.access_token ?? null).catch((error) => {
           console.warn('[auth] Failed to sync session after getSession', error);
         });
+        // 自动为新用户绑定积分账户
+        fetch('/api/auth/provision-credits', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }).catch(() => {});
         router.push('/dashboard');
       }
     });
