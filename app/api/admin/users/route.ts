@@ -19,34 +19,54 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const q = searchParams.get("q")?.trim() ?? "";
-  const referredBy = searchParams.get("referredBy")?.trim() ?? "";
+  const filterPlan = searchParams.get("plan")?.trim() ?? "";
+  const filterStatus = searchParams.get("status")?.trim() ?? ""; // active | expired | banned
   const page = Math.max(1, Number(searchParams.get("page") ?? 1));
   const pageSize = 20;
 
-  // ── Referral list mode: return users referred by a specific user ──────────
-  if (referredBy) {
-    const { data: profiles } = await supabaseAdmin
+  // ── Filter mode (plan/status): query profiles directly ───────────────────
+  if (filterPlan || filterStatus) {
+    let query = supabaseAdmin
       .from("profiles")
-      .select("id, user_no, plan, plan_expires_at, is_admin, api_key")
-      .eq("referred_by", referredBy)
-      .order("user_no", { ascending: true });
+      .select("id, user_no, plan, plan_expires_at, is_admin, is_banned, api_key, updated_at")
+      .order("user_no", { ascending: true })
+      .range((page - 1) * pageSize, page * pageSize - 1);
+
+    if (filterPlan) {
+      query = query.eq("plan", filterPlan);
+    }
+    if (filterStatus === "banned") {
+      query = query.eq("is_banned", true);
+    } else if (filterStatus === "expired") {
+      query = query.lt("plan_expires_at", new Date().toISOString()).neq("plan", "free");
+    } else if (filterStatus === "active") {
+      query = query.eq("is_banned", false);
+    }
+
+    const { data: profiles, error } = await query;
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     const ids = (profiles ?? []).map((p) => p.id);
-    const emailMap: Record<string, string | undefined> = {};
-    if (ids.length > 0) {
-      // batch lookup emails
-      await Promise.all(
-        ids.map(async (id) => {
+    const emailMap: Record<string, string | null> = {};
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
           const { data: { user } } = await supabaseAdmin.auth.admin.getUserById(id);
-          if (user) emailMap[id] = user.email;
-        })
-      );
-    }
-    const data = (profiles ?? []).map((p) => ({ ...p, email: emailMap[p.id] ?? null }));
+          emailMap[id] = user?.email ?? null;
+        } catch {
+          emailMap[id] = null;
+        }
+      })
+    );
+
+    const data = (profiles ?? [])
+      .filter((p) => !q || (emailMap[p.id] ?? "").toLowerCase().includes(q.toLowerCase()))
+      .map((p) => ({ ...p, email: emailMap[p.id] ?? null }));
+
     return NextResponse.json({ data, total: data.length });
   }
 
-  // ── Normal list mode ────────────────────────────────────────────────────
+  // ── Normal list mode (email search + pagination) ─────────────────────────
   const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers({
     page,
     perPage: pageSize,
@@ -56,13 +76,13 @@ export async function GET(request: Request) {
 
   let query = supabaseAdmin
     .from("profiles")
-    .select("id, user_no, plan, role, plan_expires_at, is_admin, api_key, updated_at")
+    .select("id, user_no, plan, plan_expires_at, is_admin, is_banned, api_key, updated_at")
     .order("user_no", { ascending: true });
 
   if (q) {
-    const matched = authUsers?.users.filter((u) =>
-      u.email?.toLowerCase().includes(q.toLowerCase())
-    ).map((u) => u.id) ?? [];
+    const matched = authUsers?.users
+      .filter((u) => u.email?.toLowerCase().includes(q.toLowerCase()))
+      .map((u) => u.id) ?? [];
     if (matched.length > 0) {
       query = query.in("id", matched);
     } else {
@@ -76,7 +96,7 @@ export async function GET(request: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const emailMap = Object.fromEntries(
-    (authUsers?.users ?? []).map((u) => [u.id, u.email])
+    (authUsers?.users ?? []).map((u) => [u.id, u.email ?? null])
   );
 
   const data = (profiles ?? []).map((p) => ({

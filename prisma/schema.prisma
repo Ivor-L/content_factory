@@ -1028,6 +1028,7 @@ model profiles {
   plan            String    @default("free")
   plan_expires_at DateTime? @db.Timestamptz(6)
   is_admin        Boolean   @default(false)
+  is_banned       Boolean   @default(false)
   notes           String?
   referred_by     String?
   users           users     @relation(fields: [id], references: [id], onDelete: NoAction, onUpdate: NoAction)

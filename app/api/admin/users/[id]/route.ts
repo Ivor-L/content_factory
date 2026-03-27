@@ -22,7 +22,7 @@ export async function GET(
 
   const { data: profile } = await supabaseAdmin
     .from("profiles")
-    .select("id, user_no, plan, role, plan_expires_at, is_admin, api_key, updated_at, notes, referred_by")
+    .select("id, user_no, plan, role, plan_expires_at, is_admin, is_banned, api_key, updated_at, notes, referred_by")
     .eq("id", params.id)
     .maybeSingle();
 
@@ -30,19 +30,25 @@ export async function GET(
 
   const { data: { user } } = await supabaseAdmin.auth.admin.getUserById(params.id);
 
-  // Referral count
+  // Referral count from user_referrals table
   const { count: referralCount } = await supabaseAdmin
-    .from("profiles")
+    .from("user_referrals")
     .select("*", { count: "exact", head: true })
-    .eq("referred_by", params.id);
+    .eq("referrer_id", params.id);
 
-  // Referrer info
+  // Referrer info from user_referrals
   let referrer: { id: string; user_no: number | null; email: string | null } | null = null;
-  if (profile.referred_by) {
+  const { data: boundRow } = await supabaseAdmin
+    .from("user_referrals")
+    .select("referrer_id")
+    .eq("invitee_id", params.id)
+    .maybeSingle();
+
+  if (boundRow?.referrer_id) {
     const { data: refProfile } = await supabaseAdmin
       .from("profiles")
       .select("id, user_no")
-      .eq("id", profile.referred_by)
+      .eq("id", boundRow.referrer_id)
       .maybeSingle();
     if (refProfile) {
       const { data: { user: refUser } } = await supabaseAdmin.auth.admin.getUserById(refProfile.id);
@@ -54,6 +60,14 @@ export async function GET(
     }
   }
 
+  // Recent operation logs
+  const { data: logs } = await supabaseAdmin
+    .from("admin_operation_logs")
+    .select("id, admin_id, action, changes, created_at")
+    .eq("target_user_id", params.id)
+    .order("created_at", { ascending: false })
+    .limit(10);
+
   return NextResponse.json({
     data: {
       ...profile,
@@ -61,8 +75,27 @@ export async function GET(
       created_at: user?.created_at ?? null,
       referral_count: referralCount ?? 0,
       referrer,
+      logs: logs ?? [],
     },
   });
+}
+
+async function writeLog(
+  adminId: string,
+  targetUserId: string,
+  action: string,
+  changes: Record<string, unknown>
+) {
+  try {
+    await supabaseAdmin.from("admin_operation_logs").insert({
+      admin_id: adminId,
+      target_user_id: targetUserId,
+      action,
+      changes,
+    });
+  } catch {
+    // non-blocking, ignore if table doesn't exist yet
+  }
 }
 
 export async function PATCH(
@@ -73,14 +106,14 @@ export async function PATCH(
   if (!adminId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await request.json();
-  const allowed = ["plan", "role", "plan_expires_at", "is_admin", "notes", "referred_by"];
+  const allowed = ["plan", "role", "plan_expires_at", "is_admin", "is_banned", "notes", "referred_by"];
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
   for (const key of allowed) {
     if (key in body) updates[key] = body[key];
   }
 
-  // Resolve referred_by: if a numeric string (user_no), look up the UUID
+  // Resolve referred_by: if numeric string (user_no), look up UUID
   if (updates.referred_by && /^\d+$/.test(String(updates.referred_by))) {
     const { data: refProfile } = await supabaseAdmin
       .from("profiles")
@@ -101,6 +134,13 @@ export async function PATCH(
     .maybeSingle();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Write operation log (non-blocking)
+  const logChanges: Record<string, unknown> = {};
+  for (const key of allowed) {
+    if (key in body) logChanges[key] = body[key];
+  }
+  await writeLog(adminId, params.id, "update_profile", logChanges);
 
   return NextResponse.json({ data });
 }

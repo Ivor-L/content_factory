@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "react-hot-toast";
 import { useTenant } from "@/hooks/useTenant";
 import { AuthSessionSync } from "@/components/AuthSessionSync";
+import { ReferralBindingWatcher } from "@/components/ReferralBindingWatcher";
 import { CanvasShellProvider, useCanvasShell } from "@/contexts/CanvasShellContext";
 import { Sparkles } from "lucide-react";
 import { CanvasAgentDrawer } from "@/components/CanvasAgentDrawer";
@@ -74,9 +75,14 @@ function MainLayoutChrome({ children }: { children: ReactNode }) {
       // 检查会员是否过期（free 用户不受限制）
       const { data: profile } = await supabase
         .from('profiles')
-        .select('plan, plan_expires_at')
+        .select('plan, plan_expires_at, is_banned')
         .eq('id', session.user.id)
         .maybeSingle();
+
+      if (profile?.is_banned) {
+        router.push(`${basePath || ''}/banned`);
+        return;
+      }
 
       if (profile && profile.plan !== 'free' && profile.plan_expires_at) {
         const isExpired = new Date(profile.plan_expires_at) < new Date();
@@ -154,6 +160,7 @@ function MainLayoutChrome({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-full w-full">
       <AuthSessionSync />
+      <ReferralBindingWatcher />
       {showSidebar && <Sidebar />}
       <div className="flex min-w-0 flex-1 flex-col">
         {canvasShell.active && (
