@@ -359,7 +359,7 @@ export async function listCanvasProjectsMeta(userId: string, limit = 50): Promis
         id: r.id,
         name: r.name,
         thumbnail: r.thumbnail ?? '',
-        canvasData: { nodes: [], edges: [], viewport: DEFAULT_CANVAS_VIEWPORT },
+        canvasData: null as unknown as CanvasData,
         createdAt: r.createdAt.toISOString(),
         updatedAt: r.updatedAt.toISOString(),
       }));
@@ -369,7 +369,7 @@ export async function listCanvasProjectsMeta(userId: string, limit = 50): Promis
       id: r.id,
       name: r.name,
       thumbnail: r.thumbnail ?? '',
-      canvasData: { nodes: [], edges: [], viewport: DEFAULT_CANVAS_VIEWPORT },
+      canvasData: null as unknown as CanvasData,
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
     }));
