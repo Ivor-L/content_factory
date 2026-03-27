@@ -1598,7 +1598,7 @@ export function ReactCanvasRoot({
     [],
   );
 
-  const showProjectList = forceProjectList || (!currentProject && !loadingProjects);
+  const showProjectList = !currentProjectId && (forceProjectList || (!currentProject && !loadingProjects));
   const isDetailView = !showProjectList;
   const hasProjects = projects.length > 0;
 
