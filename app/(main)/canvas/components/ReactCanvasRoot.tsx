@@ -373,6 +373,9 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const updateNodeInternals = useUpdateNodeInternals();
   const content = typeof data.runtime.data.content === "string" ? data.runtime.data.content : "";
   const title = resolveTitle(data);
+  const [localContent, setLocalContent] = useState(content);
+  const composingRef = useRef(false);
+  useEffect(() => { if (!composingRef.current) setLocalContent(content); }, [content]);
 
   // Auto-resize textarea to content
   useEffect(() => {
@@ -410,8 +413,16 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       >
         <textarea
           ref={textareaRef}
-          value={content}
-          onChange={(e) => patchRuntimeData(id, { content: e.target.value })}
+          value={localContent}
+          onChange={(e) => {
+            setLocalContent(e.target.value);
+            if (!composingRef.current) patchRuntimeData(id, { content: e.target.value });
+          }}
+          onCompositionStart={() => { composingRef.current = true; }}
+          onCompositionEnd={(e) => {
+            composingRef.current = false;
+            patchRuntimeData(id, { content: (e.target as HTMLTextAreaElement).value });
+          }}
           placeholder="开启你的创作..."
           className="w-full resize-none bg-transparent px-4 py-4 text-sm text-white outline-none placeholder:text-white/30"
           style={{ minHeight: 240, overflowY: "hidden", transition: "height 0.15s ease" }}
@@ -472,6 +483,43 @@ function RatioIcon({ ratio }: { ratio: string }) {
     <span
       className="inline-flex flex-shrink-0 items-center justify-center rounded-[2px] border border-white/40"
       style={{ width: w, height: h }}
+    />
+  );
+}
+
+// ── CompositionTextarea ───────────────────────────────────────────────────────
+// Buffers value locally during IME composition to prevent re-renders from
+// interrupting Chinese/Japanese/Korean input methods.
+function CompositionTextarea({
+  value,
+  onChange,
+  className,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+  placeholder?: string;
+}) {
+  const [local, setLocal] = useState(value);
+  const composing = useRef(false);
+  useEffect(() => {
+    if (!composing.current) setLocal(value);
+  }, [value]);
+  return (
+    <textarea
+      value={local}
+      className={className}
+      placeholder={placeholder}
+      onChange={(e) => {
+        setLocal(e.target.value);
+        if (!composing.current) onChange(e.target.value);
+      }}
+      onCompositionStart={() => { composing.current = true; }}
+      onCompositionEnd={(e) => {
+        composing.current = false;
+        onChange((e.target as HTMLTextAreaElement).value);
+      }}
     />
   );
 }
@@ -776,9 +824,9 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                   ↑ 上游文本：{upstream.effectivePrompt.slice(0, 60)}{upstream.effectivePrompt.length > 60 ? "…" : ""}
                 </p>
               )}
-              <textarea
+              <CompositionTextarea
                 value={prompt}
-                onChange={(event) => patchRuntimeData(id, { prompt: event.target.value })}
+                onChange={(v) => patchRuntimeData(id, { prompt: v })}
                 placeholder={upstream.effectivePrompt ? "留空则使用上游文本..." : "描述你想生成的图片..."}
                 className="flex-1 w-full resize-none bg-transparent text-sm leading-relaxed text-white placeholder:text-white/30 focus:outline-none"
               />
@@ -1027,9 +1075,9 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                   ↑ 上游文本：{upstream.effectivePrompt.slice(0, 60)}{upstream.effectivePrompt.length > 60 ? "…" : ""}
                 </p>
               )}
-              <textarea
+              <CompositionTextarea
                 value={prompt}
-                onChange={(event) => patchRuntimeData(id, { prompt: event.target.value })}
+                onChange={(v) => patchRuntimeData(id, { prompt: v })}
                 placeholder={upstream.effectivePrompt ? "留空则使用上游文本..." : "描述你想生成的视频..."}
                 className="flex-1 w-full resize-none bg-transparent text-sm leading-relaxed text-white placeholder:text-white/30 focus:outline-none"
               />
@@ -1284,9 +1332,9 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                   ↑ 上游文本：{upstream.effectivePrompt.slice(0, 60)}{upstream.effectivePrompt.length > 60 ? "…" : ""}
                 </p>
               )}
-              <textarea
+              <CompositionTextarea
                 value={script}
-                onChange={(event) => patchRuntimeData(id, { script: event.target.value })}
+                onChange={(v) => patchRuntimeData(id, { script: v })}
                 placeholder={
                   isSunoLyrics ? "输入歌词主题，点击生成歌词..." :
                   isSunoMusic ? (upstream.effectivePrompt ? "留空则使用上游文本..." : "描述你想创作的音乐风格、情感...") :
@@ -1467,9 +1515,9 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                   ↑ 上游文本：{upstream.effectivePrompt.slice(0, 60)}{upstream.effectivePrompt.length > 60 ? "…" : ""}
                 </p>
               )}
-              <textarea
+              <CompositionTextarea
                 value={script}
-                onChange={(event) => patchRuntimeData(id, { script: event.target.value })}
+                onChange={(v) => patchRuntimeData(id, { script: v })}
                 placeholder={upstream.effectivePrompt ? "留空则使用上游文本..." : "描述任何你想要生成的内容，口播文案或形象描述..."}
                 className="flex-1 w-full resize-none bg-transparent text-sm leading-relaxed text-white placeholder:text-white/30 focus:outline-none"
               />
