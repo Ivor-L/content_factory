@@ -1370,15 +1370,17 @@ function ViralReplicationModal({
   referenceVideoUrl,
   screenX,
   screenY,
+  preCreatedNodeIds,
   onClose,
 }: {
   sourceNodeId: string;
   referenceVideoUrl: string;
   screenX: number;
   screenY: number;
+  preCreatedNodeIds?: { textNodeId: string; videoNodeId: string };
   onClose: () => void;
 }) {
-  const { addDownstreamNodes, patchRuntimeData, setNodeStatus } = useCanvasNodeContext();
+  const { addDownstreamNodes, patchRuntimeData, setNodeStatus, uploadResource } = useCanvasNodeContext();
   const [products, setProducts] = useState<{ id: string; name: string }[]>([]);
   const [productId, setProductId] = useState("");
   const [localRefUrl, setLocalRefUrl] = useState(referenceVideoUrl);
@@ -1387,7 +1389,9 @@ function ViralReplicationModal({
   const [duration, setDuration] = useState("15");
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [loadingProducts, setLoadingProducts] = useState(true);
+  const videoUploadRef = useRef<HTMLInputElement>(null);
   // Track active channels for cleanup on unmount
   const channelsRef = useRef<ReturnType<typeof supabase.channel>[]>([]);
   useEffect(() => {
@@ -1416,17 +1420,20 @@ function ViralReplicationModal({
     if (!productId || !localRefUrl.trim()) return;
     setLoading(true);
     try {
-      // Create downstream node pairs (text + video per copy)
-      const nodeDefs: { type: string; data: Record<string, unknown> }[] = [];
-      const pairIndices: number[] = [];
-      for (let i = 0; i < quantity; i++) {
-        pairIndices.push(nodeDefs.length);
-        nodeDefs.push({ type: "text", data: { content: `复刻 ${i + 1} — 等待提示词回传...`, label: `提示词 ${i + 1}` } });
-        nodeDefs.push({ type: "video", data: { label: `复刻视频 ${i + 1}` } });
+      let newIds: string[];
+      if (preCreatedNodeIds) {
+        // Nodes already created before modal opened — reuse them
+        newIds = [preCreatedNodeIds.textNodeId, preCreatedNodeIds.videoNodeId];
+      } else {
+        const nodeDefs: { type: string; data: Record<string, unknown> }[] = [];
+        for (let i = 0; i < quantity; i++) {
+          nodeDefs.push({ type: "text", data: { content: `复刻 ${i + 1} — 等待提示词回传...`, label: `提示词 ${i + 1}` } });
+          nodeDefs.push({ type: "video", data: { label: `复刻视频 ${i + 1}` } });
+        }
+        newIds = addDownstreamNodes(sourceNodeId, nodeDefs);
+        newIds.forEach((nid) => setNodeStatus(nid, "running"));
       }
-      const newIds = addDownstreamNodes(sourceNodeId, nodeDefs);
-      // Mark all new nodes as running
-      newIds.forEach((nid) => setNodeStatus(nid, "running"));
+      const pairIndices: number[] = preCreatedNodeIds ? [0] : Array.from({ length: quantity }, (_, i) => i * 2);
 
       // Build canvasNodePairs for API
       const canvasNodePairs = pairIndices.map((pi, i) => ({
@@ -1506,6 +1513,21 @@ function ViralReplicationModal({
     }
   };
 
+  const handleVideoUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !file.type.startsWith("video/")) return;
+    setUploading(true);
+    try {
+      const resource = await uploadResource(file, { type: "video", name: file.name });
+      setLocalRefUrl(resource.url);
+    } catch {
+      // ignore
+    } finally {
+      setUploading(false);
+    }
+  };
+
   if (typeof document === "undefined") return null;
   const panelLeft = Math.min(Math.max(screenX - 160, 8), window.innerWidth - 336);
   const panelTop = Math.min(Math.max(screenY - 8, 8), window.innerHeight - 480);
@@ -1530,16 +1552,28 @@ function ViralReplicationModal({
 
         {/* Form */}
         <div className="space-y-3 p-4">
-          {/* Reference Video URL */}
+          {/* Reference Video */}
           <div>
             <label className="mb-1 block text-[10px] uppercase tracking-widest text-white/40">参考视频</label>
-            <input
-              type="url"
-              value={localRefUrl}
-              onChange={(e) => setLocalRefUrl(e.target.value)}
-              placeholder="粘贴参考视频链接..."
-              className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
-            />
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={localRefUrl}
+                onChange={(e) => setLocalRefUrl(e.target.value)}
+                placeholder="粘贴参考视频链接..."
+                className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none min-w-0"
+              />
+              <button
+                type="button"
+                onClick={() => videoUploadRef.current?.click()}
+                disabled={uploading}
+                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-white/50 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-40"
+                title="上传视频"
+              >
+                {uploading ? <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/20 border-t-white/60" /> : <Upload className="h-4 w-4" />}
+              </button>
+              <input ref={videoUploadRef} type="file" accept="video/*" className="hidden" onChange={handleVideoUpload} />
+            </div>
           </div>
           {/* Product */}
           <div>
@@ -2757,12 +2791,8 @@ function NodePickerPopup({
   const isFromVideo = sourceNodeType === "video";
   const isFromImage = sourceNodeType === "image";
   const isFromStoryboard = sourceNodeType === "storyboard";
-  // When source is a video node, only show text (labelled 视频拆解); image source also shows text
-  const visibleItems = isFromVideo
-    ? NODE_PICKER_ITEMS.filter((item) => item.type === "text").map((item) => ({
-        ...item, label: "视频拆解", desc: "提取视频文案、拆解内容结构",
-      }))
-    : NODE_PICKER_ITEMS;
+  // Video source: only show 一键复刻 action (no generic picker items)
+  const visibleItems = isFromVideo ? [] : NODE_PICKER_ITEMS;
   return createPortal(
     <>
       <div className="fixed inset-0 z-[9998]" onClick={onDismiss} />
@@ -2778,28 +2808,17 @@ function NodePickerPopup({
           <>
             <button
               type="button"
-              onClick={() => onPick("storyboard")}
-              className="mb-1 flex w-full items-center gap-3 rounded-[14px] bg-white/[0.05] px-3 py-3 text-left transition hover:bg-white/[0.09] active:scale-[0.98]"
-            >
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-white/10">
-                <Clapperboard className="h-5 w-5 text-white/80" />
-              </div>
-              <div>
-                <div className="text-sm font-medium text-white">拆解分镜</div>
-                <div className="text-xs text-white/40">拆解爆款分镜，AI 重新生成</div>
-              </div>
-            </button>
-            <button
-              type="button"
               onClick={() => { onPickViral?.(); onDismiss(); }}
-              className="mb-1 flex w-full items-center gap-3 rounded-[14px] bg-white/[0.05] px-3 py-3 text-left transition hover:bg-white/[0.09] active:scale-[0.98]"
+              onMouseEnter={() => setHoveredType("viral_action")}
+              onMouseLeave={() => setHoveredType(null)}
+              className={`mb-1 flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition active:scale-[0.98] ${hoveredType === "viral_action" ? "bg-white/[0.09]" : ""}`}
             >
               <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-white/10">
                 <Zap className="h-5 w-5 text-white/80" />
               </div>
               <div>
                 <div className="text-sm font-medium text-white">一键复刻</div>
-                <div className="text-xs text-white/40">选择产品，AI 批量生成视频</div>
+                <div className={`text-xs transition-all duration-150 ${hoveredType === "viral_action" ? "text-white/50" : "text-white/0"}`}>选择产品，AI 批量生成视频</div>
               </div>
             </button>
           </>
@@ -2858,7 +2877,7 @@ function NodePickerPopup({
             </button>
           ))}
         </div>
-        {onUpload && (
+        {onUpload && !isFromVideo && (
           <>
             <div className="my-2 h-px bg-white/[0.06]" />
             <button
@@ -3092,7 +3111,7 @@ export function ReactCanvasRoot({
     sourceNodeId: string | null;
     sourceNodeType: string | null;
   } | null>(null);
-  const [viralModalSource, setViralModalSource] = useState<{ nodeId: string; videoUrl: string; screenX: number; screenY: number } | null>(null);
+  const [viralModalSource, setViralModalSource] = useState<{ nodeId: string; videoUrl: string; screenX: number; screenY: number; preCreatedNodeIds?: { textNodeId: string; videoNodeId: string } } | null>(null);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const rfInstanceRef = useRef<{
     screenToFlowPosition: (p: { x: number; y: number }) => { x: number; y: number };
@@ -4765,9 +4784,17 @@ export function ReactCanvasRoot({
           onDismiss={() => setNodePicker(null)}
           onUpload={() => toolbarUploadRef.current?.click()}
           onPickViral={nodePicker.sourceNodeId ? () => {
-            const sourceNode = nodesRef.current.find((n) => n.id === nodePicker.sourceNodeId);
+            const sourceNodeId = nodePicker.sourceNodeId!;
+            const sourceNode = nodesRef.current.find((n) => n.id === sourceNodeId);
             const videoUrl = (sourceNode?.data?.runtime?.data?.outputUrl as string | undefined) ?? "";
-            setViralModalSource({ nodeId: nodePicker.sourceNodeId!, videoUrl, screenX: nodePicker.screenX, screenY: nodePicker.screenY });
+            // Pre-create downstream nodes immediately so they appear in loading state
+            const newIds = addDownstreamNodes(sourceNodeId, [
+              { type: "text", data: { content: "等待提示词回传...", label: "提示词" } },
+              { type: "video", data: { label: "复刻视频" } },
+            ]);
+            newIds.forEach((nid) => setNodeStatus(nid, "running"));
+            const preCreatedNodeIds = { textNodeId: newIds[0], videoNodeId: newIds[1] };
+            setViralModalSource({ nodeId: sourceNodeId, videoUrl, screenX: nodePicker.screenX, screenY: nodePicker.screenY, preCreatedNodeIds });
             setNodePicker(null);
           } : undefined}
         />
@@ -4778,6 +4805,7 @@ export function ReactCanvasRoot({
           referenceVideoUrl={viralModalSource.videoUrl}
           screenX={viralModalSource.screenX}
           screenY={viralModalSource.screenY}
+          preCreatedNodeIds={viralModalSource.preCreatedNodeIds}
           onClose={() => setViralModalSource(null)}
         />
       )}
