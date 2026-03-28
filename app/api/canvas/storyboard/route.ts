@@ -124,6 +124,7 @@ export async function GET(request: NextRequest) {
           generatedImage: true,
           generatedVideo: true,
           status: true,
+          generationParams: true,
         },
       },
     },

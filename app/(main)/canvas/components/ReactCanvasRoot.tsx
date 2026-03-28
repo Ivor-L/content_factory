@@ -556,7 +556,7 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             patchRuntimeData(id, { content: (e.target as HTMLTextAreaElement).value });
           }}
           placeholder="开启你的创作..."
-          className="nodrag select-text w-full bg-transparent px-4 py-4 text-sm text-white outline-none placeholder:text-white/30"
+          className="nodrag !select-text w-full bg-transparent px-4 py-4 text-sm text-white outline-none placeholder:text-white/30"
           style={{ height: 240, minHeight: 120, maxHeight: 800, resize: "vertical", overflowY: "auto" }}
         />
       </div>
@@ -1362,6 +1362,62 @@ const REPLICATION_LANGUAGES = [
   { id: "fr", label: "法语" }, { id: "de", label: "德语" }, { id: "ja", label: "日语" },
   { id: "ko", label: "韩语" }, { id: "pt", label: "葡萄牙语" },
 ];
+// ─── Project Name Editor ─────────────────────────────────────────────────────
+function ProjectNameEditor({
+  projectId,
+  name,
+  onRename,
+}: {
+  projectId: string;
+  name: string;
+  onRename: (id: string, name: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [localName, setLocalName] = useState(name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setLocalName(name); }, [name]);
+
+  const save = async () => {
+    const trimmed = localName.trim();
+    setEditing(false);
+    if (trimmed && trimmed !== name) {
+      await onRename(projectId, trimmed).catch(() => setLocalName(name));
+    } else {
+      setLocalName(name);
+    }
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        autoFocus
+        value={localName}
+        onChange={(e) => setLocalName(e.target.value)}
+        onBlur={() => { void save(); }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); void save(); }
+          if (e.key === "Escape") { setLocalName(name); setEditing(false); }
+        }}
+        className="nodrag rounded-full bg-[#1e1e20]/80 px-3 py-1.5 text-sm font-medium text-white/80 backdrop-blur outline-none border border-white/20 min-w-[80px] max-w-[220px]"
+        style={{ width: Math.max(80, Math.min(220, localName.length * 9 + 24)) }}
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      className="rounded-full bg-[#1e1e20]/80 px-3 py-1.5 text-sm font-medium text-white/80 backdrop-blur transition hover:bg-white/10 hover:text-white max-w-[220px] truncate"
+      title="点击编辑项目名称"
+    >
+      {localName || "未命名项目"}
+    </button>
+  );
+}
+
 const REPLICATION_DURATIONS = ["15", "30", "60"];
 
 function ViralReplicationModal({
@@ -2297,9 +2353,13 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const { patchRuntimeData, runStoryboardNode, uploadResource, isConnecting } = useCanvasNodeContext();
   const upstream = data.upstreamInputs ?? EMPTY_UPSTREAM;
   const videoUploadRef = useRef<HTMLInputElement>(null);
+  const photoUploadRef = useRef<HTMLInputElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const magnet = useCardMagnet(innerRef);
   const [fullscreen, setFullscreen] = useState(false);
+  const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
+  const [photoLibrary, setPhotoLibrary] = useState<{ id: string; url: string }[]>([]);
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   const ownVideoUrl = typeof (data.runtime.data as Record<string, unknown>).videoUrl === "string"
     ? ((data.runtime.data as Record<string, unknown>).videoUrl as string) : "";
@@ -2327,6 +2387,28 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
     } finally {
       event.target.value = "";
     }
+  };
+
+  const handlePhotoUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setPhotoUploading(true);
+    try {
+      const resource = await uploadResource(file, { type: "image", name: file.name });
+      setPhotoLibrary((prev) => [...prev, { id: resource.id, url: resource.url }]);
+    } catch (error) {
+      console.error("[canvas] upload storyboard photo failed", error);
+    } finally {
+      setPhotoUploading(false);
+      event.target.value = "";
+    }
+  };
+
+  const assignPhotoToSegment = (photoUrl: string, segId: string) => {
+    const updated = sbSegments.map((seg) =>
+      seg.id === segId ? { ...seg, generatedImage: photoUrl } : seg,
+    );
+    patchRuntimeData(id, { sbSegments: updated });
   };
 
   return (
@@ -2358,6 +2440,45 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       <div className="relative" ref={innerRef}>
         <MediaHandle side="left" />
         <MediaHandle side="right" />
+        {/* Photo library panel (top-left) */}
+        {hasSegments && (
+          <div className="absolute left-4 top-4 z-10 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => photoUploadRef.current?.click()}
+              disabled={photoUploading}
+              className="flex h-14 w-14 items-center justify-center rounded-xl border-2 border-dashed border-white/20 bg-white/[0.02] transition hover:border-white/40 disabled:opacity-50"
+            >
+              {photoUploading ? (
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+              ) : (
+                <Plus className="h-5 w-5 text-white/40" />
+              )}
+            </button>
+            {photoLibrary.length > 0 && (
+              <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
+                {photoLibrary.map((photo) => (
+                  <button
+                    key={photo.id}
+                    type="button"
+                    onClick={() => {
+                      if (selectedSegmentId) {
+                        assignPhotoToSegment(photo.url, selectedSegmentId);
+                      }
+                    }}
+                    disabled={!selectedSegmentId}
+                    className={`h-14 w-14 rounded-xl overflow-hidden border-2 transition ${
+                      selectedSegmentId ? "border-white/20 hover:border-white/40" : "border-white/10 opacity-50"
+                    }`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={photo.url} alt="photo" className="h-full w-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <div
           className={clsx(
             "overflow-hidden rounded-[20px] border bg-[#111113] transition",
@@ -2439,10 +2560,17 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                 <span>时长</span>
               </div>
               {sbSegments.map((seg) => {
-                const frameImage = seg.generatedImage || seg.generationParams?.reference_frame_url || "";
+                const frameImage = seg.generatedImage || "";
                 const statusLabel = SB_STATUS_LABELS[seg.status || ""] || "";
+                const isSelected = selectedSegmentId === seg.id;
                 return (
-                  <div key={seg.id} className="grid grid-cols-[32px_1fr_88px_88px_56px] items-start gap-3 px-4 py-3">
+                  <div
+                    key={seg.id}
+                    onClick={() => setSelectedSegmentId(seg.id)}
+                    className={`grid grid-cols-[32px_1fr_88px_88px_56px] items-start gap-3 px-4 py-3 cursor-pointer transition ${
+                      isSelected ? "bg-white/[0.08]" : "hover:bg-white/[0.03]"
+                    }`}
+                  >
                     <div className="pt-0.5 text-xs font-semibold text-white/50">{seg.order + 1}</div>
                     <div className="space-y-1 text-[11px] leading-relaxed text-white/70">
                       {seg.visualDescription && <p className="text-white/80">{seg.visualDescription}</p>}
@@ -2499,6 +2627,7 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       </div>
 
       <input ref={videoUploadRef} type="file" accept="video/*" className="hidden" onChange={handleVideoUpload} />
+      <input ref={photoUploadRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
     </div>
     </CardMagnetContext.Provider>
     {fullscreen && typeof document !== "undefined" && createPortal(
@@ -2533,10 +2662,15 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               </thead>
               <tbody className="divide-y divide-white/[0.04]">
                 {sbSegments.map((seg) => {
-                  const frameImage = seg.generatedImage || seg.generationParams?.reference_frame_url || "";
+                  const frameImage = seg.generatedImage || "";
                   const statusLabel = SB_STATUS_LABELS[seg.status || ""] || "";
+                  const isSelected = selectedSegmentId === seg.id;
                   return (
-                    <tr key={seg.id}>
+                    <tr
+                      key={seg.id}
+                      onClick={() => setSelectedSegmentId(seg.id)}
+                      className={`cursor-pointer transition ${isSelected ? "bg-white/[0.08]" : "hover:bg-white/[0.03]"}`}
+                    >
                       <td className="px-6 py-4 text-sm font-semibold text-white/50">{seg.order + 1}</td>
                       <td className="max-w-sm px-4 py-4">
                         <div className="space-y-1.5 text-[13px] leading-relaxed">
@@ -2826,14 +2960,16 @@ function NodePickerPopup({
           <button
             type="button"
             onClick={() => onPick("text")}
-            className="mb-1 flex w-full items-center gap-3 rounded-[14px] bg-white/[0.05] px-3 py-3 text-left transition hover:bg-white/[0.09] active:scale-[0.98]"
+            onMouseEnter={() => setHoveredType("image_understanding")}
+            onMouseLeave={() => setHoveredType(null)}
+            className={`mb-1 flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition active:scale-[0.98] ${hoveredType === "image_understanding" ? "bg-white/[0.09]" : ""}`}
           >
             <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-white/10">
               <Scan className="h-5 w-5 text-white/80" />
             </div>
             <div>
               <div className="text-sm font-medium text-white">图片理解</div>
-              <div className="text-xs text-white/40">AI 视觉分析，提取图片内容</div>
+              <div className={`text-xs transition-all duration-150 ${hoveredType === "image_understanding" ? "text-white/40" : "text-white/0"}`}>AI 视觉分析，提取图片内容</div>
             </div>
           </button>
         )}
@@ -4420,10 +4556,12 @@ export function ReactCanvasRoot({
               >
                 <ArrowLeft className="h-4 w-4 text-white/70" />
               </button>
-              {currentProject?.name && (
-                <span className="rounded-full bg-[#1e1e20]/80 px-3 py-1.5 text-sm font-medium text-white/80 backdrop-blur">
-                  {currentProject.name}
-                </span>
+              {currentProject?.name != null && (
+                <ProjectNameEditor
+                  projectId={currentProject.id}
+                  name={currentProject.name}
+                  onRename={renameProject}
+                />
               )}
             </div>
             {/* Right: credits pill + avatar */}

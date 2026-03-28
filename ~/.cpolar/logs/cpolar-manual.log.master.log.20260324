@@ -1,0 +1,7 @@
+time="2026-03-24T17:25:59+08:00" level=info msg="Reading configuration file /Users/oscar/.cpolar/cpolar.yml"
+time="2026-03-24T17:25:59+08:00" level=info msg="I'm Starting!"
+time="2026-03-24T17:25:59+08:00" level=info msg="Running in terminal."
+time="2026-03-24T17:25:59+08:00" level=info msg="I'm running darwin-launchd."
+time="2026-03-24T17:25:59+08:00" level=debug msg="启动Worker子进程"
+time="2026-03-24T17:27:56+08:00" level=info msg="I'm Stopping!"
+time="2026-03-24T17:27:56+08:00" level=debug msg="cpolar master 进程结束"

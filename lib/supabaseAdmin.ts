@@ -23,6 +23,10 @@ const baseClientOptions = {
 
 const chosenKey = supabaseServiceKey || supabaseAnonKey;
 
+// Internal URL for server-side storage uploads (bypasses nginx, goes directly to Kong).
+// Set SUPABASE_STORAGE_URL=http://localhost:54321 in production to avoid nginx proxy timeouts.
+const storageInternalUrl = process.env.SUPABASE_STORAGE_URL || supabaseUrl;
+
 if (!supabaseServiceKey) {
   console.warn(
     '[supabaseAdmin] SUPABASE_SERVICE_ROLE_KEY is not set. Falling back to anon key; storage policies must allow the intended operations.'
@@ -31,12 +35,17 @@ if (!supabaseServiceKey) {
 
 export const supabaseAdmin = createClient(supabaseUrl, chosenKey, baseClientOptions);
 
+// Used for storage operations: uses internal URL to bypass nginx proxy timeout on large uploads.
+export const supabaseStorage = storageInternalUrl !== supabaseUrl
+  ? createClient(storageInternalUrl, chosenKey, baseClientOptions)
+  : supabaseAdmin;
+
 export function getSupabaseServiceClient(accessToken?: string | null): SupabaseClient {
   if (supabaseServiceKey || !accessToken) {
-    return supabaseAdmin;
+    return supabaseStorage;
   }
 
-  return createClient(supabaseUrl, supabaseAnonKey, {
+  return createClient(storageInternalUrl, supabaseAnonKey, {
     ...baseClientOptions,
     global: {
       headers: {

@@ -12,6 +12,7 @@ export async function GET(request: Request) {
   if (!userId && !apiKey) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const currentOwner = userId ?? apiKey!;
 
   const searchParams = new URL(request.url).searchParams;
   const take = clamp(Number(searchParams.get("limit") ?? DEFAULT_PAGE_SIZE), 1, MAX_PAGE_SIZE);
@@ -22,7 +23,9 @@ export async function GET(request: Request) {
   const withSamples = searchParams.get("withSample") === "true";
   const withCounts = searchParams.get("withCounts") === "true";
 
-  const where: Prisma.ViralCreatorWhereInput = {};
+  const where: Prisma.ViralCreatorWhereInput = {
+    ingestedBy: currentOwner,
+  };
   if (platforms.length > 0) {
     where.platform = { in: platforms };
   }
@@ -45,6 +48,7 @@ export async function GET(request: Request) {
           referenceItems: {
             take: 1,
             orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+            where: { ingestedBy: currentOwner },
           },
         }
       : undefined,
@@ -64,6 +68,7 @@ export async function GET(request: Request) {
       by: ["creatorId"],
       where: {
         creatorId: { in: items.map((item) => item.id) },
+        ingestedBy: currentOwner,
       },
       _count: {
         _all: true,

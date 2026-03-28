@@ -2,7 +2,16 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useState, useMemo, useCallback, useRef, useEffect, useTransition } from "react";
+import {
+  useState,
+  useMemo,
+  useCallback,
+  useRef,
+  useEffect,
+  useTransition,
+  type CSSProperties,
+} from "react";
+import { useTheme } from "next-themes";
 import { Save, RotateCcw, RefreshCcw, Play, Pause, Volume2, VolumeX, Film, ChevronDown } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -86,6 +95,8 @@ export function StoryboardTimelineView({ initialTask, mode = 'page' }: Storyboar
   const storyboardCopy = t.storyboard?.manual;
   const isEmbedded = mode === 'embedded';
   useSidebarAutoCollapse(mode === 'page', true);
+  const { resolvedTheme } = useTheme();
+  const isDarkTheme = resolvedTheme === 'dark';
 
   const orderedSegments = useMemo<SegmentForTimeline[]>(() => {
     return [...initialTask.segments]
@@ -610,12 +621,55 @@ export function StoryboardTimelineView({ initialTask, mode = 'page' }: Storyboar
   const headerTitle = initialTask.product?.name || storyboardCopy?.timelinePreviewTitle || "Timeline";
 
   const containerClass = isEmbedded
-    ? 'rounded-3xl bg-white text-gray-900 shadow-[0_20px_60px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-transparent dark:text-white'
-    : 'min-h-screen bg-[#f5f6fa] text-gray-900';
+    ? 'rounded-3xl bg-white/95 text-gray-900 shadow-[0_20px_60px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-gray-900/80 dark:text-white'
+    : cn(
+        'min-h-screen transition-colors',
+        isDarkTheme ? 'bg-[#050505] text-white' : 'text-[var(--tenant-primary-strong,#1f1600)]'
+      );
+  const containerStyle: CSSProperties | undefined = isEmbedded
+    ? undefined
+    : isDarkTheme
+    ? {
+        backgroundImage:
+          "radial-gradient(circle at top right, rgba(255,255,255,0.06) 0%, transparent 55%), radial-gradient(circle at bottom left, rgba(255,255,255,0.04) 0%, transparent 45%)",
+        backgroundColor: "#050505",
+      }
+    : {
+        backgroundImage:
+          "radial-gradient(circle at top right, var(--tenant-primary-soft, rgba(255,255,255,0.9)) 0%, transparent 55%), radial-gradient(circle at bottom left, var(--tenant-primary-muted, rgba(31,22,0,0.18)) 0%, transparent 45%)",
+        backgroundColor: "var(--tenant-primary-soft, #f5f6fa)",
+      };
   const mainWrapper = isEmbedded
     ? 'px-4 pb-4 -mt-1.5'
-    : 'mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-8 -mt-1.5';
-  const contentTextClass = isEmbedded ? 'text-gray-900 dark:text-white' : 'text-gray-900';
+    : 'mx-auto w-full max-w-[1600px] px-4 py-8 sm:px-10 -mt-1.5';
+  const contentTextClass = isEmbedded ? 'text-gray-900 dark:text-white' : isDarkTheme ? 'text-white' : 'text-[var(--tenant-primary-strong,#1f1600)]';
+  const basePanelClass = 'rounded-[32px] border backdrop-blur-sm shadow-theme-glow';
+  const panelLight = 'bg-white/95 border-[var(--tenant-primary-muted)]';
+  const panelDark = 'bg-[#0a0a0a]/85 border-white/10 text-white';
+  const topSectionClass = cn(
+    'grid gap-6 lg:grid-cols-[minmax(260px,320px)_1fr]',
+    isEmbedded ? '' : cn(basePanelClass, isDarkTheme ? panelDark : panelLight, 'p-6')
+  );
+  const timelineSectionClass = cn(
+    'space-y-3',
+    isEmbedded ? '' : cn(basePanelClass, isDarkTheme ? panelDark : panelLight, 'p-6')
+  );
+  const previewCardClass = cn(
+    'relative w-full overflow-hidden rounded-2xl border flex items-center justify-center text-white transition-colors',
+    isEmbedded
+      ? 'border-white/15 bg-black/80'
+      : isDarkTheme
+      ? 'border-white/10 bg-[#050505]/95 shadow-[0_25px_60px_rgba(0,0,0,0.65)]'
+      : 'border-[var(--tenant-primary-muted)] bg-[var(--tenant-primary,#000)]/90 shadow-theme-glow'
+  );
+  const promptPanelClass = cn(
+    'mt-2 rounded-2xl text-sm leading-relaxed p-4 flex-1 overflow-y-auto max-h-64 border backdrop-blur-sm',
+    isEmbedded
+      ? 'bg-white/70 text-gray-900 dark:bg-white/5 dark:text-white/90 border-white/20'
+      : isDarkTheme
+      ? 'bg-[#0f0f10]/80 text-white border-white/10 shadow-inner'
+      : 'bg-[var(--tenant-primary-soft,#f4f4f5)] text-[var(--tenant-primary-strong,#1f1600)] border-[var(--tenant-primary-muted)] shadow-inner'
+  );
 
   // Timeline action buttons rendered in shared header's rightExtra slot
   const timelineActions = mode === 'page' ? (
@@ -736,7 +790,7 @@ export function StoryboardTimelineView({ initialTask, mode = 'page' }: Storyboar
   ) : null;
 
   return (
-    <div className={containerClass}>
+    <div className={containerClass} style={containerStyle}>
       {mode !== 'embedded' && (
         <StoryboardPageHeader
           taskId={initialTask.id}
@@ -748,10 +802,10 @@ export function StoryboardTimelineView({ initialTask, mode = 'page' }: Storyboar
       )}
 
       <main className={`${mainWrapper} space-y-6 ${contentTextClass}`}>
-        <section className="grid gap-6 lg:grid-cols-[minmax(260px,320px)_1fr]">
+        <section className={topSectionClass}>
           <div className={cn(
             'flex flex-col gap-4 p-2',
-            isEmbedded ? 'text-gray-900 dark:text-white' : 'text-gray-900'
+            isEmbedded ? 'text-gray-900 dark:text-white' : 'text-[var(--tenant-primary-strong,#1f1600)]'
           )}>
             <p className={cn('text-xs uppercase tracking-[0.3em]', isEmbedded ? 'text-gray-500 dark:text-white/60' : 'text-gray-400')}>当前片段</p>
             <h2 className="mt-2 text-xl font-semibold">
@@ -776,32 +830,41 @@ export function StoryboardTimelineView({ initialTask, mode = 'page' }: Storyboar
                 </p>
               </div>
             </div>
-            <div className={cn('mt-2 rounded-xl text-sm leading-relaxed p-4 flex-1 overflow-y-auto max-h-64', isEmbedded ? 'bg-white/70 text-gray-900 dark:bg-white/5 dark:text-white/90' : 'bg-gray-100 text-gray-800')}>
+            <div className={promptPanelClass}>
               {currentPrompt}
             </div>
           </div>
-          <div className={cn(
-            'relative w-full overflow-hidden h-[220px] sm:h-[280px] lg:h-[340px] xl[h-[400px]] flex items-center justify-center rounded-xl bg-black text-white'
-          )}>
-            {currentClip ? (
-              <PreviewContent
-                clip={currentClip}
-                segment={currentSegment}
-                currentTime={currentTime}
-                volume={volume}
-                onRatioChange={(portrait) => setIsPortraitPreview(portrait)}
-              />
-            ) : (
-              <div className={cn('text-lg', isEmbedded || isPortraitPreview ? 'text-white' : 'text-gray-500')}>无内容</div>
-            )}
+          <div className={previewCardClass}>
+            <div className="relative w-full pb-[56.25%]">
+              <div className="absolute inset-0 flex items-center justify-center bg-[var(--tenant-primary,#000)]/90">
+                {currentClip ? (
+                  <PreviewContent
+                    clip={currentClip}
+                    segment={currentSegment}
+                    currentTime={currentTime}
+                    volume={volume}
+                    onRatioChange={(portrait) => setIsPortraitPreview(portrait)}
+                  />
+                ) : (
+                  <div className={cn('text-lg font-medium', isEmbedded || isPortraitPreview ? 'text-white' : 'text-[var(--tenant-primary-strong,#1f1600)]/60')}>无内容</div>
+                )}
+              </div>
+            </div>
           </div>
         </section>
 
-        <section className="space-y-3">
+        <section className={timelineSectionClass}>
           <div
             className={cn(
-              "flex flex-wrap items-center justify-between gap-4 px-2 text-sm",
-              isEmbedded ? "text-gray-900 dark:text-white" : "text-[var(--tenant-primary-strong,#1f1600)]"
+              "flex flex-wrap items-center justify-between gap-4 text-sm",
+              isEmbedded
+                ? "px-2 text-gray-900 dark:text-white"
+                : cn(
+                    "rounded-2xl border px-4 py-3 shadow-sm",
+                    isDarkTheme
+                      ? "border-white/10 bg-[#0b0b0c]/85 text-white"
+                      : "border-[var(--tenant-primary-muted)] bg-white/85 text-[var(--tenant-primary-strong,#1f1600)]"
+                  )
             )}
           >
             <div className="flex items-center gap-3">
@@ -841,15 +904,23 @@ export function StoryboardTimelineView({ initialTask, mode = 'page' }: Storyboar
               {volume <= 0.01 ? (
                 <VolumeX
                   className={cn(
-                    "h-4 w-4 text-[var(--tenant-primary-strong,#1f1600)] opacity-70",
-                    isEmbedded && "dark:text-white/70"
+                    "h-4 w-4 opacity-70",
+                    isEmbedded
+                      ? "text-[var(--tenant-primary-strong,#1f1600)] dark:text-white/70"
+                      : isDarkTheme
+                      ? "text-white/70"
+                      : "text-[var(--tenant-primary-strong,#1f1600)]"
                   )}
                 />
               ) : (
                 <Volume2
                   className={cn(
-                    "h-4 w-4 text-[var(--tenant-primary-strong,#1f1600)]",
-                    isEmbedded && "dark:text-white"
+                    "h-4 w-4",
+                    isEmbedded
+                      ? "text-[var(--tenant-primary-strong,#1f1600)] dark:text-white"
+                      : isDarkTheme
+                      ? "text-white"
+                      : "text-[var(--tenant-primary-strong,#1f1600)]"
                   )}
                 />
               )}
@@ -866,7 +937,11 @@ export function StoryboardTimelineView({ initialTask, mode = 'page' }: Storyboar
               <span
                 className={cn(
                   "w-10 text-right font-mono text-xs",
-                  isEmbedded ? "text-gray-600 dark:text-white/70" : "text-[var(--tenant-primary-strong,#1f1600)]"
+                  isEmbedded
+                    ? "text-gray-600 dark:text-white/70"
+                    : isDarkTheme
+                    ? "text-white/80"
+                    : "text-[var(--tenant-primary-strong,#1f1600)]"
                 )}
               >
                 {Math.round(volume * 100)}%
@@ -896,8 +971,12 @@ export function StoryboardTimelineView({ initialTask, mode = 'page' }: Storyboar
           <div
             ref={timelineRef}
             className={cn(
-              'relative rounded-2xl cursor-pointer select-none',
-              isEmbedded ? 'bg-gray-100 dark:bg-white/5' : 'bg-white border border-white/60 shadow-[0_10px_25px_rgba(15,23,42,0.08)]'
+              'relative rounded-3xl cursor-pointer select-none border',
+              isEmbedded
+                ? 'bg-gray-100/80 dark:bg-white/5 border-white/15'
+                : isDarkTheme
+                ? 'bg-[#090909]/90 border-white/10 shadow-[0_15px_40px_rgba(0,0,0,0.55)]'
+                : 'bg-white/95 border-[var(--tenant-primary-muted)] shadow-theme-glow backdrop-blur-sm'
             )}
             onClick={handleTimelineClick}
           >
@@ -913,8 +992,12 @@ export function StoryboardTimelineView({ initialTask, mode = 'page' }: Storyboar
                   className={cn(
                     'relative h-20 rounded-xl border overflow-hidden',
                     track.type === 'video'
-                      ? 'bg-white border-gray-200 dark:border-white/20 dark:bg-white/10'
-                      : 'bg-gray-50 border-gray-200 dark:border-white/10 dark:bg-white/5'
+                      ? isDarkTheme
+                        ? 'bg-[#0f0f10]/85 border-white/10'
+                        : 'bg-white/95 border-[var(--tenant-primary-muted)]'
+                      : isDarkTheme
+                        ? 'bg-[#141414]/70 border-white/10'
+                        : 'bg-[var(--tenant-primary-soft,#f4f4f5)] border-[var(--tenant-primary-muted)]/70'
                   )}
                 >
                   <div className="absolute left-3 top-2 z-10 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-white/50">
@@ -942,8 +1025,12 @@ export function StoryboardTimelineView({ initialTask, mode = 'page' }: Storyboar
                           track.type === 'video'
                             ? isEmbedded
                               ? 'border border-gray-300 bg-white shadow-sm dark:border-white/30 dark:bg-white/10'
-                              : 'border border-gray-200 bg-white shadow-[0_8px_18px_rgba(15,23,42,0.08)]'
-                            : 'border border-dashed border-gray-300 bg-gray-200/50 dark:border-white/20 dark:bg-white/5'
+                              : isDarkTheme
+                              ? 'border border-white/10 bg-[#0a0a0a] shadow-[0_15px_35px_rgba(0,0,0,0.4)]'
+                              : 'border border-[var(--tenant-primary-muted)] bg-white/95 shadow-[0_8px_18px_rgba(15,23,42,0.08)]'
+                            : isDarkTheme
+                            ? 'border border-dashed border-white/15 bg-[#151515]/70'
+                            : 'border border-dashed border-[var(--tenant-primary-muted)]/60 bg-[var(--tenant-primary-soft,#f4f4f5)]/70'
                         )}
                         style={{
                           left: `${Math.max(0, left)}%`,
