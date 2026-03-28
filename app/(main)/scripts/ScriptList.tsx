@@ -54,10 +54,27 @@ const REFERENCE_PLACEHOLDER_IMAGE = "/logo/logo-icon.svg";
 const VIRAL_PLATFORMS = [
   { id: "xiaohongshu", label: "小红书", badge: "XHS" },
   { id: "tiktok", label: "TikTok", badge: "TT" },
+  { id: "facebook", label: "Facebook", badge: "FB" },
+  { id: "instagram", label: "Instagram", badge: "IG" },
 ];
 
 type ReferenceContentType = "all" | "video" | "image";
 const REFERENCE_CONTENT_FILTERS: ReferenceContentType[] = ["all", "video", "image"];
+
+type CollectorMode = "keyword" | "creator" | "video";
+
+const COLLECTOR_MODE_LABELS: Record<CollectorMode, string> = {
+  keyword: "关键词采集",
+  creator: "达人链接",
+  video: "视频链接",
+};
+
+const PLATFORM_COLLECTOR_MODES: Record<string, CollectorMode[]> = {
+  xiaohongshu: [],
+  tiktok: ["keyword", "creator", "video"],
+  facebook: ["creator", "video"],
+  instagram: ["creator", "video"],
+};
 
 type StatPayload = Record<string, number | string | null>;
 
@@ -527,6 +544,11 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
   const [referenceDeleting, setReferenceDeleting] = useState(false);
   const [referenceContentFilter, setReferenceContentFilter] = useState<ReferenceContentType>("all");
   const [referenceSort, setReferenceSort] = useState<string>("recent");
+  const [isCollectorModalOpen, setIsCollectorModalOpen] = useState(false);
+  const [collectorMode, setCollectorMode] = useState<CollectorMode>("video");
+  const [collectorInput, setCollectorInput] = useState("");
+  const [collectorLimit, setCollectorLimit] = useState("20");
+  const [collectorSubmitting, setCollectorSubmitting] = useState(false);
   const referenceRealtimeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suppressedReferenceRealtimeEventsRef = useRef(0);
   const filteredReferenceItems = useMemo(
@@ -613,6 +635,14 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
       selectedReplicationScript?.blueprint || selectedReplicationScript?.breakdown || null
     );
   }, [selectedReplicationScript?.blueprint, selectedReplicationScript?.breakdown]);
+  const collectorModes = PLATFORM_COLLECTOR_MODES[contentPlatform] ?? [];
+  const collectorModeEnabled = collectorModes.length > 0;
+  const collectorPlaceholder = useMemo(() => {
+    if (collectorMode === "keyword") {
+      return "每行一个关键词，例如：\n护肤品测评\n厨房收纳";
+    }
+    return "每行一个链接，支持达人主页或具体内容链接。";
+  }, [collectorMode]);
 
   useEffect(() => {
     if (!selectedReplicationScript) return;
@@ -649,6 +679,18 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
   }, []);
 
   useEffect(() => {
+    if (!collectorModeEnabled) {
+      setCollectorMode("video");
+      setCollectorInput("");
+      return;
+    }
+    if (!collectorModes.includes(collectorMode)) {
+      setCollectorMode(collectorModes[0]);
+      setCollectorInput("");
+    }
+  }, [collectorModeEnabled, collectorModes, collectorMode]);
+
+  useEffect(() => {
     if (!mounted || typeof window === 'undefined') return;
     try {
       window.localStorage.setItem(REPLICATION_MODE_STORAGE_KEY, replicationMode);
@@ -656,6 +698,54 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
       console.warn('Failed to persist replication mode', error);
     }
   }, [replicationMode, mounted]);
+
+  const parseCollectorEntries = useCallback((value: string): string[] => {
+    return value
+      .split(/[\n,，]/)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }, []);
+
+  const handleCollectorSubmit = useCallback(async () => {
+    if (!collectorModeEnabled) return;
+    const entries = parseCollectorEntries(collectorInput);
+    if (entries.length === 0) {
+      toast.error(collectorMode === "keyword" ? "请至少填写一个关键词" : "请至少填写一个链接");
+      return;
+    }
+    setCollectorSubmitting(true);
+    try {
+      const res = await fetch("/api/social-scraper/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          platform: contentPlatform,
+          mode: collectorMode,
+          entries,
+          limit: collectorMode === "keyword" ? Number(collectorLimit || "20") : undefined,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload?.error || t.common.error);
+      }
+      toast.success(payload?.message || "采集任务已提交，请稍候刷新查看");
+      setCollectorInput("");
+      setIsCollectorModalOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t.common.error);
+    } finally {
+      setCollectorSubmitting(false);
+    }
+  }, [
+    collectorInput,
+    collectorLimit,
+    collectorMode,
+    collectorModeEnabled,
+    contentPlatform,
+    parseCollectorEntries,
+    t.common.error,
+  ]);
 
   const fetchReferences = useCallback(
     async (reset = false) => {
@@ -1404,6 +1494,19 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
             </button>
             <button
               type="button"
+              onClick={() => collectorModeEnabled && setIsCollectorModalOpen(true)}
+              disabled={!collectorModeEnabled}
+              className={cn(
+                "px-4 py-2 text-sm font-semibold rounded-lg border",
+                collectorModeEnabled
+                  ? "border-black text-black dark:border-white dark:text-white hover:bg-gray-50 dark:hover:bg-gray-800"
+                  : "border-dashed border-gray-300 text-gray-400 cursor-not-allowed",
+              )}
+            >
+              数据采集
+            </button>
+            <button
+              type="button"
               onClick={handleToggleReferenceSelectionMode}
               className={cn(
                 "px-4 py-2 text-sm font-semibold rounded-lg border",
@@ -2036,6 +2139,98 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                 </span>
               ) : null}
             </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={isCollectorModalOpen}
+        onClose={() => {
+          setIsCollectorModalOpen(false);
+          setCollectorInput("");
+        }}
+        title={`${getPlatformLabel(contentPlatform)} · 数据采集`}
+        maxWidth="max-w-xl"
+      >
+        {collectorModeEnabled ? (
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              {collectorModes.map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setCollectorMode(mode)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-full text-sm font-semibold border transition-colors",
+                    collectorMode === mode
+                      ? "bg-black text-white border-black dark:bg-white dark:text-black"
+                      : "border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300",
+                  )}
+                >
+                  {COLLECTOR_MODE_LABELS[mode]}
+                </button>
+              ))}
+            </div>
+            <div>
+              <label className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2 block">
+                {collectorMode === "keyword" ? "关键词列表" : "链接列表"}
+              </label>
+              <textarea
+                value={collectorInput}
+                onChange={(e) => setCollectorInput(e.target.value)}
+                placeholder={collectorPlaceholder}
+                className="w-full h-32 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white p-3 focus:ring-2 focus:ring-primary outline-none resize-none"
+              />
+            </div>
+            {collectorMode === "keyword" && (
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                  每个关键词抓取条数
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={collectorLimit}
+                  onChange={(e) => setCollectorLimit(e.target.value)}
+                  className="w-24 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary outline-none"
+                />
+              </div>
+            )}
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              采集任务提交后通常需要几十秒完成，完成后系统会自动刷新最新内容。
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCollectorModalOpen(false);
+                  setCollectorInput("");
+                }}
+                className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleCollectorSubmit}
+                disabled={collectorSubmitting}
+                className="px-4 py-2 rounded-lg bg-black text-white dark:bg-white dark:text-black text-sm font-semibold disabled:opacity-60"
+              >
+                {collectorSubmitting ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    提交中...
+                  </span>
+                ) : (
+                  "开始采集"
+                )}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="text-sm text-gray-500">
+            当前平台暂不支持内置采集，请使用浏览器插件同步内容。
           </div>
         )}
       </Modal>

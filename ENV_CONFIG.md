@@ -60,6 +60,11 @@ Endpoints for various automation workflows.
 *   **Storyboard (Draft → Board):** `N8N_STORYBOARD_SCRIPT_WEBHOOK` (default fallback: `https://n8n.atomx.top/webhook/897bb7fb-b878-4135-9aaf-d60beba1dbef`)
 *   **XHS Text2Image:** `N8N_XHS_TEXT2IMG_WEBHOOK` (default fallback: `https://hooks.atomx.top/webhook/xhs_text2img_web`)
 *   **Creator Reference Sync:** `VIRAL_CREATOR_SYNC_WEBHOOK_URL` — optional webhook endpoint that fetches the latest notes for a selected creator when用户在前端点击“同步最新笔记”。若不配置，系统会默认调用本应用的 `/api/webhook/creator-sync` stub（按钮始终可用）；如需接入真实采集器，可将其设置为前端应用内的相对路径或任意完整 URL，后台会POST创作者信息并附带 `x-user-api-key`（如存在）。
+*   **Social Collector (TikTok/Facebook/Instagram):**
+    * `N8N_SOCIAL_SCRAPER_WEBHOOK` *(or `SOCIAL_SCRAPER_WEBHOOK_URL`)* — webhook endpoint for `Social采集总工作流_Web直连版` (default `https://hooks.atomx.top/webhook/social_scrape`).
+    * `SOCIAL_SCRAPER_APIFY_TOKEN` *(required)* — Apify token used by the workflow to launch TikTok/Facebook/Instagram Actors.
+    * `SOCIAL_SCRAPER_WEBHOOK_SECRET` *(optional)* — when set, n8n must send `x-social-webhook-secret` header so `/api/webhook/social-scraper` can validate callbacks.
+    * `SOCIAL_COLLECTOR_SECRET` *(optional)* — AES-256-GCM secret for encrypting task owner payloads that travel inside `task_id`，避免泄露用户 API Key。未配置时将退化为 Base64 明文。
 
 ### Credit System Configuration
 *   **POINTS_API_BASE:** Base URL for the external credit system API.

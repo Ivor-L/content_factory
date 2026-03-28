@@ -921,91 +921,152 @@ const App = () => {
     if (items.length === 0) return false
 
     const TARGET_URL = 'http://127.0.0.1:19527/api/batch-save'
-    console.log('[Muse] Starting sync for', items.length, 'items')
+    const MAX_BATCH_ITEMS = 20
+    const MAX_BATCH_BYTES = 80 * 1024
+    const textEncoder = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null
 
-    // Internal Helper: Delegate request to Background Script (Bypass CORS/PNA)
-    const syncViaProxy = async (): Promise<boolean> => {
-      console.log('[Muse] Attempting sync via Background Proxy...')
-      return new Promise((resolve) => {
-        chrome.runtime.sendMessage(
-          {
-            type: 'PROXY_REQ',
-            payload: {
-              url: TARGET_URL,
-              options: {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  Accept: 'application/json'
-                },
-                body: JSON.stringify(items)
-              }
+    const getByteLength = (text: string) => {
+      if (textEncoder) return textEncoder.encode(text).length
+      try {
+        return new Blob([text]).size
+      } catch {
+        return text.length
+      }
+    }
+
+    const buildBatches = (list: CollectedItem[]) => {
+      const chunks: { data: CollectedItem[]; body: string }[] = []
+      let current: CollectedItem[] = []
+
+      const flush = () => {
+        if (!current.length) return
+        const body = JSON.stringify(current)
+        chunks.push({ data: [...current], body })
+        current = []
+      }
+
+      list.forEach((item) => {
+        current.push(item)
+        let body = JSON.stringify(current)
+        let bytes = getByteLength(body)
+
+        if (current.length > MAX_BATCH_ITEMS || bytes > MAX_BATCH_BYTES) {
+          if (current.length === 1) {
+            flush()
+          } else {
+            const last = current.pop()
+            const safeBody = JSON.stringify(current)
+            if (current.length) {
+              chunks.push({ data: [...current], body: safeBody })
             }
-          },
-          (response) => {
-            if (chrome.runtime.lastError) {
-              console.error('[Muse] Proxy messaging error:', chrome.runtime.lastError)
-              resolve(false)
-              return
-            }
-            if (response && response.success) {
-              console.log('[Muse] Proxy sync success:', response.response)
-              if (response.response.ok) {
-                resolve(true)
-              } else {
-                showError('同步失败(Proxy): ' + response.response.statusText)
-                resolve(false)
+            current = []
+            if (last) {
+              current.push(last)
+              const singleBody = JSON.stringify(current)
+              if (getByteLength(singleBody) > MAX_BATCH_BYTES) {
+                chunks.push({ data: [...current], body: singleBody })
+                current = []
               }
-            } else {
-              console.error('[Muse] Proxy sync failed:', response?.error)
-              showError('同步失败: 无法连接本地服务')
-              resolve(false)
             }
           }
-        )
+        }
       })
+
+      flush()
+      return chunks
     }
 
-    try {
-      console.log('[Muse] Attempting direct sync...')
-      // Strategy: Try direct fetch first
-      const response = await fetch(TARGET_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json'
-        },
-        body: JSON.stringify(items)
-      }).catch(async (err) => {
-        // If Direct Fetch fails (Network Error / CORS blocked), switch to Proxy
-        console.warn('[Muse] Direct sync failed, switching to Proxy Strategy. Error:', err)
-        throw new Error('FALLBACK_TO_PROXY')
-      })
+    const batches = buildBatches(items)
+    console.log('[Muse] Starting sync for', items.length, 'items in', batches.length, 'batch(es)')
 
-      // If we got a response but it was not OK
-      if (response && !response.ok) {
-        const errorText = await response.text()
-        showError('同步失败: ' + (errorText || response.statusText))
+    for (let index = 0; index < batches.length; index++) {
+      const { body } = batches[index]
+      const batchLabel = batches.length > 1 ? ` (批次 ${index + 1}/${batches.length})` : ''
+
+      const syncViaProxy = async (): Promise<boolean> => {
+        console.log(`[Muse] Attempting sync via Background Proxy${batchLabel}...`)
+        return new Promise((resolve) => {
+          chrome.runtime.sendMessage(
+            {
+              type: 'PROXY_REQ',
+              payload: {
+                url: TARGET_URL,
+                options: {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json'
+                  },
+                  body
+                }
+              }
+            },
+            (response) => {
+              if (chrome.runtime.lastError) {
+                console.error('[Muse] Proxy messaging error:', chrome.runtime.lastError)
+                resolve(false)
+                return
+              }
+              if (response && response.success) {
+                console.log('[Muse] Proxy sync success:', response.response)
+                if (response.response.ok) {
+                  resolve(true)
+                } else {
+                  showError('同步失败(Proxy): ' + response.response.statusText + batchLabel)
+                  resolve(false)
+                }
+              } else {
+                console.error('[Muse] Proxy sync failed:', response?.error)
+                showError('同步失败: 无法连接本地服务' + batchLabel)
+                resolve(false)
+              }
+            }
+          )
+        })
+      }
+
+      try {
+        console.log(`[Muse] Attempting direct sync${batchLabel}...`)
+        const response = await fetch(TARGET_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json'
+          },
+          body
+        }).catch(async (err) => {
+          console.warn('[Muse] Direct sync failed, switching to Proxy Strategy. Error:', err)
+          throw new Error('FALLBACK_TO_PROXY')
+        })
+
+        if (response && !response.ok) {
+          const errorText = await response.text()
+          showError('同步失败: ' + (errorText || response.statusText) + batchLabel)
+          return false
+        }
+
+        if (response && response.ok) {
+          const result = await response.json()
+          console.log('[Muse] Direct sync success:', result)
+          continue
+        }
+
+        return false
+      } catch (e) {
+        const message = (e as Error).message
+        if (message === 'FALLBACK_TO_PROXY' || message.includes('Failed to fetch')) {
+          const proxyResult = await syncViaProxy()
+          if (proxyResult) continue
+          return false
+        }
+
+        console.error('[Muse] Sync fatal error', e)
+        showError('同步请求错误: ' + message + batchLabel)
         return false
       }
-
-      // Success logic for direct
-      if (response && response.ok) {
-        const result = await response.json()
-        console.log('[Muse] Direct sync success:', result)
-        return true
-      }
-
-      return false
-    } catch (e) {
-      if ((e as Error).message === 'FALLBACK_TO_PROXY' || (e as Error).message.includes('Failed to fetch')) {
-        return await syncViaProxy()
-      }
-
-      console.error('[Muse] Sync fatal error', e)
-      showError('同步请求错误: ' + (e as Error).message)
-      return false
     }
+
+    return true
   }
 
   const handleSync = async (): Promise<void> => {

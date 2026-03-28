@@ -18,17 +18,67 @@
 
 ## 1. 环境变量配置
 
-### 生产环境（服务器 `.env`）
+> ⚠️ **部署前必须逐项核对**：`.env` 中缺少任何一项都会导致对应功能静默失败（不报启动错误，只在运行时出错）。
+
+### 生产环境完整 `.env`（服务器 `/root/content-factory-web/.env`）
 
 ```env
-NEXT_PUBLIC_APP_URL="https://atomx.top"
-NEXT_PUBLIC_SUPABASE_URL="https://supabase-api.atomx.top"
-NEXT_PUBLIC_SUPABASE_ANON_KEY="sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH"
-SUPABASE_SERVICE_ROLE_KEY="sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz"
+# ── 数据库（Docker 容器内通过 host.docker.internal 访问宿主机 Supabase）──────
+DATABASE_URL=postgresql://supabase_admin:postgres@host.docker.internal:54322/postgres?sslmode=disable
+SHADOW_DATABASE_URL=postgresql://supabase_admin:postgres@host.docker.internal:54322/content_factory_shadow?sslmode=disable
+DIRECT_URL=postgresql://supabase_admin:postgres@host.docker.internal:54322/postgres?sslmode=disable
+PGSSLMODE=disable
 
-# Docker 容器内通过 host.docker.internal 访问宿主机上的 Supabase
-DATABASE_URL="postgresql://supabase_admin:postgres@host.docker.internal:54322/postgres?sslmode=disable"
-DIRECT_URL="postgresql://supabase_admin:postgres@host.docker.internal:54322/postgres?sslmode=disable"
+# ── Supabase ──────────────────────────────────────────────────────────────────
+NEXT_PUBLIC_SUPABASE_URL=https://supabase-api.atomx.top
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH
+SUPABASE_SERVICE_ROLE_KEY=sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz
+NEXT_PUBLIC_SUPABASE_BUCKET=uploads
+
+# ── App ───────────────────────────────────────────────────────────────────────
+NEXT_PUBLIC_APP_URL=https://atomx.top
+
+# ── Webhook 回调鉴权 ───────────────────────────────────────────────────────────
+ADMIN_TOKEN=dev-sync-token-1774007442
+
+# n8n / 轮询服务 回调到 App 时使用的公网地址（必须是外网可访问地址）
+N8N_CALLBACK_BASE_URL=https://atomx.top
+
+# ── N8N Webhooks ──────────────────────────────────────────────────────────────
+N8N_PRODUCT_ANALYSIS_WEBHOOK=https://hooks.atomx.top/webhook/product_dna_web
+N8N_SCRIPT_BREAKDOWN_WEBHOOK=https://hooks.atomx.top/webhook/script_extract_web
+N8N_STORYBOARD_BREAKDOWN_WEBHOOK=https://hooks.atomx.top/webhook/storyboard_disassembly_web
+N8N_EXTRACT_COPY_WEBHOOK=https://hooks.atomx.top/webhook/extract_copy
+N8N_REPLICATION_WEBHOOK=https://hooks.atomx.top/webhook/Getway_web
+N8N_STORYBOARD_GEN_WEBHOOK=https://hooks.atomx.top/webhook/storyboard_gateway_web
+N8N_STORYBOARD_SCRIPT_WEBHOOK=https://hooks.atomx.top/webhook/xhs_chuangzuo_web
+N8N_VEO3_WEBHOOK=https://hooks.atomx.top/webhook/storyboard_video
+N8N_IMAGE_GEN_WEBHOOK=https://hooks.atomx.top/webhook/storyboard-image-generate
+
+# ── Canvas（无线画布）─────────────────────────────────────────────────────────
+# 系统级云雾 API Key，所有用户共用
+CANVAS_UPSTREAM_DEFAULT_API_KEY=sk-gmTSsDWAsxVZf41AM5CrhdoV4leDluYeuFgg1P8VwrkpWQTm
+CANVAS_CREDITS_DEFAULT_API_KEY=sk-gmTSsDWAsxVZf41AM5CrhdoV4leDluYeuFgg1P8VwrkpWQTm
+CANVAS_SKIP_CREDITS_CHECK=true
+# 云雾 API 基础地址
+CANVAS_API_BASE_URL=https://yunwu.ai/v1
+# 视频生成接口
+CANVAS_VIDEO_GENERATIONS_URL=https://yunwu.ai/v1/video/create
+CANVAS_VIDEO_TASK_URL_TEMPLATE=https://yunwu.ai/v1/video/query?id={taskId}
+# 视频轮询服务回调地址（必须是外网可访问的公网地址，容器内 localhost 无效）
+CANVAS_VIDEO_POLL_CALLBACK_BASE_URL=https://atomx.top
+
+# ── 其他 ──────────────────────────────────────────────────────────────────────
+NEXAPI_UPSTREAM_KEY=your-upstream-key
+```
+
+> **注意**：`.env` 中变量值不要加引号（不写 `KEY="value"`，直接写 `KEY=value`），否则 Docker `--env-file` 会把引号也计入值。
+
+### 部署前环境变量检查命令
+
+```bash
+# 核查关键变量是否已配置（值为空则说明缺失）
+grep -E "CANVAS_VIDEO_POLL_CALLBACK_BASE_URL|CANVAS_UPSTREAM_DEFAULT_API_KEY|N8N_CALLBACK_BASE_URL|NEXT_PUBLIC_APP_URL|ADMIN_TOKEN" /root/content-factory-web/.env
 ```
 
 ### 本地开发（`.env`）
@@ -184,16 +234,18 @@ location / {
 
 ## 6. 部署流程
 
-1. 本地代码改好后，通过 `scp` 或 Git 上传到服务器
+1. 本地代码改好后，push 到 Git
 2. 服务器上进入项目目录：`cd /root/content-factory-web`
-3. 重新构建并启动：
+3. 拉取代码并重新构建启动（**必须加 `--build`，否则代码不生效**）：
    ```bash
-   docker compose up -d --build
+   git pull && docker compose up -d --build
    ```
 4. 查看日志确认启动成功：
    ```bash
    docker compose logs -f web
    ```
+
+> ⚠️ **常见陷阱**：`docker compose up -d`（不带 `--build`）只会重启已有镜像，不会重新编译代码。每次改动代码后必须加 `--build`。
 
 ---
 
@@ -222,3 +274,10 @@ additional_redirect_urls = ["https://atomx.top", "https://atomx.top/auth/callbac
 | `/canvas-runtime` JS 文件返回 HTML | nginx rewrite 覆盖了静态资源请求 | 静态资源 location 加 `^~` 前缀 |
 | `app.atomx.top` 显示错误证书 | nginx 有无 `server_name` 的 catch-all block | 为每个域名添加独立 server block |
 | 本地 `fetch failed` (Supabase Auth) | 隧道未转发 54321 端口，或密钥不匹配 | 本地直接用线上 Supabase URL（无需隧道） |
+| `Invalid supabaseUrl` (运行时) | `NEXT_PUBLIC_*` 变量在构建时烘焙进 JS bundle，运行时 .env 不生效 | docker compose build 时必须通过 `args` 传入，见第 4 节 |
+| P1013: database string is invalid | `.env` 中变量值带引号（如 `DATABASE_URL="..."`），Docker `--env-file` 会把引号也作为值的一部分 | 去掉 `.env` 中的引号，直接写 `DATABASE_URL=...` |
+| 改了代码部署后没有生效 | 用了 `docker compose up -d` 而未加 `--build`，镜像未重新构建 | 每次部署必须用 `docker compose up -d --build` |
+| 中文 IME 输入法在 ReactFlow 节点内无法使用 | `.react-flow__node` CSS 设置了 `user-select: none`，阻止输入法合成事件 | 在 `globals.css` 加 `.react-flow__node textarea { user-select: text !important; }` |
+| 无线画布生图提示「画布服务尚未配置」 | `.env` 缺少 `CANVAS_UPSTREAM_DEFAULT_API_KEY` | 按第 1 节补全 Canvas 环境变量 |
+| 视频生成后前端订阅无回调 | `CANVAS_VIDEO_POLL_CALLBACK_BASE_URL` 未配置，容器内 `request.nextUrl.origin` 返回内网地址，轮询服务无法回调 | 设置 `CANVAS_VIDEO_POLL_CALLBACK_BASE_URL=https://atomx.top` |
+| 云雾报错信息不显示给用户 | 云雾返回 `success:false` 时前端未检测该字段 | 已修复（`postJson` 增加 `success/ok/code` 失败判断） |

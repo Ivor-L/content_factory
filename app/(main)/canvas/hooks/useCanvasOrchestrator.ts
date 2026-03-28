@@ -290,9 +290,17 @@ async function postJson(url: string, body: Record<string, unknown>) {
     const message = extractErrorMessage(parsed, response.statusText || "请求失败");
     throw new Error(message);
   }
-  if (parsed && typeof parsed === "object" && (parsed as Record<string, any>).error) {
-    const message = extractErrorMessage(parsed, "请求失败");
-    throw new Error(message);
+  if (parsed && typeof parsed === "object") {
+    const record = parsed as Record<string, any>;
+    const isFailure =
+      record.error ||
+      record.success === false ||
+      record.ok === false ||
+      (typeof record.code === "number" && record.code >= 400);
+    if (isFailure) {
+      const message = extractErrorMessage(parsed, "请求失败");
+      throw new Error(message);
+    }
   }
   return parsed;
 }

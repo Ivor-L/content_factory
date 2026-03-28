@@ -43,11 +43,13 @@ import {
   ArrowUp,
   ChevronDown,
   Clapperboard,
+  Film,
   Grid3X3,
   Image as ImageIcon,
   ImagePlus,
   Layers,
   Locate,
+  Maximize2,
   MousePointer2,
   Music,
   Paperclip,
@@ -112,11 +114,16 @@ type CanvasNodeContextValue = {
   runAudioNode: (nodeId: string) => Promise<void>;
   runDigitalHumanNode: (nodeId: string) => Promise<void>;
   runStoryboardNode: (nodeId: string) => Promise<void>;
+  addDownstreamNodes: (
+    sourceNodeId: string,
+    nodes: { type: string; data: Record<string, unknown> }[],
+  ) => string[];
   uploadResource: (
     file: File,
     options: { type: CanvasResourceItem["type"]; variant?: string; name?: string },
   ) => Promise<CanvasResourceItem>;
   polishPrompt: (text: string) => Promise<string>;
+  openViralModal: (nodeId: string, videoUrl: string, screenX: number, screenY: number) => void;
 };
 
 const fallbackModel = { id: "", label: "", provider: "" };
@@ -149,10 +156,12 @@ const CanvasNodeContext = createContext<CanvasNodeContextValue>({
   runAudioNode: async () => {},
   runDigitalHumanNode: async () => {},
   runStoryboardNode: async () => {},
+  addDownstreamNodes: () => [],
   uploadResource: async () => {
     throw new Error("Canvas runtime未初始化");
   },
   polishPrompt: async (text) => text,
+  openViralModal: () => {},
 });
 
 function useCanvasNodeContext() {
@@ -878,7 +887,7 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const lastFrameUploadRef = useRef<HTMLInputElement>(null);
   const directUploadRef = useRef<HTMLInputElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
-  const { patchRuntimeData, models, runVideoNode, resources, uploadResource, isConnecting, polishPrompt, focusedNodeId } = useCanvasNodeContext();
+  const { patchRuntimeData, models, runVideoNode, resources, uploadResource, isConnecting, polishPrompt, focusedNodeId, addDownstreamNodes, openViralModal } = useCanvasNodeContext();
   const upstream = data.upstreamInputs ?? EMPTY_UPSTREAM;
   const [isPolishing, setIsPolishing] = useState(false);
   const magnet = useCardMagnet(innerRef);
@@ -958,24 +967,61 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   };
 
   return (
+    <>
     <CardMagnetContext.Provider value={magnet}>
-    <div style={{ width: MEDIA_NODE_WIDTH }} className="select-none">
+    <div style={{ width: MEDIA_NODE_WIDTH }} className="relative select-none">
+      {/* Floating action pill — positioned absolutely above the card */}
+      {props.selected && (
+        <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex items-center rounded-full bg-[#1e1e20] shadow-[0_8px_32px_rgba(0,0,0,0.7)]">
+          {outputUrl && (
+            <>
+              <div className="group/tip relative">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void addDownstreamNodes(id, [
+                      { type: "storyboard", data: { videoUrl: outputUrl } },
+                      { type: "timelinevideo", data: { videoUrl: "", title: "时间轴视频" } },
+                    ]);
+                  }}
+                  className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+                >
+                  <Clapperboard className="h-4 w-4" />
+                </button>
+                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">拆解分镜</span>
+              </div>
+              <div className="h-4 w-px bg-white/10" />
+              <div className="group/tip relative">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); const rect = e.currentTarget.getBoundingClientRect(); openViralModal(id, outputUrl, rect.left + rect.width / 2, rect.top); }}
+                  className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+                >
+                  <Zap className="h-4 w-4" />
+                </button>
+                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">一键复刻</span>
+              </div>
+              <div className="h-4 w-px bg-white/10" />
+            </>
+          )}
+          <div className="group/tip relative">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); directUploadRef.current?.click(); }}
+              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+            >
+              <Upload className="h-4 w-4" />
+            </button>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">{outputUrl ? "替换视频" : "上传视频"}</span>
+          </div>
+        </div>
+      )}
       <div className="mb-1.5 flex items-center justify-between px-1">
         <div className="flex items-center">
           <Video className="h-3.5 w-3.5 text-white/50" />
           <span className="ml-1.5 text-[11px] uppercase tracking-[0.2em] text-white/50">视频</span>
         </div>
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); directUploadRef.current?.click(); }}
-          className={clsx(
-            "flex items-center gap-1 rounded-full bg-[#2a2a2c] px-3 py-1 text-[11px] text-white/50 transition hover:bg-white/15 hover:text-white/80",
-            !props.selected && "invisible pointer-events-none",
-          )}
-        >
-          <Upload className="h-3 w-3" />
-          <span>{outputUrl ? "替换" : "上传"}</span>
-        </button>
       </div>
       {/* inner relative div: handles position relative to card area only */}
       <div className="relative" ref={innerRef}>
@@ -1133,6 +1179,263 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       <input ref={directUploadRef} type="file" accept="video/*" className="hidden" onChange={handleDirectUpload} />
     </div>
     </CardMagnetContext.Provider>
+    </>
+  );
+}
+
+const REPLICATION_COUNTRIES = [
+  { id: "us", label: "美国" }, { id: "uk", label: "英国" }, { id: "ca", label: "加拿大" },
+  { id: "au", label: "澳大利亚" }, { id: "de", label: "德国" }, { id: "fr", label: "法国" },
+  { id: "es", label: "西班牙" }, { id: "jp", label: "日本" }, { id: "kr", label: "韩国" },
+  { id: "cn", label: "中国" }, { id: "br", label: "巴西" },
+];
+const REPLICATION_LANGUAGES = [
+  { id: "en", label: "英语" }, { id: "zh", label: "中文" }, { id: "es", label: "西班牙语" },
+  { id: "fr", label: "法语" }, { id: "de", label: "德语" }, { id: "ja", label: "日语" },
+  { id: "ko", label: "韩语" }, { id: "pt", label: "葡萄牙语" },
+];
+const REPLICATION_DURATIONS = ["15", "30", "60"];
+
+function ViralReplicationModal({
+  sourceNodeId,
+  referenceVideoUrl,
+  screenX,
+  screenY,
+  onClose,
+}: {
+  sourceNodeId: string;
+  referenceVideoUrl: string;
+  screenX: number;
+  screenY: number;
+  onClose: () => void;
+}) {
+  const { addDownstreamNodes, patchRuntimeData, setNodeStatus } = useCanvasNodeContext();
+  const [products, setProducts] = useState<{ id: string; name: string }[]>([]);
+  const [productId, setProductId] = useState("");
+  const [country, setCountry] = useState("us");
+  const [language, setLanguage] = useState("en");
+  const [duration, setDuration] = useState("15");
+  const [quantity, setQuantity] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [loadingProducts, setLoadingProducts] = useState(true);
+  // Track active channels for cleanup on unmount
+  const channelsRef = useRef<ReturnType<typeof supabase.channel>[]>([]);
+  useEffect(() => {
+    return () => {
+      channelsRef.current.forEach((ch) => { void supabase.removeChannel(ch); });
+      channelsRef.current = [];
+    };
+  }, []);
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
+      fetch("/api/products", { credentials: "include", headers })
+        .then((r) => r.json())
+        .then((body) => {
+          const list = (body as { data?: { id: string; name: string }[] }).data ?? [];
+          setProducts(list);
+          if (list.length > 0) setProductId(list[0].id);
+        })
+        .catch(() => {})
+        .finally(() => setLoadingProducts(false));
+    }).catch(() => setLoadingProducts(false));
+  }, []);
+
+  const handleSubmit = async () => {
+    if (!productId) return;
+    setLoading(true);
+    try {
+      // Create downstream node pairs (text + video per copy)
+      const nodeDefs: { type: string; data: Record<string, unknown> }[] = [];
+      const pairIndices: number[] = [];
+      for (let i = 0; i < quantity; i++) {
+        pairIndices.push(nodeDefs.length);
+        nodeDefs.push({ type: "text", data: { content: `复刻 ${i + 1} — 等待提示词回传...`, label: `提示词 ${i + 1}` } });
+        nodeDefs.push({ type: "video", data: { label: `复刻视频 ${i + 1}` } });
+      }
+      const newIds = addDownstreamNodes(sourceNodeId, nodeDefs);
+      // Mark all new nodes as running
+      newIds.forEach((nid) => setNodeStatus(nid, "running"));
+
+      // Build canvasNodePairs for API
+      const canvasNodePairs = pairIndices.map((pi, i) => ({
+        textNodeId: newIds[pi],
+        videoNodeId: newIds[pi + 1],
+        index: i,
+      }));
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const authHeaders: Record<string, string> = { "Content-Type": "application/json" };
+      if (session?.access_token) authHeaders.Authorization = `Bearer ${session.access_token}`;
+
+      const res = await fetch("/api/canvas/replication", {
+        method: "POST",
+        headers: authHeaders,
+        credentials: "include",
+        body: JSON.stringify({
+          referenceVideoUrl,
+          productId,
+          targetCountry: country,
+          targetLanguage: language,
+          duration,
+          quantity,
+          canvasNodePairs,
+        }),
+      });
+      const body = await res.json() as { replications?: { id: string; textNodeId?: string; videoNodeId?: string }[] };
+      if (!res.ok || !body.replications) throw new Error("触发复刻失败");
+
+      // Subscribe to each replication for Supabase Realtime updates
+      body.replications.forEach(({ id: repId, textNodeId, videoNodeId }) => {
+        if (!textNodeId || !videoNodeId) return;
+        const channel = supabase
+          .channel(`canvas_rep_${repId}`)
+          .on(
+            "postgres_changes",
+            { event: "UPDATE", schema: "public", table: "replications", filter: `id=eq.${repId}` },
+            (payload) => {
+              const row = payload.new as Record<string, unknown>;
+              const result = (() => {
+                try { return JSON.parse(row.result as string) as Record<string, unknown>; }
+                catch { return {}; }
+              })();
+              // Update text node with prompt
+              const prompt = (result.videoPrompt || result.promptResult || result.prompt || result.script) as string | undefined;
+              if (prompt && typeof prompt === "string") {
+                patchRuntimeData(textNodeId, { content: prompt });
+              }
+              // Update video node with URL
+              const videoUrl = (result.videoUrl || result.video_url) as string | undefined;
+              if (videoUrl && typeof videoUrl === "string") {
+                patchRuntimeData(videoNodeId, { outputUrl: videoUrl });
+              }
+              if (row.status === "completed") {
+                setNodeStatus(textNodeId, "idle");
+                setNodeStatus(videoNodeId, "idle");
+                supabase.removeChannel(channel);
+                channelsRef.current = channelsRef.current.filter((c) => c !== channel);
+              } else if (row.status === "failed") {
+                setNodeStatus(textNodeId, "error");
+                setNodeStatus(videoNodeId, "error");
+                patchRuntimeData(textNodeId, { content: "复刻失败，请重试" });
+                supabase.removeChannel(channel);
+                channelsRef.current = channelsRef.current.filter((c) => c !== channel);
+              }
+            },
+          )
+          .subscribe();
+        channelsRef.current.push(channel);
+      });
+
+      onClose();
+    } catch (err) {
+      console.error("[canvas] viral replication failed", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (typeof document === "undefined") return null;
+  const panelLeft = Math.min(Math.max(screenX - 160, 8), window.innerWidth - 336);
+  const panelTop = Math.min(Math.max(screenY - 8, 8), window.innerHeight - 480);
+  return createPortal(
+    <>
+      <div className="fixed inset-0 z-[9998]" onClick={onClose} />
+      <div
+        style={{ left: panelLeft, top: panelTop }}
+        className="fixed z-[9999] w-[320px] overflow-hidden rounded-[20px] bg-[#1a1a1c] shadow-[0_24px_80px_rgba(0,0,0,0.85)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-2 px-4 py-3">
+          <Zap className="h-3.5 w-3.5 text-white/50" />
+          <span className="text-sm font-medium text-white">一键复刻</span>
+          <div className="flex-1" />
+          <button type="button" onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-full text-white/30 transition hover:bg-white/10 hover:text-white">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <div className="h-px bg-white/[0.06]" />
+
+        {/* Form */}
+        <div className="space-y-3 p-4">
+          {/* Product */}
+          <div>
+            <label className="mb-1 block text-[10px] uppercase tracking-widest text-white/40">选择产品</label>
+            {loadingProducts ? (
+              <div className="flex h-9 items-center rounded-xl bg-white/[0.04] px-3 text-xs text-white/30">加载中...</div>
+            ) : products.length === 0 ? (
+              <div className="flex h-9 items-center rounded-xl bg-white/[0.04] px-3 text-xs text-white/30">暂无产品，请先在产品库添加</div>
+            ) : (
+              <select
+                value={productId}
+                onChange={(e) => setProductId(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none"
+              >
+                {products.map((p) => (
+                  <option key={p.id} value={p.id} className="bg-[#1a1a1c]">{p.name}</option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* Country + Language */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="mb-1 block text-[10px] uppercase tracking-widest text-white/40">目标国家</label>
+              <select value={country} onChange={(e) => setCountry(e.target.value)} className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none">
+                {REPLICATION_COUNTRIES.map((c) => <option key={c.id} value={c.id} className="bg-[#1a1a1c]">{c.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] uppercase tracking-widest text-white/40">目标语言</label>
+              <select value={language} onChange={(e) => setLanguage(e.target.value)} className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none">
+                {REPLICATION_LANGUAGES.map((l) => <option key={l.id} value={l.id} className="bg-[#1a1a1c]">{l.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Duration + Quantity */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="mb-1 block text-[10px] uppercase tracking-widest text-white/40">视频时长</label>
+              <select value={duration} onChange={(e) => setDuration(e.target.value)} className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none">
+                {REPLICATION_DURATIONS.map((d) => <option key={d} value={d} className="bg-[#1a1a1c]">{d}s</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[10px] uppercase tracking-widest text-white/40">复刻数量 · {quantity}</label>
+              <input
+                type="range" min={1} max={10} value={quantity}
+                onChange={(e) => setQuantity(parseInt(e.target.value, 10))}
+                className="mt-2 w-full accent-[#ffc94a]"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center gap-2 border-t border-white/[0.06] px-4 py-3">
+          <button type="button" onClick={onClose} className="flex-1 rounded-xl bg-white/[0.06] py-2 text-sm text-white/50 transition hover:bg-white/10">
+            取消
+          </button>
+          <button
+            type="button"
+            disabled={loading || !productId || loadingProducts}
+            onClick={() => { void handleSubmit(); }}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#ffc94a] py-2 text-sm font-semibold text-black transition hover:bg-[#ffd666] disabled:opacity-40"
+          >
+            {loading ? (
+              <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black/20 border-t-black" />触发中...</>
+            ) : (
+              <><Zap className="h-3.5 w-3.5" />开始复刻</>
+            )}
+          </button>
+        </div>
+      </div>
+    </>,
+    document.body,
   );
 }
 
@@ -1555,6 +1858,15 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
 
 const SB_NODE_WIDTH = 560;
 
+const SB_STATUS_LABELS: Record<string, string> = {
+  PENDING_IMAGE: "待生成图",
+  GENERATING_IMAGE: "生成图中",
+  PENDING_VIDEO: "待生成视频",
+  GENERATING_VIDEO: "生成视频中",
+  COMPLETED: "已完成",
+  FAILED: "失败",
+};
+
 type StoryboardSegmentData = {
   id: string;
   order: number;
@@ -1569,6 +1881,7 @@ type StoryboardSegmentData = {
   generatedImage?: string;
   generatedVideo?: string;
   status?: string;
+  generationParams?: { reference_frame_url?: string };
 };
 
 function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
@@ -1578,7 +1891,7 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const videoUploadRef = useRef<HTMLInputElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const magnet = useCardMagnet(innerRef);
-  const [intrinsicRatio, setIntrinsicRatio] = useState(16 / 9);
+  const [fullscreen, setFullscreen] = useState(false);
 
   const ownVideoUrl = typeof (data.runtime.data as Record<string, unknown>).videoUrl === "string"
     ? ((data.runtime.data as Record<string, unknown>).videoUrl as string) : "";
@@ -1595,8 +1908,6 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const isRunning = data.status === "running";
   const hasSegments = sbSegments.length > 0;
 
-  const previewHeight = Math.round(SB_NODE_WIDTH / intrinsicRatio);
-
   const handleVideoUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -1611,6 +1922,7 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   };
 
   return (
+    <>
     <CardMagnetContext.Provider value={magnet}>
     <div style={{ width: SB_NODE_WIDTH }} className="select-none">
       {/* Header */}
@@ -1621,6 +1933,16 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/50">
             {sbSegments.length} 镜头
           </span>
+        )}
+        <div className="flex-1" />
+        {hasSegments && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setFullscreen(true); }}
+            className="flex h-6 w-6 items-center justify-center rounded-full bg-white/[0.07] text-white/40 transition hover:bg-white/15 hover:text-white/80"
+          >
+            <Maximize2 className="h-3.5 w-3.5" />
+          </button>
         )}
       </div>
 
@@ -1638,34 +1960,21 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               : "border-white/10 hover:border-white/20",
           )}
         >
-          {/* Video preview — 16:9 default, follows intrinsic ratio after load */}
-          <div style={{ height: previewHeight }} className="relative overflow-hidden bg-[#0c0c0e]">
-            {effectiveVideoUrl ? (
-              <video
-                src={effectiveVideoUrl}
-                controls
-                className="h-full w-full object-contain"
-                preload="metadata"
-                onLoadedMetadata={(e) => {
-                  const v = e.currentTarget;
-                  if (v.videoWidth && v.videoHeight) {
-                    setIntrinsicRatio(v.videoWidth / v.videoHeight);
-                  }
-                }}
-              />
-            ) : (
-              <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-white/20">
-                <Clapperboard className="h-10 w-10" />
-                <p className="text-xs">上传或引用上游视频</p>
-              </div>
-            )}
-            {isRunning && <GeneratingOverlay label={`拆解中${sbStatus ? ` · ${sbStatus}` : "..."}`} />}
-            {!ownVideoUrl && upstream.firstVideoUrl && (
-              <div className="absolute bottom-2 left-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] text-white/50 backdrop-blur-sm">
-                ↑ 上游视频
-              </div>
-            )}
-          </div>
+          {/* Idle icon panel — shown when no segments */}
+          {!hasSegments && (
+            <div className="relative flex h-[240px] w-full flex-col items-center justify-center gap-2 bg-[#0c0c0e] text-white/20">
+              <Clapperboard className="h-10 w-10" />
+              <p className="text-xs">
+                {effectiveVideoUrl ? "视频已就绪，点击一键复刻" : "上传或引用上游视频"}
+              </p>
+              {isRunning && <GeneratingOverlay label={`拆解中${sbStatus ? ` · ${sbStatus}` : "..."}`} />}
+              {!ownVideoUrl && upstream.firstVideoUrl && (
+                <div className="absolute bottom-2 left-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] text-white/50 backdrop-blur-sm">
+                  ↑ 上游视频
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Progress bar */}
           {isRunning && (
@@ -1689,7 +1998,7 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             {ownVideoUrl && (
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); patchRuntimeData(id, { videoUrl: "" }); setIntrinsicRatio(16 / 9); }}
+                onClick={(e) => { e.stopPropagation(); patchRuntimeData(id, { videoUrl: "" }); }}
                 className="flex-shrink-0 rounded-lg bg-white/5 px-2 py-1 text-[10px] text-white/30 transition hover:bg-white/10"
               >
                 清除
@@ -1702,7 +2011,7 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               onClick={(e) => { e.stopPropagation(); void runStoryboardNode(id); }}
               className="flex-shrink-0 rounded-lg bg-white/15 px-3 py-1 text-[10px] font-medium text-white transition hover:bg-white/25 disabled:opacity-40"
             >
-              {isRunning ? "拆解中..." : "一键复刻"}
+              {isRunning ? "拆解中..." : "拆解分镜"}
             </button>
           </div>
 
@@ -1713,37 +2022,69 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
 
           {/* Segment rows */}
           {hasSegments && (
-            <div className="max-h-[520px] divide-y divide-white/[0.04] overflow-y-auto border-t border-white/[0.06]">
-              <div className="grid grid-cols-[32px_1fr_88px] gap-3 px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-white/30">
+            <div className="max-h-[560px] divide-y divide-white/[0.04] overflow-y-auto border-t border-white/[0.06]">
+              <div className="grid grid-cols-[32px_1fr_88px_88px_56px] gap-3 px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-white/30">
                 <span>#</span>
                 <span>描述</span>
                 <span>图片</span>
+                <span>视频</span>
+                <span>时长</span>
               </div>
-              {sbSegments.map((seg) => (
-                <div key={seg.id} className="grid grid-cols-[32px_1fr_88px] items-start gap-3 px-4 py-3">
-                  <div className="pt-0.5 text-xs font-semibold text-white/50">{seg.order}</div>
-                  <div className="space-y-1 text-[11px] leading-relaxed text-white/70">
-                    {seg.visualDescription && <p className="text-white/80">{seg.visualDescription}</p>}
-                    {seg.cameraNotes && (
-                      <p className="text-white/40"><span className="mr-1 text-white/25">镜头</span>{seg.cameraNotes}</p>
-                    )}
-                    {seg.originalScript && (
-                      <p className="rounded-lg bg-white/[0.04] px-2 py-1 text-white/50 italic">{seg.originalScript}</p>
-                    )}
-                    {seg.timeRange && <p className="text-white/30">{seg.timeRange}</p>}
+              {sbSegments.map((seg) => {
+                const frameImage = seg.generatedImage || seg.generationParams?.reference_frame_url || "";
+                const statusLabel = SB_STATUS_LABELS[seg.status || ""] || "";
+                return (
+                  <div key={seg.id} className="grid grid-cols-[32px_1fr_88px_88px_56px] items-start gap-3 px-4 py-3">
+                    <div className="pt-0.5 text-xs font-semibold text-white/50">{seg.order + 1}</div>
+                    <div className="space-y-1 text-[11px] leading-relaxed text-white/70">
+                      {seg.visualDescription && <p className="text-white/80">{seg.visualDescription}</p>}
+                      {seg.cameraNotes && (
+                        <p className="text-white/40"><span className="mr-1 text-white/25">镜头</span>{seg.cameraNotes}</p>
+                      )}
+                      {seg.originalScript && (
+                        <p className="rounded-lg bg-white/[0.04] px-2 py-1 text-white/50 italic">{seg.originalScript}</p>
+                      )}
+                      {!seg.visualDescription && !seg.cameraNotes && !seg.originalScript && (
+                        <p className="text-white/25 italic">提示词已生成，等待合成</p>
+                      )}
+                      {statusLabel && (
+                        <span className="inline-block rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-white/40">{statusLabel}</span>
+                      )}
+                      {seg.timeRange && <p className="text-white/30">{seg.timeRange}</p>}
+                    </div>
+                    <div className="aspect-square overflow-hidden rounded-xl bg-white/[0.04]">
+                      {frameImage ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={frameImage} alt={`Shot ${seg.order + 1}`} className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center">
+                          <ImageIcon className="h-5 w-5 text-white/15" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="aspect-square overflow-hidden rounded-xl bg-white/[0.04]">
+                      {seg.generatedVideo ? (
+                        <video
+                          src={seg.generatedVideo}
+                          className="h-full w-full object-cover"
+                          muted
+                          loop
+                          playsInline
+                          onMouseEnter={(e) => { void (e.currentTarget as HTMLVideoElement).play(); }}
+                          onMouseLeave={(e) => { const v = e.currentTarget as HTMLVideoElement; v.pause(); v.currentTime = 0; }}
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center">
+                          <Video className="h-5 w-5 text-white/15" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="pt-0.5 text-[11px] text-white/40">
+                      {seg.duration != null ? `${seg.duration}s` : "—"}
+                    </div>
                   </div>
-                  <div className="aspect-square overflow-hidden rounded-xl bg-white/[0.04]">
-                    {seg.generatedImage ? (
-                      /* eslint-disable-next-line @next/next/no-img-element */
-                      <img src={seg.generatedImage} alt={`Shot ${seg.order}`} className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center">
-                        <ImageIcon className="h-5 w-5 text-white/15" />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1752,11 +2093,205 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       <input ref={videoUploadRef} type="file" accept="video/*" className="hidden" onChange={handleVideoUpload} />
     </div>
     </CardMagnetContext.Provider>
+    {fullscreen && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed inset-0 z-[10000] flex flex-col bg-[#0c0c0e]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Fullscreen header */}
+          <div className="flex items-center gap-3 border-b border-white/[0.06] px-6 py-4">
+            <Clapperboard className="h-4 w-4 text-white/50" />
+            <span className="text-sm text-white/70">分镜板 · {sbSegments.length} 镜头</span>
+            <div className="flex-1" />
+            <button
+              type="button"
+              onClick={() => setFullscreen(false)}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.07] text-white/50 transition hover:bg-white/15 hover:text-white"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          {/* Fullscreen table */}
+          <div className="flex-1 overflow-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-white/[0.06] text-[11px] uppercase tracking-widest text-white/30">
+                  <th className="w-12 px-6 py-3 text-left">#</th>
+                  <th className="px-4 py-3 text-left">描述</th>
+                  <th className="w-40 px-4 py-3 text-left">图片</th>
+                  <th className="w-40 px-4 py-3 text-left">视频</th>
+                  <th className="w-20 px-4 py-3 text-left">时长</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/[0.04]">
+                {sbSegments.map((seg) => {
+                  const frameImage = seg.generatedImage || seg.generationParams?.reference_frame_url || "";
+                  const statusLabel = SB_STATUS_LABELS[seg.status || ""] || "";
+                  return (
+                    <tr key={seg.id}>
+                      <td className="px-6 py-4 text-sm font-semibold text-white/50">{seg.order + 1}</td>
+                      <td className="max-w-sm px-4 py-4">
+                        <div className="space-y-1.5 text-[13px] leading-relaxed">
+                          {seg.visualDescription && <p className="text-white/80">{seg.visualDescription}</p>}
+                          {seg.cameraNotes && (
+                            <p className="text-white/40"><span className="mr-1 text-white/25">镜头</span>{seg.cameraNotes}</p>
+                          )}
+                          {seg.originalScript && (
+                            <p className="rounded-lg bg-white/[0.04] px-2 py-1 text-white/50 italic">{seg.originalScript}</p>
+                          )}
+                          {statusLabel && (
+                            <span className="inline-block rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-white/40">{statusLabel}</span>
+                          )}
+                          {seg.timeRange && <p className="text-[12px] text-white/30">{seg.timeRange}</p>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="h-28 w-28 overflow-hidden rounded-xl bg-white/[0.04]">
+                          {frameImage ? (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img src={frameImage} alt={`Shot ${seg.order + 1}`} className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center">
+                              <ImageIcon className="h-6 w-6 text-white/15" />
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="h-28 w-28 overflow-hidden rounded-xl bg-white/[0.04]">
+                          {seg.generatedVideo ? (
+                            <video
+                              src={seg.generatedVideo}
+                              className="h-full w-full object-cover"
+                              muted
+                              loop
+                              playsInline
+                              onMouseEnter={(e) => { void (e.currentTarget as HTMLVideoElement).play(); }}
+                              onMouseLeave={(e) => { const v = e.currentTarget as HTMLVideoElement; v.pause(); v.currentTime = 0; }}
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center">
+                              <Video className="h-6 w-6 text-white/15" />
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-[13px] text-white/40">
+                        {seg.duration != null ? `${seg.duration}s` : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 
 const PHANTOM_NODE_ID = "__connector_phantom__";
 const PHANTOM_EDGE_ID = "__connector_edge__";
+
+const TIMELINE_VIDEO_NODE_WIDTH = MEDIA_NODE_WIDTH;
+
+function TimelineVideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
+  const { data } = props;
+  const { isConnecting } = useCanvasNodeContext();
+  const innerRef = useRef<HTMLDivElement>(null);
+  const magnet = useCardMagnet(innerRef);
+  const [intrinsicRatio, setIntrinsicRatio] = useState<number | null>(null);
+
+  const rtData = (data.runtime.data as Record<string, unknown>);
+  const storyboardTaskId = typeof rtData.storyboardTaskId === "string" ? rtData.storyboardTaskId : "";
+  const videoUrl = typeof rtData.videoUrl === "string" ? rtData.videoUrl : "";
+  const title = typeof rtData.title === "string" && rtData.title ? rtData.title : "Untitled";
+
+  useEffect(() => { if (!videoUrl) setIntrinsicRatio(null); }, [videoUrl]);
+
+  const containerHeight = videoUrl && intrinsicRatio != null
+    ? Math.min(320, Math.round(TIMELINE_VIDEO_NODE_WIDTH / intrinsicRatio))
+    : 240;
+
+  const handleOpenTimeline = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (storyboardTaskId) {
+      window.open(`/storyboard/${storyboardTaskId}/timeline`, "_blank");
+    }
+  };
+
+  return (
+    <CardMagnetContext.Provider value={magnet}>
+    <div style={{ width: TIMELINE_VIDEO_NODE_WIDTH }} className="select-none">
+      {/* Header */}
+      <div className="mb-1.5 flex items-center gap-2 px-1">
+        <Film className="h-3.5 w-3.5 text-white/50" />
+        <span className="flex-1 truncate text-[13px] font-medium text-white/80">{title}</span>
+        {storyboardTaskId && (
+          <button
+            type="button"
+            onClick={handleOpenTimeline}
+            className="flex items-center gap-1.5 rounded-full bg-[#ffc94a]/15 px-3 py-1 text-[11px] font-medium text-[#ffc94a] transition hover:bg-[#ffc94a]/25"
+          >
+            <span>在时间轴中编辑</span>
+          </button>
+        )}
+      </div>
+
+      {/* Card body */}
+      <div className="relative" ref={innerRef}>
+        <MediaHandle side="left" />
+        <MediaHandle side="right" />
+        <div
+          style={{ height: containerHeight }}
+          className={clsx(
+            "relative overflow-hidden rounded-[20px] bg-[#1c1c1e] border transition-[border,box-shadow]",
+            props.selected
+              ? "border-white/30 shadow-[0_0_10px_rgba(255,255,255,0.12)]"
+              : isConnecting
+              ? "border-white/20 hover:border-white/70 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)]"
+              : "border-white/10 hover:border-white/20",
+          )}
+        >
+          {videoUrl ? (
+            <video
+              key={videoUrl}
+              src={videoUrl}
+              className="h-full w-full object-cover"
+              controls
+              muted
+              playsInline
+              onLoadedMetadata={(e) => {
+                const v = e.currentTarget as HTMLVideoElement;
+                if (v.videoWidth && v.videoHeight) setIntrinsicRatio(v.videoWidth / v.videoHeight);
+              }}
+            />
+          ) : (
+            <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-white/20">
+              <Film className="h-10 w-10" />
+              <p className="text-xs">连接分镜板节点以显示时间轴视频</p>
+            </div>
+          )}
+          {storyboardTaskId && (
+            <button
+              type="button"
+              onClick={handleOpenTimeline}
+              className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-1.5 text-[11px] font-medium text-[#ffc94a] backdrop-blur-sm transition hover:bg-black/90"
+            >
+              <Film className="h-3 w-3" />
+              <span>在时间轴中编辑</span>
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+    </CardMagnetContext.Provider>
+  );
+}
+
+
 
 function PhantomNode() {
   return <div style={{ width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />;
@@ -1769,6 +2304,7 @@ const nodeTypes = {
   audio: AudioNodeCard,
   digitalhuman: DigitalHumanNodeCard,
   storyboard: StoryboardNodeCard,
+  timelinevideo: TimelineVideoNodeCard,
   phantom: PhantomNode,
 };
 
@@ -1828,6 +2364,7 @@ function NodePickerPopup({
   onPick,
   onDismiss,
   onUpload,
+  onPickViral,
 }: {
   screenX: number;
   screenY: number;
@@ -1836,12 +2373,18 @@ function NodePickerPopup({
   onPick: (type: string) => void;
   onDismiss: () => void;
   onUpload?: () => void;
+  onPickViral?: () => void;
 }) {
   const [hoveredType, setHoveredType] = useState<string | null>(null);
   if (typeof document === "undefined") return null;
   const left = Math.min(screenX + 12, window.innerWidth - 320);
   const top = Math.min(Math.max(screenY - 40, 8), window.innerHeight - 320);
   const isFromVideo = sourceNodeType === "video";
+  const isFromStoryboard = sourceNodeType === "storyboard";
+  // When source is a video node, only show text; hide image/video/audio/digitalhuman
+  const visibleItems = isFromVideo
+    ? NODE_PICKER_ITEMS.filter((item) => item.type === "text")
+    : NODE_PICKER_ITEMS;
   return createPortal(
     <>
       <div className="fixed inset-0 z-[9998]" onClick={onDismiss} />
@@ -1854,22 +2397,52 @@ function NodePickerPopup({
           {sourceNodeId ? "引用该节点生成" : "添加节点"}
         </p>
         {isFromVideo && (
+          <>
+            <button
+              type="button"
+              onClick={() => onPick("storyboard")}
+              className="mb-1 flex w-full items-center gap-3 rounded-[14px] bg-[#ffc94a]/10 px-3 py-3 text-left transition hover:bg-[#ffc94a]/20 active:scale-[0.98]"
+            >
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-[#ffc94a]/20">
+                <Clapperboard className="h-5 w-5 text-[#ffc94a]" />
+              </div>
+              <div>
+                <div className="text-base font-medium text-[#ffc94a]">拆解分镜</div>
+                <div className="text-xs text-[#ffc94a]/60">拆解爆款分镜，AI 重新生成</div>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => { onPickViral?.(); onDismiss(); }}
+              className="mb-1 flex w-full items-center gap-3 rounded-[14px] bg-white/[0.05] px-3 py-3 text-left transition hover:bg-white/[0.09] active:scale-[0.98]"
+            >
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-white/10">
+                <Zap className="h-5 w-5 text-white/80" />
+              </div>
+              <div>
+                <div className="text-sm font-medium text-white">一键复刻</div>
+                <div className="text-xs text-white/40">选择产品，AI 批量生成视频</div>
+              </div>
+            </button>
+          </>
+        )}
+        {isFromStoryboard && (
           <button
             type="button"
-            onClick={() => onPick("storyboard")}
+            onClick={() => onPick("timelinevideo")}
             className="mb-1 flex w-full items-center gap-3 rounded-[14px] bg-[#ffc94a]/10 px-3 py-3 text-left transition hover:bg-[#ffc94a]/20 active:scale-[0.98]"
           >
             <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-[#ffc94a]/20">
-              <Clapperboard className="h-5 w-5 text-[#ffc94a]" />
+              <Film className="h-5 w-5 text-[#ffc94a]" />
             </div>
             <div>
-              <div className="text-base font-medium text-[#ffc94a]">一键复刻</div>
-              <div className="text-xs text-[#ffc94a]/60">拆解爆款分镜，AI 重新生成</div>
+              <div className="text-base font-medium text-[#ffc94a]">时间轴视频</div>
+              <div className="text-xs text-[#ffc94a]/60">展示并跳转至时间轴编辑</div>
             </div>
           </button>
         )}
         <div className="space-y-0.5">
-          {NODE_PICKER_ITEMS.map((item) => (
+          {visibleItems.map((item) => (
             <button
               key={item.type}
               type="button"
@@ -2119,6 +2692,7 @@ export function ReactCanvasRoot({
     sourceNodeId: string | null;
     sourceNodeType: string | null;
   } | null>(null);
+  const [viralModalSource, setViralModalSource] = useState<{ nodeId: string; videoUrl: string; screenX: number; screenY: number } | null>(null);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const rfInstanceRef = useRef<{
     screenToFlowPosition: (p: { x: number; y: number }) => { x: number; y: number };
@@ -2261,6 +2835,50 @@ export function ReactCanvasRoot({
     return polished || text;
   }, []);
 
+  // Add programmatic downstream nodes from a source node — returns the new node IDs
+  const addDownstreamNodes = useCallback(
+    (sourceNodeId: string, nodeDefs: { type: string; data: Record<string, unknown> }[]): string[] => {
+      const source = nodesRef.current.find((n) => n.id === sourceNodeId);
+      const sourceX = source?.position.x ?? 0;
+      const sourceY = source?.position.y ?? 0;
+      const sourceWidth = (source?.measured?.width as number | undefined) ?? MEDIA_NODE_WIDTH;
+      const ids: string[] = [];
+      const newNodes: Node<MinimalFlowNodeData>[] = [];
+      const newEdges: Edge[] = [];
+      const gapX = 80;
+      const gapY = 340;
+      nodeDefs.forEach((def, idx) => {
+        const newId = `${def.type}_${Math.random().toString(36).slice(2, 8)}`;
+        ids.push(newId);
+        const col = Math.floor(idx / 2);
+        const row = idx % 2;
+        newNodes.push({
+          id: newId,
+          type: def.type,
+          position: {
+            x: sourceX + sourceWidth + gapX + col * (MEDIA_NODE_WIDTH + gapX),
+            y: sourceY + row * gapY,
+          },
+          data: {
+            runtime: { id: newId, type: def.type, position: { x: 0, y: 0 }, data: def.data },
+            summary: "",
+            status: "idle" as const,
+            expanded: false,
+          },
+        });
+        newEdges.push({ id: `e_${sourceNodeId}_${newId}`, source: sourceNodeId, target: newId, type: "smoothstep" });
+      });
+      setNodes((prev) => [...prev, ...newNodes]);
+      setEdges((prev) => {
+        let acc = prev;
+        newEdges.forEach((e) => { acc = addEdge(e, acc); });
+        return acc;
+      });
+      return ids;
+    },
+    [],
+  );
+
   const nodeContextValue = useMemo(
     () => ({
       toggleExpanded,
@@ -2281,8 +2899,12 @@ export function ReactCanvasRoot({
       runAudioNode,
       runDigitalHumanNode,
       runStoryboardNode,
+      addDownstreamNodes,
       uploadResource,
       polishPrompt,
+      openViralModal: (nodeId: string, videoUrl: string, screenX: number, screenY: number) => {
+        setViralModalSource({ nodeId, videoUrl, screenX, screenY });
+      },
     }),
     [
       toggleExpanded,
@@ -2301,6 +2923,7 @@ export function ReactCanvasRoot({
       runAudioNode,
       runDigitalHumanNode,
       runStoryboardNode,
+      addDownstreamNodes,
       uploadResource,
       polishPrompt,
     ],
@@ -2467,6 +3090,15 @@ export function ReactCanvasRoot({
       if (type === "storyboard" && sourceNode) {
         const srcData = (sourceNode.data.runtime?.data || {}) as Record<string, unknown>;
         const srcVideoUrl = String(srcData.outputUrl || srcData.videoUrl || srcData.url || "").trim();
+        if (srcVideoUrl) prefilledData.videoUrl = srcVideoUrl;
+      }
+      if (type === "timelinevideo" && sourceNode) {
+        const srcData = (sourceNode.data.runtime?.data || {}) as Record<string, unknown>;
+        // If source is a storyboard node, link to its task ID
+        const srcTaskId = String(srcData.storyboardTaskId || srcData.taskId || "").trim();
+        if (srcTaskId) prefilledData.storyboardTaskId = srcTaskId;
+        // Also carry over any timeline video url
+        const srcVideoUrl = String(srcData.timelineVideoUrl || srcData.outputUrl || "").trim();
         if (srcVideoUrl) prefilledData.videoUrl = srcVideoUrl;
       }
       const newNode: Node<MinimalFlowNodeData> = {
@@ -3281,7 +3913,7 @@ export function ReactCanvasRoot({
             proOptions={{ hideAttribution: true }}
             zoomOnDoubleClick={false}
             panActivationKeyCode={null}
-            deleteKeyCode={null}
+            deleteKeyCode={["Delete", "Backspace"]}
           >
             <Background color="rgba(255,255,255,0.08)" variant={BackgroundVariant.Dots} style={{ display: showBackground ? undefined : "none" }} />
           </ReactFlow>
@@ -3309,6 +3941,7 @@ export function ReactCanvasRoot({
             <ToolbarBtn icon={Play}         label="图生视频"     onClick={() => { handleApplyTemplate("image-to-video");       setIsAddPanelOpen(false); }} />
             <ToolbarBtn icon={UserCircle2}  label="文字转数字人" onClick={() => { handleApplyTemplate("text-to-digitalhuman"); setIsAddPanelOpen(false); }} />
             <ToolbarBtn icon={Clapperboard} label="爆款复刻"     onClick={() => { handleApplyTemplate("viral");               setIsAddPanelOpen(false); }} />
+            <ToolbarBtn icon={Film}         label="时间轴视频"   onClick={() => { handlePickNode("timelinevideo", Math.round(window.innerWidth / 2), Math.round(window.innerHeight / 2), null); setIsAddPanelOpen(false); }} />
             <div className="my-1 h-px w-6 bg-white/10" />
             {/* Upload — always at bottom */}
             <ToolbarBtn icon={Upload} label="上传图片/视频" onClick={() => toolbarUploadRef.current?.click()} />
@@ -3339,6 +3972,24 @@ export function ReactCanvasRoot({
                   </div>
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    handlePickNode("timelinevideo", Math.round(window.innerWidth / 2), Math.round(window.innerHeight / 2), null);
+                  }
+                  setIsAddPanelOpen(false);
+                }}
+                className="group flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition hover:bg-white/[0.07] active:scale-[0.98]"
+              >
+                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-white/10">
+                  <Film className="h-5 w-5 text-white/80" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-white">时间轴视频</p>
+                  <p className="overflow-hidden text-xs text-white/0 transition-all duration-150 group-hover:text-white/50">展示时间轴视频，跳转编辑</p>
+                </div>
+              </button>
               <div className="my-2 h-px bg-white/[0.06]" />
               <p className="mb-2 px-2 text-sm text-white/40">上传素材</p>
               <button
@@ -3542,6 +4193,21 @@ export function ReactCanvasRoot({
           }}
           onDismiss={() => setNodePicker(null)}
           onUpload={() => toolbarUploadRef.current?.click()}
+          onPickViral={nodePicker.sourceNodeId ? () => {
+            const sourceNode = nodesRef.current.find((n) => n.id === nodePicker.sourceNodeId);
+            const videoUrl = (sourceNode?.data?.runtime?.data?.outputUrl as string | undefined) ?? "";
+            setViralModalSource({ nodeId: nodePicker.sourceNodeId!, videoUrl, screenX: nodePicker.screenX, screenY: nodePicker.screenY });
+            setNodePicker(null);
+          } : undefined}
+        />
+      )}
+      {viralModalSource && (
+        <ViralReplicationModal
+          sourceNodeId={viralModalSource.nodeId}
+          referenceVideoUrl={viralModalSource.videoUrl}
+          screenX={viralModalSource.screenX}
+          screenY={viralModalSource.screenY}
+          onClose={() => setViralModalSource(null)}
         />
       )}
     </>

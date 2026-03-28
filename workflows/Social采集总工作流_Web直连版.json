@@ -1,0 +1,850 @@
+{
+  "name": "Social采集总工作流_Web直连版",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "social_scrape",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        160
+      ],
+      "id": "1dee294a-8d54-42e8-9e39-c61fa0354d81",
+      "name": "Webhook",
+      "webhookId": "social-scrape-web-direct"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.body ?? $json ?? {};\n\nfunction pickFirst(...vals) {\n  for (const v of vals) {\n    if (v !== undefined && v !== null && String(v).trim() !== '') return v;\n  }\n  return undefined;\n}\nfunction asArray(v) {\n  if (Array.isArray(v)) return v;\n  if (v === undefined || v === null || v === '') return [];\n  return [v];\n}\nfunction toInt(v, d = 10) {\n  const n = parseInt(v, 10);\n  return Number.isFinite(n) && n > 0 ? n : d;\n}\nfunction normUrl(x) {\n  return String(x || '').trim();\n}\n\nconst platform = String(pickFirst(raw.platform, '') || '').trim().toLowerCase();\nconst inputMode = String(pickFirst(raw.input_mode, raw.inputMode, '') || '').trim().toLowerCase();\nconst callbackUrl = pickFirst(raw.callback_url, raw.callbackUrl, raw.webhook_callback);\nconst apiKey = pickFirst(raw.api_key, raw.apiKey);\nconst apifyToken = pickFirst(raw.apify_token, raw.apifyToken, 'YOUR_APIFY_TOKEN');\nconst workflowId = pickFirst(raw.workflow_id, 'flow0010');\nconst taskId = pickFirst(raw.task_id, raw.taskId, 'social_' + Date.now());\n\nconst payload = raw.payload && typeof raw.payload === 'object' ? raw.payload : raw;\n\nlet taskCount = 0;\nlet normalizedPayload = {};\nlet modeResolved = inputMode;\n\nif (!platform) throw new Error('缺少 platform');\nif (!apiKey) throw new Error('缺少 api_key');\nif (!callbackUrl) throw new Error('缺少 callback_url');\n\nif (platform === 'tiktok' && inputMode === 'url') {\n  const postURLs = asArray(pickFirst(payload.postURLs, payload.urls, payload.url_list, payload.url))\n    .map(normUrl).filter(Boolean);\n  if (!postURLs.length) throw new Error('TikTok URL模式缺少 postURLs/urls/url');\n  normalizedPayload = { postURLs };\n  taskCount = postURLs.length;\n} else if (platform === 'tiktok' && inputMode === 'keyword') {\n  const searchQueries = asArray(pickFirst(payload.searchQueries, payload.keywords, payload.queries, payload.keyword))\n    .map(v => String(v || '').trim()).filter(Boolean);\n  const limit = toInt(pickFirst(payload.limit, payload.resultsPerPage, payload.count), 10);\n  if (!searchQueries.length) throw new Error('TikTok 关键词模式缺少 searchQueries/keywords/keyword');\n  normalizedPayload = { searchQueries, limit };\n  taskCount = searchQueries.length;\n} else if (platform === 'facebook') {\n  modeResolved = 'url';\n  const urls = asArray(pickFirst(payload.startUrls, payload.start_urls, payload.urls, payload.url))\n    .map(item => typeof item === 'string' ? item : (item?.url || ''))\n    .map(normUrl).filter(Boolean);\n  const startUrls = urls.map(url => ({ url }));\n  const resultsLimit = toInt(pickFirst(payload.resultsLimit, payload.results_limit, payload.limit), 20);\n  const captionText = Boolean(pickFirst(payload.captionText, payload.caption_text, false));\n  if (!startUrls.length) throw new Error('Facebook 模式缺少 startUrls/urls/url');\n  normalizedPayload = { startUrls, resultsLimit, captionText };\n  taskCount = startUrls.length;\n} else if (platform === 'instagram') {\n  modeResolved = 'url';\n  const directUrls = asArray(pickFirst(payload.directUrls, payload.direct_urls, payload.urls, payload.url))\n    .map(item => typeof item === 'string' ? item : (item?.url || ''))\n    .map(normUrl).filter(Boolean);\n  const resultsLimit = toInt(pickFirst(payload.resultsLimit, payload.results_limit, payload.limit), 10);\n  if (!directUrls.length) throw new Error('Instagram 模式缺少 directUrls/urls/url');\n  normalizedPayload = { directUrls, resultsLimit };\n  taskCount = directUrls.length;\n} else {\n  throw new Error(`暂不支持的 platform/input_mode 组合: ${platform}/${inputMode}`);\n}\n\nreturn [{\n  json: {\n    task_id: taskId,\n    workflow_id: workflowId,\n    api_key: apiKey,\n    apify_token: apifyToken,\n    callback_url: callbackUrl,\n    platform,\n    input_mode: modeResolved,\n    taskCount,\n    payload: normalizedPayload,\n    request_meta: {\n      source: pickFirst(raw.source, 'web'),\n      client_uid: pickFirst(raw.client_uid, raw.user_id, ''),\n      batch_name: pickFirst(raw.batch_name, '')\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        160
+      ],
+      "id": "b9fe4e01-0f88-453b-8dd8-7cb81f67c9a2",
+      "name": "标准化输入"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{{ success: true, ok: true, message: '任务已受理', task_id: $('标准化输入').first().json.task_id, platform: $('标准化输入').first().json.platform, input_mode: $('标准化输入').first().json.input_mode, status: 'accepted', task_count: $('标准化输入').first().json.taskCount }}}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "id": "3ddcd7d1-8173-400c-ac9b-1a234a333ae1",
+      "name": "立即响应已受理"
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id={{ $('标准化输入').first().json.workflow_id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        208
+      ],
+      "id": "84d5a355-8f4d-4fb3-bbaa-37e63290ec56",
+      "name": "查询积分单价"
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/api/balance/check",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "required",
+              "value": "={{ $json.data.credit_cost * $('标准化输入').first().json.taskCount }}"
+            },
+            {
+              "name": "api_key",
+              "value": "={{ $('标准化输入').first().json.api_key }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        208
+      ],
+      "id": "b4ff7de5-8184-4b9a-827d-4d3e2e408729",
+      "name": "验证余额",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === true }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    },
+                    "id": "pass"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pass"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === true }}",
+                    "rightValue": "false",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    },
+                    "id": "fail"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "fail"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        480,
+        208
+      ],
+      "id": "aa1c68a8-348b-410c-bed7-81f99a24ad88",
+      "name": "余额是否充足"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('标准化输入').first().json.callback_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{{ success: false, ok: false, task_id: $('标准化输入').first().json.task_id, platform: $('标准化输入').first().json.platform, input_mode: $('标准化输入').first().json.input_mode, status: 'failed', error_code: 'INSUFFICIENT_CREDITS', message: '余额不足', required_credits: $('查询积分单价').first().json.data.credit_cost * $('标准化输入').first().json.taskCount, task_count: $('标准化输入').first().json.taskCount, workflow_id: $('标准化输入').first().json.workflow_id, callback_time: new Date().toISOString() }}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        368
+      ],
+      "id": "4d363775-5972-4d02-9282-00adaedcfb5a",
+      "name": "回调-余额不足"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('标准化输入').first().json;\nconst { platform, input_mode, payload, apify_token } = input;\n\nlet actorPath = '';\nlet actorInput = {};\n\nif (platform === 'tiktok' && input_mode === 'url') {\n  actorPath = 'GdWCkxBtKWOsKjdch';\n  actorInput = {\n    excludePinnedPosts: true,\n    proxyCountryCode: 'None',\n    scrapeRelatedVideos: false,\n    postURLs: payload.postURLs,\n    shouldDownloadAvatars: false,\n    shouldDownloadCovers: false,\n    shouldDownloadMusicCovers: false,\n    shouldDownloadSlideshowImages: false,\n    shouldDownloadSubtitles: true,\n    shouldDownloadVideos: true\n  };\n} else if (platform === 'tiktok' && input_mode === 'keyword') {\n  actorPath = 'GdWCkxBtKWOsKjdch';\n  actorInput = {\n    excludePinnedPosts: true,\n    proxyCountryCode: 'None',\n    resultsPerPage: payload.limit,\n    scrapeRelatedVideos: false,\n    searchQueries: payload.searchQueries,\n    shouldDownloadAvatars: false,\n    shouldDownloadCovers: false,\n    shouldDownloadMusicCovers: false,\n    shouldDownloadSlideshowImages: false,\n    shouldDownloadSubtitles: true,\n    shouldDownloadVideos: true\n  };\n} else if (platform === 'facebook') {\n  actorPath = 'apify/facebook-posts-scraper';\n  actorInput = {\n    captionText: payload.captionText,\n    resultsLimit: payload.resultsLimit,\n    startUrls: payload.startUrls\n  };\n} else if (platform === 'instagram') {\n  actorPath = 'apify/instagram-scraper';\n  actorInput = {\n    addParentData: false,\n    directUrls: payload.directUrls,\n    enhanceUserSearchWithFacebookPage: false,\n    isUserReelFeedURL: false,\n    isUserTaggedFeedURL: false,\n    resultsLimit: payload.resultsLimit,\n    resultsType: 'posts',\n    searchLimit: 1,\n    searchType: 'hashtag'\n  };\n} else {\n  throw new Error(`未支持的 actor 路由: ${platform}/${input_mode}`);\n}\n\nconst encodedActor = encodeURIComponent(actorPath);\n\nreturn [{\n  json: {\n    ...input,\n    actorPath,\n    actorInput,\n    run_url: `https://api.apify.com/v2/acts/${encodedActor}/runs?token=${apify_token}`,\n    status_base_url: `https://api.apify.com/v2`,\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        128
+      ],
+      "id": "49860b79-a7f1-42ce-8e95-5fd0c1bf4eef",
+      "name": "构建Apify任务"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.run_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.actorInput }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        128
+      ],
+      "id": "e5821698-c749-4ba4-9210-28be9dbbabf4",
+      "name": "启动Apify(异步)"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.apify.com/v2/actor-runs/{{ $('启动Apify(异步)').item.json.data.id }}?token={{ $('标准化输入').first().json.apify_token }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        128
+      ],
+      "id": "67c84f0c-18bc-4f34-aa47-aec7cdd1c3c5",
+      "name": "查询运行状态"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "running",
+                    "leftValue": "={{ $json.data.status }}",
+                    "rightValue": "RUNNING",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  },
+                  {
+                    "id": "ready",
+                    "leftValue": "={{ $json.data.status }}",
+                    "rightValue": "READY",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "or"
+              },
+              "renameOutput": true,
+              "outputKey": "wait"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "success",
+                    "leftValue": "={{ $json.data.status }}",
+                    "rightValue": "SUCCEEDED",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "success"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "failed",
+                    "leftValue": "={{ ['FAILED','TIMED-OUT','ABORTED'].includes($json.data.status) }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "fail"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1440,
+        128
+      ],
+      "id": "ee37a795-f4a9-48dd-a1e5-3a83dc66184b",
+      "name": "状态判断"
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1680,
+        32
+      ],
+      "id": "d97653aa-8863-42c4-af6b-637a5cba7531",
+      "name": "轮询等待(10s)",
+      "webhookId": "social-scrape-poll"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.apify.com/v2/datasets/{{ $('启动Apify(异步)').item.json.data.defaultDatasetId }}/items?token={{ $('标准化输入').first().json.apify_token }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        208
+      ],
+      "id": "0d3ef5ce-af5b-4ed7-bc16-ba1c033fd359",
+      "name": "获取爬取结果"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('标准化输入').first().json.callback_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{{ success: false, ok: false, task_id: $('标准化输入').first().json.task_id, platform: $('标准化输入').first().json.platform, input_mode: $('标准化输入').first().json.input_mode, status: 'failed', error_code: 'SCRAPE_FAILED', message: 'Apify 运行失败', apify_status: $('查询运行状态').first().json.data.status, callback_time: new Date().toISOString() }}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        368
+      ],
+      "id": "3d9b1dbd-2384-41f1-bdbe-42be2576985e",
+      "name": "回调-采集失败"
+    },
+    {
+      "parameters": {
+        "jsCode": "const platform = $('标准化输入').first().json.platform;\nconst inputMode = $('标准化输入').first().json.input_mode;\nconst items = $input.all();\nconst cleaned = [];\n\nfor (const item of items) {\n  const data = item.json || {};\n\n  if (platform === 'tiktok') {\n    let subtitleUrl = '';\n    if (data.videoMeta && Array.isArray(data.videoMeta.subtitleLinks)) {\n      const sub = data.videoMeta.subtitleLinks.find(s =>\n        String(s.language || '').toLowerCase().startsWith('en')\n      ) || data.videoMeta.subtitleLinks[0];\n      if (sub) subtitleUrl = sub.downloadLink || '';\n    }\n\n    cleaned.push({\n      json: {\n        platform,\n        input_mode: inputMode,\n        source_key: inputMode === 'keyword' ? (data.input || data.searchQuery || '') : (data.webVideoUrl || data.url || ''),\n        post_url: data.webVideoUrl || data.url || '',\n        author_name: data.authorMeta ? data.authorMeta.name : '',\n        author_profile_url: data.authorMeta ? data.authorMeta.profileUrl : '',\n        text: data.text || '',\n        play_count: data.playCount || 0,\n        like_count: data.diggCount || 0,\n        comment_count: data.commentCount || 0,\n        share_count: data.shareCount || 0,\n        collect_count: data.collectCount || 0,\n        fans_count: data.authorMeta ? data.authorMeta.fans : 0,\n        author_signature: data.authorMeta ? data.authorMeta.signature : '',\n        cover_url: data.videoMeta ? data.videoMeta.originalCoverUrl : '',\n        published_at: data.createTimeISO || '',\n        video_url: (data.mediaUrls && data.mediaUrls.length > 0) ? data.mediaUrls[0] : '',\n        script_text: '',\n        _subtitleUrl: subtitleUrl,\n        raw: data,\n        hasData: true\n      }\n    });\n  } else if (platform === 'facebook') {\n    cleaned.push({\n      json: {\n        platform,\n        input_mode: 'url',\n        source_key: data.inputUrl || data.pageUrl || data.url || '',\n        page_name: data.pageName || data.pageTitle || data.ownerName || '',\n        post_id: data.postId || data.id || '',\n        post_url: data.postUrl || data.url || '',\n        text: data.text || data.caption || data.message || '',\n        published_at: data.time || data.timestamp || data.createdAt || '',\n        like_count: data.reactionsCount || data.likes || 0,\n        comment_count: data.commentsCount || data.comments || 0,\n        share_count: data.sharesCount || data.shares || 0,\n        image_urls: Array.isArray(data.images) ? data.images : [],\n        video_url: data.videoUrl || '',\n        author_name: data.authorName || data.ownerName || '',\n        author_profile_url: data.authorProfileUrl || data.authorUrl || '',\n        raw: data,\n        hasData: true\n      }\n    });\n  } else if (platform === 'instagram') {\n    const postUrl = data.url || data.postUrl || '';\n    if (!postUrl) continue;\n    cleaned.push({\n      json: {\n        platform,\n        input_mode: 'url',\n        source_key: data.inputUrl || data.ownerUsername || '',\n        post_url: postUrl,\n        text: data.caption || '',\n        published_at: data.timestamp || data.latestComments?.[0]?.timestamp || '',\n        like_count: data.likesCount || 0,\n        comment_count: data.commentsCount || 0,\n        share_count: 0,\n        video_url: data.videoUrl || '',\n        display_url: data.displayUrl || '',\n        image_urls: Array.isArray(data.images) ? data.images : [],\n        author_name: data.ownerFullName || data.ownerUsername || '',\n        author_username: data.ownerUsername || '',\n        author_profile_url: data.inputUrl || data.ownerProfilePicUrl || '',\n        shortcode: data.shortCode || data.shortcode || '',\n        media_type: data.type || '',\n        raw: data,\n        hasData: true\n      }\n    });\n  }\n}\n\nif (!cleaned.length) {\n  return [{ json: { hasData: false, platform, input_mode: inputMode } }];\n}\n\nreturn cleaned;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1952,
+        208
+      ],
+      "id": "b775bba5-031b-42c0-8781-2af98a9a4679",
+      "name": "清洗结果(统一)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has_data",
+              "leftValue": "={{ $json.hasData }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2192,
+        208
+      ],
+      "id": "b035a6f4-defb-4455-85e3-e9fe2870a55b",
+      "name": "是否有数据"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "tiktok",
+                    "leftValue": "={{ $('标准化输入').first().json.platform }}",
+                    "rightValue": "tiktok",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "tiktok"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "other",
+                    "leftValue": "={{ $('标准化输入').first().json.platform !== 'tiktok' }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "other"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        2432,
+        208
+      ],
+      "id": "a9c3eb02-400e-422f-ae05-272c9508111e",
+      "name": "是否TikTok"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json._subtitleUrl }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2672,
+        128
+      ],
+      "id": "3adf7a56-89ff-40ef-870c-5e17b91889d0",
+      "name": "下载字幕(如有)",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n  let subText = '';\n  const rawContent = item.json.data || item.json;\n\n  if (typeof rawContent === 'string' && rawContent.length > 0 && !rawContent.includes('error')) {\n    const lines = rawContent.split(/\\r?\\n/);\n    const texts = [];\n    for (const line of lines) {\n      const trimmed = line.trim();\n      if (!trimmed) continue;\n      if (/^WEBVTT/i.test(trimmed)) continue;\n      if (/^\\d+$/.test(trimmed)) continue;\n      if (/^\\d{2}:\\d{2}:\\d{2}/.test(trimmed)) continue;\n      texts.push(trimmed);\n    }\n    subText = texts.join('\\n');\n  }\n\n  const original = item.pairedItem\n    ? $items('清洗结果(统一)')[item.pairedItem.item].json\n    : {};\n\n  return {\n    json: {\n      ...original,\n      script_text: subText || original.script_text || ''\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2912,
+        128
+      ],
+      "id": "e4922526-a564-45ae-80f4-4ba9fa371e1f",
+      "name": "解析字幕为文本"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst results = items.map(item => {\n  const j = item.json || {};\n  return {\n    platform: j.platform || '',\n    input_mode: j.input_mode || '',\n    source_key: j.source_key || '',\n    post_url: j.post_url || '',\n    author_name: j.author_name || '',\n    author_profile_url: j.author_profile_url || '',\n    text: j.text || '',\n    published_at: j.published_at || '',\n    like_count: j.like_count || 0,\n    comment_count: j.comment_count || 0,\n    share_count: j.share_count || 0,\n    collect_count: j.collect_count || 0,\n    play_count: j.play_count || 0,\n    fans_count: j.fans_count || 0,\n    video_url: j.video_url || '',\n    image_urls: j.image_urls || [],\n    cover_url: j.cover_url || '',\n    page_name: j.page_name || '',\n    post_id: j.post_id || '',\n    display_url: j.display_url || '',\n    author_username: j.author_username || '',\n    shortcode: j.shortcode || '',\n    media_type: j.media_type || '',\n    author_signature: j.author_signature || '',\n    script_text: j.script_text || '',\n    raw: j.raw || {}\n  };\n});\n\nreturn [{\n  json: {\n    success: true,\n    ok: true,\n    task_id: $('标准化输入').first().json.task_id,\n    platform: $('标准化输入').first().json.platform,\n    input_mode: $('标准化输入').first().json.input_mode,\n    status: 'completed',\n    workflow_id: $('标准化输入').first().json.workflow_id,\n    task_count: $('标准化输入').first().json.taskCount,\n    success_count: results.length,\n    failed_count: Math.max(0, $('标准化输入').first().json.taskCount - results.length),\n    results,\n    callback_time: new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3152,
+        128
+      ],
+      "id": "7ff25949-e2b5-48d9-9729-fcc18e66ec91",
+      "name": "聚合结果"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://47.107.158.233:8080/api/credits/deduct",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "={{ $('标准化输入').first().json.api_key }}"
+            },
+            {
+              "name": "amount",
+              "value": "={{ $('查询积分单价').first().json.data.credit_cost * $('标准化输入').first().json.taskCount }}"
+            },
+            {
+              "name": "reason",
+              "value": "=Social采集总工作流-{{ $('标准化输入').first().json.platform }}-{{ $('标准化输入').first().json.input_mode }}"
+            },
+            {
+              "name": "workflow_id",
+              "value": "={{ $('查询积分单价').first().json.data.workflow_id }}"
+            },
+            {
+              "name": "workflow_name",
+              "value": "={{ $('查询积分单价').first().json.data.workflow_name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3392,
+        128
+      ],
+      "id": "bf47f1f2-b671-4721-818a-f4ea78573016",
+      "name": "扣除积分"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('标准化输入').first().json.callback_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('聚合结果').first().json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3632,
+        128
+      ],
+      "id": "71f8f248-6a99-4200-a27c-11a561def865",
+      "name": "回调-成功结果"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('标准化输入').first().json.callback_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{{ success: true, ok: true, task_id: $('标准化输入').first().json.task_id, platform: $('标准化输入').first().json.platform, input_mode: $('标准化输入').first().json.input_mode, status: 'completed', workflow_id: $('标准化输入').first().json.workflow_id, task_count: $('标准化输入').first().json.taskCount, success_count: 0, failed_count: $('标准化输入').first().json.taskCount, results: [], message: '采集完成，但没有有效数据', callback_time: new Date().toISOString() }}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2432,
+        368
+      ],
+      "id": "106b714d-5066-40b6-9808-7a7f1ffabdd4",
+      "name": "回调-无数据"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "标准化输入",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "标准化输入": {
+      "main": [
+        [
+          {
+            "node": "立即响应已受理",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "查询积分单价",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "查询积分单价": {
+      "main": [
+        [
+          {
+            "node": "验证余额",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "验证余额": {
+      "main": [
+        [
+          {
+            "node": "余额是否充足",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "余额是否充足": {
+      "main": [
+        [
+          {
+            "node": "构建Apify任务",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "回调-余额不足",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "构建Apify任务": {
+      "main": [
+        [
+          {
+            "node": "启动Apify(异步)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "启动Apify(异步)": {
+      "main": [
+        [
+          {
+            "node": "查询运行状态",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "查询运行状态": {
+      "main": [
+        [
+          {
+            "node": "状态判断",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "状态判断": {
+      "main": [
+        [
+          {
+            "node": "轮询等待(10s)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "获取爬取结果",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "回调-采集失败",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "轮询等待(10s)": {
+      "main": [
+        [
+          {
+            "node": "查询运行状态",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "获取爬取结果": {
+      "main": [
+        [
+          {
+            "node": "清洗结果(统一)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "清洗结果(统一)": {
+      "main": [
+        [
+          {
+            "node": "是否有数据",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "是否有数据": {
+      "main": [
+        [
+          {
+            "node": "是否TikTok",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "回调-无数据",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "是否TikTok": {
+      "main": [
+        [
+          {
+            "node": "下载字幕(如有)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "聚合结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "下载字幕(如有)": {
+      "main": [
+        [
+          {
+            "node": "解析字幕为文本",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析字幕为文本": {
+      "main": [
+        [
+          {
+            "node": "聚合结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "聚合结果": {
+      "main": [
+        [
+          {
+            "node": "扣除积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "扣除积分": {
+      "main": [
+        [
+          {
+            "node": "回调-成功结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "262b2f00-1f81-4f18-a1c3-69db5851c5af",
+  "meta": {
+    "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
+  },
+  "id": "M8037KaDS88aStkQ",
+  "tags": []
+}

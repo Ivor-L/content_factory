@@ -102,7 +102,8 @@ export async function POST(request: NextRequest) {
         // Async models: deduct credits in webhook after video is actually delivered
         const taskId = extractTaskId(parsedJson);
         if (taskId) {
-          const webhookUrl = `${request.nextUrl.origin}/api/canvas/videos/webhook`;
+          const callbackBase = (process.env.CANVAS_VIDEO_POLL_CALLBACK_BASE_URL || process.env.NEXTAUTH_URL || "").replace(/\/+$/, "") || request.nextUrl.origin;
+          const webhookUrl = `${callbackBase}/api/canvas/videos/webhook`;
           try {
             await fetch("https://api.atomx.top/tools/veo/poll/async", {
               method: "POST",
