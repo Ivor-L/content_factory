@@ -424,7 +424,7 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             patchRuntimeData(id, { content: (e.target as HTMLTextAreaElement).value });
           }}
           placeholder="开启你的创作..."
-          className="w-full resize-none bg-transparent px-4 py-4 text-sm text-white outline-none placeholder:text-white/30"
+          className="select-text w-full resize-none bg-transparent px-4 py-4 text-sm text-white outline-none placeholder:text-white/30"
           style={{ minHeight: 240, overflowY: "hidden", transition: "height 0.15s ease" }}
         />
       </div>
@@ -509,7 +509,7 @@ function CompositionTextarea({
   return (
     <textarea
       value={local}
-      className={className}
+      className={className + " select-text"}
       placeholder={placeholder}
       onChange={(e) => {
         setLocal(e.target.value);
