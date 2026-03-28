@@ -407,15 +407,14 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   );
   const isRunning = data.status === "running";
 
-  // Auto-resize textarea to content
+  // Notify ReactFlow when textarea is resized by user (native drag handle)
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.max(240, el.scrollHeight)}px`;
-    // Notify ReactFlow that this node's size changed so edges recalculate
-    updateNodeInternals(id);
-  }, [content, id, updateNodeInternals]);
+    const observer = new ResizeObserver(() => updateNodeInternals(id));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [id, updateNodeInternals]);
 
   if (isImageUnderstanding) {
     return (
@@ -531,7 +530,7 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
         <span className="text-[11px] uppercase tracking-[0.2em] text-white/50">{title}</span>
       </div>
       {/* Card = textarea with handles positioned relative to it */}
-      <div className="relative" style={{ minHeight: 240 }} ref={innerRef}>
+      <div className="relative" ref={innerRef}>
       <CardHandle side="left" magnetY={magnet.magnetY} visible={magnet.showLeft || isConnecting} isConnecting={isConnecting} />
       <CardHandle side="right" magnetY={magnet.magnetY} visible={magnet.showRight} isConnecting={isConnecting} />
       <div
@@ -557,8 +556,8 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             patchRuntimeData(id, { content: (e.target as HTMLTextAreaElement).value });
           }}
           placeholder="开启你的创作..."
-          className="select-text w-full resize-none bg-transparent px-4 py-4 text-sm text-white outline-none placeholder:text-white/30"
-          style={{ minHeight: 240, overflowY: "hidden", transition: "height 0.15s ease" }}
+          className="nodrag select-text w-full bg-transparent px-4 py-4 text-sm text-white outline-none placeholder:text-white/30"
+          style={{ height: 240, minHeight: 120, maxHeight: 800, resize: "vertical", overflowY: "auto" }}
         />
       </div>
       </div>{/* end inner relative */}
