@@ -248,7 +248,7 @@ export function CanvasAgentDrawer() {
             type="button"
             onClick={handleSubmit}
             disabled={disabled}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#ffc94a] px-4 py-3 text-sm font-semibold text-black shadow-[0_0_20px_rgba(255,201,74,0.45)] transition hover:bg-[#ffd86f] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#ffc94a] px-4 py-3 text-sm font-semibold text-black transition hover:bg-[#ffd86f] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting ? (
               <>

@@ -4386,7 +4386,7 @@ export function ReactCanvasRoot({
                 type="button"
                 onClick={handleCreateProject}
                 disabled={loadingProjects}
-                className="inline-flex items-center gap-2 rounded-full bg-[#ffc94a] px-5 py-2 text-sm font-medium text-black shadow-[0_0_25px_rgba(255,201,74,0.45)] transition hover:bg-[#ffd86f] disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-full bg-[#ffc94a] px-5 py-2 text-sm font-medium text-black shadow-none transition hover:bg-[#ffd86f] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Plus className="h-4 w-4" />
                 新建项目
@@ -4517,7 +4517,7 @@ export function ReactCanvasRoot({
                 type="button"
                 onClick={handleCreateProject}
                 disabled={loadingProjects}
-                className="inline-flex items-center gap-2 rounded-full bg-[#ffc94a] px-6 py-2 text-sm font-medium text-black shadow-[0_0_25px_rgba(255,201,74,0.45)] transition hover:bg-[#ffd86f] disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center gap-2 rounded-full bg-[#ffc94a] px-6 py-2 text-sm font-medium text-black shadow-none transition hover:bg-[#ffd86f] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Plus className="h-4 w-4" />
                 创建第一个项目
