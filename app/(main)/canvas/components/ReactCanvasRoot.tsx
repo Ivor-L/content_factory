@@ -3214,7 +3214,10 @@ export function ReactCanvasRoot({
             onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd as never}
             onNodeClick={(e, node) => {
-              focusNode(node.id);
+              const target = e.target as HTMLElement;
+              const tag = target.tagName;
+              if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable) return;
+              if (focusedNodeId !== node.id) focusNode(node.id);
             }}
             onPaneClick={(e) => {
               if (suppressNextPaneClickRef.current) {
