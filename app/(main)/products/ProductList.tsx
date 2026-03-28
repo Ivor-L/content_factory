@@ -613,7 +613,7 @@ export function ProductList({ initialProducts, showHeader = true }: ProductListP
                   setViewingProduct(product);
                   setIsDetailOpen(true);
                 }}
-                className="group block bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-gray-100 dark:border-gray-700 cursor-pointer relative"
+                className="group block bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden cursor-pointer relative"
               >
                 
                 <div className="relative h-48 bg-gray-50 dark:bg-gray-700 overflow-hidden z-10">
