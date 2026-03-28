@@ -12,12 +12,16 @@ const ALLOWED_MODELS = new Set([
 ]);
 
 function getBaseUrl() {
-  const base = process.env.CLOUD_API_BASE_URL || "";
+  const base = process.env.CANVAS_API_BASE_URL || process.env.CLOUD_API_BASE_URL || "";
   return base.endsWith("/") ? base.slice(0, -1) : base;
 }
 
 function getSystemApiKey() {
-  return process.env.CLOUD_API_KEY || "";
+  return (
+    process.env.CANVAS_UPSTREAM_DEFAULT_API_KEY ||
+    process.env.CLOUD_API_KEY ||
+    ""
+  );
 }
 
 export async function POST(request: NextRequest) {
