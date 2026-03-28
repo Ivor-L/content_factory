@@ -3393,6 +3393,7 @@ export function ReactCanvasRoot({
     return () => clearTimeout(timeout);
   }, [currentProject, initialPrompt, syncFromCanvasData]);
 
+
   useEffect(() => {
     if (!currentProjectId || hydratingRef.current) return;
     let cancelled = false;
@@ -3577,63 +3578,119 @@ export function ReactCanvasRoot({
   }, [chatInput]);
 
   const handleChatSend = useCallback(
-    (input: string) => {
+    async (input: string) => {
       const trimmed = input.trim();
       if (!trimmed) return;
+      setChatInput("");
+      setChatAttachments([]);
+
+      // Classify intent via agent API
+      let intent: string = "mixed";
+      let prompt = trimmed;
+      let ratio: string | undefined;
+      try {
+        const agentRes = await fetch("/api/canvas/agent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ message: trimmed }),
+        });
+        if (agentRes.ok) {
+          const agent = await agentRes.json() as { intent?: string; prompt?: string; ratio?: string };
+          if (agent.intent) intent = agent.intent;
+          if (agent.prompt) prompt = agent.prompt;
+          if (agent.ratio) ratio = agent.ratio;
+        }
+      } catch {
+        // fallback to keyword check
+        if (/图片|生图|图像|海报|封面|banner|插画/.test(trimmed)) intent = "image";
+        else if (/视频|短片|广告片|动画|短视频/.test(trimmed)) intent = "video";
+        else if (/数字人|虚拟人|口播/.test(trimmed)) intent = "digital_human";
+        else if (/文案|脚本|标题/.test(trimmed)) intent = "text";
+      }
+
       // Place new nodes below the lowest existing node
       const existingNodes = nodesRef.current;
       let baseY = 100;
       if (existingNodes.length > 0) {
         baseY = Math.max(...existingNodes.map((n) => n.position.y + 300));
       }
-      // Center horizontally in viewport
       const vp = rfInstanceRef.current;
       let baseX = 100;
       if (vp && typeof window !== "undefined") {
         const center = vp.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
         baseX = Math.max(center.x - 200, 50);
       }
+
       const textId = `text_${Math.random().toString(36).slice(2, 8)}`;
-      const imageId = `image_${Math.random().toString(36).slice(2, 8)}`;
-      setNodes((prev) => [
-        ...prev,
-        {
-          id: textId,
-          type: "text",
-          position: { x: baseX, y: baseY },
-          data: {
-            runtime: { id: textId, type: "text", position: { x: baseX, y: baseY }, data: { content: trimmed } },
-            summary: trimmed.slice(0, 60),
-            status: "idle" as const,
-            expanded: true,
+
+      if (intent === "image") {
+        const imageId = `image_${Math.random().toString(36).slice(2, 8)}`;
+        setNodes((prev) => [
+          ...prev,
+          {
+            id: textId, type: "text", position: { x: baseX, y: baseY },
+            data: { runtime: { id: textId, type: "text", position: { x: baseX, y: baseY }, data: { content: prompt } }, summary: prompt.slice(0, 60), status: "idle" as const, expanded: true },
           },
-        },
-        {
-          id: imageId,
-          type: "image",
-          position: { x: baseX + 500, y: baseY },
-          data: {
-            runtime: {
-              id: imageId, type: "image", position: { x: baseX + 500, y: baseY },
-              data: {
-                prompt: trimmed,
-                ratio: "16:9",
-                ...(chatAttachments.find((a) => a.type === "image")
-                  ? { referenceImage: chatAttachments.find((a) => a.type === "image")!.localUrl }
-                  : {}),
-              },
-            },
-            summary: "",
-            status: "idle" as const,
-            expanded: false,
+          {
+            id: imageId, type: "image", position: { x: baseX + 520, y: baseY },
+            data: { runtime: { id: imageId, type: "image", position: { x: baseX + 520, y: baseY }, data: { prompt, ratio: ratio ?? "16:9", ...(chatAttachments.find((a) => a.type === "image") ? { referenceImage: chatAttachments.find((a) => a.type === "image")!.localUrl } : {}) } }, summary: "", status: "idle" as const, expanded: false },
           },
-        },
-      ]);
-      setEdges((prev) =>
-        addEdge({ id: `e_${textId}_${imageId}`, source: textId, target: imageId, type: "smoothstep" }, prev),
-      );
-      setChatInput("");
-      setChatAttachments([]);
+        ]);
+        setEdges((prev) => addEdge({ id: `e_${textId}_${imageId}`, source: textId, target: imageId, type: "smoothstep" }, prev));
+      } else if (intent === "video") {
+        const videoId = `video_${Math.random().toString(36).slice(2, 8)}`;
+        setNodes((prev) => [
+          ...prev,
+          {
+            id: textId, type: "text", position: { x: baseX, y: baseY },
+            data: { runtime: { id: textId, type: "text", position: { x: baseX, y: baseY }, data: { content: prompt } }, summary: prompt.slice(0, 60), status: "idle" as const, expanded: true },
+          },
+          {
+            id: videoId, type: "video", position: { x: baseX + 520, y: baseY },
+            data: { runtime: { id: videoId, type: "video", position: { x: baseX + 520, y: baseY }, data: { prompt, ratio: ratio ?? "16:9" } }, summary: "", status: "idle" as const, expanded: false },
+          },
+        ]);
+        setEdges((prev) => addEdge({ id: `e_${textId}_${videoId}`, source: textId, target: videoId, type: "smoothstep" }, prev));
+      } else if (intent === "digital_human") {
+        const dhId = `digital-human_${Math.random().toString(36).slice(2, 8)}`;
+        setNodes((prev) => [
+          ...prev,
+          {
+            id: textId, type: "text", position: { x: baseX, y: baseY },
+            data: { runtime: { id: textId, type: "text", position: { x: baseX, y: baseY }, data: { content: prompt } }, summary: prompt.slice(0, 60), status: "idle" as const, expanded: true },
+          },
+          {
+            id: dhId, type: "digital-human", position: { x: baseX + 520, y: baseY },
+            data: { runtime: { id: dhId, type: "digital-human", position: { x: baseX + 520, y: baseY }, data: { script: prompt } }, summary: "", status: "idle" as const, expanded: false },
+          },
+        ]);
+        setEdges((prev) => addEdge({ id: `e_${textId}_${dhId}`, source: textId, target: dhId, type: "smoothstep" }, prev));
+      } else if (intent === "text") {
+        setNodes((prev) => [
+          ...prev,
+          {
+            id: textId, type: "text", position: { x: baseX, y: baseY },
+            data: { runtime: { id: textId, type: "text", position: { x: baseX, y: baseY }, data: { content: prompt } }, summary: prompt.slice(0, 60), status: "idle" as const, expanded: true },
+          },
+        ]);
+      } else {
+        // mixed / fallback: text + image (original behavior)
+        const imageId = `image_${Math.random().toString(36).slice(2, 8)}`;
+        setNodes((prev) => [
+          ...prev,
+          {
+            id: textId, type: "text", position: { x: baseX, y: baseY },
+            data: { runtime: { id: textId, type: "text", position: { x: baseX, y: baseY }, data: { content: prompt } }, summary: prompt.slice(0, 60), status: "idle" as const, expanded: true },
+          },
+          {
+            id: imageId, type: "image", position: { x: baseX + 520, y: baseY },
+            data: { runtime: { id: imageId, type: "image", position: { x: baseX + 520, y: baseY }, data: { prompt, ratio: ratio ?? "16:9", ...(chatAttachments.find((a) => a.type === "image") ? { referenceImage: chatAttachments.find((a) => a.type === "image")!.localUrl } : {}) } }, summary: "", status: "idle" as const, expanded: false },
+          },
+        ]);
+        setEdges((prev) => addEdge({ id: `e_${textId}_${imageId}`, source: textId, target: imageId, type: "smoothstep" }, prev));
+      }
+
     },
     [chatAttachments, setNodes, setEdges],
   );
@@ -3679,6 +3736,18 @@ export function ReactCanvasRoot({
       );
     }
   }, [currentProjectId]);
+
+  // Auto-send initialPrompt via AI assistant when canvas loads from homepage
+  const initialPromptSentRef = useRef(false);
+  useEffect(() => {
+    if (!initialPrompt || initialPromptSentRef.current) return;
+    if (!currentProjectId) return;
+    initialPromptSentRef.current = true;
+    const timer = setTimeout(() => {
+      void handleChatSend(initialPrompt);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [initialPrompt, currentProjectId, handleChatSend]);
 
   // Space key → hand cursor / drag pan
   useEffect(() => {
@@ -4710,7 +4779,7 @@ export function ReactCanvasRoot({
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
                         e.preventDefault();
-                        handleChatSend(chatInput);
+                        void handleChatSend(chatInput);
                       }
                     }}
                     placeholder="描述你想创作的内容…"
@@ -4749,7 +4818,7 @@ export function ReactCanvasRoot({
                   <button
                     type="button"
                     disabled={!chatInput.trim() && chatAttachments.length === 0}
-                    onClick={() => handleChatSend(chatInput)}
+                    onClick={() => void handleChatSend(chatInput)}
                     className="flex h-8 w-8 items-center justify-center rounded-full bg-[#ffc94a] text-black transition hover:bg-[#ffd86f] disabled:cursor-not-allowed disabled:opacity-30"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
