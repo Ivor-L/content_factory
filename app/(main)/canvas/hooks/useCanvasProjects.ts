@@ -184,13 +184,15 @@ export function useCanvasProjects(
   );
 
   const saveProjectCanvas = useCallback(
-    async (projectId: string, canvasData: unknown) => {
+    async (projectId: string, canvasData: unknown, thumbnail?: string | null) => {
       if (!projectId) throw new Error("缺少项目 ID");
       setError(null);
       try {
+        const body: Record<string, unknown> = { canvasData };
+        if (thumbnail !== undefined) body.thumbnail = thumbnail;
         const payload = await requestJson(`/api/canvas/projects/${projectId}`, {
           method: "PATCH",
-          body: JSON.stringify({ canvasData }),
+          body: JSON.stringify(body),
         });
         if (payload.data) {
           upsertProject(payload.data as CanvasProjectRecord);

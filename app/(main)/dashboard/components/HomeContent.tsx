@@ -358,7 +358,7 @@ export function HomeContent({ recentTasks, products: _products }: HomeContentPro
               <button
                 type="button"
                 onClick={() => openQuickAction('creative')}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-200 bg-white/90 px-4 py-3 text-sm font-medium text-gray-700 shadow-sm transition hover:border-[#ffd445] hover:bg-white hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900/80 dark:text-gray-200 dark:hover:border-[#ffd445] dark:hover:bg-gray-900"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-200 bg-white/90 px-4 py-3 text-sm font-medium text-gray-700 shadow-sm transition hover:border-[#ffd445] hover:bg-white hover:text-gray-900 dark:border-transparent dark:bg-gray-900/80 dark:text-gray-200 dark:hover:border-[#ffd445] dark:hover:bg-gray-900"
               >
                 <Sparkles className="h-4 w-4" />
                 智能创作
@@ -366,7 +366,7 @@ export function HomeContent({ recentTasks, products: _products }: HomeContentPro
               <button
                 type="button"
                 onClick={() => openQuickAction('replication')}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-200 bg-white/90 px-4 py-3 text-sm font-medium text-gray-700 shadow-sm transition hover:border-[#ffd445] hover:bg-white hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900/80 dark:text-gray-200 dark:hover:border-[#ffd445] dark:hover:bg-gray-900"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-200 bg-white/90 px-4 py-3 text-sm font-medium text-gray-700 shadow-sm transition hover:border-[#ffd445] hover:bg-white hover:text-gray-900 dark:border-transparent dark:bg-gray-900/80 dark:text-gray-200 dark:hover:border-[#ffd445] dark:hover:bg-gray-900"
               >
                 <Clapperboard className="h-4 w-4" />
                 视频复刻
@@ -374,7 +374,7 @@ export function HomeContent({ recentTasks, products: _products }: HomeContentPro
               <button
                 type="button"
                 onClick={() => openQuickAction('poster')}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-200 bg-white/90 px-4 py-3 text-sm font-medium text-gray-700 shadow-sm transition hover:border-[#ffd445] hover:bg-white hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900/80 dark:text-gray-200 dark:hover:border-[#ffd445] dark:hover:bg-gray-900"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-200 bg-white/90 px-4 py-3 text-sm font-medium text-gray-700 shadow-sm transition hover:border-[#ffd445] hover:bg-white hover:text-gray-900 dark:border-transparent dark:bg-gray-900/80 dark:text-gray-200 dark:hover:border-[#ffd445] dark:hover:bg-gray-900"
               >
                 <Image className="h-4 w-4" />
                 小红书图文
@@ -382,7 +382,7 @@ export function HomeContent({ recentTasks, products: _products }: HomeContentPro
               <button
                 type="button"
                 onClick={() => openQuickAction('digitalHuman')}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-200 bg-white/90 px-4 py-3 text-sm font-medium text-gray-700 shadow-sm transition hover:border-[#ffd445] hover:bg-white hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900/80 dark:text-gray-200 dark:hover:border-[#ffd445] dark:hover:bg-gray-900"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-200 bg-white/90 px-4 py-3 text-sm font-medium text-gray-700 shadow-sm transition hover:border-[#ffd445] hover:bg-white hover:text-gray-900 dark:border-transparent dark:bg-gray-900/80 dark:text-gray-200 dark:hover:border-[#ffd445] dark:hover:bg-gray-900"
               >
                 <User className="h-4 w-4" />
                 数字人视频

@@ -94,6 +94,31 @@ import {
 } from "../lib/canvasDataAdapters";
 import { ResourceHoverPanel } from "./ResourceHoverPanel";
 import type { CanvasProjectRecord } from "../types";
+import type { RuntimeCanvasNode } from "../lib/canvasDataAdapters";
+
+function extractThumbnailFromNodes(runtimeNodes: RuntimeCanvasNode[]): string | null {
+  for (const node of runtimeNodes) {
+    const d = (node.data || {}) as Record<string, unknown>;
+    if (node.type === "image") {
+      const outputs = Array.isArray(d.outputs) ? d.outputs : [];
+      for (const out of outputs) {
+        const url =
+          typeof out === "string"
+            ? out
+            : typeof (out as Record<string, unknown>).url === "string"
+            ? ((out as Record<string, unknown>).url as string)
+            : "";
+        if (url) return url;
+      }
+      const imgUrl = typeof d.imageUrl === "string" ? d.imageUrl : "";
+      if (imgUrl) return imgUrl;
+    } else if (node.type === "video" || node.type === "digitalhuman") {
+      const url = typeof d.outputUrl === "string" ? d.outputUrl : "";
+      if (url) return url;
+    }
+  }
+  return null;
+}
 
 type CanvasResourceItem = ReturnType<typeof useCanvasResources>["resources"][number];
 
@@ -3537,12 +3562,14 @@ export function ReactCanvasRoot({
     const timer = setTimeout(async () => {
       setIsSaving(true);
       try {
+        const runtimeNodes = flowNodesToRuntime(nodes);
+        const thumbnail = extractThumbnailFromNodes(runtimeNodes);
         await saveProjectCanvas(currentProjectId, {
-          nodes: flowNodesToRuntime(nodes),
+          nodes: runtimeNodes,
           edges: flowEdgesToRuntime(edges),
           viewport,
           resources,
-        });
+        }, thumbnail);
         if (!cancelled) {
           setAutoSaveError(null);
         }
@@ -4389,7 +4416,7 @@ export function ReactCanvasRoot({
                   tabIndex={0}
                   onClick={() => renamingProjectId !== project.id && selectProject(project.id)}
                   onKeyDown={(e) => e.key === "Enter" && renamingProjectId !== project.id && selectProject(project.id)}
-                  className="group relative flex min-h-[260px] cursor-pointer flex-col overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.02] text-left transition hover:border-white/40"
+                  className="group relative flex min-h-[260px] cursor-pointer flex-col overflow-hidden rounded-[32px] border border-white/10 bg-[#1e1e20] text-left transition hover:border-white/40"
                 >
                   <div className="relative aspect-[4/3] w-full overflow-hidden">
                     {project.thumbnail ? (

@@ -116,7 +116,7 @@ export function CharacterList({
           {initialCharacters.map((character) => (
             <div
               key={character.id}
-              className="group block bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-gray-100 dark:border-gray-700"
+              className="group block bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden"
             >
               <div className="relative h-64 bg-gray-50 dark:bg-gray-700 overflow-hidden">
                 {character.avatar ? (
