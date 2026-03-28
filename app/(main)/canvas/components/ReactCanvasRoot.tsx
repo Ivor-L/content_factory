@@ -2072,7 +2072,7 @@ export function ReactCanvasRoot({
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
-        e.stopPropagation();
+        e.stopImmediatePropagation();
       }
     };
     window.addEventListener("keydown", handler, true);
@@ -3245,6 +3245,8 @@ export function ReactCanvasRoot({
             }}
             proOptions={{ hideAttribution: true }}
             zoomOnDoubleClick={false}
+            deleteKeyCode={null}
+            multiSelectionKeyCode={null}
           >
             <Background color="rgba(255,255,255,0.08)" variant={BackgroundVariant.Dots} style={{ display: showBackground ? undefined : "none" }} />
           </ReactFlow>
