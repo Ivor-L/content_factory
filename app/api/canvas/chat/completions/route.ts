@@ -14,7 +14,8 @@ export async function POST(request: NextRequest) {
     useSystemApiKey: true,
   });
   const upstreamApiKey = resolveCanvasUpstreamApiKey(apiKey);
-  if (!userId) {
+  // Allow access when system API key is configured (userId not required in that case)
+  if (!userId && !upstreamApiKey) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -41,7 +42,7 @@ export async function POST(request: NextRequest) {
     const upstream = await fetch(endpoint, {
       method: "POST",
       headers: buildCanvasUpstreamHeaders({
-        userId,
+        userId: userId ?? "anonymous",
         apiKey: upstreamApiKey,
       }),
       body: JSON.stringify(body),

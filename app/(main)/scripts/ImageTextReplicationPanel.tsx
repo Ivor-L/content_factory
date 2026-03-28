@@ -300,7 +300,7 @@ export function ImageTextReplicationPanel({
         const err = await res.json().catch(() => ({}));
         throw new Error((err as { error?: string }).error ?? "生成失败");
       }
-      toast.success("正在复刻爆款图文，请等待 2-3 分钟后在项目中查看");
+      toast.success("已开始复刻，稍后在我的项目中查看");
       onClose();
       return;
     } catch (err) {

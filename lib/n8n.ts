@@ -93,6 +93,12 @@ export async function analyzeProduct(productData: ProductData): Promise<Analysis
       }
     }
 
+    // Detect async "workflow started" response — do not treat as real analysis data
+    if (item && item.status === 'started') {
+      console.log('[analyzeProduct] n8n returned async "started" response, skipping storage');
+      return { sellingPoints: [], detailedDescription: '', workflowData: null };
+    }
+
     // Check if the response matches the workflow data structure
     let sellingPoints: string[] = [];
     let detailedDescription = "";
@@ -107,6 +113,9 @@ export async function analyzeProduct(productData: ProductData): Promise<Analysis
       detailedDescription = item.visual_description;
     } else if (item.detailedDescription) {
       detailedDescription = item.detailedDescription;
+    } else if (item.selling_points_text) {
+      // n8n workflow outputs a plain text field with the full analysis
+      detailedDescription = item.selling_points_text;
     }
 
     console.log('[analyzeProduct] n8n response item keys:', item ? Object.keys(item) : 'null', '| detailedDescription length:', detailedDescription.length);

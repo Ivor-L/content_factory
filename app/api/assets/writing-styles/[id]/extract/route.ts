@@ -5,7 +5,7 @@ import { getRequestUserContext, getApiKeyForUser } from "@/lib/authServer";
 const EXTRACT_WEBHOOK_URL =
   process.env.N8N_WRITING_STYLE_EXTRACT_WEBHOOK?.trim() ||
   process.env.N8N_STYLE_EXTRACT_WEBHOOK?.trim() ||
-  "https://hooks.atomx.top/webhook/style";
+  "https://hooks.atomx.top/webhook/style_web";
 const EXTRACT_WORKFLOW_ID =
   process.env.N8N_WRITING_STYLE_EXTRACT_WORKFLOW_ID || "flow_writing_style_extract";
 const EXTRACT_WORKFLOW_NAME =
@@ -48,8 +48,16 @@ export async function POST(request: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "写作风格不存在" }, { status: 404 });
   }
 
+  // Only block retry if PROCESSING was triggered recently (within 5 minutes)
   if (String(style.extractionStatus || "").toUpperCase() === "PROCESSING") {
-    return NextResponse.json({ error: "当前风格正在提炼中" }, { status: 409 });
+    const meta = style.metadata && typeof style.metadata === "object" && !Array.isArray(style.metadata)
+      ? (style.metadata as Record<string, any>)
+      : {};
+    const startedAt = meta?.extract?.startedAt ? new Date(meta.extract.startedAt).getTime() : 0;
+    const elapsed = Date.now() - startedAt;
+    if (elapsed < 5 * 60 * 1000) {
+      return NextResponse.json({ error: "当前风格正在提炼中" }, { status: 409 });
+    }
   }
 
   const chunks = await prisma.writingStyleChunk.findMany({

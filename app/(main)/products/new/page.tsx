@@ -338,7 +338,7 @@ export default function NewProductPage() {
         )}
 
         {/* Submit */}
-        <div className="pt-4 border-t">
+        <div className="pt-4">
           <button
             type="submit"
             disabled={loading}
