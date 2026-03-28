@@ -167,9 +167,10 @@ export function useCanvasProjects(
       try {
         const payload = await requestJson(`/api/canvas/projects/${projectId}`);
         if (payload.data) {
-          upsertProject(payload.data);
-          setCurrentProjectId(payload.data.id);
-          return payload.data;
+          const record = payload.data as CanvasProjectRecord;
+          upsertProject(record);
+          setCurrentProjectId(record.id);
+          return record;
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : "获取项目失败";
@@ -192,7 +193,7 @@ export function useCanvasProjects(
           body: JSON.stringify({ canvasData }),
         });
         if (payload.data) {
-          upsertProject(payload.data);
+          upsertProject(payload.data as CanvasProjectRecord);
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : "保存项目失败";
@@ -213,9 +214,10 @@ export function useCanvasProjects(
           body: JSON.stringify({ name }),
         });
         if (payload.data) {
-          upsertProject(payload.data);
-          setCurrentProjectId(payload.data.id);
-          return payload.data.id;
+          const record = payload.data as CanvasProjectRecord;
+          upsertProject(record);
+          setCurrentProjectId(record.id);
+          return record.id;
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : "创建项目失败";
@@ -227,6 +229,29 @@ export function useCanvasProjects(
       return null;
     },
     [upsertProject],
+  );
+
+  const renameProject = useCallback(
+    async (projectId: string, name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed || !projectId) return;
+      const payload = await requestJson(`/api/canvas/projects/${projectId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: trimmed }),
+      });
+      if (payload.data) upsertProject(payload.data as CanvasProjectRecord);
+    },
+    [upsertProject],
+  );
+
+  const deleteProject = useCallback(
+    async (projectId: string) => {
+      if (!projectId) return;
+      await requestJson(`/api/canvas/projects/${projectId}`, { method: "DELETE" });
+      setProjects((prev) => prev.filter((p) => p.id !== projectId));
+      if (currentProjectIdRef.current === projectId) setCurrentProjectId(null);
+    },
+    [],
   );
 
   const currentProject = useMemo(() => {
@@ -267,5 +292,7 @@ export function useCanvasProjects(
     fetchProjectById,
     saveProjectCanvas,
     createProject,
+    renameProject,
+    deleteProject,
   };
 }

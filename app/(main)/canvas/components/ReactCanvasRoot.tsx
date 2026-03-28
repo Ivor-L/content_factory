@@ -52,6 +52,8 @@ import {
   Maximize2,
   MousePointer2,
   Music,
+  Pencil,
+  Trash2,
   Pause,
   Paperclip,
   Play,
@@ -67,6 +69,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import toast from "react-hot-toast";
 import { AiGlowSpinner } from "@/components/AiGlowSpinner";
 import { supabase } from "@/lib/supabaseClient";
 import { useCanvasShell } from "@/contexts/CanvasShellContext";
@@ -3045,6 +3048,8 @@ export function ReactCanvasRoot({
     selectProject,
     saveProjectCanvas,
     createProject,
+    renameProject,
+    deleteProject,
     loading: loadingProjects,
     error: projectError,
   } = useCanvasProjects(initialProjectId, initialProjects, {
@@ -3070,6 +3075,8 @@ export function ReactCanvasRoot({
   const [chatInput, setChatInput] = useState("");
   const [isPolishing, setIsPolishing] = useState(false);
   const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
+  const [renamingProjectId, setRenamingProjectId] = useState<string | null>(null);
+  const [renamingProjectName, setRenamingProjectName] = useState("");
   const [addPanelChars, setAddPanelChars] = useState<{ id: string; name: string; avatar: string }[]>([]);
   const [addPanelProducts, setAddPanelProducts] = useState<{ id: string; name: string; images: string }[]>([]);
   const [addPanelResourcesLoading, setAddPanelResourcesLoading] = useState(false);
@@ -4141,11 +4148,13 @@ export function ReactCanvasRoot({
                 <span className="text-base">新建项目</span>
               </button>
               {projects.map((project) => (
-                <button
+                <div
                   key={project.id}
-                  type="button"
-                  onClick={() => selectProject(project.id)}
-                  className="group flex min-h-[260px] flex-col overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.02] text-left transition hover:border-white/40"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => renamingProjectId !== project.id && selectProject(project.id)}
+                  onKeyDown={(e) => e.key === "Enter" && renamingProjectId !== project.id && selectProject(project.id)}
+                  className="group relative flex min-h-[260px] cursor-pointer flex-col overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.02] text-left transition hover:border-white/40"
                 >
                   <div className="relative aspect-[4/3] w-full overflow-hidden">
                     {project.thumbnail ? (
@@ -4161,14 +4170,76 @@ export function ReactCanvasRoot({
                       </div>
                     )}
                     <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#05060c] via-transparent" />
+                    {/* Action buttons — visible on hover */}
+                    <div className="absolute right-3 top-3 flex gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+                      <button
+                        type="button"
+                        title="重命名"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setRenamingProjectId(project.id);
+                          setRenamingProjectName(project.name || "");
+                        }}
+                        className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/70 backdrop-blur transition hover:bg-white/20 hover:text-white"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        title="删除"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!window.confirm(`确定删除「${project.name || "未命名项目"}」？此操作不可撤销。`)) return;
+                          try {
+                            await deleteProject(project.id);
+                            toast.success("项目已删除");
+                          } catch {
+                            toast.error("删除失败，请重试");
+                          }
+                        }}
+                        className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/70 backdrop-blur transition hover:bg-rose-500/70 hover:text-white"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                   <div className="flex flex-1 flex-col px-5 py-4">
-                    <p className="text-lg font-medium text-white">{project.name || "未命名项目"}</p>
+                    {renamingProjectId === project.id ? (
+                      <input
+                        autoFocus
+                        value={renamingProjectName}
+                        onChange={(e) => setRenamingProjectName(e.target.value)}
+                        onKeyDown={async (e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            try {
+                              await renameProject(project.id, renamingProjectName);
+                              toast.success("重命名成功");
+                            } catch {
+                              toast.error("重命名失败");
+                            }
+                            setRenamingProjectId(null);
+                          } else if (e.key === "Escape") {
+                            setRenamingProjectId(null);
+                          }
+                        }}
+                        onBlur={async () => {
+                          try {
+                            await renameProject(project.id, renamingProjectName);
+                          } catch { /* silent */ }
+                          setRenamingProjectId(null);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full rounded-lg bg-white/10 px-2 py-1 text-lg font-medium text-white outline-none ring-1 ring-white/30 focus:ring-white/60"
+                      />
+                    ) : (
+                      <p className="text-lg font-medium text-white">{project.name || "未命名项目"}</p>
+                    )}
                     <p className="mt-1 text-xs text-white/50">
                       更新于 {new Date(project.updatedAt).toLocaleString()}
                     </p>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           ) : (
