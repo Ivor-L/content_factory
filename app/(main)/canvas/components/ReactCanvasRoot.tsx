@@ -3211,6 +3211,12 @@ export function ReactCanvasRoot({
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             onInit={(instance) => { rfInstanceRef.current = instance; }}
+            onKeyDown={(e) => {
+              const tag = (e.target as HTMLElement).tagName;
+              if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+                e.stopPropagation();
+              }
+            }}
             onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd as never}
             onNodeClick={(e, node) => {
