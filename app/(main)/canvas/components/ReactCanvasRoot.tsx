@@ -3228,6 +3228,8 @@ export function ReactCanvasRoot({
             }}
             proOptions={{ hideAttribution: true }}
             zoomOnDoubleClick={false}
+            panActivationKeyCode={null}
+            deleteKeyCode={null}
           >
             <Background color="rgba(255,255,255,0.08)" variant={BackgroundVariant.Dots} style={{ display: showBackground ? undefined : "none" }} />
           </ReactFlow>
