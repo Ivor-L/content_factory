@@ -11,7 +11,7 @@ const ENABLE_REFERRAL_WATCHER = process.env.NEXT_PUBLIC_ENABLE_REFERRAL_WATCHER 
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
-    <NextThemesProvider attribute="class" defaultTheme="system" enableSystem>
+    <NextThemesProvider attribute="class" defaultTheme="dark" enableSystem={false}>
       <LanguageProvider>
         <TenantProvider>
           <TenantBrandingEffect />
