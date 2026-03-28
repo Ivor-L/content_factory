@@ -193,157 +193,132 @@ export function CharacterForm({ onSuccess, initialData }: CharacterFormProps) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-5">
       {/* Name */}
       <div>
-        <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">{t.characters.name}</label>
+        <label className="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">{t.characters.name}</label>
         <input
           type="text"
           required
-          className="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary focus:border-transparent transition-all outline-none bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          className="w-full rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-primary focus:border-transparent transition-all outline-none bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t.characters.name}
         />
       </div>
 
-      {/* Avatar */}
-      <div>
-        <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">{t.characters.avatar}</label>
-        
-        <div className="mb-4">
-          <div className="flex items-center justify-center w-full">
-            <label 
-                className={`relative flex flex-col items-center justify-center w-full h-32 border-2 rounded-lg cursor-pointer transition-colors overflow-hidden ${
-                    imageDragActive 
-                      ? 'border-primary bg-primary-soft/60 border-dashed' 
-                      : avatar 
-                        ? 'border-transparent' 
-                        : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 hover:bg-primary-soft/50 dark:hover:bg-primary/10 border-dashed'
-                }`}
-                onDragEnter={handleImageDrag}
-                onDragLeave={handleImageDrag}
-                onDragOver={handleImageDrag}
-                onDrop={handleImageDrop}
-            >
-              {avatar ? (
-                <div className="relative w-full h-full group">
-                  <img src={avatar} alt="Avatar" className="w-full h-full object-contain" />
-                  <button
-                      type="button"
-                      onClick={(e) => { e.preventDefault(); handleRemoveImage(); }}
-                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                  >
-                      &times;
-                  </button>
-                  <div className={`absolute inset-0 bg-black/50 flex items-center justify-center transition-opacity ${imageDragActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                       <p className="text-white text-sm font-medium">{t.characters.upload}</p>
-                  </div>
+      {/* Avatar + Audio side by side */}
+      <div className="grid grid-cols-2 gap-4">
+        {/* Avatar */}
+        <div className="flex flex-col">
+          <label className="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">{t.characters.avatar}</label>
+          <label
+            className={`relative flex flex-col items-center justify-center aspect-square rounded-xl cursor-pointer transition-colors overflow-hidden ${
+              imageDragActive
+                ? 'border-2 border-primary border-dashed bg-primary/10'
+                : avatar
+                  ? 'border-2 border-transparent'
+                  : 'border-2 border-dashed border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 hover:bg-primary/5 dark:hover:bg-primary/10'
+            }`}
+            onDragEnter={handleImageDrag}
+            onDragLeave={handleImageDrag}
+            onDragOver={handleImageDrag}
+            onDrop={handleImageDrop}
+          >
+            {avatar ? (
+              <div className="relative w-full h-full group">
+                <img src={avatar} alt="Avatar" className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); handleRemoveImage(); }}
+                  className="absolute top-1.5 right-1.5 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                >
+                  &times;
+                </button>
+                <div className={`absolute inset-0 bg-black/40 flex items-center justify-center transition-opacity ${imageDragActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                  <p className="text-white text-sm font-medium">{t.characters.upload}</p>
                 </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                    {uploadingImage ? (
-                    <div className="flex flex-col items-center">
-                        <svg className="animate-spin h-8 w-8 text-gray-500 dark:text-gray-400 mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">{t.common.loading}</p>
-                    </div>
-                    ) : (
-                    <>
-                        <svg className="w-8 h-8 mb-4 text-gray-400" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
-                        <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"/>
-                        </svg>
-                        <p className="mb-2 text-sm text-gray-500 dark:text-gray-400"><span className="font-semibold">{t.characters.upload}</span></p>
-                    </>
-                    )}
-                </div>
-              )}
-              <input type="file" className="hidden" onChange={handleFileUpload} accept="image/*" disabled={uploadingImage} />
-            </label>
-          </div>
-        </div>
-      </div>
-
-      {/* Voice File */}
-      <div>
-        <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">{t.characters.voice || 'Voice Audio'}</label>
-        
-        <div className="flex items-center gap-4">
-            <label 
-                className={`flex-1 flex flex-col items-center justify-center h-24 border-2 rounded-lg cursor-pointer transition-colors overflow-hidden ${
-                    voiceDragActive 
-                      ? 'border-black dark:border-white bg-gray-50 dark:bg-gray-800 border-dashed' 
-                      : voiceId
-                        ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 border-solid'
-                        : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 border-dashed'
-                }`}
-                onDragEnter={handleVoiceDrag}
-                onDragLeave={handleVoiceDrag}
-                onDragOver={handleVoiceDrag}
-                onDrop={handleVoiceDrop}
-            >
-                {voiceId ? (
-                   <div className="relative w-full h-full flex items-center px-4 gap-3 group">
-                        <div className="flex-shrink-0 w-10 h-10 rounded-full bg-black/10 dark:bg-white/10 flex items-center justify-center text-black dark:text-white">
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
-                            </svg>
-                        </div>
-                        <div className="flex-1 min-w-0 z-20">
-                            <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                                Audio File Uploaded
-                            </p>
-                            <audio controls src={voiceId} className="w-full h-8 mt-1" onClick={(e) => e.stopPropagation()} />
-                        </div>
-                        <button
-                            type="button"
-                            onClick={(e) => { e.preventDefault(); handleRemoveVoice(); }}
-                            className="ml-2 p-1 text-gray-400 hover:text-red-500 transition-colors z-20"
-                        >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
-                            </svg>
-                        </button>
-                        <div className={`absolute inset-0 bg-black/5 flex items-center justify-center transition-opacity z-10 pointer-events-none ${voiceDragActive ? 'opacity-100' : 'opacity-0'}`}>
-                             <p className="text-black dark:text-white text-sm font-medium bg-white/80 dark:bg-black/80 px-2 py-1 rounded">Drop to replace</p>
-                        </div>
-                   </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-2 px-4 text-center">
+                {uploadingImage ? (
+                  <svg className="animate-spin h-7 w-7 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
                 ) : (
-                    <div className="flex flex-col items-center justify-center py-4">
-                        {uploadingVoice ? (
-                            <div className="flex items-center gap-2">
-                                <svg className="animate-spin h-5 w-5 text-gray-500 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                <span className="text-sm text-gray-500">{t.common.loading}</span>
-                            </div>
-                        ) : (
-                            <>
-                                <svg className="w-6 h-6 mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
-                                </svg>
-                                <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">{t.characters.uploadVoice || 'Upload Audio'}</span>
-                                <span className="text-xs text-gray-400 mt-1">MP3, WAV, etc.</span>
-                            </>
-                        )}
-                    </div>
+                  <>
+                    <svg className="w-7 h-7 text-gray-400" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
+                      <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2" />
+                    </svg>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{t.characters.upload}</p>
+                  </>
                 )}
-                <input 
-                    type="file" 
-                    className="hidden" 
-                    onChange={handleVoiceUpload} 
-                    accept="audio/*" 
-                    disabled={uploadingVoice} 
-                />
-            </label>
+              </div>
+            )}
+            <input type="file" className="hidden" onChange={handleFileUpload} accept="image/*" disabled={uploadingImage} />
+          </label>
+        </div>
+
+        {/* Audio */}
+        <div className="flex flex-col">
+          <label className="block text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">{t.characters.voice || '音频文件'}</label>
+          <label
+            className={`relative flex flex-col items-center justify-center aspect-square rounded-xl cursor-pointer transition-colors overflow-hidden ${
+              voiceDragActive
+                ? 'border-2 border-primary border-dashed bg-primary/10'
+                : voiceId
+                  ? 'border-2 border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800'
+                  : 'border-2 border-dashed border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 hover:bg-primary/5 dark:hover:bg-primary/10'
+            }`}
+            onDragEnter={handleVoiceDrag}
+            onDragLeave={handleVoiceDrag}
+            onDragOver={handleVoiceDrag}
+            onDrop={handleVoiceDrop}
+          >
+            {voiceId ? (
+              <div className="relative w-full h-full flex flex-col items-center justify-center px-3 gap-3 group">
+                <div className="w-10 h-10 rounded-full bg-black/10 dark:bg-white/10 flex items-center justify-center text-black dark:text-white">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                  </svg>
+                </div>
+                <audio controls src={voiceId} className="w-full h-8" onClick={(e) => e.stopPropagation()} />
+                <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); handleRemoveVoice(); }}
+                  className="absolute top-1.5 right-1.5 p-1 text-gray-400 hover:text-red-500 transition-colors z-20"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-2 px-4 text-center">
+                {uploadingVoice ? (
+                  <svg className="animate-spin h-7 w-7 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                ) : (
+                  <>
+                    <svg className="w-7 h-7 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{t.characters.uploadVoice || '上传音频'}</p>
+                    <p className="text-xs text-gray-400">MP3, WAV, etc.</p>
+                  </>
+                )}
+              </div>
+            )}
+            <input type="file" className="hidden" onChange={handleVoiceUpload} accept="audio/*" disabled={uploadingVoice} />
+          </label>
         </div>
       </div>
 
       {/* Submit */}
-      <div className="sticky bottom-0 pt-4 pb-2 bg-white dark:bg-gray-800 border-t border-gray-100 dark:border-gray-700 mt-auto">
+      <div className="sticky bottom-0 pt-4 pb-2 bg-white dark:bg-gray-900 mt-auto">
         <button
           type="submit"
           disabled={loading}
