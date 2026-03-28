@@ -726,7 +726,7 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
         )}
       </div>
       </div>{/* end inner relative */}
-      {props.selected && focusedNodeId === id && (
+      {props.selected && (
         <div
           style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 190 }}
           className="mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
@@ -968,7 +968,7 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
         )}
       </div>
       </div>{/* end inner relative */}
-      {props.selected && focusedNodeId === id && (
+      {props.selected && (
         <div
           style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 190 }}
           className="mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
@@ -1187,7 +1187,7 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           )}
         </div>
       </div>
-      {props.selected && focusedNodeId === id && (
+      {props.selected && (
         <div
           style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 190 }}
           className="mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
@@ -1406,7 +1406,7 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           )}
         </div>
       </div>
-      {props.selected && focusedNodeId === id && (
+      {props.selected && (
         <div
           style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 190 }}
           className="mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
@@ -2068,16 +2068,6 @@ export function ReactCanvasRoot({
     sourceNodeType: string | null;
   } | null>(null);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
-        e.stopImmediatePropagation();
-      }
-    };
-    window.addEventListener("keydown", handler, true);
-    return () => window.removeEventListener("keydown", handler, true);
-  }, []);
   const rfInstanceRef = useRef<{
     screenToFlowPosition: (p: { x: number; y: number }) => { x: number; y: number };
     fitView: (opts?: { padding?: number; duration?: number }) => void;
@@ -3223,19 +3213,12 @@ export function ReactCanvasRoot({
             onInit={(instance) => { rfInstanceRef.current = instance; }}
             onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd as never}
-            onNodeClick={(e, node) => {
-              const target = e.target as HTMLElement;
-              const tag = target.tagName;
-              if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable) return;
-              if (focusedNodeId !== node.id) focusNode(node.id);
-            }}
             onPaneClick={(e) => {
               if (suppressNextPaneClickRef.current) {
                 suppressNextPaneClickRef.current = false;
                 return;
               }
               setNodePicker(null);
-              setFocusedNodeId(null);
             }}
             onDoubleClick={(e: React.MouseEvent) => {
               const target = e.target as HTMLElement;
@@ -3245,8 +3228,6 @@ export function ReactCanvasRoot({
             }}
             proOptions={{ hideAttribution: true }}
             zoomOnDoubleClick={false}
-            deleteKeyCode={null}
-            multiSelectionKeyCode={null}
           >
             <Background color="rgba(255,255,255,0.08)" variant={BackgroundVariant.Dots} style={{ display: showBackground ? undefined : "none" }} />
           </ReactFlow>
