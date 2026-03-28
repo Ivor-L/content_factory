@@ -2068,6 +2068,19 @@ export function ReactCanvasRoot({
     sourceNodeType: string | null;
   } | null>(null);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+  const canvasWrapperRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = canvasWrapperRef.current;
+    if (!el) return;
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+        e.stopPropagation();
+      }
+    };
+    el.addEventListener("keydown", handler, true);
+    return () => el.removeEventListener("keydown", handler, true);
+  }, []);
   const rfInstanceRef = useRef<{
     screenToFlowPosition: (p: { x: number; y: number }) => { x: number; y: number };
     fitView: (opts?: { padding?: number; duration?: number }) => void;
@@ -3084,6 +3097,7 @@ export function ReactCanvasRoot({
       }}
     >
       <div
+        ref={canvasWrapperRef}
         className={clsx(
           "relative flex-1 overflow-hidden",
           isSpaceDown
@@ -3211,12 +3225,6 @@ export function ReactCanvasRoot({
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             onInit={(instance) => { rfInstanceRef.current = instance; }}
-            onKeyDown={(e) => {
-              const tag = (e.target as HTMLElement).tagName;
-              if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
-                e.stopPropagation();
-              }
-            }}
             onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd as never}
             onNodeClick={(e, node) => {
