@@ -27,9 +27,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const type = formData.get("type");
   const filename = (file instanceof File && file.name) || `image-${Date.now()}.jpg`;
   const ext = filename.split(".").pop() || "jpg";
-  const path = `storyboard/images/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const prefix = type === "character" ? "characters" : "storyboard/images";
+  const path = `${prefix}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
   console.log("[upload/image] uploading", { path, size: file.size, type: file.type });
   const buffer = Buffer.from(await file.arrayBuffer());

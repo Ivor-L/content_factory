@@ -15,6 +15,11 @@ const nextConfig: NextConfig = {
         hostname: 'supabase-api.atomx.top',
         pathname: '/storage/v1/object/public/uploads/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'oss.atomx.top',
+        pathname: '/**',
+      },
     ],
   },
   experimental: {
@@ -22,6 +27,7 @@ const nextConfig: NextConfig = {
       allowedOrigins: ['localhost:3000', '192.168.78.125:3000', 'atomx.top', '*.atomx.top'],
       bodySizeLimit: uploadBodySizeLimit,
     },
+    serverComponentsHmrCache: false,
   },
   turbopack: {
     root: __dirname,

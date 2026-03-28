@@ -1109,6 +1109,35 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
       if (!(file instanceof File)) {
         throw new Error("请选择要上传的文件");
       }
+
+      // Try OSS presign direct upload first (bypasses Next.js body size limit)
+      const presignResponse = await fetch("/api/upload/presign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, contentType: file.type }),
+        credentials: "include",
+        cache: "no-store",
+      });
+
+      if (presignResponse.ok) {
+        const { uploadUrl, publicUrl } = await presignResponse.json();
+        const putResponse = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: { "Content-Type": file.type },
+          body: file,
+        });
+        if (!putResponse.ok) throw new Error("上传失败");
+        const resource = addResource({
+          type: options.type,
+          variant: options.variant || undefined,
+          name: options.name || file.name,
+          url: publicUrl,
+        });
+        toast.success("资源上传成功");
+        return resource;
+      }
+
+      // Fallback: upload via server API
       const endpointMap: Record<string, string> = {
         image: "/api/upload/image",
         video: "/api/upload/video",
