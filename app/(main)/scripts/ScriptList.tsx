@@ -3,7 +3,26 @@
 /* eslint-disable @next/next/no-img-element -- Script previews show remote assets and generated frames */
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { PlayCircle, Eye, ShoppingBag, Zap, Layers, FileJson, ScrollText, User, AlertTriangle, Search, RefreshCcw, Loader2, Square, CheckSquare, Trash2 } from "lucide-react";
+import {
+  PlayCircle,
+  Eye,
+  ShoppingBag,
+  Zap,
+  Layers,
+  FileJson,
+  ScrollText,
+  User,
+  AlertTriangle,
+  Search,
+  RefreshCcw,
+  Loader2,
+  Square,
+  CheckSquare,
+  Trash2,
+  LayoutGrid,
+  List as ListIcon,
+  ExternalLink,
+} from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { ScriptForm } from "@/components/ScriptForm";
@@ -60,6 +79,7 @@ const VIRAL_PLATFORMS = [
 
 type ReferenceContentType = "all" | "video" | "image";
 const REFERENCE_CONTENT_FILTERS: ReferenceContentType[] = ["all", "video", "image"];
+type ReferenceViewMode = "grid" | "list";
 
 type CollectorMode = "keyword" | "creator" | "video";
 
@@ -151,6 +171,28 @@ function getReferenceContentLabel(
   > | null,
 ) {
   return isVideoReference(ref) ? "视频" : "图文";
+}
+
+function getStatNumber(item: ViralReferenceItemData, key: keyof StatPayload): number {
+  const val = item.stats?.[key];
+  if (val == null) return 0;
+  if (typeof val === "number") return val;
+  const num = Number(val);
+  return Number.isFinite(num) ? num : 0;
+}
+
+function sortReferenceItems(items: ViralReferenceItemData[], sortKey: string): ViralReferenceItemData[] {
+  if (sortKey === "recent") return items;
+  const sorted = [...items];
+  const keyMap: Record<string, keyof StatPayload> = {
+    likes: "likes",
+    collects: "collects",
+    comments: "comments",
+  };
+  const statKey = keyMap[sortKey];
+  if (!statKey) return items;
+  sorted.sort((a, b) => getStatNumber(b, statKey) - getStatNumber(a, statKey));
+  return sorted;
 }
 
 function parseRawPayload(raw: unknown): Record<string, unknown> | null {
@@ -544,6 +586,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
   const [referenceDeleting, setReferenceDeleting] = useState(false);
   const [referenceContentFilter, setReferenceContentFilter] = useState<ReferenceContentType>("all");
   const [referenceSort, setReferenceSort] = useState<string>("recent");
+  const [referenceViewMode, setReferenceViewMode] = useState<ReferenceViewMode>("grid");
   const [isCollectorModalOpen, setIsCollectorModalOpen] = useState(false);
   const [collectorMode, setCollectorMode] = useState<CollectorMode>("video");
   const [collectorInput, setCollectorInput] = useState("");
@@ -796,7 +839,10 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
           throw new Error(message);
         }
         const data: ViralReferenceItemData[] = Array.isArray(payload?.data) ? payload.data : [];
-        setReferenceItems((prev) => (reset ? data : [...prev, ...data]));
+        setReferenceItems((prev) => {
+          const base = reset ? data : [...prev, ...data];
+          return sortReferenceItems(base, referenceSort);
+        });
         referenceCursorRef.current = payload?.nextCursor ?? null;
         setReferenceHasMore(Boolean(payload?.nextCursor));
         setReferenceError(null);
@@ -1119,6 +1165,39 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
       return !prev;
     });
   }, []);
+
+  const handleReferenceOpen = useCallback((item: ViralReferenceItemData) => {
+    if (typeof window === "undefined") return;
+    if (item.sourceUrl) {
+      window.open(item.sourceUrl, "_blank", "noreferrer");
+    } else {
+      toast.error("该条内容没有可访问的链接");
+    }
+  }, []);
+
+  const handleQuickDeleteReference = useCallback(
+    async (id: string) => {
+      if (!id) return;
+      try {
+        const res = await fetch("/api/viral-references", {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          cache: "no-store",
+          credentials: "include",
+          body: JSON.stringify({ ids: [id] }),
+        });
+        const payload = await parseJsonSafely<any>(res);
+        if (!res.ok) {
+          throw new Error(payload?.error || `Failed to delete reference (${res.status})`);
+        }
+        setReferenceItems((prev) => prev.filter((item) => item.id !== id));
+        toast.success("已删除该参考");
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : t.common.error);
+      }
+    },
+    [t.common.error],
+  );
 
   const handleToggleCreatorSelectionMode = useCallback(() => {
     setCreatorSelectionMode((prev) => {
@@ -1485,6 +1564,29 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                 className="w-full pl-10 pr-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent"
               />
             </div>
+            <div className="flex items-center rounded-full border border-gray-200 dark:border-gray-700 overflow-hidden">
+              {(["grid", "list"] as ReferenceViewMode[]).map((mode) => {
+                const Icon = mode === "grid" ? LayoutGrid : ListIcon;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setReferenceViewMode(mode)}
+                    className={cn(
+                      "px-2.5 py-2 text-sm font-semibold transition-colors flex items-center gap-1",
+                      referenceViewMode === mode
+                        ? "bg-black text-white dark:bg-white dark:text-black"
+                        : "text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800",
+                    )}
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span className="hidden sm:inline">
+                      {mode === "grid" ? "卡片" : "列表"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
             <button
               type="button"
               onClick={() => fetchReferences(true)}
@@ -1607,106 +1709,227 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
             </div>
           )}
 
-          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            {filteredReferenceItems.map((item) => {
-              const isSelected = selectedReferenceIds.includes(item.id);
-              const displayImageUrl = getReferenceCoverImage(item) ?? REFERENCE_PLACEHOLDER_IMAGE;
-              return (
-                <div
-                  key={item.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => {
-                    if (referenceSelectionMode) {
-                      toggleReferenceSelection(item.id);
-                      return;
-                    }
-                    setSelectedReferenceItem(item);
-                    setIsReferenceModalOpen(true);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
+          {referenceViewMode === "grid" ? (
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              {filteredReferenceItems.map((item) => {
+                const isSelected = selectedReferenceIds.includes(item.id);
+                const displayImageUrl = getReferenceCoverImage(item) ?? REFERENCE_PLACEHOLDER_IMAGE;
+                return (
+                  <div
+                    key={item.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
                       if (referenceSelectionMode) {
                         toggleReferenceSelection(item.id);
-                      } else {
-                        setSelectedReferenceItem(item);
-                        setIsReferenceModalOpen(true);
+                        return;
                       }
-                    }
-                  }}
-                  className={cn(
-                    "group relative block w-full aspect-[2/3] sm:aspect-[3/4] rounded-2xl overflow-hidden bg-gray-950 text-white shadow hover:shadow-xl transition-all duration-300 cursor-pointer text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60",
-                    referenceSelectionMode && isSelected && "ring-2 ring-primary/60"
-                  )}
-                >
-                  {referenceSelectionMode && (
-                    <span
-                      className="absolute top-3 right-3 z-30 inline-flex items-center justify-center rounded-full bg-black/60 p-1 text-white"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleReferenceSelection(item.id);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
+                      setSelectedReferenceItem(item);
+                      setIsReferenceModalOpen(true);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        if (referenceSelectionMode) {
+                          toggleReferenceSelection(item.id);
+                        } else {
+                          setSelectedReferenceItem(item);
+                          setIsReferenceModalOpen(true);
+                        }
+                      }
+                    }}
+                    className={cn(
+                      "group relative block w-full aspect-[2/3] sm:aspect-[3/4] rounded-2xl overflow-hidden bg-gray-950 text-white shadow hover:shadow-xl transition-all duration-300 cursor-pointer text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60",
+                      referenceSelectionMode && isSelected && "ring-2 ring-primary/60"
+                    )}
+                  >
+                    {referenceSelectionMode && (
+                      <span
+                        className="absolute top-3 right-3 z-30 inline-flex items-center justify-center rounded-full bg-black/60 p-1 text-white"
+                        onClick={(e) => {
                           e.stopPropagation();
                           toggleReferenceSelection(item.id);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            toggleReferenceSelection(item.id);
+                          }
+                        }}
+                      >
+                        {isSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+                      </span>
+                    )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent z-10" />
+                  <img
+                    src={toProxyImgUrl(displayImageUrl)}
+                    alt={item.title || 'reference'}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                  />
+                  <div className="absolute top-3 left-3 z-20 flex gap-2">
+                    <span className="px-2 py-1 text-[10px] uppercase font-bold tracking-widest rounded-full bg-white/90 text-gray-900">
+                      {getPlatformLabel(item.platform)}
+                    </span>
+                    <span className="px-2 py-1 text-[10px] rounded-full bg-black/70 text-white shadow">
+                      {getReferenceContentLabel(item)}
+                    </span>
+                    {item.category && (
+                      <span className="px-2 py-1 text-[10px] rounded-full bg-black/60 backdrop-blur text-white border border-white/10">
+                        {item.category}
+                      </span>
+                    )}
+                  </div>
+                  <div className="absolute bottom-0 left-0 right-0 z-20 p-3 sm:p-4 space-y-2">
+                    <p className="text-xs sm:text-sm font-semibold line-clamp-2 leading-tight">
+                      {item.title || item.description || "未命名笔记"}
+                    </p>
+                    <div className="flex items-center gap-3 text-[10px] sm:text-[11px] uppercase tracking-wide text-white/80">
+                      {item.stats?.likes != null && (
+                        <span className="flex items-center gap-1">
+                          ❤️ {formatCount(item.stats.likes as number | string)}
+                        </span>
+                      )}
+                      {item.stats?.collects != null && (
+                        <span className="flex items-center gap-1">
+                          ⭐️ {formatCount(item.stats.collects as number | string)}
+                        </span>
+                      )}
+                      {item.stats?.comments != null && (
+                        <span className="flex items-center gap-1">
+                          💬 {formatCount(item.stats.comments as number | string)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between text-[9px] sm:text-[10px] text-white/70">
+                      <span>{item.creator?.displayName || item.creator?.creatorHandle || "未知作者"}</span>
+                      <span>{formatDateLabel(item.publishedAt, language === 'en' ? 'en-US' : 'zh-CN')}</span>
+                    </div>
+                  </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredReferenceItems.map((item) => {
+                const isSelected = selectedReferenceIds.includes(item.id);
+                const displayImageUrl = getReferenceCoverImage(item) ?? REFERENCE_PLACEHOLDER_IMAGE;
+                return (
+                  <div
+                    key={item.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      if (referenceSelectionMode) {
+                        toggleReferenceSelection(item.id);
+                        return;
+                      }
+                      setSelectedReferenceItem(item);
+                      setIsReferenceModalOpen(true);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        if (referenceSelectionMode) {
+                          toggleReferenceSelection(item.id);
+                        } else {
+                          setSelectedReferenceItem(item);
+                          setIsReferenceModalOpen(true);
                         }
-                      }}
-                    >
-                      {isSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
-                    </span>
-                  )}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent z-10" />
-                <img
-                  src={toProxyImgUrl(displayImageUrl)}
-                  alt={item.title || 'reference'}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-                />
-                <div className="absolute top-3 left-3 z-20 flex gap-2">
-                  <span className="px-2 py-1 text-[10px] uppercase font-bold tracking-widest rounded-full bg-white/90 text-gray-900">
-                    {getPlatformLabel(item.platform)}
-                  </span>
-                  <span className="px-2 py-1 text-[10px] rounded-full bg-black/70 text-white shadow">
-                    {getReferenceContentLabel(item)}
-                  </span>
-                  {item.category && (
-                    <span className="px-2 py-1 text-[10px] rounded-full bg-black/60 backdrop-blur text-white border border-white/10">
-                      {item.category}
-                    </span>
-                  )}
-                </div>
-                <div className="absolute bottom-0 left-0 right-0 z-20 p-3 sm:p-4 space-y-2">
-                  <p className="text-xs sm:text-sm font-semibold line-clamp-2 leading-tight">
-                    {item.title || item.description || "未命名笔记"}
-                  </p>
-                  <div className="flex items-center gap-3 text-[10px] sm:text-[11px] uppercase tracking-wide text-white/80">
-                    {item.stats?.likes != null && (
-                      <span className="flex items-center gap-1">
-                        ❤️ {formatCount(item.stats.likes as number | string)}
-                      </span>
+                      }
+                    }}
+                    className={cn(
+                      "w-full rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/60 shadow-sm hover:shadow-md transition-shadow px-4 py-3 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60",
+                      referenceSelectionMode && isSelected && "ring-2 ring-primary/60"
                     )}
-                    {item.stats?.collects != null && (
-                      <span className="flex items-center gap-1">
-                        ⭐️ {formatCount(item.stats.collects as number | string)}
-                      </span>
-                    )}
-                    {item.stats?.comments != null && (
-                      <span className="flex items-center gap-1">
-                        💬 {formatCount(item.stats.comments as number | string)}
-                      </span>
-                    )}
+                  >
+                    <div className="flex items-center gap-4">
+                      {referenceSelectionMode && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleReferenceSelection(item.id);
+                          }}
+                          className="text-primary"
+                        >
+                          {isSelected ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />}
+                        </button>
+                      )}
+                      <img
+                        src={toProxyImgUrl(displayImageUrl)}
+                        alt={item.title || "reference"}
+                        className="w-28 h-16 rounded-xl object-cover flex-shrink-0 border border-gray-100 dark:border-gray-800"
+                      />
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-center gap-2 text-[11px] uppercase text-gray-500 dark:text-gray-400">
+                          <span className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
+                            {getPlatformLabel(item.platform)}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-black/80 text-white text-[10px]">
+                            {getReferenceContentLabel(item)}
+                          </span>
+                          {item.category && (
+                            <span className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-300">
+                              {item.category}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white line-clamp-2">
+                          {item.title || item.description || "未命名笔记"}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                          <span>{item.creator?.displayName || item.creator?.creatorHandle || "未知作者"}</span>
+                          <span>{formatDateLabel(item.publishedAt, language === 'en' ? 'en-US' : 'zh-CN')}</span>
+                        </div>
+                      </div>
+                      <div className="hidden lg:flex flex-col items-end gap-1 text-xs text-gray-600 dark:text-gray-300">
+                        {item.stats?.likes != null && (
+                          <span>❤️ {formatCount(item.stats.likes as number | string)}</span>
+                        )}
+                        {item.stats?.collects != null && (
+                          <span>⭐️ {formatCount(item.stats.collects as number | string)}</span>
+                        )}
+                        {item.stats?.comments != null && (
+                          <span>💬 {formatCount(item.stats.comments as number | string)}</span>
+                        )}
+                        {item.stats?.shares != null && (
+                          <span>🔁 {formatCount(item.stats.shares as number | string)}</span>
+                        )}
+                      </div>
+                      {!referenceSelectionMode && (
+                        <div className="flex flex-col gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleReferenceOpen(item);
+                            }}
+                            className="p-2 rounded-full border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
+                            title="直达原文"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleQuickDeleteReference(item.id);
+                            }}
+                            className="p-2 rounded-full border border-gray-200 dark:border-gray-700 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10"
+                            title="删除"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between text-[9px] sm:text-[10px] text-white/70">
-                    <span>{item.creator?.displayName || item.creator?.creatorHandle || "未知作者"}</span>
-                    <span>{formatDateLabel(item.publishedAt, language === 'en' ? 'en-US' : 'zh-CN')}</span>
-                  </div>
-                </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
 
           {filteredReferenceItems.length === 0 && !referenceLoading && (
             <EmptyState

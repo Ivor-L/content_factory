@@ -18,6 +18,36 @@ const SORA_MODELS = new Set(["sora-2-all", "sora-2"]);
 const GROK_MODELS = new Set(["grok-video-3"]);
 const ASYNC_POLL_MODELS = new Set([...VEO_MODELS, ...SORA_MODELS, ...GROK_MODELS]);
 
+/** Download a remote image URL and return a base64 data URL. Returns original value if already data URL or not a http URL. */
+async function toBase64DataUrl(value: unknown): Promise<unknown> {
+  if (typeof value !== "string") return value;
+  if (!value.startsWith("http://") && !value.startsWith("https://")) return value;
+  try {
+    const res = await fetch(value, { cache: "no-store" });
+    if (!res.ok) return value;
+    const mimeType = (res.headers.get("content-type") || "image/jpeg").split(";")[0].trim();
+    const buffer = await res.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString("base64");
+    return `data:${mimeType};base64,${base64}`;
+  } catch {
+    return value;
+  }
+}
+
+/** Convert all image URL fields in the body to base64 data URLs. */
+async function convertImageUrlsToBase64(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const result = { ...body };
+  // Single image URL fields
+  for (const key of ["image_url", "first_frame_image", "last_frame_image", "image"]) {
+    if (result[key]) result[key] = await toBase64DataUrl(result[key]);
+  }
+  // Array of images (Sora)
+  if (Array.isArray(result.images)) {
+    result.images = await Promise.all(result.images.map(toBase64DataUrl));
+  }
+  return result;
+}
+
 function extractTaskId(response: unknown): string | null {
   if (!response || typeof response !== "object") return null;
   const record = response as Record<string, any>;
@@ -70,7 +100,7 @@ export async function POST(request: NextRequest) {
     const endpoint = resolveCanvasUpstreamEndpoint("video") || "";
     if (!endpoint) return canvasMissingEndpointResponse("video");
 
-    const upstreamBody: Record<string, unknown> = VEO_MODELS.has(model)
+    const upstreamBodyRaw: Record<string, unknown> = VEO_MODELS.has(model)
       ? {
           model,
           prompt: requestBody.prompt,
@@ -84,6 +114,8 @@ export async function POST(request: NextRequest) {
           ...(requestBody.first_frame_image ? { image_url: requestBody.first_frame_image } : {}),
         }
       : requestBody;
+
+    const upstreamBody = await convertImageUrlsToBase64(upstreamBodyRaw);
 
     const upstream = await fetch(endpoint, {
       method: "POST",

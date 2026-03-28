@@ -57,6 +57,7 @@ type UseCanvasOrchestratorResult = {
   runAudioNode: (nodeId: string) => Promise<void>;
   runDigitalHumanNode: (nodeId: string) => Promise<void>;
   runStoryboardNode: (nodeId: string) => Promise<void>;
+  runTextNode: (nodeId: string) => Promise<void>;
   uploadResource: (file: File, options: UploadOptions) => Promise<CanvasResourceRecord>;
 };
 
@@ -1040,6 +1041,69 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
     [getNode, getUpstreamInputs, patchRuntimeData, pollStoryboardTask, setNodeStatus],
   );
 
+  const runTextNode = useCallback(
+    async (nodeId: string) => {
+      if (!nodeId) return;
+      const node = getNode(nodeId);
+      if (!node) {
+        toast.error("未找到对应节点");
+        return;
+      }
+      if (runningNodeIds.current.has(nodeId)) {
+        toast("该节点正在执行，请稍候");
+        return;
+      }
+      runningNodeIds.current.add(nodeId);
+      const runtimeData = (node.data.runtime?.data || {}) as Record<string, any>;
+      const upstream = getUpstreamInputs(nodeId);
+      const mode = String(runtimeData.mode || "").trim();
+
+      if (mode === "image-understanding") {
+        const imageUrl = String(runtimeData.imageUrl || upstream.firstImageUrl || "").trim();
+        const prompt = String(runtimeData.prompt || runtimeData.content || "").trim();
+        const model = String(runtimeData.imgUnderstandingModel || "gemini-3.1-flash-lite-preview").trim();
+
+        if (!imageUrl) {
+          toast.error("未找到上游图片");
+          runningNodeIds.current.delete(nodeId);
+          return;
+        }
+        if (!prompt) {
+          toast.error("请输入分析提示词");
+          runningNodeIds.current.delete(nodeId);
+          return;
+        }
+
+        setNodeStatus(nodeId, "running");
+        patchRuntimeData(nodeId, { lastRunError: null });
+
+        try {
+          const response = await postJson("/api/canvas/image-understanding", {
+            imageUrl,
+            prompt,
+            model,
+          });
+          const result = (response as { result?: string }).result || "";
+          if (!result) throw new Error("未获取到分析结果");
+          patchRuntimeData(nodeId, { content: result, lastCompletedAt: Date.now() });
+          setNodeStatus(nodeId, "success");
+          toast.success("图片理解完成");
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "图片理解失败";
+          patchRuntimeData(nodeId, { lastRunError: message });
+          setNodeStatus(nodeId, "error", message);
+          toast.error(message);
+        } finally {
+          runningNodeIds.current.delete(nodeId);
+        }
+        return;
+      }
+
+      runningNodeIds.current.delete(nodeId);
+    },
+    [getNode, getUpstreamInputs, patchRuntimeData, setNodeStatus],
+  );
+
   const uploadResource = useCallback(
     async (file: File, options: UploadOptions) => {
       if (!(file instanceof File)) {
@@ -1084,6 +1148,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
     runAudioNode,
     runDigitalHumanNode,
     runStoryboardNode,
+    runTextNode,
     uploadResource,
   };
 }

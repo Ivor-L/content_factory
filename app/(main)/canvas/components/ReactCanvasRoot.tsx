@@ -52,6 +52,7 @@ import {
   Maximize2,
   MousePointer2,
   Music,
+  Pause,
   Paperclip,
   Play,
   Plus,
@@ -59,6 +60,7 @@ import {
   Scan,
   Scissors,
   Sparkles,
+  Smile,
   Upload,
   UserCircle2,
   Video,
@@ -114,6 +116,7 @@ type CanvasNodeContextValue = {
   runAudioNode: (nodeId: string) => Promise<void>;
   runDigitalHumanNode: (nodeId: string) => Promise<void>;
   runStoryboardNode: (nodeId: string) => Promise<void>;
+  runTextNode: (nodeId: string) => Promise<void>;
   addDownstreamNodes: (
     sourceNodeId: string,
     nodes: { type: string; data: Record<string, unknown> }[],
@@ -156,6 +159,7 @@ const CanvasNodeContext = createContext<CanvasNodeContextValue>({
   runAudioNode: async () => {},
   runDigitalHumanNode: async () => {},
   runStoryboardNode: async () => {},
+  runTextNode: async () => {},
   addDownstreamNodes: () => [],
   uploadResource: async () => {
     throw new Error("Canvas runtime未初始化");
@@ -377,14 +381,28 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const { data, id, selected } = props;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
-  const { patchRuntimeData, isConnecting } = useCanvasNodeContext();
+  const { patchRuntimeData, isConnecting, runTextNode } = useCanvasNodeContext();
   const magnet = useCardMagnet(innerRef);
   const updateNodeInternals = useUpdateNodeInternals();
-  const content = typeof data.runtime.data.content === "string" ? data.runtime.data.content : "";
+  const runtimeData = data.runtime.data as Record<string, unknown>;
+  const mode = typeof runtimeData.mode === "string" ? runtimeData.mode : "";
+  const isImageUnderstanding = mode === "image-understanding";
+  const content = typeof runtimeData.content === "string" ? runtimeData.content : "";
   const title = resolveTitle(data);
   const [localContent, setLocalContent] = useState(content);
   const composingRef = useRef(false);
   useEffect(() => { if (!composingRef.current) setLocalContent(content); }, [content]);
+
+  // Image understanding state
+  const upstream = data.upstreamInputs ?? EMPTY_UPSTREAM;
+  const upstreamImageUrl = String(runtimeData.imageUrl || upstream.firstImageUrl || "");
+  const imgUnderstandingModel = typeof runtimeData.imgUnderstandingModel === "string"
+    ? runtimeData.imgUnderstandingModel
+    : "gemini-3.1-flash-lite-preview";
+  const [localPrompt, setLocalPrompt] = useState(
+    typeof runtimeData.prompt === "string" ? runtimeData.prompt : "",
+  );
+  const isRunning = data.status === "running";
 
   // Auto-resize textarea to content
   useEffect(() => {
@@ -395,6 +413,109 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
     // Notify ReactFlow that this node's size changed so edges recalculate
     updateNodeInternals(id);
   }, [content, id, updateNodeInternals]);
+
+  if (isImageUnderstanding) {
+    return (
+      <div className="select-none text-white" style={{ width: 280 }}>
+        <div className="mb-1.5 flex items-center gap-1.5 px-1">
+          <Scan className="h-3.5 w-3.5 text-white/50" />
+          <span className="text-[11px] uppercase tracking-[0.2em] text-white/50">图片理解</span>
+        </div>
+        <div className="relative" ref={innerRef}>
+          <CardHandle side="left" magnetY={magnet.magnetY} visible={magnet.showLeft || isConnecting} isConnecting={isConnecting} />
+          <CardHandle side="right" magnetY={magnet.magnetY} visible={magnet.showRight} isConnecting={isConnecting} />
+          <div
+            className={clsx(
+              "rounded-[20px] border bg-[#1a1a1c] transition",
+              selected
+                ? "border-white/25 shadow-[0_0_10px_rgba(255,255,255,0.12)]"
+                : isConnecting
+                ? "border-white/15 hover:border-white/50"
+                : "border-white/10 hover:border-white/20",
+            )}
+          >
+            {/* Model selector */}
+            <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 pt-3 pb-2.5">
+              <span className="text-[11px] text-white/40">模型</span>
+              <select
+                value={imgUnderstandingModel}
+                onChange={(e) => patchRuntimeData(id, { imgUnderstandingModel: e.target.value })}
+                className="ml-auto rounded-md bg-white/[0.07] px-2 py-0.5 text-[11px] text-white/70 outline-none"
+              >
+                <option value="gemini-3.1-flash-lite-preview">Gemini Flash Lite</option>
+                <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+              </select>
+            </div>
+            {/* Upstream image preview */}
+            {upstreamImageUrl ? (
+              <div className="mx-4 mt-3 overflow-hidden rounded-xl">
+                <img
+                  src={upstreamImageUrl}
+                  alt="参考图片"
+                  className="w-full object-cover"
+                  style={{ maxHeight: 120 }}
+                  draggable={false}
+                />
+              </div>
+            ) : (
+              <div className="mx-4 mt-3 flex h-[72px] items-center justify-center rounded-xl bg-white/[0.05]">
+                <span className="text-[11px] text-white/30">等待上游图片节点</span>
+              </div>
+            )}
+            {/* Prompt input */}
+            <textarea
+              value={localPrompt}
+              onChange={(e) => {
+                setLocalPrompt(e.target.value);
+                patchRuntimeData(id, { prompt: e.target.value });
+              }}
+              placeholder="输入分析提示词，例如：描述这张图片的内容..."
+              className="select-text mt-2 w-full resize-none bg-transparent px-4 py-2 text-sm text-white outline-none placeholder:text-white/30"
+              style={{ minHeight: 72, overflowY: "hidden" }}
+            />
+            {/* Run button */}
+            <div className="flex items-center justify-between border-t border-white/[0.06] px-4 py-2.5">
+              <span className="text-[11px] text-white/30">图片理解 · 1积分</span>
+              <button
+                type="button"
+                disabled={isRunning || !upstreamImageUrl || !localPrompt.trim()}
+                onClick={(e) => { e.stopPropagation(); void runTextNode(id); }}
+                className="flex items-center gap-1.5 rounded-lg bg-white/15 px-3 py-1 text-[11px] font-medium text-white transition hover:bg-white/25 disabled:opacity-40"
+              >
+                {isRunning ? (
+                  <><AiGlowSpinner size={12} />分析中...</>
+                ) : (
+                  <><Scan className="h-3 w-3" />开始分析</>
+                )}
+              </button>
+            </div>
+            {/* Result output */}
+            {content && (
+              <div className="border-t border-white/[0.06] px-4 py-3">
+                <p className="text-[11px] text-white/40 mb-1.5">分析结果</p>
+                <textarea
+                  ref={textareaRef}
+                  value={localContent}
+                  onChange={(e) => {
+                    setLocalContent(e.target.value);
+                    if (!composingRef.current) patchRuntimeData(id, { content: e.target.value });
+                  }}
+                  onCompositionStart={() => { composingRef.current = true; }}
+                  onCompositionEnd={(e) => {
+                    composingRef.current = false;
+                    patchRuntimeData(id, { content: (e.target as HTMLTextAreaElement).value });
+                  }}
+                  className="select-text w-full resize-none bg-transparent text-sm text-white/80 outline-none"
+                  style={{ minHeight: 80, overflowY: "hidden" }}
+                />
+              </div>
+            )}
+            {isRunning && <GeneratingOverlay label="图片理解中..." />}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -447,6 +568,43 @@ const VIDEO_DURATIONS = ["5", "8", "10", "15"];
 const MEDIA_NODE_WIDTH = 380;
 const MEDIA_CONTROLS_WIDTH = MEDIA_NODE_WIDTH * 2; // 760, independent of node width
 const MEDIA_CONTROLS_OFFSET = -((MEDIA_CONTROLS_WIDTH - MEDIA_NODE_WIDTH) / 2); // centers panel under node
+
+/** Read pixel dimensions from a local File object without uploading it. */
+function getMediaDimensions(file: File): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    if (file.type.startsWith("image/")) {
+      const img = new window.Image();
+      img.onload = () => { resolve({ width: img.naturalWidth, height: img.naturalHeight }); URL.revokeObjectURL(url); };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve({ width: 0, height: 0 }); };
+      img.src = url;
+    } else {
+      const video = document.createElement("video");
+      video.preload = "metadata";
+      video.onloadedmetadata = () => { resolve({ width: video.videoWidth, height: video.videoHeight }); URL.revokeObjectURL(url); };
+      video.onerror = () => { URL.revokeObjectURL(url); resolve({ width: 0, height: 0 }); };
+      video.src = url;
+    }
+  });
+}
+
+/** Find the IMAGE_RATIOS entry whose aspect ratio is closest to width/height. */
+function findClosestRatio(width: number, height: number): string {
+  if (!width || !height) return "16:9";
+  const actual = width / height;
+  let closest = "16:9";
+  let minDiff = Infinity;
+  for (const r of IMAGE_RATIOS) {
+    const parts = r.split(":");
+    const rw = Number(parts[0]);
+    const rh = Number(parts[1]);
+    if (!rw || !rh) continue;
+    const diff = Math.abs(Math.log(actual / (rw / rh)));
+    if (diff < minDiff) { minDiff = diff; closest = r; }
+  }
+  return closest;
+}
+
 
 function parseRatio(ratio: string): [number, number] {
   const parts = ratio.split(":");
@@ -691,6 +849,7 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const lastRunError = typeof (data.runtime.data as Record<string, unknown>).lastRunError === "string"
     ? ((data.runtime.data as Record<string, unknown>).lastRunError as string) : "";
   const isRunning = data.status === "running";
+  const [isUploading, setIsUploading] = useState(false);
   const currentImageUrl = outputs[0]?.url ?? "";
   const [intrinsicRatio, setIntrinsicRatio] = useState<number | null>(null);
   useEffect(() => { if (!currentImageUrl) setIntrinsicRatio(null); }, [currentImageUrl]);
@@ -714,12 +873,14 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const handleDirectUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    setIsUploading(true);
     try {
       const resource = await uploadResource(file, { type: "image", name: file.name });
       patchRuntimeData(id, { outputs: [{ url: resource.url }] });
     } catch (error) {
       console.error("[canvas] direct image upload failed", error);
     } finally {
+      setIsUploading(false);
       event.target.value = "";
     }
   };
@@ -777,7 +938,7 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             <ImageIcon className="h-10 w-10 text-white/15" />
           </div>
         )}
-        {isRunning && <GeneratingOverlay label="生成中..." />}
+        {(isRunning || isUploading) && <GeneratingOverlay label={isUploading ? "上传中..." : "生成中..."} />}
         {lastRunError && (
           <div className="absolute inset-x-0 bottom-0 bg-rose-900/80 px-3 py-1 text-[10px] text-rose-200">{lastRunError}</div>
         )}
@@ -785,18 +946,18 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       </div>{/* end inner relative */}
       {props.selected && (
         <div
-          style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 190 }}
+          style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 220 }}
           className="nodrag mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="mb-2 flex items-center gap-1.5">
-            <button type="button"
+          <div className="mb-2 flex items-center gap-2">
+            <ResourceTile
+              imageUrl={referenceImage || upstream.firstImageUrl || undefined}
+              icon={<ImagePlus className="h-5 w-5" />}
+              label={upstream.firstImageUrl && !referenceImage ? "上游图片将用作参考图（点击更换）" : "添加参考图"}
               onClick={(e) => { e.stopPropagation(); referenceUploadRef.current?.click(); }}
-              className={clsx("flex h-8 w-8 items-center justify-center rounded-[10px] transition", (referenceImage || upstream.firstImageUrl) ? "bg-white/15 text-white/70" : "bg-white/8 text-white/40 hover:bg-white/12 hover:text-white/60")}
-              title={upstream.firstImageUrl && !referenceImage ? "上游图片将用作参考图" : "添加参考图"}>
-              <ImagePlus className="h-4 w-4" />
-            </button>
+            />
             <button type="button" disabled={isPolishing || !prompt.trim()}
               onClick={async (e) => {
                 e.stopPropagation();
@@ -918,6 +1079,7 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       ? ((data.runtime.data as Record<string, unknown>).lastTaskStatus as string)
       : "";
   const isRunning = data.status === "running";
+  const [isUploading, setIsUploading] = useState(false);
   const [intrinsicRatio, setIntrinsicRatio] = useState<number | null>(null);
   useEffect(() => { if (!outputUrl) setIntrinsicRatio(null); }, [outputUrl]);
   const containerHeight = outputUrl && intrinsicRatio != null
@@ -956,12 +1118,14 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const handleDirectUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    setIsUploading(true);
     try {
       const resource = await uploadResource(file, { type: "video", name: file.name });
       patchRuntimeData(id, { outputUrl: resource.url });
     } catch (error) {
       console.error("[canvas] direct video upload failed", error);
     } finally {
+      setIsUploading(false);
       event.target.value = "";
     }
   };
@@ -1057,7 +1221,7 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             <Play className="h-10 w-10 text-white/15" />
           </div>
         )}
-        {isRunning && <GeneratingOverlay label={`生成中${taskStatus ? ` · ${taskStatus}` : "..."}`} />}
+        {(isRunning || isUploading) && <GeneratingOverlay label={isUploading ? "上传中..." : `生成中${taskStatus ? ` · ${taskStatus}` : "..."}`} />}
         {statusMessage && !isRunning && (
           <div className={clsx("absolute inset-x-0 bottom-0 px-3 py-1 text-[10px]", data.status === "error" ? "bg-rose-900/80 text-rose-200" : "bg-black/60 text-white/60")}>{statusMessage}</div>
         )}
@@ -1065,25 +1229,27 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       </div>{/* end inner relative */}
       {props.selected && (
         <div
-          style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 190 }}
+          style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 220 }}
           className="nodrag mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="mb-2 flex items-center gap-1.5">
+          <div className="mb-2 flex items-center gap-2">
             <ResourceHoverPanel resources={imageResources} onSelect={(resource) => patchRuntimeData(id, { firstFrameImage: resource.url })} label="首帧" emptyText="暂无图片">
-              <button type="button" onClick={(e) => e.stopPropagation()}
-                className={clsx("flex h-8 w-8 items-center justify-center rounded-[10px] transition", (firstFrameImage || upstream.firstImageUrl) ? "bg-white/15 text-white/70" : "bg-white/8 text-white/40 hover:bg-white/12 hover:text-white/60")}
-                title={upstream.firstImageUrl && !firstFrameImage ? "上游图片将用作首帧" : "首帧图"}>
-                <Play className="h-4 w-4" />
-              </button>
+              <ResourceTile
+                imageUrl={firstFrameImage || upstream.firstImageUrl || undefined}
+                icon={<Play className="h-5 w-5" />}
+                label={upstream.firstImageUrl && !firstFrameImage ? "上游图片将用作首帧" : "首帧图"}
+                onClick={(e) => e.stopPropagation()}
+              />
             </ResourceHoverPanel>
             <ResourceHoverPanel resources={imageResources} onSelect={(resource) => patchRuntimeData(id, { lastFrameImage: resource.url })} label="尾帧" emptyText="暂无图片">
-              <button type="button" onClick={(e) => e.stopPropagation()}
-                className={clsx("flex h-8 w-8 items-center justify-center rounded-[10px] transition", lastFrameImage ? "bg-white/15 text-white/70" : "bg-white/8 text-white/40 hover:bg-white/12 hover:text-white/60")}
-                title="尾帧图">
-                <Clapperboard className="h-4 w-4" />
-              </button>
+              <ResourceTile
+                imageUrl={lastFrameImage || undefined}
+                icon={<Clapperboard className="h-5 w-5" />}
+                label="尾帧图"
+                onClick={(e) => e.stopPropagation()}
+              />
             </ResourceHoverPanel>
             <button type="button" disabled={isPolishing || !prompt.trim()}
               onClick={async (e) => {
@@ -1212,6 +1378,7 @@ function ViralReplicationModal({
   const { addDownstreamNodes, patchRuntimeData, setNodeStatus } = useCanvasNodeContext();
   const [products, setProducts] = useState<{ id: string; name: string }[]>([]);
   const [productId, setProductId] = useState("");
+  const [localRefUrl, setLocalRefUrl] = useState(referenceVideoUrl);
   const [country, setCountry] = useState("us");
   const [language, setLanguage] = useState("en");
   const [duration, setDuration] = useState("15");
@@ -1243,7 +1410,7 @@ function ViralReplicationModal({
   }, []);
 
   const handleSubmit = async () => {
-    if (!productId) return;
+    if (!productId || !localRefUrl.trim()) return;
     setLoading(true);
     try {
       // Create downstream node pairs (text + video per copy)
@@ -1274,7 +1441,7 @@ function ViralReplicationModal({
         headers: authHeaders,
         credentials: "include",
         body: JSON.stringify({
-          referenceVideoUrl,
+          referenceVideoUrl: localRefUrl.trim(),
           productId,
           targetCountry: country,
           targetLanguage: language,
@@ -1360,6 +1527,17 @@ function ViralReplicationModal({
 
         {/* Form */}
         <div className="space-y-3 p-4">
+          {/* Reference Video URL */}
+          <div>
+            <label className="mb-1 block text-[10px] uppercase tracking-widest text-white/40">参考视频</label>
+            <input
+              type="url"
+              value={localRefUrl}
+              onChange={(e) => setLocalRefUrl(e.target.value)}
+              placeholder="粘贴参考视频链接..."
+              className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none"
+            />
+          </div>
           {/* Product */}
           <div>
             <label className="mb-1 block text-[10px] uppercase tracking-widest text-white/40">选择产品</label>
@@ -1422,7 +1600,7 @@ function ViralReplicationModal({
           </button>
           <button
             type="button"
-            disabled={loading || !productId || loadingProducts}
+            disabled={loading || !productId || loadingProducts || !localRefUrl.trim()}
             onClick={() => { void handleSubmit(); }}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#ffc94a] py-2 text-sm font-semibold text-black transition hover:bg-[#ffd666] disabled:opacity-40"
           >
@@ -1439,10 +1617,181 @@ function ViralReplicationModal({
   );
 }
 
+// ─── Resource Tile ────────────────────────────────────────────────────────────
+// Rounded-square button for resource inputs; shows thumbnail when filled.
+function ResourceTile({
+  imageUrl,
+  audioSet = false,
+  icon,
+  label,
+  onClick,
+}: {
+  imageUrl?: string;
+  audioSet?: boolean;
+  icon: React.ReactNode;
+  label?: string;
+  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+}) {
+  const filled = !!imageUrl || audioSet;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      className={clsx(
+        "relative h-[52px] w-[52px] flex-shrink-0 overflow-hidden rounded-[14px] transition active:scale-95",
+        filled
+          ? "bg-white/12 text-white/80 ring-1 ring-white/20 hover:brightness-110"
+          : "bg-white/[0.07] text-white/35 hover:bg-white/12 hover:text-white/60",
+      )}
+    >
+      {imageUrl ? (
+        <img src={imageUrl} alt="" className="h-full w-full object-cover" draggable={false} />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center">
+          {icon}
+          {audioSet && <span className="absolute bottom-1.5 right-1.5 h-2 w-2 rounded-full bg-[#60a5fa]" />}
+        </div>
+      )}
+    </button>
+  );
+}
+
+function AudioWaveformPlayer({ src }: { src: string }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [bars, setBars] = useState<number[]>([]);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const rafRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!src) return;
+    setIsPlaying(false);
+    setCurrentTime(0);
+    setDuration(0);
+    setBars([]);
+    let cancelled = false;
+    const ctx = new AudioContext();
+    fetch(src)
+      .then((r) => r.arrayBuffer())
+      .then((buf) => ctx.decodeAudioData(buf))
+      .then((decoded) => {
+        if (cancelled) return;
+        const channelData = decoded.getChannelData(0);
+        const numBars = 80;
+        const blockSize = Math.floor(channelData.length / numBars);
+        const result: number[] = [];
+        for (let i = 0; i < numBars; i++) {
+          let sum = 0;
+          for (let j = 0; j < blockSize; j++) sum += Math.abs(channelData[i * blockSize + j] ?? 0);
+          result.push(sum / blockSize);
+        }
+        const max = Math.max(...result, 0.001);
+        setBars(result.map((v) => v / max));
+        void ctx.close();
+      })
+      .catch(() => { void ctx.close(); });
+    return () => { cancelled = true; void ctx.close(); };
+  }, [src]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const onEnded = () => setIsPlaying(false);
+    const onLoaded = () => setDuration(audio.duration);
+    audio.addEventListener("ended", onEnded);
+    audio.addEventListener("loadedmetadata", onLoaded);
+    return () => { audio.removeEventListener("ended", onEnded); audio.removeEventListener("loadedmetadata", onLoaded); };
+  }, [src]);
+
+  const tick = useCallback(() => {
+    if (audioRef.current) setCurrentTime(audioRef.current.currentTime);
+    rafRef.current = requestAnimationFrame(tick);
+  }, []);
+
+  useEffect(() => {
+    if (isPlaying) { rafRef.current = requestAnimationFrame(tick); }
+    else { cancelAnimationFrame(rafRef.current); }
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [isPlaying, tick]);
+
+  const togglePlay = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (isPlaying) { audio.pause(); setIsPlaying(false); }
+    else { void audio.play(); setIsPlaying(true); }
+  };
+
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    const audio = audioRef.current;
+    if (!audio || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = (e.clientX - rect.left) / rect.width;
+    audio.currentTime = Math.max(0, Math.min(duration, ratio * duration));
+    setCurrentTime(audio.currentTime);
+  };
+
+  const fmt = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+  const progress = duration > 0 ? currentTime / duration : 0;
+
+  return (
+    <div className="flex h-full w-full flex-col">
+      <audio ref={audioRef} src={src} preload="metadata" className="hidden" />
+      {/* Waveform area */}
+      <div
+        className="relative flex flex-1 cursor-pointer items-center gap-[2px] overflow-hidden px-3 py-4"
+        onClick={handleSeek}
+      >
+        {bars.length > 0 ? (
+          <>
+            {bars.map((h, i) => (
+              <div
+                key={i}
+                className="flex-1 rounded-full"
+                style={{
+                  height: `${Math.max(4, h * 100)}%`,
+                  backgroundColor: i / bars.length <= progress ? "#60a5fa" : "rgba(255,255,255,0.18)",
+                  transition: "background-color 0.05s",
+                }}
+              />
+            ))}
+            {/* Playhead */}
+            <div
+              className="pointer-events-none absolute top-2 bottom-2 w-[2px] rounded-full bg-white/60"
+              style={{ left: `calc(12px + ${progress} * (100% - 24px))` }}
+            />
+          </>
+        ) : (
+          <div className="flex w-full items-center justify-center">
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white/50" />
+          </div>
+        )}
+      </div>
+      {/* Controls */}
+      <div className="flex items-center gap-2 px-3 pb-3">
+        <button
+          type="button"
+          onClick={togglePlay}
+          className="flex h-7 w-7 items-center justify-center rounded-full bg-black/40 text-white/80 transition hover:bg-black/60 active:scale-95"
+        >
+          {isPlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3 translate-x-[1px]" />}
+        </button>
+        <span className="text-[11px] tabular-nums text-white/50">
+          {fmt(currentTime)} / {fmt(duration)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const { data, id } = props;
   const innerRef = useRef<HTMLDivElement>(null);
   const voiceUploadRef = useRef<HTMLInputElement>(null);
+  const emotionUploadRef = useRef<HTMLInputElement>(null);
   const directUploadRef = useRef<HTMLInputElement>(null);
   const magnet = useCardMagnet(innerRef);
   const upstream = data.upstreamInputs ?? EMPTY_UPSTREAM;
@@ -1450,10 +1799,12 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const [isPolishing, setIsPolishing] = useState(false);
   const script = typeof data.runtime.data.script === "string" ? data.runtime.data.script : "";
   const voiceRef = typeof data.runtime.data.voiceReference === "string" ? data.runtime.data.voiceReference : "";
+  const emotionRef = typeof data.runtime.data.emotionReference === "string" ? data.runtime.data.emotionReference : "";
   const model = (typeof data.runtime.data.model === "string" && data.runtime.data.model) || models.defaultModels.audio?.id || models.audioModels[0]?.id || "";
   const isSunoMusic = model === "suno_music";
   const isSunoLyrics = model === "suno_lyrics";
   const isSuno = isSunoMusic || isSunoLyrics;
+  const isNextide = model === "nextide";
   const audioUrl =
     typeof (data.runtime.data as Record<string, unknown>).audioUrl === "string"
       ? ((data.runtime.data as Record<string, unknown>).audioUrl as string)
@@ -1463,6 +1814,7 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       ? ((data.runtime.data as Record<string, unknown>).lastRunError as string)
       : "";
   const isRunning = data.status === "running";
+  const [isUploading, setIsUploading] = useState(false);
   const audioResources = resources.filter((item) => item.type === "audio" && (!item.variant || item.variant === "voice"));
 
   const handleUploadVoice = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1478,15 +1830,30 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
     }
   };
 
+  const handleUploadEmotion = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const resource = await uploadResource(file, { type: "audio", variant: "voice", name: file.name });
+      patchRuntimeData(id, { emotionReference: resource.url });
+    } catch (error) {
+      console.error("[canvas] upload emotion reference failed", error);
+    } finally {
+      event.target.value = "";
+    }
+  };
+
   const handleDirectUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    setIsUploading(true);
     try {
       const resource = await uploadResource(file, { type: "audio", name: file.name });
       patchRuntimeData(id, { audioUrl: resource.url });
     } catch (error) {
       console.error("[canvas] direct audio upload failed", error);
     } finally {
+      setIsUploading(false);
       event.target.value = "";
     }
   };
@@ -1526,23 +1893,21 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           )}
         >
           {audioUrl ? (
-            <div className="flex h-full w-full flex-col items-center justify-center gap-3 px-4">
-              <audio controls className="w-full" src={audioUrl} />
-            </div>
+            <AudioWaveformPlayer src={audioUrl} />
           ) : (
             <div className="flex h-full w-full items-center justify-center">
               <Music className="h-10 w-10 text-white/15" />
             </div>
           )}
-          {isRunning && <GeneratingOverlay label="生成中..." />}
-          {lastRunError && !isRunning && (
+          {(isRunning || isUploading) && <GeneratingOverlay label={isUploading ? "上传中..." : "生成中..."} />}
+          {lastRunError && !isRunning && !isUploading && (
             <div className="absolute inset-x-0 bottom-0 bg-rose-900/80 px-3 py-1 text-[10px] text-rose-200">{lastRunError}</div>
           )}
         </div>
       </div>
       {props.selected && (
         <div
-          style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 190 }}
+          style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 220 }}
           className="nodrag mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
@@ -1592,19 +1957,23 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               </label>
             </div>
           ) : (
-            <div className="mb-2 flex items-center gap-1.5">
+            <div className="mb-2 flex items-center gap-2">
               <ResourceHoverPanel resources={audioResources} onSelect={(resource) => patchRuntimeData(id, { voiceReference: resource.url })} label="音色库" emptyText="暂无音色资源，可上传音频">
-                <button type="button" onClick={(e) => e.stopPropagation()}
-                  className={clsx("flex h-8 w-8 items-center justify-center rounded-[10px] transition", voiceRef ? "bg-white/15 text-white/70" : "bg-white/8 text-white/40 hover:bg-white/12 hover:text-white/60")}
-                  title="选择音色">
-                  <Music className="h-4 w-4" />
-                </button>
+                <ResourceTile
+                  audioSet={!!voiceRef}
+                  icon={<Music className="h-5 w-5" />}
+                  label="选择音色（点击上传）"
+                  onClick={(e) => { e.stopPropagation(); voiceUploadRef.current?.click(); }}
+                />
               </ResourceHoverPanel>
-              <button type="button" onClick={(e) => { e.stopPropagation(); voiceUploadRef.current?.click(); }}
-                className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-white/8 text-white/40 transition hover:bg-white/12 hover:text-white/60"
-                title="上传音色">
-                <Upload className="h-4 w-4" />
-              </button>
+              {isNextide && (
+                <ResourceTile
+                  audioSet={!!emotionRef}
+                  icon={<Smile className="h-5 w-5" />}
+                  label={emotionRef ? "参考情绪已上传（点击更换）" : "上传参考情绪音频"}
+                  onClick={(e) => { e.stopPropagation(); emotionUploadRef.current?.click(); }}
+                />
+              )}
               <button type="button" disabled={isPolishing || !script.trim()}
                 onClick={async (e) => {
                   e.stopPropagation();
@@ -1667,6 +2036,7 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
         </div>
       )}
       <input ref={voiceUploadRef} type="file" accept="audio/*" className="hidden" onChange={handleUploadVoice} />
+      <input ref={emotionUploadRef} type="file" accept="audio/*" className="hidden" onChange={handleUploadEmotion} />
       <input ref={directUploadRef} type="file" accept="audio/*" className="hidden" onChange={handleDirectUpload} />
     </div>
     </CardMagnetContext.Provider>
@@ -1762,25 +2132,27 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       </div>
       {props.selected && (
         <div
-          style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 190 }}
+          style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 220 }}
           className="nodrag mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="mb-2 flex items-center gap-1.5">
+          <div className="mb-2 flex items-center gap-2">
             <ResourceHoverPanel resources={imageResources} onSelect={(resource) => patchRuntimeData(id, { avatarImage: resource.url })} label="形象库" emptyText="暂无形象图片">
-              <button type="button" onClick={(e) => e.stopPropagation()}
-                className={clsx("flex h-8 w-8 items-center justify-center rounded-[10px] transition", (avatarImage || upstream.firstImageUrl) ? "bg-white/15 text-white/70" : "bg-white/8 text-white/40 hover:bg-white/12 hover:text-white/60")}
-                title={upstream.firstImageUrl && !avatarImage ? "上游图片将用作形象" : "选择形象"}>
-                <ImagePlus className="h-4 w-4" />
-              </button>
+              <ResourceTile
+                imageUrl={avatarImage || upstream.firstImageUrl || undefined}
+                icon={<ImagePlus className="h-5 w-5" />}
+                label={upstream.firstImageUrl && !avatarImage ? "上游图片将用作形象" : "选择形象"}
+                onClick={(e) => e.stopPropagation()}
+              />
             </ResourceHoverPanel>
             <ResourceHoverPanel resources={audioResources} onSelect={(resource) => patchRuntimeData(id, { voiceReference: resource.url })} label="音色库" emptyText="暂无音色资源">
-              <button type="button" onClick={(e) => e.stopPropagation()}
-                className={clsx("flex h-8 w-8 items-center justify-center rounded-[10px] transition", (voiceReference || upstream.firstAudioUrl) ? "bg-white/15 text-white/70" : "bg-white/8 text-white/40 hover:bg-white/12 hover:text-white/60")}
-                title={upstream.firstAudioUrl && !voiceReference ? "上游音频将用作音色" : "选择音色"}>
-                <Music className="h-4 w-4" />
-              </button>
+              <ResourceTile
+                audioSet={!!(voiceReference || upstream.firstAudioUrl)}
+                icon={<Music className="h-5 w-5" />}
+                label={upstream.firstAudioUrl && !voiceReference ? "上游音频将用作音色" : "选择音色"}
+                onClick={(e) => e.stopPropagation()}
+              />
             </ResourceHoverPanel>
             <button type="button" disabled={isPolishing || !script.trim()}
               onClick={async (e) => {
@@ -2380,10 +2752,13 @@ function NodePickerPopup({
   const left = Math.min(screenX + 12, window.innerWidth - 320);
   const top = Math.min(Math.max(screenY - 40, 8), window.innerHeight - 320);
   const isFromVideo = sourceNodeType === "video";
+  const isFromImage = sourceNodeType === "image";
   const isFromStoryboard = sourceNodeType === "storyboard";
-  // When source is a video node, only show text; hide image/video/audio/digitalhuman
+  // When source is a video node, only show text (labelled 视频拆解); image source also shows text
   const visibleItems = isFromVideo
-    ? NODE_PICKER_ITEMS.filter((item) => item.type === "text")
+    ? NODE_PICKER_ITEMS.filter((item) => item.type === "text").map((item) => ({
+        ...item, label: "视频拆解", desc: "提取视频文案、拆解内容结构",
+      }))
     : NODE_PICKER_ITEMS;
   return createPortal(
     <>
@@ -2401,14 +2776,14 @@ function NodePickerPopup({
             <button
               type="button"
               onClick={() => onPick("storyboard")}
-              className="mb-1 flex w-full items-center gap-3 rounded-[14px] bg-[#ffc94a]/10 px-3 py-3 text-left transition hover:bg-[#ffc94a]/20 active:scale-[0.98]"
+              className="mb-1 flex w-full items-center gap-3 rounded-[14px] bg-white/[0.05] px-3 py-3 text-left transition hover:bg-white/[0.09] active:scale-[0.98]"
             >
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-[#ffc94a]/20">
-                <Clapperboard className="h-5 w-5 text-[#ffc94a]" />
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-white/10">
+                <Clapperboard className="h-5 w-5 text-white/80" />
               </div>
               <div>
-                <div className="text-base font-medium text-[#ffc94a]">拆解分镜</div>
-                <div className="text-xs text-[#ffc94a]/60">拆解爆款分镜，AI 重新生成</div>
+                <div className="text-sm font-medium text-white">拆解分镜</div>
+                <div className="text-xs text-white/40">拆解爆款分镜，AI 重新生成</div>
               </div>
             </button>
             <button
@@ -2425,6 +2800,21 @@ function NodePickerPopup({
               </div>
             </button>
           </>
+        )}
+        {isFromImage && (
+          <button
+            type="button"
+            onClick={() => onPick("text")}
+            className="mb-1 flex w-full items-center gap-3 rounded-[14px] bg-white/[0.05] px-3 py-3 text-left transition hover:bg-white/[0.09] active:scale-[0.98]"
+          >
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-white/10">
+              <Scan className="h-5 w-5 text-white/80" />
+            </div>
+            <div>
+              <div className="text-sm font-medium text-white">图片理解</div>
+              <div className="text-xs text-white/40">AI 视觉分析，提取图片内容</div>
+            </div>
+          </button>
         )}
         {isFromStoryboard && (
           <button
@@ -2680,6 +3070,9 @@ export function ReactCanvasRoot({
   const [chatInput, setChatInput] = useState("");
   const [isPolishing, setIsPolishing] = useState(false);
   const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
+  const [addPanelChars, setAddPanelChars] = useState<{ id: string; name: string; avatar: string }[]>([]);
+  const [addPanelProducts, setAddPanelProducts] = useState<{ id: string; name: string; images: string }[]>([]);
+  const [addPanelResourcesLoading, setAddPanelResourcesLoading] = useState(false);
   const [showBackground, setShowBackground] = useState(true);
   type ChatAttachment = { id: string; localUrl: string; type: "image" | "video"; name: string };
   const [chatAttachments, setChatAttachments] = useState<ChatAttachment[]>([]);
@@ -2795,7 +3188,7 @@ export function ReactCanvasRoot({
     },
     [],
   );
-  const { runImageNode, runVideoNode, runAudioNode, runDigitalHumanNode, runStoryboardNode, uploadResource } = useCanvasOrchestrator({
+  const { runImageNode, runVideoNode, runAudioNode, runDigitalHumanNode, runStoryboardNode, runTextNode, uploadResource } = useCanvasOrchestrator({
     getNode: getNodeById,
     getUpstreamInputs,
     patchRuntimeData,
@@ -2899,6 +3292,7 @@ export function ReactCanvasRoot({
       runAudioNode,
       runDigitalHumanNode,
       runStoryboardNode,
+      runTextNode,
       addDownstreamNodes,
       uploadResource,
       polishPrompt,
@@ -2923,6 +3317,7 @@ export function ReactCanvasRoot({
       runAudioNode,
       runDigitalHumanNode,
       runStoryboardNode,
+      runTextNode,
       addDownstreamNodes,
       uploadResource,
       polishPrompt,
@@ -3100,6 +3495,17 @@ export function ReactCanvasRoot({
         // Also carry over any timeline video url
         const srcVideoUrl = String(srcData.timelineVideoUrl || srcData.outputUrl || "").trim();
         if (srcVideoUrl) prefilledData.videoUrl = srcVideoUrl;
+      }
+      if (type === "text" && sourceNode?.type === "image") {
+        // Text node pulled from image → image understanding mode
+        const srcData = (sourceNode.data.runtime?.data || {}) as Record<string, unknown>;
+        const outputs = Array.isArray(srcData.outputs) ? srcData.outputs : [];
+        const firstOutputUrl = outputs.length > 0
+          ? String((outputs[0] as Record<string, unknown>).url || "").trim()
+          : "";
+        const imgUrl = String(firstOutputUrl || srcData.outputUrl || srcData.url || "").trim();
+        prefilledData.mode = "image-understanding";
+        if (imgUrl) prefilledData.imageUrl = imgUrl;
       }
       const newNode: Node<MinimalFlowNodeData> = {
         id: newId,
@@ -3304,13 +3710,16 @@ export function ReactCanvasRoot({
         const flowPos = rfInstanceRef.current?.screenToFlowPosition({ x: e.clientX, y: e.clientY }) ?? { x: e.clientX, y: e.clientY };
         const nodeType = isImage ? "image" : "video";
         const newId = `${nodeType}_${Math.random().toString(36).slice(2, 8)}`;
+        // Detect dimensions from local file first (fast, no network)
+        const { width, height } = await getMediaDimensions(file);
+        const ratio = findClosestRatio(width, height);
         // Optimistically add node at drop position while upload happens
         const placeholderNode: Node<MinimalFlowNodeData> = {
           id: newId,
           type: nodeType,
           position: flowPos,
           data: {
-            runtime: { id: newId, type: nodeType, position: flowPos, data: { label: isImage ? "图片" : "视频", uploading: true } },
+            runtime: { id: newId, type: nodeType, position: flowPos, data: { label: isImage ? "图片" : "视频", uploading: true, ratio } },
             summary: isImage ? "上传中..." : "上传中...",
             status: "running",
             expanded: false,
@@ -3323,8 +3732,8 @@ export function ReactCanvasRoot({
             prev.map((n) => {
               if (n.id !== newId) return n;
               const updatedData = isImage
-                ? { label: "图片", outputs: [{ url: resource.url }] }
-                : { label: "视频", outputUrl: resource.url };
+                ? { label: "图片", outputs: [{ url: resource.url }], ratio }
+                : { label: "视频", outputUrl: resource.url, ratio };
               return {
                 ...n,
                 data: {
@@ -3413,6 +3822,41 @@ export function ReactCanvasRoot({
     [],
   );
 
+  // Fetch characters + products when the add panel opens
+  useEffect(() => {
+    if (!isAddPanelOpen) return;
+    setAddPanelResourcesLoading(true);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const headers: Record<string, string> = {};
+      if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
+      Promise.all([
+        fetch("/api/characters", { credentials: "include", headers }).then((r) => r.json()).catch(() => []),
+        fetch("/api/products", { credentials: "include", headers }).then((r) => r.json()).catch(() => ({ data: [] })),
+      ]).then(([chars, prods]) => {
+        setAddPanelChars(Array.isArray(chars) ? (chars as { id: string; name: string; avatar: string }[]) : []);
+        const prodList = (prods as { data?: { id: string; name: string; images: string }[] }).data ?? [];
+        setAddPanelProducts(prodList);
+      }).finally(() => setAddPanelResourcesLoading(false));
+    }).catch(() => setAddPanelResourcesLoading(false));
+  }, [isAddPanelOpen]);
+
+  // Create a video node at canvas center + open viral modal (sidebar "一键复刻" entry)
+  const handleToolbarViralClick = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const cx = Math.round(window.innerWidth / 2);
+    const cy = Math.round(window.innerHeight / 2);
+    const type = "video";
+    const newId = `${type}_${Math.random().toString(36).slice(2, 8)}`;
+    const pos = rfInstanceRef.current?.screenToFlowPosition({ x: cx, y: cy }) ?? { x: cx, y: cy };
+    const newNode: Node<MinimalFlowNodeData> = {
+      id: newId, type, position: pos,
+      data: { runtime: { id: newId, type, position: pos, data: { label: "参考视频" } }, summary: "", status: "idle" as const, expanded: false },
+    };
+    setNodes((prev) => [...prev, newNode]);
+    setViralModalSource({ nodeId: newId, videoUrl: "", screenX: cx, screenY: Math.max(cy - 100, 8) });
+    setIsAddPanelOpen(false);
+  }, [setNodes]);
+
   // Toolbar/panel upload — creates a node at canvas center after upload
   const toolbarUploadRef = useRef<HTMLInputElement>(null);
   const handleToolbarUpload = useCallback(
@@ -3429,10 +3873,13 @@ export function ReactCanvasRoot({
           ? vp.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 })
           : { x: 0, y: 0 };
         const newId = `${nodeType}_${Math.random().toString(36).slice(2, 8)}`;
+        // Detect dimensions from local file (fast, no network)
+        const { width, height } = await getMediaDimensions(file);
+        const ratio = findClosestRatio(width, height);
         const placeholderNode: Node<MinimalFlowNodeData> = {
           id: newId, type: nodeType, position: center,
           data: {
-            runtime: { id: newId, type: nodeType, position: center, data: { label: isImage ? "图片" : "视频", uploading: true } },
+            runtime: { id: newId, type: nodeType, position: center, data: { label: isImage ? "图片" : "视频", uploading: true, ratio } },
             summary: "上传中...", status: "running", expanded: false,
           },
         };
@@ -3441,7 +3888,9 @@ export function ReactCanvasRoot({
           const resource = await uploadResource(file, { type: isImage ? "image" : "video", name: file.name });
           setNodes((prev) => prev.map((n) => {
             if (n.id !== newId) return n;
-            const d = isImage ? { label: "图片", outputs: [{ url: resource.url }] } : { label: "视频", outputUrl: resource.url };
+            const d = isImage
+              ? { label: "图片", outputs: [{ url: resource.url }], ratio }
+              : { label: "视频", outputUrl: resource.url, ratio };
             return { ...n, data: { ...n.data, runtime: { ...n.data.runtime, data: d }, summary: isImage ? "已上传图片" : "已上传视频", status: "success" as const } };
           }));
         } catch {
@@ -3940,8 +4389,8 @@ export function ReactCanvasRoot({
             <ToolbarBtn icon={Video}        label="文生视频"     onClick={() => { handleApplyTemplate("text-to-video");        setIsAddPanelOpen(false); }} />
             <ToolbarBtn icon={Play}         label="图生视频"     onClick={() => { handleApplyTemplate("image-to-video");       setIsAddPanelOpen(false); }} />
             <ToolbarBtn icon={UserCircle2}  label="文字转数字人" onClick={() => { handleApplyTemplate("text-to-digitalhuman"); setIsAddPanelOpen(false); }} />
-            <ToolbarBtn icon={Clapperboard} label="爆款复刻"     onClick={() => { handleApplyTemplate("viral");               setIsAddPanelOpen(false); }} />
-            <ToolbarBtn icon={Film}         label="时间轴视频"   onClick={() => { handlePickNode("timelinevideo", Math.round(window.innerWidth / 2), Math.round(window.innerHeight / 2), null); setIsAddPanelOpen(false); }} />
+            <ToolbarBtn icon={Clapperboard} label="分镜拆解"     onClick={() => { handleApplyTemplate("viral");               setIsAddPanelOpen(false); }} />
+            <ToolbarBtn icon={Zap}          label="一键复刻"     onClick={handleToolbarViralClick} />
             <div className="my-1 h-px w-6 bg-white/10" />
             {/* Upload — always at bottom */}
             <ToolbarBtn icon={Upload} label="上传图片/视频" onClick={() => toolbarUploadRef.current?.click()} />
@@ -3949,7 +4398,7 @@ export function ReactCanvasRoot({
 
           {/* Inline add-node panel */}
           {isAddPanelOpen && (
-            <div className="pointer-events-auto ml-2 w-[280px] overflow-hidden rounded-[20px] bg-[#1a1a1c] p-3 shadow-[0_24px_80px_rgba(0,0,0,0.85)]">
+            <div className="pointer-events-auto ml-2 w-[280px] overflow-hidden rounded-[20px] bg-[#1a1a1c] p-3 shadow-[0_24px_80px_rgba(0,0,0,0.85)]" style={{ maxHeight: "80vh", overflowY: "auto" }}>
               <p className="mb-2 px-2 text-sm text-white/40">添加节点</p>
               {NODE_PICKER_ITEMS.map((item) => (
                 <button
@@ -3972,24 +4421,6 @@ export function ReactCanvasRoot({
                   </div>
                 </button>
               ))}
-              <button
-                type="button"
-                onClick={() => {
-                  if (typeof window !== "undefined") {
-                    handlePickNode("timelinevideo", Math.round(window.innerWidth / 2), Math.round(window.innerHeight / 2), null);
-                  }
-                  setIsAddPanelOpen(false);
-                }}
-                className="group flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition hover:bg-white/[0.07] active:scale-[0.98]"
-              >
-                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-white/10">
-                  <Film className="h-5 w-5 text-white/80" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-white">时间轴视频</p>
-                  <p className="overflow-hidden text-xs text-white/0 transition-all duration-150 group-hover:text-white/50">展示时间轴视频，跳转编辑</p>
-                </div>
-              </button>
               <div className="my-2 h-px bg-white/[0.06]" />
               <p className="mb-2 px-2 text-sm text-white/40">上传素材</p>
               <button
@@ -4005,6 +4436,75 @@ export function ReactCanvasRoot({
                   <p className="text-xs text-white/40">自动创建节点到画布</p>
                 </div>
               </button>
+              <div className="my-2 h-px bg-white/[0.06]" />
+              {/* Resource library */}
+              <p className="mb-2 px-2 text-sm text-white/40">资源库</p>
+              {addPanelResourcesLoading ? (
+                <div className="flex items-center justify-center py-4 text-xs text-white/30">加载中...</div>
+              ) : (
+                <>
+                  {addPanelChars.length > 0 && (
+                    <>
+                      <p className="mb-1.5 px-2 text-[10px] uppercase tracking-widest text-white/30">角色</p>
+                      <div className="mb-2 flex flex-wrap gap-2 px-1">
+                        {addPanelChars.slice(0, 8).map((char) => {
+                          const handleCharClick = () => {
+                            if (typeof window === "undefined") return;
+                            const cx = Math.round(window.innerWidth / 2);
+                            const cy = Math.round(window.innerHeight / 2);
+                            const type = "digitalhuman";
+                            const newId = `${type}_${Math.random().toString(36).slice(2, 8)}`;
+                            const pos = rfInstanceRef.current?.screenToFlowPosition({ x: cx, y: cy }) ?? { x: cx, y: cy };
+                            setNodes((prev) => [...prev, {
+                              id: newId, type, position: pos,
+                              data: { runtime: { id: newId, type, position: pos, data: { avatarImage: char.avatar, label: char.name } }, summary: "", status: "idle" as const, expanded: false },
+                            }]);
+                            setIsAddPanelOpen(false);
+                          };
+                          return (
+                            <button key={char.id} type="button" title={char.name} onClick={handleCharClick}
+                              className="h-14 w-14 overflow-hidden rounded-[12px] bg-white/[0.07] transition hover:brightness-110 active:scale-95">
+                              {char.avatar ? <img src={char.avatar} alt={char.name} className="h-full w-full object-cover" draggable={false} /> : <UserCircle2 className="h-6 w-6 text-white/30" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                  {addPanelProducts.length > 0 && (
+                    <>
+                      <p className="mb-1.5 px-2 text-[10px] uppercase tracking-widest text-white/30">产品</p>
+                      <div className="mb-1 flex flex-wrap gap-2 px-1">
+                        {addPanelProducts.slice(0, 8).map((prod) => {
+                          const thumbUrl = (() => { try { const imgs = JSON.parse(prod.images) as string[]; return Array.isArray(imgs) ? imgs[0] : undefined; } catch { return undefined; } })();
+                          const handleProdClick = () => {
+                            if (typeof window === "undefined") return;
+                            const cx = Math.round(window.innerWidth / 2);
+                            const cy = Math.round(window.innerHeight / 2);
+                            const type = "text";
+                            const newId = `${type}_${Math.random().toString(36).slice(2, 8)}`;
+                            const pos = rfInstanceRef.current?.screenToFlowPosition({ x: cx, y: cy }) ?? { x: cx, y: cy };
+                            setNodes((prev) => [...prev, {
+                              id: newId, type, position: pos,
+                              data: { runtime: { id: newId, type, position: pos, data: { content: prod.name, label: prod.name } }, summary: "", status: "idle" as const, expanded: false },
+                            }]);
+                            setIsAddPanelOpen(false);
+                          };
+                          return (
+                            <button key={prod.id} type="button" title={prod.name} onClick={handleProdClick}
+                              className="h-14 w-14 overflow-hidden rounded-[12px] bg-white/[0.07] transition hover:brightness-110 active:scale-95">
+                              {thumbUrl ? <img src={thumbUrl} alt={prod.name} className="h-full w-full object-cover" draggable={false} /> : <div className="flex h-full w-full items-center justify-center text-[10px] text-white/30 text-center px-1">{prod.name.slice(0, 4)}</div>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                  {addPanelChars.length === 0 && addPanelProducts.length === 0 && (
+                    <p className="px-2 py-2 text-xs text-white/20">暂无角色或产品资源</p>
+                  )}
+                </>
+              )}
             </div>
           )}
         </div>
