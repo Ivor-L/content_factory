@@ -15,35 +15,35 @@ export async function GET(request: Request) {
   const modelId = searchParams.get('model');
   const route = searchParams.get('route');
 
-  const where: any = { user_id: ctx.userId };
-  if (modelId) where.model_id = modelId;
+  const where: any = { userId: ctx.userId };
+  if (modelId) where.modelId = modelId;
   if (route) where.route = route;
   if (before) {
     const beforeDate = new Date(before);
     if (!isNaN(beforeDate.getTime())) {
-      where.created_at = { lt: beforeDate };
+      where.createdAt = { lt: beforeDate };
     }
   }
 
-  const usage = await prisma.usage_logs.findMany({
+  const usage = await prisma.usageLog.findMany({
     where,
-    orderBy: { created_at: 'desc' },
+    orderBy: { createdAt: 'desc' },
     take: limit + 1,
   });
 
   const items = usage.slice(0, limit).map((log) => ({
     id: log.id,
-    modelId: log.model_id,
+    modelId: log.modelId,
     route: log.route,
-    promptTokens: log.prompt_tokens,
-    completionTokens: log.completion_tokens,
-    chargedCredits: log.charged_credits.toString(),
-    priceCny: Number(log.price_cny),
-    responseMs: log.response_ms,
-    createdAt: log.created_at,
+    promptTokens: log.promptTokens,
+    completionTokens: log.completionTokens,
+    chargedCredits: log.chargedCredits.toString(),
+    priceCny: Number(log.priceCny),
+    responseMs: log.responseMs,
+    createdAt: log.createdAt,
   }));
 
-  const nextCursor = usage.length > limit ? usage[limit].created_at.toISOString() : null;
+  const nextCursor = usage.length > limit ? usage[limit].createdAt.toISOString() : null;
 
   return NextResponse.json({
     ok: true,

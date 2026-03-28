@@ -14020,7 +14020,7 @@ ${tagString}`;
             value: apiBaseUrl,
             onChange: (e) => onApiBaseChange(e.target.value),
             className: "w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-900",
-            placeholder: "例如：https://app.atomx.top",
+            placeholder: "例如：https://atomx.top",
             autoComplete: "off"
           }
         ),

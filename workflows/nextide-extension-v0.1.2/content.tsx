@@ -24,7 +24,7 @@ type CollectorConfig = {
   apiKey: string
 }
 
-const DEFAULT_API_BASE = 'https://app.atomx.top'
+const DEFAULT_API_BASE = 'https://atomx.top'
 const LOCAL_COLLECTOR_CONFIG_KEY = 'nextide_collector_config'
 
 const readLocalCollectorConfig = (): CollectorConfig | null => {

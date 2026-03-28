@@ -27,7 +27,7 @@ export type RuntimeCanvasData = {
   resources: Array<Record<string, unknown>>;
 };
 
-export const DEFAULT_VIEWPORT = { x: 100, y: 50, zoom: 0.8 };
+export const DEFAULT_VIEWPORT = { x: 100, y: 50, zoom: 0.4 };
 
 function randomNodeId(prefix: string) {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -36,44 +36,10 @@ function randomNodeId(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function createDefaultRuntimeData(prompt?: string): RuntimeCanvasData {
-  const textId = randomNodeId("text");
-  const imageId = randomNodeId("image");
+function createEmptyCanvasData(): RuntimeCanvasData {
   return {
-    nodes: [
-      {
-        id: textId,
-        type: "text",
-        position: { x: 150, y: 120 },
-        data: {
-          label: "文本输入",
-          content: prompt?.trim() || "",
-          placeholder: "开始你的创作...",
-        },
-      },
-      {
-        id: imageId,
-        type: "image",
-        position: { x: 520, y: 120 },
-        data: {
-          label: "图片生成",
-          prompt: "",
-          model: "doubao-seedream-4-5-251128",
-          size: "1024x1024",
-          quality: "standard",
-          ratio: "16:9",
-        },
-      },
-    ],
-    edges: [
-      {
-        id: `edge-${textId}-${imageId}`,
-        source: textId,
-        target: imageId,
-        sourceHandle: "right",
-        targetHandle: "left",
-      },
-    ],
+    nodes: [],
+    edges: [],
     viewport: { ...DEFAULT_VIEWPORT },
     resources: [],
   };
@@ -96,7 +62,7 @@ export function normalizeRuntimeCanvasData(
   fallbackPrompt?: string,
 ): RuntimeCanvasData {
   if (!raw || typeof raw !== "object") {
-    return createDefaultRuntimeData(fallbackPrompt);
+    return createEmptyCanvasData();
   }
   const source = raw as Partial<RuntimeCanvasData>;
   const nodes = Array.isArray(source.nodes)
@@ -114,9 +80,6 @@ export function normalizeRuntimeCanvasData(
         })
         .filter(Boolean) as RuntimeCanvasNode[]
     : [];
-  if (nodes.length === 0) {
-    return createDefaultRuntimeData(fallbackPrompt);
-  }
   const edges = Array.isArray(source.edges)
     ? (source.edges.filter(
         (edge) => edge && typeof edge === "object" && (edge as RuntimeCanvasEdge).source && (edge as RuntimeCanvasEdge).target,
@@ -170,7 +133,122 @@ export type MinimalFlowNodeData = {
   summary: string;
   status: "idle" | "running" | "success" | "error";
   expanded: boolean;
+  upstreamInputs?: UpstreamInputs;
 };
+
+// ─── Upstream data flow ───────────────────────────────────────────────────────
+
+/**
+ * Structured upstream data resolved by traversing incoming edges.
+ * All fields degrade gracefully to empty arrays / empty strings so callers
+ * can use them without null-checking.
+ */
+export type UpstreamInputs = {
+  /** Text content from connected text nodes */
+  textContents: string[];
+  /** Output image URLs from connected image nodes */
+  imageUrls: string[];
+  /** Output video URLs from connected video / digital-human nodes */
+  videoUrls: string[];
+  /** Output audio URLs from connected audio nodes */
+  audioUrls: string[];
+  // Convenience aliases — first non-empty value in each list
+  effectivePrompt: string;
+  firstImageUrl: string;
+  firstVideoUrl: string;
+  firstAudioUrl: string;
+};
+
+export const EMPTY_UPSTREAM: UpstreamInputs = {
+  textContents: [],
+  imageUrls: [],
+  videoUrls: [],
+  audioUrls: [],
+  effectivePrompt: "",
+  firstImageUrl: "",
+  firstVideoUrl: "",
+  firstAudioUrl: "",
+};
+
+type NodeSnapshot = {
+  id: string;
+  type?: string | null;
+  data: { runtime?: { type?: string; data?: Record<string, unknown> } };
+};
+type EdgeSnapshot = { source: string; target: string };
+
+/**
+ * Pure function — resolves all upstream inputs for `nodeId` by walking every
+ * incoming edge and extracting typed output data from the source node.
+ * Safe to call inside useMemo; creates no side-effects.
+ */
+export function resolveUpstreamInputs(
+  nodeId: string,
+  nodes: NodeSnapshot[],
+  edges: EdgeSnapshot[],
+): UpstreamInputs {
+  const textContents: string[] = [];
+  const imageUrls: string[] = [];
+  const videoUrls: string[] = [];
+  const audioUrls: string[] = [];
+
+  const incomingSourceIds = edges
+    .filter((e) => e.target === nodeId)
+    .map((e) => e.source);
+
+  for (const sourceId of incomingSourceIds) {
+    const sourceNode = nodes.find((n) => n.id === sourceId);
+    if (!sourceNode) continue;
+    const d = (sourceNode.data.runtime?.data || {}) as Record<string, unknown>;
+    const type = sourceNode.type || sourceNode.data.runtime?.type || "";
+
+    switch (type) {
+      case "text": {
+        const text = String(d.content ?? "").trim();
+        if (text) textContents.push(text);
+        break;
+      }
+      case "image": {
+        // Collect every generated image URL
+        const outputs = Array.isArray(d.outputs) ? d.outputs : [];
+        for (const out of outputs) {
+          const url =
+            typeof out === "string"
+              ? out
+              : typeof (out as Record<string, unknown>).url === "string"
+              ? (out as Record<string, unknown>).url as string
+              : "";
+          if (url) imageUrls.push(url);
+        }
+        break;
+      }
+      case "video":
+      case "digitalhuman": {
+        const url = String(d.outputUrl ?? "").trim();
+        if (url) videoUrls.push(url);
+        break;
+      }
+      case "audio": {
+        const url = String(d.audioUrl ?? "").trim();
+        if (url) audioUrls.push(url);
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  return {
+    textContents,
+    imageUrls,
+    videoUrls,
+    audioUrls,
+    effectivePrompt: textContents[0] ?? "",
+    firstImageUrl: imageUrls[0] ?? "",
+    firstVideoUrl: videoUrls[0] ?? "",
+    firstAudioUrl: audioUrls[0] ?? "",
+  };
+}
 
 export function runtimeToFlowNodes(
   runtimeNodes: RuntimeCanvasNode[],

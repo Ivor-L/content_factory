@@ -1,5 +1,5 @@
 export const POSTER_COUNT_MIN = 1;
-export const POSTER_COUNT_MAX = 6;
+export const POSTER_COUNT_MAX = 5;
 export const DEFAULT_POSTER_COUNT = 3;
 
 export const clampPosterCount = (value?: number | null) => {

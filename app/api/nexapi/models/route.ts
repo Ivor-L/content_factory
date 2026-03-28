@@ -8,26 +8,26 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const models = await prisma.model_prices.findMany({
-    orderBy: { display_name: 'asc' },
+  const models = await prisma.modelPrice.findMany({
+    orderBy: { displayName: 'asc' },
   });
 
   return NextResponse.json({
     ok: true,
     models: models.map((model) => ({
-      modelId: model.model_id,
-      displayName: model.display_name,
+      modelId: model.modelId,
+      displayName: model.displayName,
       provider: model.provider,
       type: model.type,
-      baseCostCnyPer1K: Number(model.base_cost_cny_per_1k),
-      sellPriceCnyPer1K: Number(model.sell_price_cny_per_1k),
-      minIncrement: model.min_increment,
+      baseCostCnyPer1K: Number(model.baseCostCnyPer1K),
+      sellPriceCnyPer1K: Number(model.sellPriceCnyPer1K),
+      minIncrement: model.minIncrement,
       routes: model.routes,
       capabilities: model.capabilities,
       description: model.description,
-      docsLink: model.docs_link,
+      docsLink: model.docsLink,
       status: model.status,
-      updatedAt: model.updated_at,
+      updatedAt: model.updatedAt,
     })),
   });
 }

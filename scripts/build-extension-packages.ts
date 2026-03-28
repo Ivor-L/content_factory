@@ -29,7 +29,7 @@ const TARGET_TENANT_SLUGS = ["nextide", "jubaopen"] as const;
 
 // Production API base URLs per tenant (hardcoded into the distributed extension)
 const TENANT_PRODUCTION_URLS: Record<string, string> = {
-  nextide: "https://app.atomx.top",
+  nextide: "https://atomx.top",
   jubaopen: "https://atomx.top/jubaopen",
 };
 

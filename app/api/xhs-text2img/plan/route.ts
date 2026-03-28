@@ -64,7 +64,7 @@ function clampImageCount(value?: number) {
   if (!Number.isFinite(value)) return 3;
   const rounded = Math.round(value!);
   if (Number.isNaN(rounded)) return 3;
-  return Math.min(Math.max(rounded, 1), 6);
+  return Math.min(Math.max(rounded, 1), 5);
 }
 
 function normalizeJsonString(value?: string | null) {

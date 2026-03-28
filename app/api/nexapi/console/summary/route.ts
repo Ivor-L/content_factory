@@ -12,14 +12,14 @@ export async function GET(request: Request) {
 
   const [wallet, recentTransactions, recentUsage] = await Promise.all([
     ensureWallet(ctx.userId),
-    prisma.transactions.findMany({
-      where: { user_id: ctx.userId },
-      orderBy: { created_at: 'desc' },
+    prisma.transaction.findMany({
+      where: { userId: ctx.userId },
+      orderBy: { createdAt: 'desc' },
       take: 5,
     }),
-    prisma.usage_logs.findMany({
-      where: { user_id: ctx.userId },
-      orderBy: { created_at: 'desc' },
+    prisma.usageLog.findMany({
+      where: { userId: ctx.userId },
+      orderBy: { createdAt: 'desc' },
       take: 5,
     }),
   ]);
@@ -37,20 +37,20 @@ export async function GET(request: Request) {
     transactions: recentTransactions.map((tx) => ({
       id: tx.id,
       type: tx.type,
-      amountCredits: tx.amount_credits.toString(),
-      amountCny: tx.amount_cny ? Number(tx.amount_cny) : null,
+      amountCredits: tx.amountCredits.toString(),
+      amountCny: tx.amountCny ? Number(tx.amountCny) : null,
       channel: tx.channel,
-      createdAt: tx.created_at,
+      createdAt: tx.createdAt,
     })),
     usage: recentUsage.map((usage) => ({
       id: usage.id,
-      modelId: usage.model_id,
+      modelId: usage.modelId,
       route: usage.route,
-      promptTokens: usage.prompt_tokens,
-      completionTokens: usage.completion_tokens,
-      chargedCredits: usage.charged_credits.toString(),
-      priceCny: Number(usage.price_cny),
-      createdAt: usage.created_at,
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      chargedCredits: usage.chargedCredits.toString(),
+      priceCny: Number(usage.priceCny),
+      createdAt: usage.createdAt,
     })),
     routes: routeHealth,
   });

@@ -195,3 +195,13 @@ body {
     opacity: 0;
   }
 }
+
+/* ReactFlow — selection box: override CSS variables to brand yellow */
+.react-flow {
+  --xy-selection-background-color: rgba(255, 201, 74, 0.06);
+  --xy-selection-border: 1.5px solid rgba(255, 201, 74, 0.5);
+}
+.react-flow__selection {
+  border-radius: 12px;
+}
+

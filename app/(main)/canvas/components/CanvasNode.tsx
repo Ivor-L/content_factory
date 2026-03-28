@@ -135,7 +135,7 @@ function ImageConfigNodeBody({
         <input
           type="number"
           min={1}
-          max={6}
+          max={5}
           value={data.imageCount}
           onChange={(event) =>
             data.onPatch?.(id, {

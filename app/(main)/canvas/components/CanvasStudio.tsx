@@ -332,7 +332,7 @@ export function CanvasStudio() {
         title: node.data.title?.trim() || finalText.slice(0, 28) || "画布生图任务",
         text: finalText,
         styleId: node.data.styleId,
-        imageCount: Math.min(Math.max(Number(node.data.imageCount) || 3, 1), 6),
+        imageCount: Math.min(Math.max(Number(node.data.imageCount) || 3, 1), 5),
       });
       patchNode(nodeId, {
         status: "running",

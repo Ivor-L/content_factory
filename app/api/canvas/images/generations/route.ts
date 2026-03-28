@@ -17,13 +17,15 @@ import {
 
 const FAILED_STATUS_TOKENS = new Set(["failed", "error", "cancelled", "canceled", "timeout"]);
 const GEMINI_ENDPOINT_MAP: Record<string, string> = {
-  "nano-banana-pro": "/v1beta/models/gemini-3-pro-image-preview:generateContent",
+  "nano-banana": "/v1beta/models/gemini-3.1-flash-image-preview:generateContent",
+  "nano-banana-pro": "/v1beta/models/gemini-3.1-pro-preview:generateContent",
+  "gemini-3.1-pro-preview": "/v1beta/models/gemini-3.1-pro-preview:generateContent",
   "nano-banana-2": "/v1beta/models/gemini-3.1-flash-image-preview:generateContent",
-  "gemini-3-pro-image-preview": "/v1beta/models/gemini-3-pro-image-preview:generateContent",
+  "gemini-3-pro-image-preview": "/v1beta/models/gemini-3.1-pro-preview:generateContent",
   "gemini-3.1-flash-image-preview": "/v1beta/models/gemini-3.1-flash-image-preview:generateContent",
 };
-const DEFAULT_GEMINI_ENDPOINT =
-  "/v1beta/models/gemini-3.1-flash-image-preview:generateContent";
+const DEFAULT_GEMINI_ENDPOINT = "/v1beta/models/gemini-3.1-flash-image-preview:generateContent";
+const FAL_NANO_BANANA_PATH = "/fal-ai/nano-banana";
 
 function readEnv(name: string) {
   return String(process.env[name] || "").trim();

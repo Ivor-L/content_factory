@@ -1,5 +1,5 @@
 import prisma from '@/lib/prisma';
-import type { model_prices } from '@prisma/client';
+import type { ModelPrice } from '@prisma/client';
 
 export interface ModelPriceInfo {
   modelId: string;
@@ -21,45 +21,45 @@ const DEFAULT_MARKUP = 5;
 const CREDITS_PER_CNY = 100;
 
 export async function listModelPrices(): Promise<ModelPriceInfo[]> {
-  const models = await prisma.model_prices.findMany({
-    orderBy: { display_name: 'asc' },
+  const models = await prisma.modelPrice.findMany({
+    orderBy: { displayName: 'asc' },
   });
   return models.map(mapModelPrice);
 }
 
 export async function getModelPrice(modelId: string): Promise<ModelPriceInfo | null> {
-  const model = await prisma.model_prices.findUnique({ where: { model_id: modelId } });
+  const model = await prisma.modelPrice.findUnique({ where: { modelId } });
   return model ? mapModelPrice(model) : null;
 }
 
 export async function upsertModelPrice(data: Omit<ModelPriceInfo, 'updatedAt'>) {
-  await prisma.model_prices.upsert({
-    where: { model_id: data.modelId },
+  await prisma.modelPrice.upsert({
+    where: { modelId: data.modelId },
     update: {
-      display_name: data.displayName,
+      displayName: data.displayName,
       provider: data.provider,
       type: data.type,
-      base_cost_cny_per_1k: data.baseCostCnyPer1K,
-      sell_price_cny_per_1k: data.sellPriceCnyPer1K,
-      min_increment: data.minIncrement,
+      baseCostCnyPer1K: data.baseCostCnyPer1K,
+      sellPriceCnyPer1K: data.sellPriceCnyPer1K,
+      minIncrement: data.minIncrement,
       routes: data.routes,
       capabilities: data.capabilities,
       description: data.description,
-      docs_link: data.docsLink,
+      docsLink: data.docsLink,
       status: data.status,
     },
     create: {
-      model_id: data.modelId,
-      display_name: data.displayName,
+      modelId: data.modelId,
+      displayName: data.displayName,
       provider: data.provider,
       type: data.type,
-      base_cost_cny_per_1k: data.baseCostCnyPer1K,
-      sell_price_cny_per_1k: data.sellPriceCnyPer1K,
-      min_increment: data.minIncrement,
+      baseCostCnyPer1K: data.baseCostCnyPer1K,
+      sellPriceCnyPer1K: data.sellPriceCnyPer1K,
+      minIncrement: data.minIncrement,
       routes: data.routes,
       capabilities: data.capabilities,
       description: data.description,
-      docs_link: data.docsLink,
+      docsLink: data.docsLink,
       status: data.status,
     },
   });
@@ -85,21 +85,21 @@ export function computePricing({
   return { baseCost, sellCost, credits };
 }
 
-function mapModelPrice(model: model_prices) {
+function mapModelPrice(model: ModelPrice) {
   return {
-    modelId: model.model_id,
-    displayName: model.display_name,
+    modelId: model.modelId,
+    displayName: model.displayName,
     provider: model.provider,
     type: model.type,
-    baseCostCnyPer1K: Number(model.base_cost_cny_per_1k),
-    sellPriceCnyPer1K: Number(model.sell_price_cny_per_1k),
-    minIncrement: model.min_increment,
+    baseCostCnyPer1K: Number(model.baseCostCnyPer1K),
+    sellPriceCnyPer1K: Number(model.sellPriceCnyPer1K),
+    minIncrement: model.minIncrement,
     routes: model.routes,
     capabilities: model.capabilities,
     description: model.description,
-    docsLink: model.docs_link,
+    docsLink: model.docsLink,
     status: model.status,
-    updatedAt: model.updated_at ?? new Date(),
+    updatedAt: model.updatedAt ?? new Date(),
   };
 }
 

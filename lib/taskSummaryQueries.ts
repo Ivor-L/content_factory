@@ -220,6 +220,14 @@ async function attachReplicationResults(
     const metadataRecord = toMetadataRecord(task.metadata);
     if (parsedResult) {
       metadataRecord.replicationResult = parsedResult;
+      const parsedVideoUrl =
+        (typeof parsedResult.videoUrl === 'string' && parsedResult.videoUrl.trim()) ||
+        (typeof parsedResult.resultUrl === 'string' && parsedResult.resultUrl.trim()) ||
+        (typeof parsedResult.result_url === 'string' && parsedResult.result_url.trim()) ||
+        null;
+      if (parsedVideoUrl && !metadataRecord.videoUrl) {
+        metadataRecord.videoUrl = parsedVideoUrl;
+      }
     }
     if (row.status) {
       metadataRecord.replicationStatus = row.status;

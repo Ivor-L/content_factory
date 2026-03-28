@@ -1245,6 +1245,8 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
   const statusLabel = pickCopy(STATUS_LABELS[statusKey] || { en: task.status || "Unknown", zh: task.status || "未识别", "zh-TW": task.status || "未識別" }, langKey);
   const metadataVideoUrl = getMetadataString(task.metadata, "videoUrl") || getMetadataString(task.metadata, "resultUrl") || null;
   const fallbackVideoUrlFromThumbnail = looksLikeVideoUrl(task.thumbnailUrl) ? task.thumbnailUrl : null;
+  const metadataRecord = toRecord(task.metadata);
+  const metadataReplicationResult = parseRecordLike(metadataRecord?.replicationResult);
 
   const isReplication = task.taskType === "replication";
   const isCreative = task.taskType === "creative";
@@ -1307,12 +1309,16 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
     };
   }, [shouldFetchReplicationDetail, task.taskId]);
 
-  const replicationResultRecord = shouldFetchReplicationDetail
+  const fetchedResultRecord = shouldFetchReplicationDetail
     ? toRecord(replicationDetail?.result)
     : null;
-  const replicationFinalResult = shouldFetchReplicationDetail
-    ? parseRecordLike(replicationResultRecord?.finalResult)
+  const fetchedFinalResult = shouldFetchReplicationDetail
+    ? parseRecordLike(fetchedResultRecord?.finalResult)
     : null;
+
+  const replicationResultRecord = fetchedResultRecord || metadataReplicationResult;
+  const replicationFinalResult =
+    fetchedFinalResult || parseRecordLike(replicationResultRecord?.finalResult);
 
   const replicationVideoUrl =
     normalizeHttpUrl(

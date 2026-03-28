@@ -473,7 +473,7 @@ export function QuickPosterForm({ onClose, initialIdeaText = '' }: QuickPosterFo
           {copy.newTask?.direct?.posterCountLabel ?? '图文张数'}
         </label>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          {[1, 3, 4, 6].map((count) => (
+          {[1, 3, 4, 5].map((count) => (
             <button
               key={count}
               type="button"

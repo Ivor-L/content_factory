@@ -32,12 +32,12 @@ export async function createApiKey(userId: string, label?: string) {
   const lastFour = secret.slice(-4);
   const keyHash = hashKey(secret);
 
-  const record = await prisma.api_keys.create({
+  const record = await prisma.apiKey.create({
     data: {
-      user_id: userId,
+      userId,
       label,
-      key_hash: keyHash,
-      last_four: lastFour,
+      keyHash,
+      lastFour,
       status: 'active',
       scopes: [],
     },
@@ -48,29 +48,29 @@ export async function createApiKey(userId: string, label?: string) {
     secret,
     lastFour,
     label: record.label,
-    createdAt: record.created_at,
+    createdAt: record.createdAt,
   };
 }
 
 export async function listApiKeys(userId: string): Promise<ApiKeyRecord[]> {
-  const keys = await prisma.api_keys.findMany({
-    where: { user_id: userId },
-    orderBy: { created_at: 'desc' },
+  const keys = await prisma.apiKey.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
   });
 
   return keys.map((key) => ({
     id: key.id,
     label: key.label,
-    lastFour: key.last_four,
+    lastFour: key.lastFour,
     status: key.status,
-    createdAt: key.created_at,
-    updatedAt: key.updated_at,
+    createdAt: key.createdAt,
+    updatedAt: key.updatedAt,
   }));
 }
 
 export async function revokeApiKey(userId: string, keyId: string) {
-  await prisma.api_keys.updateMany({
-    where: { id: keyId, user_id: userId },
+  await prisma.apiKey.updateMany({
+    where: { id: keyId, userId },
     data: { status: 'revoked' },
   });
 }
@@ -78,25 +78,25 @@ export async function revokeApiKey(userId: string, keyId: string) {
 export async function getActiveApiKeyRecord(secret: string | null): Promise<ActiveApiKeyRecord | null> {
   if (!secret) return null;
   const keyHash = hashKey(secret);
-  const record = await prisma.api_keys.findFirst({
+  const record = await prisma.apiKey.findFirst({
     where: {
-      key_hash: keyHash,
+      keyHash,
       status: 'active',
     },
     select: {
       id: true,
-      user_id: true,
+      userId: true,
       label: true,
-      last_four: true,
+      lastFour: true,
       status: true,
     },
   });
   if (!record) return null;
   return {
     id: record.id,
-    userId: record.user_id,
+    userId: record.userId,
     label: record.label,
-    lastFour: record.last_four,
+    lastFour: record.lastFour,
     status: record.status,
   };
 }

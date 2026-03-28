@@ -65,7 +65,7 @@ const CANVAS_CREDIT_DEFAULTS: Record<CanvasCreditKind, CanvasCreditDefaults> = {
 const MODEL_WORKFLOW_PRESETS: Record<CanvasCreditKind, ModelWorkflowPreset[]> = {
   image: [
     {
-      aliases: ["nano banana pro", "nanobananapro", "nano-banana-pro", "gemini-3-pro-image-preview"],
+      aliases: ["nano banana pro", "nanobananapro", "nano-banana-pro", "gemini-3-pro-image-preview", "gemini-3.1-pro-preview"],
       workflowId: "flow_nano_pro",
       workflowName: "Nano Banana Pro",
     },
@@ -75,14 +75,14 @@ const MODEL_WORKFLOW_PRESETS: Record<CanvasCreditKind, ModelWorkflowPreset[]> = 
       workflowName: "Nano Banana2",
     },
     {
-      aliases: ["nano banana", "nanobanana", "nano-banana", "gemini-3.1-flash-image-preview"],
+      aliases: ["nano banana", "nanobanana", "nano-banana", "gemini-3.1-flash-image-preview", "gemini-3.1-flash-lite-preview"],
       workflowId: "flow_nano",
       workflowName: "NanoBanana",
     },
   ],
   video: [
     {
-      aliases: ["veo3.1", "veo31", "veo 3.1", "veo_3_1_fast", "veo3.1_fast", "veo_3_1-fast"],
+      aliases: ["veo3.1", "veo31", "veo 3.1", "veo_3_1_fast", "veo3.1_fast", "veo_3_1-fast", "veo_3_1", "veo3", "veo3-fast"],
       workflowId: "jbp_video_Veo3.1_fast",
       workflowName: "Veo3.1 Fast",
     },
@@ -92,7 +92,7 @@ const MODEL_WORKFLOW_PRESETS: Record<CanvasCreditKind, ModelWorkflowPreset[]> = 
       workflowName: "Sora2",
     },
     {
-      aliases: ["grok3", "grok 3", "grok-3", "grok-video-3-10s"],
+      aliases: ["grok3", "grok 3", "grok-3", "grok-video-3-10s", "grok-video-3", "grokvideo3"],
       workflowId: "flow0020",
       workflowName: "Grok3",
     },

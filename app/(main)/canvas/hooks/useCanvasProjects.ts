@@ -234,21 +234,21 @@ export function useCanvasProjects(
     return projects.find((item) => item.id === currentProjectId) ?? null;
   }, [projects, currentProjectId]);
 
-  // When currentProjectId changes and canvasData is not loaded, silently fetch it
-  const projectsRef = useRef<CanvasProjectRecord[]>([]);
-  useEffect(() => { projectsRef.current = projects; }, [projects]);
-
+  // When currentProjectId changes and canvasData is not loaded, silently fetch it.
+  // Uses `projects` as a dependency so it also re-fires after loadProjects populates the list,
+  // fixing the race condition where the effect first runs with an empty projects array.
   useEffect(() => {
     if (!currentProjectId) return;
-    const project = projectsRef.current.find((p) => p.id === currentProjectId);
-    if (!project || project.canvasData) return;
-    // Silently fetch full canvas data in the background
+    const hasData = projects.some((p) => p.id === currentProjectId && p.canvasData);
+    if (hasData) return;
+    let cancelled = false;
     requestJson(`/api/canvas/projects/${currentProjectId}`)
       .then((payload) => {
-        if (payload.data) upsertProject(payload.data as CanvasProjectRecord);
+        if (!cancelled && payload.data) upsertProject(payload.data as CanvasProjectRecord);
       })
       .catch(() => {});
-  }, [currentProjectId, upsertProject]);
+    return () => { cancelled = true; };
+  }, [currentProjectId, projects, upsertProject]);
 
   const selectProject = useCallback((projectId: string | null) => {
     setCurrentProjectId(projectId);

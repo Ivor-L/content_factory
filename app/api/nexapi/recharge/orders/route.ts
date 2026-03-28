@@ -9,9 +9,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const orders = await prisma.recharge_orders.findMany({
-    where: { user_id: ctx.userId },
-    orderBy: { created_at: 'desc' },
+  const orders = await prisma.rechargeOrder.findMany({
+    where: { userId: ctx.userId },
+    orderBy: { createdAt: 'desc' },
     take: 20,
   });
 
@@ -19,13 +19,13 @@ export async function GET(request: Request) {
     ok: true,
     orders: orders.map((order) => ({
       id: order.id,
-      amountCny: Number(order.amount_cny),
+      amountCny: Number(order.amountCny),
       credits: order.credits.toString(),
       status: order.status,
-      payUrl: order.pay_url,
-      alipayTradeNo: order.alipay_trade_no,
-      createdAt: order.created_at,
-      updatedAt: order.updated_at,
+      payUrl: order.payUrl,
+      alipayTradeNo: order.alipayTradeNo,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
     })),
   });
 }

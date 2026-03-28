@@ -44,10 +44,10 @@ export async function createRechargeOrder(
   }
   const credits = BigInt(Math.round(amountCny * CREDITS_PER_CNY));
 
-  const order = await prisma.recharge_orders.create({
+  const order = await prisma.rechargeOrder.create({
     data: {
-      user_id: userId,
-      amount_cny: amountCny,
+      userId,
+      amountCny,
       credits,
       status: 'pending',
       meta: {
@@ -73,10 +73,10 @@ export async function createRechargeOrder(
     { method: 'GET' }
   );
 
-  await prisma.recharge_orders.update({
+  await prisma.rechargeOrder.update({
     where: { id: order.id },
     data: {
-      pay_url: payUrl,
+      payUrl,
     },
   });
 
@@ -104,7 +104,7 @@ export async function handleAlipayWebhook(params: NotifyParams) {
     throw new Error('Missing out_trade_no');
   }
 
-  const order = await prisma.recharge_orders.findUnique({ where: { id: outTradeNo } });
+  const order = await prisma.rechargeOrder.findUnique({ where: { id: outTradeNo } });
   if (!order) {
     throw new Error('Order not found');
   }
@@ -115,21 +115,21 @@ export async function handleAlipayWebhook(params: NotifyParams) {
 
   if (tradeStatus === 'TRADE_SUCCESS' || tradeStatus === 'TRADE_FINISHED') {
     await prisma.$transaction(async (tx) => {
-      await tx.recharge_orders.update({
+      await tx.rechargeOrder.update({
         where: { id: order.id },
         data: {
           status: 'paid',
-          alipay_trade_no: tradeNo,
+          alipayTradeNo: tradeNo,
         },
       });
 
       await adjustWalletCreditsInTransaction(
         tx,
-        order.user_id,
+        order.userId,
         order.credits,
         {
           reason: 'recharge',
-          amountCny: Number(order.amount_cny),
+          amountCny: Number(order.amountCny),
           channel: 'alipay',
           refId: order.id,
           meta: params,
@@ -137,11 +137,11 @@ export async function handleAlipayWebhook(params: NotifyParams) {
       );
     });
   } else if (tradeStatus === 'TRADE_CLOSED') {
-    await prisma.recharge_orders.update({
+    await prisma.rechargeOrder.update({
       where: { id: order.id },
       data: {
         status: 'failed',
-        alipay_trade_no: tradeNo,
+        alipayTradeNo: tradeNo,
       },
     });
   }

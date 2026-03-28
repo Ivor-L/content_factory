@@ -14074,7 +14074,7 @@ ${tagString}`;
       setNotification(msg);
       setTimeout(() => setNotification(null), 3e3);
     };
-    const DEFAULT_API_BASE = "https://app.atomx.top";
+    const DEFAULT_API_BASE = "https://atomx.top";
     const DEV_TUNNEL_BASE = "https://nextide.cpolar.top/nextide";
     const LOCAL_COLLECTOR_CONFIG_KEY = "nextide_collector_config";
     const readLocalCollectorConfig = () => {

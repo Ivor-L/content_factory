@@ -11,32 +11,32 @@ export type WalletSnapshot = {
 };
 
 export async function getWallet(userId: string): Promise<WalletSnapshot | null> {
-  const wallet = await prisma.wallets.findUnique({ where: { user_id: userId } });
+  const wallet = await prisma.wallet.findUnique({ where: { userId } });
   if (!wallet) return null;
   return {
-    userId: wallet.user_id,
-    balanceCredits: wallet.balance_credits,
+    userId: wallet.userId,
+    balanceCredits: wallet.balanceCredits,
     currency: wallet.currency,
-    updatedAt: wallet.updated_at ?? new Date(),
+    updatedAt: wallet.updatedAt ?? new Date(),
   };
 }
 
 export async function ensureWallet(userId: string): Promise<WalletSnapshot> {
-  const wallet = await prisma.wallets.upsert({
-    where: { user_id: userId },
+  const wallet = await prisma.wallet.upsert({
+    where: { userId },
     update: {},
     create: {
-      user_id: userId,
-      balance_credits: BigInt(0),
+      userId,
+      balanceCredits: BigInt(0),
       currency: DEFAULT_CURRENCY,
     },
   });
 
   return {
-    userId: wallet.user_id,
-    balanceCredits: wallet.balance_credits,
+    userId: wallet.userId,
+    balanceCredits: wallet.balanceCredits,
     currency: wallet.currency,
-    updatedAt: wallet.updated_at ?? new Date(),
+    updatedAt: wallet.updatedAt ?? new Date(),
   };
 }
 
@@ -74,36 +74,36 @@ export async function adjustWalletCreditsInTransaction(
 
   const { reason, amountCny, channel, refId, meta } = options;
 
-  const wallet = await tx.wallets.upsert({
-    where: { user_id: userId },
+  const wallet = await tx.wallet.upsert({
+    where: { userId },
     update: {},
     create: {
-      user_id: userId,
-      balance_credits: BigInt(0),
+      userId,
+      balanceCredits: BigInt(0),
       currency: DEFAULT_CURRENCY,
     },
   });
 
-  const updatedBalance = wallet.balance_credits + deltaCredits;
+  const updatedBalance = wallet.balanceCredits + deltaCredits;
   if (updatedBalance < BigInt(0)) {
     throw new Error('Insufficient credits');
   }
 
-  await tx.wallets.update({
-    where: { user_id: userId },
+  await tx.wallet.update({
+    where: { userId },
     data: {
-      balance_credits: updatedBalance,
+      balanceCredits: updatedBalance,
     },
   });
 
-  const transaction = await tx.transactions.create({
+  const transaction = await tx.transaction.create({
     data: {
-      user_id: userId,
+      userId,
       type: reason,
-      amount_credits: deltaCredits,
-      amount_cny: typeof amountCny === 'number' ? amountCny : undefined,
+      amountCredits: deltaCredits,
+      amountCny: typeof amountCny === 'number' ? amountCny : undefined,
       channel,
-      ref_id: refId,
+      refId,
       meta: meta ? meta : undefined,
     },
   });
@@ -112,7 +112,7 @@ export async function adjustWalletCreditsInTransaction(
     userId,
     balanceCredits: updatedBalance,
     currency: wallet.currency,
-    updatedAt: transaction.created_at,
+    updatedAt: transaction.createdAt,
     transactionId: transaction.id,
   };
 }
