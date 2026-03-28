@@ -3045,6 +3045,7 @@ const edgeTypes = {
 export type ReactCanvasRootProps = {
   initialProjectId?: string;
   initialPrompt?: string;
+  initialMedia?: string;
   forceProjectList?: boolean;
   initialProjects?: CanvasProjectRecord[];
   autoSelectFirstProject?: boolean;
@@ -3053,6 +3054,7 @@ export type ReactCanvasRootProps = {
 export function ReactCanvasRoot({
   initialProjectId,
   initialPrompt,
+  initialMedia,
   forceProjectList,
   initialProjects,
   autoSelectFirstProject,
@@ -3743,11 +3745,21 @@ export function ReactCanvasRoot({
     if (!initialPrompt || initialPromptSentRef.current) return;
     if (!currentProjectId) return;
     initialPromptSentRef.current = true;
+    // Pre-populate attachment if a media URL was passed from homepage
+    if (initialMedia) {
+      const isVideo = /\.(mp4|mov|webm)(\?|$)/i.test(initialMedia);
+      setChatAttachments([{
+        id: 'initial_media',
+        localUrl: initialMedia,
+        type: isVideo ? 'video' : 'image',
+        name: 'media',
+      }]);
+    }
     const timer = setTimeout(() => {
       void handleChatSend(initialPrompt);
     }, 600);
     return () => clearTimeout(timer);
-  }, [initialPrompt, currentProjectId, handleChatSend]);
+  }, [initialPrompt, initialMedia, currentProjectId, handleChatSend]);
 
   // Space key → hand cursor / drag pan
   useEffect(() => {

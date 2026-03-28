@@ -2,10 +2,10 @@
 
 /* eslint-disable @next/next/no-img-element -- Dashboard cards render remote task thumbnails with mixed dimensions */
 
-import { useCallback, useEffect, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { ArrowRight, User, Clock, Clapperboard, SendHorizontal, Sparkles, Image } from 'lucide-react';
+import { ArrowRight, User, Clock, Clapperboard, SendHorizontal, Sparkles, Image, Paperclip, Play, X } from 'lucide-react';
 import Link from 'next/link';
 import { useTenant } from '@/hooks/useTenant';
 import { Modal } from '@/components/Modal';
@@ -34,6 +34,15 @@ type DashboardTaskSummary = {
   createdAt: string;
   updatedAt: string;
   updatedAtFormatted?: string;
+};
+
+type Attachment = {
+  id: string;
+  localUrl: string;
+  uploadedUrl: string | null;
+  type: 'image' | 'video';
+  name: string;
+  uploading: boolean;
 };
 
 type CopyMap = { en: string; zh: string; 'zh-TW': string };
@@ -78,6 +87,15 @@ const STATUS_BADGE_CLASSES: Record<StatusTone, string> = {
   danger: 'bg-rose-50/95 text-rose-800 border border-rose-100/70 backdrop-blur-sm',
 };
 
+const PLACEHOLDER_HINTS = [
+  '帮我拆解这个爆款视频的分镜结构…',
+  '帮我复刻这个爆款视频…',
+  '帮我生成一套小红书图文…',
+  '帮我把产品图片变成视频…',
+  '帮我生成一个数字人口播视频…',
+  '帮我生成一张竖版产品海报…',
+];
+
 const clampProgress = (value: number) => Math.min(100, Math.max(0, Math.round(value)));
 const pickCopy = (map: CopyMap | undefined, lang: LanguageCode, fallback: string) =>
   map?.[lang] ?? fallback;
@@ -86,6 +104,18 @@ const looksLikeVideoUrl = (url?: string | null) => {
   const normalized = url.split('?')[0]?.toLowerCase() ?? '';
   return normalized.endsWith('.mp4') || normalized.endsWith('.mov') || normalized.endsWith('.webm');
 };
+
+async function uploadFile(file: File): Promise<string> {
+  const isVideo = file.type.startsWith('video/');
+  const endpoint = isVideo ? '/api/upload/video' : '/api/upload/image';
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(endpoint, { method: 'POST', body: formData, credentials: 'include' });
+  const payload = await res.json().catch(() => ({})) as { url?: string };
+  if (!res.ok || !payload.url) throw new Error('上传失败');
+  return payload.url;
+}
+
 export function HomeContent({ recentTasks, products: _products }: HomeContentProps) {
   const { t, language } = useLanguage();
   const { tenant, tenantSlug, basePath } = useTenant();
@@ -97,6 +127,38 @@ export function HomeContent({ recentTasks, products: _products }: HomeContentPro
   const [showDigitalHumanModal, setShowDigitalHumanModal] = useState(false);
   const [canvasPrompt, setCanvasPrompt] = useState('');
   const [heroTitleEntered, setHeroTitleEntered] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Typewriter placeholder
+  const [placeholderIdx, setPlaceholderIdx] = useState(0);
+  const [displayedPlaceholder, setDisplayedPlaceholder] = useState('');
+  const [typingForward, setTypingForward] = useState(true);
+  const typingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const target = PLACEHOLDER_HINTS[placeholderIdx];
+    if (typingForward) {
+      if (displayedPlaceholder.length < target.length) {
+        typingRef.current = setTimeout(() => {
+          setDisplayedPlaceholder(target.slice(0, displayedPlaceholder.length + 1));
+        }, 60);
+      } else {
+        typingRef.current = setTimeout(() => setTypingForward(false), 2200);
+      }
+    } else {
+      if (displayedPlaceholder.length > 0) {
+        typingRef.current = setTimeout(() => {
+          setDisplayedPlaceholder(displayedPlaceholder.slice(0, -1));
+        }, 28);
+      } else {
+        setPlaceholderIdx((i) => (i + 1) % PLACEHOLDER_HINTS.length);
+        setTypingForward(true);
+      }
+    }
+    return () => { if (typingRef.current) clearTimeout(typingRef.current); };
+  }, [displayedPlaceholder, typingForward, placeholderIdx]);
 
   const getTenantPath = (path: string) => {
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
@@ -116,32 +178,52 @@ export function HomeContent({ recentTasks, products: _products }: HomeContentPro
       setHeroTitleEntered(true);
       return;
     }
-
-    const frame = window.requestAnimationFrame(() => {
-      setHeroTitleEntered(true);
-    });
-
+    const frame = window.requestAnimationFrame(() => setHeroTitleEntered(true));
     return () => window.cancelAnimationFrame(frame);
   }, []);
 
+  const handleFiles = useCallback(async (files: FileList | File[]) => {
+    const list = Array.from(files).filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/'));
+    if (!list.length) return;
+    const newItems: Attachment[] = list.map((f) => ({
+      id: Math.random().toString(36).slice(2),
+      localUrl: URL.createObjectURL(f),
+      uploadedUrl: null,
+      type: f.type.startsWith('video/') ? 'video' : 'image',
+      name: f.name,
+      uploading: true,
+    }));
+    setAttachments((prev) => [...prev, ...newItems]);
+    for (const [i, file] of list.entries()) {
+      const id = newItems[i].id;
+      try {
+        const url = await uploadFile(file);
+        setAttachments((prev) => prev.map((a) => a.id === id ? { ...a, uploadedUrl: url, uploading: false } : a));
+      } catch {
+        setAttachments((prev) => prev.filter((a) => a.id !== id));
+      }
+    }
+  }, []);
+
+  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Element)) setIsDragOver(false);
+  };
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (e.dataTransfer.files.length) void handleFiles(e.dataTransfer.files);
+  };
+
   const openQuickAction = useCallback(
     (action: 'creative' | 'replication' | 'poster' | 'digitalHuman') => {
-      if (action === 'creative') {
-        setShowCreativeModal(true);
-        return;
-      }
-      if (action === 'replication') {
-        setShowReplicationModal(true);
-        return;
-      }
-      if (action === 'poster') {
-        setShowPosterModal(true);
-        return;
-      }
-      if (action === 'digitalHuman') {
-        setShowDigitalHumanModal(true);
-        return;
-      }
+      if (action === 'creative') { setShowCreativeModal(true); return; }
+      if (action === 'replication') { setShowReplicationModal(true); return; }
+      if (action === 'poster') { setShowPosterModal(true); return; }
+      if (action === 'digitalHuman') { setShowDigitalHumanModal(true); return; }
     },
   []);
 
@@ -149,41 +231,23 @@ export function HomeContent({ recentTasks, products: _products }: HomeContentPro
     const prompt = canvasPrompt.trim();
     try {
       const project = await createCanvasProjectOnServer(prompt || '未命名项目');
-      if (prompt) {
-        await fetch('/api/canvas/chat/completions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            projectId: project.id,
-            messages: [
-              {
-                role: 'system',
-                content: '你是 NexTide 的创作助手，请根据用户给出的创意补充成可供无限画布使用的提示词。',
-              },
-              { role: 'user', content: prompt },
-            ],
-            stream: false,
-          }),
-        }).catch((error) => {
-          console.error('Canvas agent call failed', error);
-        });
-      }
       const search = new URLSearchParams();
       search.set('projectId', project.id);
-      if (prompt) {
-        search.set('prompt', prompt);
-      }
+      if (prompt) search.set('prompt', prompt);
+      // Pass first uploaded media URL for AI assistant to use as reference
+      const firstMedia = attachments.find((a) => a.uploadedUrl)?.uploadedUrl;
+      if (firstMedia) search.set('media', firstMedia);
       const currentReturnTo = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('returnTo') : null;
       if (!currentReturnTo && pathname !== getTenantPath('/canvas')) {
         search.set('returnTo', pathname || getTenantPath('/dashboard'));
       }
-      const targetUrl = `${getTenantPath('/canvas')}?${search.toString()}`;
-      router.push(targetUrl);
+      router.push(`${getTenantPath('/canvas')}?${search.toString()}`);
       setCanvasPrompt('');
+      setAttachments([]);
     } catch (error) {
       console.error('Failed to create canvas project', error);
     }
-  }, [canvasPrompt, getTenantPath, router, pathname]);
+  }, [canvasPrompt, attachments, getTenantPath, router, pathname]);
 
   const handleCanvasPromptKeyDown = useCallback(
     (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -198,7 +262,7 @@ export function HomeContent({ recentTasks, products: _products }: HomeContentPro
   return (
     <div className="min-h-screen bg-[#F6F7F9] dark:bg-black font-sans">
       <div className="max-w-6xl mx-auto px-4 py-12">
-      
+
         {/* Hero Section */}
         <section className="mb-10 py-8 md:py-12">
           <div className="text-center space-y-3">
@@ -213,15 +277,63 @@ export function HomeContent({ recentTasks, products: _products }: HomeContentPro
             </h1>
           </div>
           <div className="mx-auto mt-8 max-w-4xl">
-            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900">
-              <textarea
-                value={canvasPrompt}
-                onChange={(event) => setCanvasPrompt(event.target.value)}
-                onKeyDown={handleCanvasPromptKeyDown}
-                placeholder="输入你的创意，开始新项目"
-                className="min-h-[110px] w-full resize-none bg-transparent text-base text-gray-900 outline-none placeholder:text-gray-400 dark:text-white dark:placeholder:text-gray-500"
-              />
-              <div className="mt-3 flex justify-end">
+            <div
+              className={`rounded-2xl border bg-white p-4 shadow-sm dark:bg-gray-900 transition-colors ${isDragOver ? 'border-blue-400 bg-blue-50/50 dark:bg-blue-900/10' : 'border-gray-200 dark:border-gray-800'}`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
+              {/* Attachment thumbnails row — fixed height, no vertical expansion */}
+              {attachments.length > 0 && (
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {attachments.map((att) => (
+                    <div key={att.id} className="group/thumb relative flex-shrink-0">
+                      {att.type === 'image' ? (
+                        <img src={att.localUrl} alt={att.name} className="h-14 w-14 rounded-lg object-cover" />
+                      ) : (
+                        <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-gray-200 dark:bg-gray-700">
+                          <Play className="h-6 w-6 text-gray-500" />
+                        </div>
+                      )}
+                      {att.uploading && (
+                        <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/40">
+                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setAttachments((prev) => prev.filter((a) => a.id !== att.id))}
+                        className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-gray-800 text-white opacity-0 transition group-hover/thumb:opacity-100"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {isDragOver ? (
+                <div className="flex min-h-[110px] items-center justify-center gap-3 text-blue-500">
+                  <Paperclip className="h-5 w-5" />
+                  <span className="text-sm font-medium">松开鼠标导入图片或视频</span>
+                </div>
+              ) : (
+                <textarea
+                  value={canvasPrompt}
+                  onChange={(event) => setCanvasPrompt(event.target.value)}
+                  onKeyDown={handleCanvasPromptKeyDown}
+                  placeholder={displayedPlaceholder || ' '}
+                  className="min-h-[110px] w-full resize-none bg-transparent text-base text-gray-900 outline-none placeholder:text-gray-400 dark:text-white dark:placeholder:text-gray-500"
+                />
+              )}
+              <div className="mt-3 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-white/10 dark:hover:text-white"
+                  title="上传图片或视频"
+                >
+                  <Paperclip className="h-4 w-4" />
+                </button>
                 <button
                   type="button"
                   onClick={() => void openCanvasProject()}
@@ -232,6 +344,14 @@ export function HomeContent({ recentTasks, products: _products }: HomeContentPro
                 </button>
               </div>
             </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,video/*"
+              multiple
+              className="hidden"
+              onChange={(e) => { if (e.target.files) void handleFiles(e.target.files); e.target.value = ''; }}
+            />
           </div>
           <div className="mx-auto mt-10 max-w-4xl">
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">

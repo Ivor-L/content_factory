@@ -19,13 +19,16 @@ export default async function CanvasPage({ searchParams }: CanvasPageProps) {
   const forceProjectList = view === 'projects' || view === 'list'
   const projectId = pickFirstQueryValue(params.projectId)
   const prompt = pickFirstQueryValue(params.prompt)
+  const media = pickFirstQueryValue(params.media)
   const effectiveProjectId = forceProjectList ? '' : projectId
   const effectivePrompt = forceProjectList ? '' : prompt
+  const effectiveMedia = forceProjectList ? '' : media
 
   return (
     <ReactCanvasRoot
       initialProjectId={effectiveProjectId || undefined}
       initialPrompt={effectivePrompt || undefined}
+      initialMedia={effectiveMedia || undefined}
       forceProjectList={forceProjectList}
       initialProjects={[]}
     />
