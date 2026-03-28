@@ -3,13 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { uploadToStorage } from "@/lib/storageUpload";
 import { getAssetBucket } from "@/lib/storagePaths";
 
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: '50mb',
-    },
-  },
-};
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   console.log("[upload/image] start", new Date().toISOString());
