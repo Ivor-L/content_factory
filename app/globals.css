@@ -205,3 +205,11 @@ body {
   border-radius: 12px;
 }
 
+/* Allow IME (Chinese/Japanese/Korean) input inside ReactFlow nodes */
+.react-flow__node input,
+.react-flow__node textarea {
+  -webkit-user-select: text !important;
+     -moz-user-select: text !important;
+          user-select: text !important;
+}
+
