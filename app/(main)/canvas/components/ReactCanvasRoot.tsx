@@ -3213,12 +3213,16 @@ export function ReactCanvasRoot({
             onInit={(instance) => { rfInstanceRef.current = instance; }}
             onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd as never}
+            onNodeClick={(e, node) => {
+              focusNode(node.id);
+            }}
             onPaneClick={(e) => {
               if (suppressNextPaneClickRef.current) {
                 suppressNextPaneClickRef.current = false;
                 return;
               }
               setNodePicker(null);
+              setFocusedNodeId(null);
             }}
             onDoubleClick={(e: React.MouseEvent) => {
               const target = e.target as HTMLElement;
