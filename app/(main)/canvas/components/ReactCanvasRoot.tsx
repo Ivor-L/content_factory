@@ -729,8 +729,9 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       {props.selected && (
         <div
           style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 190 }}
-          className="mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
+          className="nodrag mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
           onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
         >
           <div className="mb-2 flex items-center gap-1.5">
             <button type="button"
@@ -971,8 +972,9 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       {props.selected && (
         <div
           style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 190 }}
-          className="mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
+          className="nodrag mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
           onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
         >
           <div className="mb-2 flex items-center gap-1.5">
             <ResourceHoverPanel resources={imageResources} onSelect={(resource) => patchRuntimeData(id, { firstFrameImage: resource.url })} label="首帧" emptyText="暂无图片">
@@ -1190,8 +1192,9 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       {props.selected && (
         <div
           style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 190 }}
-          className="mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
+          className="nodrag mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
           onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
         >
           {/* Tool row: changes by model type */}
           {isSunoLyrics ? (
@@ -1409,8 +1412,9 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       {props.selected && (
         <div
           style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 190 }}
-          className="mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
+          className="nodrag mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
           onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
         >
           <div className="mb-2 flex items-center gap-1.5">
             <ResourceHoverPanel resources={imageResources} onSelect={(resource) => patchRuntimeData(id, { avatarImage: resource.url })} label="形象库" emptyText="暂无形象图片">
