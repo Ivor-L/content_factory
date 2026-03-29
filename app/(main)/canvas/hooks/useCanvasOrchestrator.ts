@@ -376,14 +376,14 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         String(runtimeData.model || models.defaultModels.image?.id || models.imageModels[0]?.id || "").trim();
       const ratio = String(runtimeData.ratio || runtimeData.size || "16:9").trim();
       const quality = String(runtimeData.quality || "standard").trim();
-      const reference =
-        runtimeData.image ||
-        runtimeData.referenceImage ||
-        runtimeData.referenceImageUrl ||
-        upstream.firstImageUrl ||
-        undefined;
+      const references = [
+        runtimeData.image,
+        runtimeData.referenceImage,
+        runtimeData.referenceImageUrl,
+        ...(upstream.imageUrls || [])
+      ].filter((url): url is string => typeof url === "string" && url.trim().length > 0);
 
-      if (!prompt && !reference) {
+      if (!prompt && !references.length) {
         toast.error("请先输入提示词或上传参考图");
         runningNodeIds.current.delete(nodeId);
         return;
@@ -405,14 +405,14 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         let payload: Record<string, unknown>;
 
         if (model === "nano-banana" || model === "nano-banana-2" || model === "gemini-3.1-pro-preview" || model === "nano-banana-pro") {
-          // Gemini-backed models: prompt + ratio + optional image reference
+          // Gemini-backed models: prompt + ratio + optional image references
           payload = { model, prompt, aspect_ratio: normalizeAspectRatio(ratio) };
-          if (reference) payload.image = reference;
+          if (references.length) payload.images = references;
         } else if (model === "grok-3-image") {
           // grok image: size as pixel dimensions string, ratio options are pixel strings
           const pixelSize = (params?.ratios?.length ? ratio : "960x960");
           payload = { model, prompt, size: pixelSize };
-          if (reference) payload.image = reference;
+          if (references.length) payload.images = references;
         } else if (model === "doubao-seedream-4-5-251128") {
           // Doubao SeedDream: size as ratio string, quality
           payload = {
@@ -421,7 +421,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
             size: normalizeAspectRatio(ratio),
             quality,
           };
-          if (reference) payload.image = reference;
+          if (references.length) payload.images = references;
         } else {
           // Generic fallback
           payload = {
@@ -432,7 +432,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
             aspect_ratio: normalizeAspectRatio(ratio),
             n: 1,
           };
-          if (reference) payload.image = reference;
+          if (references.length) payload.images = references;
         }
 
         const response = await postJson("/api/canvas/images/generations", payload);
@@ -1307,7 +1307,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
           contentType,
           scriptContent,
           imageUrl,
-          ratio,
+          aspectRatio: normalizeAspectRatio(ratio),
         });
         if (apiKey) {
           await deductCanvasCredits(apiKey, "grid", {});
@@ -1351,26 +1351,53 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         if (apiKey) {
           await ensureCanvasCreditsAvailable(apiKey, "grid-split", {});
         }
-        const resp = await postJson("/api/canvas/grid/split", { imageUrl: gridImageUrl });
+        const resp = await postJson("/api/canvas/grid/split", { imageUrl: gridImageUrl, nodeId });
         if (apiKey) {
           await deductCanvasCredits(apiKey, "grid-split", {});
         }
         const taskId = typeof resp?.data?.taskId === "string" ? (resp.data.taskId as string) : String(resp?.data?.taskId ?? "");
         if (!taskId) throw new Error("未获取到任务 ID");
 
-        for (let attempt = 0; attempt < GRID_SPLIT_MAX_ATTEMPTS; attempt++) {
-          if (attempt > 0) await sleep(GRID_SPLIT_POLL_INTERVAL_MS);
-          const poll = await getJson(`/api/canvas/grid/split?taskId=${encodeURIComponent(taskId)}`);
-          const status = String((poll as Record<string, unknown>).status || "").toUpperCase();
-          const imageUrls = ((poll as Record<string, unknown>).imageUrls ?? []) as string[];
-          if (status === "SUCCESS" || status === "COMPLETED") {
-            if (!imageUrls.length) throw new Error("未获取到拆分图片");
-            patchRuntimeData(nodeId, { isSplitting: false, status: "idle" });
-            return imageUrls;
-          }
-          if (status === "FAILED") throw new Error("拆分任务失败");
-        }
-        throw new Error("拆分超时，请稍后重试");
+        return new Promise((resolve, reject) => {
+          let timeoutId: NodeJS.Timeout;
+          const channel = supabase
+            .channel(`grid-split-${taskId}`)
+            .on(
+              "postgres_changes",
+              {
+                event: "*",
+                schema: "public",
+                table: "canvas_grid_split_results",
+                filter: `task_id=eq.${taskId}`,
+              },
+              (payload) => {
+                const record = payload.new as Record<string, unknown>;
+                const status = String(record.status || "").toUpperCase();
+                const imageUrls = (record.image_urls ?? []) as string[];
+
+                if (status === "SUCCESS" || status === "COMPLETED") {
+                  if (!imageUrls.length) {
+                    reject(new Error("未获取到拆分图片"));
+                  } else {
+                    clearTimeout(timeoutId);
+                    channel.unsubscribe();
+                    patchRuntimeData(nodeId, { isSplitting: false, status: "idle" });
+                    resolve(imageUrls);
+                  }
+                } else if (status === "FAILED") {
+                  clearTimeout(timeoutId);
+                  channel.unsubscribe();
+                  reject(new Error("拆分任务失败"));
+                }
+              }
+            )
+            .subscribe();
+
+          timeoutId = setTimeout(() => {
+            channel.unsubscribe();
+            reject(new Error("拆分超时，请稍后重试"));
+          }, GRID_SPLIT_MAX_ATTEMPTS * GRID_SPLIT_POLL_INTERVAL_MS);
+        });
       } catch (err) {
         patchRuntimeData(nodeId, { isSplitting: false, status: "idle" });
         throw err;

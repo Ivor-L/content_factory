@@ -2658,6 +2658,14 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                 onClick={(e) => e.stopPropagation()}
               />
             </ResourceHoverPanel>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); avatarUploadRef.current?.click(); }}
+              className="flex h-8 items-center gap-1.5 rounded-[10px] bg-white/8 px-2.5 text-white/40 transition hover:bg-white/12 hover:text-white/60"
+              title="上传形象">
+              <Upload className="h-3.5 w-3.5" />
+              <span className="text-xs">上传</span>
+            </button>
             <ResourceHoverPanel resources={audioResources} onSelect={(resource) => patchRuntimeData(id, { voiceReference: resource.url })} label="音色库" emptyText="暂无音色资源">
               <ResourceTile
                 audioSet={!!(voiceReference || upstream.firstAudioUrl)}
@@ -2666,6 +2674,14 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                 onClick={(e) => e.stopPropagation()}
               />
             </ResourceHoverPanel>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); voiceUploadRef.current?.click(); }}
+              className="flex h-8 items-center gap-1.5 rounded-[10px] bg-white/8 px-2.5 text-white/40 transition hover:bg-white/12 hover:text-white/60"
+              title="上传音色">
+              <Upload className="h-3.5 w-3.5" />
+              <span className="text-xs">上传</span>
+            </button>
             <button type="button" disabled={isPolishing || !script.trim()}
               onClick={async (e) => {
                 e.stopPropagation();
@@ -3203,9 +3219,9 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
     if (!file) return;
     try {
       const resource = await uploadResource(file, { type: "image", name: file.name });
-      patchRuntimeData(id, { imageUrl: resource.url });
+      patchRuntimeData(id, { gridImageUrl: resource.url });
     } catch (error) {
-      console.error("[canvas] upload grid reference image failed", error);
+      console.error("[canvas] upload grid image failed", error);
     } finally {
       event.target.value = "";
     }
@@ -3237,7 +3253,7 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             >
               <Upload className="h-4 w-4" />
             </button>
-            <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">上传参考图片</span>
+            <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">上传九宫格</span>
           </div>
         </div>
       )}
@@ -4384,9 +4400,8 @@ export function ReactCanvasRoot({
     }
     const last = lastHydratedRef.current;
     const hasData = !!currentProject.canvasData;
-    // Skip re-hydrate if same project AND (already loaded with data, OR data still hasn't arrived).
-    // This prevents auto-save from resetting canvas by updating currentProject reference.
-    if (last?.projectId === currentProject.id && (last.hasData || !hasData)) return;
+    // Skip re-hydrate only if same project AND has data
+    if (last?.projectId === currentProject.id && last.hasData && hasData) return;
     lastHydratedRef.current = { projectId: currentProject.id, hasData };
     hydratingRef.current = true;
     const normalized = normalizeRuntimeCanvasData(currentProject.canvasData, initialPrompt);
