@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import toast from "react-hot-toast";
+import { supabase } from "@/lib/supabaseClient";
 import type { MinimalFlowNodeData } from "../lib/canvasDataAdapters";
 
 export interface CanvasPreset {
@@ -24,11 +25,17 @@ export function useCanvasPresets() {
   const listPresets = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/canvas/presets");
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Not authenticated");
+
+      const res = await fetch("/api/canvas/presets", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (!res.ok) throw new Error("Failed to fetch presets");
-      const data = await res.json();
-      setPresets(data.data || []);
-      return data.data || [];
+      const result = await res.json();
+      setPresets(result.data || []);
+      return result.data || [];
     } catch (error) {
       console.error("[canvas] list presets failed", error);
       toast.error("加载预设失败");
@@ -41,6 +48,10 @@ export function useCanvasPresets() {
   const savePreset = useCallback(
     async (name: string, nodeIds: string[], nodes: any[], resources: Record<string, unknown>) => {
       try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (!token) throw new Error("Not authenticated");
+
         const presetNodes = nodeIds
           .map((id) => nodes.find((n) => n.id === id))
           .filter(Boolean)
@@ -53,7 +64,10 @@ export function useCanvasPresets() {
 
         const res = await fetch("/api/canvas/presets", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
           body: JSON.stringify({
             name,
             nodes: presetNodes,
@@ -62,10 +76,10 @@ export function useCanvasPresets() {
         });
 
         if (!res.ok) throw new Error("Failed to save preset");
-        const data = await res.json();
-        setPresets((prev) => [...prev, data.data]);
+        const result = await res.json();
+        setPresets((prev) => [...prev, result.data]);
         toast.success("预设已保存");
-        return data.data;
+        return result.data;
       } catch (error) {
         console.error("[canvas] save preset failed", error);
         toast.error("保存预设失败");
@@ -76,10 +90,16 @@ export function useCanvasPresets() {
 
   const loadPreset = useCallback(async (presetId: string) => {
     try {
-      const res = await fetch(`/api/canvas/presets/${presetId}`);
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Not authenticated");
+
+      const res = await fetch(`/api/canvas/presets/${presetId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (!res.ok) throw new Error("Failed to load preset");
-      const data = await res.json();
-      return data.data;
+      const result = await res.json();
+      return result.data;
     } catch (error) {
       console.error("[canvas] load preset failed", error);
       toast.error("加载预设失败");
@@ -88,8 +108,13 @@ export function useCanvasPresets() {
 
   const deletePreset = useCallback(async (presetId: string) => {
     try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Not authenticated");
+
       const res = await fetch(`/api/canvas/presets/${presetId}`, {
         method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error("Failed to delete preset");
       setPresets((prev) => prev.filter((p) => p.id !== presetId));

@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
-  const { contentType, scriptContent, imageUrl } = body as Record<string, unknown>;
+  const { contentType, scriptContent, imageUrl, aspectRatio } = body as Record<string, unknown>;
 
   if (!scriptContent || typeof scriptContent !== "string" || !scriptContent.trim()) {
     return NextResponse.json({ error: "scriptContent is required" }, { status: 400 });
@@ -39,11 +39,11 @@ export async function POST(request: NextRequest) {
   }
 
   const contentTypeMap: Record<string, string> = {
-    appearance: "产品展示",
-    selling_points: "产品卖点展示",
-    story: "剧情故事",
+    "产品展示": "产品展示",
+    "卖点展示": "产品卖点展示",
+    "剧情故事": "剧情故事",
   };
-  const mappedContentType = contentTypeMap[String(contentType || "appearance")] || "产品展示";
+  const mappedContentType = contentTypeMap[String(contentType || "产品展示")] || "产品展示";
 
   try {
     const task = await (prisma as any).storyboardTask.create({
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
       scriptContent: scriptContent.trim(),
       imageUrl: imageUrl.trim(),
       content_type: mappedContentType,
-      aspectRatio: "9:16",
+      aspectRatio: String(aspectRatio || "9:16"),
       style_mode: "auto",
     };
 

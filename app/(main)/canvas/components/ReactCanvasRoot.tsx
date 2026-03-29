@@ -3348,7 +3348,7 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                 <Grid3X3 className="h-12 w-12 text-white/10" />
               </div>
             )}
-            {isRunning && (
+            {(isRunning || isSplitting) && (
               <GeneratingOverlay label={isSplitting ? "拆解中..." : gridProgress > 0 ? `生成中 ${gridProgress}%` : "生成中..."} />
             )}
             {lastRunError && (

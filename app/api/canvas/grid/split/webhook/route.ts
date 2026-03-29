@@ -18,15 +18,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "taskId and nodeId required" }, { status: 400 });
     }
 
-    // Extract image URLs from outputs
+    // Extract image URLs from outputs or data
+    let imageUrls: string[] = [];
+
+    // Try outputs array first
     const outputs = Array.isArray(payload.outputs) ? payload.outputs : [];
-    const imageUrls = outputs
+    imageUrls = outputs
       .filter((item: any) => {
         const ft = (item.fileType || "").toLowerCase();
         return ft === "jpg" || ft === "png" || ft === "jpeg" || ft === "webp" || ft === "image";
       })
       .map((item: any) => item.fileUrl)
       .filter((url: any): url is string => typeof url === "string" && url.length > 0);
+
+    // If no outputs, try data.images
+    if (!imageUrls.length) {
+      const data = payload.data as Record<string, unknown> | undefined;
+      const images = Array.isArray(data?.images) ? data.images : [];
+      imageUrls = images
+        .filter((item: any) => typeof item === "string" && item.length > 0)
+        .map((item: any) => String(item));
+    }
 
     // Store in Supabase
     const { error } = await supabaseAdmin
