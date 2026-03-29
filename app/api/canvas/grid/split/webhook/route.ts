@@ -9,6 +9,8 @@ export async function POST(request: NextRequest) {
     }
 
     const payload = body as Record<string, unknown>;
+    console.log("[webhook] Received payload:", JSON.stringify(payload, null, 2).substring(0, 500));
+
     const taskId = String(payload.taskId || payload.task_id || "");
     const status = String(payload.status || "").toUpperCase();
     const context = payload.context as Record<string, unknown> | undefined;
@@ -48,10 +50,13 @@ export async function POST(request: NextRequest) {
         .map((item: any) => String(item.url));
     }
 
+    console.log("[webhook] Extracted URLs:", { count: imageUrls.length, urls: imageUrls.slice(0, 2) });
+
     // Store in Supabase
     const { error } = await supabaseAdmin
       .from("canvas_grid_split_results")
       .upsert({
+        id: `${taskId}_${Date.now()}`,
         task_id: taskId,
         node_id: nodeId,
         status,

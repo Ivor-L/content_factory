@@ -3295,15 +3295,22 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           <div className="group/tip relative">
             <button
               type="button"
-              disabled={isSplitting || isRunning}
-              onClick={(e) => { e.stopPropagation(); void splitGridNode?.(id); }}
+              disabled={isRunning}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isSplitting) {
+                  patchRuntimeData(id, { isSplitting: false });
+                } else {
+                  void splitGridNode?.(id);
+                }
+              }}
               className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95 disabled:opacity-40"
             >
               {isSplitting
                 ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
                 : <LayoutGrid className="h-4 w-4" />}
             </button>
-            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">拆分九宫格</span>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">{isSplitting ? "取消拆分" : "拆分九宫格"}</span>
           </div>
         </div>
       )}

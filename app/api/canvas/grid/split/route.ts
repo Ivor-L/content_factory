@@ -30,6 +30,13 @@ export async function POST(request: NextRequest) {
 
   const webhookUrl = `${CALLBACK_BASE_URL}/api/canvas/grid/split/webhook`;
 
+  console.log("[canvas/grid/split] Request:", {
+    imageUrl: imageUrl.substring(0, 50),
+    nodeId,
+    CALLBACK_BASE_URL,
+    webhookUrl,
+  });
+
   try {
     const task = await createRunningHubTask({
       apiKey: API_KEY,
