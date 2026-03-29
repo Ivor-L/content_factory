@@ -1331,3 +1331,15 @@ model CanvasPreset {
   @@map("canvas_presets")
   @@schema("public")
 }
+
+model CanvasGridSplitResult {
+  id        String   @id @default(cuid())
+  taskId    String   @unique @map("task_id")
+  nodeId    String   @map("node_id")
+  status    String
+  imageUrls String[] @default([]) @map("image_urls")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("canvas_grid_split_results")
+  @@schema("public")
+}
