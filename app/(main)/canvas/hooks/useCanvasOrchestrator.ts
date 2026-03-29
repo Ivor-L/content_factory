@@ -8,6 +8,7 @@ import type { useCanvasModels } from "./useCanvasModels";
 import { IMAGE_MODEL_PARAMS, VIDEO_MODEL_PARAMS } from "./useCanvasModels";
 import type { CanvasResourceRecord } from "./useCanvasResources";
 import { supabase } from "@/lib/supabaseClient";
+import { ensureCanvasCreditsAvailable, deductCanvasCredits, resolveCanvasCreditsApiKey } from "@/lib/canvasCredits";
 
 const IMAGE_RATIO_PIXEL_MAP: Record<string, string> = {
   "1:1": "1024x1024",
@@ -29,6 +30,8 @@ const DH_POLL_INTERVAL_MS = 6000;
 const DH_POLL_MAX_ATTEMPTS = 100;
 const SB_POLL_INTERVAL_MS = 5000;
 const SB_POLL_MAX_ATTEMPTS = 120;
+const GRID_POLL_INTERVAL_MS = 5000;
+const GRID_POLL_MAX_ATTEMPTS = 120;
 
 type CanvasModels = ReturnType<typeof useCanvasModels>;
 
@@ -58,6 +61,9 @@ type UseCanvasOrchestratorResult = {
   runDigitalHumanNode: (nodeId: string) => Promise<void>;
   runStoryboardNode: (nodeId: string) => Promise<void>;
   runTextNode: (nodeId: string) => Promise<void>;
+  runGridNode: (nodeId: string) => Promise<void>;
+  splitGridNode: (nodeId: string) => Promise<string[]>;
+  reverseImagePrompt: (nodeId: string) => Promise<string>;
   uploadResource: (file: File, options: UploadOptions) => Promise<CanvasResourceRecord>;
 };
 
@@ -326,6 +332,22 @@ async function getJson(url: string) {
   return parsed;
 }
 
+const REVERSE_IMAGE_PROMPT = [
+  "\u53CD\u63A8\u8FD9\u5F20\u56FE\u7684AI\u751F\u56FE\u63D0\u793A\u8BCD\u3002",
+  "\u5305\u62EC\u98CE\u683C\u8C03\u6027\uFF0C\u753B\u9762\u89C6\u89D2\uFF0C\u753B\u9762\u6784\u56FE\uFF0C\u573A\u666F\u5185\u5BB9\uFF0C",
+  "\u4EA7\u54C1\u6446\u653E\u89D2\u5EA6\uFF0C\u4EA7\u54C1\u653E\u5728\u4F4D\u7F6E\uFF0C\u4EC0\u4E48\u4E1C\u897F\u4E0A\uFF0C",
+  "\u573A\u666F\u5143\u7D20\u7684\u5F62\u72B6\uFF0C\u4F4D\u7F6E\uFF0C\u6750\u8D28\u8D28\u611F\u3001\u6574\u4F53\u914D\u8272\u548C\u80CC\u666F\u63CF\u8FF0\u7B49\u7EC6\u8282\uFF0C",
+  "\u8981\u6E05\u6670\u6DB5\u76D6\u753B\u9762\u6240\u6709\u5173\u952E\u4FE1\u606F\uFF0C\u5FFD\u7565\u6587\u6848\u6392\u7248\uFF0C\u589E\u52A0\u6444\u5F71\u6216\u6E32\u67D3\u4E13\u4E1A\u8BCD\u6C47\u3002",
+  "\u9002\u914D\u4E2D\u6587AI\u7ED8\u56FE\u5DE5\u5177\u7684\u63D0\u793A\u8BCD\u903B\u8F91\u3002\u6700\u540E\u5408\u6210\u4E00\u6BB5\u8BDD\u8F93\u51FA\u3002",
+  "\u4E0D\u8981\u751F\u56FE\uFF0C\u8981\u6E05\u6670\u6DB5\u76D6\u753B\u9762\u6240\u6709\u5173\u952E\u4FE1\u606F\uFF0C\u5FFD\u7565\u6587\u6848\u6392\u7248\uFF0C",
+  "\u589E\u52A0\u6444\u5F71\u6216\u6E32\u67D3\u4E13\u4E1A\u8BCD\u6C47\uFF0C\u9002\u914D\u4E2D\u6587AI\u7ED8\u56FE\u5DE5\u5177\u7684\u63D0\u793A\u8BCD\u903B\u8F91\u3002",
+  "\u300C\u8F93\u51FA\u8981\u6C42\u300D",
+  "1. \u53EA\u8F93\u51FA\u6700\u7EC8\u7684\u4E00\u6BB5\u63D0\u793A\u8BCD\u3002",
+  "2. \u4E0D\u8981\u4EFB\u4F55\u89E3\u91CA\u8BF4\u660E\uFF0C\u4E0D\u8981\u5C0F\u6807\u9898\uFF0C\u4E0D\u8981\u5206\u70B9\u3002",
+  "3. \u7981\u6B62\u8F93\u51FA\u300C\u4EE5\u4E0B\u662F\u2026\u300D\u3001\u300CAI\u7ED8\u56FE\u63D0\u793A\u8BCD\uFF1A\u300D\u3001\u300C\u63D0\u793A\u8BCD\u5982\u4E0B\uFF1A\u300D\u7B49\u524D\u7F00\u3002",
+  "4. \u4E0D\u8981\u52A0\u5F15\u53F7\uFF0C\u4E0D\u8981\u52A0\u7ED3\u5C3E\u603B\u7ED3\uFF0C\u53EA\u4FDD\u7559\u63D0\u793A\u8BCD\u672C\u8EAB\u3002",
+].join("");
+
 export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): UseCanvasOrchestratorResult {
   const { getNode, getUpstreamInputs, patchRuntimeData, setNodeStatus, models, addResource } = options;
   const runningNodeIds = useRef(new Set<string>());
@@ -345,8 +367,11 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
       runningNodeIds.current.add(nodeId);
       const runtimeData = (node.data.runtime?.data || {}) as Record<string, any>;
       const upstream = getUpstreamInputs(nodeId);
-      // Own value takes precedence; upstream fills when empty
-      const prompt = String(runtimeData.prompt || runtimeData.content || upstream.effectivePrompt || "").trim();
+      // Merge all upstream text contents + own supplement
+      const allTexts = [...upstream.textContents];
+      const ownSupplement = String(runtimeData.prompt || runtimeData.content || "").trim();
+      if (ownSupplement) allTexts.push(ownSupplement);
+      const prompt = allTexts.join("\n") || upstream.effectivePrompt || "";
       const model =
         String(runtimeData.model || models.defaultModels.image?.id || models.imageModels[0]?.id || "").trim();
       const ratio = String(runtimeData.ratio || runtimeData.size || "16:9").trim();
@@ -379,9 +404,9 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         const params = IMAGE_MODEL_PARAMS[model];
         let payload: Record<string, unknown>;
 
-        if (model === "nano-banana" || model === "gemini-3.1-pro-preview" || model === "nano-banana-pro") {
-          // Gemini-backed models: just prompt + optional image reference
-          payload = { model, prompt };
+        if (model === "nano-banana" || model === "nano-banana-2" || model === "gemini-3.1-pro-preview" || model === "nano-banana-pro") {
+          // Gemini-backed models: prompt + ratio + optional image reference
+          payload = { model, prompt, aspect_ratio: normalizeAspectRatio(ratio) };
           if (reference) payload.image = reference;
         } else if (model === "grok-3-image") {
           // grok image: size as pixel dimensions string, ratio options are pixel strings
@@ -492,7 +517,11 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
       runningNodeIds.current.add(nodeId);
       const runtimeData = (node.data.runtime?.data || {}) as Record<string, any>;
       const upstream = getUpstreamInputs(nodeId);
-      const prompt = String(runtimeData.prompt || runtimeData.content || upstream.effectivePrompt || "").trim();
+      // Merge all upstream text contents + own supplement
+      const allTexts = [...upstream.textContents];
+      const ownSupplement = String(runtimeData.prompt || runtimeData.content || "").trim();
+      if (ownSupplement) allTexts.push(ownSupplement);
+      const prompt = allTexts.join("\n") || upstream.effectivePrompt || "";
       const model =
         String(runtimeData.model || models.defaultModels.video?.id || models.videoModels[0]?.id || "").trim();
       const ratio = normalizeAspectRatio(String(runtimeData.ratio || runtimeData.aspect_ratio || "16:9"));
@@ -509,6 +538,10 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         upstream.firstImageUrl ||
         undefined;
       const lastFrame = runtimeData.lastFrameImage || runtimeData.last_frame_image || undefined;
+      const country = String(runtimeData.country || "").trim();
+      const sellingPointsJson = String(runtimeData.sellingPointsJson || "").trim();
+      const blueprint = runtimeData.blueprint;
+      const productImageUrl = String(runtimeData.productImageUrl || "").trim();
 
       if (!prompt) {
         toast.error("请先输入提示词");
@@ -569,6 +602,11 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
           if (firstFrame) payload.first_frame_image = firstFrame;
           if (lastFrame) payload.last_frame_image = lastFrame;
         }
+
+        if (country) payload.country = country;
+        if (sellingPointsJson) payload.sellingPointsJson = sellingPointsJson;
+        if (blueprint) payload.blueprint = blueprint;
+        if (productImageUrl) payload.productImageUrl = productImageUrl;
 
         const response = await postJson("/api/canvas/videos", payload);
         const immediateUrl = extractVideoUrl(response);
@@ -1099,6 +1137,39 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         return;
       }
 
+      // AI text transform: when instruction is set and there's upstream content
+      const instruction = String(runtimeData.instruction || "").trim();
+      if (instruction) {
+        // Merge all upstream text contents
+        const allTexts = [...upstream.textContents];
+        const upstreamText = allTexts.join("\n") || "";
+        const imageUrl = upstream.firstImageUrl || "";
+
+        setNodeStatus(nodeId, "running");
+        patchRuntimeData(nodeId, { lastRunError: null });
+
+        try {
+          const response = await postJson("/api/canvas/text-transform", {
+            instruction,
+            upstreamText: upstreamText || undefined,
+            imageUrl: imageUrl || undefined,
+            model: String(runtimeData.transformModel || "gemini-3.1-flash-lite-preview"),
+          });
+          const result = (response as { result?: string }).result || "";
+          if (!result) throw new Error("未获取到处理结果");
+          patchRuntimeData(nodeId, { content: result, lastCompletedAt: Date.now() });
+          setNodeStatus(nodeId, "success");
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "AI 处理失败";
+          patchRuntimeData(nodeId, { lastRunError: message });
+          setNodeStatus(nodeId, "error", message);
+          toast.error(message);
+        } finally {
+          runningNodeIds.current.delete(nodeId);
+        }
+        return;
+      }
+
       runningNodeIds.current.delete(nodeId);
     },
     [getNode, getUpstreamInputs, patchRuntimeData, setNodeStatus],
@@ -1171,6 +1242,176 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
     [addResource],
   );
 
+  const pollGridTask = useCallback(
+    async (taskId: string, nodeId: string): Promise<string> => {
+      for (let attempt = 0; attempt < GRID_POLL_MAX_ATTEMPTS; attempt++) {
+        if (attempt > 0) await sleep(GRID_POLL_INTERVAL_MS);
+        const data = await getJson(`/api/canvas/grid?taskId=${encodeURIComponent(taskId)}`);
+        const record = data as { status?: string; progress?: number; storyboard_image_url?: string };
+        const status = String(record.status || "").toUpperCase();
+        patchRuntimeData(nodeId, { gridTaskId: taskId, gridProgress: record.progress ?? 0 });
+        if (status === "COMPLETED" && record.storyboard_image_url) {
+          return record.storyboard_image_url;
+        }
+        if (status === "FAILED") throw new Error("九宫格生成失败");
+      }
+      throw new Error("九宫格生成超时，请稍后重试");
+    },
+    [patchRuntimeData],
+  );
+
+  const runGridNode = useCallback(
+    async (nodeId: string) => {
+      if (!nodeId) return;
+      const node = getNode(nodeId);
+      if (!node) {
+        toast.error("未找到对应节点");
+        return;
+      }
+      if (runningNodeIds.current.has(nodeId)) {
+        toast("该节点正在执行，请稍候");
+        return;
+      }
+      runningNodeIds.current.add(nodeId);
+      const runtimeData = (node.data.runtime?.data || {}) as Record<string, unknown>;
+      const upstream = getUpstreamInputs(nodeId);
+      const contentType = String(runtimeData.contentType || "产品展示");
+      // Merge all upstream text contents + own script
+      const allTexts = [...upstream.textContents];
+      const ownScript = String(runtimeData.scriptContent || "").trim();
+      if (ownScript) allTexts.push(ownScript);
+      const scriptContent = allTexts.join("\n");
+      const imageUrl = String(runtimeData.imageUrl || upstream.firstImageUrl || "").trim();
+      const ratio = String(runtimeData.ratio || "1:1").trim();
+
+      if (!scriptContent) {
+        toast.error("请输入脚本/剧情/卖点内容");
+        runningNodeIds.current.delete(nodeId);
+        return;
+      }
+      if (!imageUrl) {
+        toast.error("请上传参考图片");
+        runningNodeIds.current.delete(nodeId);
+        return;
+      }
+
+      setNodeStatus(nodeId, "running");
+      patchRuntimeData(nodeId, { gridTaskId: null, gridImageUrl: null, gridProgress: 0, lastRunError: null });
+
+      try {
+        const apiKey = resolveCanvasCreditsApiKey();
+        if (apiKey) {
+          await ensureCanvasCreditsAvailable(apiKey, "grid", {});
+        }
+        const response = await postJson("/api/canvas/grid", {
+          contentType,
+          scriptContent,
+          imageUrl,
+          ratio,
+        });
+        if (apiKey) {
+          await deductCanvasCredits(apiKey, "grid", {});
+        }
+        const record = response as { data?: { taskId?: string } };
+        const taskId = record?.data?.taskId;
+        if (!taskId) throw new Error("未获取到任务 ID");
+
+        patchRuntimeData(nodeId, { gridTaskId: taskId });
+        const gridImageUrl = await pollGridTask(taskId, nodeId);
+        patchRuntimeData(nodeId, { gridImageUrl, gridProgress: 100, lastCompletedAt: Date.now() });
+        setNodeStatus(nodeId, "success");
+        toast.success("九宫格生成完成");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "九宫格生成失败";
+        patchRuntimeData(nodeId, { lastRunError: message });
+        setNodeStatus(nodeId, "error", message);
+        toast.error(message);
+      } finally {
+        runningNodeIds.current.delete(nodeId);
+      }
+    },
+    [getNode, getUpstreamInputs, patchRuntimeData, pollGridTask, setNodeStatus],
+  );
+
+  const GRID_SPLIT_POLL_INTERVAL_MS = 5000;
+  const GRID_SPLIT_MAX_ATTEMPTS = 60;
+
+  const splitGridNode = useCallback(
+    async (nodeId: string): Promise<string[]> => {
+      const node = getNode(nodeId);
+      const runtimeData = (node?.data?.runtime?.data ?? {}) as Record<string, unknown>;
+      const gridImageUrl = typeof runtimeData.gridImageUrl === "string" ? runtimeData.gridImageUrl : "";
+      if (!gridImageUrl) {
+        toast.error("请先生成九宫格图");
+        return [];
+      }
+      patchRuntimeData(nodeId, { isSplitting: true, status: "running" });
+      try {
+        const apiKey = resolveCanvasCreditsApiKey();
+        if (apiKey) {
+          await ensureCanvasCreditsAvailable(apiKey, "grid-split", {});
+        }
+        const resp = await postJson("/api/canvas/grid/split", { imageUrl: gridImageUrl });
+        if (apiKey) {
+          await deductCanvasCredits(apiKey, "grid-split", {});
+        }
+        const taskId = typeof resp?.data?.taskId === "string" ? (resp.data.taskId as string) : String(resp?.data?.taskId ?? "");
+        if (!taskId) throw new Error("未获取到任务 ID");
+
+        for (let attempt = 0; attempt < GRID_SPLIT_MAX_ATTEMPTS; attempt++) {
+          if (attempt > 0) await sleep(GRID_SPLIT_POLL_INTERVAL_MS);
+          const poll = await getJson(`/api/canvas/grid/split?taskId=${encodeURIComponent(taskId)}`);
+          const status = String((poll as Record<string, unknown>).status || "").toUpperCase();
+          const imageUrls = ((poll as Record<string, unknown>).imageUrls ?? []) as string[];
+          if (status === "SUCCESS" || status === "COMPLETED") {
+            if (!imageUrls.length) throw new Error("未获取到拆分图片");
+            patchRuntimeData(nodeId, { isSplitting: false, status: "idle" });
+            return imageUrls;
+          }
+          if (status === "FAILED") throw new Error("拆分任务失败");
+        }
+        throw new Error("拆分超时，请稍后重试");
+      } catch (err) {
+        patchRuntimeData(nodeId, { isSplitting: false, status: "idle" });
+        throw err;
+      }
+    },
+    [getNode, patchRuntimeData],
+  );
+
+  const reverseImagePrompt = useCallback(
+    async (nodeId: string): Promise<string> => {
+      const node = getNode(nodeId);
+      const runtimeData = (node?.data?.runtime?.data ?? {}) as Record<string, unknown>;
+      const outputs = Array.isArray(runtimeData.outputs)
+        ? (runtimeData.outputs as Array<{ url?: string }>)
+        : [];
+      const imageUrl = (outputs[0]?.url ?? "").trim();
+      if (!imageUrl) throw new Error("请先生成或上传图片");
+
+      try {
+        const apiKey = resolveCanvasCreditsApiKey();
+        if (apiKey) {
+          await ensureCanvasCreditsAvailable(apiKey, "image-understanding", {});
+        }
+        const response = await postJson("/api/canvas/image-understanding", {
+          imageUrl,
+          prompt: REVERSE_IMAGE_PROMPT,
+          model: "gemini-3.1-flash-lite-preview",
+        });
+        if (apiKey) {
+          await deductCanvasCredits(apiKey, "image-understanding", {});
+        }
+        const result = (response as { result?: string }).result ?? "";
+        if (!result) throw new Error("未获取到反推结果");
+        return result;
+      } catch (err) {
+        throw err;
+      }
+    },
+    [getNode],
+  );
+
   return {
     runImageNode,
     runVideoNode,
@@ -1178,6 +1419,9 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
     runDigitalHumanNode,
     runStoryboardNode,
     runTextNode,
+    runGridNode,
+    splitGridNode,
+    reverseImagePrompt,
     uploadResource,
   };
 }

@@ -1,0 +1,1049 @@
+{
+  "id": "00000000-0000-0000-0000-000000000000",
+  "revision": 0,
+  "last_node_id": 38,
+  "last_link_id": 43,
+  "nodes": [
+    {
+      "id": 17,
+      "type": "easy forLoopEnd",
+      "pos": [
+        4975.4287109375,
+        1663.9681396484375
+      ],
+      "size": [
+        163.08984375,
+        226
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "流",
+          "name": "flow",
+          "shape": 5,
+          "type": "FLOW_CONTROL",
+          "link": 18
+        },
+        {
+          "label": "初始值1",
+          "name": "initial_value1",
+          "shape": 7,
+          "type": "*",
+          "link": 19
+        },
+        {
+          "label": "initial_value3",
+          "name": "initial_value3",
+          "type": "*"
+        },
+        {
+          "label": "initial_value4",
+          "name": "initial_value4",
+          "type": "*"
+        },
+        {
+          "label": "initial_value5",
+          "name": "initial_value5",
+          "type": "*"
+        },
+        {
+          "label": "initial_value6",
+          "name": "initial_value6",
+          "type": "*"
+        },
+        {
+          "name": "initial_value7",
+          "type": "*"
+        },
+        {
+          "name": "initial_value8",
+          "type": "*"
+        },
+        {
+          "name": "initial_value9",
+          "type": "*"
+        },
+        {
+          "name": "initial_value10",
+          "type": "*"
+        },
+        {
+          "name": "initial_value11",
+          "type": "*",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "值1",
+          "name": "value1",
+          "type": "*",
+          "links": [
+            24
+          ]
+        },
+        {
+          "label": "value3",
+          "name": "value3",
+          "type": "*"
+        },
+        {
+          "label": "value4",
+          "name": "value4",
+          "type": "*"
+        },
+        {
+          "label": "value5",
+          "name": "value5",
+          "type": "*"
+        },
+        {
+          "label": "value6",
+          "name": "value6",
+          "type": "*"
+        },
+        {
+          "name": "value7",
+          "type": "*"
+        },
+        {
+          "name": "value8",
+          "type": "*"
+        },
+        {
+          "name": "value9",
+          "type": "*"
+        },
+        {
+          "name": "value10",
+          "type": "*"
+        },
+        {
+          "name": "value11",
+          "type": "*",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "easy forLoopEnd",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [],
+      "color": "#233",
+      "bgcolor": "#355"
+    },
+    {
+      "id": 28,
+      "type": "easy batchAnything",
+      "pos": [
+        4463.27392578125,
+        1886.2886962890625
+      ],
+      "size": [
+        140,
+        46
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "any_1",
+          "name": "any_1",
+          "type": "*",
+          "link": 33
+        },
+        {
+          "label": "any_2",
+          "name": "any_2",
+          "type": "*",
+          "link": 34
+        }
+      ],
+      "outputs": [
+        {
+          "label": "batch",
+          "name": "batch",
+          "type": "*",
+          "links": [
+            32
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "easy batchAnything",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 23,
+      "type": "SaveImage",
+      "pos": [
+        5221.7431640625,
+        1635.3221435546875
+      ],
+      "size": [
+        407.8962707519531,
+        282
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "图像",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 24
+        },
+        {
+          "label": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "image_urls",
+          "name": "image_urls",
+          "type": "STRING"
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SaveImage",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "ComfyUI"
+      ]
+    },
+    {
+      "id": 18,
+      "type": "LayerUtility: PurgeVRAM V2",
+      "pos": [
+        4641.63818359375,
+        1645.7547607421875
+      ],
+      "size": [
+        219.63046264648438,
+        82
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "anything",
+          "name": "anything",
+          "type": "*",
+          "link": 32
+        },
+        {
+          "label": "purge_cache",
+          "name": "purge_cache",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "purge_cache"
+          }
+        },
+        {
+          "label": "purge_models",
+          "name": "purge_models",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "purge_models"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "any",
+          "name": "any",
+          "type": "*",
+          "links": [
+            19
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LayerUtility: PurgeVRAM V2",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        true,
+        true
+      ],
+      "color": "#233",
+      "bgcolor": "#355"
+    },
+    {
+      "id": 36,
+      "type": "Note",
+      "pos": [
+        3791.59228515625,
+        1852.0008544921875
+      ],
+      "size": [
+        309.4154052734375,
+        108.26368713378906
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "总共有多少张图就写几张"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 24,
+      "type": "SeedVR2",
+      "pos": [
+        4947.884765625,
+        2298.25439453125
+      ],
+      "size": [
+        270,
+        194
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 25
+        },
+        {
+          "label": "block_swap_config",
+          "name": "block_swap_config",
+          "shape": 7,
+          "type": "block_swap_config",
+          "link": 37
+        },
+        {
+          "label": "extra_args",
+          "name": "extra_args",
+          "shape": 7,
+          "type": "extra_args"
+        },
+        {
+          "label": "model",
+          "name": "model",
+          "type": "COMBO",
+          "widget": {
+            "name": "model"
+          }
+        },
+        {
+          "label": "seed",
+          "name": "seed",
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          }
+        },
+        {
+          "label": "new_resolution",
+          "name": "new_resolution",
+          "type": "INT",
+          "widget": {
+            "name": "new_resolution"
+          }
+        },
+        {
+          "label": "batch_size",
+          "name": "batch_size",
+          "type": "INT",
+          "widget": {
+            "name": "batch_size"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "image",
+          "name": "image",
+          "type": "IMAGE",
+          "links": [
+            28,
+            34
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SeedVR2",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "seedvr2_ema_3b_fp16.safetensors",
+        672284108,
+        "randomize",
+        1024,
+        1
+      ]
+    },
+    {
+      "id": 38,
+      "type": "Note",
+      "pos": [
+        4986.923828125,
+        2579.890625
+      ],
+      "size": [
+        273.1541748046875,
+        90.50308990478516
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "分割后的图的短边像素值 你可以根据自己需求改"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 37,
+      "type": "Note",
+      "pos": [
+        4294.87939453125,
+        2603.69970703125
+      ],
+      "size": [
+        309.4154052734375,
+        108.26368713378906
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "按照你的图改几行几列"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 31,
+      "type": "SeedVR2BlockSwap",
+      "pos": [
+        5353.64892578125,
+        2140.80615234375
+      ],
+      "size": [
+        227.873046875,
+        106
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "blocks_to_swap",
+          "name": "blocks_to_swap",
+          "type": "INT",
+          "widget": {
+            "name": "blocks_to_swap"
+          }
+        },
+        {
+          "label": "use_non_blocking",
+          "name": "use_non_blocking",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "use_non_blocking"
+          }
+        },
+        {
+          "label": "offload_io_components",
+          "name": "offload_io_components",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "offload_io_components"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "block_swap_config",
+          "name": "block_swap_config",
+          "type": "block_swap_config",
+          "links": [
+            37
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SeedVR2BlockSwap",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        16,
+        false,
+        false
+      ]
+    },
+    {
+      "id": 12,
+      "type": "easy indexAnything",
+      "pos": [
+        5298.37744140625,
+        2487.435302734375
+      ],
+      "size": [
+        217.46807861328125,
+        58
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "any",
+          "name": "any",
+          "type": "*",
+          "link": 15
+        },
+        {
+          "label": "index",
+          "name": "index",
+          "type": "INT",
+          "widget": {
+            "name": "index"
+          },
+          "link": 29
+        }
+      ],
+      "outputs": [
+        {
+          "label": "out",
+          "name": "out",
+          "type": "*",
+          "links": [
+            25,
+            31
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "easy indexAnything",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        0
+      ]
+    },
+    {
+      "id": 29,
+      "type": "PreviewImage",
+      "pos": [
+        5599.263671875,
+        2540.369384765625
+      ],
+      "size": [
+        210,
+        258
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "图像",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 31
+        }
+      ],
+      "outputs": [
+        {
+          "label": "image_urls",
+          "name": "image_urls",
+          "type": "STRING"
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PreviewImage",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 27,
+      "type": "PreviewImage",
+      "pos": [
+        5673.5009765625,
+        2162.2763671875
+      ],
+      "size": [
+        210,
+        258
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "图像",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 28
+        }
+      ],
+      "outputs": [
+        {
+          "label": "image_urls",
+          "name": "image_urls",
+          "type": "STRING"
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PreviewImage",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 11,
+      "type": "easy imageSplitGrid",
+      "pos": [
+        4339.615234375,
+        2431.701171875
+      ],
+      "size": [
+        210,
+        82
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "图像",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 43
+        },
+        {
+          "label": "row",
+          "name": "row",
+          "type": "INT",
+          "widget": {
+            "name": "row"
+          }
+        },
+        {
+          "label": "column",
+          "name": "column",
+          "type": "INT",
+          "widget": {
+            "name": "column"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "图像",
+          "name": "images",
+          "type": "IMAGE",
+          "links": [
+            15
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "easy imageSplitGrid",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        3,
+        3
+      ]
+    },
+    {
+      "id": 35,
+      "type": "LoadImage",
+      "pos": [
+        3815.197021484375,
+        2208.042724609375
+      ],
+      "size": [
+        441.3636169433594,
+        567.8095092773438
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "image",
+          "name": "image",
+          "type": "COMBO",
+          "widget": {
+            "name": "image"
+          }
+        },
+        {
+          "label": "upload",
+          "name": "upload",
+          "type": "IMAGEUPLOAD",
+          "widget": {
+            "name": "upload"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "label": "图像",
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            43
+          ]
+        },
+        {
+          "label": "遮罩",
+          "name": "MASK",
+          "type": "MASK"
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "2ead69bb37a556d8358a8fef0bc0c1f732b536f0348965f061f569c321d00bdb.jpg",
+        "image"
+      ],
+      "color": "#323",
+      "bgcolor": "#535"
+    },
+    {
+      "id": 21,
+      "type": "easy forLoopStart",
+      "pos": [
+        3801.09228515625,
+        1633.633544921875
+      ],
+      "size": [
+        210,
+        158
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "初始值1",
+          "name": "initial_value1",
+          "shape": 7,
+          "type": "*"
+        },
+        {
+          "label": "total",
+          "name": "total",
+          "type": "INT",
+          "widget": {
+            "name": "total"
+          }
+        },
+        {
+          "label": "initial_value3",
+          "name": "initial_value3",
+          "type": "*"
+        },
+        {
+          "label": "initial_value4",
+          "name": "initial_value4",
+          "type": "*"
+        },
+        {
+          "label": "initial_value5",
+          "name": "initial_value5",
+          "type": "*"
+        }
+      ],
+      "outputs": [
+        {
+          "label": "流",
+          "name": "flow",
+          "shape": 5,
+          "type": "FLOW_CONTROL",
+          "links": [
+            18
+          ]
+        },
+        {
+          "label": "索引",
+          "name": "index",
+          "type": "INT",
+          "links": [
+            21,
+            29
+          ]
+        },
+        {
+          "label": "值1",
+          "name": "value1",
+          "type": "*",
+          "links": [
+            33
+          ]
+        },
+        {
+          "label": "value3",
+          "name": "value3",
+          "type": "*"
+        },
+        {
+          "label": "value4",
+          "name": "value4",
+          "type": "*"
+        },
+        {
+          "label": "value5",
+          "name": "value5",
+          "type": "*"
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "easy forLoopStart",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        9
+      ],
+      "color": "#233",
+      "bgcolor": "#355"
+    },
+    {
+      "id": 19,
+      "type": "easy showAnything",
+      "pos": [
+        4165.83544921875,
+        1616.2669677734375
+      ],
+      "size": [
+        210,
+        88
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "label": "输入任何",
+          "name": "anything",
+          "shape": 7,
+          "type": "*",
+          "link": 21
+        }
+      ],
+      "outputs": [
+        {
+          "label": "output",
+          "name": "output",
+          "type": "*"
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "easy showAnything",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "24"
+      ],
+      "color": "#233",
+      "bgcolor": "#355"
+    }
+  ],
+  "links": [
+    [
+      15,
+      11,
+      0,
+      12,
+      0,
+      "*"
+    ],
+    [
+      18,
+      21,
+      0,
+      17,
+      0,
+      "FLOW_CONTROL"
+    ],
+    [
+      19,
+      18,
+      0,
+      17,
+      1,
+      "*"
+    ],
+    [
+      21,
+      21,
+      1,
+      19,
+      0,
+      "*"
+    ],
+    [
+      24,
+      17,
+      0,
+      23,
+      0,
+      "IMAGE"
+    ],
+    [
+      25,
+      12,
+      0,
+      24,
+      0,
+      "IMAGE"
+    ],
+    [
+      28,
+      24,
+      0,
+      27,
+      0,
+      "IMAGE"
+    ],
+    [
+      29,
+      21,
+      1,
+      12,
+      1,
+      "INT"
+    ],
+    [
+      31,
+      12,
+      0,
+      29,
+      0,
+      "IMAGE"
+    ],
+    [
+      32,
+      28,
+      0,
+      18,
+      0,
+      "*"
+    ],
+    [
+      33,
+      21,
+      2,
+      28,
+      0,
+      "*"
+    ],
+    [
+      34,
+      24,
+      0,
+      28,
+      1,
+      "*"
+    ],
+    [
+      37,
+      31,
+      0,
+      24,
+      1,
+      "block_swap_config"
+    ],
+    [
+      43,
+      35,
+      0,
+      11,
+      0,
+      "IMAGE"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "title": "Group",
+      "bounding": [
+        3758.074951171875,
+        2120.9296875,
+        2225.7646484375,
+        700.1324462890625
+      ],
+      "color": "#3f789e",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "id": 2,
+      "title": "Group",
+      "bounding": [
+        3701.900634765625,
+        1532.14111328125,
+        2246.35693359375,
+        416.6962585449219
+      ],
+      "color": "#3f789e",
+      "font_size": 24,
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "links_added_by_ue": [],
+    "VHS_KeepIntermediate": true,
+    "ue_links": [],
+    "VHS_MetadataImage": true,
+    "0246.VERSION": [
+      0,
+      0,
+      4
+    ],
+    "VHS_latentpreviewrate": 0,
+    "frontendVersion": "1.23.0",
+    "VHS_latentpreview": false,
+    "ds": {
+      "scale": 0.45,
+      "offset": [
+        -2681.9465603298613,
+        -931.3780788845486
+      ]
+    }
+  },
+  "version": 0.4
+}

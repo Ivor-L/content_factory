@@ -1,0 +1,177 @@
+{
+  "11": {
+    "inputs": {
+      "row": 3,
+      "column": 3,
+      "images": [
+        "35",
+        0
+      ]
+    },
+    "class_type": "easy imageSplitGrid",
+    "_meta": {
+      "title": "图像拆分网格"
+    }
+  },
+  "12": {
+    "inputs": {
+      "index": [
+        "21",
+        1
+      ],
+      "any": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "easy indexAnything",
+    "_meta": {
+      "title": "Index Any"
+    }
+  },
+  "17": {
+    "inputs": {
+      "flow": [
+        "21",
+        0
+      ],
+      "initial_value1": [
+        "18",
+        0
+      ]
+    },
+    "class_type": "easy forLoopEnd",
+    "_meta": {
+      "title": "For循环-结束"
+    }
+  },
+  "18": {
+    "inputs": {
+      "purge_cache": true,
+      "purge_models": true,
+      "anything": [
+        "28",
+        0
+      ]
+    },
+    "class_type": "LayerUtility: PurgeVRAM V2",
+    "_meta": {
+      "title": "LayerUtility: Purge VRAM V2"
+    }
+  },
+  "19": {
+    "inputs": {
+      "text": "24",
+      "anything": [
+        "21",
+        1
+      ]
+    },
+    "class_type": "easy showAnything",
+    "_meta": {
+      "title": "展示任何"
+    }
+  },
+  "21": {
+    "inputs": {
+      "total": 9
+    },
+    "class_type": "easy forLoopStart",
+    "_meta": {
+      "title": "For循环-起始"
+    }
+  },
+  "23": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "17",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  },
+  "24": {
+    "inputs": {
+      "model": "seedvr2_ema_3b_fp16.safetensors",
+      "seed": 672284108,
+      "new_resolution": 1024,
+      "batch_size": 1,
+      "images": [
+        "12",
+        0
+      ],
+      "block_swap_config": [
+        "31",
+        0
+      ]
+    },
+    "class_type": "SeedVR2",
+    "_meta": {
+      "title": "SeedVR2 Video Upscaler"
+    }
+  },
+  "27": {
+    "inputs": {
+      "images": [
+        "24",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "预览图像"
+    }
+  },
+  "28": {
+    "inputs": {
+      "any_1": [
+        "21",
+        2
+      ],
+      "any_2": [
+        "24",
+        0
+      ]
+    },
+    "class_type": "easy batchAnything",
+    "_meta": {
+      "title": "Batch Any"
+    }
+  },
+  "29": {
+    "inputs": {
+      "images": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "预览图像"
+    }
+  },
+  "31": {
+    "inputs": {
+      "blocks_to_swap": 16,
+      "use_non_blocking": false,
+      "offload_io_components": false
+    },
+    "class_type": "SeedVR2BlockSwap",
+    "_meta": {
+      "title": "SeedVR2 BlockSwap Config"
+    }
+  },
+  "35": {
+    "inputs": {
+      "image": "2ead69bb37a556d8358a8fef0bc0c1f732b536f0348965f061f569c321d00bdb.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  }
+}

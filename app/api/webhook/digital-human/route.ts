@@ -6,6 +6,7 @@ import { deductCredits } from "@/lib/credits";
 import { parseMetadata } from "@/lib/creativeTaskService";
 import { setTaskActionStatus } from "@/lib/creativeTaskUtils";
 import { syncTaskToSummary } from "@/lib/taskSummary";
+import { logCreditUsage } from "@/lib/logCreditUsage";
 
 type ResultEntry = {
   fileUrl?: string;
@@ -157,6 +158,7 @@ async function deductCreditsForDigitalHuman(
     workflowName: workflowMeta.workflow_name ?? "Digital Human",
     reason: "digital_human",
   });
+  logCreditUsage({ featureKey: "digital_human", userId: userId ?? undefined, amount: creditCost, success: true });
 }
 
 const toArray = (source: unknown): ResultEntry[] => {

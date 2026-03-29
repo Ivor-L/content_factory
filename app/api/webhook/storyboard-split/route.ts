@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { getApiKeyForUser } from '@/lib/authServer';
 import { deductCredits } from '@/lib/credits';
 import { emitStoryboardTaskUpsert } from '@/lib/storyboardEvents';
+import { logCreditUsage } from '@/lib/logCreditUsage';
 
 function normalizeTaskId(payload: any, queryTaskId?: string | null): string | null {
   return (
@@ -160,9 +161,11 @@ export async function POST(request: Request) {
             workflowName: 'Storyboard Split',
             reason: 'storyboard_split',
           });
+          logCreditUsage({ featureKey: 'storyboard_split', userId: task.userId, amount: 1, success: true });
         }
       } catch (error) {
         console.error('Failed to deduct credits for storyboard split', error);
+        logCreditUsage({ featureKey: 'storyboard_split', userId: task.userId ?? undefined, success: false, errorMessage: error instanceof Error ? error.message : 'Unknown' });
       }
     }
 

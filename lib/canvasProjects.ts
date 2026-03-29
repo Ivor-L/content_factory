@@ -7,6 +7,7 @@ export type CanvasData = {
   nodes: unknown[];
   edges: unknown[];
   viewport: CanvasViewport;
+  resources?: unknown[];
 };
 
 export type CanvasProjectResponse = {
@@ -194,10 +195,12 @@ function normalizeCanvasData(raw: unknown): CanvasData {
   const source = raw as Partial<CanvasData>;
   const nodes = Array.isArray(source.nodes) ? source.nodes : [];
   const edges = Array.isArray(source.edges) ? source.edges : [];
+  const resources = Array.isArray(source.resources) ? source.resources : undefined;
   return {
     nodes,
     edges,
     viewport: coerceViewport(source.viewport),
+    ...(resources !== undefined ? { resources } : {}),
   };
 }
 

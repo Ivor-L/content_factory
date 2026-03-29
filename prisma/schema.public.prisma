@@ -477,6 +477,50 @@ model profiles {
   avatar_url String?
   website    String?
   api_key    String?
+  tenantId   String?   @map("tenant_id")
 
+  @@schema("public")
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("tenants")
+  @@schema("public")
+}
+
+model CreditConfig {
+  id          String   @id @default(cuid())
+  featureKey  String   @unique
+  featureName String
+  category    String
+  modelKey    String?  @map("model_key")
+  amount      Int      @default(1)
+  cost        Float?
+  sellingPrice Float?  @map("selling_price")
+  enabled     Boolean  @default(true)
+  description String?
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([category])
+  @@map("credit_configs")
+  @@schema("public")
+}
+
+model CreditUsageLog {
+  id           String   @id @default(cuid())
+  featureKey   String   @map("feature_key")
+  userId       String?  @map("user_id")
+  amount       Int      @default(0)
+  success      Boolean  @default(true)
+  errorMessage String?  @map("error_message")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([featureKey])
+  @@index([createdAt])
+  @@map("credit_usage_logs")
   @@schema("public")
 }

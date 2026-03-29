@@ -12,7 +12,8 @@ function getOssClient() {
   }
 
   // Presign uses public endpoint (not internal) so browser can access
-  return new OSS({ region, bucket, accessKeyId, accessKeySecret, internal: false });
+  // secure: true forces https:// in signed URLs, required when serving over HTTPS (Mixed Content)
+  return new OSS({ region, bucket, accessKeyId, accessKeySecret, internal: false, secure: true });
 }
 
 export async function POST(request: NextRequest) {

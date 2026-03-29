@@ -43,6 +43,7 @@ import {
   ArrowUp,
   ChevronDown,
   Clapperboard,
+  Download,
   Film,
   Grid3X3,
   Image as ImageIcon,
@@ -68,6 +69,7 @@ import {
   Video,
   X,
   Zap,
+  LayoutGrid,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { AiGlowSpinner } from "@/components/AiGlowSpinner";
@@ -79,6 +81,7 @@ import { useCanvasProjects } from "../hooks/useCanvasProjects";
 import { useCanvasResources } from "../hooks/useCanvasResources";
 import { useCanvasModels, type ModelOption, VIDEO_MODEL_PARAMS } from "../hooks/useCanvasModels";
 import { useCanvasOrchestrator } from "../hooks/useCanvasOrchestrator";
+import { useCanvasPresets } from "../hooks/useCanvasPresets";
 import {
   DEFAULT_VIEWPORT,
   EMPTY_UPSTREAM,
@@ -125,8 +128,9 @@ type CanvasResourceItem = ReturnType<typeof useCanvasResources>["resources"][num
 type CanvasNodeContextValue = {
   toggleExpanded: (nodeId: string, expanded?: boolean) => void;
   patchRuntimeData: (nodeId: string, patch: Record<string, unknown>) => void;
-  focusNode: (nodeId: string) => void;
+  focusNode: (nodeId: string, multiSelect?: boolean) => void;
   focusedNodeId: string | null;
+  selectedNodeIds: Set<string>;
   isConnecting: boolean;
   setNodeStatus: (
     nodeId: string,
@@ -145,6 +149,9 @@ type CanvasNodeContextValue = {
   runDigitalHumanNode: (nodeId: string) => Promise<void>;
   runStoryboardNode: (nodeId: string) => Promise<void>;
   runTextNode: (nodeId: string) => Promise<void>;
+  runGridNode: (nodeId: string) => Promise<void>;
+  splitGridNode: (nodeId: string) => Promise<void>;
+  reverseImagePrompt: (nodeId: string) => Promise<void>;
   addDownstreamNodes: (
     sourceNodeId: string,
     nodes: { type: string; data: Record<string, unknown> }[],
@@ -155,6 +162,8 @@ type CanvasNodeContextValue = {
   ) => Promise<CanvasResourceItem>;
   polishPrompt: (text: string) => Promise<string>;
   openViralModal: (nodeId: string, videoUrl: string, screenX: number, screenY: number) => void;
+  getNode: (nodeId: string) => Node<MinimalFlowNodeData> | undefined;
+  getUpstreamInputs: (nodeId: string) => UpstreamInputs;
 };
 
 const fallbackModel = { id: "", label: "", provider: "" };
@@ -188,12 +197,17 @@ const CanvasNodeContext = createContext<CanvasNodeContextValue>({
   runDigitalHumanNode: async () => {},
   runStoryboardNode: async () => {},
   runTextNode: async () => {},
+  runGridNode: async () => {},
+  splitGridNode: async () => {},
+  reverseImagePrompt: async () => {},
   addDownstreamNodes: () => [],
   uploadResource: async () => {
     throw new Error("Canvas runtime未初始化");
   },
   polishPrompt: async (text) => text,
   openViralModal: () => {},
+  getNode: () => undefined,
+  getUpstreamInputs: () => ({ textContents: [], imageUrls: [], videoUrls: [], audioUrls: [], effectivePrompt: "", firstImageUrl: "", firstVideoUrl: "", firstAudioUrl: "" }),
 });
 
 function useCanvasNodeContext() {
@@ -346,6 +360,8 @@ function resolveTitle(node: MinimalFlowNodeData): string {
       return "数字人";
     case "storyboard":
       return "分镜板";
+    case "grid":
+      return "九宫格";
     default:
       return "节点";
   }
@@ -365,8 +381,53 @@ const NODE_TYPE_ICONS: Partial<Record<string, React.ComponentType<{ className?: 
   audio: Music,
 };
 
+function EditableNodeLabel({ title, nodeId, patchRuntimeData }: { title: string; nodeId: string; patchRuntimeData: (id: string, patch: Record<string, unknown>) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const commit = useCallback(() => {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== title) {
+      patchRuntimeData(nodeId, { label: trimmed });
+    }
+    setEditing(false);
+  }, [draft, title, nodeId, patchRuntimeData]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    if (e.key === "Enter") commit();
+    if (e.key === "Escape") setEditing(false);
+  }, [commit]);
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={handleKeyDown}
+        onClick={(e) => e.stopPropagation()}
+        className="flex-1 ml-1 bg-transparent text-[11px] uppercase tracking-[0.2em] text-white outline-none"
+      />
+    );
+  }
+
+  return (
+    <span
+      className="cursor-pointer ml-1 text-[11px] uppercase tracking-[0.2em] text-white/50 hover:text-white/70"
+      onDoubleClick={(e) => { e.stopPropagation(); setDraft(title); setEditing(true); setTimeout(() => inputRef.current?.select(), 0); }}
+      title="双击修改名称"
+    >
+      {title}
+    </span>
+  );
+}
+
 function NodeCardShell({ id: shellId, data, selected, children }: NodeCardProps) {
-  const { isConnecting } = useCanvasNodeContext();
+  const { isConnecting, patchRuntimeData, focusNode } = useCanvasNodeContext();
   const innerRef = useRef<HTMLDivElement>(null);
   const magnet = useCardMagnet(innerRef);
   const updateNodeInternals = useUpdateNodeInternals();
@@ -377,13 +438,21 @@ function NodeCardShell({ id: shellId, data, selected, children }: NodeCardProps)
   useEffect(() => {
     updateNodeInternals(shellId);
   }, [shellId, updateNodeInternals, data.expanded]);
+
+  const handleCardClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const isMultiSelect = e.ctrlKey || e.metaKey;
+    focusNode(shellId, isMultiSelect);
+  };
+
   return (
     <div
-      className="min-w-[280px] max-w-[360px] select-none text-white"
+      className="min-w-[280px] max-w-[360px] select-none text-white cursor-pointer"
+      onClick={handleCardClick}
     >
-      <div className="mb-1.5 flex items-center px-1">
+      <div className="mb-1.5 flex items-center gap-1.5 px-1">
         <NodeIcon className="h-3.5 w-3.5 text-white/50" />
-        <span className="ml-1.5 text-[11px] uppercase tracking-[0.2em] text-white/50">{title}</span>
+        <EditableNodeLabel title={title} nodeId={shellId} patchRuntimeData={patchRuntimeData} />
       </div>
       <div className="relative" ref={innerRef}>
       <CardHandle side="left" magnetY={magnet.magnetY} visible={magnet.showLeft || isConnecting} isConnecting={isConnecting} />
@@ -416,13 +485,24 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const mode = typeof runtimeData.mode === "string" ? runtimeData.mode : "";
   const isImageUnderstanding = mode === "image-understanding";
   const content = typeof runtimeData.content === "string" ? runtimeData.content : "";
+  const isLoadingPrompt = runtimeData.isLoadingPrompt === true;
   const title = resolveTitle(data);
   const [localContent, setLocalContent] = useState(content);
   const composingRef = useRef(false);
   useEffect(() => { if (!composingRef.current) setLocalContent(content); }, [content]);
 
-  // Image understanding state
+  // AI transform state
   const upstream = data.upstreamInputs ?? EMPTY_UPSTREAM;
+  const hasUpstream = !!(upstream.effectivePrompt || upstream.firstImageUrl || upstream.firstVideoUrl);
+  const [localInstruction, setLocalInstruction] = useState(
+    typeof runtimeData.instruction === "string" ? runtimeData.instruction : "",
+  );
+  const transformModel = typeof runtimeData.transformModel === "string"
+    ? runtimeData.transformModel
+    : "gemini-3.1-flash-lite-preview";
+  const isRunning = data.status === "running";
+
+  // Image understanding state
   const upstreamImageUrl = String(runtimeData.imageUrl || upstream.firstImageUrl || "");
   const imgUnderstandingModel = typeof runtimeData.imgUnderstandingModel === "string"
     ? runtimeData.imgUnderstandingModel
@@ -430,7 +510,6 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const [localPrompt, setLocalPrompt] = useState(
     typeof runtimeData.prompt === "string" ? runtimeData.prompt : "",
   );
-  const isRunning = data.status === "running";
 
   // Notify ReactFlow when textarea is resized by user (native drag handle)
   useEffect(() => {
@@ -464,14 +543,16 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             {/* Model selector */}
             <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 pt-3 pb-2.5">
               <span className="text-[11px] text-white/40">模型</span>
-              <select
-                value={imgUnderstandingModel}
-                onChange={(e) => patchRuntimeData(id, { imgUnderstandingModel: e.target.value })}
-                className="ml-auto rounded-md bg-white/[0.07] px-2 py-0.5 text-[11px] text-white/70 outline-none"
-              >
-                <option value="gemini-3.1-flash-lite-preview">Gemini Flash Lite</option>
-                <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-              </select>
+              <div className="ml-auto">
+                <CanvasSelect
+                  value={imgUnderstandingModel}
+                  options={[
+                    { value: "gemini-3.1-flash-lite-preview", label: "Gemini Flash Lite" },
+                    { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+                  ]}
+                  onChange={(v) => patchRuntimeData(id, { imgUnderstandingModel: v })}
+                />
+              </div>
             </div>
             {/* Upstream image preview */}
             {upstreamImageUrl ? (
@@ -551,8 +632,12 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
     >
       {/* Label above */}
       <div className="mb-1.5 flex items-center gap-1.5 px-1">
-        <AlignLeft className="h-3.5 w-3.5 text-white/50" />
-        <span className="text-[11px] uppercase tracking-[0.2em] text-white/50">{title}</span>
+        {upstream.firstImageUrl ? (
+          <ImageIcon className="h-3.5 w-3.5 text-white/50" />
+        ) : (
+          <AlignLeft className="h-3.5 w-3.5 text-white/50" />
+        )}
+        <EditableNodeLabel title={title} nodeId={id} patchRuntimeData={patchRuntimeData} />
       </div>
       {/* Card = textarea with handles positioned relative to it */}
       <div className="relative" ref={innerRef}>
@@ -568,6 +653,15 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             : "border-white/10 hover:border-white/20",
         )}
       >
+        {isLoadingPrompt ? (
+          <div className="space-y-2.5 px-4 py-4 animate-pulse" style={{ height: 240 }}>
+            <div className="h-2.5 w-full rounded-full bg-white/20" />
+            <div className="h-2.5 w-[85%] rounded-full bg-white/15" />
+            <div className="h-2.5 w-[70%] rounded-full bg-white/15" />
+            <div className="h-2.5 w-[90%] rounded-full bg-white/10" />
+            <div className="h-2.5 w-[60%] rounded-full bg-white/10" />
+          </div>
+        ) : (
         <textarea
           ref={textareaRef}
           value={localContent}
@@ -584,15 +678,70 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           className="nodrag !select-text w-full bg-transparent px-4 py-4 text-sm text-white outline-none placeholder:text-white/30"
           style={{ height: 240, minHeight: 120, maxHeight: 800, resize: "vertical", overflowY: "auto" }}
         />
+        )}
       </div>
       </div>{/* end inner relative */}
+      {selected && (
+        <NodeControlsPanel nodeWidth={240}>
+          {/* Upstream context hint */}
+          {upstream.firstImageUrl && (
+            <div className="mb-2 flex items-center gap-1.5 text-[10px] text-white/30">
+              <ImageIcon className="h-3 w-3 shrink-0" />
+              <span className="shrink-0">上游图片</span>
+              {upstream.effectivePrompt && (
+                <span className="truncate">· {upstream.effectivePrompt.slice(0, 40)}{upstream.effectivePrompt.length > 40 ? "…" : ""}</span>
+              )}
+            </div>
+          )}
+          {!upstream.firstImageUrl && upstream.effectivePrompt && (
+            <p className="mb-2 truncate text-[10px] text-white/30">
+              ↑ {upstream.effectivePrompt.slice(0, 70)}{upstream.effectivePrompt.length > 70 ? "…" : ""}
+            </p>
+          )}
+          {/* Instruction input */}
+          <textarea
+            value={localInstruction}
+            onChange={(e) => {
+              setLocalInstruction(e.target.value);
+              patchRuntimeData(id, { instruction: e.target.value });
+            }}
+            placeholder={hasUpstream ? "输入指令，如：翻译成英文、提取关键词、改写成广告文案..." : "输入生成指令..."}
+            className="nodrag !select-text min-h-[72px] w-full resize-none bg-transparent text-sm leading-relaxed text-white outline-none placeholder:text-white/30"
+          />
+          {/* Bottom bar: model + run */}
+          <div className="mt-2 flex items-center gap-2">
+            <Sparkles className="h-3.5 w-3.5 shrink-0 text-white/30" />
+            <div className="flex-1">
+              <CanvasSelect
+                value={transformModel}
+                options={[
+                  { value: "gemini-3.1-flash-lite-preview", label: "Gemini Flash Lite" },
+                  { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+                ]}
+                onChange={(v) => patchRuntimeData(id, { transformModel: v })}
+              />
+            </div>
+            <button
+              type="button"
+              disabled={isRunning || !localInstruction.trim()}
+              onClick={(e) => { e.stopPropagation(); void runTextNode(id); }}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-black transition hover:bg-white/90 active:scale-95 disabled:opacity-40"
+            >
+              {isRunning
+                ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black/20 border-t-black" />
+                : <ArrowUp className="h-4 w-4" />}
+            </button>
+          </div>
+        </NodeControlsPanel>
+      )}
     </div>
   );
 }
 
-const IMAGE_RATIOS = ["21:9", "16:9", "4:3", "3:2", "1:1", "2:3", "3:4", "9:16", "9:21"];
+const IMAGE_RATIOS = ["16:9", "4:3", "1:1", "3:4", "9:16"];
 const VIDEO_DURATIONS = ["5", "8", "10", "15"];
 const MEDIA_NODE_WIDTH = 380;
+const MEDIA_NODE_AREA = MEDIA_NODE_WIDTH * Math.round(MEDIA_NODE_WIDTH * 9 / 16); // ~81,320, reference area at 16:9
 const MEDIA_CONTROLS_WIDTH = MEDIA_NODE_WIDTH * 2; // 760, independent of node width
 const MEDIA_CONTROLS_OFFSET = -((MEDIA_CONTROLS_WIDTH - MEDIA_NODE_WIDTH) / 2); // centers panel under node
 
@@ -725,11 +874,14 @@ function CanvasSelect({
   onChange,
 }: {
   value: string;
-  options: { value: string; label: string }[];
+  options: { value: string; label: string; icon?: React.ReactNode }[];
   onChange: (v: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const current = options.find((o) => o.value === value)?.label ?? value;
+  const current = options.find((o) => o.value === value);
+  const isRatioSelect = options.length === 5 && options.every(o => o.label?.includes(":"));
+  const isQualitySelect = options.length === 2 && options.every(o => ["standard", "4k"].includes(o.value));
+
   return (
     <div className="relative">
       {open && (
@@ -743,12 +895,58 @@ function CanvasSelect({
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
         className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-white/50 transition hover:bg-white/8 hover:text-white/80"
       >
-        {current}
+        {current?.label ?? value}
         <ChevronDown className="h-3 w-3 opacity-40" />
       </button>
-      {open && (
+      {open && isRatioSelect && (
         <div
-          className="absolute bottom-full left-0 z-50 mb-1 min-w-[80px] overflow-hidden rounded-xl bg-[#232325] py-1 shadow-2xl"
+          className="absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 rounded-xl bg-[#232325] p-4 shadow-2xl"
+          style={{ width: "300px" }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="grid grid-cols-5 gap-3">
+            {options.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onChange(opt.value); setOpen(false); }}
+                className={clsx(
+                  "flex flex-col items-center justify-center rounded-lg p-3 transition",
+                  opt.value === value ? "bg-white/20 text-white" : "bg-white/5 text-white/50 hover:bg-white/10"
+                )}
+              >
+                {opt.icon}
+                <span className="text-xs mt-1.5">{opt.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {open && isQualitySelect && (
+        <div
+          className="absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 rounded-xl bg-[#232325] p-4 shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex gap-4">
+            {options.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onChange(opt.value); setOpen(false); }}
+                className={clsx(
+                  "flex items-center justify-center rounded-lg px-4 py-2 transition",
+                  opt.value === value ? "bg-white/20 text-white" : "bg-white/5 text-white/50 hover:bg-white/10"
+                )}
+              >
+                <span className="text-sm">{opt.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {open && !isRatioSelect && !isQualitySelect && (
+        <div
+          className="absolute top-full left-0 z-50 mt-1 min-w-[80px] overflow-hidden rounded-xl bg-[#232325] py-1 shadow-2xl"
           onClick={(e) => e.stopPropagation()}
         >
           {options.map((opt) => (
@@ -757,15 +955,36 @@ function CanvasSelect({
               type="button"
               onClick={(e) => { e.stopPropagation(); onChange(opt.value); setOpen(false); }}
               className={clsx(
-                "flex w-full items-center px-3 py-2 text-left text-xs transition hover:bg-white/8",
+                "flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-white/8",
                 opt.value === value ? "text-white" : "text-white/50",
               )}
             >
+              {opt.icon}
               {opt.label}
             </button>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── NodeControlsPanel ─────────────────────────────────────────────────────────
+type NodeControlsPanelProps = {
+  width?: number;
+  nodeWidth: number;
+  children: React.ReactNode;
+};
+
+function NodeControlsPanel({ width = MEDIA_CONTROLS_WIDTH, nodeWidth, children }: NodeControlsPanelProps) {
+  return (
+    <div
+      style={{ width, marginLeft: -((width - nodeWidth) / 2) }}
+      className="nodrag mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {children}
     </div>
   );
 }
@@ -859,10 +1078,11 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const referenceUploadRef = useRef<HTMLInputElement>(null);
   const directUploadRef = useRef<HTMLInputElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
-  const { patchRuntimeData, models, runImageNode, uploadResource, isConnecting, polishPrompt, focusedNodeId } = useCanvasNodeContext();
+  const { patchRuntimeData, models, runImageNode, reverseImagePrompt, uploadResource, isConnecting, polishPrompt, focusedNodeId } = useCanvasNodeContext();
   const upstream = data.upstreamInputs ?? EMPTY_UPSTREAM;
   const [isPolishing, setIsPolishing] = useState(false);
   const magnet = useCardMagnet(innerRef);
+  const title = resolveTitle(data);
   const ratio = (typeof data.runtime.data.ratio === "string" && data.runtime.data.ratio) || IMAGE_RATIOS[1];
   const [rw, rh] = parseRatio(ratio);
   const model = (typeof data.runtime.data.model === "string" && data.runtime.data.model) || models.defaultModels.image.id;
@@ -876,13 +1096,15 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const lastRunError = typeof (data.runtime.data as Record<string, unknown>).lastRunError === "string"
     ? ((data.runtime.data as Record<string, unknown>).lastRunError as string) : "";
   const isRunning = data.status === "running";
-  const [isUploading, setIsUploading] = useState(false);
+  const isReversingPrompt = (data.runtime.data as Record<string, unknown>).isReversingPrompt === true;
+  const [fullscreenUrl, setFullscreenUrl] = useState<string | null>(null);
   const currentImageUrl = outputs[0]?.url ?? "";
   const [intrinsicRatio, setIntrinsicRatio] = useState<number | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   useEffect(() => { if (!currentImageUrl) setIntrinsicRatio(null); }, [currentImageUrl]);
-  const containerHeight = currentImageUrl && intrinsicRatio != null
-    ? Math.min(320, Math.round(MEDIA_NODE_WIDTH / intrinsicRatio))
-    : 240;
+  const effectiveRatio = intrinsicRatio ?? (rw / rh);
+  const containerWidth = Math.round(Math.sqrt(MEDIA_NODE_AREA * effectiveRatio));
+  const containerHeight = Math.round(Math.sqrt(MEDIA_NODE_AREA / effectiveRatio));
 
   const handleUploadReference = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -914,25 +1136,68 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
 
   return (
     <CardMagnetContext.Provider value={magnet}>
-    <div style={{ width: MEDIA_NODE_WIDTH }} className="select-none">
+    <div style={{ width: containerWidth }} className="relative select-none">
+      {props.selected && currentImageUrl && (
+        <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex items-center rounded-full bg-[#1e1e20] shadow-[0_8px_32px_rgba(0,0,0,0.7)]">
+          <div className="group/tip relative">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setFullscreenUrl(currentImageUrl); }}
+              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+            >
+              <Maximize2 className="h-4 w-4" />
+            </button>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">全屏查看</span>
+          </div>
+          <div className="h-4 w-px bg-white/10" />
+          <div className="group/tip relative">
+            <button
+              type="button"
+              disabled={isReversingPrompt || isRunning}
+              onClick={(e) => { e.stopPropagation(); void reverseImagePrompt?.(id); }}
+              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95 disabled:opacity-40"
+            >
+              {isReversingPrompt
+                ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                : <Scan className="h-4 w-4" />}
+            </button>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">反推提示词</span>
+          </div>
+          <div className="h-4 w-px bg-white/10" />
+          <div className="group/tip relative">
+            <a
+              href={currentImageUrl}
+              download
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+            >
+              <Download className="h-4 w-4" />
+            </a>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">下载图片</span>
+          </div>
+          <div className="h-4 w-px bg-white/10" />
+          <div className="group/tip relative">
+            <button
+              type="button"
+              disabled={isUploading}
+              onClick={(e) => { e.stopPropagation(); directUploadRef.current?.click(); }}
+              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95 disabled:opacity-40"
+            >
+              {isUploading
+                ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                : <Upload className="h-4 w-4" />}
+            </button>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">{currentImageUrl ? "替换图片" : "上传图片"}</span>
+          </div>
+        </div>
+      )}
       <div className="mb-1.5 flex items-center justify-between px-1">
         <div className="flex items-center">
           <ImageIcon className="h-3.5 w-3.5 text-white/50" />
-          <span className="ml-1.5 text-[11px] uppercase tracking-[0.2em] text-white/50">图片</span>
+          <EditableNodeLabel title={title} nodeId={id} patchRuntimeData={patchRuntimeData} />
         </div>
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); directUploadRef.current?.click(); }}
-          className={clsx(
-            "flex items-center gap-1 rounded-full bg-[#2a2a2c] px-3 py-1 text-[11px] text-white/50 transition hover:bg-white/15 hover:text-white/80",
-            !props.selected && "invisible pointer-events-none",
-          )}
-        >
-          <Upload className="h-3 w-3" />
-          <span>{outputs[0]?.url ? "替换" : "上传"}</span>
-        </button>
       </div>
-      {/* inner relative div: handles position relative to card area only (no controls panel) */}
+      {/* inner relative div: handles position relative to card area only */}
       <div className="relative" ref={innerRef}>
       <MediaHandle side="left" />
       <MediaHandle side="right" />
@@ -952,7 +1217,7 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           <img
             src={outputs[0].url}
             alt="Generated"
-            className="h-full w-full object-contain"
+            className="h-full w-full object-cover"
             onLoad={(e) => {
               const img = e.currentTarget;
               if (img.naturalWidth && img.naturalHeight) {
@@ -973,7 +1238,7 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       </div>{/* end inner relative */}
       {props.selected && (
         <div
-          style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 220 }}
+          style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: -((MEDIA_CONTROLS_WIDTH - containerWidth) / 2), height: 220 }}
           className="nodrag mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
@@ -1040,7 +1305,7 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               <RatioIcon ratio={ratio} />
               <CanvasSelect
                 value={ratio}
-                options={IMAGE_RATIOS.map((r) => ({ value: r, label: r }))}
+                options={IMAGE_RATIOS.map((r) => ({ value: r, label: r, icon: <RatioIcon ratio={r} /> }))}
                 onChange={(v) => patchRuntimeData(id, { ratio: v })}
               />
             </div>
@@ -1079,6 +1344,7 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const upstream = data.upstreamInputs ?? EMPTY_UPSTREAM;
   const [isPolishing, setIsPolishing] = useState(false);
   const magnet = useCardMagnet(innerRef);
+  const title = resolveTitle(data);
   const prompt = typeof data.runtime.data.prompt === "string" ? data.runtime.data.prompt : "";
   const model =
     (typeof data.runtime.data.model === "string" && data.runtime.data.model) ||
@@ -1109,9 +1375,9 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const [isUploading, setIsUploading] = useState(false);
   const [intrinsicRatio, setIntrinsicRatio] = useState<number | null>(null);
   useEffect(() => { if (!outputUrl) setIntrinsicRatio(null); }, [outputUrl]);
-  const containerHeight = outputUrl && intrinsicRatio != null
-    ? Math.min(320, Math.round(MEDIA_NODE_WIDTH / intrinsicRatio))
-    : 240;
+  const effectiveRatio = intrinsicRatio ?? (rw / rh);
+  const containerWidth = Math.round(Math.sqrt(MEDIA_NODE_AREA * effectiveRatio));
+  const containerHeight = Math.round(Math.sqrt(MEDIA_NODE_AREA / effectiveRatio));
   const imageResources = resources.filter((item) => item.type === "image");
   const firstFrameImage =
     typeof (data.runtime.data as Record<string, unknown>).firstFrameImage === "string"
@@ -1160,12 +1426,22 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   return (
     <>
     <CardMagnetContext.Provider value={magnet}>
-    <div style={{ width: MEDIA_NODE_WIDTH }} className="relative select-none">
-      {/* Floating action pill — positioned absolutely above the card */}
+    <div style={{ width: containerWidth }} className="relative select-none">
       {props.selected && (
         <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex items-center rounded-full bg-[#1e1e20] shadow-[0_8px_32px_rgba(0,0,0,0.7)]">
           {outputUrl && (
             <>
+              <div className="group/tip relative">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setFullscreenUrl(outputUrl); }}
+                  className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+                >
+                  <Maximize2 className="h-4 w-4" />
+                </button>
+                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">全屏查看</span>
+              </div>
+              <div className="h-4 w-px bg-white/10" />
               <div className="group/tip relative">
                 <button
                   type="button"
@@ -1194,6 +1470,18 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                 <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">一键复刻</span>
               </div>
               <div className="h-4 w-px bg-white/10" />
+              <div className="group/tip relative">
+                <a
+                  href={outputUrl}
+                  download
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+                >
+                  <Download className="h-4 w-4" />
+                </a>
+                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">下载视频</span>
+              </div>
+              <div className="h-4 w-px bg-white/10" />
             </>
           )}
           <div className="group/tip relative">
@@ -1211,7 +1499,7 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       <div className="mb-1.5 flex items-center justify-between px-1">
         <div className="flex items-center">
           <Video className="h-3.5 w-3.5 text-white/50" />
-          <span className="ml-1.5 text-[11px] uppercase tracking-[0.2em] text-white/50">视频</span>
+          <EditableNodeLabel title={title} nodeId={id} patchRuntimeData={patchRuntimeData} />
         </div>
       </div>
       {/* inner relative div: handles position relative to card area only */}
@@ -1233,7 +1521,7 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           <video
             src={outputUrl}
             controls
-            className="h-full w-full object-contain"
+            className="h-full w-full object-cover"
             preload="metadata"
             muted
             onLoadedMetadata={(e) => {
@@ -1256,28 +1544,24 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       </div>{/* end inner relative */}
       {props.selected && (
         <div
-          style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 220 }}
+          style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: -((MEDIA_CONTROLS_WIDTH - containerWidth) / 2), height: 220 }}
           className="nodrag mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
           <div className="mb-2 flex items-center gap-2">
-            <ResourceHoverPanel resources={imageResources} onSelect={(resource) => patchRuntimeData(id, { firstFrameImage: resource.url })} label="首帧" emptyText="暂无图片">
-              <ResourceTile
-                imageUrl={firstFrameImage || upstream.firstImageUrl || undefined}
-                icon={<Play className="h-5 w-5" />}
-                label={upstream.firstImageUrl && !firstFrameImage ? "上游图片将用作首帧" : "首帧图"}
-                onClick={(e) => e.stopPropagation()}
-              />
-            </ResourceHoverPanel>
-            <ResourceHoverPanel resources={imageResources} onSelect={(resource) => patchRuntimeData(id, { lastFrameImage: resource.url })} label="尾帧" emptyText="暂无图片">
-              <ResourceTile
-                imageUrl={lastFrameImage || undefined}
-                icon={<Clapperboard className="h-5 w-5" />}
-                label="尾帧图"
-                onClick={(e) => e.stopPropagation()}
-              />
-            </ResourceHoverPanel>
+            <ResourceTile
+              imageUrl={firstFrameImage || upstream.firstImageUrl || undefined}
+              icon={<ImageIcon className="h-5 w-5" />}
+              label={upstream.firstImageUrl && !firstFrameImage ? "上游图片将用作首帧（点击更换）" : "添加首帧"}
+              onClick={(e) => { e.stopPropagation(); firstFrameUploadRef.current?.click(); }}
+            />
+            <ResourceTile
+              imageUrl={lastFrameImage || upstream.firstImageUrl || undefined}
+              icon={<ImageIcon className="h-5 w-5" />}
+              label={upstream.firstImageUrl && !lastFrameImage ? "上游图片将用作尾帧（点击更换）" : "添加尾帧"}
+              onClick={(e) => { e.stopPropagation(); lastFrameUploadRef.current?.click(); }}
+            />
             <button type="button" disabled={isPolishing || !prompt.trim()}
               onClick={async (e) => {
                 e.stopPropagation();
@@ -1333,7 +1617,7 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               <RatioIcon ratio={ratio} />
               <CanvasSelect
                 value={ratio}
-                options={IMAGE_RATIOS.map((r) => ({ value: r, label: r }))}
+                options={IMAGE_RATIOS.map((r) => ({ value: r, label: r, icon: <RatioIcon ratio={r} /> }))}
                 onChange={(v) => patchRuntimeData(id, { ratio: v })}
               />
             </div>
@@ -1460,8 +1744,8 @@ function ViralReplicationModal({
   preCreatedNodeIds?: { textNodeId: string; videoNodeId: string };
   onClose: () => void;
 }) {
-  const { addDownstreamNodes, patchRuntimeData, setNodeStatus, uploadResource } = useCanvasNodeContext();
-  const [products, setProducts] = useState<{ id: string; name: string }[]>([]);
+  const { addDownstreamNodes, patchRuntimeData, setNodeStatus, uploadResource, getNode, getUpstreamInputs } = useCanvasNodeContext();
+  const [products, setProducts] = useState<{ id: string; name: string; sellingPoints?: string; imageUrl?: string }[]>([]);
   const [productId, setProductId] = useState("");
   const [localRefUrl, setLocalRefUrl] = useState(referenceVideoUrl);
   const [country, setCountry] = useState("us");
@@ -1487,7 +1771,7 @@ function ViralReplicationModal({
       fetch("/api/products", { credentials: "include", headers })
         .then((r) => r.json())
         .then((body) => {
-          const list = (body as { data?: { id: string; name: string }[] }).data ?? [];
+          const list = (body as { data?: { id: string; name: string; sellingPoints?: string; imageUrl?: string }[] }).data ?? [];
           setProducts(list);
           if (list.length > 0) setProductId(list[0].id);
         })
@@ -1499,32 +1783,93 @@ function ViralReplicationModal({
   const handleSubmit = async () => {
     if (!productId || !localRefUrl.trim()) return;
     setLoading(true);
+    setNodeStatus(sourceNodeId, "running");
     try {
-      let newIds: string[];
-      if (preCreatedNodeIds) {
-        // Nodes already created before modal opened — reuse them
-        newIds = [preCreatedNodeIds.textNodeId, preCreatedNodeIds.videoNodeId];
-      } else {
-        const nodeDefs: { type: string; data: Record<string, unknown> }[] = [];
-        for (let i = 0; i < quantity; i++) {
-          nodeDefs.push({ type: "text", data: { content: `复刻 ${i + 1} — 等待提示词回传...`, label: `提示词 ${i + 1}` } });
-          nodeDefs.push({ type: "video", data: { label: `复刻视频 ${i + 1}` } });
-        }
-        newIds = addDownstreamNodes(sourceNodeId, nodeDefs);
-        newIds.forEach((nid) => setNodeStatus(nid, "running"));
-      }
-      const pairIndices: number[] = preCreatedNodeIds ? [0] : Array.from({ length: quantity }, (_, i) => i * 2);
+      const product = products.find((p) => p.id === productId);
 
-      // Build canvasNodePairs for API
-      const canvasNodePairs = pairIndices.map((pi, i) => ({
-        textNodeId: newIds[pi],
-        videoNodeId: newIds[pi + 1],
-        index: i,
-      }));
+      const [REDACTED] = `你是一位精通视频逆向工程与商业叙事逻辑拆解的专家。你的核心能力是透过像素表象，提取视频的"爆款基因"，同时精准还原视频中的口播文案。
+
+# Goal
+输出一份标准 JSON 分析报告，包含两部分：
+1. 视觉蓝图（blueprint 部分）：保留原视频运镜、节奏和情绪逻辑，作为"母版"供下游AI填入新产品
+2. 口播文案（breakdown 部分）：提取视频中的口播/旁白内容，结构化为三段式
+
+# Output Format
+请严格输出 JSON，不要输出 Markdown，不要闲聊：
+{
+  "meta": {
+    "art_style": "全局艺术风格",
+    "render_quality": "渲染质量",
+    "mood_atmosphere": "核心情绪氛围",
+    "total_duration": "视频总时长"
+  },
+  "scene_breakdown": [
+    {
+      "id": 1,
+      "time_range": "00:00 - 00:XX",
+      "visual_specs": {
+        "camera": "镜头信息",
+        "subject_action": "主体动作",
+        "lighting_environment": "环境细节",
+        "auxiliary_elements": "辅助元素"
+      },
+      "abstract_logic": {
+        "narrative_role": "叙事功能",
+        "universal_instruction": "通用生成指令，包含[HERO_PRODUCT]变量"
+      }
+    }
+  ],
+  "breakdown": {
+    "description": "视频整体背景描述，包含产品类别、目标受众、核心卖点概述",
+    "intro": "钩子与开场白：视频前段的口播内容，原文还原或高度概括",
+    "body": "核心价值与产品讲解：视频中段的口播内容，包含卖点、使用场景、用户痛点",
+    "conclusion": "行动号召与结尾：视频结尾的口播内容，包含促销信息、CTA指令"
+  }
+}`;
+
+      const userPrompt = `请对这个视频进行拆解分析：${localRefUrl}`;
 
       const { data: { session } } = await supabase.auth.getSession();
       const authHeaders: Record<string, string> = { "Content-Type": "application/json" };
       if (session?.access_token) authHeaders.Authorization = `Bearer ${session.access_token}`;
+
+      const llmResp = await fetch("/api/canvas/text-transform", {
+        method: "POST",
+        headers: authHeaders,
+        credentials: "include",
+        body: JSON.stringify({
+          model: "gemini-3.1-flash-lite-preview",
+          [REDACTED]: [REDACTED],
+          userPrompt,
+        }),
+      });
+      if (!llmResp.ok) throw new Error("视频拆解失败");
+      const llmResult = await llmResp.json() as { data?: string };
+      const blueprint = llmResult.data ? JSON.parse(llmResult.data) : {};
+
+      let newIds: string[];
+      if (preCreatedNodeIds) {
+        newIds = [preCreatedNodeIds.textNodeId, preCreatedNodeIds.videoNodeId];
+      } else {
+        const nodeDefs: { type: string; data: Record<string, unknown> }[] = [];
+        for (let i = 0; i < quantity; i++) {
+          nodeDefs.push({ type: "text", data: { content: JSON.stringify(blueprint, null, 2), label: `拆解结果 ${i + 1}` } });
+          nodeDefs.push({ type: "text", data: { content: `复刻 ${i + 1} — 等待提示词回传...`, label: `提示词 ${i + 1}` } });
+          nodeDefs.push({ type: "video", data: { label: `复刻视频 ${i + 1}`, country, blueprint, sellingPointsJson: product?.sellingPoints, productImageUrl: product?.imageUrl } });
+        }
+        newIds = addDownstreamNodes(sourceNodeId, nodeDefs);
+        newIds.forEach((nid) => setNodeStatus(nid, "running"));
+      }
+      const pairIndices: number[] = preCreatedNodeIds ? [0] : Array.from({ length: quantity }, (_, i) => i * 3);
+
+      const canvasNodePairs = pairIndices.map((pi, i) => ({
+        textNodeId: newIds[pi + 1],
+        videoNodeId: newIds[pi + 2],
+        index: i,
+      }));
+
+      const { data: { session: sessionData } } = await supabase.auth.getSession();
+      if (sessionData?.access_token) authHeaders.Authorization = `Bearer ${sessionData.access_token}`;
 
       const res = await fetch("/api/canvas/replication", {
         method: "POST",
@@ -1543,7 +1888,6 @@ function ViralReplicationModal({
       const body = await res.json() as { replications?: { id: string; textNodeId?: string; videoNodeId?: string }[] };
       if (!res.ok || !body.replications) throw new Error("触发复刻失败");
 
-      // Subscribe to each replication for Supabase Realtime updates
       body.replications.forEach(({ id: repId, textNodeId, videoNodeId }) => {
         if (!textNodeId || !videoNodeId) return;
         const channel = supabase
@@ -1557,12 +1901,10 @@ function ViralReplicationModal({
                 try { return JSON.parse(row.result as string) as Record<string, unknown>; }
                 catch { return {}; }
               })();
-              // Update text node with prompt
               const prompt = (result.videoPrompt || result.promptResult || result.prompt || result.script) as string | undefined;
               if (prompt && typeof prompt === "string") {
                 patchRuntimeData(textNodeId, { content: prompt });
               }
-              // Update video node with URL
               const videoUrl = (result.videoUrl || result.video_url) as string | undefined;
               if (videoUrl && typeof videoUrl === "string") {
                 patchRuntimeData(videoNodeId, { outputUrl: videoUrl });
@@ -1570,11 +1912,13 @@ function ViralReplicationModal({
               if (row.status === "completed") {
                 setNodeStatus(textNodeId, "idle");
                 setNodeStatus(videoNodeId, "idle");
+                setNodeStatus(sourceNodeId, "idle");
                 supabase.removeChannel(channel);
                 channelsRef.current = channelsRef.current.filter((c) => c !== channel);
               } else if (row.status === "failed") {
                 setNodeStatus(textNodeId, "error");
                 setNodeStatus(videoNodeId, "error");
+                setNodeStatus(sourceNodeId, "idle");
                 patchRuntimeData(textNodeId, { content: "复刻失败，请重试" });
                 supabase.removeChannel(channel);
                 channelsRef.current = channelsRef.current.filter((c) => c !== channel);
@@ -1588,6 +1932,8 @@ function ViralReplicationModal({
       onClose();
     } catch (err) {
       console.error("[canvas] viral replication failed", err);
+      toast.error((err as Error).message || "复刻失败");
+      setNodeStatus(sourceNodeId, "idle");
     } finally {
       setLoading(false);
     }
@@ -1911,6 +2257,7 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const emotionUploadRef = useRef<HTMLInputElement>(null);
   const directUploadRef = useRef<HTMLInputElement>(null);
   const magnet = useCardMagnet(innerRef);
+  const title = resolveTitle(data);
   const upstream = data.upstreamInputs ?? EMPTY_UPSTREAM;
   const { patchRuntimeData, models, runAudioNode, resources, uploadResource, isConnecting, polishPrompt, focusedNodeId } = useCanvasNodeContext();
   const [isPolishing, setIsPolishing] = useState(false);
@@ -1977,11 +2324,58 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
 
   return (
     <CardMagnetContext.Provider value={magnet}>
-    <div style={{ width: MEDIA_NODE_WIDTH }} className="select-none">
+    <div style={{ width: MEDIA_NODE_WIDTH }} className="relative select-none">
+      {/* Floating action pill */}
+      {props.selected && audioUrl && (
+        <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex items-center rounded-full bg-[#1e1e20] shadow-[0_8px_32px_rgba(0,0,0,0.7)]">
+          <div className="group/tip relative">
+            <a
+              href={audioUrl}
+              download
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+            >
+              <Download className="h-4 w-4" />
+            </a>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">下载音频</span>
+          </div>
+          <div className="h-4 w-px bg-white/10" />
+          <div className="group/tip relative">
+            <button
+              type="button"
+              disabled={isUploading}
+              onClick={(e) => { e.stopPropagation(); directUploadRef.current?.click(); }}
+              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95 disabled:opacity-40"
+            >
+              {isUploading
+                ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                : <Upload className="h-4 w-4" />}
+            </button>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">{audioUrl ? "替换音频" : "上传音频"}</span>
+          </div>
+        </div>
+      )}
+      {props.selected && !audioUrl && (
+        <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex items-center rounded-full bg-[#1e1e20] shadow-[0_8px_32px_rgba(0,0,0,0.7)]">
+          <div className="group/tip relative">
+            <button
+              type="button"
+              disabled={isUploading}
+              onClick={(e) => { e.stopPropagation(); directUploadRef.current?.click(); }}
+              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95 disabled:opacity-40"
+            >
+              {isUploading
+                ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                : <Upload className="h-4 w-4" />}
+            </button>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">上传音频</span>
+          </div>
+        </div>
+      )}
       <div className="mb-1.5 flex items-center justify-between px-1">
         <div className="flex items-center">
           <Music className="h-3.5 w-3.5 text-white/50" />
-          <span className="ml-1.5 text-[11px] uppercase tracking-[0.2em] text-white/50">音频</span>
+          <EditableNodeLabel title={title} nodeId={id} patchRuntimeData={patchRuntimeData} />
         </div>
         <button
           type="button"
@@ -2165,6 +2559,7 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const { patchRuntimeData, models, runDigitalHumanNode, resources, uploadResource, isConnecting, polishPrompt, focusedNodeId } = useCanvasNodeContext();
   const innerRef = useRef<HTMLDivElement>(null);
   const magnet = useCardMagnet(innerRef);
+  const title = resolveTitle(data);
   const upstream = data.upstreamInputs ?? EMPTY_UPSTREAM;
   const [isPolishing, setIsPolishing] = useState(false);
   const voiceUploadRef = useRef<HTMLInputElement>(null);
@@ -2215,7 +2610,7 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
     <div style={{ width: MEDIA_NODE_WIDTH }} className="select-none">
       <div className="mb-1.5 flex items-center px-1">
         <UserCircle2 className="h-3.5 w-3.5 text-white/50" />
-        <span className="ml-1.5 text-[11px] uppercase tracking-[0.2em] text-white/50">数字人</span>
+        <EditableNodeLabel title={title} nodeId={id} patchRuntimeData={patchRuntimeData} />
       </div>
       <div className="relative" ref={innerRef}>
         <MediaHandle side="left" />
@@ -2377,6 +2772,7 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const { data, id } = props;
   const { patchRuntimeData, runStoryboardNode, uploadResource, isConnecting } = useCanvasNodeContext();
   const upstream = data.upstreamInputs ?? EMPTY_UPSTREAM;
+  const title = resolveTitle(data);
   const videoUploadRef = useRef<HTMLInputElement>(null);
   const photoUploadRef = useRef<HTMLInputElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
@@ -2443,7 +2839,7 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       {/* Header */}
       <div className="mb-2 flex items-center gap-1.5 px-1">
         <Clapperboard className="h-3.5 w-3.5 text-white/50" />
-        <span className="text-[11px] uppercase tracking-[0.2em] text-white/50">分镜板</span>
+        <EditableNodeLabel title={title} nodeId={id} patchRuntimeData={patchRuntimeData} />
         {hasSegments && (
           <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/50">
             {sbSegments.length} 镜头
@@ -2762,6 +3158,279 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
 const PHANTOM_NODE_ID = "__connector_phantom__";
 const PHANTOM_EDGE_ID = "__connector_edge__";
 
+function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
+  const { data, id } = props;
+  const { patchRuntimeData, runGridNode, splitGridNode, uploadResource, isConnecting, polishPrompt } = useCanvasNodeContext();
+  const upstream = data.upstreamInputs ?? EMPTY_UPSTREAM;
+  const innerRef = useRef<HTMLDivElement>(null);
+  const magnet = useCardMagnet(innerRef);
+  const title = resolveTitle(data);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const contentType = typeof (data.runtime.data as Record<string, unknown>).contentType === "string"
+    ? ((data.runtime.data as Record<string, unknown>).contentType as string) : "产品展示";
+  const scriptContent = typeof (data.runtime.data as Record<string, unknown>).scriptContent === "string"
+    ? ((data.runtime.data as Record<string, unknown>).scriptContent as string) : "";
+  const imageUrl = typeof (data.runtime.data as Record<string, unknown>).imageUrl === "string"
+    ? ((data.runtime.data as Record<string, unknown>).imageUrl as string) : "";
+  const ratio = typeof data.runtime.data.ratio === "string" && data.runtime.data.ratio ? data.runtime.data.ratio : IMAGE_RATIOS[0];
+  const quality = typeof (data.runtime.data as Record<string, unknown>).quality === "string"
+    ? ((data.runtime.data as Record<string, unknown>).quality as string) : "standard";
+  const [rw, rh] = parseRatio(ratio);
+  const gridImageUrl = typeof (data.runtime.data as Record<string, unknown>).gridImageUrl === "string"
+    ? ((data.runtime.data as Record<string, unknown>).gridImageUrl as string) : "";
+  const gridProgress = typeof (data.runtime.data as Record<string, unknown>).gridProgress === "number"
+    ? ((data.runtime.data as Record<string, unknown>).gridProgress as number) : 0;
+  const lastRunError = typeof (data.runtime.data as Record<string, unknown>).lastRunError === "string"
+    ? ((data.runtime.data as Record<string, unknown>).lastRunError as string) : "";
+  const isSplitting = (data.runtime.data as Record<string, unknown>).isSplitting === true;
+  const isRunning = data.status === "running";
+  const [isPolishing, setIsPolishing] = useState(false);
+  const [intrinsicRatio, setIntrinsicRatio] = useState<number | null>(null);
+  useEffect(() => { if (!gridImageUrl) setIntrinsicRatio(null); }, [gridImageUrl]);
+  const effectiveRatio = intrinsicRatio ?? (rw / rh);
+  const containerWidth = Math.round(Math.sqrt(MEDIA_NODE_AREA * effectiveRatio));
+  const containerHeight = Math.round(Math.sqrt(MEDIA_NODE_AREA / effectiveRatio));
+
+  const CONTENT_TYPE_PLACEHOLDERS: Record<string, string> = {
+    "产品展示": "描述产品外观、材质、设计亮点...",
+    "产品卖点展示": "列出核心卖点，例如：防水、轻量、高续航...",
+    "剧情故事": "输入故事情节或剧情脚本...",
+  };
+
+  const handleImageUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const resource = await uploadResource(file, { type: "image", name: file.name });
+      patchRuntimeData(id, { imageUrl: resource.url });
+    } catch (error) {
+      console.error("[canvas] upload grid reference image failed", error);
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const handlePolish = async () => {
+    if (!scriptContent.trim()) return;
+    setIsPolishing(true);
+    try {
+      const polished = await polishPrompt(scriptContent);
+      patchRuntimeData(id, { scriptContent: polished });
+    } catch (error) {
+      console.error("[canvas] polish script failed", error);
+    } finally {
+      setIsPolishing(false);
+    }
+  };
+
+  return (
+    <CardMagnetContext.Provider value={magnet}>
+    <div style={{ width: containerWidth }} className="relative select-none">
+      {!gridImageUrl && props.selected && (
+        <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex items-center gap-3 rounded-full bg-[#1e1e20] px-3 py-2.5 shadow-[0_8px_32px_rgba(0,0,0,0.7)]">
+          <div className="group/tip relative">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+            >
+              <Upload className="h-4 w-4" />
+            </button>
+            <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">上传参考图片</span>
+          </div>
+        </div>
+      )}
+      {props.selected && gridImageUrl && (
+        <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex items-center rounded-full bg-[#1e1e20] shadow-[0_8px_32px_rgba(0,0,0,0.7)]">
+          <div className="group/tip relative">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setFullscreenUrl(gridImageUrl); }}
+              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+            >
+              <Maximize2 className="h-4 w-4" />
+            </button>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">全屏查看</span>
+          </div>
+          <div className="h-4 w-px bg-white/10" />
+          <div className="group/tip relative">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); window.open(gridImageUrl, "_blank"); }}
+              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+            >
+              <Download className="h-4 w-4" />
+            </button>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">下载九宫格</span>
+          </div>
+          <div className="h-4 w-px bg-white/10" />
+          <div className="group/tip relative">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+            >
+              <Upload className="h-4 w-4" />
+            </button>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">替换九宫格</span>
+          </div>
+          <div className="h-4 w-px bg-white/10" />
+          <div className="group/tip relative">
+            <button
+              type="button"
+              disabled={isSplitting || isRunning}
+              onClick={(e) => { e.stopPropagation(); void splitGridNode?.(id); }}
+              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95 disabled:opacity-40"
+            >
+              {isSplitting
+                ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                : <LayoutGrid className="h-4 w-4" />}
+            </button>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">拆分九宫格</span>
+          </div>
+        </div>
+      )}
+      <div className="mb-1.5 flex items-center justify-between px-1">
+        <div className="flex items-center">
+          <Grid3X3 className="h-3.5 w-3.5 text-white/50" />
+          <EditableNodeLabel title={title} nodeId={id} patchRuntimeData={patchRuntimeData} />
+        </div>
+      </div>
+
+      <div className="relative" ref={innerRef}>
+        <MediaHandle side="left" />
+        <MediaHandle side="right" />
+
+        {/* Main card */}
+        <div
+          className={clsx(
+            "overflow-hidden rounded-[20px] bg-[#1c1c1e] border transition-[border,box-shadow]",
+            props.selected
+              ? "border-white/30 shadow-[0_0_10px_rgba(255,255,255,0.12)]"
+              : isConnecting
+              ? "border-white/20 hover:border-white/70 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)]"
+              : "border-white/10 hover:border-white/20",
+          )}
+        >
+          {/* Result image or placeholder */}
+          <div className="relative" style={{ height: containerHeight }}>
+            {gridImageUrl ? (
+              <img
+                src={gridImageUrl}
+                alt="九宫格"
+                className="h-full w-full object-contain"
+                  onLoad={(e) => {
+                    const img = e.currentTarget;
+                    if (img.naturalWidth && img.naturalHeight) {
+                      setIntrinsicRatio(img.naturalWidth / img.naturalHeight);
+                    }
+                  }}
+                />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center">
+                <Grid3X3 className="h-12 w-12 text-white/10" />
+              </div>
+            )}
+            {isRunning && (
+              <GeneratingOverlay label={isSplitting ? "拆解中..." : gridProgress > 0 ? `生成中 ${gridProgress}%` : "生成中..."} />
+            )}
+            {lastRunError && (
+              <div className="absolute inset-x-0 bottom-0 bg-rose-900/80 px-3 py-1 text-[10px] text-rose-200">{lastRunError}</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Controls panel (visible when selected) */}
+      {props.selected && (
+        <div
+          style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: -((MEDIA_CONTROLS_WIDTH - containerWidth) / 2) }}
+          className="nodrag mt-2 flex flex-col gap-2.5 rounded-[20px] bg-[#1e1e20] px-4 pb-4 pt-3"
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {/* Top row: image tile + AI polish */}
+          <div className="flex items-center gap-2">
+            <ResourceTile
+              imageUrl={imageUrl}
+              icon={<ImagePlus className="h-5 w-5" />}
+              label="上传参考图"
+              onClick={() => fileInputRef.current?.click()}
+            />
+            {!imageUrl && upstream.firstImageUrl && (
+              <ResourceTile
+                imageUrl={upstream.firstImageUrl}
+                icon={<Image className="h-5 w-5" />}
+                label="上游图片"
+                onClick={() => {}}
+              />
+            )}
+            <button
+              type="button"
+              disabled={isPolishing || !scriptContent.trim()}
+              onClick={handlePolish}
+              className="flex h-8 items-center gap-1.5 rounded-[10px] bg-white/8 px-2.5 text-white/40 transition hover:bg-white/12 hover:text-white/60 disabled:opacity-40"
+            >
+              {isPolishing ? (
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )}
+              <span className="text-xs">AI润色</span>
+            </button>
+          </div>
+
+          {/* Script textarea */}
+          <CompositionTextarea
+            value={scriptContent}
+            onChange={(v) => patchRuntimeData(id, { scriptContent: v })}
+            placeholder={CONTENT_TYPE_PLACEHOLDERS[contentType] || "输入脚本内容..."}
+            className="min-h-[72px] w-full resize-none bg-transparent text-sm leading-relaxed text-white placeholder:text-white/30 focus:outline-none"
+          />
+
+          {/* Bottom row: content type + ratio + run */}
+          <div className="flex items-center gap-1">
+            <CanvasSelect
+              value={contentType}
+              options={[
+                { value: "产品展示", label: "产品展示" },
+                { value: "卖点展示", label: "卖点展示" },
+                { value: "剧情故事", label: "剧情故事" },
+              ]}
+              onChange={(v) => patchRuntimeData(id, { contentType: v })}
+            />
+            <span className="text-xs text-white/15">·</span>
+            <div className="flex items-center gap-1 rounded-lg px-2 py-1">
+              <RatioIcon ratio={ratio} />
+              <CanvasSelect
+                value={ratio}
+                options={IMAGE_RATIOS.map((r) => ({ value: r, label: r, icon: <RatioIcon ratio={r} /> }))}
+                onChange={(v) => patchRuntimeData(id, { ratio: v })}
+              />
+            </div>
+            <button
+              type="button"
+              disabled={isRunning}
+              onClick={(e) => { e.stopPropagation(); void runGridNode(id); }}
+              className="ml-auto flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white text-black shadow transition hover:bg-white/90 disabled:opacity-40"
+            >
+              {isRunning ? (
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black/20 border-t-black" />
+              ) : (
+                <ArrowUp className="h-4 w-4" />
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+    </div>
+    </CardMagnetContext.Provider>
+  );
+}
+
 const TIMELINE_VIDEO_NODE_WIDTH = MEDIA_NODE_WIDTH;
 
 function TimelineVideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
@@ -2871,16 +3540,18 @@ const nodeTypes = {
   audio: AudioNodeCard,
   digitalhuman: DigitalHumanNodeCard,
   storyboard: StoryboardNodeCard,
+  grid: GridNodeCard,
   timelinevideo: TimelineVideoNodeCard,
   phantom: PhantomNode,
 };
 
 const NODE_PICKER_ITEMS = [
-  { type: "text", icon: AlignLeft, label: "文本生成", desc: "脚本、广告词、品牌文案" },
-  { type: "image", icon: ImageIcon, label: "图片生成", desc: "AI 文生图、风格创作" },
-  { type: "video", icon: Video, label: "视频生成", desc: "AI 文生视频、Sora / Veo" },
+  { type: "text", icon: AlignLeft, label: "文本", desc: "脚本、广告词、品牌文案" },
+  { type: "image", icon: ImageIcon, label: "图片", desc: "AI 文生图、风格创作" },
+  { type: "video", icon: Video, label: "视频", desc: "AI 文生视频、Sora / Veo" },
   { type: "audio", icon: Music, label: "音频", desc: "AI 音乐与语音合成" },
   { type: "digitalhuman", icon: UserCircle2, label: "数字人", desc: "AI 数字人视频生成" },
+  { type: "grid", icon: Grid3X3, label: "九宫格", desc: "产品展示、故事剧情、卖点展示" },
 ] as const;
 
 function ToolbarBtn({
@@ -2955,9 +3626,12 @@ function NodePickerPopup({
     <>
       <div className="fixed inset-0 z-[9998]" onClick={onDismiss} />
       <div
-        style={{ left, top }}
-        className="fixed z-[9999] w-[300px] overflow-hidden rounded-[20px] bg-[#1a1a1c] p-3 shadow-[0_24px_80px_rgba(0,0,0,0.85)]"
+        style={{ left: left - 24, top: top - 24, padding: 24 }}
+        className="fixed z-[9999]"
         onClick={(e) => e.stopPropagation()}
+      >
+      <div
+        className="w-[300px] overflow-hidden rounded-[20px] bg-[#1a1a1c] p-3 shadow-[0_24px_80px_rgba(0,0,0,0.85)]"
       >
         <p className="mb-2 px-2 text-sm text-white/40">
           {sourceNodeId ? "引用该节点生成" : "添加节点"}
@@ -2982,21 +3656,8 @@ function NodePickerPopup({
           </>
         )}
         {isFromImage && (
-          <button
-            type="button"
-            onClick={() => onPick("text")}
-            onMouseEnter={() => setHoveredType("image_understanding")}
-            onMouseLeave={() => setHoveredType(null)}
-            className={`mb-1 flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition active:scale-[0.98] ${hoveredType === "image_understanding" ? "bg-white/[0.09]" : ""}`}
-          >
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-white/10">
-              <Scan className="h-5 w-5 text-white/80" />
-            </div>
-            <div>
-              <div className="text-sm font-medium text-white">图片理解</div>
-              <div className={`text-xs transition-all duration-150 ${hoveredType === "image_understanding" ? "text-white/40" : "text-white/0"}`}>AI 视觉分析，提取图片内容</div>
-            </div>
-          </button>
+          <>
+          </>
         )}
         {isFromStoryboard && (
           <button
@@ -3055,6 +3716,7 @@ function NodePickerPopup({
             </button>
           </>
         )}
+      </div>
       </div>
     </>,
     document.body,
@@ -3256,6 +3918,8 @@ export function ReactCanvasRoot({
   const [chatInput, setChatInput] = useState("");
   const [isPolishing, setIsPolishing] = useState(false);
   const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
+  const [isPresetPanelOpen, setIsPresetPanelOpen] = useState(false);
+  const [presetName, setPresetName] = useState("");
   const [renamingProjectId, setRenamingProjectId] = useState<string | null>(null);
   const [renamingProjectName, setRenamingProjectName] = useState("");
   const [addPanelChars, setAddPanelChars] = useState<{ id: string; name: string; avatar: string }[]>([]);
@@ -3275,6 +3939,7 @@ export function ReactCanvasRoot({
   } | null>(null);
   const [viralModalSource, setViralModalSource] = useState<{ nodeId: string; videoUrl: string; screenX: number; screenY: number; preCreatedNodeIds?: { textNodeId: string; videoNodeId: string } } | null>(null);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   const rfInstanceRef = useRef<{
     screenToFlowPosition: (p: { x: number; y: number }) => { x: number; y: number };
     fitView: (opts?: { padding?: number; duration?: number }) => void;
@@ -3285,6 +3950,9 @@ export function ReactCanvasRoot({
   const nodesRef = useRef<Node<MinimalFlowNodeData>[]>(nodes);
   const edgesRef = useRef<Edge[]>(edges);
   const viewportRef = useRef(viewport);
+  const resourcesRef = useRef(resources);
+  const currentProjectIdRef2 = useRef(currentProjectId);
+  const saveProjectCanvasRef = useRef(saveProjectCanvas);
   useEffect(() => {
     nodesRef.current = nodes;
   }, [nodes]);
@@ -3294,6 +3962,15 @@ export function ReactCanvasRoot({
   useEffect(() => {
     viewportRef.current = viewport;
   }, [viewport]);
+  useEffect(() => {
+    resourcesRef.current = resources;
+  }, [resources]);
+  useEffect(() => {
+    currentProjectIdRef2.current = currentProjectId;
+  }, [currentProjectId]);
+  useEffect(() => {
+    saveProjectCanvasRef.current = saveProjectCanvas;
+  }, [saveProjectCanvas]);
   const getNodeById = useCallback(
     (nodeId: string) => nodesRef.current.find((node) => node.id === nodeId),
     [],
@@ -3325,8 +4002,21 @@ export function ReactCanvasRoot({
     );
   }, []);
   const focusNode = useCallback(
-    (nodeId: string) => {
+    (nodeId: string, multiSelect: boolean = false) => {
       toggleExpanded(nodeId, true);
+      if (multiSelect) {
+        setSelectedNodeIds((prev) => {
+          const next = new Set(prev);
+          if (next.has(nodeId)) {
+            next.delete(nodeId);
+          } else {
+            next.add(nodeId);
+          }
+          return next;
+        });
+      } else {
+        setSelectedNodeIds(new Set([nodeId]));
+      }
       setFocusedNodeId(nodeId);
     },
     [toggleExpanded],
@@ -3376,7 +4066,7 @@ export function ReactCanvasRoot({
     },
     [],
   );
-  const { runImageNode, runVideoNode, runAudioNode, runDigitalHumanNode, runStoryboardNode, runTextNode, uploadResource } = useCanvasOrchestrator({
+  const { runImageNode, runVideoNode, runAudioNode, runDigitalHumanNode, runStoryboardNode, runTextNode, runGridNode, splitGridNode, reverseImagePrompt, uploadResource } = useCanvasOrchestrator({
     getNode: getNodeById,
     getUpstreamInputs,
     patchRuntimeData,
@@ -3430,23 +4120,14 @@ export function ReactCanvasRoot({
       const gapY = 340;
       nodeDefs.forEach((def, idx) => {
         const newId = `${def.type}_${Math.random().toString(36).slice(2, 8)}`;
-        ids.push(newId);
-        const col = Math.floor(idx / 2);
-        const row = idx % 2;
-        newNodes.push({
+        const newNode: Node<MinimalFlowNodeData> = {
           id: newId,
           type: def.type,
-          position: {
-            x: sourceX + sourceWidth + gapX + col * (MEDIA_NODE_WIDTH + gapX),
-            y: sourceY + row * gapY,
-          },
-          data: {
-            runtime: { id: newId, type: def.type, position: { x: 0, y: 0 }, data: def.data },
-            summary: "",
-            status: "idle" as const,
-            expanded: false,
-          },
-        });
+          position: { x: sourceX + sourceWidth + gapX, y: sourceY + idx * gapY },
+          data: { runtime: { id: newId, type: def.type, position: { x: 0, y: 0 }, data: def.data }, summary: "", status: "idle" as const, expanded: false },
+        };
+        newNodes.push(newNode);
+        ids.push(newId);
         newEdges.push({ id: `e_${sourceNodeId}_${newId}`, source: sourceNodeId, target: newId, type: "smoothstep" });
       });
       setNodes((prev) => [...prev, ...newNodes]);
@@ -3459,6 +4140,81 @@ export function ReactCanvasRoot({
     },
     [],
   );
+  const { presets, listPresets, savePreset, loadPreset, deletePreset } = useCanvasPresets();
+  const handleSavePreset = useCallback(async () => {
+    if (!presetName.trim() || selectedNodeIds.size === 0) {
+      toast.error("请输入预设名称并选择节点");
+      return;
+    }
+    const nodeIds = Array.from(selectedNodeIds);
+    await savePreset(presetName, nodeIds, nodes, resources);
+    setPresetName("");
+    setSelectedNodeIds(new Set());
+    setIsPresetPanelOpen(false);
+    await listPresets();
+  }, [presetName, selectedNodeIds, nodes, resources, savePreset, listPresets]);
+
+  const handleLoadPreset = useCallback(
+    async (presetId: string) => {
+      const preset = await loadPreset(presetId);
+      if (!preset) return;
+      const offsetX = 100;
+      const offsetY = 100;
+      const newNodes = preset.nodes.map((n: any) => ({
+        ...n,
+        id: `${n.type}_${Math.random().toString(36).slice(2, 8)}`,
+        position: { x: n.position.x + offsetX, y: n.position.y + offsetY },
+        data: { runtime: { ...n, data: n.data }, summary: "", status: "idle" as const, expanded: false },
+      }));
+      setNodes((prev) => [...prev, ...newNodes]);
+      toast.success("预设已加载");
+    },
+    [loadPreset],
+  );
+
+  const handleBatchDownload = useCallback(async () => {
+    if (selectedNodeIds.size === 0) {
+      toast.error("请先选择节点");
+      return;
+    }
+    const selectedNodes = nodes.filter((n) => selectedNodeIds.has(n.id));
+    const urls: string[] = [];
+    selectedNodes.forEach((node) => {
+      const d = node.data.runtime.data as Record<string, unknown>;
+      if (node.type === "image") {
+        const outputs = Array.isArray(d.outputs) ? d.outputs : [];
+        outputs.forEach((out: any) => {
+          if (typeof out?.url === "string") urls.push(out.url);
+        });
+      } else if (node.type === "video" || node.type === "digitalhuman") {
+        if (typeof d.outputUrl === "string") urls.push(d.outputUrl);
+      } else if (node.type === "grid") {
+        const gridImages = Array.isArray(d.gridImages) ? d.gridImages : [];
+        gridImages.forEach((img: any) => {
+          if (typeof img?.url === "string") urls.push(img.url);
+        });
+      }
+    });
+    if (urls.length === 0) {
+      toast.error("选中节点没有输出资源");
+      return;
+    }
+    urls.forEach((url) => {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = url.split("/").pop() || "download";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    });
+    toast.success(`已下载 ${urls.length} 个文件`);
+  }, [selectedNodeIds, nodes]);
+
+  useEffect(() => {
+    if (isPresetPanelOpen) {
+      void listPresets();
+    }
+  }, [isPresetPanelOpen, listPresets]);
 
   const nodeContextValue = useMemo(
     () => ({
@@ -3466,6 +4222,7 @@ export function ReactCanvasRoot({
       patchRuntimeData,
       focusNode,
       focusedNodeId,
+      selectedNodeIds,
       isConnecting,
       setNodeStatus,
       models,
@@ -3481,18 +4238,104 @@ export function ReactCanvasRoot({
       runDigitalHumanNode,
       runStoryboardNode,
       runTextNode,
+      runGridNode,
+      splitGridNode: async (nodeId: string) => {
+        patchRuntimeData(nodeId, { isSplitting: true });
+        try {
+          const imageUrls = await splitGridNode(nodeId);
+          if (!imageUrls.length) return;
+          const source = nodesRef.current.find((n) => n.id === nodeId);
+          const sx = source?.position.x ?? 0;
+          const sy = source?.position.y ?? 0;
+          const sw = (source?.measured?.width as number | undefined) ?? MEDIA_NODE_WIDTH;
+          const GAP_X = 60;
+          const GAP_Y = MEDIA_NODE_WIDTH + 40;
+          const newFlowNodes = imageUrls.slice(0, 9).map((url, idx) => {
+            const col = idx % 3;
+            const row = Math.floor(idx / 3);
+            const newId = `image_${Math.random().toString(36).slice(2, 8)}`;
+            return {
+              id: newId,
+              type: "image" as const,
+              position: {
+                x: sx + sw + GAP_X + col * (MEDIA_NODE_WIDTH + GAP_X),
+                y: sy + row * GAP_Y,
+              },
+              data: {
+                runtime: { id: newId, type: "image", position: { x: 0, y: 0 }, data: { currentImageUrl: url, prompt: "" } },
+                summary: "",
+                status: "idle" as const,
+                expanded: false,
+              } as MinimalFlowNodeData,
+            };
+          });
+          const newFlowEdges = newFlowNodes.map((n) => ({
+            id: `e_${nodeId}_${n.id}`,
+            source: nodeId,
+            target: n.id,
+            type: "smoothstep",
+          }));
+          setNodes((prev) => [...prev, ...newFlowNodes]);
+          setEdges((prev) => {
+            let acc = prev;
+            newFlowEdges.forEach((e) => { acc = addEdge(e, acc); });
+            return acc;
+          });
+          patchRuntimeData(nodeId, { isSplitting: false });
+          toast.success("拆分完成，已创建 9 个图片节点");
+        } catch (err) {
+          patchRuntimeData(nodeId, { isSplitting: false });
+          toast.error((err as Error).message || "拆分失败");
+        }
+      },
+      reverseImagePrompt: async (nodeId: string) => {
+        // Immediately create text node with loading state
+        const source = nodesRef.current.find((n) => n.id === nodeId);
+        const sx = source?.position.x ?? 0;
+        const sy = source?.position.y ?? 0;
+        const sw = (source?.measured?.width as number | undefined) ?? MEDIA_NODE_WIDTH;
+        const newId = `text_${Math.random().toString(36).slice(2, 8)}`;
+        setNodes((prev) => [
+          ...prev,
+          {
+            id: newId,
+            type: "text",
+            position: { x: sx + sw + 60, y: sy },
+            data: {
+              runtime: { id: newId, type: "text", position: { x: 0, y: 0 }, data: { content: "", mode: "", label: "\u63d0\u793a\u8bcd", isLoadingPrompt: true } },
+              summary: "",
+              status: "idle" as const,
+              expanded: false,
+            } as MinimalFlowNodeData,
+          },
+        ]);
+        setEdges((prev) => addEdge({ id: `e_${nodeId}_${newId}`, source: nodeId, target: newId, type: "smoothstep" }, prev));
+        patchRuntimeData(nodeId, { isReversingPrompt: true });
+        try {
+          const result = await reverseImagePrompt(nodeId);
+          patchRuntimeData(newId, { content: result, isLoadingPrompt: false });
+          patchRuntimeData(nodeId, { isReversingPrompt: false });
+        } catch (err) {
+          patchRuntimeData(newId, { isLoadingPrompt: false });
+          patchRuntimeData(nodeId, { isReversingPrompt: false });
+          toast.error((err as Error).message || "反推失败");
+        }
+      },
       addDownstreamNodes,
       uploadResource,
       polishPrompt,
       openViralModal: (nodeId: string, videoUrl: string, screenX: number, screenY: number) => {
         setViralModalSource({ nodeId, videoUrl, screenX, screenY });
       },
+      getNode: (nodeId: string) => nodesRef.current.find((n) => n.id === nodeId),
+      getUpstreamInputs: (nodeId: string) => resolveUpstreamInputs(nodeId, nodesRef.current, edgesRef.current),
     }),
     [
       toggleExpanded,
       patchRuntimeData,
       focusNode,
       focusedNodeId,
+      selectedNodeIds,
       isConnecting,
       setNodeStatus,
       models,
@@ -3506,6 +4349,9 @@ export function ReactCanvasRoot({
       runDigitalHumanNode,
       runStoryboardNode,
       runTextNode,
+      runGridNode,
+      splitGridNode,
+      reverseImagePrompt,
       addDownstreamNodes,
       uploadResource,
       polishPrompt,
@@ -3589,6 +4435,23 @@ export function ReactCanvasRoot({
       clearTimeout(timer);
     };
   }, [currentProjectId, edges, nodes, resources, viewport, saveProjectCanvas]);
+
+  // Flush any pending unsaved state when the component unmounts (SPA navigation away from canvas).
+  // The debounce cleanup cancels the timer, so we fire one final save using refs.
+  useEffect(() => {
+    return () => {
+      const projectId = currentProjectIdRef2.current;
+      if (!projectId || hydratingRef.current) return;
+      const runtimeNodes = flowNodesToRuntime(nodesRef.current);
+      const thumbnail = extractThumbnailFromNodes(runtimeNodes);
+      void saveProjectCanvasRef.current(projectId, {
+        nodes: runtimeNodes,
+        edges: flowEdgesToRuntime(edgesRef.current),
+        viewport: viewportRef.current,
+        resources: resourcesRef.current,
+      }, thumbnail);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<MinimalFlowNodeData>>[]) => setNodes((current) => applyNodeChanges(changes, current) as Node<MinimalFlowNodeData>[]),
@@ -4338,6 +5201,10 @@ export function ReactCanvasRoot({
         }
         if (runtimeType === "storyboard") {
           await runStoryboardNode(nodeId);
+          return;
+        }
+        if (runtimeType === "grid") {
+          await runGridNode(nodeId);
         }
       },
     });
@@ -4349,12 +5216,21 @@ export function ReactCanvasRoot({
     registerCommands,
     runAudioNode,
     runDigitalHumanNode,
+    runGridNode,
     runImageNode,
     runStoryboardNode,
     runVideoNode,
   ]);
 
   if (showProjectList && loadingProjects && !hasProjects) {
+    return (
+      <div className="flex min-h-screen w-full items-center justify-center bg-[#05060c]">
+        <AiGlowSpinner size={96} />
+      </div>
+    );
+  }
+
+  if (isDetailView && loadingProjects) {
     return (
       <div className="flex min-h-screen w-full items-center justify-center bg-[#05060c]">
         <AiGlowSpinner size={96} />
@@ -4636,7 +5512,7 @@ export function ReactCanvasRoot({
               {/* Quick-start buttons */}
               <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2">
                 {([
-                  { tpl: "text-to-image",        icon: ImageIcon,    label: "文生图" },
+                  { tpl: "text-to-image",         icon: ImageIcon,    label: "文生图" },
                   { tpl: "text-to-video",         icon: Video,        label: "文生视频" },
                   { tpl: "image-to-video",        icon: Play,         label: "图生视频" },
                   { tpl: "text-to-digitalhuman",  icon: UserCircle2,  label: "文字转数字人" },
@@ -4727,6 +5603,8 @@ export function ReactCanvasRoot({
             <ToolbarBtn icon={Clapperboard} label="分镜拆解"     onClick={() => { handleApplyTemplate("viral");               setIsAddPanelOpen(false); }} />
             <ToolbarBtn icon={Zap}          label="一键复刻"     onClick={handleToolbarViralClick} />
             <div className="my-1 h-px w-6 bg-white/10" />
+            {/* Presets button */}
+            <ToolbarBtn icon={LayoutGrid} label="预设" onClick={() => setIsPresetPanelOpen((v) => !v)} active={isPresetPanelOpen} />
             {/* Upload — always at bottom */}
             <ToolbarBtn icon={Upload} label="上传图片/视频" onClick={() => toolbarUploadRef.current?.click()} />
           </div>
@@ -4839,6 +5717,66 @@ export function ReactCanvasRoot({
                     <p className="px-2 py-2 text-xs text-white/20">暂无角色或产品资源</p>
                   )}
                 </>
+              )}
+            </div>
+          )}
+
+          {/* Preset panel */}
+          {isPresetPanelOpen && (
+            <div className="pointer-events-auto ml-2 w-[320px] overflow-hidden rounded-[20px] bg-[#1a1a1c] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.85)]" style={{ maxHeight: "80vh", overflowY: "auto" }}>
+              <p className="mb-3 text-sm font-medium text-white">预设管理</p>
+              {selectedNodeIds.size > 0 && (
+                <div className="mb-3 space-y-2">
+                  <input
+                    type="text"
+                    value={presetName}
+                    onChange={(e) => setPresetName(e.target.value)}
+                    placeholder="输入预设名称"
+                    className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 outline-none"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSavePreset}
+                      className="flex-1 rounded-lg bg-white/20 px-3 py-2 text-sm text-white transition hover:bg-white/30"
+                    >
+                      保存预设
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleBatchDownload}
+                      className="flex-1 rounded-lg bg-white/20 px-3 py-2 text-sm text-white transition hover:bg-white/30"
+                    >
+                      批量下载
+                    </button>
+                  </div>
+                  <div className="h-px bg-white/10" />
+                </div>
+              )}
+              <p className="mb-2 text-xs text-white/40">已保存的预设</p>
+              {presets.length === 0 ? (
+                <p className="py-4 text-center text-xs text-white/30">暂无预设</p>
+              ) : (
+                <div className="space-y-2">
+                  {presets.map((preset) => (
+                    <div key={preset.id} className="flex items-center justify-between rounded-lg bg-white/[0.07] p-2">
+                      <button
+                        type="button"
+                        onClick={() => handleLoadPreset(preset.id)}
+                        className="flex-1 text-left text-xs text-white/80 transition hover:text-white"
+                      >
+                        {preset.name}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deletePreset(preset.id)}
+                        className="text-white/40 transition hover:text-rose-400"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           )}

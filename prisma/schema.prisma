@@ -1031,8 +1031,18 @@ model profiles {
   is_banned       Boolean   @default(false)
   notes           String?
   referred_by     String?
+  tenantId        String?   @map("tenant_id")
   users           users     @relation(fields: [id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
+  @@schema("public")
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("tenants")
   @@schema("public")
 }
 
@@ -1104,6 +1114,40 @@ enum one_time_token_type {
   phone_change_token
 
   @@schema("auth")
+}
+
+model CreditConfig {
+  id          String   @id @default(cuid())
+  featureKey  String   @unique
+  featureName String
+  category    String
+  modelKey    String?  @map("model_key")
+  amount      Int      @default(1)
+  cost        Float?
+  sellingPrice Float?  @map("selling_price")
+  enabled     Boolean  @default(true)
+  description String?
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([category])
+  @@map("credit_configs")
+  @@schema("public")
+}
+
+model CreditUsageLog {
+  id           String   @id @default(cuid())
+  featureKey   String   @map("feature_key")
+  userId       String?  @map("user_id")
+  amount       Int      @default(0)
+  success      Boolean  @default(true)
+  errorMessage String?  @map("error_message")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([featureKey])
+  @@index([createdAt])
+  @@map("credit_usage_logs")
+  @@schema("public")
 }
 
 model TaskSummary {
@@ -1271,5 +1315,19 @@ model AgentRelation {
 
   @@unique([parentUserId, childUserId], map: "agent_relations_unique_pair")
   @@map("agent_relations")
+  @@schema("public")
+}
+
+model CanvasPreset {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id") @db.Uuid
+  name      String
+  nodes     Json
+  resources Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId], map: "canvas_presets_user_id_idx")
+  @@map("canvas_presets")
   @@schema("public")
 }

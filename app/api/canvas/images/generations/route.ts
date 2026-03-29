@@ -18,8 +18,8 @@ import {
 const FAILED_STATUS_TOKENS = new Set(["failed", "error", "cancelled", "canceled", "timeout"]);
 const GEMINI_ENDPOINT_MAP: Record<string, string> = {
   "nano-banana": "/v1beta/models/gemini-3.1-flash-image-preview:generateContent",
-  "nano-banana-pro": "/v1beta/models/gemini-3.1-pro-preview:generateContent",
-  "gemini-3.1-pro-preview": "/v1beta/models/gemini-3.1-pro-preview:generateContent",
+  "nano-banana-pro": "/v1beta/models/gemini-3-pro-image-preview:generateContent",
+  "gemini-3.1-pro-preview": "/v1beta/models/gemini-3-pro-image-preview:generateContent",
   "nano-banana-2": "/v1beta/models/gemini-3.1-flash-image-preview:generateContent",
   "gemini-3-pro-image-preview": "/v1beta/models/gemini-3.1-pro-preview:generateContent",
   "gemini-3.1-flash-image-preview": "/v1beta/models/gemini-3.1-flash-image-preview:generateContent",
@@ -120,6 +120,9 @@ async function toInlineData(input: unknown) {
 }
 
 async function buildGeminiRequest(payload: Record<string, unknown>, modelName: string) {
+  console.log("[buildGeminiRequest] payload:", JSON.stringify(payload).slice(0, 500));
+  console.log("[buildGeminiRequest] aspect_ratio:", payload.aspect_ratio);
+
   // 已是 Gemini 原生请求体，直接透传
   if (Array.isArray(payload.contents)) {
     return payload;
@@ -139,6 +142,20 @@ async function buildGeminiRequest(payload: Record<string, unknown>, modelName: s
     }
   }
 
+  const aspectRatio = typeof payload.aspect_ratio === "string" ? payload.aspect_ratio : undefined;
+  const quality = typeof payload.quality === "string" ? payload.quality : undefined;
+
+  const generationConfig: Record<string, unknown> = {
+    response_modalities: ["IMAGE"],
+    responseModalities: ["IMAGE"],
+  };
+
+  if (aspectRatio || quality) {
+    generationConfig.imageConfig = {};
+    if (aspectRatio) (generationConfig.imageConfig as Record<string, unknown>).aspectRatio = aspectRatio;
+    if (quality) (generationConfig.imageConfig as Record<string, unknown>).quality = quality;
+  }
+
   return {
     model: modelName || undefined,
     contents: [
@@ -147,10 +164,7 @@ async function buildGeminiRequest(payload: Record<string, unknown>, modelName: s
         parts: [{ text: prompt }, ...imageParts],
       },
     ],
-    generationConfig: {
-      response_modalities: ["IMAGE"],
-      responseModalities: ["IMAGE"],
-    },
+    generationConfig,
   };
 }
 

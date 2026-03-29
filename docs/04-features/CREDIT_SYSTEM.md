@@ -180,7 +180,98 @@
 
 ---
 
-## 7. 常见问题（Troubleshooting）
+## 7. 积分配置管理（Admin）
+
+### 7.1 设计思路
+
+积分费用分两层：
+
+| 层 | 职责 | 系统 |
+|---|---|---|
+| **积分配置**（本系统 DB） | 定义每个功能/模型收多少积分 | `credit_configs` 表 |
+| **积分余额 + 扣费执行** | 实际扣减用户余额、查询余额 | 外部 `api.atomx.top` |
+
+### 7.2 数据库模型
+
+表名：`credit_configs`（`public` schema）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | String | 主键（cuid） |
+| `featureKey` | String | 唯一标识，格式：`"category"` 或 `"category:modelKey"` |
+| `featureName` | String | 展示名称，如"Canvas 视频 · Veo3" |
+| `category` | String | 功能分组，如 `canvas_video`、`storyboard` |
+| `model_key` | String? | 模型标识，固定费用功能为 null |
+| `amount` | Int | 每次消耗积分数（正整数） |
+| `enabled` | Boolean | 是否启用，禁用后不参与计费 |
+| `description` | String? | 说明文字 |
+
+### 7.3 默认积分配置
+
+| featureKey | 功能 | 默认积分 |
+|---|---|---|
+| `canvas_image:nano-banana` | Canvas 图片 · Nano Banana | 1 |
+| `canvas_image:nano-banana-pro` | Canvas 图片 · Nano Banana Pro | 2 |
+| `canvas_video:veo3` | Canvas 视频 · Veo3 | 5 |
+| `canvas_video:veo3-fast` | Canvas 视频 · Veo3 Fast | 3 |
+| `canvas_video:sora2` | Canvas 视频 · Sora2 | 5 |
+| `canvas_video:grok3` | Canvas 视频 · Grok3 | 4 |
+| `storyboard_split` | 分镜拆分 | 1 |
+| `storyboard_video:veo3` | 分镜视频生成 · Veo3 | 5 |
+| `storyboard_video:veo3-fast` | 分镜视频生成 · Veo3 Fast | 3 |
+| `image_text_replication` | 图文复刻 | 2 |
+| `writing_style_extraction` | 写作风格提取 | 1 |
+| `digital_human` | 数字人视频 | 3 |
+| `knowledge_video` | 知识视频 | 2 |
+| `smart_creation` | 智能创作（一键成片） | 3 |
+| `ai_agent:default` | AI 助手 · 默认模型 | 1 |
+| `ai_agent:gpt-4o` | AI 助手 · GPT-4o | 3 |
+| `ai_agent:claude-opus` | AI 助手 · Claude Opus | 5 |
+| `ai_agent:deepseek-r1` | AI 助手 · DeepSeek R1 | 2 |
+
+### 7.4 运行时读取（lib/creditCosts.ts）
+
+```typescript
+import { getCreditCost } from "@/lib/creditCosts";
+
+// 在 API route 中读取费用
+const amount = await getCreditCost("canvas_video:veo3", 5); // 第二个参数为找不到时的默认值
+```
+
+- 首次调用从数据库加载全部配置，缓存 60 秒
+- Admin 页面保存后立即调用 `invalidateCreditCostCache()`，下次请求重新加载
+
+### 7.5 Admin 页面（/admin/credits）
+
+路径：`app/(admin)/admin/credits/page.tsx`
+
+功能：
+- 按功能分组展示所有积分配置
+- 点击"编辑"进入行内编辑模式，修改积分数和启用状态
+- 保存后立即生效（60 秒内）
+- 支持批量保存所有修改
+
+### 7.6 Admin API
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/admin/credits` | 列出所有配置，按 category+featureKey 排序 |
+| `POST` | `/api/admin/credits` | 新增一条配置 |
+| `PATCH` | `/api/admin/credits/[id]` | 更新 amount / enabled / description |
+| `DELETE` | `/api/admin/credits/[id]` | 删除配置 |
+
+所有接口需要 admin 权限（`profiles.is_admin = true`）。
+
+### 7.7 新增功能时的流程
+
+1. 在 `scripts/seed-credit-configs.ts` 添加默认积分条目
+2. 执行 `npx tsx scripts/seed-credit-configs.ts` 写入数据库（幂等，安全重复执行）
+3. 在 API route 中用 `getCreditCost("your_feature_key")` 读取费用
+4. 如需在 admin UI 分组显示，在 `app/(admin)/admin/credits/page.tsx` 的 `CATEGORY_META` 中添加分类
+
+---
+
+## 8. 常见问题（Troubleshooting）
 
 - 设置页/侧边栏出现 HTML（`<!DOCTYPE html>`）而不是 JSON：
   - 基本可以确定 `POINTS_API_BASE` 指向了网页域名或反代错误；推荐使用 `https://api.atomx.top`。

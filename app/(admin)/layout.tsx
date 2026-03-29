@@ -1,12 +1,48 @@
 'use client';
 
-import { ReactNode, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { ReactNode, useEffect, useState } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { Crown } from 'lucide-react';
+import { Crown, Sun, Moon } from 'lucide-react';
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const [dark, setDark] = useState(false);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('admin-theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const isDark = stored ? stored === 'dark' : prefersDark;
+    setDark(isDark);
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (dark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [dark]);
+
+  const toggleTheme = () => {
+    setDark((d) => {
+      const next = !d;
+      if (next) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+      localStorage.setItem('admin-theme', next ? 'dark' : 'light');
+      return next;
+    });
+  };
 
   useEffect(() => {
     const check = async () => {
@@ -34,14 +70,37 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           <span className="font-bold text-gray-900 dark:text-white">管理后台</span>
         </div>
         <nav className="flex gap-1 ml-2">
-          <a
-            href="/admin"
-            className="text-sm px-3 py-1.5 rounded-lg text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors font-medium"
-          >
-            用户管理
-          </a>
+          {[
+            { href: '/admin/dashboard', label: '数据仪表盘' },
+            { href: '/admin',           label: '用户管理' },
+            { href: '/admin/credits',   label: '积分配置' },
+            { href: '/admin/tenants',   label: '租户管理' },
+          ].map(({ href, label }) => {
+            const isActive = href === '/admin' ? pathname === '/admin' : pathname.startsWith(href);
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={`text-sm px-3 py-1.5 rounded-lg transition-colors font-medium ${
+                  isActive
+                    ? 'bg-gray-900 dark:bg-white text-white dark:text-black'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                {label}
+              </Link>
+            );
+          })}
         </nav>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-3">
+          <button
+            suppressHydrationWarning
+            onClick={toggleTheme}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
+          >
+            {dark ? <Sun size={14} /> : <Moon size={14} />}
+            {dark ? '亮色' : '暗色'}
+          </button>
           <a
             href="/dashboard"
             className="text-sm text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors flex items-center gap-1"

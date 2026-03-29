@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { decodeOwnerDescriptor } from "@/lib/socialCollectorToken";
 import {
@@ -19,6 +20,13 @@ type WebhookPayload = {
 
 const SUCCESS_STATUS = new Set(["completed", "success", "succeeded", "ok", "done"]);
 
+function toRawObject(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === "object") {
+    return value as Record<string, unknown>;
+  }
+  return null;
+}
+
 function toNumber(value: unknown): number | undefined {
   if (value == null) return undefined;
   const num = Number(value);
@@ -30,6 +38,52 @@ function extractOwnerToken(taskId: string | undefined): string | null {
   const idx = taskId.lastIndexOf(OWNER_TOKEN_DELIMITER);
   if (idx === -1) return null;
   return taskId.slice(idx + OWNER_TOKEN_DELIMITER.length);
+}
+
+function normalizeSourceIdValue(value: unknown): string | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return null;
+}
+
+function resolveSourceId(result: Record<string, any>): string {
+  const raw = toRawObject(result.raw);
+  const candidates: unknown[] = [
+    result.source_id,
+    result.sourceId,
+    result.raw_id,
+    raw?.source_id,
+    raw?.sourceId,
+    raw?.awemeId,
+    raw?.aweme_id,
+    raw?.postId,
+    raw?.post_id,
+    raw?.videoId,
+    raw?.video_id,
+    raw?.id,
+    result.post_id,
+    result.id,
+    result.shortcode,
+    raw?.webVideoUrl,
+    raw?.display_url,
+    raw?.url,
+    result.post_url,
+    result.display_url,
+    result.url,
+    result.source_key,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeSourceIdValue(candidate);
+    if (normalized) return normalized;
+  }
+
+  return randomUUID();
 }
 
 function buildQueueItem(result: Record<string, any>, fallbackPlatform: string): RawQueueItem {
@@ -48,13 +102,7 @@ function buildQueueItem(result: Record<string, any>, fallbackPlatform: string): 
   const fans = toNumber(result.fans_count);
   if (fans != null) stats.fans = fans;
 
-  const sourceId =
-    result.source_key ||
-    result.post_id ||
-    result.shortcode ||
-    result.id ||
-    result.display_url ||
-    result.post_url;
+  const sourceId = resolveSourceId(result);
   const primaryUrl = result.post_url || result.display_url || result.url;
 
   const data: Record<string, unknown> = {

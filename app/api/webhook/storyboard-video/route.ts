@@ -3,32 +3,31 @@ import prisma from "@/lib/prisma";
 import { isValidAdminWebhookRequest } from "@/lib/webhookAuth";
 
 /**
- * Webhook endpoint for receiving video generation results from n8n workflows
- * Supports multiple video generation models:
- * - Veo3: Kyo4XHbYfxMPSTQQ + 6b81dOqinw023oAa
- * - Grok: TBD
- * - Digital Human: TBD
+ * Webhook endpoint for receiving video generation results.
+ * Accepts callbacks from:
+ *   - Legacy: admin-token authenticated requests (direct / n8n)
+ *   - Poll service: api.atomx.top/tools/veo/poll/async — sends { status, task_id, video_url, context: { segment_id, ... } }
  */
 export async function POST(req: NextRequest) {
   try {
-    // 1. Verify admin token
-    if (!isValidAdminWebhookRequest(req)) {
+    const body = await req.json();
+
+    // Support poll-service callback format: segment_id lives in context
+    const context = body.context && typeof body.context === "object" ? body.context : null;
+    const isPollingCallback = Boolean(context?.segment_id);
+
+    // Auth: accept admin token OR valid polling callback with segment_id in context
+    if (!isPollingCallback && !isValidAdminWebhookRequest(req)) {
       console.error("[storyboard-video] Unauthorized: Invalid admin token");
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await req.json();
-    const {
-      segment_id,
-      video_url,
-      status,
-      error,
-      model,
-      generation_params,
-    } = body;
+    const segment_id = body.segment_id || context?.segment_id;
+    const video_url = body.video_url;
+    const status = body.status;
+    const error = body.error || body.message;
+    const model = body.model || context?.model;
+    const generation_params = body.generation_params;
 
     console.log("[storyboard-video] Received webhook:", {
       segment_id,

@@ -3,9 +3,12 @@ import { getApiKeyForUser, getRequestUserContext } from "@/lib/authServer";
 import prisma from "@/lib/prisma";
 import { getXhsText2ImgWebhookUrl } from "@/lib/webhookTargets";
 import { toInputJson } from "@/lib/jsonUtils";
+import { deductCredits } from "@/lib/credits";
+import { getCreditCost } from "@/lib/creditCosts";
+import { logCreditUsage } from "@/lib/logCreditUsage";
 
-const WORKFLOW_ID = "flow_xhs_text2img";
-const WORKFLOW_NAME = "图文排版生图";
+const WORKFLOW_ID = "flow_image_text_replication";
+const WORKFLOW_NAME = "图文复刻";
 
 function normalizeText(value: string | null | undefined): string {
   return String(value ?? "").trim();
@@ -261,6 +264,22 @@ export async function POST(
   const resolvedApiKey = contextApiKey ?? (await getApiKeyForUser(userId).catch(() => null));
   if (!resolvedApiKey) {
     return NextResponse.json({ error: "请先在设置页绑定 API Key" }, { status: 400 });
+  }
+
+  const costPerImage = await getCreditCost("image_text_replication", 2);
+  const totalCost = imageCount * costPerImage;
+  try {
+    await deductCredits(resolvedApiKey, {
+      amount: totalCost,
+      workflowId: WORKFLOW_ID,
+      workflowName: WORKFLOW_NAME,
+      reason: "image_text_replication",
+    });
+    logCreditUsage({ featureKey: "image_text_replication", userId, amount: totalCost, success: true });
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : "积分不足";
+    logCreditUsage({ featureKey: "image_text_replication", userId, amount: totalCost, success: false, errorMessage });
+    return NextResponse.json({ error: errorMessage }, { status: 402 });
   }
 
   const explicitStyleProfile =

@@ -5,9 +5,12 @@ import { getRequestUserContext } from "@/lib/authServer";
 import { initMetadata } from "@/lib/creativeTaskUtils";
 import { toInputJson } from "@/lib/jsonUtils";
 import { getXhsText2ImgWebhookUrl } from "@/lib/webhookTargets";
+import { deductCredits } from "@/lib/credits";
+import { getCreditCost } from "@/lib/creditCosts";
+import { logCreditUsage } from "@/lib/logCreditUsage";
 
 const WORKFLOW_ID = "flow_xhs_text2img";
-const WORKFLOW_NAME = "图文排版生图";
+const WORKFLOW_NAME = "图文排版";
 const ASYNC_TRIGGER = process.env.XHS_TEXT2IMG_ASYNC_TRIGGER !== "0";
 
 function normalizeText(value: string | null | undefined): string {
@@ -275,6 +278,23 @@ export async function POST(request: NextRequest) {
 
   const imageCount = clampImageCount(rawImageCount);
   const taskId = randomUUID();
+
+  const costPerImage = await getCreditCost("image_text_replication", 2);
+  const totalCost = imageCount * costPerImage;
+  try {
+    await deductCredits(apiKey, {
+      amount: totalCost,
+      workflowId: WORKFLOW_ID,
+      workflowName: WORKFLOW_NAME,
+      reason: "image_text_replication",
+    });
+    logCreditUsage({ featureKey: "image_text_replication", userId, amount: totalCost, success: true });
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : "积分不足";
+    logCreditUsage({ featureKey: "image_text_replication", userId, amount: totalCost, success: false, errorMessage });
+    return NextResponse.json({ error: errorMessage }, { status: 402 });
+  }
+
   const creativeMetadata = initMetadata();
   const customMetadata = (creativeMetadata.custom = creativeMetadata.custom ?? {});
   customMetadata.posterMode = "text2image";

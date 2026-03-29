@@ -6,7 +6,7 @@ import {
   Search, ChevronLeft, ChevronRight, Crown, Users, X,
   Check, Loader2, CalendarDays, ShieldCheck, MessageSquare,
   UserPlus, Zap, ChevronDown, ChevronUp, History, Ban,
-  Filter, CheckSquare, Square,
+  Filter, CheckSquare, Square, Plus,
 } from 'lucide-react';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -39,12 +39,14 @@ type ListUser = {
   is_admin: boolean;
   is_banned: boolean;
   api_key: string | null;
+  tenant_id: string | null;
+  notes: string | null;
+  created_at: string | null;
+  last_active_at: string | null;
 };
 
 type UserDetail = ListUser & {
   updated_at: string | null;
-  created_at: string | null;
-  notes: string | null;
   referred_by: string | null;
   referral_count: number;
   referrer: { id: string; user_no: number | null; email: string | null } | null;
@@ -67,6 +69,12 @@ type Referral = {
   created_at: string;
 };
 
+type Tenant = {
+  id: string;
+  name: string;
+  createdAt: string;
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function addDays(base: Date, days: number) {
   const d = new Date(base);
@@ -76,6 +84,24 @@ function addDays(base: Date, days: number) {
 const fmt = (iso: string | null) => iso ? new Date(iso).toLocaleDateString('zh-CN') : '—';
 const fmtFull = (iso: string | null) => iso ? new Date(iso).toLocaleString('zh-CN') : '—';
 
+function timeAgo(iso: string | null): string {
+  if (!iso) return '—';
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return '刚刚';
+  if (mins < 60) return `${mins}分钟前`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}小时前`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}天前`;
+  return fmt(iso);
+}
+
+function isActiveRecently(last_active_at: string | null): boolean {
+  if (!last_active_at) return false;
+  return Date.now() - new Date(last_active_at).getTime() < 3 * 24 * 60 * 60 * 1000;
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<ListUser[]>([]);
@@ -83,6 +109,8 @@ export default function AdminUsersPage() {
   const [q, setQ] = useState('');
   const [filterPlan, setFilterPlan] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterTenant, setFilterTenant] = useState('');
+  const [tenants, setTenants] = useState<Tenant[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
 
@@ -109,11 +137,29 @@ export default function AdminUsersPage() {
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Manual credit addition
+  const [addCreditsAmount, setAddCreditsAmount] = useState('');
+  const [addCreditsLoading, setAddCreditsLoading] = useState(false);
+  const [addCreditsResult, setAddCreditsResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
   // Batch select
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchPlan, setBatchPlan] = useState('pro');
   const [batchDays, setBatchDays] = useState(30);
+  const [batchCreditsAmount, setBatchCreditsAmount] = useState('');
+  const [batchTenantId, setBatchTenantId] = useState('');
   const [batchLoading, setBatchLoading] = useState(false);
+
+  // Create user modal
+  const [showCreate, setShowCreate] = useState(false);
+  const [createEmail, setCreateEmail] = useState('');
+  const [createPassword, setCreatePassword] = useState('123456');
+  const [createName, setCreateName] = useState('');
+  const [createPlan, setCreatePlan] = useState('free');
+  const [createExpiresAt, setCreateExpiresAt] = useState('');
+  const [createTenantId, setCreateTenantId] = useState('');
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const sessionRef = useRef<string | null>(null);
   const getToken = useCallback(async () => {
@@ -124,7 +170,7 @@ export default function AdminUsersPage() {
   }, []);
 
   // ── Fetch list ──────────────────────────────────────────────────────────────
-  const fetchUsers = useCallback(async (query: string, p: number, plan: string, status: string) => {
+  const fetchUsers = useCallback(async (query: string, p: number, plan: string, status: string, tenant: string) => {
     setLoading(true);
     const token = await getToken();
     if (!token) return;
@@ -132,6 +178,7 @@ export default function AdminUsersPage() {
     if (query) params.set('q', query);
     if (plan) params.set('plan', plan);
     if (status) params.set('status', status);
+    if (tenant) params.set('tenant', tenant);
     const res = await fetch(`/api/admin/users?${params}`, { headers: { Authorization: `Bearer ${token}` } });
     const json = await res.json();
     setUsers(json.data ?? []);
@@ -140,12 +187,12 @@ export default function AdminUsersPage() {
     setSelectedIds(new Set());
   }, [getToken]);
 
-  useEffect(() => { fetchUsers(q, page, filterPlan, filterStatus); }, [fetchUsers, q, page, filterPlan, filterStatus]);
+  useEffect(() => { fetchUsers(q, page, filterPlan, filterStatus, filterTenant); }, [fetchUsers, q, page, filterPlan, filterStatus, filterTenant]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setPage(1);
-    fetchUsers(q, 1, filterPlan, filterStatus);
+    fetchUsers(q, 1, filterPlan, filterStatus, filterTenant);
   };
 
   // ── Open drawer ─────────────────────────────────────────────────────────────
@@ -159,6 +206,8 @@ export default function AdminUsersPage() {
     setShowReferrals(false);
     setShowHistory(false);
     setShowLogs(false);
+    setAddCreditsAmount('');
+    setAddCreditsResult(null);
     setDetailLoading(true);
 
     const token = await getToken();
@@ -222,6 +271,7 @@ export default function AdminUsersPage() {
       plan, is_admin: isAdmin, is_banned: isBanned,
       notes: notes || null,
       plan_expires_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+      tenant_id: detail?.tenant_id ?? null,
     };
     if (referredByInput.trim()) body.referred_by = referredByInput.trim();
 
@@ -237,7 +287,7 @@ export default function AdminUsersPage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
       setUsers(prev => prev.map(u => u.id === selectedId
-        ? { ...u, plan, is_admin: isAdmin, is_banned: isBanned, plan_expires_at: expiresAt ? new Date(expiresAt).toISOString() : null }
+        ? { ...u, plan, is_admin: isAdmin, is_banned: isBanned, notes: notes || null, plan_expires_at: expiresAt ? new Date(expiresAt).toISOString() : null, tenant_id: detail?.tenant_id ?? null }
         : u));
       setDetail(prev => prev ? { ...prev, ...json.data } : prev);
     }
@@ -247,6 +297,41 @@ export default function AdminUsersPage() {
   const applyPreset = (days: number) => {
     const base = expiresAt && new Date(expiresAt) > new Date() ? new Date(expiresAt) : new Date();
     setExpiresAt(addDays(base, days));
+  };
+
+  // ── Add Credits ─────────────────────────────────────────────────────────────
+  const handleAddCredits = async () => {
+    if (!selectedId) return;
+    const amount = Math.floor(Number(addCreditsAmount));
+    if (!amount || amount <= 0) return;
+    setAddCreditsLoading(true);
+    setAddCreditsResult(null);
+    const token = await getToken();
+    try {
+      const res = await fetch(`/api/admin/users/${selectedId}/credits`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token!}` },
+        body: JSON.stringify({ amount }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setAddCreditsResult({ ok: false, msg: json.error ?? '充值失败' });
+      } else {
+        setAddCreditsResult({ ok: true, msg: `已充值 ${amount} 积分` });
+        setAddCreditsAmount('');
+        // Refresh balance
+        if (selectedId) {
+          fetch(`/api/admin/users/${selectedId}/stats`, { headers: { Authorization: `Bearer ${token!}` } })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => { if (data) setCredits(data); })
+            .catch(() => {});
+        }
+        setTimeout(() => setAddCreditsResult(null), 4000);
+      }
+    } catch {
+      setAddCreditsResult({ ok: false, msg: '网络错误' });
+    }
+    setAddCreditsLoading(false);
   };
 
   // ── Batch ───────────────────────────────────────────────────────────────────
@@ -275,10 +360,55 @@ export default function AdminUsersPage() {
     });
     setBatchLoading(false);
     setSelectedIds(new Set());
-    fetchUsers(q, page, filterPlan, filterStatus);
+    fetchUsers(q, page, filterPlan, filterStatus, filterTenant);
   };
 
   const allSelected = users.length > 0 && selectedIds.size === users.length;
+
+  const handleCreateUser = async () => {
+    if (!createEmail.trim()) return;
+    setCreateLoading(true);
+    setCreateError(null);
+    const token = await getToken();
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token!}` },
+        body: JSON.stringify({
+          email: createEmail.trim(),
+          password: createPassword,
+          plan: createPlan,
+          plan_expires_at: createExpiresAt ? new Date(createExpiresAt).toISOString() : null,
+          tenant_id: createTenantId || null,
+          notes: createName.trim() || null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || '创建失败');
+      setShowCreate(false);
+      setCreateEmail(''); setCreatePassword(''); setCreateName('');
+      setCreatePlan('free'); setCreateExpiresAt(''); setCreateTenantId('');
+      fetchUsers(q, page, filterPlan, filterStatus, filterTenant);
+    } catch (e: any) {
+      setCreateError(e.message);
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const loadTenants = async () => {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetch('/api/admin/tenants', { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        const json = await res.json();
+        setTenants(json.data ?? []);
+      }
+    };
+    loadTenants();
+  }, [getToken]);
 
   // ─────────────────────────────────────────────────────────────────────────────
   return (
@@ -294,6 +424,13 @@ export default function AdminUsersPage() {
             <p className="text-sm text-gray-500 dark:text-gray-400">共 {total} 位用户</p>
           </div>
         </div>
+        <button
+          onClick={() => { setShowCreate(true); setCreateError(null); }}
+          className="flex items-center gap-2 px-4 py-2 bg-black dark:bg-white text-white dark:text-black text-sm font-semibold rounded-lg hover:opacity-90 transition-opacity"
+        >
+          <UserPlus size={15} />
+          创建账号
+        </button>
       </div>
 
       {/* Search + Filters */}
@@ -318,6 +455,11 @@ export default function AdminUsersPage() {
           <option value="expired">已过期</option>
           <option value="banned">已封禁</option>
         </select>
+        <select value={filterTenant} onChange={e => { setFilterTenant(e.target.value); setPage(1); }}
+          className="px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none">
+          <option value="">所有租户</option>
+          {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
         <button type="submit" className="px-4 py-2.5 text-sm bg-black dark:bg-white text-white dark:text-black rounded-lg font-semibold hover:opacity-90">
           搜索
         </button>
@@ -336,23 +478,25 @@ export default function AdminUsersPage() {
               <th className="text-left px-4 py-3.5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">用户</th>
               <th className="text-left px-4 py-3.5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">等级</th>
               <th className="text-left px-4 py-3.5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">到期时间</th>
-              <th className="text-left px-4 py-3.5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">API Key</th>
+              <th className="text-left px-4 py-3.5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide hidden lg:table-cell">注册 / 上次使用</th>
+              <th className="text-left px-4 py-3.5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide hidden md:table-cell">API Key</th>
               <th className="text-right px-4 py-3.5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">操作</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
             {loading ? (
-              <tr><td colSpan={6} className="px-5 py-12 text-center text-gray-400">
+              <tr><td colSpan={7} className="px-5 py-12 text-center text-gray-400">
                 <div className="flex items-center justify-center gap-2">
                   <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />加载中...
                 </div>
               </td></tr>
             ) : users.length === 0 ? (
-              <tr><td colSpan={6} className="px-5 py-12 text-center text-gray-400">暂无用户</td></tr>
+              <tr><td colSpan={7} className="px-5 py-12 text-center text-gray-400">暂无用户</td></tr>
             ) : users.map((user) => {
               const isExpired = user.plan_expires_at && new Date(user.plan_expires_at) < new Date();
               const isSelected = selectedIds.has(user.id);
               const isDrawerOpen = user.id === selectedId;
+              const isActive = isActiveRecently(user.last_active_at);
               return (
                 <tr key={user.id}
                   className={`transition-colors ${isDrawerOpen ? 'bg-gray-50 dark:bg-gray-700/30' : 'hover:bg-gray-50/80 dark:hover:bg-gray-700/20'} ${user.is_banned ? 'opacity-60' : ''}`}>
@@ -368,10 +512,19 @@ export default function AdminUsersPage() {
                         {user.is_banned ? <Ban size={14} /> : (user.email?.[0]?.toUpperCase() ?? '?')}
                       </div>
                       <div className="min-w-0">
+                        {user.notes && (
+                          <p className="text-sm font-semibold text-orange-600 dark:text-orange-400 truncate max-w-[180px]">{user.notes}</p>
+                        )}
                         <div className="flex items-center gap-1.5">
                           <span className="font-mono text-xs text-gray-400">{user.user_no ? `#${user.user_no}` : '—'}</span>
                           {user.is_admin && <Crown size={11} className="text-amber-500" />}
                           {user.is_banned && <span className="text-[10px] bg-red-100 dark:bg-red-900/20 text-red-500 px-1.5 py-0.5 rounded">已封禁</span>}
+                          {isActive && <span className="text-[10px] bg-green-100 dark:bg-green-900/20 text-green-600 dark:text-green-400 px-1.5 py-0.5 rounded font-medium">活跃</span>}
+                          {user.tenant_id && (
+                            <span className="text-[10px] bg-blue-100 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded font-medium">
+                              {tenants.find(t => t.id === user.tenant_id)?.name ?? user.tenant_id}
+                            </span>
+                          )}
                         </div>
                         <p className="text-sm text-gray-900 dark:text-white truncate max-w-[200px]">{user.email ?? '—'}</p>
                       </div>
@@ -390,7 +543,16 @@ export default function AdminUsersPage() {
                       </span>
                     ) : <span className="text-gray-300 dark:text-gray-600">—</span>}
                   </td>
-                  <td className="px-4 py-4">
+                  <td className="px-4 py-4 hidden lg:table-cell">
+                    <div className="text-xs text-gray-400 space-y-0.5">
+                      <p>注册: {fmt(user.created_at)}</p>
+                      {user.last_active_at
+                        ? <p className={isActive ? 'text-green-600 dark:text-green-400' : ''}>用: {timeAgo(user.last_active_at)}</p>
+                        : <p>未使用</p>
+                      }
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 hidden md:table-cell">
                     {user.api_key
                       ? <span className="font-mono text-xs text-gray-400">{user.api_key.slice(0, 12)}...</span>
                       : <span className="text-xs text-red-400 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded-full">未绑定</span>}
@@ -425,9 +587,10 @@ export default function AdminUsersPage() {
 
       {/* ── Batch Action Bar ───────────────────────────────────────────────────── */}
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-2xl shadow-2xl px-5 py-3 flex flex-wrap items-center gap-3">
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 rounded-2xl shadow-2xl px-5 py-3 flex flex-wrap items-center gap-3 max-w-[90vw]">
           <span className="text-sm font-medium">已选 {selectedIds.size} 人</span>
           <div className="w-px h-5 bg-white/20 dark:bg-gray-400" />
+          {/* 设置等级 */}
           <div className="flex items-center gap-2">
             <select value={batchPlan} onChange={e => setBatchPlan(e.target.value)}
               className="text-sm bg-white/10 dark:bg-gray-900/10 border border-white/20 dark:border-gray-400 rounded-lg px-2 py-1.5 text-white dark:text-gray-900">
@@ -439,6 +602,7 @@ export default function AdminUsersPage() {
             </button>
           </div>
           <div className="w-px h-5 bg-white/20 dark:bg-gray-400" />
+          {/* 延期 */}
           <div className="flex items-center gap-2">
             <select value={batchDays} onChange={e => setBatchDays(Number(e.target.value))}
               className="text-sm bg-white/10 dark:bg-gray-900/10 border border-white/20 dark:border-gray-400 rounded-lg px-2 py-1.5 text-white dark:text-gray-900">
@@ -451,6 +615,41 @@ export default function AdminUsersPage() {
             <button onClick={() => runBatch({ type: 'extendDays', value: batchDays })} disabled={batchLoading}
               className="text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-1.5 rounded-lg font-medium hover:opacity-90 disabled:opacity-50">
               延期
+            </button>
+          </div>
+          <div className="w-px h-5 bg-white/20 dark:bg-gray-400" />
+          {/* 批量充值积分 */}
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={1}
+              value={batchCreditsAmount}
+              onChange={e => setBatchCreditsAmount(e.target.value)}
+              placeholder="积分数"
+              className="w-20 text-sm bg-white/10 dark:bg-gray-900/10 border border-white/20 dark:border-gray-400 rounded-lg px-2 py-1.5 text-white dark:text-gray-900 placeholder-white/40 dark:placeholder-gray-400"
+            />
+            <button
+              onClick={() => {
+                const n = Math.floor(Number(batchCreditsAmount));
+                if (n > 0) runBatch({ type: 'addCredits', value: n });
+              }}
+              disabled={batchLoading || !batchCreditsAmount || Number(batchCreditsAmount) <= 0}
+              className="flex items-center gap-1 text-sm bg-green-600 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-green-500 disabled:opacity-50"
+            >
+              <Plus size={12} />充值积分
+            </button>
+          </div>
+          <div className="w-px h-5 bg-white/20 dark:bg-gray-400" />
+          {/* 批量修改租户 */}
+          <div className="flex items-center gap-2">
+            <select value={batchTenantId} onChange={e => setBatchTenantId(e.target.value)}
+              className="text-sm bg-white/10 dark:bg-gray-900/10 border border-white/20 dark:border-gray-400 rounded-lg px-2 py-1.5 text-white dark:text-gray-900">
+              <option value="">无租户</option>
+              {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <button onClick={() => runBatch({ type: 'setTenant', value: batchTenantId })} disabled={batchLoading}
+              className="text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-white px-3 py-1.5 rounded-lg font-medium hover:opacity-90 disabled:opacity-50">
+              修改租户
             </button>
           </div>
           <div className="w-px h-5 bg-white/20 dark:bg-gray-400" />
@@ -480,6 +679,9 @@ export default function AdminUsersPage() {
                     {detail.is_banned ? <Ban size={16} /> : (detail.email?.[0]?.toUpperCase() ?? '?')}
                   </div>
                   <div className="min-w-0">
+                    {detail.notes && (
+                      <p className="text-sm font-bold text-orange-600 dark:text-orange-400 truncate">{detail.notes}</p>
+                    )}
                     <div className="flex items-center gap-1.5">
                       <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{detail.email}</p>
                       {detail.is_admin && <Crown size={13} className="text-amber-500 shrink-0" />}
@@ -513,11 +715,21 @@ export default function AdminUsersPage() {
                     <StatCard label="本月消耗" value={creditsLoading ? '…' : credits?.monthConsumed != null ? String(credits.monthConsumed) : '—'} icon={<History size={14} />} />
                   </div>
 
+                  {/* 会员名字 */}
+                  <Section title="会员名字" icon={<MessageSquare size={14} />}>
+                    <div>
+                      <p className="text-xs text-gray-400 mb-2">管理员备注，仅后台可见</p>
+                      <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="如：张三 / 公司A"
+                        className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white resize-none" />
+                    </div>
+                  </Section>
+
                   {/* Account info */}
                   <Section title="账号信息" icon={<CalendarDays size={14} />}>
                     <InfoGrid>
                       <InfoItem label="注册时间" value={fmtFull(detail.created_at)} />
                       <InfoItem label="最后更新" value={fmtFull(detail.updated_at)} />
+                      <InfoItem label="最后使用积分" value={detail.last_active_at ? `${fmtFull(detail.last_active_at)}` : '从未使用'} />
                       <InfoItem label="到期时间"
                         value={detail.plan_expires_at ? `${fmt(detail.plan_expires_at)}${new Date(detail.plan_expires_at) < new Date() ? '（已过期）' : ''}` : '永不过期'}
                         danger={!!(detail.plan_expires_at && new Date(detail.plan_expires_at) < new Date())} />
@@ -528,11 +740,42 @@ export default function AdminUsersPage() {
                   </Section>
 
                   {/* Credits */}
-                  <Section title="积分消耗" icon={<Zap size={14} />}>
+                  <Section title="积分" icon={<Zap size={14} />}>
                     <InfoGrid>
                       <InfoItem label="总消耗" value={creditsLoading ? '…' : credits?.totalConsumed != null ? String(credits.totalConsumed) : '—'} />
                       <InfoItem label="本月消耗" value={creditsLoading ? '…' : credits?.monthConsumed != null ? String(credits.monthConsumed) : '—'} />
                     </InfoGrid>
+                    {/* Manual add credits */}
+                    <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">手动充值积分</p>
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          min={1}
+                          value={addCreditsAmount}
+                          onChange={e => setAddCreditsAmount(e.target.value)}
+                          placeholder="输入积分数量"
+                          className="flex-1 px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
+                        />
+                        <button
+                          onClick={handleAddCredits}
+                          disabled={addCreditsLoading || !addCreditsAmount || Number(addCreditsAmount) <= 0}
+                          className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-green-600 text-white rounded-lg hover:bg-green-500 disabled:opacity-50 transition-colors shrink-0"
+                        >
+                          {addCreditsLoading ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                          充值
+                        </button>
+                      </div>
+                      {addCreditsResult && (
+                        <p className={`text-xs mt-2 ${addCreditsResult.ok ? 'text-green-600 dark:text-green-400' : 'text-red-500'}`}>
+                          {addCreditsResult.ok ? <Check size={12} className="inline mr-1" /> : null}
+                          {addCreditsResult.msg}
+                        </p>
+                      )}
+                      {!detail.api_key && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5">⚠ 该用户未绑定 API Key，无法充值</p>
+                      )}
+                    </div>
                     <button onClick={() => setShowHistory(v => !v)}
                       className="mt-3 flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">
                       <History size={12} />查看历史消耗记录
@@ -661,6 +904,20 @@ export default function AdminUsersPage() {
                         <Toggle label="管理员权限" desc="可访问管理后台" value={isAdmin} onChange={setIsAdmin} color="amber" />
                         <Toggle label="封禁账号" desc="封禁后用户无法登录" value={isBanned} onChange={setIsBanned} color="red" />
                       </div>
+                      {/* Tenant */}
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 mb-2">租户</label>
+                        <select value={detail?.tenant_id ?? ''} onChange={e => {
+                          if (detail) {
+                            const newTenantId = e.target.value || null;
+                            setDetail({ ...detail, tenant_id: newTenantId });
+                          }
+                        }}
+                          className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white">
+                          <option value="">无租户</option>
+                          {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </select>
+                      </div>
                       {/* Referrer */}
                       <div>
                         <label className="block text-xs font-semibold text-gray-500 mb-1.5">
@@ -670,12 +927,6 @@ export default function AdminUsersPage() {
                           className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white" />
                       </div>
                     </div>
-                  </Section>
-
-                  {/* Notes */}
-                  <Section title="备注" icon={<MessageSquare size={14} />}>
-                    <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="内部备注，仅管理员可见..."
-                      className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white resize-none" />
                   </Section>
 
                   {/* Operation Logs */}
@@ -723,6 +974,109 @@ export default function AdminUsersPage() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Create User Modal ──────────────────────────────────────────────────── */}
+      {showCreate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowCreate(false)} />
+          <div className="relative z-10 w-full max-w-md bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-base font-bold text-gray-900 dark:text-white">创建账号</h2>
+              <button onClick={() => setShowCreate(false)} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="space-y-3">
+              {/* 会员名字（管理员备注） */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1.5">
+                  会员名字 <span className="font-normal text-gray-400">（仅管理员可见）</span>
+                </label>
+                <input
+                  type="text"
+                  value={createName}
+                  onChange={e => setCreateName(e.target.value)}
+                  placeholder="如：张三 / 公司A"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
+                />
+              </div>
+              {/* 邮箱 */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1.5">邮箱</label>
+                <input
+                  type="email"
+                  value={createEmail}
+                  onChange={e => setCreateEmail(e.target.value)}
+                  placeholder="user@example.com"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
+                />
+              </div>
+              {/* 租户 */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1.5">租户</label>
+                <select
+                  value={createTenantId}
+                  onChange={e => setCreateTenantId(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white"
+                >
+                  <option value="">无租户</option>
+                  {tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </div>
+              {/* 会员等级 */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1.5">会员等级</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {PLAN_OPTIONS.map(o => (
+                    <button key={o.value} type="button" onClick={() => setCreatePlan(o.value)}
+                      className={`py-2 rounded-lg border text-xs font-bold text-center transition-all ${createPlan === o.value ? 'border-gray-900 dark:border-white bg-gray-900 dark:bg-white text-white dark:text-black' : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-400'}`}>
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* 使用期限 */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1.5">使用期限</label>
+                <div className="flex gap-1.5 mb-2">
+                  {DURATION_PRESETS.map(p => (
+                    <button key={p.days} type="button"
+                      onClick={() => {
+                        const base = createExpiresAt && new Date(createExpiresAt) > new Date() ? new Date(createExpiresAt) : new Date();
+                        const d = new Date(base);
+                        d.setDate(d.getDate() + p.days);
+                        setCreateExpiresAt(d.toISOString().slice(0, 10));
+                      }}
+                      className="flex-1 py-1.5 text-xs font-semibold rounded-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-900 dark:hover:border-white hover:text-gray-900 dark:hover:text-white transition-all">
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-2 items-center">
+                  <input type="date" value={createExpiresAt} onChange={e => setCreateExpiresAt(e.target.value)}
+                    className="flex-1 px-3 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white" />
+                  {createExpiresAt && <button type="button" onClick={() => setCreateExpiresAt('')} className="text-xs text-gray-400 hover:text-red-500 px-2 py-1 rounded">清除</button>}
+                </div>
+              </div>
+              {createError && <p className="text-xs text-red-500">{createError}</p>}
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button onClick={() => setShowCreate(false)}
+                className="flex-1 py-2 text-sm border border-gray-200 dark:border-gray-700 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                取消
+              </button>
+              <button
+                onClick={handleCreateUser}
+                disabled={!createEmail.trim() || createLoading}
+                className="flex-1 flex items-center justify-center gap-2 py-2 text-sm bg-black dark:bg-white text-white dark:text-black font-semibold rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity"
+              >
+                {createLoading ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
+                创建
+              </button>
+            </div>
           </div>
         </div>
       )}

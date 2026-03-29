@@ -19,6 +19,62 @@ import {
   formatScriptDurationMessage,
 } from '@/lib/digitalHumanLimits';
 
+const PRIMARY_BREAK_CHARS = new Set<string>([
+  '。',
+  '！',
+  '!',
+  '？',
+  '?',
+  '；',
+  ';',
+  '，',
+  ',',
+  '、',
+  '：',
+  ':',
+  '.',
+  '\n',
+]);
+const SECONDARY_BREAK_CHARS = new Set<string>([' ', '\t']);
+
+function findBreakPoint(chunk: string): number {
+  for (const charset of [PRIMARY_BREAK_CHARS, SECONDARY_BREAK_CHARS]) {
+    for (let i = chunk.length - 1; i >= 0; i -= 1) {
+      if (charset.has(chunk[i])) {
+        return i + 1;
+      }
+    }
+  }
+  return -1;
+}
+
+function splitScriptIntoChunks(script: string, maxChars: number): string[] {
+  const safeLimit = Math.max(1, Math.floor(maxChars));
+  const normalized = (script ?? '').replace(/\r\n/g, '\n').trim();
+  if (!normalized) return [];
+
+  const chunks: string[] = [];
+  let cursor = 0;
+  while (cursor < normalized.length) {
+    const remaining = normalized.length - cursor;
+    if (remaining <= safeLimit) {
+      chunks.push(normalized.slice(cursor).trim());
+      break;
+    }
+
+    const tentativeEnd = cursor + safeLimit;
+    const slice = normalized.slice(cursor, tentativeEnd);
+    let breakPoint = findBreakPoint(slice);
+    if (breakPoint <= 0) breakPoint = safeLimit;
+
+    const segment = normalized.slice(cursor, cursor + breakPoint).trim();
+    if (segment) chunks.push(segment);
+    cursor += breakPoint;
+  }
+
+  return chunks;
+}
+
 interface DigitalHumanModalProps {
   onClose: () => void;
   defaultScript?: string;
@@ -46,6 +102,8 @@ export function DigitalHumanModal({
   showAssistant = true,
 }: DigitalHumanModalProps) {
   const { t, language } = useLanguage();
+  const normalizedLanguage = (language || '').toLowerCase();
+  const isZhLocale = normalizedLanguage.startsWith('zh');
   const digitalCopy = t.contentCreation?.newTask?.digitalHuman;
   const voiceModeCopy = digitalCopy?.modes?.voice;
   const lipModeCopy = digitalCopy?.modes?.lip;
@@ -222,6 +280,14 @@ export function DigitalHumanModal({
   const [emoAudioFile, setEmoAudioFile] = useState<File | null>(null);
   const [emoAudioUrl, setEmoAudioUrl] = useState('');
   const [emoAudioDragActive, setEmoAudioDragActive] = useState(false);
+  const [splitChunks, setSplitChunks] = useState<string[]>([]);
+  const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
+  const [splitMeta, setSplitMeta] = useState<{
+    limitChars: number;
+    chunkSeconds: number;
+    limitSeconds: number;
+    estimatedSeconds: number;
+  } | null>(null);
   
   const [script, setScript] = useState(defaultScript ?? '');
   useEffect(() => {
@@ -243,16 +309,42 @@ export function DigitalHumanModal({
     () => formatScriptDurationMessage(scriptStats, { locale: language }),
     [language, scriptStats]
   );
+  const splitChunkSummary = useMemo(
+    () =>
+      splitChunks.map((chunk, index) => {
+        const trimmed = chunk.trim();
+        const preview =
+          trimmed.length > 42 ? `${trimmed.slice(0, 42)}...` : trimmed;
+        return {
+          index: index + 1,
+          length: trimmed.length,
+          preview: preview || '(empty chunk)',
+        };
+      }),
+    [splitChunks]
+  );
+  const numberFormatter = useMemo(
+    () => new Intl.NumberFormat(isZhLocale ? 'zh-CN' : 'en-US'),
+    [isZhLocale]
+  );
+  const splitModalHints = useMemo(() => {
+    const chunkSeconds =
+      splitMeta?.chunkSeconds ?? Math.max(1, Math.round(scriptStats.limitSeconds * scriptStats.safety));
+    const limitChars = splitMeta?.limitChars ?? scriptStats.limitChars;
+    const limitSeconds = splitMeta?.limitSeconds ?? scriptStats.limitSeconds;
+    const estimatedSeconds = splitMeta?.estimatedSeconds ?? scriptStats.estimatedSeconds;
+    return { chunkSeconds, limitChars, limitSeconds, estimatedSeconds };
+  }, [splitMeta, scriptStats]);
   const scriptHasContent = script.trim().length > 0;
   const scriptTooLong = mode === 'VOICE_CLONE' && scriptHasContent && scriptStats.needSplit;
   const audioLimitSeconds = DIGITAL_HUMAN_MAX_SECONDS;
   const audioTooLong = audioDuration > audioLimitSeconds;
   const audioLimitReminder = useMemo(() => {
-    if (language.toLowerCase().startsWith('zh')) {
+    if (isZhLocale) {
       return `音频需控制在 ${audioLimitSeconds}s 内，超出请拆分后上传。`;
     }
     return `Audio must be ≤ ${audioLimitSeconds}s. Please split longer clips.`;
-  }, [audioLimitSeconds, language]);
+  }, [audioLimitSeconds, isZhLocale]);
 
   useEffect(() => {
     if (mode !== 'LIP_SYNC') return;
@@ -376,55 +468,138 @@ export function DigitalHumanModal({
     setEmoAudioFile(null);
   };
 
+  const submitDigitalHumanJobs = async (scriptChunks?: string[]) => {
+    const trimmedScriptChunks =
+      mode === 'VOICE_CLONE'
+        ? (scriptChunks ?? [script])
+            .map((chunk) => (chunk ?? '').trim())
+            .filter((chunk) => chunk.length > 0)
+        : [null];
+
+    if (mode === 'VOICE_CLONE' && trimmedScriptChunks.length === 0) {
+      toast.error(scriptRequiredMessage || 'Please enter script');
+      return;
+    }
+
+    const jobCount = trimmedScriptChunks.length;
+    const isSplitFlow = jobCount > 1;
+    const loadingMessage = isSplitFlow
+      ? isZhLocale
+        ? `正在提交 ${jobCount} 段数字人任务...`
+        : `Submitting ${jobCount} split digital human jobs...`
+      : t.contentCreation?.newTask?.digitalHuman?.submitting ??
+        t.storyboard.generatingDigitalHumanVideo ??
+        'Submitting digital human job...';
+    const successMessage = isSplitFlow
+      ? isZhLocale
+        ? `已拆分并提交 ${jobCount} 段数字人任务，系统将依次生成。`
+        : `Submitted ${jobCount} split digital human jobs.`
+      : digitalCopy?.success ??
+        t.contentCreation?.common?.success ??
+        'Digital human task created';
+    const failureMessage = isSplitFlow
+      ? isZhLocale
+        ? '拆分任务创建失败，请稍后重试。'
+        : 'Failed to submit split jobs. Please try again.'
+      : 'Failed to create task';
+
+    const toastId = isSplitFlow ? toast.loading(loadingMessage) : undefined;
+    setLoading(true);
+    try {
+      for (const chunk of trimmedScriptChunks) {
+        const formData = new FormData();
+        formData.append('type', mode);
+        formData.append('imageUrl', imageUrl);
+        formData.append('audioUrl', audioUrl);
+        formData.append('duration', audioDuration.toString());
+        if (userId) formData.append('userId', userId);
+        if (sourceTaskId) formData.append('sourceTaskId', sourceTaskId);
+        if (mode === 'VOICE_CLONE') {
+          formData.append('script', chunk ?? '');
+          if (emoAudioUrl) {
+            formData.append('emoAudioUrl', emoAudioUrl);
+          }
+        }
+        await createDigitalHumanVideo(formData);
+      }
+
+      if (toastId) {
+        toast.success(successMessage, { id: toastId });
+      } else {
+        toast.success(successMessage);
+      }
+
+      if (onSuccess) {
+        await onSuccess();
+      }
+      if (!disableAutoRedirect) {
+        router.push(myProjectsPath);
+      }
+      onClose();
+    } catch (error) {
+      console.error(error);
+      if (toastId) {
+        toast.error(failureMessage, { id: toastId });
+      } else {
+        toast.error(failureMessage);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!selectedCharacter || !imageUrl) return toast.error(characterRequiredMessage);
     if (!audioUrl) return toast.error(audioRequiredMessage || 'Please upload audio');
-    if (mode === 'VOICE_CLONE' && !script) return toast.error(scriptRequiredMessage || 'Please enter script');
-    if (mode === 'VOICE_CLONE' && scriptHasContent && scriptStats.needSplit) {
-      toast.error(scriptMessage);
-      return;
-    }
     if (audioDuration > audioLimitSeconds && audioDuration > 0) {
       toast.error(audioLimitReminder);
       return;
     }
 
-    setLoading(true);
-    try {
-      const formData = new FormData();
-      formData.append('type', mode);
-      formData.append('imageUrl', imageUrl);
-      formData.append('audioUrl', audioUrl);
-      formData.append('duration', audioDuration.toString());
-      if (userId) formData.append('userId', userId);
-      if (sourceTaskId) formData.append('sourceTaskId', sourceTaskId);
-      if (mode === 'VOICE_CLONE') {
-          formData.append('script', script);
-          if (emoAudioUrl) {
-              formData.append('emoAudioUrl', emoAudioUrl);
-          }
+    if (mode === 'VOICE_CLONE') {
+      const trimmedScript = script.trim();
+      if (!trimmedScript) return toast.error(scriptRequiredMessage || 'Please enter script');
+
+      if (scriptTooLong) {
+        const limitChars =
+          scriptStats.limitChars && scriptStats.limitChars > 0
+            ? scriptStats.limitChars
+            : Math.max(scriptStats.cleanedLength, 120);
+        const chunks = splitScriptIntoChunks(trimmedScript, limitChars);
+        if (chunks.length > 1) {
+          setSplitChunks(chunks);
+          setSplitMeta({
+            limitChars,
+            chunkSeconds: Math.max(1, Math.round(scriptStats.limitSeconds * scriptStats.safety)),
+            limitSeconds: scriptStats.limitSeconds,
+            estimatedSeconds: scriptStats.estimatedSeconds,
+          });
+          setIsSplitModalOpen(true);
+          return;
+        }
       }
-      
-      await createDigitalHumanVideo(formData);
-      
-      toast.success(
-        t.contentCreation?.newTask?.digitalHuman?.success ??
-          t.contentCreation?.common?.success ??
-          "Digital human task created"
-      );
-      if (onSuccess) {
-        await onSuccess();
-      }
-      if (!disableAutoRedirect) {
-        router.push(myProjectsPath); // Redirect to tenant-scoped My Projects page
-      }
-      onClose();
-    } catch (error) {
-      console.error(error);
-      toast.error('Failed to create task');
-    } finally {
-      setLoading(false);
+
+      await submitDigitalHumanJobs([trimmedScript]);
+      return;
     }
+
+    await submitDigitalHumanJobs();
+  };
+
+  const closeSplitModal = () => {
+    setIsSplitModalOpen(false);
+    setSplitChunks([]);
+    setSplitMeta(null);
+  };
+
+  const handleSplitConfirm = async () => {
+    if (!splitChunks.length) {
+      closeSplitModal();
+      return;
+    }
+    const chunksToSubmit = [...splitChunks];
+    closeSplitModal();
+    await submitDigitalHumanJobs(chunksToSubmit);
   };
 
   const layoutClass = showAssistant
@@ -805,6 +980,13 @@ export function DigitalHumanModal({
                     {scriptMessage}
                   </p>
                 )}
+                {scriptTooLong && (
+                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                    {isZhLocale
+                      ? '系统会沿用当前角色与音色，拆成多段依次生成。'
+                      : 'We will reuse the selected character and voice, auto-splitting into multiple jobs.'}
+                  </p>
+                )}
             </div>
             )}
         </div>
@@ -813,7 +995,7 @@ export function DigitalHumanModal({
       <div className="p-6 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 rounded-b-xl">
         <button
           onClick={handleSubmit}
-          disabled={loading || uploading || scriptTooLong || audioTooLong}
+          disabled={loading || uploading || audioTooLong}
           className="btn-openclaw w-full py-3 font-bold flex items-center justify-center gap-2"
         >
           {loading ? <Loader2 className="animate-spin" /> : <Check size={20} />}
@@ -870,6 +1052,52 @@ export function DigitalHumanModal({
         </aside>
       )}
     </div>
+    <Modal
+      isOpen={isSplitModalOpen}
+      onClose={closeSplitModal}
+      title={isZhLocale ? '字数超限，拆分生成？' : 'Script Too Long'}
+      maxWidth="max-w-2xl"
+    >
+      <div className="space-y-5 text-sm text-gray-700 dark:text-gray-200">
+        <p>
+          {isZhLocale
+            ? `当前文案预计 ${numberFormatter.format(splitModalHints.estimatedSeconds || 0)}s，超过单次上限 ${numberFormatter.format(splitModalHints.limitSeconds || DIGITAL_HUMAN_MAX_SECONDS)}s。系统将拆分成 ${splitChunks.length} 段，每段建议 ≤ ${numberFormatter.format(splitModalHints.chunkSeconds)}s（≈${numberFormatter.format(splitModalHints.limitChars || 0)} 字）。`
+            : `This script is about ${numberFormatter.format(splitModalHints.estimatedSeconds || 0)}s, above the ${numberFormatter.format(splitModalHints.limitSeconds || DIGITAL_HUMAN_MAX_SECONDS)}s limit. We'll split it into ${splitChunks.length} chunks (~${numberFormatter.format(splitModalHints.chunkSeconds)}s / ${numberFormatter.format(splitModalHints.limitChars || 0)} chars each).`}
+        </p>
+        {splitChunkSummary.length > 0 && (
+          <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/70 p-3 space-y-2 max-h-60 overflow-y-auto">
+            {splitChunkSummary.map((segment) => (
+              <div key={segment.index} className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300">
+                <span className="font-semibold text-gray-900 dark:text-white">#{segment.index}</span>
+                <span className="text-gray-500 dark:text-gray-400">
+                  {numberFormatter.format(segment.length)} {isZhLocale ? '字' : 'chars'}
+                </span>
+                <span className="flex-1 truncate text-gray-700 dark:text-gray-100">{segment.preview}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          {isZhLocale
+            ? '点击继续后会沿用当前角色与音色，逐段提交任务。'
+            : 'We will reuse the selected character and voice for every chunk.'}
+        </p>
+        <div className="flex justify-end gap-3 pt-2">
+          <button
+            onClick={closeSplitModal}
+            className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-200 bg-white/90 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800"
+          >
+            {isZhLocale ? '返回修改' : 'Edit Script'}
+          </button>
+          <button
+            onClick={handleSplitConfirm}
+            className="btn-openclaw inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold"
+          >
+            {isZhLocale ? '拆分并继续' : 'Split & Continue'}
+          </button>
+        </div>
+      </div>
+    </Modal>
     <Modal
       isOpen={isCharacterModalOpen}
       onClose={() => setIsCharacterModalOpen(false)}

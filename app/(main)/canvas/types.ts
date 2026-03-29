@@ -5,7 +5,8 @@ export type CanvasNodeKind =
   | "imageConfig"
   | "imageResult"
   | "videoConfig"
-  | "videoResult";
+  | "videoResult"
+  | "gridConfig";
 
 export type NodeRunStatus = "idle" | "running" | "success" | "error";
 
@@ -53,12 +54,21 @@ export type VideoResultNodeData = BaseNodeData & {
   sourceTaskId?: string;
 };
 
+export type GridConfigNodeData = BaseNodeData & {
+  kind: "gridConfig";
+  title: string;
+  contentType: "appearance" | "selling_points" | "story";
+  scriptContent: string;
+  imageUrl: string;
+};
+
 export type CanvasNodeData =
   | TextNodeData
   | ImageConfigNodeData
   | ImageResultNodeData
   | VideoConfigNodeData
-  | VideoResultNodeData;
+  | VideoResultNodeData
+  | GridConfigNodeData;
 
 export type StyleOption = {
   id: string;
@@ -71,6 +81,7 @@ export type CanvasNodeRuntimeData = {
   onRun?: (nodeId: string) => void;
   onDuplicate?: (nodeId: string) => void;
   onDelete?: (nodeId: string) => void;
+  onUpload?: (nodeId: string, file: File, field: string) => Promise<void>;
 };
 
 export type CanvasRenderNodeData = CanvasNodeData & CanvasNodeRuntimeData;

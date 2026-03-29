@@ -23,7 +23,7 @@ export async function GET(
 
   const { data: profile } = await supabaseAdmin
     .from("profiles")
-    .select("id, user_no, plan, role, plan_expires_at, is_admin, is_banned, api_key, updated_at, notes, referred_by")
+    .select("id, user_no, plan, role, plan_expires_at, is_admin, is_banned, api_key, updated_at, notes, referred_by, tenant_id")
     .eq("id", id)
     .maybeSingle();
 
@@ -108,7 +108,7 @@ export async function PATCH(
   if (!adminId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await request.json();
-  const allowed = ["plan", "role", "plan_expires_at", "is_admin", "is_banned", "notes", "referred_by"];
+  const allowed = ["plan", "role", "plan_expires_at", "is_admin", "is_banned", "notes", "referred_by", "tenant_id"];
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
   for (const key of allowed) {

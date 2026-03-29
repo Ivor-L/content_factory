@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { analyzeProduct } from '@/lib/n8n';
 import prisma from '@/lib/prisma';
 import { getRequestUserContext } from '@/lib/authServer';
+import { deductCredits } from '@/lib/credits';
+import { getCreditCost } from '@/lib/creditCosts';
+import { logCreditUsage } from '@/lib/logCreditUsage';
 
 const PRODUCT_ANALYSIS_WORKFLOW_ID = 'flow_product_dna';
 const PRODUCT_ANALYSIS_WORKFLOW_NAME = '产品分析';
@@ -30,21 +33,16 @@ export async function POST(request: Request) {
 
     const imageList = Array.isArray(images) ? images : [];
 
-    // If productId is provided, it means we want to trigger n8n workflow for this product
     if (productId) {
-        // Update status to PROCESSING immediately to show progress
-        // Note: createProduct in actions.ts already sets it to PROCESSING/0, but this reinforces it.
         await prisma.product.update({
             where: { id: productId },
             data: {
                 analysisResult: JSON.stringify({ status: 'ANALYZING' }),
                 status: 'PROCESSING',
                 progress: 0
-            } as any // Cast to any to bypass linter if types are not updated yet
+            } as any
         });
 
-        // Trigger n8n workflow
-        // analyzeProduct is now async-friendly (returns immediately if n8n responds quickly)
         const analysis = await analyzeProduct({
             name,
             description: description || '',
@@ -54,11 +52,20 @@ export async function POST(request: Request) {
             workflowId: PRODUCT_ANALYSIS_WORKFLOW_ID,
             workflowName: PRODUCT_ANALYSIS_WORKFLOW_NAME,
         });
-        
+
+        // 触发成功后扣费
+        const amount = await getCreditCost('product_analysis', 2);
+        deductCredits(apiKey, {
+          amount,
+          reason: 'product_analysis',
+          workflowId: PRODUCT_ANALYSIS_WORKFLOW_ID,
+          workflowName: PRODUCT_ANALYSIS_WORKFLOW_NAME,
+        }).catch((e) => console.error('[product/analyze] deduct credits failed:', e));
+        logCreditUsage({ featureKey: 'product_analysis', userId: context.userId, amount, success: true });
+
         return NextResponse.json(analysis);
     }
 
-    // Fallback for no productId/apiKey (should not happen in new flow)
     const analysis = await analyzeProduct({
       name,
       description: description || '',
@@ -68,9 +75,19 @@ export async function POST(request: Request) {
       workflowName: PRODUCT_ANALYSIS_WORKFLOW_NAME,
     });
 
+    const amount = await getCreditCost('product_analysis', 2);
+    deductCredits(apiKey, {
+      amount,
+      reason: 'product_analysis',
+      workflowId: PRODUCT_ANALYSIS_WORKFLOW_ID,
+      workflowName: PRODUCT_ANALYSIS_WORKFLOW_NAME,
+    }).catch((e) => console.error('[product/analyze] deduct credits failed:', e));
+    logCreditUsage({ featureKey: 'product_analysis', userId: context.userId, amount, success: true });
+
     return NextResponse.json(analysis);
   } catch (error) {
     console.error('Error analyzing product:', error);
+    logCreditUsage({ featureKey: 'product_analysis', success: false, errorMessage: error instanceof Error ? error.message : 'Unknown error' });
     return NextResponse.json(
       { error: 'Failed to analyze product' },
       { status: 500 }

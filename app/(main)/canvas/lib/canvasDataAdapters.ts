@@ -123,6 +123,11 @@ export function summarizeNodeData(node: RuntimeCanvasNode): string {
       const voice = typeof node.data?.voiceName === "string" ? node.data.voiceName : "音色";
       return `${label || "音频节点"} • ${voice}`;
     }
+    case "grid": {
+      const contentType = typeof node.data?.contentType === "string" ? node.data.contentType : "产品展示";
+      const ratio = typeof node.data?.ratio === "string" ? node.data.ratio : "1:1";
+      return `${label || "九宫格"} • ${contentType} · ${ratio}`;
+    }
     default:
       return label || node.type;
   }
@@ -253,7 +258,7 @@ export function resolveUpstreamInputs(
 export function runtimeToFlowNodes(
   runtimeNodes: RuntimeCanvasNode[],
 ): Node<MinimalFlowNodeData>[] {
-  const supported = new Set(["text", "image", "video", "audio"]);
+  const supported = new Set(["text", "image", "video", "audio", "grid"]);
   return runtimeNodes.map((node) => ({
     id: node.id,
     type: supported.has(node.type) ? node.type : "text",

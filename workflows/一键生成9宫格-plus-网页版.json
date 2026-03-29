@@ -1,0 +1,773 @@
+{
+  "name": "一键生成9宫格-plus-网页版",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "storyboard_Plot_web",
+        "options": {}
+      },
+      "id": "8df76616-b375-433d-807c-b0bef335926f",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -64,
+        -112
+      ],
+      "webhookId": "6a62bc24-387a-462f-b28b-096b2d11c234"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "storyboard_tasks",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "task_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Webhook').item.json.body.taskId || $('Webhook').item.json.body.task_id || $('Webhook').item.json.body.record_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "PROCESSING"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "10"
+            }
+          ]
+        }
+      },
+      "id": "a6709994-eecb-4b40-a3d0-c46c2ec19013",
+      "name": "Update Progress 10%",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        160,
+        -112
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputBody = $json || {}; \nconst binaryData = $input.first().binary || {}; \n\nconst script = inputBody.script || inputBody.scriptContent || inputBody.story_text || '';\nconst sellingPoints = inputBody.selling_points || []; // 允许为空数组\nconst contentType = inputBody.content_type || 'ugc带货';\nconst aspectRatio = inputBody.aspectRatio || inputBody.aspect_ratio || '9:16';\nconst styleMode = inputBody.style_mode || 'anime';\n\nif (!script) throw new Error('缺少剧本 (script)');\n\n// 🔍 修改点：只校验产品图，不再强制要求 selling_points\nif (contentType === '产品卖点展示' && !binaryData.product_data) {\n  throw new Error('内容类型为“产品卖点展示”时，必须提供 productImageUrl (产品外观图)');\n}\n\nconst modelB64 = binaryData.model_data?.data;\nconst productB64 = binaryData.product_data?.data || ''; \n\nif (!modelB64) throw new Error('未能获取到基础参考图的 Base64 数据');\n\nreturn {\n  json: {\n    ...inputBody,\n    story_text: script,\n    selling_points: sellingPoints, \n    model_image_b64: modelB64, \n    product_image_b64: productB64, \n    model_mime_type: inputBody.modelMimeType || 'image/jpeg',\n    product_mime_type: inputBody.productMimeType || 'image/jpeg',\n    content_type: contentType,\n    aspectRatio,\n    style_mode: styleMode,\n    taskId: inputBody.taskId || inputBody.task_id || inputBody.record_id || 'unknown_task'\n  }\n};"
+      },
+      "id": "9ade5125-ed15-424c-9792-978ed5aefa61",
+      "name": "Prepare Gemini Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "function s(v){ return v == null ? '' : String(v); }\nfunction stripDataPrefix(b64){ return s(b64).trim().replace(/^data:.*;base64,/, '').trim(); }\n\nconst j = $json || {};\nconst content_type = s(j.content_type).trim() || 'ugc带货';\nconst story_text = s(j.story_text).trim();\nconst selling_points = j.selling_points || []; \nconst style_mode = s(j.style_mode).trim() || 'anime';\n\nconst model_image_b64 = stripDataPrefix(j.model_image_b64);\nconst product_image_b64 = stripDataPrefix(j.product_image_b64);\n\nif (!story_text) throw new Error('缺少剧本 story_text');\nif (!model_image_b64) throw new Error('缺少基础参考图 model_image_b64');\n\n// 🔍 判断用户是否传了卖点\nconst hasUserSellingPoints = selling_points.length > 0;\n\nconst baseRules = [\n  'You are a senior storyboard director and cinematic video prompt engineer.',\n  'Your job is to convert the script, selling points (if provided), and reference image(s) into a 9-shot storyboard plan for a single 3x3 storyboard grid image.',\n  'You must preserve identity consistency, outfit consistency, product appearance consistency (if provided), and scene logic consistency.',\n  'shots must be exactly 9 items.',\n  'Each shot must be visually distinct but remain coherent as one continuous story.',\n  'Do not output vague prompts. Be concrete and visual.',\n  'No text overlays, no subtitles, no watermark, no UI.'\n].join(' ');\n\n// 🔍 针对“产品卖点展示”动态生成规则\nconst sellingPointRule = hasUserSellingPoints \n  ? 'You MUST integrate the provided `selling_points` list as the core storybeat.' \n  : 'Analyze the Product Image and Script to INFER 3-5 core functional selling points. List them in `selling_points_focus`, and use them as the core storybeat.';\n\nconst typeRulesMap = {\n  'ugc带货': 'UGC commercial style narrative. The same person naturally interacts with the product across the 9 shots.',\n  '产品展示': 'Product showcase style. The product is always the hero. Use different framings, angles, and hero beauty shots.',\n  '剧情故事': 'Narrative storytelling style. Characters and props must remain continuous.',\n  '产品卖点展示': `Focus on DEMONSTRATING functional selling points (USP). ${sellingPointRule} Visually demonstrate the benefit of each selling point in action.`\n};\n\nconst styleRulesMap = {\n  anime: 'Preserve original anime/illustration style. Maintain cel shading, clean lineart. DO NOT make it photorealistic.',\n  realistic: 'Preserve original realistic/live-action style. Maintain cinematic lighting, realistic anatomy. DO NOT cartoonize.',\n  auto: 'Infer the visual style from the reference image, then preserve it strictly.'\n};\n\nconst typeRules = typeRulesMap[content_type] || typeRulesMap['ugc带货'];\nconst styleRules = styleRulesMap[style_mode] || styleRulesMap['anime'];\n\nconst outputSchema = {\n  content_type: content_type,\n  style_mode: style_mode,\n  // 🔍 让 AI 把最终使用的卖点（用户提供的，或自己提炼的）回传给我们\n  selling_points_focus: contentType === '产品卖点展示' ? ['Selling Point 1', 'Selling Point 2'] : [], \n  visual_anchor: {\n    subject_identity: 'Specify how to anchor the person identity',\n    outfit_anchor: 'Specify how to anchor the outfit and accessories',\n    product_anchor: product_image_b64 ? 'Specify product appearance from Product Image' : 'Infer product from script/reference',\n    scene_anchor: 'Specify environment logic'\n  },\n  global_style: 'No text, no UI...',\n  negative_prompts: ['text overlay', 'watermark', 'frame border'],\n  shots: [\n    {\n      shot_index: 1,\n      focus_selling_point: contentType === '产品卖点展示' ? 'Specify which selling point is demonstrated here' : 'N/A', \n      title: 'shot title',\n      story_beat: 'what this beat does in the story',\n      subject: 'main subject',\n      scene: 'where it happens',\n      camera_shot: 'composition / size / angle',\n      motion_hint: 'dynamics for later video expansion',\n      prompt_text: 'detailed visual prompt.' \n    }\n  ]\n};\n\n// 🔍 动态组装卖点输入文本\nlet sellingPointsInputText = 'N/A';\nif (content_type === '产品卖点展示') {\n  sellingPointsInputText = hasUserSellingPoints \n    ? JSON.stringify(selling_points, null, 2) \n    : 'NOT PROVIDED. Please infer them from the Product Image and Script, and output them in `selling_points_focus`.';\n}\n\nconst instruction = `You are a senior cinematic video prompt engineer.\n\nInput fields:\n- script: basic story description\n- selling_points: product unique selling points\n- content_type: content narrative type (${Object.keys(typeRulesMap).join('|')})\n- style_mode: visual style mode (${Object.keys(styleRulesMap).join('|')})\n\nCore Goals:\n${baseRules}\n\nContent type rules:\n${typeRules}\n\nStyle preservation rules:\n${styleRules}\n\nHard constraints:\n1. shots must be exactly 9 items.\n2. prompt_text must be detailed and visual.\n3. If content_type is '产品卖点展示', distribute the key selling_points logically across the 9 shots.\n\n[INPUT DATA]\nScript:\n${story_text}\n\nSelling Points:\n${sellingPointsInputText}\n\nReturn a JSON object following this structure exactly:\n${JSON.stringify(outputSchema, null, 2)}`;\n\nconst promptParts = [\n  { text: instruction },\n  {\n    inline_data: {\n      mime_type: s(j.model_mime_type).trim() || 'image/jpeg',\n      data: model_image_b64\n    }\n  }\n];\n\nif (product_image_b64) {\n  promptParts.push({\n    inline_data: {\n      mime_type: s(j.product_mime_type).trim() || 'image/jpeg',\n      data: product_image_b64\n    }\n  });\n}\n\nconst image_storyboard_body = {\n  contents: [\n    {\n      role: 'user',\n      parts: promptParts\n    }\n  ],\n  generationConfig: {\n    temperature: 0.5,\n    responseMimeType: 'application/json'\n  }\n};\n\nreturn {\n  json: {\n    ...j,\n    image_storyboard_body\n  }\n};"
+      },
+      "id": "e573db72-3d59-4fc0-8cb0-9c8123295ae4",
+      "name": "组装九宫格分镜请求",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "storyboard_tasks",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "task_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.taskId }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "PROCESSING"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "35"
+            }
+          ]
+        }
+      },
+      "id": "ca853d76-9e11-49f2-98f7-1482cb9e26f5",
+      "name": "Update Progress 35%",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1056,
+        -112
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://yunwu.ai/v1beta/models/gemini-2.5-pro:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('组装九宫格分镜请求').item.json.image_storyboard_body }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "57fe9143-1324-4e60-b4ba-2de708746157",
+      "name": "分析Agent-九宫格分镜撰写",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        -112
+      ],
+      "retryOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mMIH382GnJoMSu4L",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function unwrapRoot(x) {\n  if (x && typeof x === 'object' && x.body && typeof x.body === 'object') return x.body;\n  return x;\n}\n\nfunction extractFirstJsonObject(s) {\n  if (!s) return '';\n  const cleaned = String(s).replace(/```json\\s*/gi, '').replace(/```/g, '').trim();\n  const start = cleaned.indexOf('{');\n  if (start < 0) return '';\n  let depth = 0;\n  let inString = false;\n  let escaped = false;\n  for (let i = start; i < cleaned.length; i++) {\n    const ch = cleaned[i];\n    if (escaped) {\n      escaped = false;\n      continue;\n    }\n    if (ch === '\\\\') {\n      escaped = true;\n      continue;\n    }\n    if (ch === '\"') {\n      inString = !inString;\n      continue;\n    }\n    if (!inString) {\n      if (ch === '{') depth++;\n      if (ch === '}') depth--;\n      if (depth === 0) return cleaned.slice(start, i + 1).trim();\n    }\n  }\n  return '';\n}\n\nfunction extractText(root) {\n  const parts = root?.candidates?.[0]?.content?.parts;\n  if (!Array.isArray(parts) || parts.length === 0) return '';\n  const direct = parts.find(p => typeof p?.text === 'string' && p.text.trim().startsWith('{'));\n  if (direct) return direct.text.trim();\n  const all = parts.map(p => typeof p?.text === 'string' ? p.text : '').filter(Boolean).join('\\n');\n  return extractFirstJsonObject(all);\n}\n\nconst raw = $json || {};\nconst root = unwrapRoot(raw);\nconst text = extractText(root);\nif (!text) throw new Error('第一阶段九宫格分镜 agent 未返回可解析 JSON');\n\nlet plan;\ntry {\n  plan = JSON.parse(text);\n} catch (e) {\n  throw new Error('第一阶段九宫格分镜 JSON 解析失败：' + e.message + '\\n原文前500字：' + String(text).slice(0, 500));\n}\n\nconst shots = Array.isArray(plan?.shots) ? plan.shots : [];\nif (shots.length !== 9) {\n  throw new Error('第一阶段九宫格分镜 shots 必须刚好 9 个；实际=' + shots.length);\n}\n\nconst content_type = String(plan?.content_type || 'ugc带货');\nconst style_mode = String(plan?.style_mode || $('Prepare Gemini Data').first().json.style_mode || 'anime');\n\nconst hardCommon = `Create ONE single image. It must be a full-bleed 3x3 grid (nine panels) that fills the entire canvas with NO margins, NO borders, NO frames, NO gutters, NO gridlines, NO separators.\\nNo visible text of any kind: no captions, no labels, no numbers, no watermark, no UI.\\nPreserve identity consistency, outfit consistency, prop consistency, and scene logic consistency across all panels.\\n`;\n\nconst styleLockMap = {\n  anime: `Preserve the original anime / illustration style from the reference image. Maintain 2D anime aesthetic, cel shading, clean lineart, stylized facial design, illustrated texture, non-photorealistic rendering. Do NOT convert any character into a real human. Do NOT use live-action look.`,\n  realistic: `Preserve the original realistic / live-action style from the reference image. Maintain realistic skin texture, cinematic lighting, realistic anatomy, real-world material rendering. Do NOT convert into anime or cartoon look.`,\n  auto: `First infer the original style from the reference image, then preserve it strictly. If anime, keep anime and do not make it photorealistic. If realistic, keep realistic and do not cartoonize it.`\n};\n\nconst hardByType = {\n  'ugc带货': `Preserve EXACTLY the same number of people as the reference image across all panels. Do NOT add or remove any person. Keep the SAME set of people across all panels. Keep EACH person's identity consistent. Keep the SAME product identity across all panels. Keep a consistent environment and lighting logic across all panels.`,\n  '产品展示': `Keep the SAME product identity across all panels. Product is the hero. Show different angles, macro details, usage steps, and hero shots while preserving original style.`,\n  '剧情故事': `If the reference image contains multiple people, preserve EXACTLY the same number of people. Characters must stay consistent when they re-appear. Locations MAY change between panels if the story requires it, but continuity must be coherent.`\n};\n\nconst hardLayout = [hardCommon, styleLockMap[style_mode] || styleLockMap['anime'], hardByType[content_type] || hardByType['ugc带货']].join('\\n');\n\nconst panels = shots.map((s, i) => {\n  const p = String(s?.prompt_text || '').trim();\n  if (!p) throw new Error('第 ' + (i + 1) + ' 个 shot 的 prompt_text 为空');\n  return `Panel ${i + 1} (left-to-right, top-to-bottom): ${p}`;\n}).join('\\n\\n');\n\nconst neg = Array.isArray(plan?.negative_prompts) ? plan.negative_prompts.join(', ') : '';\nconst negBlock = neg ? `\\nNegative: ${neg}` : '';\n\nconst base = $('Prepare Gemini Data').first().json || {};\n\nreturn {\n  json: {\n    ...base,\n    style_mode,\n    image_storyboard_json: plan,\n    grid_prompt: `${hardLayout}\\n\\n${panels}${negBlock}`\n  }\n};"
+      },
+      "id": "e815dc9a-1759-4c9b-a0d1-544e210d5d6f",
+      "name": "解析九宫格分镜并生成grid_prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1504,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "function s(v){ return v == null ? '' : String(v); }\nfunction stripDataPrefix(b64){ return s(b64).trim().replace(/^data:.*;base64,/, '').trim(); }\n\nconst j = $json || {};\nconst img_b64 = stripDataPrefix(j.person_image_b64);\nconst img_mime = s(j.person_mime_type).trim() || 'image/jpeg';\nconst promptText = s(j.grid_prompt).trim();\nconst aspectRatio = s(j.aspectRatio).trim() || '9:16';\nconst styleMode = s(j.style_mode).trim() || 'anime';\n\nif (!img_b64) throw new Error('缺少 person_image_b64');\nif (!promptText) throw new Error('缺少 grid_prompt');\n\nconst CONSISTENCY_LOCK = `ABSOLUTE CONSISTENCY LOCK (must follow):\\n- Preserve EXACTLY the same number of people as the reference image. Do NOT add or remove any person.\\n- Keep EXACTLY the same set of identities as the reference image (for EACH person): same face structure / anime face design, eyes, nose, lips, skin tone, hairstyle, hair color, makeup.\\n- Keep EXACTLY the same outfit and accessories as the reference image.\\n- Keep EXACTLY the same core character design and props from the reference image.\\n- Do NOT swap hands, do NOT mirror / flip the image.\\n- No text, no subtitles, no watermark, no UI, no borders, no frames, no gridlines, no separators.`.trim();\n\nconst STYLE_LOCK_MAP = {\n  anime: `STYLE LOCK (anime):\\n- Preserve the original anime / illustration style from the reference image.\\n- Maintain 2D illustrated look, cel shading, clean lineart, stylized facial design, anime proportions, illustrated texture.\\n- Keep the same anime character design language, color rendering style, and drawing texture.\\n- Do NOT convert into real human or live-action style.\\n- Do NOT make the face photorealistic.`,\n  realistic: `STYLE LOCK (realistic):\\n- Preserve the original realistic / live-action style from the reference image.\\n- Maintain realistic skin texture, natural human anatomy, cinematic lighting, realistic materials.\\n- Do NOT convert into anime or cartoon style.`,\n  auto: `STYLE LOCK (auto):\\n- First infer the original style from the reference image, then preserve it strictly.\\n- If anime / illustration, keep anime / illustration and do NOT make it photorealistic.\\n- If realistic, keep realistic and do NOT cartoonize it.`\n};\n\nconst finalPrompt = `${CONSISTENCY_LOCK}\\n\\n${STYLE_LOCK_MAP[styleMode] || STYLE_LOCK_MAP['anime']}\\n\\n${promptText}`;\n\nconst request_body = {\n  contents: [\n    {\n      role: 'user',\n      parts: [\n        { text: finalPrompt },\n        {\n          inline_data: {\n            mime_type: img_mime,\n            data: img_b64\n          }\n        }\n      ]\n    }\n  ],\n  generationConfig: {\n    responseModalities: ['IMAGE'],\n    imageConfig: {\n      aspectRatio,\n      imageSize: '4K'\n    }\n  }\n};\n\nreturn {\n  json: {\n    ...j,\n    final_grid_prompt: finalPrompt,\n    request_body\n  }\n};"
+      },
+      "id": "da8277eb-be94-43ed-a959-e3ebdc2c1699",
+      "name": "组装九宫格生图请求体",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1728,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://yunwu.ai/v1beta/models/gemini-3-pro-image-preview:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.request_body }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "ff719e4c-6153-41b2-86df-a65f665cb98c",
+      "name": "九宫格生图请求",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1952,
+        -112
+      ],
+      "retryOnFail": false,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mMIH382GnJoMSu4L",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "function unwrapRoot(x) {\n  if (x && typeof x === 'object' && x.body && typeof x.body === 'object') return x.body;\n  return x;\n}\n\nfunction getByPath(obj, path) {\n  try {\n    return path.split('.').reduce((acc, k) => (acc == null ? undefined : acc[k]), obj);\n  } catch {\n    return undefined;\n  }\n}\n\nfunction findInlineImageParts(root) {\n  const candidates = root?.candidates;\n  if (!Array.isArray(candidates) || !candidates.length) return [];\n  const parts = candidates?.[0]?.content?.parts;\n  if (!Array.isArray(parts)) return [];\n  const imgs = [];\n  for (const p of parts) {\n    const inline = p?.inline_data || p?.inlineData;\n    if (inline?.data) {\n      imgs.push({ b64: inline.data, mimeType: inline.mime_type || inline.mimeType || 'image/png' });\n      continue;\n    }\n    const fd = p?.fileData;\n    if (fd?.fileUri) {\n      imgs.push({ fileUri: fd.fileUri, mimeType: fd.mimeType || 'image/png' });\n    }\n  }\n  return imgs;\n}\n\nfunction stripDataPrefix(b64) {\n  return String(b64 || '').replace(/^data:.*;base64,/, '').trim();\n}\n\nconst raw = $json || {};\nconst root = unwrapRoot(raw);\nlet imgs = findInlineImageParts(root);\n\nif (!imgs.length) {\n  const maybe = getByPath(root, 'image.data') || getByPath(root, 'data.image') || getByPath(root, 'output.image') || getByPath(root, 'output.data') || null;\n  if (maybe && typeof maybe === 'string') imgs = [{ b64: maybe, mimeType: 'image/png' }];\n}\n\nif (!imgs.length) throw new Error('没有在返回体中找到图片数据（inline_data / inlineData）');\n\nconst first = imgs[0];\nif (first.fileUri && !first.b64) {\n  throw new Error(`返回的是 fileUri（${first.fileUri}）而不是 base64，需要额外下载。当前流程未处理 fileUri 模式。`);\n}\n\nconst mimeType = first.mimeType || 'image/png';\nconst ext = mimeType.includes('jpeg') || mimeType.includes('jpg') ? 'jpg' : 'png';\nconst b64 = stripDataPrefix(first.b64);\nif (!b64) throw new Error('图片 base64 为空');\n\nconst base = $('组装九宫格生图请求体').first().json || {};\n\nreturn {\n  json: {\n    ...base,\n    mimeType,\n    generated_grid_b64: b64,\n    generated_grid_mime_type: mimeType,\n    fileName: `storyboard_grid.${ext}`\n  },\n  binary: {\n    data: {\n      data: b64,\n      mimeType,\n      fileName: `storyboard_grid.${ext}`\n    }\n  }\n};"
+      },
+      "id": "7e76f837-ab57-4fc4-a632-3ad0d983c9cc",
+      "name": "转换九宫格为Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2176,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "storyboard_tasks",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "task_id",
+              "condition": "eq",
+              "keyValue": "={{ $('生成上传文件名').item.json.taskId }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "PROCESSING"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "75"
+            },
+            {
+              "fieldId": "storyboard_image_url",
+              "fieldValue": "={{ $('生成上传文件名').item.json.storyboard_image_url }}"
+            }
+          ]
+        }
+      },
+      "id": "bc7f7d5e-c5e7-48e9-8b55-95b03d234887",
+      "name": "Update Progress 75%",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        3072,
+        -112
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function s(v){ return v == null ? '' : String(v); }\nfunction stripDataPrefix(b64){ return s(b64).trim().replace(/^data:.*;base64,/, '').trim(); }\n\nconst base = $('生成上传文件名').first().json || {};\nconst imageStoryboard = base.image_storyboard_json || {};\nconst shots = Array.isArray(imageStoryboard?.shots) ? imageStoryboard.shots : [];\nif (shots.length !== 9) throw new Error('第二阶段前校验失败：image_storyboard_json.shots 不是 9 个');\n\nconst gridB64 = stripDataPrefix(base.generated_grid_b64);\nconst gridMime = s(base.generated_grid_mime_type).trim() || 'image/png';\nconst styleMode = s(base.style_mode).trim() || 'anime';\nif (!gridB64) throw new Error('缺少生成后的九宫格图片 base64');\n\nconst storyText = s(base.story_text).trim();\nconst contentType = s(base.content_type).trim() || 'ugc带货';\n\nconst styleRulesMap = {\n  anime: 'The storyboard image is anime / illustration style. Preserve anime / illustration style in understanding the panels. Do NOT reinterpret the characters as real humans.',\n  realistic: 'The storyboard image is realistic / live-action style. Preserve realistic visual understanding of the panels. Do NOT reinterpret it as anime.',\n  auto: 'Infer the style from the storyboard image and preserve it. If anime, do not make it photorealistic. If realistic, do not cartoonize it.'\n};\n\nconst instruction = `You are a senior cinematic video prompt engineer.\\n\\nTask:\\nThe uploaded image is a 3x3 storyboard grid image. Based on this generated storyboard image and the structured storyboard JSON, expand each of the 9 storyboard shots into a highly detailed 8-second video prompt.\\n\\nStyle preservation rule:\\n${styleRulesMap[styleMode] || styleRulesMap['anime']}\\n\\nHard requirements:\\n1. Do NOT rewrite the story structure.\\n2. Keep the same person identity, outfit, accessories, product identity, and scene logic from the storyboard image and storyboard JSON.\\n3. Each shot duration is EXACTLY 8 seconds.\\n4. For EACH shot output these fields:\\n   - shot_index\\n   - title\\n   - story_beat\\n   - subject\\n   - scene\\n   - emotion\\n   - camera_shot\\n   - motion_hint\\n   - prompt_text\\n   - start_frame\\n   - action\\n   - end_frame\\n   - style\\n   - timeline (minimum 4 segments)\\n   - video_prompt\\n5. The final video_prompt must strictly use this structure:\\n   Start frame: ...\\n   Action: ...\\n   End frame: ...\\n   Style: ...\\n6. timeline must describe the exact 8-second evolution with time_range / visual / camera / environment.\\n7. Maintain subject consistency and scene consistency throughout.\\n8. Return JSON only. No markdown. No explanation.\\n\\nReturn schema example:\\n{\\n  \\\"content_type\\\": \\\"${contentType}\\\",\\n  \\\"style_mode\\\": \\\"${styleMode}\\\",\\n  \\\"global_video_rules\\\": {\\n    \\\"duration_per_shot\\\": 8,\\n    \\\"subject_consistency\\\": true,\\n    \\\"scene_consistency\\\": true,\\n    \\\"style_anchor\\\": \\\"preserve original visual style from storyboard image\\\"\\n  },\\n  \\\"shots\\\": [\\n    {\\n      \\\"shot_index\\\": 1,\\n      \\\"title\\\": \\\"...\\\",\\n      \\\"story_beat\\\": \\\"...\\\",\\n      \\\"subject\\\": \\\"...\\\",\\n      \\\"scene\\\": \\\"...\\\",\\n      \\\"emotion\\\": \\\"...\\\",\\n      \\\"camera_shot\\\": \\\"...\\\",\\n      \\\"motion_hint\\\": \\\"...\\\",\\n      \\\"prompt_text\\\": \\\"...\\\",\\n      \\\"start_frame\\\": \\\"...\\\",\\n      \\\"action\\\": \\\"...\\\",\\n      \\\"end_frame\\\": \\\"...\\\",\\n      \\\"style\\\": \\\"...\\\",\\n      \\\"timeline\\\": [\\n        {\\n          \\\"time_range\\\": \\\"0.0-1.5s\\\",\\n          \\\"visual\\\": \\\"...\\\",\\n          \\\"camera\\\": \\\"...\\\",\\n          \\\"environment\\\": \\\"...\\\"\\n        },\\n        {\\n          \\\"time_range\\\": \\\"1.5-3.5s\\\",\\n          \\\"visual\\\": \\\"...\\\",\\n          \\\"camera\\\": \\\"...\\\",\\n          \\\"environment\\\": \\\"...\\\"\\n        },\\n        {\\n          \\\"time_range\\\": \\\"3.5-6.0s\\\",\\n          \\\"visual\\\": \\\"...\\\",\\n          \\\"camera\\\": \\\"...\\\",\\n          \\\"environment\\\": \\\"...\\\"\\n        },\\n        {\\n          \\\"time_range\\\": \\\"6.0-8.0s\\\",\\n          \\\"visual\\\": \\\"...\\\",\\n          \\\"camera\\\": \\\"...\\\",\\n          \\\"environment\\\": \\\"...\\\"\\n        }\\n      ],\\n      \\\"video_prompt\\\": \\\"Start frame: ... Action: ... End frame: ... Style: ...\\\"\\n    }\\n  ]\\n}`;\n\nconst video_prompt_body = {\n  contents: [\n    {\n      role: 'user',\n      parts: [\n        { text: instruction + '\\n\\nStory text:\\n' + storyText + '\\n\\nStructured storyboard JSON:\\n' + JSON.stringify(imageStoryboard, null, 2) },\n        { inline_data: { mime_type: gridMime, data: gridB64 } }\n      ]\n    }\n  ],\n  generationConfig: {\n    temperature: 0.5,\n    responseMimeType: 'application/json'\n  }\n};\n\nreturn {\n  json: {\n    ...base,\n    video_prompt_body\n  }\n};"
+      },
+      "id": "e086312a-1a22-45cc-90c2-8b5beb76c75a",
+      "name": "组装视频提示词请求",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3296,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://yunwu.ai/v1beta/models/gemini-3-flash-preview:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.video_prompt_body }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "22092a36-16c9-4564-bcaf-430d97b93152",
+      "name": "分析Agent-视频提示词扩写",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3520,
+        -112
+      ],
+      "retryOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mMIH382GnJoMSu4L",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function unwrapRoot(x) {\n  if (x && typeof x === 'object' && x.body && typeof x.body === 'object') return x.body;\n  return x;\n}\n\nfunction extractFirstJsonObject(s) {\n  if (!s) return '';\n  const cleaned = String(s).replace(/```json\\s*/gi, '').replace(/```/g, '').trim();\n  const start = cleaned.indexOf('{');\n  if (start < 0) return '';\n  let depth = 0;\n  let inString = false;\n  let escaped = false;\n  for (let i = start; i < cleaned.length; i++) {\n    const ch = cleaned[i];\n    if (escaped) {\n      escaped = false;\n      continue;\n    }\n    if (ch === '\\\\') {\n      escaped = true;\n      continue;\n    }\n    if (ch === '\"') {\n      inString = !inString;\n      continue;\n    }\n    if (!inString) {\n      if (ch === '{') depth++;\n      if (ch === '}') depth--;\n      if (depth === 0) return cleaned.slice(start, i + 1).trim();\n    }\n  }\n  return '';\n}\n\nfunction extractText(root) {\n  const parts = root?.candidates?.[0]?.content?.parts;\n  if (!Array.isArray(parts) || parts.length === 0) return '';\n  const direct = parts.find(p => typeof p?.text === 'string' && p.text.trim().startsWith('{'));\n  if (direct) return direct.text.trim();\n  const all = parts.map(p => typeof p?.text === 'string' ? p.text : '').filter(Boolean).join('\\n');\n  return extractFirstJsonObject(all);\n}\n\nconst raw = $json || {};\nconst root = unwrapRoot(raw);\nconst text = extractText(root);\nif (!text) throw new Error('第二阶段视频提示词 agent 未返回可解析 JSON');\n\nlet videoPlan;\ntry {\n  videoPlan = JSON.parse(text);\n} catch (e) {\n  throw new Error('第二阶段视频提示词 JSON 解析失败：' + e.message + '\\n原文前500字：' + String(text).slice(0, 500));\n}\n\nconst shots = Array.isArray(videoPlan?.shots) ? videoPlan.shots : [];\nif (shots.length !== 9) {\n  throw new Error('第二阶段视频提示词 shots 必须刚好 9 个；实际=' + shots.length);\n}\n\nconst base = $('组装视频提示词请求').first().json || {};\n\nreturn {\n  json: {\n    taskId: base.taskId,\n    style_mode: base.style_mode,\n    storyboard_image_url: base.storyboard_image_url,\n    image_storyboard_json: base.image_storyboard_json || {},\n    video_storyboard_json: videoPlan,\n    video_prompt_list: shots.map(s => ({\n      shot_index: s.shot_index,\n      title: s.title,\n      video_prompt: s.video_prompt\n    }))\n  }\n};"
+      },
+      "id": "8a570d02-17ef-4587-a961-c8831e417cb6",
+      "name": "整理最终回传数据",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3744,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "storyboard_tasks",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "task_id",
+              "condition": "eq",
+              "keyValue": "={{ $json.taskId }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "COMPLETED"
+            },
+            {
+              "fieldId": "progress",
+              "fieldValue": "100"
+            },
+            {
+              "fieldId": "storyboard_structure",
+              "fieldValue": "={{ JSON.stringify($json.video_storyboard_json || {}) }}"
+            },
+            {
+              "fieldId": "storyboard_image_url",
+              "fieldValue": "={{ $json.storyboard_image_url }}"
+            }
+          ]
+        }
+      },
+      "id": "b664db26-06ad-49a8-9310-34b584e500e1",
+      "name": "Supabase Update 100%",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        3968,
+        -112
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "51Y43Q3CDfFRAjNI",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const taskId = $json.taskId || 'unknown_task';\nconst timestamp = Date.now();\nconst mimeType = $json.mimeType || 'image/png';\nconst ext = mimeType.includes('jpeg') || mimeType.includes('jpg') ? 'jpg' : 'png';\n\n// OSS 配置\nconst folder = 'storyboard';\nconst fileName = `${taskId}_grid_${timestamp}.${ext}`;\nconst ossPath = `${folder}/${fileName}`; // OSS 插件需要的路径\n\nreturn {\n  json: {\n    ...($json || {}),\n    fileName,\n    ossPath,\n    taskId\n  },\n  binary: {\n    data: $input.item.binary.data\n  }\n};"
+      },
+      "id": "1ba9df29-b53d-4b88-b187-59bf08fb7eea",
+      "name": "生成上传文件名",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const uploadItems = $input.all();\nconst preparedItems = $('准备上传参数').all();\n\nreturn uploadItems.map((item, idx) => {\n  const resp = item.json || {};\n  const prepared = preparedItems[idx]?.json || {};\n\n  const publicUrl = resp.url || resp.publicUrl || prepared.publicUrl || '';\n\n  return {\n    json: {\n      ...prepared,\n      ...resp,\n      publicUrl\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2848,
+        -112
+      ],
+      "id": "f0a20164-0f59-4f3e-aa02-de1bbe880b1a",
+      "name": "整理上传结果"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://atomx.top/api/upload/image",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2624,
+        -112
+      ],
+      "id": "44d45045-8604-4c60-869a-ca9698619916",
+      "name": "上传到oss"
+    },
+    {
+      "parameters": {
+        "jsCode": "const inputBody = $('Webhook').item.json.body || {};\nconst modelUrl = inputBody.imageUrl || inputBody.referenceImage;\nconst productUrl = inputBody.productImageUrl; // 现在变成选填了\n\nif (!modelUrl) {\n  throw new Error('Missing imageUrl (必须提供基础参考图)');\n}\n\n// 动态构建下载任务\nconst promises = [\n  this.helpers.httpRequest({ url: modelUrl, encoding: null, resolveWithFullResponse: true })\n];\n\nif (productUrl) {\n  promises.push(\n    this.helpers.httpRequest({ url: productUrl, encoding: null, resolveWithFullResponse: true })\n  );\n}\n\nconst results = await Promise.all(promises);\n\n// 处理基础参考图\nconst modelRes = results[0];\nconst binary = {\n  model_data: {\n    data: modelRes.body.toString('base64'),\n    mimeType: modelRes.headers['content-type'] || 'image/jpeg',\n    fileName: 'model.png'\n  }\n};\n\n// 如果有产品图，处理产品图\nif (productUrl && results[1]) {\n  const productRes = results[1];\n  binary.product_data = {\n    data: productRes.body.toString('base64'),\n    mimeType: productRes.headers['content-type'] || 'image/jpeg',\n    fileName: 'product.png'\n  };\n}\n\nreturn {\n  json: {\n    ...inputBody,\n    modelMimeType: binary.model_data.mimeType,\n    productMimeType: binary.product_data?.mimeType || ''\n  },\n  binary\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        368,
+        -112
+      ],
+      "id": "fc3d28ac-b64d-4663-8923-cbe3e58d8a23",
+      "name": "下载图片"
+    }
+  ],
+  "pinData": {
+    "分析Agent-九宫格分镜撰写": [
+      {
+        "json": {
+          "candidates": [
+            {
+              "content": {
+                "parts": [
+                  {
+                    "text": "{\n  \"content_type\": \"剧情故事\",\n  \"style_mode\": \"anime\",\n  \"style_anchor\": \"preserved original visual style from reference image\",\n  \"visual_anchor\": {\n    \"subject_identity\": \"A handsome young man with long, flowing white hair tied in a topknot, sharp features, and a calm demeanor. He is an ancient Chinese martial artist.\",\n    \"outfit_anchor\": \"A flowing white robe with black and grey underlayers, a black sash, and dark bracers. The style is elegant and traditional.\",\n    \"product_anchor\": \"N/A\",\n    \"scene_anchor\": \"An open-air stone courtyard of an ancient Chinese temple, with traditional architecture in the background, set against a misty, mountainous landscape.\"\n  },\n  \"global_style\": \"anime illustration, 2D cel shading, clean lineart, stylized composition, preserve original anime aesthetic, no text, no UI\",\n  \"negative_prompts\": [\n    \"real human skin texture\",\n    \"photorealistic face\",\n    \"live action style\",\n    \"hyper realistic pores\",\n    \"text overlay\",\n    \"watermark\",\n    \"frame border\",\n    \"gridline\"\n  ],\n  \"shots\": [\n    {\n      \"shot_index\": 1,\n      \"title\": \"The Standoff\",\n      \"story_beat\": \"Introduction of the two combatants, establishing the scene and the imminent conflict.\",\n      \"subject\": \"The white-haired hero and his opponent, a warrior in dark crimson armor.\",\n      \"scene\": \"Ancient Chinese temple courtyard, misty mountains in the background.\",\n      \"emotion\": \"Tense, focused, anticipation.\",\n      \"camera_shot\": \"Wide shot, eye-level, showing both fighters facing each other from a distance.\",\n      \"motion_hint\": \"A slow camera dolly-in, increasing the tension. Wind blows their hair and clothes.\",\n      \"prompt_text\": \"A wide shot in an ancient Chinese temple courtyard. On the left, a handsome man with long white hair in white robes stands in a ready stance. On the right, a muscular warrior in ornate dark crimson and black armor faces him. The air crackles with tension. The background features misty mountains and traditional temple roofs. Anime illustration style, cel shading, clean lineart.\"\n    },\n    {\n      \"shot_index\": 2,\n      \"title\": \"First Strike\",\n      \"story_beat\": \"The opponent initiates the duel with a powerful elemental attack.\",\n      \"subject\": \"The warrior in crimson armor.\",\n      \"scene\": \"Ancient Chinese temple courtyard.\",\n      \"emotion\": \"Aggressive, powerful, determined.\",\n      \"camera_shot\": \"Medium shot, low angle, focusing on the crimson warrior as he thrusts his palm forward.\",\n      \"motion_hint\": \"A fast zoom towards the opponent as he launches the attack. Fire particles erupt from his hand.\",\n      \"prompt_text\": \"A low-angle medium shot of the warrior in crimson armor. He has a fierce expression, thrusting his palm forward, unleashing a massive, swirling fireball. Orange and red energy particles emanate from his hand, illuminating his armor. The stone ground beneath him begins to crack and glow. Anime illustration style, cel shading, clean lineart.\"\n    },\n    {\n      \"shot_index\": 3,\n      \"title\": \"Swift Defense\",\n      \"story_beat\": \"The hero calmly reacts and defends against the incoming attack.\",\n      \"subject\": \"The white-haired hero.\",\n      \"scene\": \"Ancient Chinese temple courtyard.\",\n      \"emotion\": \"Calm, composed, powerful.\",\n      \"camera_shot\": \"Over-the-shoulder shot from behind the hero, showing the incoming fireball and his defensive maneuver.\",\n      \"motion_hint\": \"The hero's hands move in a circular motion, forming a shield that ripples upon impact.\",\n      \"prompt_text\": \"Over-the-shoulder shot of the white-haired man. He holds his hands up, conjuring a translucent, swirling blue energy shield just as the massive fireball is about to hit. The impact creates a bright flash of light where blue and orange energies meet. His white robes billow from the force. Anime illustration style, cel shading, clean lineart.\"\n    },\n    {\n      \"shot_index\": 4,\n      \"title\": \"Counterattack\",\n      \"story_beat\": \"The hero retaliates with his signature energy attack.\",\n      \"subject\": \"The white-haired hero.\",\n      \"scene\": \"Ancient Chinese temple courtyard.\",\n      \"emotion\": \"Focused, powerful, controlled.\",\n      \"camera_shot\": \"Medium shot, side profile, capturing the hero launching his attack.\",\n      \"motion_hint\": \"The hero pushes his hand forward, and the energy orb shoots across the frame with a trail of light.\",\n      \"prompt_text\": \"A dynamic side-profile medium shot of the white-haired man, in the exact pose from the reference image. He extends his right hand, launching a swirling sphere of blue energy towards his opponent. A trail of blue light follows the orb. His expression is one of intense focus. Anime illustration style, cel shading, clean lineart.\"\n    },\n    {\n      \"shot_index\": 5,\n      \"title\": \"Clash of Powers\",\n      \"story_beat\": \"The two opposing forces collide, creating a massive explosion.\",\n      \"subject\": \"The blue energy orb and a newly summoned fire vortex.\",\n      \"scene\": \"Center of the temple courtyard.\",\n      \"emotion\": \"Violent, chaotic, spectacular.\",\n      \"camera_shot\": \"Wide shot, centered on the point of impact between the two attacks.\",\n      \"motion_hint\": \"A violent screen shake and a bright flash of light, followed by an expanding shockwave of energy and dust.\",\n      \"prompt_text\": \"A wide shot focusing on the center of the courtyard. The hero's blue energy sphere collides with a red fire vortex from the opponent, creating a massive explosion of purple and white light. Energy arcs and sparks fly everywhere, and the stone tiles of the ground are shattered and thrown into the air. Anime illustration style, cel shading, clean lineart.\"\n    },\n    {\n      \"shot_index\": 6,\n      \"title\": \"The Shockwave\",\n      \"story_beat\": \"Both combatants brace against the aftermath of the explosion.\",\n      \"subject\": \"Both fighters, struggling against the blast.\",\n      \"scene\": \"Temple courtyard, filled with dust and debris.\",\n      \"emotion\": \"Strained, enduring.\",\n      \"camera_shot\": \"Dutch angle wide shot, showing both fighters pushed back and bracing themselves.\",\n      \"motion_hint\": \"Dust and small rocks fly past the camera. The characters' clothes whip around violently.\",\n      \"prompt_text\": \"A dramatic Dutch angle wide shot. The white-haired hero and the crimson warrior are on opposite sides of the frame, thrown back by the explosion's shockwave. They are digging their feet into the ground to hold their stance, arms raised to shield their faces from the swirling dust and energy. The courtyard is obscured by smoke and debris. Anime illustration style, cel shading, clean lineart.\"\n    },\n    {\n      \"shot_index\": 7,\n      \"title\": \"Opponent's Resolve\",\n      \"story_beat\": \"The opponent, undeterred, prepares a more devastating attack.\",\n      \"subject\": \"The crimson warrior.\",\n      \"scene\": \"His side of the ruined courtyard.\",\n      \"emotion\": \"Furious, determined, immense power.\",\n      \"camera_shot\": \"Close-up on the crimson warrior's face and upper body.\",\n      \"motion_hint\": \"Flames intensify around him, swirling upwards. A low camera tremble indicates the immense power being gathered.\",\n      \"prompt_text\": \"A tight close-up on the crimson warrior's enraged face, seen through a curtain of rising flames. His eyes glow with fiery energy as he gathers power, his hands clenched. Intense flames and streams of lava-like energy swirl around his body, casting a hellish red light on his dark armor. Anime illustration style, cel shading, clean lineart.\"\n    },\n    {\n      \"shot_index\": 8,\n      \"title\": \"Hero's Final Stand\",\n      \"story_beat\": \"The hero gathers his own energy to meet the final challenge.\",\n      \"subject\": \"The white-haired hero.\",\n      \"scene\": \"His side of the ruined courtyard.\",\n      \"emotion\": \"Serene, focused, ultimate concentration.\",\n      \"camera_shot\": \"Close-up on the hero's face and upper body.\",\n      \"motion_hint\": \"Blue energy particles converge on him, and his white hair begins to float upwards as he powers up.\",\n      \"prompt_text\": \"A serene close-up on the white-haired hero's calm and focused face. His eyes are closed for a moment, then snap open, glowing with a brilliant blue light. Bright blue energy particles from the air converge around him, and his long white hair floats weightlessly as a massive aura of swirling blue power forms behind him. Anime illustration style, cel shading, clean lineart.\"\n    },\n    {\n      \"shot_index\": 9,\n      \"title\": \"The Final Charge\",\n      \"story_beat\": \"Both combatants launch themselves at each other for the final, decisive blow.\",\n      \"subject\": \"Both fighters in mid-air.\",\n      \"scene\": \"Above the center of the ruined courtyard.\",\n      \"emotion\": \"Climactic, epic, high-stakes.\",\n      \"camera_shot\": \"Extreme wide shot, low angle, capturing both figures leaping towards each other.\",\n      \"motion_hint\": \"A dramatic slow-motion as they approach each other, freezing the frame just before impact.\",\n      \"prompt_text\": \"An epic, low-angle extreme wide shot. The white-haired hero, wreathed in a spiraling blue aura, and the crimson warrior, cloaked in raging fire, have leaped into the air. They are frozen in time, milliseconds from colliding in the center of the frame, their ultimate attacks ready to be unleashed. The ruined temple courtyard is visible below them. Anime illustration style, cel shading, clean lineart.\"\n    }\n  ]\n}"
+                  }
+                ],
+                "role": "model"
+              },
+              "finishReason": "STOP",
+              "index": 0
+            }
+          ],
+          "usageMetadata": {
+            "promptTokenCount": 1033,
+            "candidatesTokenCount": 2267,
+            "totalTokenCount": 4405,
+            "promptTokensDetails": [
+              {
+                "modality": "TEXT",
+                "tokenCount": 775
+              },
+              {
+                "modality": "IMAGE",
+                "tokenCount": 258
+              }
+            ],
+            "thoughtsTokenCount": 1105
+          },
+          "modelVersion": "gemini-2.5-pro",
+          "responseId": "I2GyaajQJMXnz7IPuojU0AQ"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ],
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "hooks.atomx.top",
+            "x-real-ip": "221.192.237.82",
+            "x-forwarded-for": "221.192.237.82",
+            "x-forwarded-proto": "https",
+            "connection": "close",
+            "content-length": "327",
+            "content-type": "application/json",
+            "accept": "*/*",
+            "accept-language": "*",
+            "sec-fetch-mode": "cors",
+            "user-agent": "node",
+            "accept-encoding": "br, gzip, deflate"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "script": "遇到一个火属性的敌人，双方开展激烈战斗",
+            "imageUrl": "https://supabase-api.atomx.top/storage/v1/object/public/uploads/1773303646052-301259493-20260312-161530.png",
+            "taskId": "cmmn77o8k0000s25runu5m6fa",
+            "userId": "e6df9b49-88ce-48e0-a5cd-62758910a9df",
+            "aspectRatio": "16:9",
+            "content_type": "剧情故事"
+          },
+          "webhookUrl": "http://localhost:5678/webhook/storyboard_Plot_web",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Update Progress 10%",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Progress 10%": {
+      "main": [
+        [
+          {
+            "node": "下载图片",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Gemini Data": {
+      "main": [
+        [
+          {
+            "node": "组装九宫格分镜请求",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装九宫格分镜请求": {
+      "main": [
+        [
+          {
+            "node": "Update Progress 35%",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Progress 35%": {
+      "main": [
+        [
+          {
+            "node": "分析Agent-九宫格分镜撰写",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "分析Agent-九宫格分镜撰写": {
+      "main": [
+        [
+          {
+            "node": "解析九宫格分镜并生成grid_prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析九宫格分镜并生成grid_prompt": {
+      "main": [
+        [
+          {
+            "node": "组装九宫格生图请求体",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装九宫格生图请求体": {
+      "main": [
+        [
+          {
+            "node": "九宫格生图请求",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "九宫格生图请求": {
+      "main": [
+        [
+          {
+            "node": "转换九宫格为Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "转换九宫格为Binary": {
+      "main": [
+        [
+          {
+            "node": "生成上传文件名",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Progress 75%": {
+      "main": [
+        [
+          {
+            "node": "组装视频提示词请求",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装视频提示词请求": {
+      "main": [
+        [
+          {
+            "node": "分析Agent-视频提示词扩写",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "分析Agent-视频提示词扩写": {
+      "main": [
+        [
+          {
+            "node": "整理最终回传数据",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "整理最终回传数据": {
+      "main": [
+        [
+          {
+            "node": "Supabase Update 100%",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "生成上传文件名": {
+      "main": [
+        [
+          {
+            "node": "上传到oss",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "上传到oss": {
+      "main": [
+        [
+          {
+            "node": "整理上传结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "整理上传结果": {
+      "main": [
+        [
+          {
+            "node": "Update Progress 75%",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "下载图片": {
+      "main": [
+        [
+          {
+            "node": "Prepare Gemini Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "678027bb-6cdd-48ad-a887-ea50193f733d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
+  },
+  "id": "xNY4qhKT2cwXYi0v",
+  "tags": []
+}

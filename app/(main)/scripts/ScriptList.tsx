@@ -103,6 +103,7 @@ type ViralReferenceItemData = {
   platform: string;
   sourceType: string;
   sourceId: string;
+  scriptText?: string | null;
   title?: string | null;
   description?: string | null;
   coverUrl?: string | null;
@@ -289,6 +290,27 @@ function getReferenceCoverImage(ref: Pick<ViralReferenceItemData, "coverUrl" | "
     mediaList[0] ??
     null
   );
+}
+
+function extractReferenceScriptText(
+  ref?: Pick<ViralReferenceItemData, "description" | "rawPayload"> | null,
+): string | null {
+  if (!ref) return null;
+  const payload = parseRawPayload(ref.rawPayload);
+  const scriptText =
+    getStringFromPath(payload, ["script_text"]) ??
+    getStringFromPath(payload, ["data", "script_text"]) ??
+    getStringFromPath(payload, ["raw", "script_text"]);
+  if (scriptText) return scriptText.trim();
+
+  const fallback =
+    getStringFromPath(payload, ["raw", "text"]) ?? getStringFromPath(payload, ["text"]);
+  if (fallback) return fallback.trim();
+
+  if (typeof ref.description === "string" && ref.description.trim()) {
+    return ref.description.trim();
+  }
+  return null;
 }
 
 async function parseJsonSafely<T = unknown>(response: Response): Promise<T | null> {
@@ -802,7 +824,6 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
           limit: '20',
           sort: referenceSort,
         });
-        params.set('sourceType', 'note');
         params.set('_', Date.now().toString());
         if (debouncedReferenceQuery.trim()) {
           params.set('q', debouncedReferenceQuery.trim());
@@ -839,8 +860,12 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
           throw new Error(message);
         }
         const data: ViralReferenceItemData[] = Array.isArray(payload?.data) ? payload.data : [];
+        const normalizedData = data.map((item) => ({
+          ...item,
+          scriptText: extractReferenceScriptText(item),
+        }));
         setReferenceItems((prev) => {
-          const base = reset ? data : [...prev, ...data];
+          const base = reset ? normalizedData : [...prev, ...normalizedData];
           return sortReferenceItems(base, referenceSort);
         });
         referenceCursorRef.current = payload?.nextCursor ?? null;
@@ -1714,6 +1739,8 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
               {filteredReferenceItems.map((item) => {
                 const isSelected = selectedReferenceIds.includes(item.id);
                 const displayImageUrl = getReferenceCoverImage(item) ?? REFERENCE_PLACEHOLDER_IMAGE;
+                const scriptPreview = (item.scriptText ?? "").trim();
+                const hasScriptPreview = scriptPreview.length > 0;
                 return (
                   <div
                     key={item.id}
@@ -1844,86 +1871,96 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                       referenceSelectionMode && isSelected && "ring-2 ring-primary/60"
                     )}
                   >
-                    <div className="flex items-center gap-4">
-                      {referenceSelectionMode && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleReferenceSelection(item.id);
-                          }}
-                          className="text-primary"
-                        >
-                          {isSelected ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />}
-                        </button>
-                      )}
-                      <img
-                        src={toProxyImgUrl(displayImageUrl)}
-                        alt={item.title || "reference"}
-                        className="w-28 h-16 rounded-xl object-cover flex-shrink-0 border border-gray-100 dark:border-gray-800"
-                      />
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <div className="flex items-center gap-2 text-[11px] uppercase text-gray-500 dark:text-gray-400">
-                          <span className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
-                            {getPlatformLabel(item.platform)}
-                          </span>
-                          <span className="px-2 py-0.5 rounded-full bg-black/80 text-white text-[10px]">
-                            {getReferenceContentLabel(item)}
-                          </span>
-                          {item.category && (
-                            <span className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-300">
-                              {item.category}
+                    <div className="flex flex-col gap-4 md:flex-row md:items-start md:gap-6">
+                      <div className="flex flex-1 items-center gap-4">
+                        {referenceSelectionMode && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleReferenceSelection(item.id);
+                            }}
+                            className="text-primary"
+                          >
+                            {isSelected ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />}
+                          </button>
+                        )}
+                        <img
+                          src={toProxyImgUrl(displayImageUrl)}
+                          alt={item.title || "reference"}
+                          className="w-28 h-16 rounded-xl object-cover flex-shrink-0 border border-gray-100 dark:border-gray-800"
+                        />
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-center gap-2 text-[11px] uppercase text-gray-500 dark:text-gray-400">
+                            <span className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
+                              {getPlatformLabel(item.platform)}
                             </span>
+                            <span className="px-2 py-0.5 rounded-full bg-black/80 text-white text-[10px]">
+                              {getReferenceContentLabel(item)}
+                            </span>
+                            {item.category && (
+                              <span className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-300">
+                                {item.category}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm font-semibold text-gray-900 dark:text-white line-clamp-2">
+                            {item.title || item.description || "未命名笔记"}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                            <span>{item.creator?.displayName || item.creator?.creatorHandle || "未知作者"}</span>
+                            <span>{formatDateLabel(item.publishedAt, language === 'en' ? 'en-US' : 'zh-CN')}</span>
+                          </div>
+                        </div>
+                        <div className="hidden lg:flex flex-col items-end gap-1 text-xs text-gray-600 dark:text-gray-300">
+                          {item.stats?.likes != null && (
+                            <span>❤️ {formatCount(item.stats.likes as number | string)}</span>
+                          )}
+                          {item.stats?.collects != null && (
+                            <span>⭐️ {formatCount(item.stats.collects as number | string)}</span>
+                          )}
+                          {item.stats?.comments != null && (
+                            <span>💬 {formatCount(item.stats.comments as number | string)}</span>
+                          )}
+                          {item.stats?.shares != null && (
+                            <span>🔁 {formatCount(item.stats.shares as number | string)}</span>
                           )}
                         </div>
-                        <p className="text-sm font-semibold text-gray-900 dark:text-white line-clamp-2">
-                          {item.title || item.description || "未命名笔记"}
+                        {!referenceSelectionMode && (
+                          <div className="flex flex-col gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleReferenceOpen(item);
+                              }}
+                              className="p-2 rounded-full border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
+                              title="直达原文"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleQuickDeleteReference(item.id);
+                              }}
+                              className="p-2 rounded-full border border-gray-200 dark:border-gray-700 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10"
+                              title="删除"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div className="w-full md:w-5/12 border-t border-gray-100 dark:border-gray-800 pt-3 md:pt-0 md:border-t-0 md:border-l md:border-gray-200 dark:md:border-gray-700 md:pl-6">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+                          字幕文案
+                        </div>
+                        <p className="text-sm text-gray-700 dark:text-gray-100 whitespace-pre-line leading-relaxed line-clamp-5">
+                          {hasScriptPreview ? scriptPreview : "暂无字幕"}
                         </p>
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
-                          <span>{item.creator?.displayName || item.creator?.creatorHandle || "未知作者"}</span>
-                          <span>{formatDateLabel(item.publishedAt, language === 'en' ? 'en-US' : 'zh-CN')}</span>
-                        </div>
                       </div>
-                      <div className="hidden lg:flex flex-col items-end gap-1 text-xs text-gray-600 dark:text-gray-300">
-                        {item.stats?.likes != null && (
-                          <span>❤️ {formatCount(item.stats.likes as number | string)}</span>
-                        )}
-                        {item.stats?.collects != null && (
-                          <span>⭐️ {formatCount(item.stats.collects as number | string)}</span>
-                        )}
-                        {item.stats?.comments != null && (
-                          <span>💬 {formatCount(item.stats.comments as number | string)}</span>
-                        )}
-                        {item.stats?.shares != null && (
-                          <span>🔁 {formatCount(item.stats.shares as number | string)}</span>
-                        )}
-                      </div>
-                      {!referenceSelectionMode && (
-                        <div className="flex flex-col gap-2">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleReferenceOpen(item);
-                            }}
-                            className="p-2 rounded-full border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
-                            title="直达原文"
-                          >
-                            <ExternalLink className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleQuickDeleteReference(item.id);
-                            }}
-                            className="p-2 rounded-full border border-gray-200 dark:border-gray-700 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10"
-                            title="删除"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      )}
                     </div>
                   </div>
                 );

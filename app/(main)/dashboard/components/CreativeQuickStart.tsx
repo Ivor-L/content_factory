@@ -46,6 +46,8 @@ type WritingStyleDetailResponse = {
   error?: string;
 };
 
+const LAST_STYLE_KEY = 'creative_quick_start_last_style_id';
+
 export function CreativeQuickStartModal({
   isOpen,
   onClose,
@@ -113,6 +115,17 @@ export function CreativeQuickStartModal({
         ) {
           clearSelectedStyle();
         }
+        // 恢复上次选择的风格
+        if (!selectedStyleIdRef.current && rows.length > 0) {
+          const lastId = typeof window !== 'undefined'
+            ? localStorage.getItem(LAST_STYLE_KEY)
+            : null;
+          const matched = lastId && rows.find((row) => row.id === lastId);
+          if (matched) {
+            selectedStyleIdRef.current = lastId!;
+            setSelectedStyleId(lastId!);
+          }
+        }
       } catch (error) {
         if (cancelled) return;
         setStyleOptions([]);
@@ -175,8 +188,10 @@ export function CreativeQuickStartModal({
       const value = event.target.value;
       if (!value) {
         clearSelectedStyle();
+        localStorage.removeItem(LAST_STYLE_KEY);
         return;
       }
+      localStorage.setItem(LAST_STYLE_KEY, value);
       selectedStyleIdRef.current = value;
       setSelectedStyleId(value);
       setSelectedStyleJson(null);

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getRequestUserContext } from "@/lib/authServer";
+import { refundCredits } from "@/lib/credits";
 
 async function requireAdmin(request: Request) {
   const { userId } = await getRequestUserContext(request);
@@ -38,12 +39,43 @@ export async function PATCH(request: Request) {
   const body = await request.json();
   const ids: string[] = Array.isArray(body.ids) ? body.ids : [];
   const action = body.action as {
-    type: "setPlan" | "extendDays" | "ban" | "unban";
+    type: "setPlan" | "extendDays" | "ban" | "unban" | "addCredits" | "setTenant";
     value?: string | number;
   };
 
   if (!ids.length || !action?.type) {
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+  }
+
+  // ── addCredits: per-user via credits API ──────────────────────────────────
+  if (action.type === "addCredits") {
+    const amount = Math.floor(Number(action.value));
+    if (!amount || amount <= 0) {
+      return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
+    }
+    const results = await Promise.all(
+      ids.map(async (id) => {
+        const { data: profile } = await supabaseAdmin
+          .from("profiles")
+          .select("api_key")
+          .eq("id", id)
+          .maybeSingle();
+        if (!profile?.api_key) return { id, error: "未绑定 API Key" };
+        try {
+          await refundCredits(profile.api_key, {
+            amount,
+            reason: "admin_batch_add",
+            workflowId: "admin",
+            workflowName: "管理员批量充值",
+          });
+          await writeLog(adminId, id, "batch_addCredits", { amount });
+          return { id, ok: true };
+        } catch (e: unknown) {
+          return { id, error: e instanceof Error ? e.message : String(e) };
+        }
+      })
+    );
+    return NextResponse.json({ ok: true, results });
   }
 
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -83,6 +115,8 @@ export async function PATCH(request: Request) {
     updates.is_banned = true;
   } else if (action.type === "unban") {
     updates.is_banned = false;
+  } else if (action.type === "setTenant") {
+    updates.tenant_id = action.value ? String(action.value) : null;
   }
 
   const { error } = await supabaseAdmin

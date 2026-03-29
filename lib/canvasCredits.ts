@@ -1,6 +1,6 @@
 import { deductCredits } from "@/lib/credits";
 
-type CanvasCreditKind = "image" | "video";
+type CanvasCreditKind = "image" | "video" | "grid" | "grid-split" | "image-understanding";
 
 type CanvasCreditDefaults = {
   workflowIdEnv: string;
@@ -59,6 +59,33 @@ const CANVAS_CREDIT_DEFAULTS: Record<CanvasCreditKind, CanvasCreditDefaults> = {
     defaultWorkflowName: "Canvas Video Generation",
     defaultAmount: 1,
     reason: "canvas_video_generation",
+  },
+  grid: {
+    workflowIdEnv: "CANVAS_GRID_WORKFLOW_ID",
+    workflowNameEnv: "CANVAS_GRID_WORKFLOW_NAME",
+    amountEnv: "CANVAS_GRID_CREDIT_COST",
+    defaultWorkflowId: "flow_grid",
+    defaultWorkflowName: "Canvas Grid Generation",
+    defaultAmount: 50,
+    reason: "canvas_grid_generation",
+  },
+  "image-understanding": {
+    workflowIdEnv: "CANVAS_IMAGE_UNDERSTANDING_WORKFLOW_ID",
+    workflowNameEnv: "CANVAS_IMAGE_UNDERSTANDING_WORKFLOW_NAME",
+    amountEnv: "CANVAS_IMAGE_UNDERSTANDING_CREDIT_COST",
+    defaultWorkflowId: "flow_image_understanding",
+    defaultWorkflowName: "Canvas Image Understanding",
+    defaultAmount: 15,
+    reason: "canvas_image_understanding",
+  },
+  "grid-split": {
+    workflowIdEnv: "CANVAS_GRID_SPLIT_WORKFLOW_ID",
+    workflowNameEnv: "CANVAS_GRID_SPLIT_WORKFLOW_NAME",
+    amountEnv: "CANVAS_GRID_SPLIT_CREDIT_COST",
+    defaultWorkflowId: "flow_grid_split",
+    defaultWorkflowName: "Canvas Grid Split",
+    defaultAmount: 20,
+    reason: "canvas_grid_split",
   },
 };
 

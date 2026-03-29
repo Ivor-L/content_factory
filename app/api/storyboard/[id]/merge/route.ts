@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getRequestUserContext } from "@/lib/authServer";
+import { resolveUserApiKey } from "@/lib/userApiKey";
+import { deductCredits } from "@/lib/credits";
+import { getCreditCost } from "@/lib/creditCosts";
+import { logCreditUsage } from "@/lib/logCreditUsage";
 
 /**
  * Merge storyboard segments into final video with optional subtitles
@@ -11,7 +15,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await getRequestUserContext(req);
+    const { userId, apiKey: contextApiKey } = await getRequestUserContext(req);
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -134,6 +138,30 @@ export async function POST(
           subtitleTemplate: enableSubtitles ? subtitleTemplate : null,
         },
       });
+
+      // 7. 扣除积分（拼接 + 字幕各计一次）
+      const apiKey = await resolveUserApiKey({ userId, explicitApiKey: contextApiKey, allowDefaultFallback: false });
+      if (apiKey) {
+        const mergeAmount = await getCreditCost("storyboard_merge", 1);
+        deductCredits(apiKey, {
+          amount: mergeAmount,
+          reason: "storyboard_merge",
+          workflowId: "storyboard_video_merge",
+          workflowName: "分镜视频拼接",
+        }).catch((e) => console.error("[merge-video] deduct merge credits failed:", e));
+        logCreditUsage({ featureKey: "storyboard_merge", userId, amount: mergeAmount, success: true });
+
+        if (enableSubtitles) {
+          const subtitleAmount = await getCreditCost("storyboard_subtitle", 1);
+          deductCredits(apiKey, {
+            amount: subtitleAmount,
+            reason: "storyboard_subtitle",
+            workflowId: "storyboard_video_merge",
+            workflowName: "分镜字幕生成",
+          }).catch((e) => console.error("[merge-video] deduct subtitle credits failed:", e));
+          logCreditUsage({ featureKey: "storyboard_subtitle", userId, amount: subtitleAmount, success: true });
+        }
+      }
 
       console.log("[merge-video] Merge workflow triggered:", {
         task_id: id,

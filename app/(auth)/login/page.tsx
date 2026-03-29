@@ -370,15 +370,8 @@ export default function LoginPage() {
 
                         <div className="mt-8 flex items-center justify-between text-sm">
                             <div className="flex items-center gap-1 text-gray-500 dark:text-gray-300">
-                                {t.auth?.noAccount || 'No account?'} 
-                                <Link
-                                    href={`${basePath || ''}/register`}
-                                    className="font-medium text-black dark:text-white hover:underline ml-1"
-                                >
-                                    {t.auth?.signUp || 'Sign up'}
-                                </Link>
                             </div>
-                            
+
                             <button
                                 onClick={() => setLoginMethod(loginMethod === 'magic_link' ? 'password' : 'magic_link')}
                                 className="text-gray-400 dark:text-gray-200 hover:text-black dark:hover:text-white transition-colors"

@@ -278,7 +278,11 @@ export function QuickPosterForm({ onClose, initialIdeaText = '' }: QuickPosterFo
         const items: StylePresetLite[] = Array.isArray(payload?.data) ? payload.data : [];
         setStyles(items);
         if (!form.styleId && items.length > 0) {
-          setForm((prev) => ({ ...prev, styleId: items[0].id }));
+          const lastStyleId = typeof window !== 'undefined'
+            ? localStorage.getItem('quick_poster_last_style_id')
+            : null;
+          const matched = lastStyleId && items.find((s) => s.id === lastStyleId);
+          setForm((prev) => ({ ...prev, styleId: matched ? lastStyleId! : items[0].id }));
         }
       } catch (error) {
         if (signal?.aborted) return;
@@ -441,7 +445,10 @@ export function QuickPosterForm({ onClose, initialIdeaText = '' }: QuickPosterFo
                 <button
                   type="button"
                   key={style.id}
-                  onClick={() => setForm((prev) => ({ ...prev, styleId: style.id }))}
+                  onClick={() => {
+                    setForm((prev) => ({ ...prev, styleId: style.id }));
+                    localStorage.setItem('quick_poster_last_style_id', style.id);
+                  }}
                   className={cn(
                     'relative flex flex-col items-center gap-1.5 rounded-xl border px-2 py-2.5 text-center transition-all',
                     isActive
