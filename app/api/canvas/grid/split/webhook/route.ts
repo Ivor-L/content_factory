@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
     }
 
     const payload = body as Record<string, unknown>;
-    const taskId = String(payload.task_id || payload.taskId || "");
+    const taskId = String(payload.taskId || payload.task_id || "");
     const status = String(payload.status || "").toUpperCase();
     const context = payload.context as Record<string, unknown> | undefined;
     const nodeId = context?.nodeId ? String(context.nodeId) : "";
@@ -18,10 +18,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "taskId and nodeId required" }, { status: 400 });
     }
 
-    // Extract image URLs from outputs or data
+    // Extract image URLs from multiple possible formats
     let imageUrls: string[] = [];
 
-    // Try outputs array first
+    // Format 1: outputs array with fileUrl
     const outputs = Array.isArray(payload.outputs) ? payload.outputs : [];
     imageUrls = outputs
       .filter((item: any) => {
@@ -31,13 +31,21 @@ export async function POST(request: NextRequest) {
       .map((item: any) => item.fileUrl)
       .filter((url: any): url is string => typeof url === "string" && url.length > 0);
 
-    // If no outputs, try data.images
+    // Format 2: data.images array
     if (!imageUrls.length) {
       const data = payload.data as Record<string, unknown> | undefined;
       const images = Array.isArray(data?.images) ? data.images : [];
       imageUrls = images
         .filter((item: any) => typeof item === "string" && item.length > 0)
         .map((item: any) => String(item));
+    }
+
+    // Format 3: results array (RunningHub format)
+    if (!imageUrls.length) {
+      const results = Array.isArray(payload.results) ? payload.results : [];
+      imageUrls = results
+        .filter((item: any) => typeof item?.url === "string" && item.url.length > 0)
+        .map((item: any) => String(item.url));
     }
 
     // Store in Supabase

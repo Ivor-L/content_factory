@@ -38,6 +38,7 @@ export async function POST(request: NextRequest) {
       webhookUrl,
       context: { nodeId },
     });
+    console.log("[canvas/grid/split] Task created:", { taskId: task.taskId, webhookUrl });
     return NextResponse.json({ data: { taskId: task.taskId } });
   } catch (error) {
     console.error("[canvas/grid/split] POST error:", error);
