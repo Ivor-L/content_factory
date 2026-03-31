@@ -84,7 +84,7 @@ const CANVAS_CREDIT_DEFAULTS: Record<CanvasCreditKind, CanvasCreditDefaults> = {
     amountEnv: "CANVAS_GRID_SPLIT_CREDIT_COST",
     defaultWorkflowId: "flow_grid_split",
     defaultWorkflowName: "Canvas Grid Split",
-    defaultAmount: 20,
+    defaultAmount: 100,
     reason: "canvas_grid_split",
   },
 };

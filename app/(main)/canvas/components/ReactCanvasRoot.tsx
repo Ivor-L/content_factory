@@ -5436,7 +5436,7 @@ export function ReactCanvasRoot({
                         className="h-full w-full object-cover"
                       />
                     ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-white/5 to-transparent text-[var(--canvas-text-40)]">
+                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-black/80 to-black text-[var(--canvas-text-40)]">
                         <Sparkles className="h-8 w-8" />
                       </div>
                     )}

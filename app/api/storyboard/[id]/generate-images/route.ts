@@ -51,13 +51,15 @@ export async function POST(
     }
 
     // 2. Get segments to generate images for
+    const hasSpecificSegments = Array.isArray(segmentIds) && segmentIds.length > 0;
+    const whereClause: any = { taskId: id };
+
+    if (hasSpecificSegments) {
+      whereClause.id = { in: segmentIds };
+    }
+
     const segments = await prisma.storyboardSegment.findMany({
-      where: {
-        taskId: id,
-        ...(segmentIds && segmentIds.length > 0
-          ? { id: { in: segmentIds } }
-          : {}),
-      },
+      where: whereClause,
       orderBy: { order: "asc" },
     });
 

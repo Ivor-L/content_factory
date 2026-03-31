@@ -52,12 +52,6 @@ export async function POST(
     const whereClause: Prisma.StoryboardSegmentWhereInput = { taskId: id };
     if (hasSpecificSegments) {
       whereClause.id = { in: segmentIds };
-      if (!allowTextOnly) {
-        whereClause.generatedImage = { not: null };
-        whereClause.status = { in: ["IMAGE_READY", "VIDEO_READY", "VIDEO_FAILED"] };
-      } else {
-        whereClause.status = { not: "VIDEO_READY" };
-      }
     } else {
       whereClause.status = allowTextOnly ? { not: "VIDEO_READY" } : "IMAGE_READY";
     }
