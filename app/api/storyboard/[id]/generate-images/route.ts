@@ -131,14 +131,18 @@ export async function POST(
       const subjectRefs: Array<{ type: string; url: string }> = generationParams?.subject_refs || [];
       const characterRef = subjectRefs.find((r) => r.type === "character");
       const productRef = subjectRefs.find((r) => r.type === "product");
-      const characterImageUrl = characterRef?.url || taskLevelCharacterImage || null;
-      const productImageUrl = productRef?.url || taskLevelProductImage || null;
+      const hasPersonFlag = generationParams?.has_person ?? true;
+      const hasProductFlag = generationParams?.has_product ?? true;
+      const characterImageUrl = hasPersonFlag ? (characterRef?.url || taskLevelCharacterImage || null) : null;
+      const productImageUrl = hasProductFlag ? (productRef?.url || taskLevelProductImage || null) : null;
 
       const payload = {
         segment_id: segment.id,
         task_id: id,
         prompt,
         reference_frame_url: referenceFrameUrl,
+        has_person: hasPersonFlag,
+        has_product: hasProductFlag,
         product_image_url: productImageUrl,
         character_image_url: characterImageUrl,
         model,

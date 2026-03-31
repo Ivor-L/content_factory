@@ -67,6 +67,8 @@ export async function POST(request: NextRequest) {
       process.env.N8N_STORYBOARD_GEN_WEBHOOK?.trim() ||
       "https://hooks.atomx.top/webhook/storyboard_Plot_web";
 
+    const callbackBase = (process.env.CANVAS_VIDEO_POLL_CALLBACK_BASE_URL || "").replace(/\/+$/, "") || "https://atomx.top";
+
     const payload = {
       taskId: task.id,
       task_id: task.id,
@@ -77,6 +79,8 @@ export async function POST(request: NextRequest) {
       content_type: mappedContentType,
       aspectRatio: String(aspectRatio || "9:16"),
       style_mode: "auto",
+      callback_url: `${callbackBase}/api/canvas/grid/webhook`,
+      admin_token: process.env.ADMIN_TOKEN,
     };
 
     console.log("[canvas/grid] Calling n8n webhook:", webhookUrl);
