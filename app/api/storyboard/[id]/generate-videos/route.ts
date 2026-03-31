@@ -2,18 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getRequestUserContext } from "@/lib/authServer";
 import { resolveUserApiKey } from "@/lib/userApiKey";
-import { resolveCanvasUpstreamEndpoint } from "@/lib/canvasUpstream";
 import type { Prisma } from "@prisma/client";
 
 /**
  * Batch trigger video generation for storyboard segments
  * POST /api/storyboard/[id]/generate-videos
  *
- * Calls yunwu.ai video API directly, then registers async polling.
+ * Calls n8n webhook which generates the video and POSTs back via callback_url.
  */
-
-const VEO_MODELS = new Set(["veo3.1-fast", "veo3.1", "veo3", "veo3-fast"]);
-const GROK_MODELS = new Set(["grok", "grok-video-3"]);
 
 export async function POST(
   req: NextRequest,
@@ -37,7 +33,7 @@ export async function POST(
 
     console.log("[generate-videos] Request:", { task_id: id, segmentIds, model, userId });
 
-    // 1. Verify task exists and belongs to user (if user ownership is enforced)
+    // 1. Verify task
     const task = await prisma.storyboardTask.findUnique({
       where: { id },
       include: { product: true, character: true },
@@ -73,7 +69,7 @@ export async function POST(
       return NextResponse.json({ error: "All selected segments already have generated videos" }, { status: 404 });
     }
 
-    // 3. Resolve API key and yunwu.ai endpoint
+    // 3. Resolve API key
     const apiKey = await resolveUserApiKey({
       userId,
       explicitApiKey: contextApiKey,
@@ -86,92 +82,50 @@ export async function POST(
       );
     }
 
-    const videoEndpoint = resolveCanvasUpstreamEndpoint("video");
-    if (!videoEndpoint) {
-      return NextResponse.json({ error: "Video generation service not configured" }, { status: 500 });
-    }
+    // 4. Resolve webhook + callback URLs
+    const webhookUrl =
+      process.env.N8N_VIDEO_GEN_WEBHOOK?.trim() ||
+      "https://hooks.atomx.top/webhook/storyboard_video";
 
     const callbackBase = (
-      process.env.CANVAS_VIDEO_POLL_CALLBACK_BASE_URL ||
       process.env.N8N_CALLBACK_BASE_URL ||
-      ""
+      process.env.CANVAS_VIDEO_POLL_CALLBACK_BASE_URL ||
+      "https://atomx.top"
     ).replace(/\/+$/, "");
-    const webhookUrl = `${callbackBase}/api/webhook/storyboard-video`;
+    const callbackUrl = `${callbackBase}/api/webhook/storyboard-video`;
 
-    // 4. Submit each segment to yunwu.ai + register polling
+    // 5. Fire n8n for each segment
     const triggers = targetSegments.map(async (segment) => {
+      const payload = {
+        segment_id: segment.id,
+        task_id: id,
+        prompt: segment.videoPrompt || segment.visualDescription || "",
+        image_url: segment.generatedImage || null,
+        model,
+        aspect_ratio: "9:16",
+        callback_url: callbackUrl,
+        api_key: apiKey,
+        admin_token: process.env.ADMIN_TOKEN,
+      };
+
       try {
-        const isVeo = VEO_MODELS.has(model);
-        const isGrok = GROK_MODELS.has(model);
-
-        let upstreamBody: Record<string, unknown> = { model };
-
-        if (isVeo || isGrok) {
-          upstreamBody = {
-            model,
-            prompt: segment.videoPrompt || segment.visualDescription || "",
-            aspect_ratio: "9:16",
-            enhance_prompt: true,
-            enable_upsample: true,
-            ...(segment.generatedImage ? { images: [segment.generatedImage] } : {}),
-          };
-        }
-
-        // Submit to yunwu.ai
-        const upstream = await fetch(videoEndpoint, {
+        const response = await fetch(webhookUrl, {
           method: "POST",
-          headers: {
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify(upstreamBody),
-          cache: "no-store",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
         });
 
-        const responseText = await upstream.text();
-        let parsed: any;
-        try { parsed = JSON.parse(responseText); } catch { parsed = {}; }
-
-        if (!upstream.ok) {
-          throw new Error(`yunwu.ai error (${upstream.status}): ${parsed?.message || responseText}`);
+        if (!response.ok) {
+          throw new Error(`n8n webhook failed: ${response.status}`);
         }
 
-        const taskId = parsed?.task_id || parsed?.taskId || parsed?.id;
-        if (!taskId) {
-          throw new Error("yunwu.ai did not return a task_id");
-        }
-
-        console.log(`[generate-videos] Submitted segment ${segment.id}, yunwu task_id: ${taskId}`);
-
-        // Register async polling
-        try {
-          await fetch("https://api.atomx.top/tools/veo/poll/async", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              task_id: taskId,
-              api_key: apiKey,
-              webhook_url: webhookUrl,
-              context: {
-                segment_id: segment.id,
-                task_id: id,
-                model,
-              },
-            }),
-          });
-          console.log(`[generate-videos] Polling registered for segment ${segment.id}, webhook: ${webhookUrl}`);
-        } catch (pollError) {
-          console.error(`[generate-videos] register polling failed for segment ${segment.id}:`, pollError);
-        }
-
-        // Update segment status
         await prisma.storyboardSegment.update({
           where: { id: segment.id },
           data: { status: "VIDEO_GENERATING", videoGenerationModel: model },
         });
 
-        return { segment_id: segment.id, success: true, yunwu_task_id: taskId };
+        console.log(`[generate-videos] Triggered n8n for segment ${segment.id}`);
+        return { segment_id: segment.id, success: true };
       } catch (error) {
         console.error(`[generate-videos] Failed for segment ${segment.id}:`, error);
         await prisma.storyboardSegment.update({
