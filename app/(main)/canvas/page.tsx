@@ -1,4 +1,4 @@
-import { ReactCanvasRoot } from './components/ReactCanvasRoot'
+import { ReactCanvasRootLazy } from './components/ReactCanvasRootLazy'
 
 type SearchParamValue = string | string[] | undefined
 
@@ -25,7 +25,7 @@ export default async function CanvasPage({ searchParams }: CanvasPageProps) {
   const effectiveMedia = forceProjectList ? '' : media
 
   return (
-    <ReactCanvasRoot
+    <ReactCanvasRootLazy
       initialProjectId={effectiveProjectId || undefined}
       initialPrompt={effectivePrompt || undefined}
       initialMedia={effectiveMedia || undefined}

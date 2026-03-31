@@ -98,28 +98,16 @@ export async function POST(request: NextRequest) {
 
   console.log("[canvas/videos] Triggering n8n:", { taskId, model: requestBody.model });
 
-  try {
-    const res = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(n8nPayload),
-    });
-    if (!res.ok) {
-      throw new Error(`n8n webhook returned ${res.status}`);
-    }
-  } catch (error) {
-    console.error("[canvas/videos] n8n error:", error);
-    return NextResponse.json(
-      {
-        error: {
-          code: "CANVAS_VIDEO_PROXY_FAILED",
-          message: error instanceof Error ? error.message : "触发视频生成失败",
-        },
-      },
-      { status: 502 },
-    );
-  }
+  // Fire-and-forget — don't await n8n; return task_id immediately so the
+  // frontend can subscribe via Supabase Realtime before the video completes.
+  fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(n8nPayload),
+  }).catch((err) => {
+    console.error("[canvas/videos] n8n trigger failed:", err);
+  });
 
-  // 3. Return task_id so the frontend can subscribe via Supabase Realtime
+  // 3. Return task_id immediately
   return NextResponse.json({ task_id: taskId });
 }

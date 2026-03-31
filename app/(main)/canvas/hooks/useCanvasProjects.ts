@@ -16,7 +16,7 @@ type UseCanvasProjectsOptions = {
 };
 
 const DEFAULT_TIMEOUT_MS =
-  Number(process.env.NEXT_PUBLIC_CANVAS_FETCH_TIMEOUT_MS ?? "30000") || 30000;
+  Number(process.env.NEXT_PUBLIC_CANVAS_FETCH_TIMEOUT_MS ?? "8000") || 8000;
 const MAX_RETRIES = 2;
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
