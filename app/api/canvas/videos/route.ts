@@ -1,74 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getApiKeyForUser, getRequestUserContext } from "@/lib/authServer";
 import {
-  buildCanvasUpstreamHeaders,
-  canvasMissingEndpointResponse,
-  resolveCanvasUpstreamApiKey,
-  resolveCanvasUpstreamEndpoint,
-} from "@/lib/canvasUpstream";
-import {
   CanvasCreditsError,
   ensureCanvasCreditsAvailable,
-  deductCanvasCredits,
   resolveCanvasCreditsApiKey,
 } from "@/lib/canvasCredits";
 
-const VEO_MODELS = new Set(["veo_3_1-fast", "veo_3_1", "veo3", "veo3-fast"]);
-const SORA_MODELS = new Set(["sora-2-all", "sora-2"]);
-const GROK_MODELS = new Set(["grok-video-3"]);
-const ASYNC_POLL_MODELS = new Set([...VEO_MODELS, ...SORA_MODELS, ...GROK_MODELS]);
-
-/** Download a remote image URL and return a base64 data URL. Returns original value if already data URL or not a http URL. */
-async function toBase64DataUrl(value: unknown): Promise<unknown> {
-  if (typeof value !== "string") return value;
-  if (!value.startsWith("http://") && !value.startsWith("https://")) return value;
-  try {
-    const res = await fetch(value, { cache: "no-store" });
-    if (!res.ok) return value;
-    const mimeType = (res.headers.get("content-type") || "image/jpeg").split(";")[0].trim();
-    const buffer = await res.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString("base64");
-    return `data:${mimeType};base64,${base64}`;
-  } catch {
-    return value;
-  }
-}
-
-/** Convert all image URL fields in the body to base64 data URLs. */
-async function convertImageUrlsToBase64(body: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const result = { ...body };
-  // Single image URL fields
-  for (const key of ["image_url", "first_frame_image", "last_frame_image", "image"]) {
-    if (result[key]) result[key] = await toBase64DataUrl(result[key]);
-  }
-  // Array of images (Sora)
-  if (Array.isArray(result.images)) {
-    result.images = await Promise.all(result.images.map(toBase64DataUrl));
-  }
-  return result;
-}
-
-function extractTaskId(response: unknown): string | null {
-  if (!response || typeof response !== "object") return null;
-  const record = response as Record<string, any>;
-  return record.task_id || record.taskId || record.id || null;
-}
-
+/**
+ * POST /api/canvas/videos
+ * Trigger video generation via the same n8n webhook as storyboard.
+ *
+ * Flow:
+ *  1. Pre-check credits balance (ensureCanvasCreditsAvailable → preparedCharge)
+ *  2. POST to n8n with { segment_id, prompt, image_url, model, … }
+ *     + context: { creditsApiKey, charge } so the callback can deduct
+ *  3. Return { task_id } immediately
+ *  4. n8n calls back /api/canvas/videos/webhook — webhook deducts credits on success
+ */
 export async function POST(request: NextRequest) {
   const { userId, apiKey } = await getRequestUserContext(request, {
     allowDefaultApiKey: true,
     useSystemApiKey: true,
   });
-  const upstreamApiKey = resolveCanvasUpstreamApiKey(apiKey);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  if (!upstreamApiKey) {
-    return NextResponse.json(
-      { error: { code: "CANVAS_API_KEY_REQUIRED", message: "画布服务尚未配置，请联系管理员处理。" } },
-      { status: 400 },
-    );
   }
 
   const body = await request.json().catch(() => null);
@@ -76,107 +31,95 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
   const requestBody = body as Record<string, unknown>;
-  const model = String(requestBody.model || "").trim().toLowerCase();
 
-  const creditsApiKey = (await getApiKeyForUser(userId)) || resolveCanvasCreditsApiKey(null);
+  const creditsApiKey =
+    (await getApiKeyForUser(userId)) || resolveCanvasCreditsApiKey(apiKey ?? null);
   if (!creditsApiKey) {
     return NextResponse.json(
-      { error: { code: "CANVAS_CREDITS_NOT_CONFIGURED", message: "积分服务未配置，请联系管理员。" } },
+      {
+        error: {
+          code: "CANVAS_CREDITS_NOT_CONFIGURED",
+          message: "积分服务未配置，请联系管理员。",
+        },
+      },
       { status: 500 },
     );
   }
 
+  // 1. Pre-check balance; get the charge object for later deduction
   let preparedCharge;
   try {
     preparedCharge = await ensureCanvasCreditsAvailable(creditsApiKey, "video", requestBody);
   } catch (error) {
     if (error instanceof CanvasCreditsError) {
-      return NextResponse.json({ error: { code: error.code, message: error.message } }, { status: error.status });
+      return NextResponse.json(
+        { error: { code: error.code, message: error.message } },
+        { status: error.status },
+      );
     }
     throw error;
   }
 
+  // 2. Use node_id as task_id so the Supabase Realtime subscription matches
+  const nodeId = String(requestBody.node_id || "").trim();
+  const taskId = nodeId || crypto.randomUUID().replace(/-/g, "");
+
+  const webhookUrl =
+    process.env.N8N_VIDEO_GEN_WEBHOOK?.trim() ||
+    "https://hooks.atomx.top/webhook/storyboard_video";
+
+  const callbackBase = (
+    process.env.N8N_CALLBACK_BASE_URL ||
+    process.env.CANVAS_VIDEO_POLL_CALLBACK_BASE_URL ||
+    "https://atomx.top"
+  ).replace(/\/+$/, "");
+  const callbackUrl = `${callbackBase}/api/canvas/videos/webhook`;
+
+  const n8nPayload = {
+    // Identifies this job in both n8n and the callback
+    segment_id: taskId,
+    task_id: taskId,
+    // Video params
+    prompt: requestBody.prompt,
+    image_url: requestBody.image_url || requestBody.first_frame_image || null,
+    model: requestBody.model,
+    aspect_ratio: requestBody.aspect_ratio || requestBody.ratio || "16:9",
+    duration: requestBody.duration || 8,
+    // Infra
+    callback_url: callbackUrl,
+    api_key: creditsApiKey,
+    admin_token: process.env.ADMIN_TOKEN,
+    // Credits context — n8n must echo this object back in the callback payload
+    context: {
+      creditsApiKey,
+      charge: preparedCharge,
+    },
+  };
+
+  console.log("[canvas/videos] Triggering n8n:", { taskId, model: requestBody.model });
+
   try {
-    const endpoint = resolveCanvasUpstreamEndpoint("video") || "";
-    if (!endpoint) return canvasMissingEndpointResponse("video");
-
-    const upstreamBodyRaw: Record<string, unknown> = VEO_MODELS.has(model)
-      ? {
-          model,
-          prompt: requestBody.prompt,
-          aspect_ratio: requestBody.aspect_ratio || requestBody.ratio || "16:9",
-          duration: requestBody.duration || 8,
-          enhance_prompt: true,
-          auto_fix: true,
-          resolution: requestBody.resolution || "720p",
-          generate_audio: requestBody.generate_audio ?? true,
-          ...(requestBody.image_url ? { image_url: requestBody.image_url } : {}),
-          ...(requestBody.first_frame_image ? { image_url: requestBody.first_frame_image } : {}),
-        }
-      : requestBody;
-
-    const upstreamBody = await convertImageUrlsToBase64(upstreamBodyRaw);
-
-    const upstream = await fetch(endpoint, {
+    const res = await fetch(webhookUrl, {
       method: "POST",
-      headers: buildCanvasUpstreamHeaders({ userId, apiKey: upstreamApiKey }),
-      body: JSON.stringify(upstreamBody),
-      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(n8nPayload),
     });
-
-    const contentType = upstream.headers.get("content-type") || "application/json";
-    const bodyText = await upstream.text();
-    let parsedJson: unknown;
-    try { parsedJson = bodyText ? JSON.parse(bodyText) : {}; } catch { parsedJson = undefined; }
-
-    if (upstream.ok) {
-      if (ASYNC_POLL_MODELS.has(model)) {
-        // Async models: deduct credits in webhook after video is actually delivered
-        const taskId = extractTaskId(parsedJson);
-        if (taskId) {
-          const callbackBase = (process.env.CANVAS_VIDEO_POLL_CALLBACK_BASE_URL || process.env.NEXTAUTH_URL || "").replace(/\/+$/, "") || request.nextUrl.origin;
-          const webhookUrl = `${callbackBase}/api/canvas/videos/webhook`;
-          try {
-            await fetch("https://api.atomx.top/tools/veo/poll/async", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                task_id: taskId,
-                api_key: upstreamApiKey,
-                webhook_url: webhookUrl,
-                context: {
-                  creditsApiKey,
-                  charge: preparedCharge,
-                },
-              }),
-            });
-          } catch (pollError) {
-            console.error("[canvas/video] register async polling failed", pollError);
-          }
-        }
-      } else {
-        // Sync models: deduct credits immediately
-        try {
-          await deductCanvasCredits(creditsApiKey, "video", requestBody, { charge: preparedCharge });
-        } catch (creditError) {
-          console.error("[canvas/video] deduct credits failed after success", creditError);
-        }
-      }
+    if (!res.ok) {
+      throw new Error(`n8n webhook returned ${res.status}`);
     }
-
-    if (contentType.includes("application/json") && parsedJson !== undefined) {
-      return NextResponse.json(parsedJson, { status: upstream.status });
-    }
-    return new NextResponse(bodyText, { status: upstream.status, headers: { "Content-Type": contentType } });
   } catch (error) {
+    console.error("[canvas/videos] n8n error:", error);
     return NextResponse.json(
       {
         error: {
           code: "CANVAS_VIDEO_PROXY_FAILED",
-          message: error instanceof Error ? error.message : "Canvas video proxy failed",
+          message: error instanceof Error ? error.message : "触发视频生成失败",
         },
       },
       { status: 502 },
     );
   }
+
+  // 3. Return task_id so the frontend can subscribe via Supabase Realtime
+  return NextResponse.json({ task_id: taskId });
 }

@@ -3060,7 +3060,7 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                           muted
                           loop
                           playsInline
-                          onMouseEnter={(e) => { void (e.currentTarget as HTMLVideoElement).play(); }}
+                          onMouseEnter={(e) => { const v = e.currentTarget as HTMLVideoElement; void v.play().catch(() => {}); }}
                           onMouseLeave={(e) => { const v = e.currentTarget as HTMLVideoElement; v.pause(); v.currentTime = 0; }}
                         />
                       ) : (

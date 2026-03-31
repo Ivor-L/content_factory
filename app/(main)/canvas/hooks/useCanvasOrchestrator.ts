@@ -604,58 +604,33 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         if (sellingPointsJson) payload.sellingPointsJson = sellingPointsJson;
         if (blueprint) payload.blueprint = blueprint;
         if (productImageUrl) payload.productImageUrl = productImageUrl;
+        // node_id lets the API use it as task_id so our Supabase subscription matches
+        payload.node_id = nodeId;
 
-        const response = await postJson("/api/canvas/videos", payload);
-        const immediateUrl = extractVideoUrl(response);
-        if (immediateUrl) {
-          const outputRecord = {
-            id: createOutputId("video"),
-            url: immediateUrl,
-            createdAt: Date.now(),
-          };
-          patchRuntimeData(nodeId, {
-            outputUrl: immediateUrl,
-            outputs: [outputRecord],
-            lastCompletedAt: Date.now(),
-            lastTaskStatus: "completed",
-          });
-          addResource({
-            type: "video",
-            variant: "output",
-            name: `视频输出 ${new Date().toLocaleTimeString()}`,
-            url: immediateUrl,
-            metadata: { nodeId },
-          });
-          setNodeStatus(nodeId, "success");
-          toast.success("视频生成完成");
-        } else {
-          const taskId = extractVideoTaskId(response);
-          if (!taskId) {
-            throw new Error("未获取到任务 ID");
-          }
-          patchRuntimeData(nodeId, { taskId, lastTaskStatus: "queued" });
-          const url = await waitForVideoTask(taskId, nodeId);
-          const outputRecord = {
-            id: createOutputId("video"),
-            url,
-            createdAt: Date.now(),
-          };
-          patchRuntimeData(nodeId, {
-            outputUrl: url,
-            lastCompletedAt: Date.now(),
-            lastTaskStatus: "completed",
-            outputs: [outputRecord],
-          });
-          addResource({
-            type: "video",
-            variant: "output",
-            name: `视频输出 ${new Date().toLocaleTimeString()}`,
-            url,
-            metadata: { nodeId },
-          });
-          setNodeStatus(nodeId, "success");
-          toast.success("视频生成完成");
-        }
+        patchRuntimeData(nodeId, { taskId: nodeId, lastTaskStatus: "queued" });
+        await postJson("/api/canvas/videos", payload);
+
+        const url = await waitForVideoTask(nodeId, nodeId);
+        const outputRecord = {
+          id: createOutputId("video"),
+          url,
+          createdAt: Date.now(),
+        };
+        patchRuntimeData(nodeId, {
+          outputUrl: url,
+          lastCompletedAt: Date.now(),
+          lastTaskStatus: "completed",
+          outputs: [outputRecord],
+        });
+        addResource({
+          type: "video",
+          variant: "output",
+          name: `视频输出 ${new Date().toLocaleTimeString()}`,
+          url,
+          metadata: { nodeId },
+        });
+        setNodeStatus(nodeId, "success");
+        toast.success("视频生成完成");
       } catch (error) {
         const message = error instanceof Error ? error.message : "视频生成失败";
         patchRuntimeData(nodeId, { lastRunError: message });

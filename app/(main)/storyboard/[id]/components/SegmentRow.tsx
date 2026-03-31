@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { Loader2, RefreshCw, Play, Upload, Sparkles, Plus, X } from "lucide-react";
 import { ImageEditorModal } from "./ImageEditorModal";
-import { VideoPreviewModal } from "./VideoPreviewModal";
+import { VideoEditorModal } from "./VideoEditorModal";
 import { toast } from "react-hot-toast";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -501,8 +501,8 @@ export function SegmentRow({
         >
           {hasVideo ? (
             <>
-              <video src={segment.generatedVideo!} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" muted loop playsInline
-                onMouseEnter={(e) => { (e.currentTarget as HTMLVideoElement).play(); setVideoPlaying(true); }}
+              <video src={segment.generatedVideo!} className="w-full h-full object-contain transition-transform duration-300 group-hover:scale-105" muted loop playsInline
+                onMouseEnter={(e) => { const v = e.currentTarget as HTMLVideoElement; void v.play().then(() => { setVideoPlaying(true); }).catch(() => {}); }}
                 onMouseLeave={(e) => { const v = e.currentTarget as HTMLVideoElement; v.pause(); v.currentTime = 0; setVideoPlaying(false); }}
               />
               {!videoPlaying && (
@@ -625,8 +625,10 @@ export function SegmentRow({
       )}
 
       {videoModalOpen && (
-        <VideoPreviewModal
+        <VideoEditorModal
           segment={segment}
+          taskId={taskId}
+          videoModel={videoModel}
           onClose={() => setVideoModalOpen(false)}
           onRegenerate={() => onRegenVideo?.(segment.id)}
           onSegmentUpdated={(updates) => onSegmentUpdated?.(segment.id, updates)}

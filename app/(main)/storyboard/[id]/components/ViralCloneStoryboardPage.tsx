@@ -255,7 +255,24 @@ export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryb
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "storyboard_segments", filter: `task_id=eq.${task.id}` },
         (payload) => {
-          const updated = payload.new as SegmentData;
+          // payload.new uses DB snake_case column names; map to camelCase SegmentData
+          const raw = payload.new as Record<string, unknown>;
+          const updated: Partial<SegmentData> & { id: string } = {
+            id: raw.id as string,
+            status: raw.status as string,
+            generatedImage: (raw.generated_image ?? raw.generatedImage) as string | null | undefined,
+            generatedVideo: (raw.generated_video ?? raw.generatedVideo) as string | null | undefined,
+            imagePrompt: (raw.image_prompt ?? raw.imagePrompt) as string | null | undefined,
+            videoPrompt: (raw.video_prompt ?? raw.videoPrompt) as string | null | undefined,
+            timeRange: (raw.time_range ?? raw.timeRange) as string | null | undefined,
+            originalScript: (raw.original_script ?? raw.originalScript) as string | null | undefined,
+            rewrittenScript: (raw.rewritten_script ?? raw.rewrittenScript) as string | null | undefined,
+            visualDescription: (raw.visual_description ?? raw.visualDescription) as string | null | undefined,
+            cameraNotes: (raw.camera_notes ?? raw.cameraNotes) as string | null | undefined,
+            lightingNotes: (raw.lighting_notes ?? raw.lightingNotes) as string | null | undefined,
+            retryCount: (raw.retry_count ?? raw.retryCount ?? 0) as number,
+            generationParams: (raw.generation_params ?? raw.generationParams) as import("./SegmentRow").GenerationParams | null | undefined,
+          };
           setSegments((prev) =>
             prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s))
           );
