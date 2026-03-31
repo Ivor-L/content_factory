@@ -240,6 +240,8 @@ export async function POST(request: NextRequest) {
       : Number.isFinite(Number(body.imageCount))
       ? Number(body.imageCount)
       : undefined;
+  const languagePrefRaw = typeof body.language === "string" ? body.language.trim() : "";
+  const languagePref = languagePrefRaw || "简体";
 
   if (!title) {
     return NextResponse.json({ error: "标题不能为空" }, { status: 400 });
@@ -304,6 +306,7 @@ export async function POST(request: NextRequest) {
     styleId,
     styleName: style.name,
     imageCount,
+    language: languagePref,
     ...(styleProfileObject ? { styleProfile: styleProfileObject } : {}),
   };
 
@@ -383,6 +386,7 @@ export async function POST(request: NextRequest) {
     imageUploadUrl: infra.imageUploadUrl,
     generate_image_url: infra.generateImageUrl,
     generateImageUrl: infra.generateImageUrl,
+    language: languagePref,
   };
 
   const forwardPromise = forwardToWebhook({

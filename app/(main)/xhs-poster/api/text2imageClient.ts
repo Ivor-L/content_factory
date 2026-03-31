@@ -30,6 +30,7 @@ export async function startText2ImageTask(
       styleId: payload.styleId,
       styleProfileJson: payload.styleProfileJson,
       imageCount: payload.imageCount,
+      language: payload.language,
     }),
   });
 

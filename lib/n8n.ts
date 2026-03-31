@@ -611,6 +611,7 @@ export interface CreativeScriptTriggerOptions {
   wordCount?: number;
   styleRules?: Record<string, any> | null;
   styleId?: string | null;
+  language?: string | null;
   apiKey?: string;
   callbackUrl: string;
   appUrl: string;
@@ -664,6 +665,7 @@ export async function triggerCreativeScriptGeneration(
     word_count: options.wordCount,
     style_rules: options.styleRules ?? null,
     style_id: options.styleId ?? null,
+    language: options.language ?? null,
     api_key: options.apiKey,
     callback_url: options.callbackUrl,
     app_url: options.appUrl,

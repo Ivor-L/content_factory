@@ -47,6 +47,7 @@ export async function POST(request: NextRequest) {
     title?: string;
     styleId?: string;
     styleRules?: unknown;
+    language?: string;
   };
   try {
     body = await request.json();
@@ -57,6 +58,8 @@ export async function POST(request: NextRequest) {
   const { ideaText, wordCount, characterId, title } = body || {};
   const styleId = typeof body?.styleId === "string" ? body.styleId.trim() || undefined : undefined;
   let styleRules = normalizeStyleRules(body?.styleRules);
+  const requestLanguage =
+    typeof body?.language === "string" ? body.language.trim() || undefined : undefined;
 
   if (!ideaText?.trim()) {
     return NextResponse.json({ error: "ideaText is required" }, { status: 400 });
@@ -107,6 +110,7 @@ export async function POST(request: NextRequest) {
         title: title?.trim() ?? null,
         styleId: styleId ?? null,
         styleRules: styleRules ?? null,
+        language: requestLanguage ?? null,
         userId,
       },
     },
@@ -128,6 +132,7 @@ export async function POST(request: NextRequest) {
       wordCount: wordCount,
       styleRules,
       styleId,
+      language: requestLanguage,
       apiKey: apiKey ?? undefined,
       callbackUrl,
       appUrl,

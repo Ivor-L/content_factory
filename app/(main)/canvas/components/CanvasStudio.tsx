@@ -27,6 +27,7 @@ import {
   startVideoReplicationTask,
 } from "../lib/api";
 import { supabase } from "@/lib/supabaseClient";
+import { useLanguage } from "@/contexts/LanguageContext";
 import type {
   AppCanvasEdge,
   AppCanvasNode,
@@ -43,6 +44,12 @@ import type {
 
 const STORAGE_KEY = "canvas.studio.snapshot.v1";
 const TASK_TIMEOUT_MS = 6 * 60 * 1000; // 6 minutes
+
+const mapLanguageLabel = (lang?: string | null) => {
+  if (lang === "zh-TW") return "繁体";
+  if (lang === "en") return "English";
+  return "简体";
+};
 
 function createId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -149,6 +156,11 @@ export function CanvasStudio() {
   const initialSnapshot = safeLoadSnapshot();
   const initialNodes = initialSnapshot?.nodes ?? createDefaultNodes();
   const initialEdges = initialSnapshot?.edges ?? createDefaultEdges(initialNodes);
+  const { language } = useLanguage();
+  const languageLabelRef = useRef(mapLanguageLabel(language));
+  useEffect(() => {
+    languageLabelRef.current = mapLanguageLabel(language);
+  }, [language]);
 
   const [nodes, setNodes] = useState<AppCanvasNode[]>(initialNodes);
   const [edges, setEdges] = useState<AppCanvasEdge[]>(initialEdges);
@@ -330,6 +342,7 @@ export function CanvasStudio() {
         text: finalText,
         styleId: node.data.styleId,
         imageCount: Math.min(Math.max(Number(node.data.imageCount) || 3, 1), 5),
+        language: languageLabelRef.current,
       });
       patchNode(nodeId, {
         status: "running",

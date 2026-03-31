@@ -916,6 +916,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
       const scriptContent = String(runtimeData.script || runtimeData.scriptContent || runtimeData.content || upstream.effectivePrompt || "").trim();
       // Upstream audio (from audio node) can supply the voice reference
       const audioUrl = String(runtimeData.voiceReference || runtimeData.audioUrl || runtimeData.voiceReferenceUrl || upstream.firstAudioUrl || "").trim();
+      const emoAudioUrl = String(runtimeData.emoAudioUrl || "").trim() || null;
       // Upstream image (from image node) can supply the avatar
       const imageUrl = String(runtimeData.avatarImage || runtimeData.imageUrl || upstream.firstImageUrl || "").trim();
 
@@ -925,7 +926,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         return;
       }
       if (!audioUrl) {
-        toast.error("请提供音色参考音频");
+        toast.error("请提供参考音色音频");
         runningNodeIds.current.delete(nodeId);
         return;
       }
@@ -944,10 +945,12 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
       });
 
       try {
-        const response = await postJson("/api/canvas/digital-human", {
+        const response = await postJson("/api/digital-human/videos", {
+          type: "VOICE_CLONE",
           scriptContent,
           audioUrl,
           imageUrl,
+          emoAudioUrl,
         });
         const record = response as { data?: { id?: string } };
         const videoId = record?.data?.id;

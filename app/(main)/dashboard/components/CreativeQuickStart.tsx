@@ -12,6 +12,31 @@ import { toast } from "react-hot-toast";
 const DEFAULT_WORD_COUNT = 800;
 const MIN_WORD_COUNT = 1;
 
+const DEFAULT_HELPER_MESSAGES = {
+  loadingOptions: "Loading writing styles...",
+  emptyOptions: "No writing styles yet. Upload history docs in Assets first.",
+  loadingDetail: "Loading the selected style profile...",
+  lockedReady: "Style profile locked and ready for this run.",
+  lockedFallback: "Style is still extracting, so the default will be used.",
+  noSelection: "Select an extracted style for better alignment, or use the default.",
+};
+
+const DEFAULT_STYLE_STATUS = {
+  ready: "Ready",
+  failed: "Failed",
+  pending: "Pending",
+};
+
+const DEFAULT_SMART_TOASTS = {
+  listError: "Failed to fetch writing styles",
+  detailError: "Failed to load style detail",
+  notReady: "This writing style hasn't finished extracting. Try again later.",
+  ideaRequired: "Please describe your idea first",
+  creating: "Creating smart creation task...",
+  created: "Task created. Generating the full draft...",
+  failed: "Creation failed",
+};
+
 interface CreativeQuickStartModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -53,8 +78,43 @@ export function CreativeQuickStartModal({
   onClose,
 }: CreativeQuickStartModalProps) {
   const router = useRouter();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const myWorksPath = useTenantPath("/my-works");
+  const languageLabel =
+    language === "zh-TW" ? "繁体" : language === "en" ? "English" : "简体";
+  const smartCopy = t.contentCreation?.smartModal;
+  const helperMessages = smartCopy?.helperMessages ?? DEFAULT_HELPER_MESSAGES;
+  const smartToasts = smartCopy?.toasts ?? DEFAULT_SMART_TOASTS;
+  const styleStatusCopy = smartCopy?.styleStatus ?? DEFAULT_STYLE_STATUS;
+  const wordCountPlaceholder = (smartCopy?.wordCountPlaceholder ?? `Default ${DEFAULT_WORD_COUNT}`).replace(
+    "{count}",
+    String(DEFAULT_WORD_COUNT),
+  );
+  const loginMessage = t.common?.loginPlease ?? "Please log in first.";
+  const isZhLocale = (language || "").startsWith("zh");
+  const wrapStatusLabel = (value: string) => (isZhLocale ? `（${value}）` : ` (${value})`);
+  const ideaLabel = smartCopy?.ideaLabel ?? "Idea or insight";
+  const ideaPlaceholder =
+    smartCopy?.ideaPlaceholder ??
+    "Example: tell a story about perseverance or share the POV you want to test.";
+  const ideaHelper =
+    smartCopy?.ideaHelper ?? "We'll automatically pull your history docs and story assets as context.";
+  const wordCountLabel = smartCopy?.wordCountLabel ?? "Target length";
+  const styleLabel = smartCopy?.styleLabel ?? "Writing style";
+  const defaultStyleOption = smartCopy?.defaultStyleOption ?? "System default style";
+  const submitLabel = smartCopy?.submitLabel ?? "Generate script";
+  const processingLabel = smartCopy?.processingLabel ?? "Processing...";
+  const modalTitle = smartCopy?.title ?? "Smart creation";
+  const defaultTitle = smartCopy?.defaultTitle ?? "Smart creation task";
+  const {
+    listError: listErrorMessage,
+    detailError: detailErrorMessage,
+    notReady: notReadyMessage,
+    ideaRequired: ideaRequiredMessage,
+    creating: creatingMessage,
+    created: createdMessage,
+    failed: failedMessage,
+  } = smartToasts;
 
   // ── 认证 ────────────────────────────────────────────────────────────────────
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -104,7 +164,7 @@ export function CreativeQuickStartModal({
         const payload: WritingStyleListResponse =
           (await res.json().catch(() => ({}))) as WritingStyleListResponse;
         if (!res.ok) {
-          throw new Error(payload?.error || "获取创作风格失败");
+          throw new Error(payload?.error || listErrorMessage);
         }
         if (cancelled) return;
         const rows = Array.isArray(payload?.data) ? payload.data : [];
@@ -129,7 +189,7 @@ export function CreativeQuickStartModal({
       } catch (error) {
         if (cancelled) return;
         setStyleOptions([]);
-        toast.error(error instanceof Error ? error.message : "获取创作风格失败");
+        toast.error(error instanceof Error ? error.message : listErrorMessage);
         clearSelectedStyle();
       } finally {
         if (!cancelled) {
@@ -140,7 +200,7 @@ export function CreativeQuickStartModal({
     return () => {
       cancelled = true;
     };
-  }, [authToken, isOpen, clearSelectedStyle]);
+  }, [authToken, isOpen, clearSelectedStyle, listErrorMessage]);
 
   const fetchStyleDetail = useCallback(
     async (styleId: string) => {
@@ -160,7 +220,7 @@ export function CreativeQuickStartModal({
         const payload: WritingStyleDetailResponse =
           (await res.json().catch(() => ({}))) as WritingStyleDetailResponse;
         if (!res.ok) {
-          throw new Error(payload?.error || "获取风格详情失败");
+          throw new Error(payload?.error || detailErrorMessage);
         }
         const rawProfile = payload?.data?.currentProfile?.profileJson;
         const profile =
@@ -180,7 +240,7 @@ export function CreativeQuickStartModal({
       styleDetailRequests.current[styleId] = request;
       return request;
     },
-    [authToken],
+    [authToken, detailErrorMessage],
   );
 
   const handleStyleSelectChange = useCallback(
@@ -205,7 +265,7 @@ export function CreativeQuickStartModal({
         }
         if (!profile) {
           clearSelectedStyle();
-          toast.error("该风格尚未提炼完成，请稍后再试");
+          toast.error(notReadyMessage);
           return;
         }
         setSelectedStyleJson(profile);
@@ -214,7 +274,7 @@ export function CreativeQuickStartModal({
           return;
         }
         clearSelectedStyle();
-        toast.error(error instanceof Error ? error.message : "获取风格详情失败");
+        toast.error(error instanceof Error ? error.message : detailErrorMessage);
       } finally {
         if (styleFetchTokenRef.current === currentToken) {
           setStyleJsonLoading(false);
@@ -243,11 +303,11 @@ export function CreativeQuickStartModal({
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!authToken) {
-      toast.error("请先登录");
+      toast.error(loginMessage);
       return;
     }
     if (!ideaText.trim()) {
-      toast.error("请输入你的观点或想法");
+      toast.error(ideaRequiredMessage);
       return;
     }
 
@@ -262,21 +322,22 @@ export function CreativeQuickStartModal({
     setCreating(true);
     const effectiveStyleId = selectedStyleIdRef.current || selectedStyleId || null;
     let resolvedStyleJson = selectedStyleJson;
-    let progressToastId: string | null = toast.loading("正在创建智能创作任务…");
+    let progressToastId: string | null = toast.loading(creatingMessage);
 
     try {
       if (effectiveStyleId && !resolvedStyleJson) {
         resolvedStyleJson = await fetchStyleDetail(effectiveStyleId);
         if (!resolvedStyleJson) {
-          throw new Error("该创作风格尚未完成提炼，请稍后再试");
+          throw new Error(notReadyMessage);
         }
         setSelectedStyleJson(resolvedStyleJson);
       }
 
       const payload: Record<string, unknown> = {
         ideaText: ideaText.trim(),
-        title: ideaText.trim().slice(0, 60) || "智能创作任务",
+        title: ideaText.trim().slice(0, 60) || defaultTitle,
         goal: { targetWordCount: parsedWordCount },
+        language: languageLabel,
       };
       if (resolvedStyleJson) {
         payload.styleRules = resolvedStyleJson;
@@ -293,19 +354,19 @@ export function CreativeQuickStartModal({
 
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(body?.error || "创建失败");
+        throw new Error(body?.error || failedMessage);
       }
 
       const taskId = typeof body?.data?.id === "string" ? body.data.id : null;
 
       if (progressToastId) {
-        toast.success("任务已创建，正在生成完整文案", {
+        toast.success(createdMessage, {
           id: progressToastId,
           icon: "✨",
         });
         progressToastId = null;
       } else {
-        toast.success("任务已创建，正在生成完整文案", { icon: "✨" });
+        toast.success(createdMessage, { icon: "✨" });
       }
 
       resetForm();
@@ -313,12 +374,12 @@ export function CreativeQuickStartModal({
       router.push(taskId ? `${myWorksPath}?taskId=${taskId}` : myWorksPath);
     } catch (error) {
       if (progressToastId) {
-        toast.error(error instanceof Error ? error.message : "创建失败", {
+        toast.error(error instanceof Error ? error.message : failedMessage, {
           id: progressToastId,
         });
         progressToastId = null;
       } else {
-        toast.error(error instanceof Error ? error.message : "创建失败");
+        toast.error(error instanceof Error ? error.message : failedMessage);
       }
     } finally {
       setCreating(false);
@@ -331,21 +392,21 @@ export function CreativeQuickStartModal({
   // ── 确认回调 ─────────────────────────────────────────────────────────────────
   const styleHelperMessage = (() => {
     if (styleOptionsLoading) {
-      return "写作风格列表加载中…";
+      return helperMessages.loadingOptions;
     }
     if (!styleOptions.length) {
-      return "暂无可用创作风格，可前往资产中心上传历史文案后提炼。";
+      return helperMessages.emptyOptions;
     }
     if (selectedStyleId) {
       if (styleJsonLoading) {
-        return "正在载入该风格的提炼数据…";
+        return helperMessages.loadingDetail;
       }
       if (selectedStyleJson) {
-        return "已锁定该风格提炼 JSON，将用于本次生成。";
+        return helperMessages.lockedReady;
       }
-      return "该风格暂未提炼完成，将使用系统默认风格生成。";
+      return helperMessages.lockedFallback;
     }
-    return "可选择已提炼的创作风格提升匹配度，未选择时使用系统默认。";
+    return helperMessages.noSelection;
   })();
 
   return (
@@ -353,23 +414,23 @@ export function CreativeQuickStartModal({
       <Modal
         isOpen={isOpen}
         onClose={handleCancel}
-        title="智能创作"
+        title={modalTitle}
         maxWidth="max-w-xl"
       >
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* 观点 / 想法输入 */}
           <div>
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              你的观点 / 想法
+              {ideaLabel}
             </label>
             <textarea
               className="mt-2 w-full min-h-[120px] rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 shadow-inner focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/5 resize-none"
-              placeholder="例如：讲一个关于坚持的故事，或分享一个行业洞察..."
+              placeholder={ideaPlaceholder}
               value={ideaText}
               onChange={(e) => setIdeaText(e.target.value)}
             />
             <p className="text-xs text-gray-400 mt-1.5">
-              系统会自动调用你的历史文案和案例故事作为创作上下文
+              {ideaHelper}
             </p>
           </div>
 
@@ -377,7 +438,7 @@ export function CreativeQuickStartModal({
             {/* 目标字数 */}
             <div className="flex flex-col gap-2">
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                目标字数
+                {wordCountLabel}
               </label>
               <input
                 type="number"
@@ -385,13 +446,13 @@ export function CreativeQuickStartModal({
                 className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/5"
                 value={wordCount}
                 onChange={(e) => setWordCount(e.target.value)}
-                placeholder={`默认 ${DEFAULT_WORD_COUNT}`}
+                placeholder={wordCountPlaceholder}
               />
             </div>
             {/* 创作风格 */}
             <div className="flex flex-col gap-2">
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1">
-                创作风格
+                {styleLabel}
                 {styleOptionsLoading && <Loader2 className="h-3 w-3 animate-spin text-gray-400" />}
               </label>
               <div className={`relative group ${styleOptionsLoading ? "opacity-70" : ""}`}>
@@ -401,23 +462,23 @@ export function CreativeQuickStartModal({
                   onChange={handleStyleSelectChange}
                   disabled={styleOptionsLoading}
                 >
-                  <option value="">系统默认风格</option>
+                  <option value="">{defaultStyleOption}</option>
                   {styleOptions.map((style) => {
                     const status = (style.currentProfile?.status || style.extractionStatus || "").toUpperCase();
                     const statusLabel =
                       status === "READY"
-                        ? "已提炼"
+                        ? styleStatusCopy.ready
                         : status === "FAILED"
-                          ? "提炼失败"
+                          ? styleStatusCopy.failed
                           : status
-                            ? "提炼中"
+                            ? styleStatusCopy.pending
                             : "";
                     const channelLabel = style.channel ? ` | ${style.channel}` : "";
                     return (
                       <option key={style.id} value={style.id}>
                         {style.name}
                         {channelLabel}
-                        {statusLabel ? `（${statusLabel}）` : ""}
+                        {statusLabel ? wrapStatusLabel(statusLabel) : ""}
                       </option>
                     );
                   })}
@@ -443,12 +504,12 @@ export function CreativeQuickStartModal({
               {creating ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  {"处理中…"}
+                  {processingLabel}
                 </>
               ) : (
                 <>
                   <Sparkles className="h-4 w-4" />
-                  生成文案
+                  {submitLabel}
                 </>
               )}
             </button>
@@ -457,7 +518,7 @@ export function CreativeQuickStartModal({
               onClick={handleCancel}
               className="flex-1 inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 px-5 py-3 text-sm font-semibold text-gray-700 hover:border-gray-300 transition"
             >
-              取消
+              {t.common?.cancel ?? "Cancel"}
             </button>
           </div>
         </form>

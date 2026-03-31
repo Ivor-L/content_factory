@@ -5,12 +5,38 @@ import { getRequestUserContext } from "@/lib/authServer";
 const MAX_BYTES = 500 * 1024 * 1024;
 
 // Headers to forward when fetching from the origin CDN
-const ORIGIN_HEADERS: Record<string, string> = {
+const BASE_ORIGIN_HEADERS: Record<string, string> = {
   "User-Agent":
     "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
-  Referer: "https://www.xiaohongshu.com/",
   Accept: "*/*",
 };
+
+const REFERER_OVERRIDES: Array<{ test: (hostname: string) => boolean; referer: string }> = [
+  {
+    test: (hostname) => /tiktok/i.test(hostname) || /tiktokcdn/i.test(hostname),
+    referer: "https://www.tiktok.com/",
+  },
+  {
+    test: (hostname) => /instagram/i.test(hostname) || /fbcdn\.net$/i.test(hostname) || /cdninstagram/i.test(hostname),
+    referer: "https://www.instagram.com/",
+  },
+  {
+    test: (hostname) => /facebook/i.test(hostname),
+    referer: "https://www.facebook.com/",
+  },
+];
+
+const DEFAULT_REFERER = "https://www.xiaohongshu.com/";
+
+function buildOriginHeaders(targetUrl: URL): Record<string, string> {
+  const headers: Record<string, string> = { ...BASE_ORIGIN_HEADERS };
+  const hostname = targetUrl.hostname.toLowerCase();
+  const override = REFERER_OVERRIDES.find((entry) => entry.test(hostname));
+  const referer = override?.referer ?? DEFAULT_REFERER;
+  headers.Referer = referer;
+  headers.Origin = referer.replace(/\/$/, "");
+  return headers;
+}
 
 export async function GET(request: NextRequest) {
   const { userId } = await getRequestUserContext(request);
@@ -20,8 +46,9 @@ export async function GET(request: NextRequest) {
 
   const rawUrl = request.nextUrl.searchParams.get("url");
   const filename = request.nextUrl.searchParams.get("filename") ?? "download";
-  // When filename is "img", serve inline (for <img> tags); otherwise force download
-  const inline = filename === "img";
+  // When filename is "img" or "media", serve inline (for <img>/<video> tags); otherwise force download
+  const inlineMode = filename === "img" ? "image" : filename === "media" ? "media" : null;
+  const inline = inlineMode !== null;
 
   if (!rawUrl) {
     return NextResponse.json({ error: "Missing url param" }, { status: 400 });
@@ -41,7 +68,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const upstream = await fetch(rawUrl, {
-      headers: ORIGIN_HEADERS,
+      headers: buildOriginHeaders(targetUrl),
       // Follow redirects (default)
     });
 
@@ -69,11 +96,13 @@ export async function GET(request: NextRequest) {
       status: 200,
       headers: {
         "Content-Type": contentType,
+        "Content-Length": String(body.byteLength),
         ...(inline
-          ? { "Cache-Control": "public, max-age=86400" }
+          ? {
+              "Cache-Control": inlineMode === "media" ? "public, max-age=3600" : "public, max-age=86400",
+            }
           : {
               "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
-              "Content-Length": String(body.byteLength),
               "Cache-Control": "no-store",
             }),
       },

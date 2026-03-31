@@ -158,13 +158,13 @@ export function Sidebar() {
         .maybeSingle();
 
       if (error) {
-        console.error('Failed to load profile info:', error);
+        console.error('Failed to load profile info:', error.message, error.code, error.details);
       }
 
       setProfileName(profile?.full_name ?? fallbackFullName ?? '');
       setProfileAvatarUrl(profile?.avatar_url ?? fallbackAvatar ?? '');
     } catch (error) {
-      console.error('Failed to load profile info:', error);
+      console.error('Failed to load profile info:', error instanceof Error ? error.message : error);
       setProfileName('');
       setProfileAvatarUrl('');
     }

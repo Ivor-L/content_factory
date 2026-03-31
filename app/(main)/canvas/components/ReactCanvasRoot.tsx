@@ -17,6 +17,7 @@ import {
   Background,
   BackgroundVariant,
   BaseEdge,
+  ConnectionMode,
   EdgeLabelRenderer,
   ReactFlow,
   SelectionMode,
@@ -78,6 +79,7 @@ import { AiGlowSpinner } from "@/components/AiGlowSpinner";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { supabase } from "@/lib/supabaseClient";
 import { useCanvasShell } from "@/contexts/CanvasShellContext";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { useTenant } from "@/hooks/useTenant";
 import { usePathname, useRouter } from "next/navigation";
 import { useCanvasProjects } from "../hooks/useCanvasProjects";
@@ -100,6 +102,12 @@ import {
 } from "../lib/canvasDataAdapters";
 import type { CanvasProjectRecord } from "../types";
 import type { RuntimeCanvasNode } from "../lib/canvasDataAdapters";
+
+function resolveLanguageLabel(lang?: string | null): string {
+  if (lang === "zh-TW") return "繁体";
+  if (lang === "en") return "English";
+  return "简体";
+}
 
 function extractThumbnailFromNodes(runtimeNodes: RuntimeCanvasNode[]): string | null {
   for (const node of runtimeNodes) {
@@ -371,6 +379,8 @@ function resolveTitle(node: MinimalFlowNodeData): string {
       return "音频";
     case "digitalhuman":
       return "数字人";
+    case "imagetextgroup":
+      return "图文创作";
     case "storyboard":
       return "分镜板";
     case "grid":
@@ -392,6 +402,7 @@ type NodeCardProps = NodeProps<Node<MinimalFlowNodeData>> & { children?: React.R
 const NODE_TYPE_ICONS: Partial<Record<string, React.ComponentType<{ className?: string }>>> = {
   text: AlignLeft,
   audio: Music,
+  imagetextgroup: LayoutGrid,
 };
 
 function EditableNodeLabel({ title, nodeId, patchRuntimeData }: { title: string; nodeId: string; patchRuntimeData: (id: string, patch: Record<string, unknown>) => void }) {
@@ -493,6 +504,8 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const { patchRuntimeData, isConnecting, runTextNode } = useCanvasNodeContext();
+  const { language: interfaceLanguage } = useLanguage();
+  const languageLabel = resolveLanguageLabel(interfaceLanguage);
   const magnet = useCardMagnet(innerRef);
   const updateNodeInternals = useUpdateNodeInternals();
   const runtimeData = data.runtime.data as Record<string, unknown>;
@@ -545,6 +558,104 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
     el.addEventListener("wheel", wheelHandler, { passive: false });
     return () => el.removeEventListener("wheel", wheelHandler);
   }, []);
+
+  // ── Smart Create panel ───────────────────────────────────────────────────────
+  const [showSmartCreate, setShowSmartCreate] = useState(false);
+  const [scAuthToken, setScAuthToken] = useState<string | null>(null);
+  const [scIdeaText, setScIdeaText] = useState("");
+  const [scWordCount, setScWordCount] = useState("800");
+  const [scStyleOptions, setScStyleOptions] = useState<{ id: string; name: string; channel?: string | null }[]>([]);
+  const [scStyleLoading, setScStyleLoading] = useState(false);
+  const [scSelectedStyleId, setScSelectedStyleId] = useState<string | null>(null);
+  const [scSelectedStyleJson, setScSelectedStyleJson] = useState<Record<string, unknown> | null>(null);
+  const [scCreating, setScCreating] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setScAuthToken(data.session?.access_token ?? null);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!showSmartCreate || !scAuthToken || scStyleOptions.length > 0) return;
+    let cancelled = false;
+    setScStyleLoading(true);
+    fetch("/api/assets/writing-styles?limit=50", {
+      headers: { Authorization: `Bearer ${scAuthToken}` },
+      cache: "no-store",
+    })
+      .then((r) => r.json())
+      .then((p) => { if (!cancelled) setScStyleOptions(Array.isArray(p?.data) ? p.data : []); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setScStyleLoading(false); });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showSmartCreate, scAuthToken]);
+
+  async function handleSmartCreate() {
+    if (!scIdeaText.trim() || !scAuthToken) return;
+    setScCreating(true);
+    patchRuntimeData(id, { isLoadingPrompt: true });
+    try {
+      let styleRules: Record<string, unknown> | null = scSelectedStyleJson;
+      if (scSelectedStyleId && !styleRules) {
+        const r = await fetch(`/api/assets/writing-styles/${scSelectedStyleId}`, {
+          headers: { Authorization: `Bearer ${scAuthToken}` },
+        });
+        const p = await r.json();
+        styleRules = (p?.data?.currentProfile?.profileJson as Record<string, unknown>) || null;
+        if (styleRules) setScSelectedStyleJson(styleRules);
+      }
+      const reqBody: Record<string, unknown> = {
+        ideaText: scIdeaText.trim(),
+        title: scIdeaText.trim().slice(0, 60) || "智能创作",
+        goal: { targetWordCount: Math.max(1, parseInt(scWordCount, 10) || 800) },
+        language: languageLabel,
+      };
+      if (styleRules) reqBody.styleRules = styleRules;
+      const res = await fetch("/api/creative-tasks/direct", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${scAuthToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify(reqBody),
+      });
+      const resBody = await res.json() as Record<string, unknown>;
+      if (!res.ok) throw new Error((resBody?.error as string) || "创建失败");
+      const taskId = typeof (resBody?.data as Record<string, unknown>)?.id === "string"
+        ? (resBody.data as Record<string, unknown>).id as string
+        : null;
+      if (!taskId) throw new Error("未获取到任务 ID");
+      // Poll until done (max 3 min)
+      for (let i = 0; i < 60; i++) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 3000));
+        const pr = await fetch(`/api/creative-tasks/${taskId}`, {
+          headers: { Authorization: `Bearer ${scAuthToken}` },
+        });
+        const pd = await pr.json() as Record<string, unknown>;
+        const t = pd?.data as Record<string, unknown> | null;
+        if (t?.status === "COMPLETED") {
+          const ao = (t?.metadata as Record<string, unknown>)?.stages as Record<string, unknown> | null;
+          const draft = (ao?.draft as Record<string, unknown>)?.aiOutput as Record<string, unknown> | null;
+          const titlePart = typeof draft?.["标题"] === "string" ? draft["标题"] : "";
+          const bodyPart = typeof draft?.["正文"] === "string" ? draft["正文"] : "";
+          const tags = Array.isArray(draft?.["标签"]) ? (draft["标签"] as string[]).join(" ") : "";
+          const combined = [titlePart, bodyPart, tags].filter(Boolean).join("\n\n");
+          patchRuntimeData(id, { content: combined });
+          setLocalContent(combined);
+          setShowSmartCreate(false);
+          setScIdeaText("");
+          toast.success("智能创作完成！");
+          return;
+        }
+        if (t?.status === "GENERATE_FAILED") throw new Error("创作生成失败，请重试");
+      }
+      throw new Error("生成超时，请前往「我的作品」查看结果");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "生成失败");
+    } finally {
+      setScCreating(false);
+      patchRuntimeData(id, { isLoadingPrompt: false });
+    }
+  }
 
   if (isImageUnderstanding) {
     return (
@@ -653,9 +764,27 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
 
   return (
     <div
-      className="select-none text-[var(--canvas-text)]"
+      className="relative select-none text-[var(--canvas-text)]"
       style={{ width: 240 }}
     >
+      {/* Smart Create floating button — shown when selected */}
+      {selected && !isRunning && (
+        <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex items-center rounded-full bg-[var(--canvas-surface)] shadow-[var(--canvas-shadow-sm)]">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setShowSmartCreate((v) => !v); }}
+            className={clsx(
+              "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium transition",
+              showSmartCreate
+                ? "bg-[var(--tenant-primary)] text-[var(--tenant-primary-foreground)]"
+                : "text-[var(--canvas-text)] hover:bg-[var(--canvas-hover)]",
+            )}
+          >
+            <Sparkles className="h-3 w-3" />
+            智能创作
+          </button>
+        </div>
+      )}
       {/* Label above */}
       <div className="mb-1.5 flex items-center gap-1.5 px-1">
         {upstream.firstImageUrl ? (
@@ -709,56 +838,105 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       </div>{/* end inner relative */}
       {selected && (
         <NodeControlsPanel nodeWidth={240}>
-          {/* Upstream context hint */}
-          {upstream.firstImageUrl && (
-            <div className="mb-2 flex items-center gap-1.5 text-[10px] text-[var(--canvas-text-30)]">
-              <ImageIcon className="h-3 w-3 shrink-0" />
-              <span className="shrink-0">上游图片</span>
-              {upstream.effectivePrompt && (
-                <span className="truncate">· {upstream.effectivePrompt.slice(0, 40)}{upstream.effectivePrompt.length > 40 ? "…" : ""}</span>
-              )}
-            </div>
-          )}
-          {!upstream.firstImageUrl && upstream.effectivePrompt && (
-            <p className="mb-2 truncate text-[10px] text-[var(--canvas-text-30)]">
-              ↑ {upstream.effectivePrompt.slice(0, 70)}{upstream.effectivePrompt.length > 70 ? "…" : ""}
-            </p>
-          )}
-          {/* Instruction input */}
-          <textarea
-            ref={instructionRef}
-            value={localInstruction}
-            onChange={(e) => {
-              setLocalInstruction(e.target.value);
-              patchRuntimeData(id, { instruction: e.target.value });
-            }}
-            placeholder={hasUpstream ? "输入指令，如：翻译成英文、提取关键词、改写成广告文案..." : "输入生成指令..."}
-            className="nodrag !select-text min-h-[72px] w-full resize-none bg-transparent text-sm leading-relaxed text-[var(--canvas-text)] outline-none placeholder:text-[var(--canvas-text-30)] nopan selection:bg-blue-500/50"
-          />
-          {/* Bottom bar: model + run */}
-          <div className="mt-2 flex items-center gap-2">
-            <Sparkles className="h-3.5 w-3.5 shrink-0 text-[var(--canvas-text-30)]" />
-            <div className="flex-1">
-              <CanvasSelect
-                value={transformModel}
-                options={[
-                  { value: "gemini-3.1-flash-lite-preview", label: "Gemini Flash Lite" },
-                  { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-                ]}
-                onChange={(v) => patchRuntimeData(id, { transformModel: v })}
+          {showSmartCreate ? (
+            /* ── Smart Create form — same visual style as AI transform panel ── */
+            <>
+              <textarea
+                value={scIdeaText}
+                onChange={(e) => setScIdeaText(e.target.value)}
+                placeholder="输入你的观点或想法…"
+                className="nodrag !select-text min-h-[72px] w-full resize-none bg-transparent text-sm leading-relaxed text-[var(--canvas-text)] outline-none placeholder:text-[var(--canvas-text-30)] nopan selection:bg-blue-500/50"
               />
-            </div>
-            <button
-              type="button"
-              disabled={isRunning || !localInstruction.trim()}
-              onClick={(e) => { e.stopPropagation(); void runTextNode(id); }}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--tenant-primary)] text-[var(--tenant-primary-foreground)] transition hover:bg-[var(--tenant-primary-hover)] active:scale-95 disabled:opacity-40"
-            >
-              {isRunning
-                ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--tenant-primary-foreground)]/20 border-t-[var(--tenant-primary-foreground)]" />
-                : <ArrowUp className="h-4 w-4" />}
-            </button>
-          </div>
+              <div className="mt-2 flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  value={scWordCount}
+                  onChange={(e) => setScWordCount(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="nodrag !select-text w-14 shrink-0 bg-transparent text-sm text-[var(--canvas-text-50)] outline-none nopan"
+                  title="目标字数"
+                />
+                <span className="shrink-0 text-[11px] text-[var(--canvas-text-30)]">字</span>
+                <div className="flex-1 min-w-0">
+                  <select
+                    value={scSelectedStyleId ?? ""}
+                    onChange={(e) => { setScSelectedStyleId(e.target.value || null); setScSelectedStyleJson(null); }}
+                    disabled={scStyleLoading}
+                    onClick={(e) => e.stopPropagation()}
+                    className="nodrag w-full appearance-none bg-transparent text-sm text-[var(--canvas-text-50)] outline-none disabled:opacity-50 truncate"
+                  >
+                    <option value="">{scStyleLoading ? "加载中…" : "默认风格"}</option>
+                    {scStyleOptions.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}{s.channel ? ` · ${s.channel}` : ""}</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  disabled={scCreating || !scIdeaText.trim()}
+                  onClick={(e) => { e.stopPropagation(); void handleSmartCreate(); }}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--tenant-primary)] text-[var(--tenant-primary-foreground)] transition hover:bg-[var(--tenant-primary-hover)] active:scale-95 disabled:opacity-40"
+                >
+                  {scCreating
+                    ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--tenant-primary-foreground)]/20 border-t-[var(--tenant-primary-foreground)]" />
+                    : <ArrowUp className="h-4 w-4" />}
+                </button>
+              </div>
+            </>
+          ) : (
+            /* ── AI transform form ── */
+            <>
+              {/* Upstream context hint */}
+              {upstream.firstImageUrl && (
+                <div className="mb-2 flex items-center gap-1.5 text-[10px] text-[var(--canvas-text-30)]">
+                  <ImageIcon className="h-3 w-3 shrink-0" />
+                  <span className="shrink-0">上游图片</span>
+                  {upstream.effectivePrompt && (
+                    <span className="truncate">· {upstream.effectivePrompt.slice(0, 40)}{upstream.effectivePrompt.length > 40 ? "…" : ""}</span>
+                  )}
+                </div>
+              )}
+              {!upstream.firstImageUrl && upstream.effectivePrompt && (
+                <p className="mb-2 truncate text-[10px] text-[var(--canvas-text-30)]">
+                  ↑ {upstream.effectivePrompt.slice(0, 70)}{upstream.effectivePrompt.length > 70 ? "…" : ""}
+                </p>
+              )}
+              <textarea
+                ref={instructionRef}
+                value={localInstruction}
+                onChange={(e) => {
+                  setLocalInstruction(e.target.value);
+                  patchRuntimeData(id, { instruction: e.target.value });
+                }}
+                placeholder={hasUpstream ? "输入指令，如：翻译成英文、提取关键词、改写成广告文案..." : "输入生成指令..."}
+                className="nodrag !select-text min-h-[72px] w-full resize-none bg-transparent text-sm leading-relaxed text-[var(--canvas-text)] outline-none placeholder:text-[var(--canvas-text-30)] nopan selection:bg-blue-500/50"
+              />
+              <div className="mt-2 flex items-center gap-2">
+                <Sparkles className="h-3.5 w-3.5 shrink-0 text-[var(--canvas-text-30)]" />
+                <div className="flex-1">
+                  <CanvasSelect
+                    value={transformModel}
+                    options={[
+                      { value: "gemini-3.1-flash-lite-preview", label: "Gemini Flash Lite" },
+                      { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+                    ]}
+                    onChange={(v) => patchRuntimeData(id, { transformModel: v })}
+                  />
+                </div>
+                <button
+                  type="button"
+                  disabled={isRunning || !localInstruction.trim()}
+                  onClick={(e) => { e.stopPropagation(); void runTextNode(id); }}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--tenant-primary)] text-[var(--tenant-primary-foreground)] transition hover:bg-[var(--tenant-primary-hover)] active:scale-95 disabled:opacity-40"
+                >
+                  {isRunning
+                    ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--tenant-primary-foreground)]/20 border-t-[var(--tenant-primary-foreground)]" />
+                    : <ArrowUp className="h-4 w-4" />}
+                </button>
+              </div>
+            </>
+          )}
         </NodeControlsPanel>
       )}
     </div>
@@ -1120,6 +1298,7 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const directUploadRef = useRef<HTMLInputElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const { patchRuntimeData, models, runImageNode, reverseImagePrompt, uploadResource, isConnecting, polishPrompt, focusedNodeId } = useCanvasNodeContext();
+
   const upstream = data.upstreamInputs ?? EMPTY_UPSTREAM;
   const [isPolishing, setIsPolishing] = useState(false);
   const [reverseMode, setReverseMode] = useState<"no-text" | "with-text">("no-text");
@@ -1180,9 +1359,10 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   return (
     <CardMagnetContext.Provider value={magnet}>
     <div style={{ width: containerWidth }} className="relative select-none">
-      {props.selected && currentImageUrl && (
+      {props.selected && (
         <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex flex-col items-center gap-1.5">
-          {/* Action buttons */}
+          {/* Existing action buttons — only when there's a generated image */}
+          {currentImageUrl && (
           <div className="flex items-center rounded-full bg-[var(--canvas-surface)] shadow-[var(--canvas-shadow-sm)]">
           <div className="group/tip relative">
             <button
@@ -1257,6 +1437,7 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">{currentImageUrl ? "替换图片" : "上传图片"}</span>
           </div>
           </div>
+          )}
         </div>
       )}
       <div className="mb-1.5 flex items-center justify-between px-1">
@@ -1633,9 +1814,9 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               onClick={(e) => { e.stopPropagation(); firstFrameUploadRef.current?.click(); }}
             />
             <ResourceTile
-              imageUrl={lastFrameImage || upstream.firstImageUrl || undefined}
+              imageUrl={lastFrameImage || undefined}
               icon={<ImageIcon className="h-5 w-5" />}
-              label={upstream.firstImageUrl && !lastFrameImage ? "上游图片将用作尾帧（点击更换）" : "添加尾帧"}
+              label="添加尾帧"
               onClick={(e) => { e.stopPropagation(); lastFrameUploadRef.current?.click(); }}
             />
             <button type="button" disabled={isPolishing || !prompt.trim()}
@@ -2593,7 +2774,7 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
 
 function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const { data, id } = props;
-  const { patchRuntimeData, models, runDigitalHumanNode, resources, uploadResource, isConnecting, polishPrompt, focusedNodeId } = useCanvasNodeContext();
+  const { patchRuntimeData, runDigitalHumanNode, uploadResource, isConnecting, polishPrompt } = useCanvasNodeContext();
   const innerRef = useRef<HTMLDivElement>(null);
   const magnet = useCardMagnet(innerRef);
   const title = resolveTitle(data);
@@ -2601,11 +2782,13 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const [isPolishing, setIsPolishing] = useState(false);
   const voiceUploadRef = useRef<HTMLInputElement>(null);
   const avatarUploadRef = useRef<HTMLInputElement>(null);
+  const emoAudioUploadRef = useRef<HTMLInputElement>(null);
+  const [videoAspect, setVideoAspect] = useState<number | null>(null);
   const script = typeof data.runtime.data.script === "string" ? data.runtime.data.script : "";
   const voiceReference = typeof data.runtime.data.voiceReference === "string" ? data.runtime.data.voiceReference : "";
+  const emoAudioUrl = typeof (data.runtime.data as Record<string, unknown>).emoAudioUrl === "string"
+    ? ((data.runtime.data as Record<string, unknown>).emoAudioUrl as string) : "";
   const avatarImage = typeof data.runtime.data.avatarImage === "string" ? data.runtime.data.avatarImage : "";
-  const model = (typeof data.runtime.data.model === "string" && data.runtime.data.model) || models.digitalHumanModels[0]?.id || "";
-  const ratio = (typeof data.runtime.data.ratio === "string" && data.runtime.data.ratio) || "auto";
   const outputUrl = typeof (data.runtime.data as Record<string, unknown>).outputUrl === "string"
     ? ((data.runtime.data as Record<string, unknown>).outputUrl as string) : "";
   const lastRunError = typeof (data.runtime.data as Record<string, unknown>).lastRunError === "string"
@@ -2613,8 +2796,6 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const dhStatus = typeof (data.runtime.data as Record<string, unknown>).dhStatus === "string"
     ? ((data.runtime.data as Record<string, unknown>).dhStatus as string) : "";
   const isRunning = data.status === "running";
-  const audioResources = resources.filter((item) => item.type === "audio");
-  const imageResources = resources.filter((item) => item.type === "image");
 
   const handleVoiceUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -2642,6 +2823,19 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
     }
   };
 
+  const handleEmoAudioUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const resource = await uploadResource(file, { type: "audio", variant: "voice", name: file.name });
+      patchRuntimeData(id, { emoAudioUrl: resource.url });
+    } catch (error) {
+      console.error("[canvas] upload emo audio failed", error);
+    } finally {
+      event.target.value = "";
+    }
+  };
+
   return (
     <CardMagnetContext.Provider value={magnet}>
     <div style={{ width: MEDIA_NODE_WIDTH }} className="select-none">
@@ -2653,7 +2847,7 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
         <MediaHandle side="left" />
         <MediaHandle side="right" />
         <div
-          style={{ height: 240 }}
+          style={{ height: videoAspect ? Math.round(MEDIA_NODE_WIDTH / videoAspect) : 240 }}
           className={clsx(
             "relative overflow-hidden rounded-[20px] bg-[var(--canvas-surface-alt)] border transition",
             props.selected
@@ -2664,7 +2858,18 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           )}
         >
           {outputUrl ? (
-            <video src={outputUrl} controls className="h-full w-full object-cover" preload="metadata" />
+            <video
+              src={outputUrl}
+              controls
+              className="h-full w-full object-cover"
+              preload="metadata"
+              onLoadedMetadata={(e) => {
+                const v = e.currentTarget;
+                if (v.videoWidth > 0 && v.videoHeight > 0) {
+                  setVideoAspect(v.videoWidth / v.videoHeight);
+                }
+              }}
+            />
           ) : avatarImage ? (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img src={avatarImage} alt="Avatar" className="h-full w-full object-cover opacity-60" />
@@ -2681,7 +2886,7 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       </div>
       {props.selected && (
         <div
-          style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 220 }}
+          style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET }}
           className="nodrag mt-2 flex flex-col rounded-[20px] bg-[var(--canvas-surface)] px-4 pb-3 pt-3"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
@@ -2696,9 +2901,38 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             <ResourceTile
               audioSet={!!(voiceReference || upstream.firstAudioUrl)}
               icon={<Music className="h-5 w-5" />}
-              label={upstream.firstAudioUrl && !voiceReference ? "上游音频将用作音色" : "选择音色"}
+              label={upstream.firstAudioUrl && !voiceReference ? "上游音频将用作音色" : "参考音色"}
               onClick={(e) => { e.stopPropagation(); voiceUploadRef.current?.click(); }}
             />
+            <ResourceTile
+              audioSet={!!emoAudioUrl}
+              icon={<Music className="h-5 w-5" />}
+              label="参考情感"
+              onClick={(e) => { e.stopPropagation(); emoAudioUploadRef.current?.click(); }}
+            />
+          </div>
+          {isPolishing ? (
+            <div className="flex-1 space-y-2.5 py-1 animate-pulse">
+              <div className="h-2.5 w-full rounded-full bg-[var(--canvas-hover-xl)]" />
+              <div className="h-2.5 w-[62%] rounded-full bg-[var(--canvas-hover-lg)]" />
+              <div className="h-2.5 w-[38%] rounded-full bg-[var(--canvas-hover)]" />
+            </div>
+          ) : (
+            <>
+              {!script && upstream.effectivePrompt && (
+                <p className="mb-1 truncate text-[10px] text-[var(--canvas-text-30)]">
+                  ↑ 上游文本：{upstream.effectivePrompt.slice(0, 60)}{upstream.effectivePrompt.length > 60 ? "…" : ""}
+                </p>
+              )}
+              <CompositionTextarea
+                value={script}
+                onChange={(v) => patchRuntimeData(id, { script: v })}
+                placeholder={upstream.effectivePrompt ? "留空则使用上游文本..." : "输入口播文案..."}
+                className="nodrag select-text flex-1 w-full resize-none bg-transparent text-sm leading-relaxed text-[var(--canvas-text)] placeholder:text-[var(--canvas-text-30)] focus:outline-none nopan selection:bg-blue-500/50 min-h-[60px]"
+              />
+            </>
+          )}
+          <div className="flex items-center gap-1.5 pt-2">
             <button type="button" disabled={isPolishing || !script.trim()}
               onClick={async (e) => {
                 e.stopPropagation();
@@ -2721,39 +2955,6 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               )}
               <span className="text-xs">AI润色</span>
             </button>
-          </div>
-          {isPolishing ? (
-            <div className="flex-1 space-y-2.5 py-1 animate-pulse">
-              <div className="h-2.5 w-full rounded-full bg-[var(--canvas-hover-xl)]" />
-              <div className="h-2.5 w-[62%] rounded-full bg-[var(--canvas-hover-lg)]" />
-              <div className="h-2.5 w-[38%] rounded-full bg-[var(--canvas-hover)]" />
-            </div>
-          ) : (
-            <>
-              {!script && upstream.effectivePrompt && (
-                <p className="mb-1 truncate text-[10px] text-[var(--canvas-text-30)]">
-                  ↑ 上游文本：{upstream.effectivePrompt.slice(0, 60)}{upstream.effectivePrompt.length > 60 ? "…" : ""}
-                </p>
-              )}
-              <CompositionTextarea
-                value={script}
-                onChange={(v) => patchRuntimeData(id, { script: v })}
-                placeholder={upstream.effectivePrompt ? "留空则使用上游文本..." : "描述任何你想要生成的内容，口播文案或形象描述..."}
-                className="nodrag select-text flex-1 w-full resize-none bg-transparent text-sm leading-relaxed text-[var(--canvas-text)] placeholder:text-[var(--canvas-text-30)] focus:outline-none nopan selection:bg-blue-500/50"
-              />
-            </>
-          )}
-          <div className="flex items-center gap-1.5">
-            <select value={model} onChange={(e) => patchRuntimeData(id, { model: e.target.value })} onClick={(e) => e.stopPropagation()}
-              className="min-w-0 flex-1 appearance-none truncate bg-transparent text-xs text-[var(--canvas-text-50)] focus:outline-none">
-              {models.digitalHumanModels.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-            </select>
-            <span className="text-xs text-[var(--canvas-text-20)]">·</span>
-            <select value={ratio} onChange={(e) => patchRuntimeData(id, { ratio: e.target.value })} onClick={(e) => e.stopPropagation()}
-              className="appearance-none bg-transparent text-xs text-[var(--canvas-text-50)] focus:outline-none">
-              <option value="auto">自适应</option>
-              {IMAGE_RATIOS.map((r) => <option key={r} value={r}>{r}</option>)}
-            </select>
             <button type="button" disabled={isRunning}
               onClick={(e) => { e.stopPropagation(); void runDigitalHumanNode(id); }}
               className="ml-auto flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--tenant-primary)] text-[var(--tenant-primary-foreground)] shadow transition hover:bg-[var(--tenant-primary-hover)] disabled:opacity-40">
@@ -2768,6 +2969,7 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       )}
       <input ref={voiceUploadRef} type="file" accept="audio/*" className="hidden" onChange={handleVoiceUpload} />
       <input ref={avatarUploadRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+      <input ref={emoAudioUploadRef} type="file" accept="audio/*" className="hidden" onChange={handleEmoAudioUpload} />
     </div>
     </CardMagnetContext.Provider>
   );
@@ -3471,6 +3673,418 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   );
 }
 
+// ─── ImageTextGroupNodeCard ────────────────────────────────────────────────────
+// 专属图文创作节点：展示多张生成图片 + 正文文案
+function ImageTextGroupNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
+  const { data, id } = props;
+  const { isConnecting, patchRuntimeData: _patchRtd, setNodeStatus, getUpstreamInputs } = useCanvasNodeContext();
+  const { language: itgLanguage } = useLanguage();
+  const itgLanguageLabel = resolveLanguageLabel(itgLanguage);
+  const innerRef = useRef<HTMLDivElement>(null);
+  const magnet = useCardMagnet(innerRef);
+  const updateNodeInternals = useUpdateNodeInternals();
+  const [fullscreenIdx, setFullscreenIdx] = useState<number | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  // ── Smart Create state ───────────────────────────────────────────────────────
+  const [scAuthToken, setScAuthToken] = useState<string | null>(null);
+  const [scStyles, setScStyles] = useState<{ id: string; name: string; previewUrl?: string | null }[]>([]);
+  const [scStylesLoading, setScStylesLoading] = useState(false);
+  const [scSelectedStyleId, setScSelectedStyleId] = useState<string | null>(null);
+  const [scCount, setScCount] = useState(3);
+  const [scCreating, setScCreating] = useState(false);
+  const scChannelsRef = useRef<ReturnType<typeof supabase.channel>[]>([]);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: s }) => {
+      setScAuthToken(s.session?.access_token ?? null);
+    });
+    return () => {
+      scChannelsRef.current.forEach((ch) => { void supabase.removeChannel(ch); });
+      scChannelsRef.current = [];
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!scAuthToken || scStyles.length > 0) return;
+    let cancelled = false;
+    setScStylesLoading(true);
+    fetch("/api/assets/styles?limit=50", {
+      headers: { Authorization: `Bearer ${scAuthToken}` },
+      cache: "no-store",
+    })
+      .then((r) => r.json())
+      .then((p) => {
+        if (cancelled) return;
+        const rows = Array.isArray(p?.data) ? p.data as { id: string; name: string; previewUrl?: string | null }[] : [];
+        setScStyles(rows);
+        if (rows.length > 0 && !scSelectedStyleId) setScSelectedStyleId(rows[0].id);
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setScStylesLoading(false); });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scAuthToken]);
+
+  async function handleSmartCreate() {
+    if (!scAuthToken || !scSelectedStyleId || scCreating) return;
+    const upstream = getUpstreamInputs(id);
+    const textContent = upstream.effectivePrompt || upstream.textContents.join("\n\n");
+    if (!textContent.trim()) {
+      toast.error("请先连接一个文本节点作为内容来源");
+      return;
+    }
+    const title = textContent.trim().slice(0, 60) || "智能创作";
+    setScCreating(true);
+    setNodeStatus(id, "running");
+
+    try {
+      const res = await fetch("/api/xhs-text2img/plan", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${scAuthToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          text: textContent.trim(),
+          styleId: scSelectedStyleId,
+          imageCount: scCount,
+          language: itgLanguageLabel,
+        }),
+      });
+      const body = await res.json() as Record<string, unknown>;
+      if (!res.ok) {
+        const errMsg = (body?.error as string) || "提交失败";
+        setNodeStatus(id, "error");
+        _patchRtd(id, { lastRunError: errMsg });
+        throw new Error(errMsg);
+      }
+      const taskId = typeof (body?.data as Record<string, unknown>)?.taskId === "string"
+        ? (body.data as Record<string, unknown>).taskId as string
+        : null;
+      if (!taskId) throw new Error("未获取到任务 ID");
+
+      const channel = supabase
+        .channel(`itg_sc_${taskId}`)
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "creative_tasks", filter: `id=eq.${taskId}` },
+          (payload) => {
+            const row = payload.new as Record<string, unknown>;
+            if (row.status === "COMPLETED") {
+              let imgs: { index: number; url: string }[] = [];
+              try {
+                const raw = row.generated_images_json ?? row.generatedImagesJson;
+                imgs = Array.isArray(raw)
+                  ? (raw as { index: number; url: string }[])
+                  : (JSON.parse(raw as string) as { index: number; url: string }[]);
+              } catch { /* ignore */ }
+              const copy = typeof row.idea_text === "string" ? row.idea_text
+                : typeof row.ideaText === "string" ? row.ideaText : "";
+              _patchRtd(id, { images: imgs, copy });
+              setNodeStatus(id, "idle");
+              setScCreating(false);
+              supabase.removeChannel(channel);
+              scChannelsRef.current = scChannelsRef.current.filter((c) => c !== channel);
+              toast.success("图文创作完成！");
+            } else if (row.status === "GENERATE_FAILED" || row.status === "FAILED") {
+              setNodeStatus(id, "error");
+              _patchRtd(id, { lastRunError: "生成失败，请重试" });
+              setScCreating(false);
+              supabase.removeChannel(channel);
+              scChannelsRef.current = scChannelsRef.current.filter((c) => c !== channel);
+              toast.error("图片生成失败，请重试");
+            }
+          },
+        )
+        .subscribe();
+      scChannelsRef.current.push(channel);
+      toast.success("已提交，正在生成图文…");
+    } catch (err) {
+      setNodeStatus(id, "error");
+      setScCreating(false);
+      toast.error(err instanceof Error ? err.message : "生成失败");
+    }
+  }
+
+  const rtData = data.runtime.data as Record<string, unknown>;
+  const images = Array.isArray(rtData.images)
+    ? (rtData.images as { index: number; url: string }[])
+    : [];
+  const copy = typeof rtData.copy === "string" ? rtData.copy : "";
+  const isRunning = data.status === "running";
+
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, updateNodeInternals, images.length, data.expanded]);
+
+  const handleCardClick = (e: React.MouseEvent) => { e.stopPropagation(); };
+
+  const handleDownloadAll = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (images.length === 0 || isDownloading) return;
+    setIsDownloading(true);
+    try {
+      for (const img of images) {
+        const a = document.createElement("a");
+        a.href = img.url;
+        a.download = img.url.split("/").pop() || `image_${img.index}.jpg`;
+        a.target = "_blank";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      toast.success(`已下载 ${images.length} 张图片`);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const NODE_W = 560;
+
+  const fullscreenPortal = fullscreenIdx !== null && images[fullscreenIdx]
+    ? createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+          onClick={() => setFullscreenIdx(null)}
+        >
+          <img
+            src={images[fullscreenIdx].url}
+            alt={`图片 ${fullscreenIdx + 1}`}
+            className="max-h-[90vh] max-w-[90vw] rounded-2xl object-contain shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          {/* 关闭按钮 — 右上角 */}
+          <button
+            className="fixed right-6 top-6 flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm hover:bg-white/20 transition"
+            onClick={() => setFullscreenIdx(null)}
+          >
+            <X className="h-5 w-5" />
+          </button>
+          {/* 页码 */}
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 text-sm text-white/60">
+            {fullscreenIdx + 1} / {images.length}
+          </div>
+          {/* 左箭头 */}
+          {fullscreenIdx > 0 && (
+            <button
+              className="fixed left-6 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition"
+              onClick={(e) => { e.stopPropagation(); setFullscreenIdx((v) => (v ?? 0) - 1); }}
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+          )}
+          {/* 右箭头 */}
+          {fullscreenIdx < images.length - 1 && (
+            <button
+              className="fixed right-6 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition"
+              onClick={(e) => { e.stopPropagation(); setFullscreenIdx((v) => (v ?? 0) + 1); }}
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          )}
+        </div>,
+        document.body,
+      )
+    : null;
+
+  return (
+    <CardMagnetContext.Provider value={magnet}>
+      {fullscreenPortal}
+      <div style={{ width: NODE_W }} className="relative select-none" onClick={handleCardClick}>
+
+        {/* 浮动操作栏 — 选中时显示 */}
+        {props.selected && !isRunning && (
+          <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex flex-col items-center gap-1.5">
+            {/* 下载 pill — 有图片时显示 */}
+            {images.length > 0 && (
+              <div className="flex items-center rounded-full bg-[var(--canvas-surface)] shadow-[var(--canvas-shadow-sm)]">
+                <div className="group/tip relative">
+                  <button
+                    type="button"
+                    disabled={isDownloading}
+                    onClick={handleDownloadAll}
+                    className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95 disabled:opacity-40"
+                  >
+                    <Download className="h-4 w-4" />
+                  </button>
+                  <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">
+                    下载全部图片
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* node label row */}
+        <div className="mb-1.5 flex items-center gap-1.5 px-1">
+          <LayoutGrid className="h-3.5 w-3.5 text-[var(--canvas-text-50)]" />
+          <EditableNodeLabel title={resolveTitle(data)} nodeId={id} patchRuntimeData={_patchRtd} />
+        </div>
+
+        <div className="relative">
+          <CardHandle side="left" magnetY={magnet.magnetY} visible={magnet.showLeft || isConnecting} isConnecting={isConnecting} />
+          <CardHandle side="right" magnetY={magnet.magnetY} visible={magnet.showRight} isConnecting={isConnecting} />
+          <div
+            ref={innerRef}
+            className={clsx(
+              "rounded-[24px] border bg-[var(--canvas-surface)] p-4 transition",
+              props.selected
+                ? "border-[var(--canvas-border-strong)] shadow-[var(--canvas-shadow-glow-sm)]"
+                : isConnecting
+                ? "border-[var(--canvas-border-md)] hover:border-[var(--canvas-border-accent)] hover:shadow-[var(--canvas-shadow-glow-md)]"
+                : "border-[var(--canvas-border)] hover:border-[var(--canvas-border-md)]",
+            )}
+          >
+            {isRunning ? (
+              /* skeleton loading */
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-2">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="aspect-[3/4] animate-pulse rounded-xl bg-[var(--canvas-hover)]" />
+                  ))}
+                </div>
+                <div className="h-3 w-3/4 animate-pulse rounded-full bg-[var(--canvas-hover)]" />
+                <div className="h-3 w-1/2 animate-pulse rounded-full bg-[var(--canvas-hover)]" />
+              </div>
+            ) : images.length > 0 ? (
+              <div className="space-y-3">
+                {/* image grid — max 3 per row */}
+                <div className={clsx(
+                  "grid gap-2",
+                  images.length === 1 ? "grid-cols-1"
+                  : images.length === 2 ? "grid-cols-2"
+                  : "grid-cols-3"
+                )}>
+                  {images.map((img, idx) => (
+                    <button
+                      key={img.index}
+                      type="button"
+                      className="group relative overflow-hidden rounded-xl"
+                      onClick={(e) => { e.stopPropagation(); setFullscreenIdx(idx); }}
+                    >
+                      <img
+                        src={img.url}
+                        alt={`图片 ${img.index}`}
+                        className="aspect-[3/4] w-full object-cover transition group-hover:brightness-90"
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center opacity-0 transition group-hover:opacity-100">
+                        <Maximize2 className="h-5 w-5 text-white drop-shadow" />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                {/* copy text */}
+                {copy && (
+                  <p className="whitespace-pre-wrap break-words text-[12px] leading-relaxed text-[var(--canvas-text-70)]">
+                    {copy.length > 150 ? copy.slice(0, 150) + "…" : copy}
+                  </p>
+                )}
+                <p className="text-[11px] text-[var(--canvas-text-30)]">{images.length} 张图片 · 点击图片查看大图</p>
+              </div>
+            ) : (
+              /* empty placeholder */
+              <div className="flex h-36 flex-col items-center justify-center gap-2 text-[var(--canvas-text-30)]">
+                <LayoutGrid className="h-8 w-8 opacity-40" />
+                <span className="text-[12px]">图文创作结果将在此展示</span>
+              </div>
+            )}
+          </div>
+        </div>
+        {/* 智能创作操作面板 */}
+        {props.selected && (
+          <div
+            style={{ width: NODE_W }}
+            className="nodrag mt-2 flex flex-col rounded-[20px] bg-[var(--canvas-surface)] px-4 pb-3 pt-3"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {/* 上游内容提示 */}
+            {(() => {
+              const upstream = getUpstreamInputs(id);
+              return upstream.effectivePrompt ? (
+                <p className="mb-2 truncate text-[10px] text-[var(--canvas-text-30)]">
+                  ↑ 内容：{upstream.effectivePrompt.slice(0, 80)}{upstream.effectivePrompt.length > 80 ? "…" : ""}
+                </p>
+              ) : (
+                <p className="mb-2 text-[10px] text-rose-400/70">请先连接文本节点作为内容来源</p>
+              );
+            })()}
+            {/* 风格预设 */}
+            <p className="mb-1.5 text-[11px] text-[var(--canvas-text-30)]">风格预设</p>
+            {scStylesLoading ? (
+              <div className="mb-3 flex gap-2 animate-pulse">
+                {[1, 2, 3].map((n) => <div key={n} className="h-16 w-14 rounded-xl bg-[var(--canvas-hover-lg)]" />)}
+              </div>
+            ) : (
+              <div className="mb-3 flex gap-2 overflow-x-auto pb-1 nopan">
+                {scStyles.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setScSelectedStyleId(s.id); }}
+                    className={clsx(
+                      "flex-shrink-0 flex flex-col items-center gap-1 rounded-xl border-2 overflow-hidden transition",
+                      scSelectedStyleId === s.id
+                        ? "border-[var(--tenant-primary)]"
+                        : "border-transparent hover:border-[var(--canvas-border-md)]",
+                    )}
+                  >
+                    {s.previewUrl ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={s.previewUrl} alt={s.name} className="h-14 w-14 object-cover" />
+                    ) : (
+                      <div className="flex h-14 w-14 items-center justify-center bg-[var(--canvas-hover)] text-[10px] text-[var(--canvas-text-30)] text-center px-1 leading-tight">
+                        {s.name}
+                      </div>
+                    )}
+                    <span className="w-14 truncate px-0.5 pb-0.5 text-center text-[10px] text-[var(--canvas-text-50)]">{s.name}</span>
+                  </button>
+                ))}
+                {scStyles.length === 0 && !scStylesLoading && (
+                  <p className="text-[11px] text-[var(--canvas-text-30)]">暂无风格预设</p>
+                )}
+              </div>
+            )}
+            {/* 生成张数 + 提交 */}
+            <div className="flex items-center gap-3">
+              <span className="shrink-0 text-[11px] text-[var(--canvas-text-30)]">生成张数</span>
+              <div className="flex gap-1.5">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setScCount(n); }}
+                    className={clsx(
+                      "flex h-7 w-7 items-center justify-center rounded-lg text-sm font-medium transition",
+                      scCount === n
+                        ? "bg-[var(--tenant-primary)] text-[var(--tenant-primary-foreground)]"
+                        : "bg-[var(--canvas-hover)] text-[var(--canvas-text-60)] hover:bg-[var(--canvas-hover-lg)]",
+                    )}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                disabled={scCreating || !scSelectedStyleId || !getUpstreamInputs(id).effectivePrompt}
+                onClick={(e) => { e.stopPropagation(); void handleSmartCreate(); }}
+                className="ml-auto flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--tenant-primary)] text-[var(--tenant-primary-foreground)] shadow transition hover:bg-[var(--tenant-primary-hover)] active:scale-95 disabled:opacity-40"
+              >
+                {scCreating
+                  ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--tenant-primary-foreground)]/20 border-t-[var(--tenant-primary-foreground)]" />
+                  : <ArrowUp className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </CardMagnetContext.Provider>
+  );
+}
+
 const TIMELINE_VIDEO_NODE_WIDTH = MEDIA_NODE_WIDTH;
 
 function TimelineVideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
@@ -3581,12 +4195,14 @@ const nodeTypes = {
   digitalhuman: DigitalHumanNodeCard,
   storyboard: StoryboardNodeCard,
   grid: GridNodeCard,
+  imagetextgroup: ImageTextGroupNodeCard,
   timelinevideo: TimelineVideoNodeCard,
   phantom: PhantomNode,
 };
 
 const NODE_PICKER_ITEMS = [
   { type: "text", icon: AlignLeft, label: "文本", desc: "脚本、广告词、品牌文案" },
+  { type: "imagetextgroup", icon: LayoutGrid, label: "图文", desc: "图文内容创作、小红书图文" },
   { type: "image", icon: ImageIcon, label: "图片", desc: "AI 文生图、风格创作" },
   { type: "video", icon: Video, label: "视频", desc: "AI 文生视频、Sora / Veo" },
   { type: "audio", icon: Music, label: "音频", desc: "AI 音乐与语音合成" },
@@ -3944,6 +4560,8 @@ export function ReactCanvasRoot({
   const models = useCanvasModels();
   const { update: updateCanvasShell, registerCommands } = useCanvasShell();
   const { basePath } = useTenant();
+  const { language: interfaceLanguage } = useLanguage();
+  const interfaceLanguageLabel = resolveLanguageLabel(interfaceLanguage);
 
   const [nodes, setNodes] = useState<Node<MinimalFlowNodeData>[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -5670,6 +6288,7 @@ export function ReactCanvasRoot({
             zoomOnPinch={true}
             selectionOnDrag={!isSpaceDown}
             selectionMode={SelectionMode.Partial}
+            connectionMode={ConnectionMode.Loose}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}

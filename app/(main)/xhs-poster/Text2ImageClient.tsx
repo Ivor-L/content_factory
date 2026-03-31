@@ -19,6 +19,13 @@ import { useCreativeTaskPolling } from './hooks/useCreativeTaskPolling';
 import { useUserApiKey } from './hooks/useUserApiKey';
 import { startText2ImageTask } from './api/text2imageClient';
 import { safeParseJson, prettifyJson } from './utils/json';
+import { useLanguage } from '@/contexts/LanguageContext';
+
+const mapLanguageLabel = (lang?: string | null) => {
+  if (lang === 'zh-TW') return '繁体';
+  if (lang === 'en') return 'English';
+  return '简体';
+};
 
 interface Text2ImageClientProps {
   searchParams?: Record<string, string | string[] | undefined>;
@@ -196,6 +203,7 @@ export function Text2ImageClient({ searchParams }: Text2ImageClientProps) {
       styleId: selectedStyleId,
       styleProfileJson: normalizedStyle,
       imageCount,
+      language: languageLabel,
     };
 
     try {
@@ -215,7 +223,7 @@ export function Text2ImageClient({ searchParams }: Text2ImageClientProps) {
     } finally {
       setIsSubmitting(false);
     }
-  }, [apiKey, imageCount, normalizeStylePayload, selectedStyleId, text, title]);
+  }, [apiKey, imageCount, languageLabel, normalizeStylePayload, selectedStyleId, text, title]);
 
   useEffect(() => {
     if (!autoStartPendingRef.current) return;
@@ -577,3 +585,5 @@ function maskApiKey(value: string) {
   if (value.length <= 6) return value;
   return `${value.slice(0, 3)}••••${value.slice(-3)}`;
 }
+  const { language } = useLanguage();
+  const languageLabel = useMemo(() => mapLanguageLabel(language), [language]);

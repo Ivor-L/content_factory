@@ -9,14 +9,44 @@ const MEDIA_CACHE_MAX_BYTES =
   Number.parseInt(process.env.MEDIA_CACHE_MAX_BYTES ?? "", 10) || 30 * 1024 * 1024; // 30 MB
 const MEDIA_CACHE_TTL_DAYS =
   Number.parseInt(process.env.MEDIA_CACHE_TTL_DAYS ?? "", 10) || 5;
-const MEDIA_CACHE_FETCH_HEADERS: Record<string, string> = {
+const MEDIA_CACHE_STORAGE = (process.env.MEDIA_CACHE_STORAGE ?? "oss").toLowerCase();
+const USE_SUPABASE_CACHE = MEDIA_CACHE_STORAGE === "supabase";
+const MEDIA_CACHE_BASE_HEADERS: Record<string, string> = {
   "User-Agent":
     "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
-  Referer: "https://www.xiaohongshu.com/",
   Accept: "*/*",
 };
+const MEDIA_CACHE_REFERER_OVERRIDES: Array<{ test: (hostname: string) => boolean; referer: string }> = [
+  {
+    test: (hostname) => /tiktok/i.test(hostname) || /tiktokcdn/i.test(hostname),
+    referer: "https://www.tiktok.com/",
+  },
+  {
+    test: (hostname) => /instagram/i.test(hostname) || /cdninstagram/i.test(hostname) || /fbcdn\.net$/i.test(hostname),
+    referer: "https://www.instagram.com/",
+  },
+  {
+    test: (hostname) => /facebook/i.test(hostname),
+    referer: "https://www.facebook.com/",
+  },
+];
+const MEDIA_CACHE_DEFAULT_REFERER = "https://www.xiaohongshu.com/";
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
-const SELF_HOSTED_HOSTS = new Set(["supabase-api.atomx.top", "localhost", "127.0.0.1"]);
+const EXTRA_SELF_HOSTS = (() => {
+  const hosts: string[] = [];
+  const ossPublicUrl = process.env.ALIYUN_OSS_PUBLIC_URL?.trim();
+  if (ossPublicUrl) {
+    try {
+      const normalized = ossPublicUrl.startsWith("http") ? ossPublicUrl : `https://${ossPublicUrl}`;
+      const hostname = new URL(normalized).hostname;
+      if (hostname) hosts.push(hostname);
+    } catch {
+      // ignore invalid OSS url
+    }
+  }
+  return hosts;
+})();
+const SELF_HOSTED_HOSTS = new Set<string>(["supabase-api.atomx.top", "localhost", "127.0.0.1", ...EXTRA_SELF_HOSTS]);
 
 let lastCleanupAt = 0;
 let bucketSetupPromise: Promise<void> | null = null;
@@ -36,7 +66,9 @@ export async function cacheReferenceMediaAssets(
   fields: CachedMediaFields,
   context: CacheContext,
 ): Promise<CachedMediaFields> {
-  await cleanupExpiredCache();
+  if (USE_SUPABASE_CACHE) {
+    await cleanupExpiredCache();
+  }
 
   const urlMap = new Map<string, string>();
 
@@ -84,8 +116,9 @@ async function cacheSingleUrl(url: string, context: CacheContext): Promise<strin
     return url;
   }
 
+  const target = new URL(url);
   const response = await fetch(url, {
-    headers: MEDIA_CACHE_FETCH_HEADERS,
+    headers: buildFetchHeaders(target),
   });
 
   if (!response.ok) {
@@ -107,7 +140,9 @@ async function cacheSingleUrl(url: string, context: CacheContext): Promise<strin
     throw new Error(`Downloaded asset exceeds ${MEDIA_CACHE_MAX_BYTES} bytes`);
   }
 
-  await ensureCacheBucket();
+  if (USE_SUPABASE_CACHE) {
+    await ensureCacheBucket();
+  }
   const extension = guessExtension(url, contentType);
   const filename = `${Date.now()}-${context.platform}-${context.sourceId}-${randomUUID()}${extension}`;
   const path = `${MEDIA_CACHE_PREFIX}/${filename}`;
@@ -168,6 +203,9 @@ function guessExtension(url: string, contentType: string | null) {
 }
 
 async function cleanupExpiredCache() {
+  if (!USE_SUPABASE_CACHE) {
+    return;
+  }
   if (MEDIA_CACHE_TTL_DAYS <= 0) {
     return;
   }
@@ -221,6 +259,9 @@ async function cleanupExpiredCache() {
 }
 
 async function ensureCacheBucket() {
+  if (!USE_SUPABASE_CACHE) {
+    return;
+  }
   if (bucketSetupPromise) {
     return bucketSetupPromise;
   }
@@ -255,4 +296,14 @@ async function ensureCacheBucket() {
     bucketSetupPromise = null;
   });
   return bucketSetupPromise;
+}
+
+function buildFetchHeaders(targetUrl: URL): Record<string, string> {
+  const headers: Record<string, string> = { ...MEDIA_CACHE_BASE_HEADERS };
+  const hostname = targetUrl.hostname.toLowerCase();
+  const override = MEDIA_CACHE_REFERER_OVERRIDES.find((entry) => entry.test(hostname));
+  const referer = override?.referer ?? MEDIA_CACHE_DEFAULT_REFERER;
+  headers.Referer = referer;
+  headers.Origin = referer.replace(/\/$/, "");
+  return headers;
 }

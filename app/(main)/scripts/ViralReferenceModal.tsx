@@ -3,12 +3,12 @@
 /* eslint-disable @next/next/no-img-element -- Modal displays proxied remote media and carousel thumbnails */
 
 import { useState } from "react";
-import { X, Download, Zap, ExternalLink, ChevronLeft, ChevronRight, Play, ArrowLeft } from "lucide-react";
+import { X, Download, Zap, ExternalLink, ChevronLeft, ChevronRight, ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "react-hot-toast";
 import { ImageTextReplicationPanel } from "./ImageTextReplicationPanel";
 import { useTenant } from "@/hooks/useTenant";
-import { toProxyUrl, toProxyImgUrl } from "@/lib/mediaProxy";
+import { toProxyUrl, toProxyImgUrl, toProxyMediaUrl } from "@/lib/mediaProxy";
 import { chooseBestMediaUrl, isLikelyBlockedXhsUrl } from "@/lib/viralReferenceMedia";
 
 type StatPayload = Record<string, number | string | null>;
@@ -65,7 +65,6 @@ function formatCount(value?: number | string | null) {
 export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps) {
   const router = useRouter();
   const { basePath } = useTenant();
-  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isReplicating, setIsReplicating] = useState(false);
   const [showImageTextPanel, setShowImageTextPanel] = useState(false);
@@ -110,6 +109,7 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
 
   const buildProxyUrl = (url: string, filename: string) => toProxyUrl(url, filename);
   const buildProxyImgUrl = (url: string) => toProxyImgUrl(url);
+  const buildProxyMediaUrl = (url: string) => toProxyMediaUrl(url);
 
   const handleDownload = async () => {
     // For video: download the video file. For images: download current image.
@@ -186,55 +186,17 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
 
         {/* ── Left side: video or image carousel ── */}
         <div className="w-full md:w-1/2 bg-black flex flex-col">
-          {isVideo ? (
-            /* ── VIDEO MODE ── */
+          {isVideo && item.videoUrl ? (
             <div className="relative flex-1 flex items-center justify-center" style={{ minHeight: 320 }}>
-              {isVideoPlaying && item.videoUrl ? (
-                /* Actual video player — source routed through server proxy to bypass CDN CORS */
-                <video
-                  src={buildProxyUrl(
-                    item.videoUrl,
-                    `${item.title || item.sourceId}.mp4`,
-                  )}
-                  poster={preferredCoverImage ? buildProxyImgUrl(preferredCoverImage) : undefined}
-                  controls
-                  autoPlay
-                  loop
-                  className="w-full h-full object-contain"
-                  style={{ maxHeight: "90vh" }}
-                />
-              ) : (
-                /* Cover image + play button overlay */
-                <button
-                  type="button"
-                  className="relative w-full h-full flex items-center justify-center cursor-pointer group"
-                  onClick={() => item.videoUrl ? setIsVideoPlaying(true) : undefined}
-                  style={{ minHeight: 320 }}
-                >
-                  {item.coverUrl ? (
-                    <img
-                      src={buildProxyImgUrl(item.coverUrl)}
-                      alt={item.title || "video cover"}
-                      className="w-full h-full object-contain"
-                      style={{ maxHeight: "90vh" }}
-                    />
-                  ) : (
-                    <div className="w-full flex-1 bg-gray-900 min-h-[320px]" />
-                  )}
-                  {/* Play overlay */}
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors">
-                    {item.videoUrl ? (
-                      <div className="w-20 h-20 rounded-full bg-black/50 group-hover:bg-black/70 backdrop-blur-sm flex items-center justify-center transition-all shadow-xl">
-                        <Play className="w-9 h-9 text-white fill-white ml-1" />
-                      </div>
-                    ) : (
-                      <div className="px-4 py-2 rounded-xl bg-black/60 text-white text-xs text-center">
-                        批量采集暂无视频链接<br />请点击「查看原文」播放
-                      </div>
-                    )}
-                  </div>
-                </button>
-              )}
+              <video
+                key={item.id}
+                src={buildProxyMediaUrl(item.videoUrl)}
+                poster={preferredCoverImage ? buildProxyImgUrl(preferredCoverImage) : undefined}
+                controls
+                playsInline
+                className="w-full h-full object-contain"
+                style={{ maxHeight: "90vh" }}
+              />
             </div>
           ) : (
             /* ── IMAGE CAROUSEL MODE ── */

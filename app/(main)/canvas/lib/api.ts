@@ -65,6 +65,7 @@ export async function startTextToImageTask(params: {
   text: string;
   styleId: string;
   imageCount: number;
+  language?: string;
 }) {
   const payload = await fetchJson<{ data?: { taskId: string }; taskId?: string }>(
     "/api/xhs-text2img/plan",

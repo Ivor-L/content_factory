@@ -16,6 +16,7 @@ export type CreateCreativeTaskPayload = {
   storyIds?: string[];
   styleIds?: string[];
   styleRules?: StyleRules | null;
+  language?: string | null;
 };
 
 export async function createCreativeTaskWithAssets({
@@ -45,6 +46,12 @@ export async function createCreativeTaskWithAssets({
   }
 
   const metadata = initMetadata();
+  if (Object.prototype.hasOwnProperty.call(payload, "language")) {
+    const normalizedLanguage =
+      typeof payload.language === "string" ? payload.language.trim() : "";
+    metadata.custom = metadata.custom ?? {};
+    metadata.custom.language = normalizedLanguage || null;
+  }
   if (Object.prototype.hasOwnProperty.call(payload, "styleRules")) {
     const sanitizedStyleRules = sanitizeStyleRules(payload.styleRules);
     if (sanitizedStyleRules !== undefined) {

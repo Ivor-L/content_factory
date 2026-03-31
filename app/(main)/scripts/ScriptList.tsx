@@ -40,7 +40,7 @@ import { motion } from "framer-motion";
 import { ScriptStatusBadge } from "./ScriptStatusBadge";
 import ScriptStatusPoller from "./[id]/ScriptStatusPoller";
 import { deriveCopyInsights } from "@/lib/copyInsights";
-import { toProxyUrl, toProxyImgUrl } from "@/lib/mediaProxy";
+import { toProxyUrl, toProxyImgUrl, toProxyMediaUrl } from "@/lib/mediaProxy";
 import { chooseBestMediaUrl } from "@/lib/viralReferenceMedia";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -69,6 +69,7 @@ interface ScriptListProps {
 }
 
 const REFERENCE_PLACEHOLDER_IMAGE = "/logo/logo-icon.svg";
+const VIDEO_URL_PATTERN = /\.(mp4|mov|m3u8)(\?|$)/i;
 
 const VIRAL_PLATFORMS = [
   { id: "xiaohongshu", label: "小红书", badge: "XHS" },
@@ -290,6 +291,15 @@ function getReferenceCoverImage(ref: Pick<ViralReferenceItemData, "coverUrl" | "
     mediaList[0] ??
     null
   );
+}
+
+function getReferenceVideoUrl(ref: Pick<ViralReferenceItemData, "videoUrl" | "mediaUrls">): string | null {
+  if (typeof ref.videoUrl === "string" && ref.videoUrl.trim()) {
+    return ref.videoUrl.trim();
+  }
+  const mediaList = normalizeMediaList(ref.mediaUrls);
+  const candidate = mediaList.find((url) => typeof url === "string" && VIDEO_URL_PATTERN.test(url));
+  return candidate ?? null;
 }
 
 function extractReferenceScriptText(
@@ -1739,6 +1749,9 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
               {filteredReferenceItems.map((item) => {
                 const isSelected = selectedReferenceIds.includes(item.id);
                 const displayImageUrl = getReferenceCoverImage(item) ?? REFERENCE_PLACEHOLDER_IMAGE;
+                const displayVideoUrl = getReferenceVideoUrl(item);
+                const proxiedPosterUrl = toProxyImgUrl(displayImageUrl);
+                const proxiedVideoUrl = displayVideoUrl ? toProxyMediaUrl(displayVideoUrl) : null;
                 const scriptPreview = (item.scriptText ?? "").trim();
                 const hasScriptPreview = scriptPreview.length > 0;
                 return (
@@ -1789,11 +1802,22 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                       </span>
                     )}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent z-10" />
-                  <img
-                    src={toProxyImgUrl(displayImageUrl)}
-                    alt={item.title || 'reference'}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-                  />
+                  {proxiedVideoUrl ? (
+                    <video
+                      src={proxiedVideoUrl}
+                      poster={proxiedPosterUrl}
+                      muted
+                      playsInline
+                      preload="metadata"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                    />
+                  ) : (
+                    <img
+                      src={proxiedPosterUrl}
+                      alt={item.title || 'reference'}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                    />
+                  )}
                   <div className="absolute top-3 left-3 z-20 flex gap-2">
                     <span className="px-2 py-1 text-[10px] uppercase font-bold tracking-widest rounded-full bg-white/90 text-gray-900">
                       {getPlatformLabel(item.platform)}
@@ -1842,6 +1866,9 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
               {filteredReferenceItems.map((item) => {
                 const isSelected = selectedReferenceIds.includes(item.id);
                 const displayImageUrl = getReferenceCoverImage(item) ?? REFERENCE_PLACEHOLDER_IMAGE;
+                const displayVideoUrl = getReferenceVideoUrl(item);
+                const proxiedPosterUrl = toProxyImgUrl(displayImageUrl);
+                const proxiedVideoUrl = displayVideoUrl ? toProxyMediaUrl(displayVideoUrl) : null;
                 return (
                   <div
                     key={item.id}
@@ -1885,11 +1912,22 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                             {isSelected ? <CheckSquare className="h-5 w-5" /> : <Square className="h-5 w-5" />}
                           </button>
                         )}
-                        <img
-                          src={toProxyImgUrl(displayImageUrl)}
-                          alt={item.title || "reference"}
-                          className="w-28 h-16 rounded-xl object-cover flex-shrink-0 border border-gray-100 dark:border-gray-800"
-                        />
+                        {proxiedVideoUrl ? (
+                          <video
+                            src={proxiedVideoUrl}
+                            poster={proxiedPosterUrl}
+                            muted
+                            playsInline
+                            preload="metadata"
+                            className="w-28 h-16 rounded-xl object-cover flex-shrink-0 border border-gray-100 dark:border-gray-800"
+                          />
+                        ) : (
+                          <img
+                            src={proxiedPosterUrl}
+                            alt={item.title || "reference"}
+                            className="w-28 h-16 rounded-xl object-cover flex-shrink-0 border border-gray-100 dark:border-gray-800"
+                          />
+                        )}
                         <div className="min-w-0 flex-1 space-y-1">
                           <div className="flex items-center gap-2 text-[11px] uppercase text-gray-500 dark:text-gray-400">
                             <span className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">

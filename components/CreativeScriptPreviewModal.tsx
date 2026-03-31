@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTenantPath } from "@/hooks/useTenant";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 export interface CreativeScriptData {
   script_content: string;
@@ -49,6 +50,9 @@ export function CreativeScriptPreviewModal({
   onPosterConfirmed,
   onClose,
 }: CreativeScriptPreviewModalProps) {
+  const { language } = useLanguage();
+  const languageLabel =
+    language === "zh-TW" ? "繁体" : language === "en" ? "English" : "简体";
   const [editedScript, setEditedScript] = useState(scriptData.script_content);
   const hasEdited = editedScript !== scriptData.script_content;
   const charCount = editedScript.length;
@@ -151,6 +155,7 @@ export function CreativeScriptPreviewModal({
           text: editedScript,
           styleId: selectedStyleId,
           imageCount: 3,
+          language: languageLabel,
         }),
       });
       const data = await res.json().catch(() => ({}));

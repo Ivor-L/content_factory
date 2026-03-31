@@ -31,10 +31,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "ideaText is required" }, { status: 400 });
   }
 
+  const normalizedLanguage =
+    typeof payload.language === "string" ? payload.language.trim() : payload.language ?? null;
+
   const createPayload: CreateCreativeTaskPayload = {
     ...payload,
     channel: payload.channel ?? "xhs",
     targetOutput: payload.targetOutput ?? "图文",
+    language: normalizedLanguage,
   };
 
   let task;
@@ -74,6 +78,7 @@ export async function POST(request: NextRequest) {
       ideaText: payload.ideaText.trim(),
       wordCount,
       styleRules: payload.styleRules as Record<string, any> | null ?? null,
+      language: typeof normalizedLanguage === "string" ? normalizedLanguage : undefined,
       apiKey: apiKey ?? undefined,
       callbackUrl,
       appUrl,

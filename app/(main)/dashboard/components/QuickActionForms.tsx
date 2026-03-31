@@ -233,7 +233,9 @@ const createPosterFormState = (initialIdeaText = '') => ({
 });
 
 export function QuickPosterForm({ onClose, initialIdeaText = '' }: QuickPosterFormProps) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const languageLabel =
+    language === 'zh-TW' ? '繁体' : language === 'en' ? 'English' : '简体';
   const router = useRouter();
   const copy = t?.contentCreation as any;
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -343,6 +345,7 @@ export function QuickPosterForm({ onClose, initialIdeaText = '' }: QuickPosterFo
           styleId: form.styleId,
           imageCount: clampPosterCount(form.posterCount),
           styleProfileJson: styleProfileJson ?? undefined,
+          language: languageLabel,
         }),
       });
       const payload = await response.json().catch(() => ({}));

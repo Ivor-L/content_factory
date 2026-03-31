@@ -6,6 +6,7 @@ export interface Text2ImagePlanPayload {
   styleId: string;
   styleProfileJson: string;
   imageCount: number;
+  language?: string;
 }
 
 export interface Text2ImagePlanResponse {

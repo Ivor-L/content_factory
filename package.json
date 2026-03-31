@@ -19,7 +19,8 @@
     "styles:previews": "tsx scripts/generate-style-previews.ts",
     "layouts:previews": "tsx scripts/regenerate-layout-previews.ts",
     "build:extensions": "tsx scripts/build-extension-packages.ts",
-    "build:nexapi:apifox": "tsx scripts/nexapi/build-apifox.ts"
+    "build:nexapi:apifox": "tsx scripts/nexapi/build-apifox.ts",
+    "backfill:media-cache": "tsx scripts/backfill-reference-media-cache.ts"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.4.1",
