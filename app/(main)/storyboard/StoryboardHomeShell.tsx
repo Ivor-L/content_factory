@@ -6,7 +6,7 @@ import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import clsx from 'clsx';
 import { toast } from 'react-hot-toast';
-import { Download, Clock3, Film, Video, Mic, Pencil, ChevronDown, FolderOpen, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { Download, Clock3, Film, Video, Pencil, ChevronDown, FolderOpen, Image as ImageIcon, Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { read, utils } from 'xlsx';
 import type { ChangeEvent, MouseEvent as ReactMouseEvent } from 'react';
@@ -815,7 +815,7 @@ export function StoryboardHomeShell({ tasks, stats: _stats }: StoryboardHomeShel
 }
 
 const headerGridClass =
-  'grid min-w-[1500px] grid-cols-[70px_minmax(0,1.25fr)_minmax(0,0.55fr)_minmax(0,2.1fr)_minmax(0,2.1fr)_minmax(0,1.1fr)] gap-5';
+  'grid min-w-[1300px] grid-cols-[70px_minmax(0,1.35fr)_minmax(0,0.55fr)_minmax(0,2.1fr)_minmax(0,2.1fr)] gap-5';
 
 function ShotsTable({
   task,
@@ -854,7 +854,6 @@ function ShotsTable({
         <span>主体参考</span>
         <span>图片</span>
         <span>视频</span>
-        <span>口播文案</span>
       </div>
       <div>
         <InsertShotDivider
@@ -962,8 +961,6 @@ function ShotRow({ shot, isActive, onActivate, highlight = false }: ShotRowProps
         url={shot.videoUrl}
         emptyLabel="等待视频生成"
       />
-
-      <VoiceoverBlock voiceover={shot.voiceover} />
     </div>
   );
 }
@@ -1012,20 +1009,6 @@ function AssetPreview({ type, url, emptyLabel }: { type: 'image' | 'video'; url:
       ) : (
         <video src={url} controls className="h-full w-full object-cover" />
       )}
-    </div>
-  );
-}
-
-function VoiceoverBlock({ voiceover }: { voiceover: string | null }) {
-  return (
-    <div className="flex h-full flex-col rounded-2xl border border-gray-200 bg-gray-50 p-3 text-sm text-gray-800 dark:border-white/10 dark:bg-white/5 dark:text-white/80">
-      <div className="mb-2 inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-gray-500 dark:text-white/50">
-        <Mic size={14} />
-        口播文案
-      </div>
-      <p className="flex-1 whitespace-pre-line text-sm leading-relaxed text-gray-800 dark:text-white/80">
-        {voiceover || '等待口播生成'}
-      </p>
     </div>
   );
 }

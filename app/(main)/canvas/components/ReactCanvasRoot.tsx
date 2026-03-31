@@ -42,6 +42,7 @@ import {
   ArrowLeft,
   ArrowUp,
   ChevronDown,
+  ChevronRight,
   Clapperboard,
   Download,
   Film,
@@ -51,6 +52,7 @@ import {
   Layers,
   Locate,
   Maximize2,
+  MessageSquare,
   MousePointer2,
   Music,
   Pencil,
@@ -73,6 +75,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { AiGlowSpinner } from "@/components/AiGlowSpinner";
+import { ConfirmModal } from "@/components/ConfirmModal";
 import { supabase } from "@/lib/supabaseClient";
 import { useCanvasShell } from "@/contexts/CanvasShellContext";
 import { useTenant } from "@/hooks/useTenant";
@@ -95,7 +98,6 @@ import {
   type MinimalFlowNodeData,
   type UpstreamInputs,
 } from "../lib/canvasDataAdapters";
-import { ResourceHoverPanel } from "./ResourceHoverPanel";
 import type { CanvasProjectRecord } from "../types";
 import type { RuntimeCanvasNode } from "../lib/canvasDataAdapters";
 
@@ -151,7 +153,7 @@ type CanvasNodeContextValue = {
   runTextNode: (nodeId: string) => Promise<void>;
   runGridNode: (nodeId: string) => Promise<void>;
   splitGridNode: (nodeId: string) => Promise<void>;
-  reverseImagePrompt: (nodeId: string) => Promise<void>;
+  reverseImagePrompt: (nodeId: string, mode?: "no-text" | "with-text") => Promise<void>;
   addDownstreamNodes: (
     sourceNodeId: string,
     nodes: { type: string; data: Record<string, unknown> }[],
@@ -220,61 +222,72 @@ const CardMagnetContext = createContext<CardMagnetState>(DEFAULT_MAGNET);
 
 function useCardMagnet(ref: RefObject<HTMLElement | null>): CardMagnetState {
   const [state, setState] = useState<CardMagnetState>(DEFAULT_MAGNET);
+  const boundsRef = useRef<{ top: number; left: number; right: number; height: number } | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  // Update bounds on resize/scroll
   useEffect(() => {
-    // Circular detection zone radius in CSS pixels.
-    // The circle is centred at the card body's left/right edge midpoint.
-    const RADIUS = 130;
-
-    const onMove = (e: MouseEvent) => {
-      const el = ref.current;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-
-      // Centre of each side in screen coordinates
-      const cy = rect.top + rect.height / 2;
-      const leftCX = rect.left;
-      const rightCX = rect.right;
-
-      const mx = e.clientX;
-      const my = e.clientY;
-
-      const distLeft  = Math.sqrt((mx - leftCX) ** 2 + (my - cy) ** 2);
-      const distRight = Math.sqrt((mx - rightCX) ** 2 + (my - cy) ** 2);
-
-      const nearLeft  = distLeft  <= RADIUS;
-      const nearRight = distRight <= RADIUS;
-
-      if (nearLeft || nearRight) {
-        // Use the side the mouse is closest to (or left-biased on tie)
-        const activeDist = nearLeft ? distLeft : distRight;
-
-        // Quadratic strength: 1 at the zone centre, 0 at the zone edge.
-        // Result: precise tracking when mouse is close to centre,
-        // graceful pull-back to 50 % as it drifts toward the boundary.
-        const t = 1 - activeDist / RADIUS;
-        const strength = t * t;
-
-        // MouseY as percentage of card body height
-        const mousePct = ((my - rect.top) / rect.height) * 100;
-        // Interpolate between card centre (50 %) and mouse Y
-        const magnetPct = 50 + (mousePct - 50) * strength;
-
-        setState({
-          showLeft:  nearLeft,
-          showRight: nearRight,
-          magnetY:   Math.max(5, Math.min(95, magnetPct)),
-        });
-      } else {
-        // Outside every detection zone → reset to centre
-        setState((prev) =>
-          prev.showLeft || prev.showRight ? DEFAULT_MAGNET : prev,
-        );
-      }
+    const el = ref.current;
+    if (!el) return;
+    const updateBounds = () => {
+      const r = el.getBoundingClientRect();
+      boundsRef.current = { top: r.top, left: r.left, right: r.right, height: r.height };
     };
-
-    document.addEventListener("mousemove", onMove);
-    return () => document.removeEventListener("mousemove", onMove);
+    updateBounds();
+    const ro = new ResizeObserver(updateBounds);
+    ro.observe(el);
+    window.addEventListener("scroll", updateBounds, { passive: true, capture: true });
+    window.addEventListener("resize", updateBounds, { passive: true });
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("scroll", updateBounds, { capture: true });
+      window.removeEventListener("resize", updateBounds);
+    };
   }, [ref]);
+
+  // Per-node mousemove listener with RAF throttling
+  useEffect(() => {
+    const RADIUS = 130;
+    let lastMx = 0;
+    let lastMy = 0;
+    const onMove = (e: MouseEvent) => {
+      lastMx = e.clientX;
+      lastMy = e.clientY;
+      if (rafRef.current !== null) return; // Already scheduled
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        const rect = boundsRef.current;
+        if (!rect) return;
+        const mx = lastMx;
+        const my = lastMy;
+        const cy = rect.top + rect.height / 2;
+        const distLeft  = Math.sqrt((mx - rect.left)  ** 2 + (my - cy) ** 2);
+        const distRight = Math.sqrt((mx - rect.right) ** 2 + (my - cy) ** 2);
+        const nearLeft  = distLeft  <= RADIUS;
+        const nearRight = distRight <= RADIUS;
+        if (nearLeft || nearRight) {
+          const activeDist = nearLeft ? distLeft : distRight;
+          const t = 1 - activeDist / RADIUS;
+          const strength = t * t;
+          const mousePct = ((my - rect.top) / rect.height) * 100;
+          const magnetPct = 50 + (mousePct - 50) * strength;
+          setState({
+            showLeft:  nearLeft,
+            showRight: nearRight,
+            magnetY:   Math.max(5, Math.min(95, magnetPct)),
+          });
+        } else {
+          setState((prev) => (prev.showLeft || prev.showRight ? DEFAULT_MAGNET : prev));
+        }
+      });
+    };
+    document.addEventListener("mousemove", onMove);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
   return state;
 }
 
@@ -327,8 +340,8 @@ function CardHandle({
           width: 28,
           height: 28,
           borderRadius: "50%",
-          border: `1px solid ${isConnecting && isTarget ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.28)"}`,
-          background: "rgba(0,0,0,0.55)",
+          border: `1px solid ${isConnecting && isTarget ? "var(--canvas-border-strong)" : "var(--canvas-border-md)"}`,
+          background: "transparent",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -338,7 +351,7 @@ function CardHandle({
           zIndex: 10,
         }}
       >
-        <Plus className="h-3 w-3 text-white/50 pointer-events-none" />
+        <Plus className="h-3 w-3 text-[var(--canvas-text-50)] pointer-events-none" />
       </div>
     </>
   );
@@ -410,14 +423,14 @@ function EditableNodeLabel({ title, nodeId, patchRuntimeData }: { title: string;
         onBlur={commit}
         onKeyDown={handleKeyDown}
         onClick={(e) => e.stopPropagation()}
-        className="flex-1 ml-1 bg-transparent text-[11px] uppercase tracking-[0.2em] text-white outline-none"
+        className="flex-1 ml-1 bg-transparent text-[11px] uppercase tracking-[0.2em] text-[var(--canvas-text)] outline-none"
       />
     );
   }
 
   return (
     <span
-      className="cursor-pointer ml-1 text-[11px] uppercase tracking-[0.2em] text-white/50 hover:text-white/70"
+      className="cursor-pointer ml-1 text-[11px] uppercase tracking-[0.2em] text-[var(--canvas-text-50)] hover:text-[var(--canvas-text-70)]"
       onDoubleClick={(e) => { e.stopPropagation(); setDraft(title); setEditing(true); setTimeout(() => inputRef.current?.select(), 0); }}
       title="双击修改名称"
     >
@@ -447,24 +460,25 @@ function NodeCardShell({ id: shellId, data, selected, children }: NodeCardProps)
 
   return (
     <div
-      className="min-w-[280px] max-w-[360px] select-none text-white cursor-pointer"
+      className="min-w-[280px] max-w-[360px] select-none text-[var(--canvas-text)] cursor-pointer"
       onClick={handleCardClick}
     >
       <div className="mb-1.5 flex items-center gap-1.5 px-1">
-        <NodeIcon className="h-3.5 w-3.5 text-white/50" />
+        <NodeIcon className="h-3.5 w-3.5 text-[var(--canvas-text-50)]" />
         <EditableNodeLabel title={title} nodeId={shellId} patchRuntimeData={patchRuntimeData} />
       </div>
-      <div className="relative" ref={innerRef}>
+      <div className="relative">
       <CardHandle side="left" magnetY={magnet.magnetY} visible={magnet.showLeft || isConnecting} isConnecting={isConnecting} />
       <CardHandle side="right" magnetY={magnet.magnetY} visible={magnet.showRight} isConnecting={isConnecting} />
       <div
+        ref={innerRef}
         className={clsx(
-          "rounded-[24px] border bg-[#1e1e20] p-4 transition",
+          "rounded-[24px] border bg-[var(--canvas-surface)] p-4 transition",
           selected
-            ? "border-white/30 shadow-[0_0_10px_rgba(255,255,255,0.12)]"
+            ? "border-[var(--canvas-border-strong)] shadow-[var(--canvas-shadow-glow-sm)]"
             : isConnecting
-            ? "border-white/20 hover:border-white/70 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)]"
-            : "border-white/10 hover:border-white/20",
+            ? "border-[var(--canvas-border-md)] hover:border-[var(--canvas-border-accent)] hover:shadow-[var(--canvas-shadow-glow-md)]"
+            : "border-[var(--canvas-border)] hover:border-[var(--canvas-border-md)]",
         )}
       >
         <div className="space-y-3">{children}</div>
@@ -497,6 +511,7 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const [localInstruction, setLocalInstruction] = useState(
     typeof runtimeData.instruction === "string" ? runtimeData.instruction : "",
   );
+  const instructionRef = useRef<HTMLTextAreaElement>(null);
   const transformModel = typeof runtimeData.transformModel === "string"
     ? runtimeData.transformModel
     : "gemini-3.1-flash-lite-preview";
@@ -512,37 +527,48 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   );
 
   // Notify ReactFlow when textarea is resized by user (native drag handle)
+  // Also prevent wheel events from propagating to ReactFlow when textarea is focused
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     const observer = new ResizeObserver(() => updateNodeInternals(id));
     observer.observe(el);
-    return () => observer.disconnect();
+    const wheelHandler = (e: WheelEvent) => { if (document.activeElement === el) e.stopPropagation(); };
+    el.addEventListener("wheel", wheelHandler, { passive: false });
+    return () => { observer.disconnect(); el.removeEventListener("wheel", wheelHandler); };
   }, [id, updateNodeInternals]);
+
+  useEffect(() => {
+    const el = instructionRef.current;
+    if (!el) return;
+    const wheelHandler = (e: WheelEvent) => { if (document.activeElement === el) e.stopPropagation(); };
+    el.addEventListener("wheel", wheelHandler, { passive: false });
+    return () => el.removeEventListener("wheel", wheelHandler);
+  }, []);
 
   if (isImageUnderstanding) {
     return (
-      <div className="select-none text-white" style={{ width: 280 }}>
+      <div className="select-none text-[var(--canvas-text)]" style={{ width: 280 }}>
         <div className="mb-1.5 flex items-center gap-1.5 px-1">
-          <Scan className="h-3.5 w-3.5 text-white/50" />
-          <span className="text-[11px] uppercase tracking-[0.2em] text-white/50">图片理解</span>
+          <Scan className="h-3.5 w-3.5 text-[var(--canvas-text-50)]" />
+          <span className="text-[11px] uppercase tracking-[0.2em] text-[var(--canvas-text-50)]">图片理解</span>
         </div>
         <div className="relative" ref={innerRef}>
           <CardHandle side="left" magnetY={magnet.magnetY} visible={magnet.showLeft || isConnecting} isConnecting={isConnecting} />
           <CardHandle side="right" magnetY={magnet.magnetY} visible={magnet.showRight} isConnecting={isConnecting} />
           <div
             className={clsx(
-              "rounded-[20px] border bg-[#1a1a1c] transition",
+              "rounded-[20px] border bg-[var(--canvas-surface-deep)] transition",
               selected
-                ? "border-white/25 shadow-[0_0_10px_rgba(255,255,255,0.12)]"
+                ? "border-[var(--canvas-border-md)] shadow-[var(--canvas-shadow-glow-sm)]"
                 : isConnecting
-                ? "border-white/15 hover:border-white/50"
-                : "border-white/10 hover:border-white/20",
+                ? "border-[var(--canvas-border)] hover:border-[var(--canvas-border-heavy)]"
+                : "border-[var(--canvas-border)] hover:border-[var(--canvas-border-md)]",
             )}
           >
             {/* Model selector */}
-            <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 pt-3 pb-2.5">
-              <span className="text-[11px] text-white/40">模型</span>
+            <div className="flex items-center gap-2 border-b border-[var(--canvas-border)] px-4 pt-3 pb-2.5">
+              <span className="text-[11px] text-[var(--canvas-text-40)]">模型</span>
               <div className="ml-auto">
                 <CanvasSelect
                   value={imgUnderstandingModel}
@@ -566,8 +592,8 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                 />
               </div>
             ) : (
-              <div className="mx-4 mt-3 flex h-[72px] items-center justify-center rounded-xl bg-white/[0.05]">
-                <span className="text-[11px] text-white/30">等待上游图片节点</span>
+              <div className="mx-4 mt-3 flex h-[72px] items-center justify-center rounded-xl bg-[var(--canvas-hover-sm)]">
+                <span className="text-[11px] text-[var(--canvas-text-30)]">等待上游图片节点</span>
               </div>
             )}
             {/* Prompt input */}
@@ -578,17 +604,17 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                 patchRuntimeData(id, { prompt: e.target.value });
               }}
               placeholder="输入分析提示词，例如：描述这张图片的内容..."
-              className="select-text mt-2 w-full resize-none bg-transparent px-4 py-2 text-sm text-white outline-none placeholder:text-white/30"
+              className="select-text mt-2 w-full resize-none bg-transparent px-4 py-2 text-sm text-[var(--canvas-text)] outline-none placeholder:text-[var(--canvas-text-30)] nopan selection:bg-blue-500/50"
               style={{ minHeight: 72, overflowY: "hidden" }}
             />
             {/* Run button */}
-            <div className="flex items-center justify-between border-t border-white/[0.06] px-4 py-2.5">
-              <span className="text-[11px] text-white/30">图片理解 · 1积分</span>
+            <div className="flex items-center justify-between border-t border-[var(--canvas-border)] px-4 py-2.5">
+              <span className="text-[11px] text-[var(--canvas-text-30)]">图片理解 · 1积分</span>
               <button
                 type="button"
                 disabled={isRunning || !upstreamImageUrl || !localPrompt.trim()}
                 onClick={(e) => { e.stopPropagation(); void runTextNode(id); }}
-                className="flex items-center gap-1.5 rounded-lg bg-white/15 px-3 py-1 text-[11px] font-medium text-white transition hover:bg-white/25 disabled:opacity-40"
+                className="flex items-center gap-1.5 rounded-lg bg-[var(--canvas-hover-lg)] px-3 py-1 text-[11px] font-medium text-[var(--canvas-text)] transition hover:bg-[var(--canvas-hover-xl)] disabled:opacity-40"
               >
                 {isRunning ? (
                   <><AiGlowSpinner size={12} />分析中...</>
@@ -599,8 +625,8 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             </div>
             {/* Result output */}
             {content && (
-              <div className="border-t border-white/[0.06] px-4 py-3">
-                <p className="text-[11px] text-white/40 mb-1.5">分析结果</p>
+              <div className="border-t border-[var(--canvas-border)] px-4 py-3">
+                <p className="text-[11px] text-[var(--canvas-text-40)] mb-1.5">分析结果</p>
                 <textarea
                   ref={textareaRef}
                   value={localContent}
@@ -613,7 +639,7 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                     composingRef.current = false;
                     patchRuntimeData(id, { content: (e.target as HTMLTextAreaElement).value });
                   }}
-                  className="select-text w-full resize-none bg-transparent text-sm text-white/80 outline-none"
+                  className="select-text w-full resize-none bg-transparent text-sm text-[var(--canvas-text-80)] outline-none nopan selection:bg-blue-500/50"
                   style={{ minHeight: 80, overflowY: "hidden" }}
                 />
               </div>
@@ -627,15 +653,15 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
 
   return (
     <div
-      className="select-none text-white"
+      className="select-none text-[var(--canvas-text)]"
       style={{ width: 240 }}
     >
       {/* Label above */}
       <div className="mb-1.5 flex items-center gap-1.5 px-1">
         {upstream.firstImageUrl ? (
-          <ImageIcon className="h-3.5 w-3.5 text-white/50" />
+          <ImageIcon className="h-3.5 w-3.5 text-[var(--canvas-text-50)]" />
         ) : (
-          <AlignLeft className="h-3.5 w-3.5 text-white/50" />
+          <AlignLeft className="h-3.5 w-3.5 text-[var(--canvas-text-50)]" />
         )}
         <EditableNodeLabel title={title} nodeId={id} patchRuntimeData={patchRuntimeData} />
       </div>
@@ -645,21 +671,21 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       <CardHandle side="right" magnetY={magnet.magnetY} visible={magnet.showRight} isConnecting={isConnecting} />
       <div
         className={clsx(
-          "rounded-[20px] border bg-[#1a1a1c] transition",
+          "rounded-[20px] border bg-[var(--canvas-surface-deep)] transition",
           selected
-            ? "border-white/25 shadow-[0_0_10px_rgba(255,255,255,0.12)]"
+            ? "border-[var(--canvas-border-md)] shadow-[var(--canvas-shadow-glow-sm)]"
             : isConnecting
-            ? "border-white/15 hover:border-white/50"
-            : "border-white/10 hover:border-white/20",
+            ? "border-[var(--canvas-border)] hover:border-[var(--canvas-border-heavy)]"
+            : "border-[var(--canvas-border)] hover:border-[var(--canvas-border-md)]",
         )}
       >
         {isLoadingPrompt ? (
           <div className="space-y-2.5 px-4 py-4 animate-pulse" style={{ height: 240 }}>
-            <div className="h-2.5 w-full rounded-full bg-white/20" />
-            <div className="h-2.5 w-[85%] rounded-full bg-white/15" />
-            <div className="h-2.5 w-[70%] rounded-full bg-white/15" />
-            <div className="h-2.5 w-[90%] rounded-full bg-white/10" />
-            <div className="h-2.5 w-[60%] rounded-full bg-white/10" />
+            <div className="h-2.5 w-full rounded-full bg-[var(--canvas-hover-xl)]" />
+            <div className="h-2.5 w-[85%] rounded-full bg-[var(--canvas-hover-lg)]" />
+            <div className="h-2.5 w-[70%] rounded-full bg-[var(--canvas-hover-lg)]" />
+            <div className="h-2.5 w-[90%] rounded-full bg-[var(--canvas-hover)]" />
+            <div className="h-2.5 w-[60%] rounded-full bg-[var(--canvas-hover)]" />
           </div>
         ) : (
         <textarea
@@ -675,7 +701,7 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             patchRuntimeData(id, { content: (e.target as HTMLTextAreaElement).value });
           }}
           placeholder="开启你的创作..."
-          className="nodrag !select-text w-full bg-transparent px-4 py-4 text-sm text-white outline-none placeholder:text-white/30"
+          className="nodrag !select-text w-full bg-transparent px-4 py-4 text-sm text-[var(--canvas-text)] outline-none placeholder:text-[var(--canvas-text-30)]"
           style={{ height: 240, minHeight: 120, maxHeight: 800, resize: "vertical", overflowY: "auto" }}
         />
         )}
@@ -685,7 +711,7 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
         <NodeControlsPanel nodeWidth={240}>
           {/* Upstream context hint */}
           {upstream.firstImageUrl && (
-            <div className="mb-2 flex items-center gap-1.5 text-[10px] text-white/30">
+            <div className="mb-2 flex items-center gap-1.5 text-[10px] text-[var(--canvas-text-30)]">
               <ImageIcon className="h-3 w-3 shrink-0" />
               <span className="shrink-0">上游图片</span>
               {upstream.effectivePrompt && (
@@ -694,23 +720,24 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             </div>
           )}
           {!upstream.firstImageUrl && upstream.effectivePrompt && (
-            <p className="mb-2 truncate text-[10px] text-white/30">
+            <p className="mb-2 truncate text-[10px] text-[var(--canvas-text-30)]">
               ↑ {upstream.effectivePrompt.slice(0, 70)}{upstream.effectivePrompt.length > 70 ? "…" : ""}
             </p>
           )}
           {/* Instruction input */}
           <textarea
+            ref={instructionRef}
             value={localInstruction}
             onChange={(e) => {
               setLocalInstruction(e.target.value);
               patchRuntimeData(id, { instruction: e.target.value });
             }}
             placeholder={hasUpstream ? "输入指令，如：翻译成英文、提取关键词、改写成广告文案..." : "输入生成指令..."}
-            className="nodrag !select-text min-h-[72px] w-full resize-none bg-transparent text-sm leading-relaxed text-white outline-none placeholder:text-white/30"
+            className="nodrag !select-text min-h-[72px] w-full resize-none bg-transparent text-sm leading-relaxed text-[var(--canvas-text)] outline-none placeholder:text-[var(--canvas-text-30)] nopan selection:bg-blue-500/50"
           />
           {/* Bottom bar: model + run */}
           <div className="mt-2 flex items-center gap-2">
-            <Sparkles className="h-3.5 w-3.5 shrink-0 text-white/30" />
+            <Sparkles className="h-3.5 w-3.5 shrink-0 text-[var(--canvas-text-30)]" />
             <div className="flex-1">
               <CanvasSelect
                 value={transformModel}
@@ -725,10 +752,10 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               type="button"
               disabled={isRunning || !localInstruction.trim()}
               onClick={(e) => { e.stopPropagation(); void runTextNode(id); }}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-black transition hover:bg-white/90 active:scale-95 disabled:opacity-40"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--tenant-primary)] text-[var(--tenant-primary-foreground)] transition hover:bg-[var(--tenant-primary-hover)] active:scale-95 disabled:opacity-40"
             >
               {isRunning
-                ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black/20 border-t-black" />
+                ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--tenant-primary-foreground)]/20 border-t-[var(--tenant-primary-foreground)]" />
                 : <ArrowUp className="h-4 w-4" />}
             </button>
           </div>
@@ -808,7 +835,7 @@ function GeneratingOverlay({ label }: { label?: string }) {
       {/* status label */}
       {label && (
         <div className="absolute inset-x-0 bottom-3 flex justify-center">
-          <span className="rounded-full bg-black/40 px-3 py-1 text-[11px] text-white/70 backdrop-blur-sm">{label}</span>
+          <span className="rounded-full bg-[var(--canvas-surface-deep)] px-3 py-1 text-[11px] text-[var(--canvas-text)] backdrop-blur-sm">{label}</span>
         </div>
       )}
     </div>
@@ -824,7 +851,7 @@ function RatioIcon({ ratio }: { ratio: string }) {
   const h = aspect >= 1 ? Math.round(MAX / aspect) : MAX;
   return (
     <span
-      className="inline-flex flex-shrink-0 items-center justify-center rounded-[2px] border border-white/40"
+      className="inline-flex flex-shrink-0 items-center justify-center rounded-[2px] border border-[var(--canvas-border-heavy)]"
       style={{ width: w, height: h }}
     />
   );
@@ -846,11 +873,25 @@ function CompositionTextarea({
 }) {
   const [local, setLocal] = useState(value);
   const composing = useRef(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
   useEffect(() => {
     if (!composing.current) setLocal(value);
   }, [value]);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      if (document.activeElement === el) e.stopPropagation();
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, []);
+
   return (
     <textarea
+      ref={textareaRef}
       value={local}
       className={className + " select-text"}
       placeholder={placeholder}
@@ -893,14 +934,14 @@ function CanvasSelect({
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
-        className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-white/50 transition hover:bg-white/8 hover:text-white/80"
+        className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-[var(--canvas-text-50)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text-80)]"
       >
         {current?.label ?? value}
         <ChevronDown className="h-3 w-3 opacity-40" />
       </button>
       {open && isRatioSelect && (
         <div
-          className="absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 rounded-xl bg-[#232325] p-4 shadow-2xl"
+          className="absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 rounded-xl bg-[var(--canvas-menu)] p-4 shadow-md"
           style={{ width: "300px" }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -912,7 +953,7 @@ function CanvasSelect({
                 onClick={(e) => { e.stopPropagation(); onChange(opt.value); setOpen(false); }}
                 className={clsx(
                   "flex flex-col items-center justify-center rounded-lg p-3 transition",
-                  opt.value === value ? "bg-white/20 text-white" : "bg-white/5 text-white/50 hover:bg-white/10"
+                  opt.value === value ? "bg-[var(--canvas-hover-xl)] text-[var(--canvas-text)]" : "bg-[var(--canvas-hover-sm)] text-[var(--canvas-text-50)] hover:bg-[var(--canvas-hover)]"
                 )}
               >
                 {opt.icon}
@@ -924,7 +965,7 @@ function CanvasSelect({
       )}
       {open && isQualitySelect && (
         <div
-          className="absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 rounded-xl bg-[#232325] p-4 shadow-2xl"
+          className="absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 rounded-xl bg-[var(--canvas-menu)] p-4 shadow-md"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex gap-4">
@@ -935,7 +976,7 @@ function CanvasSelect({
                 onClick={(e) => { e.stopPropagation(); onChange(opt.value); setOpen(false); }}
                 className={clsx(
                   "flex items-center justify-center rounded-lg px-4 py-2 transition",
-                  opt.value === value ? "bg-white/20 text-white" : "bg-white/5 text-white/50 hover:bg-white/10"
+                  opt.value === value ? "bg-[var(--canvas-hover-xl)] text-[var(--canvas-text)]" : "bg-[var(--canvas-hover-sm)] text-[var(--canvas-text-50)] hover:bg-[var(--canvas-hover)]"
                 )}
               >
                 <span className="text-sm">{opt.label}</span>
@@ -946,7 +987,7 @@ function CanvasSelect({
       )}
       {open && !isRatioSelect && !isQualitySelect && (
         <div
-          className="absolute top-full left-0 z-50 mt-1 min-w-[80px] overflow-hidden rounded-xl bg-[#232325] py-1 shadow-2xl"
+          className="absolute top-full left-0 z-50 mt-1 min-w-[80px] overflow-hidden rounded-xl bg-[var(--canvas-menu)] py-1 shadow-md"
           onClick={(e) => e.stopPropagation()}
         >
           {options.map((opt) => (
@@ -955,8 +996,8 @@ function CanvasSelect({
               type="button"
               onClick={(e) => { e.stopPropagation(); onChange(opt.value); setOpen(false); }}
               className={clsx(
-                "flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-white/8",
-                opt.value === value ? "text-white" : "text-white/50",
+                "flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-[var(--canvas-hover)]",
+                opt.value === value ? "text-[var(--canvas-text)]" : "text-[var(--canvas-text-50)]",
               )}
             >
               {opt.icon}
@@ -980,7 +1021,7 @@ function NodeControlsPanel({ width = MEDIA_CONTROLS_WIDTH, nodeWidth, children }
   return (
     <div
       style={{ width, marginLeft: -((width - nodeWidth) / 2) }}
-      className="nodrag mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
+      className="nodrag mt-2 flex flex-col rounded-[20px] bg-[var(--canvas-surface)] px-4 pb-3 pt-3"
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
@@ -1012,7 +1053,7 @@ function ModelPicker({
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
-        className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-xs text-white/50 transition hover:bg-white/8 hover:text-white/80"
+        className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-xs text-[var(--canvas-text-50)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text-80)]"
       >
         <Layers className="h-3.5 w-3.5 flex-shrink-0 opacity-60" />
         <span className="min-w-0 flex-1 truncate">{selected?.label}</span>
@@ -1020,7 +1061,7 @@ function ModelPicker({
       </button>
       {open && (
         <div
-          className="absolute bottom-full left-0 z-[200] mb-1 w-64 overflow-hidden rounded-2xl bg-[#232325] py-1.5 shadow-2xl ring-1 ring-white/[0.07]"
+          className="absolute bottom-full left-0 z-[200] mb-1 w-64 overflow-hidden rounded-2xl bg-[var(--canvas-menu)] py-1.5 shadow-md ring-1 ring-[var(--canvas-border)]"
           onClick={(e) => e.stopPropagation()}
         >
           {options.map((opt) => (
@@ -1029,26 +1070,26 @@ function ModelPicker({
               type="button"
               onClick={(e) => { e.stopPropagation(); onChange(opt.id); setOpen(false); }}
               className={clsx(
-                "flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-white/8",
-                opt.id === value && "bg-white/5",
+                "flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-[var(--canvas-hover)]",
+                opt.id === value && "bg-[var(--canvas-hover-sm)]",
               )}
             >
-              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-white/8 text-white/40">
+              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-[var(--canvas-hover)] text-[var(--canvas-text-40)]">
                 <Layers className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   {opt.isNew && (
-                    <span className="rounded-full bg-[#3b82f6] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">新</span>
+                    <span className="rounded-full bg-[#3b82f6] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-[var(--canvas-text)]">新</span>
                   )}
-                  <span className="text-sm font-medium text-white/85">{opt.label}</span>
+                  <span className="text-sm font-medium text-[var(--canvas-text-90)]">{opt.label}</span>
                 </div>
                 {opt.description && (
-                  <p className="mt-0.5 truncate text-[11px] text-white/30">{opt.description}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-[var(--canvas-text-30)]">{opt.description}</p>
                 )}
               </div>
               {opt.estimatedTime && (
-                <span className="flex-shrink-0 text-xs text-white/30">{opt.estimatedTime}</span>
+                <span className="flex-shrink-0 text-xs text-[var(--canvas-text-30)]">{opt.estimatedTime}</span>
               )}
             </button>
           ))}
@@ -1081,6 +1122,8 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const { patchRuntimeData, models, runImageNode, reverseImagePrompt, uploadResource, isConnecting, polishPrompt, focusedNodeId } = useCanvasNodeContext();
   const upstream = data.upstreamInputs ?? EMPTY_UPSTREAM;
   const [isPolishing, setIsPolishing] = useState(false);
+  const [reverseMode, setReverseMode] = useState<"no-text" | "with-text">("no-text");
+  const [showReverseMenu, setShowReverseMenu] = useState(false);
   const magnet = useCardMagnet(innerRef);
   const title = resolveTitle(data);
   const ratio = (typeof data.runtime.data.ratio === "string" && data.runtime.data.ratio) || IMAGE_RATIOS[1];
@@ -1138,78 +1181,104 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
     <CardMagnetContext.Provider value={magnet}>
     <div style={{ width: containerWidth }} className="relative select-none">
       {props.selected && currentImageUrl && (
-        <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex items-center rounded-full bg-[#1e1e20] shadow-[0_8px_32px_rgba(0,0,0,0.7)]">
+        <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex flex-col items-center gap-1.5">
+          {/* Action buttons */}
+          <div className="flex items-center rounded-full bg-[var(--canvas-surface)] shadow-[var(--canvas-shadow-sm)]">
           <div className="group/tip relative">
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setFullscreenUrl(currentImageUrl); }}
-              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+              className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95"
             >
               <Maximize2 className="h-4 w-4" />
             </button>
-            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">全屏查看</span>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">全屏查看</span>
           </div>
-          <div className="h-4 w-px bg-white/10" />
-          <div className="group/tip relative">
+          <div className="h-4 w-px bg-[var(--canvas-hover)]" />
+          <div className="group/scan relative">
+            {/* Reverse-mode popup menu */}
+            {showReverseMenu && (
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-2 flex flex-col overflow-hidden rounded-xl bg-[var(--canvas-tooltip)] shadow-[var(--canvas-shadow-md)] z-20 whitespace-nowrap">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setShowReverseMenu(false); void reverseImagePrompt?.(id, "no-text"); }}
+                  className="px-4 py-2.5 text-left text-[13px] text-[var(--canvas-text-80)] hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] transition"
+                >
+                  无文字
+                </button>
+                <div className="h-px bg-[var(--canvas-hover)] mx-3" />
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setShowReverseMenu(false); void reverseImagePrompt?.(id, "with-text"); }}
+                  className="px-4 py-2.5 text-left text-[13px] text-[var(--canvas-text-80)] hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] transition"
+                >
+                  有文字
+                </button>
+              </div>
+            )}
             <button
               type="button"
               disabled={isReversingPrompt || isRunning}
-              onClick={(e) => { e.stopPropagation(); void reverseImagePrompt?.(id); }}
-              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95 disabled:opacity-40"
+              onClick={(e) => { e.stopPropagation(); setShowReverseMenu((v) => !v); }}
+              className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95 disabled:opacity-40"
             >
               {isReversingPrompt
-                ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--canvas-border-md)] border-t-white/60" />
                 : <Scan className="h-4 w-4" />}
             </button>
-            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">反推提示词</span>
+            {!showReverseMenu && (
+              <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/scan:opacity-100">反推提示词</span>
+            )}
           </div>
-          <div className="h-4 w-px bg-white/10" />
+          <div className="h-4 w-px bg-[var(--canvas-hover)]" />
           <div className="group/tip relative">
             <a
               href={currentImageUrl}
               download
               onClick={(e) => e.stopPropagation()}
-              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+              className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95"
             >
               <Download className="h-4 w-4" />
             </a>
-            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">下载图片</span>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">下载图片</span>
           </div>
-          <div className="h-4 w-px bg-white/10" />
+          <div className="h-4 w-px bg-[var(--canvas-hover)]" />
           <div className="group/tip relative">
             <button
               type="button"
               disabled={isUploading}
               onClick={(e) => { e.stopPropagation(); directUploadRef.current?.click(); }}
-              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95 disabled:opacity-40"
+              className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95 disabled:opacity-40"
             >
               {isUploading
-                ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--canvas-border-md)] border-t-white/60" />
                 : <Upload className="h-4 w-4" />}
             </button>
-            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">{currentImageUrl ? "替换图片" : "上传图片"}</span>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">{currentImageUrl ? "替换图片" : "上传图片"}</span>
+          </div>
           </div>
         </div>
       )}
       <div className="mb-1.5 flex items-center justify-between px-1">
         <div className="flex items-center">
-          <ImageIcon className="h-3.5 w-3.5 text-white/50" />
+          <ImageIcon className="h-3.5 w-3.5 text-[var(--canvas-text-50)]" />
           <EditableNodeLabel title={title} nodeId={id} patchRuntimeData={patchRuntimeData} />
         </div>
       </div>
       {/* inner relative div: handles position relative to card area only */}
-      <div className="relative" ref={innerRef}>
+      <div className="relative">
       <MediaHandle side="left" />
       <MediaHandle side="right" />
       <div
+        ref={innerRef}
         style={{ height: containerHeight }}
         className={clsx(
-          "relative overflow-hidden rounded-[20px] bg-[#1c1c1e] border transition-[border,box-shadow]",
+          "relative overflow-hidden rounded-[20px] bg-[var(--canvas-surface-alt)] border transition-[border,box-shadow]",
           props.selected
-            ? "border-white/30 shadow-[0_0_10px_rgba(255,255,255,0.12)]"
+            ? "border-[var(--canvas-border-strong)] shadow-[var(--canvas-shadow-glow-sm)]"
             : isConnecting
-            ? "border-white/20 hover:border-white/70 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)]"
-            : "border-white/10 hover:border-white/20",
+            ? "border-[var(--canvas-border-md)] hover:border-[var(--canvas-border-accent)] hover:shadow-[var(--canvas-shadow-glow-md)]"
+            : "border-[var(--canvas-border)] hover:border-[var(--canvas-border-md)]",
         )}
       >
         {outputs[0]?.url ? (
@@ -1227,7 +1296,7 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center">
-            <ImageIcon className="h-10 w-10 text-white/15" />
+            <ImageIcon className="h-10 w-10 text-[var(--canvas-text-15)]" />
           </div>
         )}
         {(isRunning || isUploading) && <GeneratingOverlay label={isUploading ? "上传中..." : "生成中..."} />}
@@ -1239,7 +1308,7 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       {props.selected && (
         <div
           style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: -((MEDIA_CONTROLS_WIDTH - containerWidth) / 2), height: 220 }}
-          className="nodrag mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
+          className="nodrag mt-2 flex flex-col rounded-[20px] bg-[var(--canvas-surface)] px-4 pb-3 pt-3"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
@@ -1263,10 +1332,10 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                   setIsPolishing(false);
                 }
               }}
-              className="flex h-8 items-center gap-1.5 rounded-[10px] bg-white/8 px-2.5 text-white/40 transition hover:bg-white/12 hover:text-white/60 disabled:opacity-40"
+              className="flex h-8 items-center gap-1.5 rounded-[10px] bg-[var(--canvas-hover)] px-2.5 text-[var(--canvas-text-40)] transition hover:bg-[var(--canvas-hover-lg)] hover:text-[var(--canvas-text-60)] disabled:opacity-40"
               title="AI润色">
               {isPolishing ? (
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--canvas-border-md)] border-t-white/60" />
               ) : (
                 <Sparkles className="h-3.5 w-3.5" />
               )}
@@ -1275,14 +1344,14 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           </div>
           {isPolishing ? (
             <div className="flex-1 space-y-2.5 py-1 animate-pulse">
-              <div className="h-2.5 w-full rounded-full bg-white/20" />
-              <div className="h-2.5 w-[62%] rounded-full bg-white/15" />
-              <div className="h-2.5 w-[38%] rounded-full bg-white/10" />
+              <div className="h-2.5 w-full rounded-full bg-[var(--canvas-hover-xl)]" />
+              <div className="h-2.5 w-[62%] rounded-full bg-[var(--canvas-hover-lg)]" />
+              <div className="h-2.5 w-[38%] rounded-full bg-[var(--canvas-hover)]" />
             </div>
           ) : (
             <>
               {!prompt && upstream.effectivePrompt && (
-                <p className="mb-1 truncate text-[10px] text-white/30">
+                <p className="mb-1 truncate text-[10px] text-[var(--canvas-text-30)]">
                   ↑ 上游文本：{upstream.effectivePrompt.slice(0, 60)}{upstream.effectivePrompt.length > 60 ? "…" : ""}
                 </p>
               )}
@@ -1290,7 +1359,7 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                 value={prompt}
                 onChange={(v) => patchRuntimeData(id, { prompt: v })}
                 placeholder={upstream.effectivePrompt ? "留空则使用上游文本..." : "描述你想生成的图片..."}
-                className="flex-1 w-full resize-none bg-transparent text-sm leading-relaxed text-white placeholder:text-white/30 focus:outline-none"
+                className="nodrag select-text flex-1 w-full resize-none bg-transparent text-sm leading-relaxed text-[var(--canvas-text)] placeholder:text-[var(--canvas-text-30)] focus:outline-none nopan selection:bg-blue-500/50"
               />
             </>
           )}
@@ -1300,7 +1369,7 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               options={models.imageModels}
               onChange={(v) => patchRuntimeData(id, { model: v })}
             />
-            <span className="text-xs text-white/15">·</span>
+            <span className="text-xs text-[var(--canvas-text-15)]">·</span>
             <div className="flex items-center gap-1 rounded-lg px-2 py-1">
               <RatioIcon ratio={ratio} />
               <CanvasSelect
@@ -1309,7 +1378,7 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                 onChange={(v) => patchRuntimeData(id, { ratio: v })}
               />
             </div>
-            <span className="text-xs text-white/15">·</span>
+            <span className="text-xs text-[var(--canvas-text-15)]">·</span>
             <CanvasSelect
               value={quality}
               options={[{ value: "standard", label: "标准" }, { value: "4k", label: "4K" }]}
@@ -1317,9 +1386,9 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             />
             <button type="button" disabled={isRunning}
               onClick={(e) => { e.stopPropagation(); void runImageNode(id); }}
-              className="ml-auto flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white text-black shadow transition hover:bg-white/90 disabled:opacity-40">
+              className="ml-auto flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--tenant-primary)] text-[var(--tenant-primary-foreground)] shadow transition hover:bg-[var(--tenant-primary-hover)] disabled:opacity-40">
               {isRunning ? (
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black/20 border-t-black" />
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--tenant-primary-foreground)]/20 border-t-[var(--tenant-primary-foreground)]" />
               ) : (
                 <ArrowUp className="h-4 w-4" />
               )}
@@ -1340,7 +1409,8 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const lastFrameUploadRef = useRef<HTMLInputElement>(null);
   const directUploadRef = useRef<HTMLInputElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
-  const { patchRuntimeData, models, runVideoNode, resources, uploadResource, isConnecting, polishPrompt, focusedNodeId, addDownstreamNodes, openViralModal } = useCanvasNodeContext();
+  const { patchRuntimeData, models, runVideoNode, runStoryboardNode, resources, uploadResource, isConnecting, polishPrompt, focusedNodeId, addDownstreamNodes, openViralModal } = useCanvasNodeContext();
+  const { setNodes: rfSetNodes, setEdges: rfSetEdges, getNode: rfGetNode } = useReactFlow();
   const upstream = data.upstreamInputs ?? EMPTY_UPSTREAM;
   const [isPolishing, setIsPolishing] = useState(false);
   const magnet = useCardMagnet(innerRef);
@@ -1428,93 +1498,99 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
     <CardMagnetContext.Provider value={magnet}>
     <div style={{ width: containerWidth }} className="relative select-none">
       {props.selected && (
-        <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex items-center rounded-full bg-[#1e1e20] shadow-[0_8px_32px_rgba(0,0,0,0.7)]">
+        <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex items-center rounded-full bg-[var(--canvas-surface)] shadow-[var(--canvas-shadow-sm)]">
           {outputUrl && (
             <>
               <div className="group/tip relative">
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); setFullscreenUrl(outputUrl); }}
-                  className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+                  className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95"
                 >
                   <Maximize2 className="h-4 w-4" />
                 </button>
-                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">全屏查看</span>
+                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">全屏查看</span>
               </div>
-              <div className="h-4 w-px bg-white/10" />
+              <div className="h-4 w-px bg-[var(--canvas-hover)]" />
               <div className="group/tip relative">
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    void addDownstreamNodes(id, [
-                      { type: "storyboard", data: { videoUrl: outputUrl } },
-                      { type: "timelinevideo", data: { videoUrl: "", title: "时间轴视频" } },
+                    const srcNode = rfGetNode(id);
+                    const srcX = srcNode?.position.x ?? 0;
+                    const srcY = srcNode?.position.y ?? 0;
+                    const srcW = (srcNode?.measured?.width as number | undefined) ?? MEDIA_NODE_WIDTH;
+                    const gap = 160;
+                    const sbId = `storyboard_${Math.random().toString(36).slice(2, 8)}`;
+                    const tlId = `timelinevideo_${Math.random().toString(36).slice(2, 8)}`;
+                    const sbX = srcX + srcW + gap;
+                    const tlX = sbX + SB_NODE_WIDTH + gap;
+                    rfSetNodes((prev) => [
+                      ...prev,
+                      { id: sbId, type: "storyboard", position: { x: sbX, y: srcY }, data: { runtime: { id: sbId, type: "storyboard", position: { x: sbX, y: srcY }, data: { videoUrl: outputUrl } }, summary: "", status: "idle" as const, expanded: false } },
+                      { id: tlId, type: "timelinevideo", position: { x: tlX, y: srcY }, data: { runtime: { id: tlId, type: "timelinevideo", position: { x: tlX, y: srcY }, data: { videoUrl: "", title: "时间轴视频" } }, summary: "", status: "idle" as const, expanded: false } },
                     ]);
+                    rfSetEdges((prev) => {
+                      let acc = addEdge({ id: `e_${id}_${sbId}`, source: id, target: sbId, type: "smoothstep" }, prev);
+                      acc = addEdge({ id: `e_${sbId}_${tlId}`, source: sbId, target: tlId, type: "smoothstep" }, acc);
+                      return acc;
+                    });
+                    setTimeout(() => { void runStoryboardNode(sbId); }, 50);
                   }}
-                  className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+                  className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95"
                 >
                   <Clapperboard className="h-4 w-4" />
                 </button>
-                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">拆解分镜</span>
+                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">拆解分镜</span>
               </div>
-              <div className="h-4 w-px bg-white/10" />
-              <div className="group/tip relative">
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); const rect = e.currentTarget.getBoundingClientRect(); openViralModal(id, outputUrl, rect.left + rect.width / 2, rect.top); }}
-                  className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
-                >
-                  <Zap className="h-4 w-4" />
-                </button>
-                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">一键复刻</span>
-              </div>
-              <div className="h-4 w-px bg-white/10" />
+              <div className="h-4 w-px bg-[var(--canvas-hover)]" />
               <div className="group/tip relative">
                 <a
                   href={outputUrl}
                   download
                   onClick={(e) => e.stopPropagation()}
-                  className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+                  className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95"
                 >
                   <Download className="h-4 w-4" />
                 </a>
-                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">下载视频</span>
+                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">下载视频</span>
               </div>
-              <div className="h-4 w-px bg-white/10" />
+              <div className="h-4 w-px bg-[var(--canvas-hover)]" />
             </>
           )}
           <div className="group/tip relative">
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); directUploadRef.current?.click(); }}
-              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+              className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95"
             >
               <Upload className="h-4 w-4" />
             </button>
-            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">{outputUrl ? "替换视频" : "上传视频"}</span>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">{outputUrl ? "替换视频" : "上传视频"}</span>
           </div>
         </div>
       )}
       <div className="mb-1.5 flex items-center justify-between px-1">
         <div className="flex items-center">
-          <Video className="h-3.5 w-3.5 text-white/50" />
+          <Video className="h-3.5 w-3.5 text-[var(--canvas-text-50)]" />
           <EditableNodeLabel title={title} nodeId={id} patchRuntimeData={patchRuntimeData} />
         </div>
       </div>
       {/* inner relative div: handles position relative to card area only */}
-      <div className="relative" ref={innerRef}>
+      <div className="relative">
       <MediaHandle side="left" />
       <MediaHandle side="right" />
       <div
+        ref={innerRef}
         style={{ height: containerHeight }}
         className={clsx(
-          "relative overflow-hidden rounded-[20px] bg-[#1c1c1e] border transition-[border,box-shadow]",
+          "relative overflow-hidden rounded-[20px] bg-[var(--canvas-surface-alt)] border transition-[border,box-shadow]",
           props.selected
-            ? "border-white/30 shadow-[0_0_10px_rgba(255,255,255,0.12)]"
+            ? "border-[var(--canvas-border-strong)] shadow-[var(--canvas-shadow-glow-sm)]"
             : isConnecting
-            ? "border-white/20 hover:border-white/70 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)]"
-            : "border-white/10 hover:border-white/20",
+            ? "border-[var(--canvas-border-md)] hover:border-[var(--canvas-border-accent)] hover:shadow-[var(--canvas-shadow-glow-md)]"
+            : "border-[var(--canvas-border)] hover:border-[var(--canvas-border-md)]",
         )}
       >
         {outputUrl ? (
@@ -1533,19 +1609,19 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center">
-            <Play className="h-10 w-10 text-white/15" />
+            <Play className="h-10 w-10 text-[var(--canvas-text-15)]" />
           </div>
         )}
         {(isRunning || isUploading) && <GeneratingOverlay label={isUploading ? "上传中..." : `生成中${taskStatus ? ` · ${taskStatus}` : "..."}`} />}
         {statusMessage && !isRunning && (
-          <div className={clsx("absolute inset-x-0 bottom-0 px-3 py-1 text-[10px]", data.status === "error" ? "bg-rose-900/80 text-rose-200" : "bg-black/60 text-white/60")}>{statusMessage}</div>
+          <div className={clsx("absolute inset-x-0 bottom-0 px-3 py-1 text-[10px]", data.status === "error" ? "bg-rose-900/80 text-rose-200" : "bg-black/60 text-[var(--canvas-text-60)]")}>{statusMessage}</div>
         )}
       </div>
       </div>{/* end inner relative */}
       {props.selected && (
         <div
           style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: -((MEDIA_CONTROLS_WIDTH - containerWidth) / 2), height: 220 }}
-          className="nodrag mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
+          className="nodrag mt-2 flex flex-col rounded-[20px] bg-[var(--canvas-surface)] px-4 pb-3 pt-3"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
@@ -1575,10 +1651,10 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                   setIsPolishing(false);
                 }
               }}
-              className="flex h-8 items-center gap-1.5 rounded-[10px] bg-white/8 px-2.5 text-white/40 transition hover:bg-white/12 hover:text-white/60 disabled:opacity-40"
+              className="flex h-8 items-center gap-1.5 rounded-[10px] bg-[var(--canvas-hover)] px-2.5 text-[var(--canvas-text-40)] transition hover:bg-[var(--canvas-hover-lg)] hover:text-[var(--canvas-text-60)] disabled:opacity-40"
               title="AI润色">
               {isPolishing ? (
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--canvas-border-md)] border-t-white/60" />
               ) : (
                 <Sparkles className="h-3.5 w-3.5" />
               )}
@@ -1587,14 +1663,14 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           </div>
           {isPolishing ? (
             <div className="flex-1 space-y-2.5 py-1 animate-pulse">
-              <div className="h-2.5 w-full rounded-full bg-white/20" />
-              <div className="h-2.5 w-[62%] rounded-full bg-white/15" />
-              <div className="h-2.5 w-[38%] rounded-full bg-white/10" />
+              <div className="h-2.5 w-full rounded-full bg-[var(--canvas-hover-xl)]" />
+              <div className="h-2.5 w-[62%] rounded-full bg-[var(--canvas-hover-lg)]" />
+              <div className="h-2.5 w-[38%] rounded-full bg-[var(--canvas-hover)]" />
             </div>
           ) : (
             <>
               {!prompt && upstream.effectivePrompt && (
-                <p className="mb-1 truncate text-[10px] text-white/30">
+                <p className="mb-1 truncate text-[10px] text-[var(--canvas-text-30)]">
                   ↑ 上游文本：{upstream.effectivePrompt.slice(0, 60)}{upstream.effectivePrompt.length > 60 ? "…" : ""}
                 </p>
               )}
@@ -1602,7 +1678,7 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                 value={prompt}
                 onChange={(v) => patchRuntimeData(id, { prompt: v })}
                 placeholder={upstream.effectivePrompt ? "留空则使用上游文本..." : "描述你想生成的视频..."}
-                className="flex-1 w-full resize-none bg-transparent text-sm leading-relaxed text-white placeholder:text-white/30 focus:outline-none"
+                className="nodrag select-text flex-1 w-full resize-none bg-transparent text-sm leading-relaxed text-[var(--canvas-text)] placeholder:text-[var(--canvas-text-30)] focus:outline-none nopan selection:bg-blue-500/50"
               />
             </>
           )}
@@ -1612,7 +1688,7 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               options={models.videoModels}
               onChange={(v) => patchRuntimeData(id, { model: v })}
             />
-            <span className="text-xs text-white/15">·</span>
+            <span className="text-xs text-[var(--canvas-text-15)]">·</span>
             <div className="flex items-center gap-1 rounded-lg px-2 py-1">
               <RatioIcon ratio={ratio} />
               <CanvasSelect
@@ -1621,10 +1697,10 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                 onChange={(v) => patchRuntimeData(id, { ratio: v })}
               />
             </div>
-            <span className="text-xs text-white/15">·</span>
+            <span className="text-xs text-[var(--canvas-text-15)]">·</span>
             {allowedDurations.length > 0 ? (
               allowedDurations.length === 1 ? (
-                <span className="px-2 text-xs text-white/40">{allowedDurations[0]}s</span>
+                <span className="px-2 text-xs text-[var(--canvas-text-40)]">{allowedDurations[0]}s</span>
               ) : (
                 <CanvasSelect
                   value={duration}
@@ -1641,9 +1717,9 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             )}
             <button type="button" disabled={isRunning}
               onClick={(e) => { e.stopPropagation(); void runVideoNode(id); }}
-              className="ml-auto flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white text-black shadow transition hover:bg-white/90 disabled:opacity-40">
+              className="ml-auto flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--tenant-primary)] text-[var(--tenant-primary-foreground)] shadow transition hover:bg-[var(--tenant-primary-hover)] disabled:opacity-40">
               {isRunning ? (
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black/20 border-t-black" />
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--tenant-primary-foreground)]/20 border-t-[var(--tenant-primary-foreground)]" />
               ) : (
                 <Play className="h-4 w-4 fill-black" />
               )}
@@ -1709,7 +1785,7 @@ function ProjectNameEditor({
           if (e.key === "Enter") { e.preventDefault(); void save(); }
           if (e.key === "Escape") { setLocalName(name); setEditing(false); }
         }}
-        className="nodrag rounded-full bg-[#1e1e20]/80 px-3 py-1.5 text-sm font-medium text-white/80 backdrop-blur outline-none border border-white/20 min-w-[80px] max-w-[220px]"
+        className="nodrag rounded-full bg-[var(--canvas-surface-80)] px-3 py-1.5 text-sm font-medium text-[var(--canvas-text-80)] backdrop-blur outline-none border border-[var(--canvas-border-md)] min-w-[80px] max-w-[220px]"
         style={{ width: Math.max(80, Math.min(220, localName.length * 9 + 24)) }}
       />
     );
@@ -1719,7 +1795,7 @@ function ProjectNameEditor({
     <button
       type="button"
       onClick={() => setEditing(true)}
-      className="rounded-full bg-[#1e1e20]/80 px-3 py-1.5 text-sm font-medium text-white/80 backdrop-blur transition hover:bg-white/10 hover:text-white max-w-[220px] truncate"
+      className="rounded-full bg-[var(--canvas-surface-80)] px-3 py-1.5 text-sm font-medium text-[var(--canvas-text-80)] backdrop-blur transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] max-w-[220px] truncate"
       title="点击编辑项目名称"
     >
       {localName || "未命名项目"}
@@ -1962,60 +2038,60 @@ function ViralReplicationModal({
       <div className="fixed inset-0 z-[9998]" onClick={onClose} />
       <div
         style={{ left: panelLeft, top: panelTop }}
-        className="fixed z-[9999] w-[320px] overflow-hidden rounded-[20px] bg-[#1a1a1c] shadow-[0_24px_80px_rgba(0,0,0,0.85)]"
+        className="fixed z-[9999] w-[320px] overflow-hidden rounded-[20px] bg-[var(--canvas-surface-deep)] shadow-[var(--canvas-shadow-lg)]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center gap-2 px-4 py-3">
-          <Zap className="h-3.5 w-3.5 text-white/50" />
-          <span className="text-sm font-medium text-white">一键复刻</span>
+          <Zap className="h-3.5 w-3.5 text-[var(--canvas-text-50)]" />
+          <span className="text-sm font-medium text-[var(--canvas-text)]">一键复刻</span>
           <div className="flex-1" />
-          <button type="button" onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-full text-white/30 transition hover:bg-white/10 hover:text-white">
+          <button type="button" onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--canvas-text-30)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)]">
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
-        <div className="h-px bg-white/[0.06]" />
+        <div className="h-px bg-[var(--canvas-hover)]" />
 
         {/* Form */}
         <div className="space-y-3 p-4">
           {/* Reference Video */}
           <div>
-            <label className="mb-1 block text-[10px] uppercase tracking-widest text-white/40">参考视频</label>
+            <label className="mb-1 block text-[10px] uppercase tracking-widest text-[var(--canvas-text-40)]">参考视频</label>
             <div className="flex gap-2">
               <input
                 type="url"
                 value={localRefUrl}
                 onChange={(e) => setLocalRefUrl(e.target.value)}
                 placeholder="粘贴参考视频链接..."
-                className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-white/30 focus:outline-none min-w-0"
+                className="flex-1 rounded-xl border border-[var(--canvas-border)] bg-[var(--canvas-hover-sm)] px-3 py-2 text-sm text-[var(--canvas-text)] placeholder:text-[var(--canvas-text-30)] focus:border-[var(--canvas-border-strong)] focus:outline-none min-w-0"
               />
               <button
                 type="button"
                 onClick={() => videoUploadRef.current?.click()}
                 disabled={uploading}
-                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-white/50 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-40"
+                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-[var(--canvas-border)] bg-[var(--canvas-hover-sm)] text-[var(--canvas-text-50)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] disabled:opacity-40"
                 title="上传视频"
               >
-                {uploading ? <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/20 border-t-white/60" /> : <Upload className="h-4 w-4" />}
+                {uploading ? <span className="h-3 w-3 animate-spin rounded-full border-2 border-[var(--canvas-border-md)] border-t-white/60" /> : <Upload className="h-4 w-4" />}
               </button>
               <input ref={videoUploadRef} type="file" accept="video/*" className="hidden" onChange={handleVideoUpload} />
             </div>
           </div>
           {/* Product */}
           <div>
-            <label className="mb-1 block text-[10px] uppercase tracking-widest text-white/40">选择产品</label>
+            <label className="mb-1 block text-[10px] uppercase tracking-widest text-[var(--canvas-text-40)]">选择产品</label>
             {loadingProducts ? (
-              <div className="flex h-9 items-center rounded-xl bg-white/[0.04] px-3 text-xs text-white/30">加载中...</div>
+              <div className="flex h-9 items-center rounded-xl bg-[var(--canvas-hover-sm)] px-3 text-xs text-[var(--canvas-text-30)]">加载中...</div>
             ) : products.length === 0 ? (
-              <div className="flex h-9 items-center rounded-xl bg-white/[0.04] px-3 text-xs text-white/30">暂无产品，请先在产品库添加</div>
+              <div className="flex h-9 items-center rounded-xl bg-[var(--canvas-hover-sm)] px-3 text-xs text-[var(--canvas-text-30)]">暂无产品，请先在产品库添加</div>
             ) : (
               <select
                 value={productId}
                 onChange={(e) => setProductId(e.target.value)}
-                className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none"
+                className="w-full rounded-xl border border-[var(--canvas-border)] bg-[var(--canvas-hover-sm)] px-3 py-2 text-sm text-[var(--canvas-text)] focus:border-[var(--canvas-border-strong)] focus:outline-none"
               >
                 {products.map((p) => (
-                  <option key={p.id} value={p.id} className="bg-[#1a1a1c]">{p.name}</option>
+                  <option key={p.id} value={p.id} className="bg-[var(--canvas-surface-deep)]">{p.name}</option>
                 ))}
               </select>
             )}
@@ -2024,15 +2100,15 @@ function ViralReplicationModal({
           {/* Country + Language */}
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="mb-1 block text-[10px] uppercase tracking-widest text-white/40">目标国家</label>
-              <select value={country} onChange={(e) => setCountry(e.target.value)} className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none">
-                {REPLICATION_COUNTRIES.map((c) => <option key={c.id} value={c.id} className="bg-[#1a1a1c]">{c.label}</option>)}
+              <label className="mb-1 block text-[10px] uppercase tracking-widest text-[var(--canvas-text-40)]">目标国家</label>
+              <select value={country} onChange={(e) => setCountry(e.target.value)} className="w-full rounded-xl border border-[var(--canvas-border)] bg-[var(--canvas-hover-sm)] px-3 py-2 text-sm text-[var(--canvas-text)] focus:border-[var(--canvas-border-strong)] focus:outline-none">
+                {REPLICATION_COUNTRIES.map((c) => <option key={c.id} value={c.id} className="bg-[var(--canvas-surface-deep)]">{c.label}</option>)}
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-[10px] uppercase tracking-widest text-white/40">目标语言</label>
-              <select value={language} onChange={(e) => setLanguage(e.target.value)} className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none">
-                {REPLICATION_LANGUAGES.map((l) => <option key={l.id} value={l.id} className="bg-[#1a1a1c]">{l.label}</option>)}
+              <label className="mb-1 block text-[10px] uppercase tracking-widest text-[var(--canvas-text-40)]">目标语言</label>
+              <select value={language} onChange={(e) => setLanguage(e.target.value)} className="w-full rounded-xl border border-[var(--canvas-border)] bg-[var(--canvas-hover-sm)] px-3 py-2 text-sm text-[var(--canvas-text)] focus:border-[var(--canvas-border-strong)] focus:outline-none">
+                {REPLICATION_LANGUAGES.map((l) => <option key={l.id} value={l.id} className="bg-[var(--canvas-surface-deep)]">{l.label}</option>)}
               </select>
             </div>
           </div>
@@ -2040,13 +2116,13 @@ function ViralReplicationModal({
           {/* Duration + Quantity */}
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="mb-1 block text-[10px] uppercase tracking-widest text-white/40">视频时长</label>
-              <select value={duration} onChange={(e) => setDuration(e.target.value)} className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white focus:border-white/30 focus:outline-none">
-                {REPLICATION_DURATIONS.map((d) => <option key={d} value={d} className="bg-[#1a1a1c]">{d}s</option>)}
+              <label className="mb-1 block text-[10px] uppercase tracking-widest text-[var(--canvas-text-40)]">视频时长</label>
+              <select value={duration} onChange={(e) => setDuration(e.target.value)} className="w-full rounded-xl border border-[var(--canvas-border)] bg-[var(--canvas-hover-sm)] px-3 py-2 text-sm text-[var(--canvas-text)] focus:border-[var(--canvas-border-strong)] focus:outline-none">
+                {REPLICATION_DURATIONS.map((d) => <option key={d} value={d} className="bg-[var(--canvas-surface-deep)]">{d}s</option>)}
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-[10px] uppercase tracking-widest text-white/40">复刻数量 · {quantity}</label>
+              <label className="mb-1 block text-[10px] uppercase tracking-widest text-[var(--canvas-text-40)]">复刻数量 · {quantity}</label>
               <input
                 type="range" min={1} max={10} value={quantity}
                 onChange={(e) => setQuantity(parseInt(e.target.value, 10))}
@@ -2057,8 +2133,8 @@ function ViralReplicationModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center gap-2 border-t border-white/[0.06] px-4 py-3">
-          <button type="button" onClick={onClose} className="flex-1 rounded-xl bg-white/[0.06] py-2 text-sm text-white/50 transition hover:bg-white/10">
+        <div className="flex items-center gap-2 border-t border-[var(--canvas-border)] px-4 py-3">
+          <button type="button" onClick={onClose} className="flex-1 rounded-xl bg-[var(--canvas-hover)] py-2 text-sm text-[var(--canvas-text-50)] transition hover:bg-[var(--canvas-hover)]">
             取消
           </button>
           <button
@@ -2068,7 +2144,7 @@ function ViralReplicationModal({
             className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#ffc94a] py-2 text-sm font-semibold text-black transition hover:bg-[#ffd666] disabled:opacity-40"
           >
             {loading ? (
-              <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black/20 border-t-black" />触发中...</>
+              <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--tenant-primary-foreground)]/20 border-t-[var(--tenant-primary-foreground)]" />触发中...</>
             ) : (
               <><Zap className="h-3.5 w-3.5" />开始复刻</>
             )}
@@ -2104,8 +2180,8 @@ function ResourceTile({
       className={clsx(
         "relative h-[52px] w-[52px] flex-shrink-0 overflow-hidden rounded-[14px] transition active:scale-95",
         filled
-          ? "bg-white/12 text-white/80 ring-1 ring-white/20 hover:brightness-110"
-          : "bg-white/[0.07] text-white/35 hover:bg-white/12 hover:text-white/60",
+          ? "bg-[var(--canvas-hover-lg)] text-[var(--canvas-text-80)] ring-1 ring-[var(--canvas-border-md)] hover:brightness-110"
+          : "bg-[var(--canvas-hover)] text-[var(--canvas-text-35)] hover:bg-[var(--canvas-hover-lg)] hover:text-[var(--canvas-text-60)]",
       )}
     >
       {imageUrl ? (
@@ -2229,7 +2305,7 @@ function AudioWaveformPlayer({ src }: { src: string }) {
           </>
         ) : (
           <div className="flex w-full items-center justify-center">
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white/50" />
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--canvas-border-md)] border-t-white/50" />
           </div>
         )}
       </div>
@@ -2238,11 +2314,11 @@ function AudioWaveformPlayer({ src }: { src: string }) {
         <button
           type="button"
           onClick={togglePlay}
-          className="flex h-7 w-7 items-center justify-center rounded-full bg-black/40 text-white/80 transition hover:bg-black/60 active:scale-95"
+          className="flex h-7 w-7 items-center justify-center rounded-full bg-black/40 text-[var(--canvas-text-80)] transition hover:bg-black/60 active:scale-95"
         >
           {isPlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3 translate-x-[1px]" />}
         </button>
-        <span className="text-[11px] tabular-nums text-white/50">
+        <span className="text-[11px] tabular-nums text-[var(--canvas-text-50)]">
           {fmt(currentTime)} / {fmt(duration)}
         </span>
       </div>
@@ -2327,67 +2403,56 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
     <div style={{ width: MEDIA_NODE_WIDTH }} className="relative select-none">
       {/* Floating action pill */}
       {props.selected && audioUrl && (
-        <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex items-center rounded-full bg-[#1e1e20] shadow-[0_8px_32px_rgba(0,0,0,0.7)]">
+        <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex items-center rounded-full bg-[var(--canvas-surface)] shadow-[var(--canvas-shadow-sm)]">
           <div className="group/tip relative">
             <a
               href={audioUrl}
               download
               onClick={(e) => e.stopPropagation()}
-              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+              className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95"
             >
               <Download className="h-4 w-4" />
             </a>
-            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">下载音频</span>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">下载音频</span>
           </div>
-          <div className="h-4 w-px bg-white/10" />
+          <div className="h-4 w-px bg-[var(--canvas-hover)]" />
           <div className="group/tip relative">
             <button
               type="button"
               disabled={isUploading}
               onClick={(e) => { e.stopPropagation(); directUploadRef.current?.click(); }}
-              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95 disabled:opacity-40"
+              className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95 disabled:opacity-40"
             >
               {isUploading
-                ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--canvas-border-md)] border-t-white/60" />
                 : <Upload className="h-4 w-4" />}
             </button>
-            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">{audioUrl ? "替换音频" : "上传音频"}</span>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">{audioUrl ? "替换音频" : "上传音频"}</span>
           </div>
         </div>
       )}
       {props.selected && !audioUrl && (
-        <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex items-center rounded-full bg-[#1e1e20] shadow-[0_8px_32px_rgba(0,0,0,0.7)]">
+        <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex items-center rounded-full bg-[var(--canvas-surface)] shadow-[var(--canvas-shadow-sm)]">
           <div className="group/tip relative">
             <button
               type="button"
               disabled={isUploading}
               onClick={(e) => { e.stopPropagation(); directUploadRef.current?.click(); }}
-              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95 disabled:opacity-40"
+              className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95 disabled:opacity-40"
             >
               {isUploading
-                ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--canvas-border-md)] border-t-white/60" />
                 : <Upload className="h-4 w-4" />}
             </button>
-            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">上传音频</span>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">上传音频</span>
           </div>
         </div>
       )}
       <div className="mb-1.5 flex items-center justify-between px-1">
         <div className="flex items-center">
-          <Music className="h-3.5 w-3.5 text-white/50" />
+          <Music className="h-3.5 w-3.5 text-[var(--canvas-text-50)]" />
           <EditableNodeLabel title={title} nodeId={id} patchRuntimeData={patchRuntimeData} />
         </div>
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); directUploadRef.current?.click(); }}
-          className={clsx(
-            "flex items-center gap-1 rounded-full bg-[#2a2a2c] px-3 py-1 text-[11px] text-white/50 transition hover:bg-white/15 hover:text-white/80",
-            !props.selected && "invisible pointer-events-none",
-          )}
-        >
-          <Upload className="h-3 w-3" />
-          <span>{audioUrl ? "替换" : "上传"}</span>
-        </button>
       </div>
       <div className="relative" ref={innerRef}>
         <MediaHandle side="left" />
@@ -2395,19 +2460,19 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
         <div
           style={{ height: 240 }}
           className={clsx(
-            "relative overflow-hidden rounded-[20px] bg-[#1c1c1e] border transition",
+            "relative overflow-hidden rounded-[20px] bg-[var(--canvas-surface-alt)] border transition",
             props.selected
-              ? "border-white/30 shadow-[0_0_10px_rgba(255,255,255,0.12)]"
+              ? "border-[var(--canvas-border-strong)] shadow-[var(--canvas-shadow-glow-sm)]"
               : isConnecting
-              ? "border-white/20 hover:border-white/70 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)]"
-              : "border-white/10 hover:border-white/20",
+              ? "border-[var(--canvas-border-md)] hover:border-[var(--canvas-border-accent)] hover:shadow-[var(--canvas-shadow-glow-md)]"
+              : "border-[var(--canvas-border)] hover:border-[var(--canvas-border-md)]",
           )}
         >
           {audioUrl ? (
             <AudioWaveformPlayer src={audioUrl} />
           ) : (
             <div className="flex h-full w-full items-center justify-center">
-              <Music className="h-10 w-10 text-white/15" />
+              <Music className="h-10 w-10 text-[var(--canvas-text-15)]" />
             </div>
           )}
           {(isRunning || isUploading) && <GeneratingOverlay label={isUploading ? "上传中..." : "生成中..."} />}
@@ -2419,7 +2484,7 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       {props.selected && (
         <div
           style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 220 }}
-          className="nodrag mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
+          className="nodrag mt-2 flex flex-col rounded-[20px] bg-[var(--canvas-surface)] px-4 pb-3 pt-3"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
@@ -2435,53 +2500,25 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                     patchRuntimeData(id, { script: polished });
                   } catch { /* silently fail */ } finally { setIsPolishing(false); }
                 }}
-                className="flex h-8 items-center gap-1.5 rounded-[10px] bg-white/8 px-2.5 text-white/40 transition hover:bg-white/12 hover:text-white/60 disabled:opacity-40"
+                className="flex h-8 items-center gap-1.5 rounded-[10px] bg-[var(--canvas-hover)] px-2.5 text-[var(--canvas-text-40)] transition hover:bg-[var(--canvas-hover-lg)] hover:text-[var(--canvas-text-60)] disabled:opacity-40"
                 title="AI润色">
-                {isPolishing ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/20 border-t-white/60" /> : <Sparkles className="h-3.5 w-3.5" />}
+                {isPolishing ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--canvas-border-md)] border-t-white/60" /> : <Sparkles className="h-3.5 w-3.5" />}
                 <span className="text-xs">AI润色</span>
               </button>
             </div>
-          ) : isSunoMusic ? (
-            <div className="mb-2 grid grid-cols-2 gap-1.5">
-              <input
-                type="text"
-                placeholder="歌曲标题（可选）"
-                value={typeof data.runtime.data.title === "string" ? data.runtime.data.title : ""}
-                onChange={(e) => patchRuntimeData(id, { title: e.target.value })}
-                className="col-span-2 h-7 rounded-[8px] bg-white/8 px-2 text-xs text-white/70 placeholder:text-white/30 focus:outline-none"
-              />
-              <input
-                type="text"
-                placeholder="风格标签（可选）"
-                value={typeof data.runtime.data.tags === "string" ? data.runtime.data.tags : ""}
-                onChange={(e) => patchRuntimeData(id, { tags: e.target.value })}
-                className="h-7 rounded-[8px] bg-white/8 px-2 text-xs text-white/70 placeholder:text-white/30 focus:outline-none"
-              />
-              <label className="flex h-7 cursor-pointer items-center gap-2 rounded-[8px] bg-white/8 px-2">
-                <input
-                  type="checkbox"
-                  checked={Boolean(data.runtime.data.make_instrumental)}
-                  onChange={(e) => patchRuntimeData(id, { make_instrumental: e.target.checked })}
-                  className="accent-white"
-                />
-                <span className="text-xs text-white/50">纯音乐</span>
-              </label>
-            </div>
-          ) : (
+          ) : isSunoMusic ? null : (
             <div className="mb-2 flex items-center gap-2">
-              <ResourceHoverPanel resources={audioResources} onSelect={(resource) => patchRuntimeData(id, { voiceReference: resource.url })} label="音色库" emptyText="暂无音色资源，可上传音频">
-                <ResourceTile
-                  audioSet={!!voiceRef}
-                  icon={<Music className="h-5 w-5" />}
-                  label="选择音色（点击上传）"
-                  onClick={(e) => { e.stopPropagation(); voiceUploadRef.current?.click(); }}
-                />
-              </ResourceHoverPanel>
+              <ResourceTile
+                audioSet={!!voiceRef}
+                icon={<Music className="h-5 w-5" />}
+                label="上传参考音色"
+                onClick={(e) => { e.stopPropagation(); voiceUploadRef.current?.click(); }}
+              />
               {isNextide && (
                 <ResourceTile
                   audioSet={!!emotionRef}
                   icon={<Smile className="h-5 w-5" />}
-                  label={emotionRef ? "参考情绪已上传（点击更换）" : "上传参考情绪音频"}
+                  label={emotionRef ? "参考情绪已上传（点击更换）" : "上传参考情绪"}
                   onClick={(e) => { e.stopPropagation(); emotionUploadRef.current?.click(); }}
                 />
               )}
@@ -2494,9 +2531,9 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                     patchRuntimeData(id, { script: polished });
                   } catch { /* silently fail */ } finally { setIsPolishing(false); }
                 }}
-                className="flex h-8 items-center gap-1.5 rounded-[10px] bg-white/8 px-2.5 text-white/40 transition hover:bg-white/12 hover:text-white/60 disabled:opacity-40"
+                className="flex h-8 items-center gap-1.5 rounded-[10px] bg-[var(--canvas-hover)] px-2.5 text-[var(--canvas-text-40)] transition hover:bg-[var(--canvas-hover-lg)] hover:text-[var(--canvas-text-60)] disabled:opacity-40"
                 title="AI润色">
-                {isPolishing ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/20 border-t-white/60" /> : <Sparkles className="h-3.5 w-3.5" />}
+                {isPolishing ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--canvas-border-md)] border-t-white/60" /> : <Sparkles className="h-3.5 w-3.5" />}
                 <span className="text-xs">AI润色</span>
               </button>
             </div>
@@ -2504,14 +2541,14 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           {/* Text area */}
           {isPolishing ? (
             <div className="flex-1 space-y-2.5 py-1 animate-pulse">
-              <div className="h-2.5 w-full rounded-full bg-white/20" />
-              <div className="h-2.5 w-[62%] rounded-full bg-white/15" />
-              <div className="h-2.5 w-[38%] rounded-full bg-white/10" />
+              <div className="h-2.5 w-full rounded-full bg-[var(--canvas-hover-xl)]" />
+              <div className="h-2.5 w-[62%] rounded-full bg-[var(--canvas-hover-lg)]" />
+              <div className="h-2.5 w-[38%] rounded-full bg-[var(--canvas-hover)]" />
             </div>
           ) : (
             <>
               {!script && upstream.effectivePrompt && (
-                <p className="mb-1 truncate text-[10px] text-white/30">
+                <p className="mb-1 truncate text-[10px] text-[var(--canvas-text-30)]">
                   ↑ 上游文本：{upstream.effectivePrompt.slice(0, 60)}{upstream.effectivePrompt.length > 60 ? "…" : ""}
                 </p>
               )}
@@ -2523,7 +2560,7 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                   isSunoMusic ? (upstream.effectivePrompt ? "留空则使用上游文本..." : "描述你想创作的音乐风格、情感...") :
                   (upstream.effectivePrompt ? "留空则使用上游文本..." : "口播文本，描述你想生成的语音内容...")
                 }
-                className="flex-1 w-full resize-none bg-transparent text-sm leading-relaxed text-white placeholder:text-white/30 focus:outline-none"
+                className="nodrag select-text flex-1 w-full resize-none bg-transparent text-sm leading-relaxed text-[var(--canvas-text)] placeholder:text-[var(--canvas-text-30)] focus:outline-none nopan selection:bg-blue-500/50"
               />
             </>
           )}
@@ -2536,9 +2573,9 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             />
             <button type="button" disabled={isRunning}
               onClick={(e) => { e.stopPropagation(); void runAudioNode(id); }}
-              className="ml-auto flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white text-black shadow transition hover:bg-white/90 disabled:opacity-40">
+              className="ml-auto flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--tenant-primary)] text-[var(--tenant-primary-foreground)] shadow transition hover:bg-[var(--tenant-primary-hover)] disabled:opacity-40">
               {isRunning ? (
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black/20 border-t-black" />
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--tenant-primary-foreground)]/20 border-t-[var(--tenant-primary-foreground)]" />
               ) : (
                 <ArrowUp className="h-4 w-4" />
               )}
@@ -2609,7 +2646,7 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
     <CardMagnetContext.Provider value={magnet}>
     <div style={{ width: MEDIA_NODE_WIDTH }} className="select-none">
       <div className="mb-1.5 flex items-center px-1">
-        <UserCircle2 className="h-3.5 w-3.5 text-white/50" />
+        <UserCircle2 className="h-3.5 w-3.5 text-[var(--canvas-text-50)]" />
         <EditableNodeLabel title={title} nodeId={id} patchRuntimeData={patchRuntimeData} />
       </div>
       <div className="relative" ref={innerRef}>
@@ -2618,12 +2655,12 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
         <div
           style={{ height: 240 }}
           className={clsx(
-            "relative overflow-hidden rounded-[20px] bg-[#1c1c1e] border transition",
+            "relative overflow-hidden rounded-[20px] bg-[var(--canvas-surface-alt)] border transition",
             props.selected
-              ? "border-white/30 shadow-[0_0_10px_rgba(255,255,255,0.12)]"
+              ? "border-[var(--canvas-border-strong)] shadow-[var(--canvas-shadow-glow-sm)]"
               : isConnecting
-              ? "border-white/20 hover:border-white/70 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)]"
-              : "border-white/10 hover:border-white/20",
+              ? "border-[var(--canvas-border-md)] hover:border-[var(--canvas-border-accent)] hover:shadow-[var(--canvas-shadow-glow-md)]"
+              : "border-[var(--canvas-border)] hover:border-[var(--canvas-border-md)]",
           )}
         >
           {outputUrl ? (
@@ -2633,7 +2670,7 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             <img src={avatarImage} alt="Avatar" className="h-full w-full object-cover opacity-60" />
           ) : (
             <div className="flex h-full w-full items-center justify-center">
-              <UserCircle2 className="h-10 w-10 text-white/15" />
+              <UserCircle2 className="h-10 w-10 text-[var(--canvas-text-15)]" />
             </div>
           )}
           {isRunning && <GeneratingOverlay label={`生成中${dhStatus ? ` · ${dhStatus}` : "..."}`} />}
@@ -2645,43 +2682,23 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       {props.selected && (
         <div
           style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: MEDIA_CONTROLS_OFFSET, height: 220 }}
-          className="nodrag mt-2 flex flex-col rounded-[20px] bg-[#1e1e20] px-4 pb-3 pt-3"
+          className="nodrag mt-2 flex flex-col rounded-[20px] bg-[var(--canvas-surface)] px-4 pb-3 pt-3"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
           <div className="mb-2 flex items-center gap-2">
-            <ResourceHoverPanel resources={imageResources} onSelect={(resource) => patchRuntimeData(id, { avatarImage: resource.url })} label="形象库" emptyText="暂无形象图片">
-              <ResourceTile
-                imageUrl={avatarImage || upstream.firstImageUrl || undefined}
-                icon={<ImagePlus className="h-5 w-5" />}
-                label={upstream.firstImageUrl && !avatarImage ? "上游图片将用作形象" : "选择形象"}
-                onClick={(e) => e.stopPropagation()}
-              />
-            </ResourceHoverPanel>
-            <button
-              type="button"
+            <ResourceTile
+              imageUrl={avatarImage || upstream.firstImageUrl || undefined}
+              icon={<ImagePlus className="h-5 w-5" />}
+              label={upstream.firstImageUrl && !avatarImage ? "上游图片将用作形象" : "选择形象"}
               onClick={(e) => { e.stopPropagation(); avatarUploadRef.current?.click(); }}
-              className="flex h-8 items-center gap-1.5 rounded-[10px] bg-white/8 px-2.5 text-white/40 transition hover:bg-white/12 hover:text-white/60"
-              title="上传形象">
-              <Upload className="h-3.5 w-3.5" />
-              <span className="text-xs">上传</span>
-            </button>
-            <ResourceHoverPanel resources={audioResources} onSelect={(resource) => patchRuntimeData(id, { voiceReference: resource.url })} label="音色库" emptyText="暂无音色资源">
-              <ResourceTile
-                audioSet={!!(voiceReference || upstream.firstAudioUrl)}
-                icon={<Music className="h-5 w-5" />}
-                label={upstream.firstAudioUrl && !voiceReference ? "上游音频将用作音色" : "选择音色"}
-                onClick={(e) => e.stopPropagation()}
-              />
-            </ResourceHoverPanel>
-            <button
-              type="button"
+            />
+            <ResourceTile
+              audioSet={!!(voiceReference || upstream.firstAudioUrl)}
+              icon={<Music className="h-5 w-5" />}
+              label={upstream.firstAudioUrl && !voiceReference ? "上游音频将用作音色" : "选择音色"}
               onClick={(e) => { e.stopPropagation(); voiceUploadRef.current?.click(); }}
-              className="flex h-8 items-center gap-1.5 rounded-[10px] bg-white/8 px-2.5 text-white/40 transition hover:bg-white/12 hover:text-white/60"
-              title="上传音色">
-              <Upload className="h-3.5 w-3.5" />
-              <span className="text-xs">上传</span>
-            </button>
+            />
             <button type="button" disabled={isPolishing || !script.trim()}
               onClick={async (e) => {
                 e.stopPropagation();
@@ -2695,10 +2712,10 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                   setIsPolishing(false);
                 }
               }}
-              className="flex h-8 items-center gap-1.5 rounded-[10px] bg-white/8 px-2.5 text-white/40 transition hover:bg-white/12 hover:text-white/60 disabled:opacity-40"
+              className="flex h-8 items-center gap-1.5 rounded-[10px] bg-[var(--canvas-hover)] px-2.5 text-[var(--canvas-text-40)] transition hover:bg-[var(--canvas-hover-lg)] hover:text-[var(--canvas-text-60)] disabled:opacity-40"
               title="AI润色">
               {isPolishing ? (
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--canvas-border-md)] border-t-white/60" />
               ) : (
                 <Sparkles className="h-3.5 w-3.5" />
               )}
@@ -2707,14 +2724,14 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           </div>
           {isPolishing ? (
             <div className="flex-1 space-y-2.5 py-1 animate-pulse">
-              <div className="h-2.5 w-full rounded-full bg-white/20" />
-              <div className="h-2.5 w-[62%] rounded-full bg-white/15" />
-              <div className="h-2.5 w-[38%] rounded-full bg-white/10" />
+              <div className="h-2.5 w-full rounded-full bg-[var(--canvas-hover-xl)]" />
+              <div className="h-2.5 w-[62%] rounded-full bg-[var(--canvas-hover-lg)]" />
+              <div className="h-2.5 w-[38%] rounded-full bg-[var(--canvas-hover)]" />
             </div>
           ) : (
             <>
               {!script && upstream.effectivePrompt && (
-                <p className="mb-1 truncate text-[10px] text-white/30">
+                <p className="mb-1 truncate text-[10px] text-[var(--canvas-text-30)]">
                   ↑ 上游文本：{upstream.effectivePrompt.slice(0, 60)}{upstream.effectivePrompt.length > 60 ? "…" : ""}
                 </p>
               )}
@@ -2722,26 +2739,26 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                 value={script}
                 onChange={(v) => patchRuntimeData(id, { script: v })}
                 placeholder={upstream.effectivePrompt ? "留空则使用上游文本..." : "描述任何你想要生成的内容，口播文案或形象描述..."}
-                className="flex-1 w-full resize-none bg-transparent text-sm leading-relaxed text-white placeholder:text-white/30 focus:outline-none"
+                className="nodrag select-text flex-1 w-full resize-none bg-transparent text-sm leading-relaxed text-[var(--canvas-text)] placeholder:text-[var(--canvas-text-30)] focus:outline-none nopan selection:bg-blue-500/50"
               />
             </>
           )}
           <div className="flex items-center gap-1.5">
             <select value={model} onChange={(e) => patchRuntimeData(id, { model: e.target.value })} onClick={(e) => e.stopPropagation()}
-              className="min-w-0 flex-1 appearance-none truncate bg-transparent text-xs text-white/50 focus:outline-none">
+              className="min-w-0 flex-1 appearance-none truncate bg-transparent text-xs text-[var(--canvas-text-50)] focus:outline-none">
               {models.digitalHumanModels.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
             </select>
-            <span className="text-xs text-white/20">·</span>
+            <span className="text-xs text-[var(--canvas-text-20)]">·</span>
             <select value={ratio} onChange={(e) => patchRuntimeData(id, { ratio: e.target.value })} onClick={(e) => e.stopPropagation()}
-              className="appearance-none bg-transparent text-xs text-white/50 focus:outline-none">
+              className="appearance-none bg-transparent text-xs text-[var(--canvas-text-50)] focus:outline-none">
               <option value="auto">自适应</option>
               {IMAGE_RATIOS.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
             <button type="button" disabled={isRunning}
               onClick={(e) => { e.stopPropagation(); void runDigitalHumanNode(id); }}
-              className="ml-auto flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white text-black shadow transition hover:bg-white/90 disabled:opacity-40">
+              className="ml-auto flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--tenant-primary)] text-[var(--tenant-primary-foreground)] shadow transition hover:bg-[var(--tenant-primary-hover)] disabled:opacity-40">
               {isRunning ? (
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black/20 border-t-black" />
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--tenant-primary-foreground)]/20 border-t-[var(--tenant-primary-foreground)]" />
               ) : (
                 <ArrowUp className="h-4 w-4" />
               )}
@@ -2854,10 +2871,10 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
     <div style={{ width: SB_NODE_WIDTH }} className="select-none">
       {/* Header */}
       <div className="mb-2 flex items-center gap-1.5 px-1">
-        <Clapperboard className="h-3.5 w-3.5 text-white/50" />
+        <Clapperboard className="h-3.5 w-3.5 text-[var(--canvas-text-50)]" />
         <EditableNodeLabel title={title} nodeId={id} patchRuntimeData={patchRuntimeData} />
         {hasSegments && (
-          <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/50">
+          <span className="rounded-full bg-[var(--canvas-hover)] px-2 py-0.5 text-[10px] text-[var(--canvas-text-50)]">
             {sbSegments.length} 镜头
           </span>
         )}
@@ -2866,7 +2883,7 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); setFullscreen(true); }}
-            className="flex h-6 w-6 items-center justify-center rounded-full bg-white/[0.07] text-white/40 transition hover:bg-white/15 hover:text-white/80"
+            className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--canvas-hover)] text-[var(--canvas-text-40)] transition hover:bg-[var(--canvas-hover-lg)] hover:text-[var(--canvas-text-80)]"
           >
             <Maximize2 className="h-3.5 w-3.5" />
           </button>
@@ -2884,12 +2901,12 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               type="button"
               onClick={() => photoUploadRef.current?.click()}
               disabled={photoUploading}
-              className="flex h-14 w-14 items-center justify-center rounded-xl border-2 border-dashed border-white/20 bg-white/[0.02] transition hover:border-white/40 disabled:opacity-50"
+              className="flex h-14 w-14 items-center justify-center rounded-xl border-2 border-dashed border-[var(--canvas-border-md)] bg-[var(--canvas-hover-sm)] transition hover:border-[var(--canvas-border-heavy)] disabled:opacity-50"
             >
               {photoUploading ? (
-                <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                <span className="h-3 w-3 animate-spin rounded-full border-2 border-[var(--canvas-border-md)] border-t-white/60" />
               ) : (
-                <Plus className="h-5 w-5 text-white/40" />
+                <Plus className="h-5 w-5 text-[var(--canvas-text-40)]" />
               )}
             </button>
             {photoLibrary.length > 0 && (
@@ -2905,7 +2922,7 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                     }}
                     disabled={!selectedSegmentId}
                     className={`h-14 w-14 rounded-xl overflow-hidden border-2 transition ${
-                      selectedSegmentId ? "border-white/20 hover:border-white/40" : "border-white/10 opacity-50"
+                      selectedSegmentId ? "border-[var(--canvas-border-md)] hover:border-[var(--canvas-border-heavy)]" : "border-[var(--canvas-border)] opacity-50"
                     }`}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -2918,24 +2935,24 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
         )}
         <div
           className={clsx(
-            "overflow-hidden rounded-[20px] border bg-[#111113] transition",
+            "overflow-hidden rounded-[20px] border bg-[var(--canvas-surface-deep)] transition",
             props.selected
-              ? "border-white/30 shadow-[0_0_10px_rgba(255,255,255,0.12)]"
+              ? "border-[var(--canvas-border-strong)] shadow-[var(--canvas-shadow-glow-sm)]"
               : isConnecting
-              ? "border-white/20 hover:border-white/70 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)]"
-              : "border-white/10 hover:border-white/20",
+              ? "border-[var(--canvas-border-md)] hover:border-[var(--canvas-border-accent)] hover:shadow-[var(--canvas-shadow-glow-md)]"
+              : "border-[var(--canvas-border)] hover:border-[var(--canvas-border-md)]",
           )}
         >
           {/* Idle icon panel — shown when no segments */}
           {!hasSegments && (
-            <div className="relative flex h-[240px] w-full flex-col items-center justify-center gap-2 bg-[#0c0c0e] text-white/20">
+            <div className="relative flex h-[240px] w-full flex-col items-center justify-center gap-2 bg-[var(--canvas-bg)] text-[var(--canvas-text-20)]">
               <Clapperboard className="h-10 w-10" />
               <p className="text-xs">
                 {effectiveVideoUrl ? "视频已就绪，点击一键复刻" : "上传或引用上游视频"}
               </p>
               {isRunning && <GeneratingOverlay label={`拆解中${sbStatus ? ` · ${sbStatus}` : "..."}`} />}
               {!ownVideoUrl && upstream.firstVideoUrl && (
-                <div className="absolute bottom-2 left-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] text-white/50 backdrop-blur-sm">
+                <div className="absolute bottom-2 left-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] text-[var(--canvas-text-50)] backdrop-blur-sm">
                   ↑ 上游视频
                 </div>
               )}
@@ -2944,7 +2961,7 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
 
           {/* Progress bar */}
           {isRunning && (
-            <div className="h-0.5 bg-white/5">
+            <div className="h-0.5 bg-[var(--canvas-hover-sm)]">
               <div
                 className="h-full bg-white/40 transition-all duration-500"
                 style={{ width: `${Math.max(5, sbProgress)}%` }}
@@ -2953,11 +2970,11 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           )}
 
           {/* Controls row */}
-          <div className="flex items-center gap-2 border-t border-white/[0.06] px-4 py-3">
+          <div className="flex items-center gap-2 border-t border-[var(--canvas-border)] px-4 py-3">
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); videoUploadRef.current?.click(); }}
-              className="flex-shrink-0 rounded-lg bg-white/10 px-2 py-1 text-[10px] text-white/60 transition hover:bg-white/20"
+              className="flex-shrink-0 rounded-lg bg-[var(--canvas-hover)] px-2 py-1 text-[10px] text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover-xl)]"
             >
               上传视频
             </button>
@@ -2965,7 +2982,7 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); patchRuntimeData(id, { videoUrl: "" }); }}
-                className="flex-shrink-0 rounded-lg bg-white/5 px-2 py-1 text-[10px] text-white/30 transition hover:bg-white/10"
+                className="flex-shrink-0 rounded-lg bg-[var(--canvas-hover-sm)] px-2 py-1 text-[10px] text-[var(--canvas-text-30)] transition hover:bg-[var(--canvas-hover)]"
               >
                 清除
               </button>
@@ -2975,7 +2992,7 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               type="button"
               disabled={isRunning || !effectiveVideoUrl}
               onClick={(e) => { e.stopPropagation(); void runStoryboardNode(id); }}
-              className="flex-shrink-0 rounded-lg bg-white/15 px-3 py-1 text-[10px] font-medium text-white transition hover:bg-white/25 disabled:opacity-40"
+              className="flex-shrink-0 rounded-lg bg-[var(--canvas-hover-lg)] px-3 py-1 text-[10px] font-medium text-[var(--canvas-text)] transition hover:bg-[var(--canvas-hover-xl)] disabled:opacity-40"
             >
               {isRunning ? "拆解中..." : "拆解分镜"}
             </button>
@@ -2983,13 +3000,13 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
 
           {/* Error */}
           {lastRunError && !isRunning && (
-            <div className="border-t border-white/[0.06] px-4 py-2 text-[11px] text-rose-300">{lastRunError}</div>
+            <div className="border-t border-[var(--canvas-border)] px-4 py-2 text-[11px] text-rose-300">{lastRunError}</div>
           )}
 
           {/* Segment rows */}
           {hasSegments && (
-            <div className="max-h-[560px] divide-y divide-white/[0.04] overflow-y-auto border-t border-white/[0.06]">
-              <div className="grid grid-cols-[32px_1fr_88px_88px_56px] gap-3 px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-white/30">
+            <div className="max-h-[560px] divide-y divide-white/[0.04] overflow-y-auto border-t border-[var(--canvas-border)]">
+              <div className="grid grid-cols-[32px_1fr_88px_88px_56px] gap-3 px-4 py-2 text-[10px] uppercase tracking-[0.2em] text-[var(--canvas-text-30)]">
                 <span>#</span>
                 <span>描述</span>
                 <span>图片</span>
@@ -3005,37 +3022,37 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                     key={seg.id}
                     onClick={() => setSelectedSegmentId(seg.id)}
                     className={`grid grid-cols-[32px_1fr_88px_88px_56px] items-start gap-3 px-4 py-3 cursor-pointer transition ${
-                      isSelected ? "bg-white/[0.08]" : "hover:bg-white/[0.03]"
+                      isSelected ? "bg-[var(--canvas-hover)]" : "hover:bg-[var(--canvas-hover-sm)]"
                     }`}
                   >
-                    <div className="pt-0.5 text-xs font-semibold text-white/50">{seg.order + 1}</div>
-                    <div className="space-y-1 text-[11px] leading-relaxed text-white/70">
-                      {seg.visualDescription && <p className="text-white/80">{seg.visualDescription}</p>}
+                    <div className="pt-0.5 text-xs font-semibold text-[var(--canvas-text-50)]">{seg.order + 1}</div>
+                    <div className="space-y-1 text-[11px] leading-relaxed text-[var(--canvas-text-70)]">
+                      {seg.visualDescription && <p className="text-[var(--canvas-text-80)]">{seg.visualDescription}</p>}
                       {seg.cameraNotes && (
-                        <p className="text-white/40"><span className="mr-1 text-white/25">镜头</span>{seg.cameraNotes}</p>
+                        <p className="text-[var(--canvas-text-40)]"><span className="mr-1 text-[var(--canvas-text-25)]">镜头</span>{seg.cameraNotes}</p>
                       )}
                       {seg.originalScript && (
-                        <p className="rounded-lg bg-white/[0.04] px-2 py-1 text-white/50 italic">{seg.originalScript}</p>
+                        <p className="rounded-lg bg-[var(--canvas-hover-sm)] px-2 py-1 text-[var(--canvas-text-50)] italic">{seg.originalScript}</p>
                       )}
                       {!seg.visualDescription && !seg.cameraNotes && !seg.originalScript && (
-                        <p className="text-white/25 italic">提示词已生成，等待合成</p>
+                        <p className="text-[var(--canvas-text-25)] italic">提示词已生成，等待合成</p>
                       )}
                       {statusLabel && (
-                        <span className="inline-block rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] text-white/40">{statusLabel}</span>
+                        <span className="inline-block rounded-full bg-[var(--canvas-hover)] px-2 py-0.5 text-[10px] text-[var(--canvas-text-40)]">{statusLabel}</span>
                       )}
-                      {seg.timeRange && <p className="text-white/30">{seg.timeRange}</p>}
+                      {seg.timeRange && <p className="text-[var(--canvas-text-30)]">{seg.timeRange}</p>}
                     </div>
-                    <div className="aspect-square overflow-hidden rounded-xl bg-white/[0.04]">
+                    <div className="aspect-square overflow-hidden rounded-xl bg-[var(--canvas-hover-sm)]">
                       {frameImage ? (
                         /* eslint-disable-next-line @next/next/no-img-element */
                         <img src={frameImage} alt={`Shot ${seg.order + 1}`} className="h-full w-full object-cover" />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center">
-                          <ImageIcon className="h-5 w-5 text-white/15" />
+                          <ImageIcon className="h-5 w-5 text-[var(--canvas-text-15)]" />
                         </div>
                       )}
                     </div>
-                    <div className="aspect-square overflow-hidden rounded-xl bg-white/[0.04]">
+                    <div className="aspect-square overflow-hidden rounded-xl bg-[var(--canvas-hover-sm)]">
                       {seg.generatedVideo ? (
                         <video
                           src={seg.generatedVideo}
@@ -3048,11 +3065,11 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center">
-                          <Video className="h-5 w-5 text-white/15" />
+                          <Video className="h-5 w-5 text-[var(--canvas-text-15)]" />
                         </div>
                       )}
                     </div>
-                    <div className="pt-0.5 text-[11px] text-white/40">
+                    <div className="pt-0.5 text-[11px] text-[var(--canvas-text-40)]">
                       {seg.duration != null ? `${seg.duration}s` : "—"}
                     </div>
                   </div>
@@ -3069,18 +3086,18 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
     </CardMagnetContext.Provider>
     {fullscreen && typeof document !== "undefined" && createPortal(
         <div
-          className="fixed inset-0 z-[10000] flex flex-col bg-[#0c0c0e]"
+          className="fixed inset-0 z-[10000] flex flex-col bg-[var(--canvas-bg)]"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Fullscreen header */}
-          <div className="flex items-center gap-3 border-b border-white/[0.06] px-6 py-4">
-            <Clapperboard className="h-4 w-4 text-white/50" />
-            <span className="text-sm text-white/70">分镜板 · {sbSegments.length} 镜头</span>
+          <div className="flex items-center gap-3 border-b border-[var(--canvas-border)] px-6 py-4">
+            <Clapperboard className="h-4 w-4 text-[var(--canvas-text-50)]" />
+            <span className="text-sm text-[var(--canvas-text-70)]">分镜板 · {sbSegments.length} 镜头</span>
             <div className="flex-1" />
             <button
               type="button"
               onClick={() => setFullscreen(false)}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-white/[0.07] text-white/50 transition hover:bg-white/15 hover:text-white"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--canvas-hover)] text-[var(--canvas-text-50)] transition hover:bg-[var(--canvas-hover-lg)] hover:text-[var(--canvas-text)]"
             >
               <X className="h-4 w-4" />
             </button>
@@ -3089,7 +3106,7 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           <div className="flex-1 overflow-auto">
             <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="border-b border-white/[0.06] text-[11px] uppercase tracking-widest text-white/30">
+                <tr className="border-b border-[var(--canvas-border)] text-[11px] uppercase tracking-widest text-[var(--canvas-text-30)]">
                   <th className="w-12 px-6 py-3 text-left">#</th>
                   <th className="px-4 py-3 text-left">描述</th>
                   <th className="w-40 px-4 py-3 text-left">图片</th>
@@ -3106,38 +3123,38 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                     <tr
                       key={seg.id}
                       onClick={() => setSelectedSegmentId(seg.id)}
-                      className={`cursor-pointer transition ${isSelected ? "bg-white/[0.08]" : "hover:bg-white/[0.03]"}`}
+                      className={`cursor-pointer transition ${isSelected ? "bg-[var(--canvas-hover)]" : "hover:bg-[var(--canvas-hover-sm)]"}`}
                     >
-                      <td className="px-6 py-4 text-sm font-semibold text-white/50">{seg.order + 1}</td>
+                      <td className="px-6 py-4 text-sm font-semibold text-[var(--canvas-text-50)]">{seg.order + 1}</td>
                       <td className="max-w-sm px-4 py-4">
                         <div className="space-y-1.5 text-[13px] leading-relaxed">
-                          {seg.visualDescription && <p className="text-white/80">{seg.visualDescription}</p>}
+                          {seg.visualDescription && <p className="text-[var(--canvas-text-80)]">{seg.visualDescription}</p>}
                           {seg.cameraNotes && (
-                            <p className="text-white/40"><span className="mr-1 text-white/25">镜头</span>{seg.cameraNotes}</p>
+                            <p className="text-[var(--canvas-text-40)]"><span className="mr-1 text-[var(--canvas-text-25)]">镜头</span>{seg.cameraNotes}</p>
                           )}
                           {seg.originalScript && (
-                            <p className="rounded-lg bg-white/[0.04] px-2 py-1 text-white/50 italic">{seg.originalScript}</p>
+                            <p className="rounded-lg bg-[var(--canvas-hover-sm)] px-2 py-1 text-[var(--canvas-text-50)] italic">{seg.originalScript}</p>
                           )}
                           {statusLabel && (
-                            <span className="inline-block rounded-full bg-white/[0.06] px-2 py-0.5 text-[11px] text-white/40">{statusLabel}</span>
+                            <span className="inline-block rounded-full bg-[var(--canvas-hover)] px-2 py-0.5 text-[11px] text-[var(--canvas-text-40)]">{statusLabel}</span>
                           )}
-                          {seg.timeRange && <p className="text-[12px] text-white/30">{seg.timeRange}</p>}
+                          {seg.timeRange && <p className="text-[12px] text-[var(--canvas-text-30)]">{seg.timeRange}</p>}
                         </div>
                       </td>
                       <td className="px-4 py-4">
-                        <div className="h-28 w-28 overflow-hidden rounded-xl bg-white/[0.04]">
+                        <div className="h-28 w-28 overflow-hidden rounded-xl bg-[var(--canvas-hover-sm)]">
                           {frameImage ? (
                             /* eslint-disable-next-line @next/next/no-img-element */
                             <img src={frameImage} alt={`Shot ${seg.order + 1}`} className="h-full w-full object-cover" />
                           ) : (
                             <div className="flex h-full w-full items-center justify-center">
-                              <ImageIcon className="h-6 w-6 text-white/15" />
+                              <ImageIcon className="h-6 w-6 text-[var(--canvas-text-15)]" />
                             </div>
                           )}
                         </div>
                       </td>
                       <td className="px-4 py-4">
-                        <div className="h-28 w-28 overflow-hidden rounded-xl bg-white/[0.04]">
+                        <div className="h-28 w-28 overflow-hidden rounded-xl bg-[var(--canvas-hover-sm)]">
                           {seg.generatedVideo ? (
                             <video
                               src={seg.generatedVideo}
@@ -3150,12 +3167,12 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                             />
                           ) : (
                             <div className="flex h-full w-full items-center justify-center">
-                              <Video className="h-6 w-6 text-white/15" />
+                              <Video className="h-6 w-6 text-[var(--canvas-text-15)]" />
                             </div>
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-4 text-[13px] text-white/40">
+                      <td className="px-4 py-4 text-[13px] text-[var(--canvas-text-40)]">
                         {seg.duration != null ? `${seg.duration}s` : "—"}
                       </td>
                     </tr>
@@ -3244,54 +3261,54 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
     <CardMagnetContext.Provider value={magnet}>
     <div style={{ width: containerWidth }} className="relative select-none">
       {!gridImageUrl && props.selected && (
-        <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex items-center gap-3 rounded-full bg-[#1e1e20] px-3 py-2.5 shadow-[0_8px_32px_rgba(0,0,0,0.7)]">
+        <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex items-center gap-3 rounded-full bg-[var(--canvas-surface)] px-3 py-2.5 shadow-[var(--canvas-shadow-sm)]">
           <div className="group/tip relative">
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+              className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95"
             >
               <Upload className="h-4 w-4" />
             </button>
-            <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">上传九宫格</span>
+            <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">上传九宫格</span>
           </div>
         </div>
       )}
       {props.selected && gridImageUrl && (
-        <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex items-center rounded-full bg-[#1e1e20] shadow-[0_8px_32px_rgba(0,0,0,0.7)]">
+        <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex items-center rounded-full bg-[var(--canvas-surface)] shadow-[var(--canvas-shadow-sm)]">
           <div className="group/tip relative">
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setFullscreenUrl(gridImageUrl); }}
-              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+              className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95"
             >
               <Maximize2 className="h-4 w-4" />
             </button>
-            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">全屏查看</span>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">全屏查看</span>
           </div>
-          <div className="h-4 w-px bg-white/10" />
+          <div className="h-4 w-px bg-[var(--canvas-hover)]" />
           <div className="group/tip relative">
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); window.open(gridImageUrl, "_blank"); }}
-              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+              className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95"
             >
               <Download className="h-4 w-4" />
             </button>
-            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">下载九宫格</span>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">下载九宫格</span>
           </div>
-          <div className="h-4 w-px bg-white/10" />
+          <div className="h-4 w-px bg-[var(--canvas-hover)]" />
           <div className="group/tip relative">
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95"
+              className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95"
             >
               <Upload className="h-4 w-4" />
             </button>
-            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">替换九宫格</span>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">替换九宫格</span>
           </div>
-          <div className="h-4 w-px bg-white/10" />
+          <div className="h-4 w-px bg-[var(--canvas-hover)]" />
           <div className="group/tip relative">
             <button
               type="button"
@@ -3304,19 +3321,19 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                   void splitGridNode?.(id);
                 }
               }}
-              className="flex items-center justify-center rounded-full p-2.5 text-white/60 transition hover:bg-white/10 hover:text-white active:scale-95 disabled:opacity-40"
+              className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95 disabled:opacity-40"
             >
               {isSplitting
-                ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--canvas-border-md)] border-t-white/60" />
                 : <LayoutGrid className="h-4 w-4" />}
             </button>
-            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[#2a2a2d] px-2 py-1 text-[11px] text-white/80 opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">{isSplitting ? "取消拆分" : "拆分九宫格"}</span>
+            <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">{isSplitting ? "取消拆分" : "拆分九宫格"}</span>
           </div>
         </div>
       )}
       <div className="mb-1.5 flex items-center justify-between px-1">
         <div className="flex items-center">
-          <Grid3X3 className="h-3.5 w-3.5 text-white/50" />
+          <Grid3X3 className="h-3.5 w-3.5 text-[var(--canvas-text-50)]" />
           <EditableNodeLabel title={title} nodeId={id} patchRuntimeData={patchRuntimeData} />
         </div>
       </div>
@@ -3328,12 +3345,12 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
         {/* Main card */}
         <div
           className={clsx(
-            "overflow-hidden rounded-[20px] bg-[#1c1c1e] border transition-[border,box-shadow]",
+            "overflow-hidden rounded-[20px] bg-[var(--canvas-surface-alt)] border transition-[border,box-shadow]",
             props.selected
-              ? "border-white/30 shadow-[0_0_10px_rgba(255,255,255,0.12)]"
+              ? "border-[var(--canvas-border-strong)] shadow-[var(--canvas-shadow-glow-sm)]"
               : isConnecting
-              ? "border-white/20 hover:border-white/70 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)]"
-              : "border-white/10 hover:border-white/20",
+              ? "border-[var(--canvas-border-md)] hover:border-[var(--canvas-border-accent)] hover:shadow-[var(--canvas-shadow-glow-md)]"
+              : "border-[var(--canvas-border)] hover:border-[var(--canvas-border-md)]",
           )}
         >
           {/* Result image or placeholder */}
@@ -3352,7 +3369,7 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                 />
             ) : (
               <div className="flex h-full w-full items-center justify-center">
-                <Grid3X3 className="h-12 w-12 text-white/10" />
+                <Grid3X3 className="h-12 w-12 text-[var(--canvas-text-15)]" />
               </div>
             )}
             {(isRunning || isSplitting) && (
@@ -3369,7 +3386,7 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       {props.selected && (
         <div
           style={{ width: MEDIA_CONTROLS_WIDTH, marginLeft: -((MEDIA_CONTROLS_WIDTH - containerWidth) / 2) }}
-          className="nodrag mt-2 flex flex-col gap-2.5 rounded-[20px] bg-[#1e1e20] px-4 pb-4 pt-3"
+          className="nodrag mt-2 flex flex-col gap-2.5 rounded-[20px] bg-[var(--canvas-surface)] px-4 pb-4 pt-3"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
@@ -3393,10 +3410,10 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               type="button"
               disabled={isPolishing || !scriptContent.trim()}
               onClick={handlePolish}
-              className="flex h-8 items-center gap-1.5 rounded-[10px] bg-white/8 px-2.5 text-white/40 transition hover:bg-white/12 hover:text-white/60 disabled:opacity-40"
+              className="flex h-8 items-center gap-1.5 rounded-[10px] bg-[var(--canvas-hover)] px-2.5 text-[var(--canvas-text-40)] transition hover:bg-[var(--canvas-hover-lg)] hover:text-[var(--canvas-text-60)] disabled:opacity-40"
             >
               {isPolishing ? (
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--canvas-border-md)] border-t-white/60" />
               ) : (
                 <Sparkles className="h-3.5 w-3.5" />
               )}
@@ -3409,7 +3426,7 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             value={scriptContent}
             onChange={(v) => patchRuntimeData(id, { scriptContent: v })}
             placeholder={CONTENT_TYPE_PLACEHOLDERS[contentType] || "输入脚本内容..."}
-            className="min-h-[72px] w-full resize-none bg-transparent text-sm leading-relaxed text-white placeholder:text-white/30 focus:outline-none"
+            className="nodrag select-text min-h-[72px] w-full resize-none bg-transparent text-sm leading-relaxed text-[var(--canvas-text)] placeholder:text-[var(--canvas-text-30)] focus:outline-none nopan selection:bg-blue-500/50"
           />
 
           {/* Bottom row: content type + ratio + run */}
@@ -3423,7 +3440,7 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               ]}
               onChange={(v) => patchRuntimeData(id, { contentType: v })}
             />
-            <span className="text-xs text-white/15">·</span>
+            <span className="text-xs text-[var(--canvas-text-15)]">·</span>
             <div className="flex items-center gap-1 rounded-lg px-2 py-1">
               <RatioIcon ratio={ratio} />
               <CanvasSelect
@@ -3436,10 +3453,10 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               type="button"
               disabled={isRunning}
               onClick={(e) => { e.stopPropagation(); void runGridNode(id); }}
-              className="ml-auto flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white text-black shadow transition hover:bg-white/90 disabled:opacity-40"
+              className="ml-auto flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--tenant-primary)] text-[var(--tenant-primary-foreground)] shadow transition hover:bg-[var(--tenant-primary-hover)] disabled:opacity-40"
             >
               {isRunning ? (
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black/20 border-t-black" />
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--tenant-primary-foreground)]/20 border-t-[var(--tenant-primary-foreground)]" />
               ) : (
                 <ArrowUp className="h-4 w-4" />
               )}
@@ -3486,8 +3503,8 @@ function TimelineVideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
     <div style={{ width: TIMELINE_VIDEO_NODE_WIDTH }} className="select-none">
       {/* Header */}
       <div className="mb-1.5 flex items-center gap-2 px-1">
-        <Film className="h-3.5 w-3.5 text-white/50" />
-        <span className="flex-1 truncate text-[13px] font-medium text-white/80">{title}</span>
+        <Film className="h-3.5 w-3.5 text-[var(--canvas-text-50)]" />
+        <span className="flex-1 truncate text-[13px] font-medium text-[var(--canvas-text-80)]">{title}</span>
         {storyboardTaskId && (
           <button
             type="button"
@@ -3506,12 +3523,12 @@ function TimelineVideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
         <div
           style={{ height: containerHeight }}
           className={clsx(
-            "relative overflow-hidden rounded-[20px] bg-[#1c1c1e] border transition-[border,box-shadow]",
+            "relative overflow-hidden rounded-[20px] bg-[var(--canvas-surface-alt)] border transition-[border,box-shadow]",
             props.selected
-              ? "border-white/30 shadow-[0_0_10px_rgba(255,255,255,0.12)]"
+              ? "border-[var(--canvas-border-strong)] shadow-[var(--canvas-shadow-glow-sm)]"
               : isConnecting
-              ? "border-white/20 hover:border-white/70 hover:shadow-[0_0_30px_rgba(255,255,255,0.2)]"
-              : "border-white/10 hover:border-white/20",
+              ? "border-[var(--canvas-border-md)] hover:border-[var(--canvas-border-accent)] hover:shadow-[var(--canvas-shadow-glow-md)]"
+              : "border-[var(--canvas-border)] hover:border-[var(--canvas-border-md)]",
           )}
         >
           {videoUrl ? (
@@ -3528,7 +3545,7 @@ function TimelineVideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               }}
             />
           ) : (
-            <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-white/20">
+            <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-[var(--canvas-text-20)]">
               <Film className="h-10 w-10" />
               <p className="text-xs">连接分镜板节点以显示时间轴视频</p>
             </div>
@@ -3601,14 +3618,14 @@ function ToolbarBtn({
         className={clsx(
           "flex h-9 w-9 items-center justify-center rounded-full transition-all duration-150",
           highlight && !active ? "bg-white text-black hover:bg-white/90 active:scale-95 shadow-md" :
-          active ? "bg-white/10 text-white/60" :
-          "text-white/50 hover:bg-white/10 hover:text-white",
+          active ? "bg-[var(--canvas-hover)] text-[var(--canvas-text-60)]" :
+          "text-[var(--canvas-text-50)] hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)]",
         )}
       >
         <Icon className={highlight && !active ? "h-4.5 w-4.5" : "h-4 w-4"} />
       </button>
       {show && (
-        <div className="pointer-events-none absolute left-[calc(100%+10px)] top-1/2 -translate-y-1/2 whitespace-nowrap rounded-lg bg-[#2a2a2c] px-3 py-1.5 text-xs font-medium text-white shadow-lg">
+        <div className="pointer-events-none absolute left-[calc(100%+10px)] top-1/2 -translate-y-1/2 whitespace-nowrap rounded-lg bg-[var(--canvas-tooltip)] px-3 py-1.5 text-xs font-medium text-[var(--canvas-text)] shadow-lg">
           {label}
           <div className="absolute right-full top-1/2 -translate-y-1/2 border-4 border-transparent border-r-[#2a2a2c]" />
         </div>
@@ -3654,9 +3671,9 @@ function NodePickerPopup({
         onClick={(e) => e.stopPropagation()}
       >
       <div
-        className="w-[300px] overflow-hidden rounded-[20px] bg-[#1a1a1c] p-3 shadow-[0_24px_80px_rgba(0,0,0,0.85)]"
+        className="w-[300px] overflow-hidden rounded-[20px] bg-[var(--canvas-surface-deep)] p-3 shadow-[var(--canvas-shadow-lg)]"
       >
-        <p className="mb-2 px-2 text-sm text-white/40">
+        <p className="mb-2 px-2 text-sm text-[var(--canvas-text-40)]">
           {sourceNodeId ? "引用该节点生成" : "添加节点"}
         </p>
         {isFromVideo && (
@@ -3666,14 +3683,14 @@ function NodePickerPopup({
               onClick={() => { onPickViral?.(); onDismiss(); }}
               onMouseEnter={() => setHoveredType("viral_action")}
               onMouseLeave={() => setHoveredType(null)}
-              className={`mb-1 flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition active:scale-[0.98] ${hoveredType === "viral_action" ? "bg-white/[0.09]" : ""}`}
+              className={`mb-1 flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition active:scale-[0.98] ${hoveredType === "viral_action" ? "bg-[var(--canvas-hover-md)]" : ""}`}
             >
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-white/10">
-                <Zap className="h-5 w-5 text-white/80" />
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-[var(--canvas-hover)]">
+                <Zap className="h-5 w-5 text-[var(--canvas-text-80)]" />
               </div>
               <div>
-                <div className="text-sm font-medium text-white">一键复刻</div>
-                <div className={`text-xs transition-all duration-150 ${hoveredType === "viral_action" ? "text-white/50" : "text-white/0"}`}>选择产品，AI 批量生成视频</div>
+                <div className="text-sm font-medium text-[var(--canvas-text)]">一键复刻</div>
+                <div className={`text-xs transition-all duration-150 ${hoveredType === "viral_action" ? "text-[var(--canvas-text-50)]" : "text-[var(--canvas-text)]/0"}`}>选择产品，AI 批量生成视频</div>
               </div>
             </button>
           </>
@@ -3705,15 +3722,15 @@ function NodePickerPopup({
               onClick={() => onPick(item.type)}
               onMouseEnter={() => setHoveredType(item.type)}
               onMouseLeave={() => setHoveredType(null)}
-              className={`flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition active:scale-[0.98] ${hoveredType === item.type ? "bg-white/[0.07]" : ""}`}
+              className={`flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition active:scale-[0.98] ${hoveredType === item.type ? "bg-[var(--canvas-hover)]" : ""}`}
             >
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-white/10">
-                <item.icon className="h-5 w-5 text-white/80" />
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-[var(--canvas-hover)]">
+                <item.icon className="h-5 w-5 text-[var(--canvas-text-80)]" />
               </div>
               <div className="min-w-0">
-                <div className="text-sm font-medium text-white">{item.label}</div>
+                <div className="text-sm font-medium text-[var(--canvas-text)]">{item.label}</div>
                 {item.desc && (
-                  <div className={`overflow-hidden text-xs transition-all duration-150 ${hoveredType === item.type ? "text-white/50" : "text-white/0"}`}>
+                  <div className={`overflow-hidden text-xs transition-all duration-150 ${hoveredType === item.type ? "text-[var(--canvas-text-50)]" : "text-[var(--canvas-text)]/0"}`}>
                     {item.desc}
                   </div>
                 )}
@@ -3723,18 +3740,18 @@ function NodePickerPopup({
         </div>
         {onUpload && !isFromVideo && (
           <>
-            <div className="my-2 h-px bg-white/[0.06]" />
+            <div className="my-2 h-px bg-[var(--canvas-hover)]" />
             <button
               type="button"
               onClick={() => { onUpload(); onDismiss(); }}
-              className="flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition hover:bg-white/[0.07] active:scale-[0.98]"
+              className="flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition hover:bg-[var(--canvas-hover)] active:scale-[0.98]"
             >
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-white/10">
-                <Upload className="h-5 w-5 text-white/80" />
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-[var(--canvas-hover)]">
+                <Upload className="h-5 w-5 text-[var(--canvas-text-80)]" />
               </div>
               <div className="min-w-0">
-                <div className="text-sm font-medium text-white">上传图片或视频</div>
-                <div className="text-xs text-white/40">自动创建节点到画布</div>
+                <div className="text-sm font-medium text-[var(--canvas-text)]">上传图片或视频</div>
+                <div className="text-xs text-[var(--canvas-text-40)]">自动创建节点到画布</div>
               </div>
             </button>
           </>
@@ -3817,7 +3834,7 @@ function ScissorsEdge({
         <path
           d={edgePath}
           fill="none"
-          stroke="rgba(255,255,255,0.04)"
+          stroke="var(--canvas-edge-glow)"
           strokeWidth={8}
           strokeLinecap="round"
         />
@@ -3827,7 +3844,7 @@ function ScissorsEdge({
         <path
           d={edgePath}
           fill="none"
-          stroke="rgba(255,255,255,0.2)"
+          stroke="var(--canvas-border-strong)"
           strokeWidth={3}
           strokeLinecap="round"
           style={{
@@ -3840,7 +3857,7 @@ function ScissorsEdge({
         <path
           d={edgePath}
           fill="none"
-          stroke="rgba(255,255,255,0.5)"
+          stroke="var(--canvas-border-heavy)"
           strokeWidth={1.5}
           strokeDasharray="16 2000"
           strokeLinecap="round"
@@ -3859,7 +3876,7 @@ function ScissorsEdge({
         id={id}
         path={edgePath}
         style={{
-          stroke: isHighlighted ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.22)",
+          stroke: isHighlighted ? "var(--canvas-border-heavy)" : "var(--canvas-border-strong)",
           strokeWidth: 1.5,
           transition: "stroke 0.35s ease",
         }}
@@ -3872,10 +3889,10 @@ function ScissorsEdge({
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
               pointerEvents: "all",
             }}
-            className="nodrag nopan absolute flex h-8 w-8 items-center justify-center rounded-full border border-white/30 bg-[#1c1c1e] transition hover:border-rose-400/60 hover:bg-rose-900/80"
+            className="nodrag nopan absolute flex h-8 w-8 items-center justify-center rounded-full border border-[var(--canvas-border-strong)] bg-[var(--canvas-surface-alt)] transition hover:border-rose-400/60 hover:bg-rose-900/80"
             onClick={() => setEdges((edges) => edges.filter((e) => e.id !== id))}
           >
-            <Scissors className="h-3.5 w-3.5 text-white/80" />
+            <Scissors className="h-3.5 w-3.5 text-[var(--canvas-text-80)]" />
           </button>
         </EdgeLabelRenderer>
       )}
@@ -3913,6 +3930,7 @@ export function ReactCanvasRoot({
     loadProjects,
     selectProject,
     saveProjectCanvas,
+    fetchProjectById,
     createProject,
     renameProject,
     deleteProject,
@@ -3933,6 +3951,7 @@ export function ReactCanvasRoot({
   const [viewportKey, setViewportKey] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [autoSaveError, setAutoSaveError] = useState<string | null>(null);
+  const lastSaveHashRef = useRef<number | null>(null);
   const [creditsLabel, setCreditsLabel] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string>("");
   const [avatarInitial, setAvatarInitial] = useState<string>("?");
@@ -3945,6 +3964,7 @@ export function ReactCanvasRoot({
   const [presetName, setPresetName] = useState("");
   const [renamingProjectId, setRenamingProjectId] = useState<string | null>(null);
   const [renamingProjectName, setRenamingProjectName] = useState("");
+  const [deleteConfirmProject, setDeleteConfirmProject] = useState<{ id: string; name: string } | null>(null);
   const [addPanelChars, setAddPanelChars] = useState<{ id: string; name: string; avatar: string }[]>([]);
   const [addPanelProducts, setAddPanelProducts] = useState<{ id: string; name: string; images: string }[]>([]);
   const [addPanelResourcesLoading, setAddPanelResourcesLoading] = useState(false);
@@ -3952,6 +3972,11 @@ export function ReactCanvasRoot({
   type ChatAttachment = { id: string; localUrl: string; type: "image" | "video"; name: string };
   const [chatAttachments, setChatAttachments] = useState<ChatAttachment[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isChatPanelDragOver, setIsChatPanelDragOver] = useState(false);
+  type ConvMessage = { id: string; role: "user" | "assistant"; content: string };
+  const [isChatSideCollapsed, setIsChatSideCollapsed] = useState(true);
+  const [convMessages, setConvMessages] = useState<ConvMessage[]>([]);
+  const convEndRef = useRef<HTMLDivElement>(null);
   const chatFileInputRef = useRef<HTMLInputElement>(null);
   const chatTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [nodePicker, setNodePicker] = useState<{
@@ -4311,7 +4336,7 @@ export function ReactCanvasRoot({
           toast.error((err as Error).message || "拆分失败");
         }
       },
-      reverseImagePrompt: async (nodeId: string) => {
+      reverseImagePrompt: async (nodeId: string, mode: "no-text" | "with-text" = "no-text") => {
         // Immediately create text node with loading state
         const source = nodesRef.current.find((n) => n.id === nodeId);
         const sx = source?.position.x ?? 0;
@@ -4335,7 +4360,7 @@ export function ReactCanvasRoot({
         setEdges((prev) => addEdge({ id: `e_${nodeId}_${newId}`, source: nodeId, target: newId, type: "smoothstep" }, prev));
         patchRuntimeData(nodeId, { isReversingPrompt: true });
         try {
-          const result = await reverseImagePrompt(nodeId);
+          const result = await reverseImagePrompt(nodeId, mode);
           patchRuntimeData(newId, { content: result, isLoadingPrompt: false });
           patchRuntimeData(nodeId, { isReversingPrompt: false });
         } catch (err) {
@@ -4410,6 +4435,27 @@ export function ReactCanvasRoot({
     // Skip re-hydrate only if same project AND has data
     if (last?.projectId === currentProject.id && last.hasData && hasData) return;
     lastHydratedRef.current = { projectId: currentProject.id, hasData };
+
+    // If no canvasData, fetch it first
+    if (!hasData) {
+      hydratingRef.current = true;
+      fetchProjectById(currentProject.id, false)
+        .then((project) => {
+          if (project?.canvasData) {
+            const normalized = normalizeRuntimeCanvasData(project.canvasData, initialPrompt);
+            setNodes(runtimeToFlowNodes(normalized.nodes));
+            setEdges(runtimeEdgesToFlowEdges(normalized.edges));
+            syncFromCanvasData(normalized.resources);
+            setViewport(normalized.viewport);
+            setViewportKey((key) => key + 1);
+          }
+        })
+        .finally(() => {
+          hydratingRef.current = false;
+        });
+      return;
+    }
+
     hydratingRef.current = true;
     const normalized = normalizeRuntimeCanvasData(currentProject.canvasData, initialPrompt);
     setNodes(runtimeToFlowNodes(normalized.nodes));
@@ -4421,24 +4467,31 @@ export function ReactCanvasRoot({
       hydratingRef.current = false;
     }, 300);
     return () => clearTimeout(timeout);
-  }, [currentProject, initialPrompt, syncFromCanvasData]);
+  }, [currentProject, initialPrompt, syncFromCanvasData, fetchProjectById]);
 
 
   useEffect(() => {
     if (!currentProjectId || hydratingRef.current) return;
     let cancelled = false;
     const timer = setTimeout(async () => {
+      const runtimeNodes = flowNodesToRuntime(nodes);
+      const runtimeEdges = flowEdgesToRuntime(edges);
+      // Cheap hash: skip save if nothing actually changed
+      const hashInput = JSON.stringify({ n: runtimeNodes, e: runtimeEdges, v: viewport, r: resources.map((r) => r.id) });
+      const hash = hashInput.split("").reduce((acc, ch) => (Math.imul(31, acc) + ch.charCodeAt(0)) | 0, 0);
+      if (hash === lastSaveHashRef.current) return;
+
       setIsSaving(true);
       try {
-        const runtimeNodes = flowNodesToRuntime(nodes);
         const thumbnail = extractThumbnailFromNodes(runtimeNodes);
         await saveProjectCanvas(currentProjectId, {
           nodes: runtimeNodes,
-          edges: flowEdgesToRuntime(edges),
+          edges: runtimeEdges,
           viewport,
           resources,
         }, thumbnail);
         if (!cancelled) {
+          lastSaveHashRef.current = hash;
           setAutoSaveError(null);
         }
       } catch (error) {
@@ -4506,6 +4559,26 @@ export function ReactCanvasRoot({
         const clientY = "clientY" in event ? event.clientY : (event as TouchEvent).changedTouches?.[0]?.clientY ?? 0;
         const sourceNodeId = connectionState.fromHandle?.nodeId ?? connectionState.fromNode?.id ?? null;
         const sourceNode = sourceNodeId ? nodesRef.current.find((n) => n.id === sourceNodeId) : null;
+
+        // Check if drop landed inside an existing node — if so, connect to it instead of opening the picker
+        if (sourceNodeId && rfInstanceRef.current) {
+          const flowPos = rfInstanceRef.current.screenToFlowPosition({ x: clientX, y: clientY });
+          const targetNode = nodesRef.current.find((n) => {
+            if (n.id === sourceNodeId) return false;
+            const w = (n.measured?.width as number | undefined) ?? 200;
+            const h = (n.measured?.height as number | undefined) ?? 200;
+            return (
+              flowPos.x >= n.position.x &&
+              flowPos.x <= n.position.x + w &&
+              flowPos.y >= n.position.y &&
+              flowPos.y <= n.position.y + h
+            );
+          });
+          if (targetNode) {
+            setEdges((prev) => addEdge({ id: `e_${sourceNodeId}_${targetNode.id}_${Date.now()}`, source: sourceNodeId, target: targetNode.id, type: "smoothstep" }, prev));
+            return;
+          }
+        }
 
         if (sourceNodeId) {
           const flowPos = rfInstanceRef.current?.screenToFlowPosition({ x: clientX, y: clientY }) ?? { x: clientX, y: clientY };
@@ -4618,6 +4691,31 @@ export function ReactCanvasRoot({
     });
   }, []);
 
+  const removeChatAttachment = useCallback((id: string) => {
+    setChatAttachments((prev) => {
+      const removed = prev.find((a) => a.id === id);
+      if (removed?.localUrl.startsWith("blob:")) URL.revokeObjectURL(removed.localUrl);
+      return prev.filter((a) => a.id !== id);
+    });
+  }, []);
+
+  const clearChatAttachments = useCallback(() => {
+    setChatAttachments((prev) => {
+      prev.forEach((a) => { if (a.localUrl.startsWith("blob:")) URL.revokeObjectURL(a.localUrl); });
+      return [];
+    });
+  }, []);
+
+  // Revoke all blob URLs when component unmounts to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      setChatAttachments((prev) => {
+        prev.forEach((a) => { if (a.localUrl.startsWith("blob:")) URL.revokeObjectURL(a.localUrl); });
+        return prev;
+      });
+    };
+  }, []);
+
   // Auto-resize chat textarea
   useEffect(() => {
     const el = chatTextareaRef.current;
@@ -4631,7 +4729,13 @@ export function ReactCanvasRoot({
       const trimmed = input.trim();
       if (!trimmed) return;
       setChatInput("");
-      setChatAttachments([]);
+      clearChatAttachments();
+
+      // Record in conversation history
+      setConvMessages((prev) => [
+        ...prev,
+        { id: `u_${Date.now()}`, role: "user" as const, content: trimmed },
+      ]);
 
       // Classify intent via agent API
       let intent: string = "mixed";
@@ -4741,7 +4845,7 @@ export function ReactCanvasRoot({
       }
 
     },
-    [chatAttachments, setNodes, setEdges],
+    [chatAttachments, setNodes, setEdges, clearChatAttachments, setConvMessages],
   );
 
   const handlePolish = useCallback(async () => {
@@ -4775,6 +4879,11 @@ export function ReactCanvasRoot({
       setIsPolishing(false);
     }
   }, [chatInput, isPolishing]);
+
+  // Auto-scroll conversation to bottom when new messages arrive
+  useEffect(() => {
+    convEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [convMessages]);
 
   const handleOpenAgentFromToolbar = useCallback(() => {
     if (typeof window !== "undefined") {
@@ -4955,15 +5064,17 @@ export function ReactCanvasRoot({
         newNodes = [i, v];
         newEdges = [edge(i, v)];
       } else if (tpl === "text-to-digitalhuman") {
-        const t = makeNode("text",       -320, 0, { label: "文本输入", content: "", placeholder: "输入数字人台词..." });
-        const d = makeNode("digitalhuman", 280, 0, { label: "数字人" });
-        newNodes = [t, d];
-        newEdges = [edge(t, d)];
+        const t = makeNode("text",       -320, -160, { label: "文本输入", content: "", placeholder: "输入数字人台词..." });
+        const a = makeNode("audio",      -320,  160, { label: "参考音频" });
+        const d = makeNode("digitalhuman", 280,    0, { label: "数字人" });
+        newNodes = [t, a, d];
+        newEdges = [edge(t, d), edge(a, d)];
       } else if (tpl === "viral") {
-        const v = makeNode("video",      -320, 0, { label: "参考视频" });
-        const s = makeNode("storyboard",  280, 0, { label: "爆款复刻" });
-        newNodes = [v, s];
-        newEdges = [edge(v, s)];
+        const v = makeNode("video",           -320, 0, { label: "参考视频" });
+        const s = makeNode("storyboard",       280, 0, { label: "分镜板" });
+        const tl = makeNode("timelinevideo",   880, 0, { label: "时间轴视频" });
+        newNodes = [v, s, tl];
+        newEdges = [edge(v, s), edge(s, tl)];
       }
 
       setNodes(newNodes);
@@ -5246,7 +5357,7 @@ export function ReactCanvasRoot({
 
   if (showProjectList && loadingProjects && !hasProjects) {
     return (
-      <div className="flex min-h-screen w-full items-center justify-center bg-[#05060c]">
+      <div className="flex min-h-screen w-full items-center justify-center bg-[var(--canvas-bg)]">
         <AiGlowSpinner size={96} />
       </div>
     );
@@ -5254,7 +5365,7 @@ export function ReactCanvasRoot({
 
   if (isDetailView && loadingProjects) {
     return (
-      <div className="flex min-h-screen w-full items-center justify-center bg-[#05060c]">
+      <div className="flex min-h-screen w-full items-center justify-center bg-[var(--canvas-bg)]">
         <AiGlowSpinner size={96} />
       </div>
     );
@@ -5262,7 +5373,7 @@ export function ReactCanvasRoot({
 
   if (showProjectList) {
     return (
-      <div className="min-h-screen bg-[#05060c] text-white">
+      <div className="min-h-screen bg-[var(--canvas-bg)] text-[var(--canvas-text)]">
         <div className="mx-auto flex h-full w-full max-w-6xl flex-col px-6 py-10">
           <div className="mb-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <h1 className="text-4xl font-semibold tracking-tight">无限画布</h1>
@@ -5271,7 +5382,7 @@ export function ReactCanvasRoot({
                 type="button"
                 onClick={handleReloadProjects}
                 disabled={loadingProjects}
-                className="inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-2 text-sm text-white/80 transition hover:border-white/50 disabled:cursor-not-allowed disabled:border-white/10 disabled:text-white/40"
+                className="inline-flex items-center gap-2 rounded-full border border-[var(--canvas-border-md)] px-4 py-2 text-sm text-[var(--canvas-text-80)] transition hover:border-[var(--canvas-border-heavy)] disabled:cursor-not-allowed disabled:border-[var(--canvas-border)] disabled:text-[var(--canvas-text-40)]"
               >
                 <RotateCcw
                   className={clsx("h-4 w-4", {
@@ -5302,7 +5413,7 @@ export function ReactCanvasRoot({
                 type="button"
                 onClick={handleCreateProject}
                 disabled={loadingProjects}
-                className="flex min-h-[260px] flex-col items-center justify-center rounded-[32px] border border-dashed border-white/20 bg-white/[0.02] text-white/70 transition hover:border-white/50 hover:text-white disabled:cursor-not-allowed disabled:border-white/10"
+                className="flex min-h-[260px] flex-col items-center justify-center rounded-[32px] border border-dashed border-[var(--canvas-border-md)] bg-[var(--canvas-hover-sm)] text-[var(--canvas-text-70)] transition hover:border-[var(--canvas-border-heavy)] hover:text-[var(--canvas-text)] disabled:cursor-not-allowed disabled:border-[var(--canvas-border)]"
               >
                 <Plus className="mb-3 h-8 w-8" />
                 <span className="text-base">新建项目</span>
@@ -5314,7 +5425,7 @@ export function ReactCanvasRoot({
                   tabIndex={0}
                   onClick={() => renamingProjectId !== project.id && selectProject(project.id)}
                   onKeyDown={(e) => e.key === "Enter" && renamingProjectId !== project.id && selectProject(project.id)}
-                  className="group relative flex min-h-[260px] cursor-pointer flex-col overflow-hidden rounded-[32px] border border-white/10 bg-[#1e1e20] text-left transition hover:border-white/40"
+                  className="group relative flex min-h-[260px] cursor-pointer flex-col overflow-hidden rounded-[32px] border border-[var(--canvas-border)] bg-[var(--canvas-surface)] text-left transition hover:border-[var(--canvas-border-heavy)]"
                 >
                   <div className="relative aspect-[4/3] w-full overflow-hidden">
                     {project.thumbnail ? (
@@ -5325,7 +5436,7 @@ export function ReactCanvasRoot({
                         className="h-full w-full object-cover"
                       />
                     ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-white/5 to-transparent text-white/40">
+                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-white/5 to-transparent text-[var(--canvas-text-40)]">
                         <Sparkles className="h-8 w-8" />
                       </div>
                     )}
@@ -5340,30 +5451,24 @@ export function ReactCanvasRoot({
                           setRenamingProjectId(project.id);
                           setRenamingProjectName(project.name || "");
                         }}
-                        className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/70 backdrop-blur transition hover:bg-white/20 hover:text-white"
+                        className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-[var(--canvas-text-70)] backdrop-blur transition hover:bg-[var(--canvas-hover-xl)] hover:text-[var(--canvas-text)]"
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
                       <button
                         type="button"
                         title="删除"
-                        onClick={async (e) => {
+                        onClick={(e) => {
                           e.stopPropagation();
-                          if (!window.confirm(`确定删除「${project.name || "未命名项目"}」？此操作不可撤销。`)) return;
-                          try {
-                            await deleteProject(project.id);
-                            toast.success("项目已删除");
-                          } catch {
-                            toast.error("删除失败，请重试");
-                          }
+                          setDeleteConfirmProject({ id: project.id, name: project.name || "未命名项目" });
                         }}
-                        className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/70 backdrop-blur transition hover:bg-rose-500/70 hover:text-white"
+                        className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-[var(--canvas-text-70)] backdrop-blur transition hover:bg-rose-500/70 hover:text-[var(--canvas-text)]"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   </div>
-                  <div className="flex flex-1 flex-col px-5 py-4">
+                  <div className="flex min-w-0 flex-1 flex-col px-5 py-4">
                     {renamingProjectId === project.id ? (
                       <input
                         autoFocus
@@ -5390,12 +5495,12 @@ export function ReactCanvasRoot({
                           setRenamingProjectId(null);
                         }}
                         onClick={(e) => e.stopPropagation()}
-                        className="w-full rounded-lg bg-white/10 px-2 py-1 text-lg font-medium text-white outline-none ring-1 ring-white/30 focus:ring-white/60"
+                        className="w-full rounded-lg bg-[var(--canvas-hover)] px-2 py-1 text-lg font-medium text-[var(--canvas-text)] outline-none ring-1 ring-[var(--canvas-border-strong)] focus:ring-[var(--canvas-border-heavy)]"
                       />
                     ) : (
-                      <p className="text-lg font-medium text-white">{project.name || "未命名项目"}</p>
+                      <p className="text-lg font-medium text-[var(--canvas-text)]">{project.name || "未命名项目"}</p>
                     )}
-                    <p className="mt-1 text-xs text-white/50">
+                    <p className="mt-1 text-xs text-[var(--canvas-text-50)]">
                       更新于 {new Date(project.updatedAt).toLocaleString()}
                     </p>
                   </div>
@@ -5403,12 +5508,12 @@ export function ReactCanvasRoot({
               ))}
             </div>
           ) : (
-            <div className="flex flex-1 flex-col items-center justify-center gap-4 rounded-[32px] border border-white/10 bg-white/[0.02] px-10 py-24 text-center">
-              <div className="rounded-full bg-white/5 p-4">
+            <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-4 rounded-[32px] border border-[var(--canvas-border)] bg-[var(--canvas-hover-sm)] px-10 py-24 text-center">
+              <div className="rounded-full bg-[var(--canvas-hover-sm)] p-4">
                 <Sparkles className="h-8 w-8 text-[#ffc94a]" />
               </div>
-              <p className="text-lg font-medium text-white">欢迎使用无限画布</p>
-              <p className="max-w-md text-sm text-white/60">
+              <p className="text-lg font-medium text-[var(--canvas-text)]">欢迎使用无限画布</p>
+              <p className="max-w-md text-sm text-[var(--canvas-text-60)]">
                 创建你的第一个项目，体验极简节点、AI 渲染与资源联动。
               </p>
               <button
@@ -5437,7 +5542,7 @@ export function ReactCanvasRoot({
       }
     `}</style>
     <div
-      className="flex h-full flex-col bg-[#05060c] text-white"
+      className="flex h-full flex-col bg-[var(--canvas-bg)] text-[var(--canvas-text)]"
       onKeyDownCapture={(e) => {
         if (e.key === " ") {
           const tag = (e.target as HTMLElement).tagName;
@@ -5476,10 +5581,10 @@ export function ReactCanvasRoot({
               <button
                 type="button"
                 onClick={handleBackToList}
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-[#1e1e20]/80 backdrop-blur transition hover:bg-white/10"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--canvas-surface-80)] backdrop-blur transition hover:bg-[var(--canvas-hover)]"
                 title="返回项目列表"
               >
-                <ArrowLeft className="h-4 w-4 text-white/70" />
+                <ArrowLeft className="h-4 w-4 text-[var(--canvas-text-70)]" />
               </button>
               {currentProject?.name != null && (
                 <ProjectNameEditor
@@ -5492,18 +5597,18 @@ export function ReactCanvasRoot({
             {/* Right: credits pill + avatar */}
             <div className="pointer-events-auto flex items-center gap-2">
               {creditsLabel != null && (
-                <div className="flex items-center gap-1.5 rounded-full bg-[#1e1e20]/80 px-3 py-1.5 text-sm text-white/80 backdrop-blur">
+                <div className="flex items-center gap-1.5 rounded-full bg-[var(--canvas-surface-80)] px-3 py-1.5 text-sm text-[var(--canvas-text-80)] backdrop-blur">
                   <Zap className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
                   <span>{creditsLabel}</span>
                 </div>
               )}
               {/* Avatar */}
-              <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-[#2a2a2c]">
+              <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-[var(--canvas-tooltip)]">
                 {avatarUrl ? (
                   /* eslint-disable-next-line @next/next/no-img-element */
                   <img src={avatarUrl} alt="avatar" className="h-full w-full object-cover" />
                 ) : (
-                  <span className="text-sm font-semibold text-white/70">{avatarInitial}</span>
+                  <span className="text-sm font-semibold text-[var(--canvas-text-70)]">{avatarInitial}</span>
                 )}
               </div>
             </div>
@@ -5513,8 +5618,8 @@ export function ReactCanvasRoot({
           {/* Drag-over overlay */}
           {isDragOver && (
             <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center">
-              <div className="absolute inset-4 rounded-[28px] border-2 border-dashed border-white/40 bg-white/[0.04] backdrop-blur-sm" />
-              <div className="relative flex flex-col items-center gap-2 text-white/60">
+              <div className="absolute inset-4 rounded-[28px] border-2 border-dashed border-[var(--canvas-border-heavy)] bg-[var(--canvas-hover-sm)] backdrop-blur-sm" />
+              <div className="relative flex flex-col items-center gap-2 text-[var(--canvas-text-60)]">
                 <Upload className="h-10 w-10" />
                 <span className="text-sm font-medium">松开鼠标上传图片或视频</span>
               </div>
@@ -5525,11 +5630,11 @@ export function ReactCanvasRoot({
             <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-6">
               {/* Hint row */}
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 rounded-full bg-[#1e1e20] px-4 py-2 text-sm font-medium text-white shadow-lg">
+                <div className="flex items-center gap-2 rounded-full bg-[var(--canvas-surface)] px-4 py-2 text-sm font-medium text-[var(--canvas-text)] shadow-lg">
                   <MousePointer2 className="h-4 w-4 text-blue-400" />
                   <span>双击</span>
                 </div>
-                <span className="text-sm text-white/50">画布自由生成，或选择快捷模板</span>
+                <span className="text-sm text-[var(--canvas-text-50)]">画布自由生成，或选择快捷模板</span>
               </div>
               {/* Quick-start buttons */}
               <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2">
@@ -5538,15 +5643,14 @@ export function ReactCanvasRoot({
                   { tpl: "text-to-video",         icon: Video,        label: "文生视频" },
                   { tpl: "image-to-video",        icon: Play,         label: "图生视频" },
                   { tpl: "text-to-digitalhuman",  icon: UserCircle2,  label: "文字转数字人" },
-                  { tpl: "viral",                 icon: Clapperboard, label: "爆款复刻" },
                 ] as const).map(({ tpl, icon: Icon, label }) => (
                   <button
                     key={tpl}
                     type="button"
                     onClick={() => handleApplyTemplate(tpl)}
-                    className="flex items-center gap-2 rounded-[14px] border border-white/10 bg-[#1e1e20] px-4 py-2.5 text-sm text-white/70 shadow-lg transition hover:border-white/25 hover:bg-white/10 hover:text-white active:scale-[0.97]"
+                    className="flex items-center gap-2 rounded-[14px] border border-[var(--canvas-border)] bg-[var(--canvas-surface)] px-4 py-2.5 text-sm text-[var(--canvas-text-70)] shadow-lg transition hover:border-[var(--canvas-border-md)] hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-[0.97]"
                   >
-                    <Icon className="h-4 w-4 text-white/50" />
+                    <Icon className="h-4 w-4 text-[var(--canvas-text-50)]" />
                     {label}
                   </button>
                 ))}
@@ -5558,9 +5662,12 @@ export function ReactCanvasRoot({
             nodes={nodesWithUpstream}
             edges={edges}
             fitView
-            className="bg-transparent text-white"
+            className="bg-transparent text-[var(--canvas-text)]"
             panOnDrag={isSpaceDown ? [0] : [1, 2]}
-            panOnScroll={false}
+            panOnScroll={true}
+            panOnScrollMode={"free" as any}
+            zoomOnScroll={false}
+            zoomOnPinch={true}
             selectionOnDrag={!isSpaceDown}
             selectionMode={SelectionMode.Partial}
             onNodesChange={onNodesChange}
@@ -5596,8 +5703,12 @@ export function ReactCanvasRoot({
             zoomOnDoubleClick={false}
             panActivationKeyCode={null}
             deleteKeyCode={["Delete", "Backspace"]}
+            // Only render nodes visible in the viewport — avoids DOM updates for
+            // off-screen nodes when state changes. React Flow v12 handles the
+            // culling logic internally with this flag.
+            onlyRenderVisibleElements={nodes.length > 20}
           >
-            <Background color="rgba(255,255,255,0.08)" variant={BackgroundVariant.Dots} style={{ display: showBackground ? undefined : "none" }} />
+            <Background color="var(--canvas-border-md)" variant={BackgroundVariant.Dots} style={{ display: showBackground ? undefined : "none" }} />
           </ReactFlow>
         </CanvasNodeContext.Provider>
         {/* Left floating toolbar */}
@@ -5606,7 +5717,7 @@ export function ReactCanvasRoot({
           onMouseLeave={() => setIsAddPanelOpen(false)}
         >
           {/* Toolbar pill — no border */}
-          <div className="pointer-events-auto flex flex-col items-center gap-1 rounded-[20px] bg-[#1e1e20] px-2 py-3 shadow-[0_8px_40px_rgba(0,0,0,0.6)]">
+          <div className="pointer-events-auto flex flex-col items-center gap-1 rounded-[20px] bg-[var(--canvas-surface)] px-2 py-3 shadow-[var(--canvas-shadow-md)]">
             {/* + toggle */}
             <ToolbarBtn
               icon={isAddPanelOpen ? X : Plus}
@@ -5616,15 +5727,14 @@ export function ReactCanvasRoot({
               onClick={() => setIsAddPanelOpen((v) => !v)}
               highlight
             />
-            <div className="my-1 h-px w-6 bg-white/10" />
+            <div className="my-1 h-px w-6 bg-[var(--canvas-hover)]" />
             {/* Quick templates */}
             <ToolbarBtn icon={ImageIcon}    label="文生图"       onClick={() => { handleApplyTemplate("text-to-image");        setIsAddPanelOpen(false); }} />
             <ToolbarBtn icon={Video}        label="文生视频"     onClick={() => { handleApplyTemplate("text-to-video");        setIsAddPanelOpen(false); }} />
             <ToolbarBtn icon={Play}         label="图生视频"     onClick={() => { handleApplyTemplate("image-to-video");       setIsAddPanelOpen(false); }} />
             <ToolbarBtn icon={UserCircle2}  label="文字转数字人" onClick={() => { handleApplyTemplate("text-to-digitalhuman"); setIsAddPanelOpen(false); }} />
             <ToolbarBtn icon={Clapperboard} label="分镜拆解"     onClick={() => { handleApplyTemplate("viral");               setIsAddPanelOpen(false); }} />
-            <ToolbarBtn icon={Zap}          label="一键复刻"     onClick={handleToolbarViralClick} />
-            <div className="my-1 h-px w-6 bg-white/10" />
+            <div className="my-1 h-px w-6 bg-[var(--canvas-hover)]" />
             {/* Presets button */}
             <ToolbarBtn icon={LayoutGrid} label="预设" onClick={() => setIsPresetPanelOpen((v) => !v)} active={isPresetPanelOpen} />
             {/* Upload — always at bottom */}
@@ -5633,8 +5743,8 @@ export function ReactCanvasRoot({
 
           {/* Inline add-node panel */}
           {isAddPanelOpen && (
-            <div className="pointer-events-auto ml-2 w-[280px] overflow-hidden rounded-[20px] bg-[#1a1a1c] p-3 shadow-[0_24px_80px_rgba(0,0,0,0.85)]" style={{ maxHeight: "80vh", overflowY: "auto" }}>
-              <p className="mb-2 px-2 text-sm text-white/40">添加节点</p>
+            <div className="pointer-events-auto ml-2 w-[280px] overflow-hidden rounded-[20px] bg-[var(--canvas-surface-deep)] p-3 shadow-[var(--canvas-shadow-lg)]" style={{ maxHeight: "80vh", overflowY: "auto" }}>
+              <p className="mb-2 px-2 text-sm text-[var(--canvas-text-40)]">添加节点</p>
               {NODE_PICKER_ITEMS.map((item) => (
                 <button
                   key={item.type}
@@ -5645,42 +5755,42 @@ export function ReactCanvasRoot({
                     }
                     setIsAddPanelOpen(false);
                   }}
-                  className="group flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition hover:bg-white/[0.07] active:scale-[0.98]"
+                  className="group flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition hover:bg-[var(--canvas-hover)] active:scale-[0.98]"
                 >
-                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-white/10">
-                    <item.icon className="h-5 w-5 text-white/80" />
+                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-[var(--canvas-hover)]">
+                    <item.icon className="h-5 w-5 text-[var(--canvas-text-80)]" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-white">{item.label}</p>
-                    <p className="overflow-hidden text-xs text-white/0 transition-all duration-150 group-hover:text-white/50">{item.desc}</p>
+                    <p className="text-sm font-medium text-[var(--canvas-text)]">{item.label}</p>
+                    <p className="overflow-hidden text-xs text-[var(--canvas-text)]/0 transition-all duration-150 group-hover:text-[var(--canvas-text-50)]">{item.desc}</p>
                   </div>
                 </button>
               ))}
-              <div className="my-2 h-px bg-white/[0.06]" />
-              <p className="mb-2 px-2 text-sm text-white/40">上传素材</p>
+              <div className="my-2 h-px bg-[var(--canvas-hover)]" />
+              <p className="mb-2 px-2 text-sm text-[var(--canvas-text-40)]">上传素材</p>
               <button
                 type="button"
                 onClick={() => { toolbarUploadRef.current?.click(); setIsAddPanelOpen(false); }}
-                className="flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition hover:bg-white/[0.07] active:scale-[0.98]"
+                className="flex w-full items-center gap-3 rounded-[14px] px-3 py-3 text-left transition hover:bg-[var(--canvas-hover)] active:scale-[0.98]"
               >
-                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-white/10">
-                  <Upload className="h-5 w-5 text-white/80" />
+                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-[var(--canvas-hover)]">
+                  <Upload className="h-5 w-5 text-[var(--canvas-text-80)]" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-white">上传图片或视频</p>
-                  <p className="text-xs text-white/40">自动创建节点到画布</p>
+                  <p className="text-sm font-medium text-[var(--canvas-text)]">上传图片或视频</p>
+                  <p className="text-xs text-[var(--canvas-text-40)]">自动创建节点到画布</p>
                 </div>
               </button>
-              <div className="my-2 h-px bg-white/[0.06]" />
+              <div className="my-2 h-px bg-[var(--canvas-hover)]" />
               {/* Resource library */}
-              <p className="mb-2 px-2 text-sm text-white/40">资源库</p>
+              <p className="mb-2 px-2 text-sm text-[var(--canvas-text-40)]">资源库</p>
               {addPanelResourcesLoading ? (
-                <div className="flex items-center justify-center py-4 text-xs text-white/30">加载中...</div>
+                <div className="flex items-center justify-center py-4 text-xs text-[var(--canvas-text-30)]">加载中...</div>
               ) : (
                 <>
                   {addPanelChars.length > 0 && (
                     <>
-                      <p className="mb-1.5 px-2 text-[10px] uppercase tracking-widest text-white/30">角色</p>
+                      <p className="mb-1.5 px-2 text-[10px] uppercase tracking-widest text-[var(--canvas-text-30)]">角色</p>
                       <div className="mb-2 flex flex-wrap gap-2 px-1">
                         {addPanelChars.slice(0, 8).map((char) => {
                           const handleCharClick = () => {
@@ -5698,8 +5808,8 @@ export function ReactCanvasRoot({
                           };
                           return (
                             <button key={char.id} type="button" title={char.name} onClick={handleCharClick}
-                              className="h-14 w-14 overflow-hidden rounded-[12px] bg-white/[0.07] transition hover:brightness-110 active:scale-95">
-                              {char.avatar ? <img src={char.avatar} alt={char.name} className="h-full w-full object-cover" draggable={false} /> : <UserCircle2 className="h-6 w-6 text-white/30" />}
+                              className="h-14 w-14 overflow-hidden rounded-[12px] bg-[var(--canvas-hover)] transition hover:brightness-110 active:scale-95">
+                              {char.avatar ? <img src={char.avatar} alt={char.name} className="h-full w-full object-cover" draggable={false} /> : <UserCircle2 className="h-6 w-6 text-[var(--canvas-text-30)]" />}
                             </button>
                           );
                         })}
@@ -5708,7 +5818,7 @@ export function ReactCanvasRoot({
                   )}
                   {addPanelProducts.length > 0 && (
                     <>
-                      <p className="mb-1.5 px-2 text-[10px] uppercase tracking-widest text-white/30">产品</p>
+                      <p className="mb-1.5 px-2 text-[10px] uppercase tracking-widest text-[var(--canvas-text-30)]">产品</p>
                       <div className="mb-1 flex flex-wrap gap-2 px-1">
                         {addPanelProducts.slice(0, 8).map((prod) => {
                           const thumbUrl = (() => { try { const imgs = JSON.parse(prod.images) as string[]; return Array.isArray(imgs) ? imgs[0] : undefined; } catch { return undefined; } })();
@@ -5727,8 +5837,8 @@ export function ReactCanvasRoot({
                           };
                           return (
                             <button key={prod.id} type="button" title={prod.name} onClick={handleProdClick}
-                              className="h-14 w-14 overflow-hidden rounded-[12px] bg-white/[0.07] transition hover:brightness-110 active:scale-95">
-                              {thumbUrl ? <img src={thumbUrl} alt={prod.name} className="h-full w-full object-cover" draggable={false} /> : <div className="flex h-full w-full items-center justify-center text-[10px] text-white/30 text-center px-1">{prod.name.slice(0, 4)}</div>}
+                              className="h-14 w-14 overflow-hidden rounded-[12px] bg-[var(--canvas-hover)] transition hover:brightness-110 active:scale-95">
+                              {thumbUrl ? <img src={thumbUrl} alt={prod.name} className="h-full w-full object-cover" draggable={false} /> : <div className="flex h-full w-full items-center justify-center text-[10px] text-[var(--canvas-text-30)] text-center px-1">{prod.name.slice(0, 4)}</div>}
                             </button>
                           );
                         })}
@@ -5736,7 +5846,7 @@ export function ReactCanvasRoot({
                     </>
                   )}
                   {addPanelChars.length === 0 && addPanelProducts.length === 0 && (
-                    <p className="px-2 py-2 text-xs text-white/20">暂无角色或产品资源</p>
+                    <p className="px-2 py-2 text-xs text-[var(--canvas-text-20)]">暂无角色或产品资源</p>
                   )}
                 </>
               )}
@@ -5745,8 +5855,8 @@ export function ReactCanvasRoot({
 
           {/* Preset panel */}
           {isPresetPanelOpen && (
-            <div className="pointer-events-auto ml-2 w-[320px] overflow-hidden rounded-[20px] bg-[#1a1a1c] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.85)]" style={{ maxHeight: "80vh", overflowY: "auto" }}>
-              <p className="mb-3 text-sm font-medium text-white">预设管理</p>
+            <div className="pointer-events-auto ml-2 w-[320px] overflow-hidden rounded-[20px] bg-[var(--canvas-surface-deep)] p-4 shadow-[var(--canvas-shadow-lg)]" style={{ maxHeight: "80vh", overflowY: "auto" }}>
+              <p className="mb-3 text-sm font-medium text-[var(--canvas-text)]">预设管理</p>
               {selectedNodeIds.size > 0 && (
                 <div className="mb-3 space-y-2">
                   <input
@@ -5754,45 +5864,45 @@ export function ReactCanvasRoot({
                     value={presetName}
                     onChange={(e) => setPresetName(e.target.value)}
                     placeholder="输入预设名称"
-                    className="w-full rounded-lg bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 outline-none"
+                    className="w-full rounded-lg bg-[var(--canvas-hover)] px-3 py-2 text-sm text-[var(--canvas-text)] placeholder:text-[var(--canvas-text-40)] outline-none"
                   />
                   <div className="flex gap-2">
                     <button
                       type="button"
                       onClick={handleSavePreset}
-                      className="flex-1 rounded-lg bg-white/20 px-3 py-2 text-sm text-white transition hover:bg-white/30"
+                      className="flex-1 rounded-lg bg-[var(--canvas-hover-xl)] px-3 py-2 text-sm text-[var(--canvas-text)] transition hover:bg-white/30"
                     >
                       保存预设
                     </button>
                     <button
                       type="button"
                       onClick={handleBatchDownload}
-                      className="flex-1 rounded-lg bg-white/20 px-3 py-2 text-sm text-white transition hover:bg-white/30"
+                      className="flex-1 rounded-lg bg-[var(--canvas-hover-xl)] px-3 py-2 text-sm text-[var(--canvas-text)] transition hover:bg-white/30"
                     >
                       批量下载
                     </button>
                   </div>
-                  <div className="h-px bg-white/10" />
+                  <div className="h-px bg-[var(--canvas-hover)]" />
                 </div>
               )}
-              <p className="mb-2 text-xs text-white/40">已保存的预设</p>
+              <p className="mb-2 text-xs text-[var(--canvas-text-40)]">已保存的预设</p>
               {presets.length === 0 ? (
-                <p className="py-4 text-center text-xs text-white/30">暂无预设</p>
+                <p className="py-4 text-center text-xs text-[var(--canvas-text-30)]">暂无预设</p>
               ) : (
                 <div className="space-y-2">
                   {presets.map((preset) => (
-                    <div key={preset.id} className="flex items-center justify-between rounded-lg bg-white/[0.07] p-2">
+                    <div key={preset.id} className="flex items-center justify-between rounded-lg bg-[var(--canvas-hover)] p-2">
                       <button
                         type="button"
                         onClick={() => handleLoadPreset(preset.id)}
-                        className="flex-1 text-left text-xs text-white/80 transition hover:text-white"
+                        className="flex-1 text-left text-xs text-[var(--canvas-text-80)] transition hover:text-[var(--canvas-text)]"
                       >
                         {preset.name}
                       </button>
                       <button
                         type="button"
                         onClick={() => deletePreset(preset.id)}
-                        className="text-white/40 transition hover:text-rose-400"
+                        className="text-[var(--canvas-text-40)] transition hover:text-rose-400"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -5807,11 +5917,11 @@ export function ReactCanvasRoot({
         <input ref={toolbarUploadRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleToolbarUpload} />
         {/* Bottom-left zoom control bar */}
         <div className="pointer-events-none absolute bottom-4 left-[76px] z-20">
-          <div className="pointer-events-auto flex items-center gap-1 rounded-full bg-[#1e1e20] px-2 py-2 shadow-[0_8px_40px_rgba(0,0,0,0.6)]">
+          <div className="pointer-events-auto flex items-center gap-1 rounded-full bg-[var(--canvas-surface)] px-2 py-2 shadow-[var(--canvas-shadow-md)]">
             <button
               type="button"
               onClick={() => rfInstanceRef.current?.fitView({ padding: 0.15, duration: 300 })}
-              className="flex h-8 w-8 items-center justify-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white"
+              className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)]"
               title="适应屏幕"
             >
               <Locate className="h-4 w-4" />
@@ -5821,7 +5931,7 @@ export function ReactCanvasRoot({
               onClick={() => setShowBackground((v) => !v)}
               className={clsx(
                 "flex h-8 w-8 items-center justify-center rounded-full transition",
-                showBackground ? "text-white/90 hover:bg-white/10" : "text-white/30 hover:bg-white/10 hover:text-white/60",
+                showBackground ? "text-[var(--canvas-text-90)] hover:bg-[var(--canvas-hover)]" : "text-[var(--canvas-text-30)] hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text-60)]",
               )}
               title={showBackground ? "隐藏背景网格" : "显示背景网格"}
             >
@@ -5830,7 +5940,7 @@ export function ReactCanvasRoot({
             <button
               type="button"
               onClick={() => rfInstanceRef.current?.fitView({ padding: 0.15, duration: 300 })}
-              className="flex h-8 w-8 items-center justify-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white"
+              className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)]"
               title="居中所有节点"
             >
               <Scan className="h-4 w-4" />
@@ -5847,133 +5957,172 @@ export function ReactCanvasRoot({
                   rfInstanceRef.current?.setViewport({ ...viewport, zoom });
                   setViewport((prev) => ({ ...prev, zoom }));
                 }}
-                className="h-1 w-24 cursor-pointer rounded-full accent-white"
-                style={{ accentColor: "white" }}
+                className="h-1 w-24 cursor-pointer rounded-full"
+                style={{ accentColor: "var(--tenant-primary)" }}
               />
             </div>
           </div>
         </div>
-        {/* Bottom AI chat panel */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center px-4">
+        {/* Right-side AI chat panel — Gemini design language */}
+        {!isChatSideCollapsed && (
           <div
-            className="pointer-events-auto w-full max-w-2xl"
-            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(true); }}
-            onDragLeave={(e) => { e.stopPropagation(); if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragOver(false); }}
-            onDrop={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setIsDragOver(false);
-              if (e.dataTransfer.files.length) handleChatAttach(e.dataTransfer.files);
-            }}
+            className="pointer-events-auto absolute right-0 top-0 h-full w-[380px] z-30 flex flex-col bg-[var(--canvas-panel)] backdrop-blur-2xl shadow-[var(--canvas-shadow-panel)]"
+            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsChatPanelDragOver(true); setIsDragOver(false); }}
+            onDragLeave={(e) => { e.stopPropagation(); if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsChatPanelDragOver(false); }}
+            onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setIsChatPanelDragOver(false); if (e.dataTransfer.files.length) handleChatAttach(e.dataTransfer.files); }}
           >
-            {isDragOver ? (
-              <div className="flex min-h-[120px] items-center justify-center gap-3 rounded-[20px] border-2 border-dashed border-blue-400/60 bg-blue-500/10 px-5 py-8 shadow-[0_8px_40px_rgba(0,0,0,0.7)]">
-                <Paperclip className="h-5 w-5 text-blue-400/80" />
-                <span className="text-sm text-blue-300/80">将文件拖放到此处</span>
+
+            {/* Header — no line, just spacing */}
+            <div className="flex items-center gap-2 px-5 pt-5 pb-3 shrink-0">
+              <span className="flex-1 text-[15px] font-semibold text-[var(--canvas-text-90)] truncate">
+                {currentProject?.name || "AI 助手"}
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsChatSideCollapsed(true)}
+                title="收起"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--canvas-text-35)] transition-all hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text-70)]"
+              >
+                <X className="h-[18px] w-[18px]" />
+              </button>
+            </div>
+
+            {/* Panel-level drag overlay */}
+            {isChatPanelDragOver && (
+              <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center rounded-r-none">
+                <div className="absolute inset-3 rounded-[20px] border-2 border-dashed border-[var(--canvas-border-strong)] bg-[var(--canvas-hover-sm)]" />
+                <div className="relative flex flex-col items-center gap-2 text-[var(--canvas-text-50)]">
+                  <Upload className="h-8 w-8" />
+                  <span className="text-sm">松开上传</span>
+                </div>
               </div>
-            ) : (
-              <div className="rounded-[20px] bg-[#1a1a1c] px-5 pt-4 pb-3 shadow-[0_8px_40px_rgba(0,0,0,0.7)]">
-                {/* Attachment thumbnails */}
+            )}
+
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto px-5 py-2 space-y-5 [scrollbar-width:none]">
+              {convMessages.length === 0 && (
+                <p className="text-center text-[13px] text-[var(--canvas-text-20)] mt-12 leading-relaxed">
+                  描述你想创作的内容<br />我来帮你搭建节点
+                </p>
+              )}
+              {convMessages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={msg.role === "user" ? "flex justify-end" : "flex justify-start items-start gap-2.5"}
+                >
+                  {msg.role === "user" ? (
+                    <div className="max-w-[85%] rounded-[20px] rounded-tr-[6px] bg-[var(--canvas-hover)] px-4 py-2.5 text-[14px] leading-relaxed text-[var(--canvas-text-90)]">
+                      {msg.content}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#4285f4] to-[#9b59b6]">
+                        <Sparkles className="h-3 w-3 text-[var(--canvas-text)]" />
+                      </div>
+                      <div className="max-w-[85%] text-[14px] leading-relaxed text-[var(--canvas-text-70)]">
+                        {msg.content}
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+              <div ref={convEndRef} />
+            </div>
+
+            {/* Input pill — Gemini style, no top border */}
+            <div className="shrink-0 px-4 pb-5 pt-3">
+              <div
+                className="rounded-[24px] bg-[var(--canvas-panel-header)] px-4 pt-3.5 pb-3"
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onDragLeave={(e) => { e.stopPropagation(); }}
+                onDrop={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              >
                 {chatAttachments.length > 0 && (
-                  <div className="mb-3 flex flex-wrap gap-2">
+                  <div className="mb-2 flex flex-wrap gap-2">
                     {chatAttachments.map((att) => (
                       <div key={att.id} className="group/thumb relative">
                         {att.type === "image" ? (
-                          /* eslint-disable-next-line @next/next/no-img-element */
-                          <img
-                            src={att.localUrl}
-                            alt={att.name}
-                            className="h-[72px] w-[72px] rounded-[10px] object-cover"
-                          />
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={att.localUrl} alt={att.name} className="h-14 w-14 rounded-xl object-cover" />
                         ) : (
-                          <div className="flex h-[72px] w-[72px] items-center justify-center rounded-[10px] bg-white/10">
-                            <Play className="h-8 w-8 text-white/40" />
+                          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-[var(--canvas-hover)]">
+                            <Play className="h-5 w-5 text-[var(--canvas-text-40)]" />
                           </div>
                         )}
                         <button
                           type="button"
-                          onClick={() => setChatAttachments((prev) => prev.filter((a) => a.id !== att.id))}
-                          className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-white/20 text-white/70 opacity-0 transition hover:bg-white/40 group-hover/thumb:opacity-100"
+                          onClick={() => removeChatAttachment(att.id)}
+                          className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--canvas-btn)] text-[var(--canvas-text-60)] opacity-0 transition hover:bg-[var(--canvas-hover-xl)] group-hover/thumb:opacity-100"
                         >
-                          <X className="h-3 w-3" />
+                          <X className="h-2.5 w-2.5" />
                         </button>
                       </div>
                     ))}
                   </div>
                 )}
-                {isPolishing ? (
-                  <div className="animate-pulse space-y-2.5 py-1" style={{ minHeight: 24 }}>
-                    <div className="h-2.5 w-full rounded-full bg-white/20" />
-                    <div className="h-2.5 w-[62%] rounded-full bg-white/15" />
-                    <div className="h-2.5 w-[38%] rounded-full bg-white/10" />
-                  </div>
-                ) : (
-                  <textarea
-                    ref={chatTextareaRef}
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        void handleChatSend(chatInput);
-                      }
-                    }}
-                    placeholder="描述你想创作的内容…"
-                    rows={1}
-                    className="w-full resize-none bg-transparent text-sm text-white outline-none placeholder:text-white/40"
-                    style={{ minHeight: 24, maxHeight: 240, overflowY: "auto", transition: "height 0.15s ease" }}
-                  />
-                )}
+                <textarea
+                  ref={chatTextareaRef}
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void handleChatSend(chatInput);
+                    }
+                  }}
+                  placeholder="描述想法，或框选节点添加上下文..."
+                  rows={1}
+                  className="w-full resize-none bg-transparent text-[14px] text-[var(--canvas-text-90)] outline-none placeholder:text-[var(--canvas-text-30)] leading-relaxed"
+                  style={{ minHeight: 24, maxHeight: 160, overflowY: "auto" }}
+                />
                 <div className="mt-3 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-1">
                     <button
                       type="button"
                       onClick={() => chatFileInputRef.current?.click()}
-                      className="flex h-7 w-7 items-center justify-center rounded-full text-white/50 transition hover:bg-white/10 hover:text-white"
-                      title="上传图片或视频"
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--canvas-text-35)] transition-all hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text-60)]"
+                      title="上传附件"
                     >
-                      <Plus className="h-4 w-4" />
+                      <Paperclip className="h-[17px] w-[17px]" />
                     </button>
                     <button
                       type="button"
                       disabled={!chatInput.trim() || isPolishing}
                       onClick={handlePolish}
-                      className="flex items-center gap-1.5 text-sm text-white/50 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                      className="flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] text-[var(--canvas-text-35)] transition-all hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text-60)] disabled:cursor-not-allowed disabled:opacity-25"
                     >
-                      {isPolishing ? (
-                        <svg className="h-3.5 w-3.5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                        </svg>
-                      ) : (
-                        <Sparkles className="h-3.5 w-3.5" />
-                      )}
-                      AI 润色
+                      <Sparkles className="h-3.5 w-3.5" />
+                      润色
                     </button>
                   </div>
                   <button
                     type="button"
                     disabled={!chatInput.trim() && chatAttachments.length === 0}
                     onClick={() => void handleChatSend(chatInput)}
-                    className="flex h-8 w-8 items-center justify-center rounded-full bg-[#ffc94a] text-black transition hover:bg-[#ffd86f] disabled:cursor-not-allowed disabled:opacity-30"
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--tenant-primary)] text-[var(--tenant-primary-foreground)] transition-all hover:bg-[var(--tenant-primary-hover)] disabled:cursor-not-allowed disabled:opacity-20"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-[17px] w-[17px]">
                       <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
                     </svg>
                   </button>
                 </div>
               </div>
-            )}
-            <input
-              ref={chatFileInputRef}
-              type="file"
-              accept="image/*,video/*"
-              multiple
-              className="hidden"
-              onChange={(e) => { if (e.target.files) handleChatAttach(e.target.files); e.target.value = ""; }}
-            />
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Floating orb — shown when side panel is collapsed */}
+        {isChatSideCollapsed && (
+          <button
+            type="button"
+            onClick={() => setIsChatSideCollapsed(false)}
+            title="展开 AI 助手"
+            className="pointer-events-auto absolute bottom-6 right-6 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--canvas-surface-alt)]/90 backdrop-blur-xl shadow-[var(--canvas-shadow-sm)] transition-all hover:scale-105 hover:shadow-[var(--canvas-shadow-md)] active:scale-95"
+          >
+            <div className="absolute inset-0 rounded-full bg-gradient-to-br from-[#4285f4]/30 to-[#9b59b6]/30" />
+            <MessageSquare className="relative h-6 w-6 text-[var(--canvas-text-80)]" />
+          </button>
+        )}
       </div>
     </div>
       {nodePicker && (
@@ -6004,16 +6153,19 @@ export function ReactCanvasRoot({
           } : undefined}
         />
       )}
-      {viralModalSource && (
-        <ViralReplicationModal
-          sourceNodeId={viralModalSource.nodeId}
-          referenceVideoUrl={viralModalSource.videoUrl}
-          screenX={viralModalSource.screenX}
-          screenY={viralModalSource.screenY}
-          preCreatedNodeIds={viralModalSource.preCreatedNodeIds}
-          onClose={() => setViralModalSource(null)}
-        />
-      )}
+      <ConfirmModal
+        isOpen={!!deleteConfirmProject}
+        onClose={() => setDeleteConfirmProject(null)}
+        onConfirm={async () => {
+          if (!deleteConfirmProject) return;
+          await deleteProject(deleteConfirmProject.id);
+          toast.success("项目已删除");
+        }}
+        title="删除项目"
+        message={`确定删除「${deleteConfirmProject?.name ?? ""}」？此操作不可撤销。`}
+        confirmText="删除"
+        isDanger
+      />
     </>
   );
 }

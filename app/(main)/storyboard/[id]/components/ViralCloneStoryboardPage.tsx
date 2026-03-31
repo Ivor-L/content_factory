@@ -198,6 +198,8 @@ export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryb
   const [regenVideoLoading, setRegenVideoLoading] = useState<Record<string, boolean>>({});
   const [batchImageLoading, setBatchImageLoading] = useState(false);
   const [batchVideoLoading, setBatchVideoLoading] = useState(false);
+  const [videoModel, setVideoModel] = useState("veo3.1-fast");
+  const [imageModel, setImageModel] = useState("nano-banana-pro");
   const [generatingTimedOut, setGeneratingTimedOut] = useState(false);
   const generatingStartRef = useRef<number | null>(null);
 
@@ -267,8 +269,6 @@ export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryb
   useEffect(() => {
     if (isPollingTerminal) return;
     void fetchLatestStatus();
-    const interval = window.setInterval(() => { void fetchLatestStatus(); }, 5000);
-    return () => window.clearInterval(interval);
   }, [fetchLatestStatus, isPollingTerminal]);
 
   // Timeout detection: if stuck in generating state for too long, re-enable buttons
@@ -293,7 +293,7 @@ export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryb
       const res = await fetch(`/api/storyboard/${task.id}/generate-images`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: task.imageModel || "nanoBananapro" }),
+        body: JSON.stringify({ model: imageModel || task.imageModel || "nano-banana-pro" }),
       });
       if (!res.ok) {
         const message = await readErrorMessage(res);
@@ -323,14 +323,14 @@ export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryb
     }
   };
 
-  const handleBatchGenerateVideos = async (options?: { allowTextVideo?: boolean }) => {
+  const handleBatchGenerateVideos = async (options?: { allowTextVideo?: boolean; model?: string }) => {
     setBatchVideoLoading(true);
     try {
       const res = await fetch(`/api/storyboard/${task.id}/generate-videos`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: task.videoModel || "veo_3_1-fast",
+          model: options?.model || videoModel || "veo_3_1-fast",
           allowTextVideo: options?.allowTextVideo ?? false,
         }),
       });
@@ -475,6 +475,10 @@ export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryb
         isVideoGenerating={task.status === "VIDEO_GENERATING" && !generatingTimedOut}
         onBatchGenerateImages={handleBatchGenerateImages}
         onBatchGenerateVideos={handleBatchGenerateVideos}
+        videoModel={videoModel}
+        onVideoModelChange={setVideoModel}
+        imageModel={imageModel}
+        onImageModelChange={setImageModel}
       />
 
       {/* Breakdown pending state */}

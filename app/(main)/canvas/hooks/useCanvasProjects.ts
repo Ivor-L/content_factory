@@ -109,6 +109,7 @@ export function useCanvasProjects(
   const [error, setError] = useState<string | null>(null);
   const initializedRef = useRef(hasInitialProjects);
   const currentProjectIdRef = useRef<string | null>(initialSelection ?? null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     currentProjectIdRef.current = currentProjectId;
@@ -123,10 +124,32 @@ export function useCanvasProjects(
 
   const loadProjects = useCallback(
     async (silent = false) => {
+      // Cancel previous request if still pending
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      abortControllerRef.current = new AbortController();
+
       if (!silent) setLoading(true);
       setError(null);
       try {
-        const payload = await requestJson("/api/canvas/projects?limit=50");
+        const authHeaders = await getAuthHeaders();
+        const response = await fetchWithTimeout(
+          "/api/canvas/projects?limit=50",
+          {
+            credentials: "include",
+            headers: {
+              "Content-Type": "application/json",
+              ...authHeaders,
+            },
+            signal: abortControllerRef.current.signal,
+          },
+          DEFAULT_TIMEOUT_MS,
+        );
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload?.error?.message || response.statusText || "Request failed");
+        }
         const rows = Array.isArray(payload.data) ? payload.data : [];
         setProjects(rows);
         const previousSelection = currentProjectIdRef.current;
@@ -139,6 +162,10 @@ export function useCanvasProjects(
           setCurrentProjectId(autoSelectFirstProject && rows.length > 0 ? rows[0].id : null);
         }
       } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") {
+          // Request was cancelled, don't set error
+          return;
+        }
         const message = err instanceof Error ? err.message : "加载项目失败";
         setError(message);
       } finally {
@@ -152,7 +179,12 @@ export function useCanvasProjects(
   useEffect(() => {
     const silent = initializedRef.current;
     void loadProjects(silent);
-  }, [loadProjects]);
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   const fetchProjectById = useCallback(
     async (projectId: string, silent = true) => {

@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Canvas textarea text selection highlight */
+.react-flow__node textarea::selection,
+.react-flow__node input::selection {
+  background-color: rgba(59, 130, 246, 0.5);
+  color: inherit;
+}
+
 @keyframes shimmer-sweep {
   0%   { transform: translateX(-100%) skewX(-15deg); }
   100% { transform: translateX(250%) skewX(-15deg); }
@@ -14,6 +21,96 @@ html,
 body,
 :root {
   height: 100%;
+}
+
+/* ─── Canvas surface tokens — Gemini light / dark ─────────────────────────── */
+:root {
+  --canvas-bg: #EEF2FA;
+  --canvas-surface: #FFFFFF;
+  --canvas-surface-80: rgba(255, 255, 255, 0.80);
+  --canvas-surface-alt: #F8F9FA;
+  --canvas-surface-deep: #FFFFFF;
+  --canvas-menu: #FFFFFF;
+  --canvas-tooltip: #FFFFFF;
+  --canvas-panel: rgba(255, 255, 255, 0.96);
+  --canvas-panel-header: #F1F3F4;
+  --canvas-btn: #E8EAED;
+  --canvas-hover-sm: rgba(0, 0, 0, 0.04);
+  --canvas-hover: rgba(0, 0, 0, 0.06);
+  --canvas-hover-md: rgba(0, 0, 0, 0.09);
+  --canvas-hover-lg: rgba(0, 0, 0, 0.14);
+  --canvas-hover-xl: rgba(0, 0, 0, 0.20);
+  --canvas-border: rgba(0, 0, 0, 0.08);
+  --canvas-border-md: rgba(0, 0, 0, 0.13);
+  --canvas-border-strong: rgba(0, 0, 0, 0.22);
+  --canvas-border-heavy: rgba(0, 0, 0, 0.40);
+  --canvas-border-accent: rgba(0, 0, 0, 0.65);
+  --canvas-text: #202124;
+  --canvas-text-90: rgba(32, 33, 36, 0.90);
+  --canvas-text-80: rgba(32, 33, 36, 0.80);
+  --canvas-text-70: rgba(32, 33, 36, 0.70);
+  --canvas-text-60: rgba(32, 33, 36, 0.60);
+  --canvas-text-50: rgba(32, 33, 36, 0.50);
+  --canvas-text-40: rgba(32, 33, 36, 0.40);
+  --canvas-text-35: rgba(32, 33, 36, 0.35);
+  --canvas-text-30: rgba(32, 33, 36, 0.30);
+  --canvas-text-25: rgba(32, 33, 36, 0.25);
+  --canvas-text-20: rgba(32, 33, 36, 0.20);
+  --canvas-text-15: rgba(32, 33, 36, 0.15);
+  --canvas-overlay: rgba(0, 0, 0, 0.40);
+  --canvas-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --canvas-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --canvas-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.10);
+  --canvas-shadow-xl: 0 12px 36px rgba(0, 0, 0, 0.12);
+  --canvas-shadow-panel: -4px 0 16px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --canvas-shadow-glow-sm: none;
+  --canvas-shadow-glow-md: none;
+  --canvas-edge-glow: transparent;
+}
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+.dark {
+  --canvas-bg: #05060c;
+  --canvas-surface: #1e1e20;
+  --canvas-surface-80: rgba(30, 30, 32, 0.80);
+  --canvas-surface-alt: #1c1c1e;
+  --canvas-surface-deep: #1a1a1c;
+  --canvas-menu: #232325;
+  --canvas-tooltip: #2a2a2d;
+  --canvas-panel: rgba(22, 22, 22, 0.95);
+  --canvas-panel-header: #1f1f1f;
+  --canvas-btn: #3a3a3e;
+  --canvas-hover-sm: rgba(255, 255, 255, 0.03);
+  --canvas-hover: rgba(255, 255, 255, 0.05);
+  --canvas-hover-md: rgba(255, 255, 255, 0.08);
+  --canvas-hover-lg: rgba(255, 255, 255, 0.12);
+  --canvas-hover-xl: rgba(255, 255, 255, 0.20);
+  --canvas-border: rgba(255, 255, 255, 0.07);
+  --canvas-border-md: rgba(255, 255, 255, 0.12);
+  --canvas-border-strong: rgba(255, 255, 255, 0.20);
+  --canvas-border-heavy: rgba(255, 255, 255, 0.40);
+  --canvas-border-accent: rgba(255, 255, 255, 0.65);
+  --canvas-text: #e8eaed;
+  --canvas-text-90: rgba(232, 234, 237, 0.90);
+  --canvas-text-80: rgba(232, 234, 237, 0.80);
+  --canvas-text-70: rgba(232, 234, 237, 0.70);
+  --canvas-text-60: rgba(232, 234, 237, 0.60);
+  --canvas-text-50: rgba(232, 234, 237, 0.50);
+  --canvas-text-40: rgba(232, 234, 237, 0.40);
+  --canvas-text-35: rgba(232, 234, 237, 0.35);
+  --canvas-text-30: rgba(232, 234, 237, 0.30);
+  --canvas-text-25: rgba(232, 234, 237, 0.25);
+  --canvas-text-20: rgba(232, 234, 237, 0.20);
+  --canvas-text-15: rgba(232, 234, 237, 0.15);
+  --canvas-overlay: rgba(0, 0, 0, 0.60);
+  --canvas-shadow-sm: 0 8px 32px rgba(0, 0, 0, 0.70);
+  --canvas-shadow-md: 0 8px 40px rgba(0, 0, 0, 0.60);
+  --canvas-shadow-lg: 0 24px 80px rgba(0, 0, 0, 0.85);
+  --canvas-shadow-xl: 0 24px 80px rgba(0, 0, 0, 0.85);
+  --canvas-shadow-panel: -12px 0 40px rgba(0, 0, 0, 0.50);
+  --canvas-shadow-glow-sm: 0 0 10px rgba(255, 255, 255, 0.12);
+  --canvas-shadow-glow-md: 0 0 30px rgba(255, 255, 255, 0.20);
+  --canvas-edge-glow: rgba(255, 255, 255, 0.08);
 }
 
 :root {

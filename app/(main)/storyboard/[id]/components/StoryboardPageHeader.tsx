@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Loader2,
@@ -8,6 +8,7 @@ import {
   Video,
   ArrowLeft,
   Download,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTenant } from "@/hooks/useTenant";
@@ -32,7 +33,11 @@ interface StoryboardPageHeaderProps {
   isImageGenerating?: boolean;
   isVideoGenerating?: boolean;
   onBatchGenerateImages?: () => void;
-  onBatchGenerateVideos?: (options?: { allowTextVideo?: boolean }) => void;
+  onBatchGenerateVideos?: (options?: { allowTextVideo?: boolean; model?: string }) => void;
+  videoModel?: string;
+  onVideoModelChange?: (model: string) => void;
+  imageModel?: string;
+  onImageModelChange?: (model: string) => void;
   // Extra content rendered before 批量下载 (e.g. timeline action buttons)
   rightExtra?: React.ReactNode;
 }
@@ -53,10 +58,27 @@ export function StoryboardPageHeader({
   isVideoGenerating,
   onBatchGenerateImages,
   onBatchGenerateVideos,
+  videoModel = "veo3.1-fast",
+  onVideoModelChange,
+  imageModel = "nano-banana-pro",
+  onImageModelChange,
   rightExtra,
 }: StoryboardPageHeaderProps) {
   const router = useRouter();
   const { basePath } = useTenant();
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [showImageModelDropdown, setShowImageModelDropdown] = useState(false);
+
+  const videoModels = [
+    { value: "veo3.1-fast", label: "Veo 3.1 Fast" },
+    { value: "grok-video-3", label: "Grok 3" },
+  ];
+
+  const imageModels = [
+    { value: "nano-banana-2", label: "Nano Banana2" },
+    { value: "nano-banana-pro", label: "Banana Pro" },
+    { value: "seedream-4.5", label: "Seedream 4.5" },
+  ];
 
   return (
     <div className="sticky top-0 z-20 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-white/10">
@@ -111,6 +133,66 @@ export function StoryboardPageHeader({
         <div className="flex items-center gap-2 flex-1 justify-end">
           {showBatchActions && (
             <div className="flex items-center gap-2">
+              {/* Image model selector */}
+              <div className="relative">
+                <button
+                  onClick={() => { setShowImageModelDropdown(!showImageModelDropdown); setShowModelDropdown(false); }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-gray-600 dark:text-white/70 hover:bg-gray-50 dark:hover:bg-white/10 transition-colors"
+                >
+                  {imageModels.find(m => m.value === imageModel)?.label || imageModel}
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+                {showImageModelDropdown && (
+                  <div className="absolute top-full right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-white/10 rounded-lg shadow-lg z-50 min-w-[140px]">
+                    {imageModels.map(model => (
+                      <button
+                        key={model.value}
+                        onClick={() => {
+                          onImageModelChange?.(model.value);
+                          setShowImageModelDropdown(false);
+                        }}
+                        className={cn(
+                          "block w-full text-left px-3 py-2 text-xs hover:bg-gray-100 dark:hover:bg-white/10",
+                          imageModel === model.value && "bg-yellow-50 dark:bg-yellow-500/10 text-yellow-700 dark:text-yellow-400"
+                        )}
+                      >
+                        {model.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Video model selector */}
+              <div className="relative">
+                <button
+                  onClick={() => { setShowModelDropdown(!showModelDropdown); setShowImageModelDropdown(false); }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-gray-600 dark:text-white/70 hover:bg-gray-50 dark:hover:bg-white/10 transition-colors"
+                >
+                  {videoModels.find(m => m.value === videoModel)?.label || videoModel}
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+                {showModelDropdown && (
+                  <div className="absolute top-full right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-white/10 rounded-lg shadow-lg z-50 min-w-[140px]">
+                    {videoModels.map(model => (
+                      <button
+                        key={model.value}
+                        onClick={() => {
+                          onVideoModelChange?.(model.value);
+                          setShowModelDropdown(false);
+                        }}
+                        className={cn(
+                          "block w-full text-left px-3 py-2 text-xs hover:bg-gray-100 dark:hover:bg-white/10",
+                          videoModel === model.value && "bg-yellow-50 dark:bg-yellow-500/10 text-yellow-700 dark:text-yellow-400"
+                        )}
+                      >
+                        {model.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <button
                 onClick={onBatchGenerateImages}
                 disabled={batchImageLoading || isImageGenerating}
@@ -129,7 +211,7 @@ export function StoryboardPageHeader({
               </button>
 
               <button
-                onClick={() => onBatchGenerateVideos?.({ allowTextVideo: !allImagesReady })}
+                onClick={() => onBatchGenerateVideos?.({ allowTextVideo: !allImagesReady, model: videoModel })}
                 disabled={batchVideoLoading || isVideoGenerating}
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border",

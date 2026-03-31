@@ -562,6 +562,27 @@ function enrichRawPayload(data: Record<string, unknown>): Prisma.InputJsonValue 
   if (!base || typeof base !== "object" || Array.isArray(base)) return base;
   const existing = (base as Record<string, unknown>).type;
   if (existing) return base;
+
+  // Try to infer type from nested raw.type (e.g. Instagram Apify: raw.type = "Video")
+  // or from media_type field, before falling back to XHS CDN URL heuristic
+  const rawNested = (base as Record<string, unknown>).raw;
+  const nestedType =
+    typeof rawNested === "object" && rawNested !== null
+      ? (rawNested as Record<string, unknown>).type
+      : null;
+  const mediaType = (base as Record<string, unknown>).media_type;
+
+  if (typeof nestedType === "string" && nestedType) {
+    const normalized = nestedType.toLowerCase();
+    const mappedType = normalized === "video" ? "video" : normalized === "image" ? "image" : null;
+    if (mappedType) return { ...(base as Record<string, unknown>), type: mappedType } as Prisma.InputJsonValue;
+  }
+  if (typeof mediaType === "string" && mediaType) {
+    const normalized = mediaType.toLowerCase();
+    const mappedType = normalized.includes("video") ? "video" : normalized.includes("image") ? "image" : null;
+    if (mappedType) return { ...(base as Record<string, unknown>), type: mappedType } as Prisma.InputJsonValue;
+  }
+
   const coverUrl = extractViralReferenceMedia(data).coverUrl;
   const inferred = inferTypeFromCoverUrl(coverUrl);
   if (!inferred) return base;

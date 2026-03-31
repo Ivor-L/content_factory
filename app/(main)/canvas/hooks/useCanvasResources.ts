@@ -15,6 +15,8 @@ export type CanvasResourceRecord = {
 
 const generateId = () => `res_${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36)}`;
 
+const MAX_RESOURCES = 500;
+
 export function useCanvasResources(initialResources: CanvasResourceRecord[] = []) {
   const [resources, setResources] = useState<CanvasResourceRecord[]>(initialResources);
 
@@ -51,7 +53,10 @@ export function useCanvasResources(initialResources: CanvasResourceRecord[] = []
       duration: typeof record.duration === "number" ? record.duration : null,
       metadata: record.metadata || {},
     };
-    setResources((prev) => [normalized, ...prev.filter((item) => item.id !== normalized.id)]);
+    setResources((prev) => {
+      const deduped = prev.filter((item) => item.id !== normalized.id);
+      return [normalized, ...deduped].slice(0, MAX_RESOURCES);
+    });
     return normalized;
   }, []);
 

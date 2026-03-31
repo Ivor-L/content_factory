@@ -36,15 +36,12 @@ export async function POST(
       userId,
     });
 
-    // 1. Verify task exists and belongs to user
-    const task = await prisma.storyboardTask.findFirst({
-      where: {
-        id,
-        userId,
-      },
+    // 1. Verify task exists and belongs to user (if userId is assigned)
+    const task = await prisma.storyboardTask.findUnique({
+      where: { id },
     });
 
-    if (!task) {
+    if (!task || (task.userId && task.userId !== userId)) {
       return NextResponse.json(
         { error: "Task not found or unauthorized" },
         { status: 404 }

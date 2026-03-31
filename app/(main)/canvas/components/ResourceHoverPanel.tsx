@@ -40,7 +40,7 @@ export function ResourceHoverPanel({
     >
       {children}
       {open && (
-        <div className="absolute left-0 top-[calc(100%+8px)] z-20 w-72 rounded-2xl border border-white/10 bg-[#090a13] p-3 text-white shadow-xl">
+        <div className="absolute left-0 top-[calc(100%+8px)] z-20 w-72 rounded-2xl border border-white/10 bg-[var(--canvas-bg)] p-3 text-white shadow-xl">
           <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.2em] text-white/40">
             <span>{label}</span>
             <span>{resources.length}</span>

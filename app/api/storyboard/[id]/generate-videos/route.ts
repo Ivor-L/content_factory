@@ -10,25 +10,10 @@ import type { Prisma } from "@prisma/client";
  * POST /api/storyboard/[id]/generate-videos
  *
  * Calls yunwu.ai video API directly, then registers async polling.
- * Credits are deducted by yunwu.ai automatically via the user's API key.
  */
 
-const VEO_MODELS = new Set(["veo3", "veo3-fast", "veo_3_1-fast", "veo_3_1"]);
+const VEO_MODELS = new Set(["veo3.1-fast", "veo3.1", "veo3", "veo3-fast"]);
 const GROK_MODELS = new Set(["grok", "grok-video-3"]);
-
-/** Download a remote image URL and return a base64 data URL. */
-async function toBase64DataUrl(url: string): Promise<string> {
-  try {
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) return url;
-    const mimeType = (res.headers.get("content-type") || "image/jpeg").split(";")[0].trim();
-    const buffer = await res.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString("base64");
-    return `data:${mimeType};base64,${base64}`;
-  } catch {
-    return url;
-  }
-}
 
 export async function POST(
   req: NextRequest,
@@ -46,18 +31,18 @@ export async function POST(
     const body = await req.json();
     const {
       segmentIds,
-      model = "veo_3_1-fast",
+      model = "veo3.1-fast",
       allowTextVideo = false,
     } = body;
 
     console.log("[generate-videos] Request:", { task_id: id, segmentIds, model, userId });
 
-    // 1. Verify task exists and belongs to user
-    const task = await prisma.storyboardTask.findFirst({
-      where: { id, userId },
+    // 1. Verify task exists and belongs to user (if user ownership is enforced)
+    const task = await prisma.storyboardTask.findUnique({
+      where: { id },
       include: { product: true, character: true },
     });
-    if (!task) {
+    if (!task || (task.userId && task.userId !== userId)) {
       return NextResponse.json({ error: "Task not found or unauthorized" }, { status: 404 });
     }
 
@@ -98,7 +83,7 @@ export async function POST(
     const apiKey = await resolveUserApiKey({
       userId,
       explicitApiKey: contextApiKey,
-      allowDefaultFallback: false,
+      allowDefaultFallback: true,
     });
     if (!apiKey) {
       return NextResponse.json(
@@ -122,7 +107,6 @@ export async function POST(
     // 4. Submit each segment to yunwu.ai + register polling
     const triggers = targetSegments.map(async (segment) => {
       try {
-        // Build request body
         const isVeo = VEO_MODELS.has(model);
         const isGrok = GROK_MODELS.has(model);
 
@@ -133,21 +117,17 @@ export async function POST(
             model,
             prompt: segment.videoPrompt || segment.visualDescription || "",
             aspect_ratio: "9:16",
-            duration: segment.duration || 8,
             enhance_prompt: true,
             enable_upsample: true,
+            ...(segment.generatedImage ? { images: [segment.generatedImage] } : {}),
           };
-          // Convert first frame image URL to base64
-          if (segment.generatedImage) {
-            const base64Image = await toBase64DataUrl(segment.generatedImage);
-            upstreamBody.images = [base64Image];
-          }
         }
 
         // Submit to yunwu.ai
         const upstream = await fetch(videoEndpoint, {
           method: "POST",
           headers: {
+            "Accept": "application/json",
             "Content-Type": "application/json",
             "Authorization": `Bearer ${apiKey}`,
           },
@@ -168,6 +148,8 @@ export async function POST(
           throw new Error("yunwu.ai did not return a task_id");
         }
 
+        console.log(`[generate-videos] Submitted segment ${segment.id}, yunwu task_id: ${taskId}`);
+
         // Register async polling
         try {
           await fetch("https://api.atomx.top/tools/veo/poll/async", {
@@ -184,6 +166,7 @@ export async function POST(
               },
             }),
           });
+          console.log(`[generate-videos] Polling registered for segment ${segment.id}, webhook: ${webhookUrl}`);
         } catch (pollError) {
           console.error(`[generate-videos] register polling failed for segment ${segment.id}:`, pollError);
         }

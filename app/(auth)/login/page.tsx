@@ -103,6 +103,7 @@ export default function LoginPage() {
     try {
       const { error } = await supabase.auth.signInWithOtp({
         email,
+        options: { shouldCreateUser: false },
         // Removed emailRedirectTo to request an OTP code instead of a magic link
       });
 

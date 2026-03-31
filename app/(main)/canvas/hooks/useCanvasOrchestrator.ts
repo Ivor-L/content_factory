@@ -26,12 +26,7 @@ const VIDEO_POLL_INTERVAL_MS = 5000;
 const VIDEO_POLL_MAX_ATTEMPTS = 90;
 const AUDIO_POLL_INTERVAL_MS = 4000;
 const AUDIO_POLL_MAX_ATTEMPTS = 120;
-const DH_POLL_INTERVAL_MS = 6000;
-const DH_POLL_MAX_ATTEMPTS = 100;
-const SB_POLL_INTERVAL_MS = 5000;
-const SB_POLL_MAX_ATTEMPTS = 120;
-const GRID_POLL_INTERVAL_MS = 5000;
-const GRID_POLL_MAX_ATTEMPTS = 120;
+const REALTIME_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 type CanvasModels = ReturnType<typeof useCanvasModels>;
 
@@ -63,7 +58,7 @@ type UseCanvasOrchestratorResult = {
   runTextNode: (nodeId: string) => Promise<void>;
   runGridNode: (nodeId: string) => Promise<void>;
   splitGridNode: (nodeId: string) => Promise<string[]>;
-  reverseImagePrompt: (nodeId: string) => Promise<string>;
+  reverseImagePrompt: (nodeId: string, mode?: "no-text" | "with-text") => Promise<string>;
   uploadResource: (file: File, options: UploadOptions) => Promise<CanvasResourceRecord>;
 };
 
@@ -348,6 +343,8 @@ const REVERSE_IMAGE_PROMPT = [
   "4. \u4E0D\u8981\u52A0\u5F15\u53F7\uFF0C\u4E0D\u8981\u52A0\u7ED3\u5C3E\u603B\u7ED3\uFF0C\u53EA\u4FDD\u7559\u63D0\u793A\u8BCD\u672C\u8EAB\u3002",
 ].join("");
 
+const REVERSE_IMAGE_PROMPT_WITH_TEXT = "# Role\n你是一位精通视觉传达与提示词工程的顶级平面设计师。你的任务是将用户提供的参考图，拆解为一套极其专业、可直接用于 AI 生图（如 Midjourney, Stable Diffusion, Flux）的结构化 JSON 数据。\n\n# Constraints\n1. **仅输出 JSON 格式**：严禁输出任何开场白、解释性文字或结尾总结。\n2. **专业术语驱动**：必须使用平面设计（Layout）、摄影（Photography）及视觉心理学专业词汇（如：Rule of Thirds, Negative Space, Leading Lines, Chiaroscuro 等）。\n3. **第一视角描述**：所有描述应为具体的画面事实，严禁使用\"建议、这里可以、要求AI\"等第三方指导语言。\n4. **结构完整性**：必须涵盖视觉方案、摄影/人物细节、排版/版式、视觉逻辑四个核心维度。\n\n# Output JSON Structure (Standard)\n{\n  \"master_visual_brief\": \"整体设计风格、核心理念、色彩美学与情感基调的综合描述\",\n  \"photography_and_character\": {\n    \"character_specs\": \"样貌、发型、妆容等视觉特征\",\n    \"outfit_and_styling\": \"服装材质、配饰款式、穿着方式\",\n    \"pose_and_action\": \"精确的人物动态、关节指向、肌肉张力及表情细节（如：Contrapposto, 3/4 View）\",\n    \"camera_and_lighting\": \"摄影机位（如：Low Angle Shot）、镜头语言、光影布局与氛围渲染\"\n  },\n  \"graphic_design_layout\": {\n    \"structure\": \"版面构图逻辑（如：Grid System, Diagonal Composition）\",\n    \"elements\": \"各区域文案布局、装饰元素、背景纹理的具体设计样式\",\n    \"layering_and_depth\": \"图层前后关系（如：Foreground model overlapping background typography）\"\n  },\n  \"visual_logic_and_flow\": {\n    \"color_theory\": \"配色方案及其对视觉情绪的引导\",\n    \"eye_tracking\": \"视觉动线分析（如：Z-pattern, F-pattern）\",\n    \"balance\": \"画面重心分布与元素间的视觉张力平衡\"\n  },\n  \"raw_prompt_tags\": \"提取上述精华生成的英文生图标签组（Prompt Tags），用于直接复制生图\"\n}\n\n# Workflow\n1. 深度扫描参考图的视觉层次。\n2. 将图像信息转化为平面设计领域的专业描述。\n3. 按照定义的 JSON 结构填充内容，确保细节详实。\n4. 在 raw_prompt_tags 中将描述转化为高质量的英文 Prompt 关键词。\n\n请开始你的拆解：";
+
 export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): UseCanvasOrchestratorResult {
   const { getNode, getUpstreamInputs, patchRuntimeData, setNodeStatus, models, addResource } = options;
   const runningNodeIds = useRef(new Set<string>());
@@ -404,7 +401,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         const params = IMAGE_MODEL_PARAMS[model];
         let payload: Record<string, unknown>;
 
-        if (model === "nano-banana" || model === "nano-banana-2" || model === "gemini-3.1-pro-preview" || model === "nano-banana-pro") {
+        if (model === "nano-banana-2" || model === "gemini-3.1-pro-preview" || model === "nano-banana-pro") {
           // Gemini-backed models: prompt + ratio + optional image references
           payload = { model, prompt, aspect_ratio: normalizeAspectRatio(ratio) };
           if (references.length) payload.images = references;
@@ -878,29 +875,51 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
     [addResource, getNode, getUpstreamInputs, models, patchRuntimeData, pollAudioTask, pollSunoMusicTask, setNodeStatus],
   );
 
-  const pollDigitalHumanJob = useCallback(
-    async (videoId: string, nodeId: string) => {
-      for (let attempt = 0; attempt < DH_POLL_MAX_ATTEMPTS; attempt++) {
-        if (attempt > 0) {
-          await sleep(DH_POLL_INTERVAL_MS);
-        }
-        const data = await getJson(`/api/canvas/digital-human?videoId=${encodeURIComponent(videoId)}`);
-        const record = data as { status?: string; resultUrl?: string | null };
-        const status = String(record.status || "").toUpperCase();
-        patchRuntimeData(nodeId, {
-          dhVideoId: videoId,
-          dhStatus: status,
-          lastPolledAt: Date.now(),
-        });
-        if (record.resultUrl) {
-          return record.resultUrl;
-        }
-        if (["FAILED", "ERROR", "CANCELED"].includes(status)) {
-          throw new Error("数字人视频生成失败");
-        }
-      }
-      throw new Error("数字人视频生成超时，请稍后重试");
-    },
+  const waitForDigitalHumanJob = useCallback(
+    (videoId: string, nodeId: string): Promise<string> =>
+      new Promise((resolve, reject) => {
+        let done = false;
+        let timeoutId: ReturnType<typeof setTimeout>;
+
+        const settle = (fn: () => void) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timeoutId);
+          supabase.removeChannel(channel);
+          fn();
+        };
+
+        const channel = supabase
+          .channel(`canvas_dh_${videoId}`)
+          .on(
+            "postgres_changes",
+            { event: "UPDATE", schema: "public", table: "digital_human_videos", filter: `id=eq.${videoId}` },
+            (payload) => {
+              const row = payload.new as Record<string, unknown>;
+              const status = String(row.status || "").toUpperCase();
+              patchRuntimeData(nodeId, { dhVideoId: videoId, dhStatus: status });
+              if (row.result_url) {
+                settle(() => resolve(String(row.result_url)));
+              } else if (["FAILED", "ERROR", "CANCELED"].includes(status)) {
+                settle(() => reject(new Error("数字人视频生成失败")));
+              }
+            },
+          )
+          .subscribe();
+
+        // Race condition guard: check current status after subscribe
+        void getJson(`/api/canvas/digital-human?videoId=${encodeURIComponent(videoId)}`)
+          .then((data) => {
+            const record = data as { status?: string; resultUrl?: string | null };
+            const status = String(record.status || "").toUpperCase();
+            patchRuntimeData(nodeId, { dhVideoId: videoId, dhStatus: status });
+            if (record.resultUrl) settle(() => resolve(record.resultUrl!));
+            else if (["FAILED", "ERROR", "CANCELED"].includes(status)) settle(() => reject(new Error("数字人视频生成失败")));
+          })
+          .catch(() => {});
+
+        timeoutId = setTimeout(() => settle(() => reject(new Error("数字人视频生成超时，请稍后重试"))), REALTIME_TIMEOUT_MS);
+      }),
     [patchRuntimeData],
   );
 
@@ -961,7 +980,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
           throw new Error("未获取到数字人任务 ID");
         }
         patchRuntimeData(nodeId, { dhVideoId: videoId, dhStatus: "GENERATING" });
-        const resultUrl = await pollDigitalHumanJob(videoId, nodeId);
+        const resultUrl = await waitForDigitalHumanJob(videoId, nodeId);
         patchRuntimeData(nodeId, {
           outputUrl: resultUrl,
           dhStatus: "COMPLETED",
@@ -986,37 +1005,59 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         runningNodeIds.current.delete(nodeId);
       }
     },
-    [addResource, getNode, getUpstreamInputs, patchRuntimeData, pollDigitalHumanJob, setNodeStatus],
+    [addResource, getNode, getUpstreamInputs, patchRuntimeData, waitForDigitalHumanJob, setNodeStatus],
   );
 
-  const pollStoryboardTask = useCallback(
-    async (taskId: string, nodeId: string) => {
-      const TERMINAL_STATUSES = ["BREAKDOWN_COMPLETED", "COMPLETED", "BREAKDOWN_FAILED", "FAILED"];
-      for (let attempt = 0; attempt < SB_POLL_MAX_ATTEMPTS; attempt++) {
-        if (attempt > 0) {
-          await sleep(SB_POLL_INTERVAL_MS);
-        }
-        const data = await getJson(`/api/canvas/storyboard?taskId=${encodeURIComponent(taskId)}`);
-        const record = data as { status?: string; progress?: number; segments?: unknown[] };
-        const status = String(record.status || "").toUpperCase();
-        patchRuntimeData(nodeId, {
-          sbTaskId: taskId,
-          sbStatus: status,
-          sbProgress: record.progress ?? 0,
-          lastPolledAt: Date.now(),
-        });
-        if (status === "BREAKDOWN_COMPLETED" || status === "COMPLETED") {
-          return record.segments ?? [];
-        }
-        if (["BREAKDOWN_FAILED", "FAILED"].includes(status)) {
-          throw new Error("分镜拆解失败");
-        }
-        if (!TERMINAL_STATUSES.includes(status)) {
-          patchRuntimeData(nodeId, { sbSegments: record.segments ?? [] });
-        }
-      }
-      throw new Error("分镜拆解超时，请稍后重试");
-    },
+  const waitForStoryboardTask = useCallback(
+    (taskId: string, nodeId: string): Promise<unknown[]> =>
+      new Promise((resolve, reject) => {
+        let done = false;
+        let timeoutId: ReturnType<typeof setTimeout>;
+        const TERMINAL = ["BREAKDOWN_COMPLETED", "COMPLETED", "BREAKDOWN_FAILED", "FAILED"];
+
+        const settle = (fn: () => void) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timeoutId);
+          supabase.removeChannel(channel);
+          fn();
+        };
+
+        const channel = supabase
+          .channel(`canvas_sb_${taskId}`)
+          .on(
+            "postgres_changes",
+            { event: "UPDATE", schema: "public", table: "storyboard_tasks", filter: `id=eq.${taskId}` },
+            (payload) => {
+              const row = payload.new as Record<string, unknown>;
+              const s = String(row.status || "").toUpperCase();
+              patchRuntimeData(nodeId, { sbStatus: s, sbProgress: Number(row.progress) || 0 });
+              if (s === "BREAKDOWN_COMPLETED" || s === "COMPLETED") {
+                void getJson(`/api/canvas/storyboard?taskId=${encodeURIComponent(taskId)}`)
+                  .then((res) => settle(() => resolve((res as { segments?: unknown[] }).segments ?? [])))
+                  .catch(() => settle(() => resolve([])));
+              } else if (s === "BREAKDOWN_FAILED" || s === "FAILED") {
+                settle(() => reject(new Error("分镜拆解失败")));
+              }
+            },
+          )
+          .subscribe();
+
+        // Race condition guard
+        void getJson(`/api/canvas/storyboard?taskId=${encodeURIComponent(taskId)}`)
+          .then((data) => {
+            const rec = data as { status?: string; progress?: number; segments?: unknown[] };
+            const s = String(rec.status || "").toUpperCase();
+            patchRuntimeData(nodeId, { sbTaskId: taskId, sbStatus: s, sbProgress: rec.progress ?? 0 });
+            if (TERMINAL.includes(s)) {
+              if (s === "BREAKDOWN_COMPLETED" || s === "COMPLETED") settle(() => resolve(rec.segments ?? []));
+              else settle(() => reject(new Error("分镜拆解失败")));
+            }
+          })
+          .catch(() => {});
+
+        timeoutId = setTimeout(() => settle(() => reject(new Error("分镜拆解超时，请稍后重试"))), REALTIME_TIMEOUT_MS);
+      }),
     [patchRuntimeData],
   );
 
@@ -1059,7 +1100,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
           throw new Error("未获取到分镜任务 ID");
         }
         patchRuntimeData(nodeId, { sbTaskId: taskId, sbStatus: "BREAKDOWN_PENDING" });
-        const segments = await pollStoryboardTask(taskId, nodeId);
+        const segments = await waitForStoryboardTask(taskId, nodeId);
         patchRuntimeData(nodeId, {
           sbSegments: segments,
           sbStatus: "BREAKDOWN_COMPLETED",
@@ -1076,7 +1117,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         runningNodeIds.current.delete(nodeId);
       }
     },
-    [getNode, getUpstreamInputs, patchRuntimeData, pollStoryboardTask, setNodeStatus],
+    [getNode, getUpstreamInputs, patchRuntimeData, waitForStoryboardTask, setNodeStatus],
   );
 
   const runTextNode = useCallback(
@@ -1242,21 +1283,56 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
     [addResource],
   );
 
-  const pollGridTask = useCallback(
-    async (taskId: string, nodeId: string): Promise<string> => {
-      for (let attempt = 0; attempt < GRID_POLL_MAX_ATTEMPTS; attempt++) {
-        if (attempt > 0) await sleep(GRID_POLL_INTERVAL_MS);
-        const data = await getJson(`/api/canvas/grid?taskId=${encodeURIComponent(taskId)}`);
-        const record = data as { status?: string; progress?: number; storyboard_image_url?: string };
-        const status = String(record.status || "").toUpperCase();
-        patchRuntimeData(nodeId, { gridTaskId: taskId, gridProgress: record.progress ?? 0 });
-        if (status === "COMPLETED" && record.storyboard_image_url) {
-          return record.storyboard_image_url;
-        }
-        if (status === "FAILED") throw new Error("九宫格生成失败");
-      }
-      throw new Error("九宫格生成超时，请稍后重试");
-    },
+  const waitForGridTask = useCallback(
+    (taskId: string, nodeId: string): Promise<string> =>
+      new Promise((resolve, reject) => {
+        let done = false;
+        let timeoutId: ReturnType<typeof setTimeout>;
+
+        const settle = (fn: () => void) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timeoutId);
+          supabase.removeChannel(channel);
+          fn();
+        };
+
+        const checkRow = (status: string, imageUrl?: string, progress?: number) => {
+          const s = status.toUpperCase();
+          patchRuntimeData(nodeId, { gridTaskId: taskId, gridProgress: progress ?? 0 });
+          if (s === "COMPLETED" && imageUrl) {
+            settle(() => resolve(imageUrl));
+          } else if (s === "FAILED") {
+            settle(() => reject(new Error("九宫格生成失败")));
+          }
+        };
+
+        const channel = supabase
+          .channel(`canvas_grid_${taskId}`)
+          .on(
+            "postgres_changes",
+            { event: "UPDATE", schema: "public", table: "storyboard_tasks", filter: `id=eq.${taskId}` },
+            (payload) => {
+              const row = payload.new as Record<string, unknown>;
+              checkRow(
+                String(row.status || ""),
+                String(row.storyboard_image_url || row.cover_image || ""),
+                Number(row.progress) || 0,
+              );
+            },
+          )
+          .subscribe();
+
+        // Race condition guard
+        void getJson(`/api/canvas/grid?taskId=${encodeURIComponent(taskId)}`)
+          .then((data) => {
+            const rec = data as { status?: string; progress?: number; storyboard_image_url?: string };
+            checkRow(String(rec.status || ""), rec.storyboard_image_url, rec.progress);
+          })
+          .catch(() => {});
+
+        timeoutId = setTimeout(() => settle(() => reject(new Error("九宫格生成超时，请稍后重试"))), REALTIME_TIMEOUT_MS);
+      }),
     [patchRuntimeData],
   );
 
@@ -1317,7 +1393,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         if (!taskId) throw new Error("未获取到任务 ID");
 
         patchRuntimeData(nodeId, { gridTaskId: taskId });
-        const gridImageUrl = await pollGridTask(taskId, nodeId);
+        const gridImageUrl = await waitForGridTask(taskId, nodeId);
         patchRuntimeData(nodeId, { gridImageUrl, gridProgress: 100, lastCompletedAt: Date.now() });
         setNodeStatus(nodeId, "success");
         toast.success("九宫格生成完成");
@@ -1330,7 +1406,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         runningNodeIds.current.delete(nodeId);
       }
     },
-    [getNode, getUpstreamInputs, patchRuntimeData, pollGridTask, setNodeStatus],
+    [getNode, getUpstreamInputs, patchRuntimeData, waitForGridTask, setNodeStatus],
   );
 
   const GRID_SPLIT_POLL_INTERVAL_MS = 5000;
@@ -1407,7 +1483,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
   );
 
   const reverseImagePrompt = useCallback(
-    async (nodeId: string): Promise<string> => {
+    async (nodeId: string, mode: "no-text" | "with-text" = "no-text"): Promise<string> => {
       const node = getNode(nodeId);
       const runtimeData = (node?.data?.runtime?.data ?? {}) as Record<string, unknown>;
       const outputs = Array.isArray(runtimeData.outputs)
@@ -1421,9 +1497,10 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         if (apiKey) {
           await ensureCanvasCreditsAvailable(apiKey, "image-understanding", {});
         }
+        const prompt = mode === "with-text" ? REVERSE_IMAGE_PROMPT_WITH_TEXT : REVERSE_IMAGE_PROMPT;
         const response = await postJson("/api/canvas/image-understanding", {
           imageUrl,
-          prompt: REVERSE_IMAGE_PROMPT,
+          prompt,
           model: "gemini-3.1-flash-lite-preview",
         });
         if (apiKey) {

@@ -26,6 +26,7 @@ import {
   startTextToImageTask,
   startVideoReplicationTask,
 } from "../lib/api";
+import { supabase } from "@/lib/supabaseClient";
 import type {
   AppCanvasEdge,
   AppCanvasNode,
@@ -41,16 +42,12 @@ import type {
 } from "../types";
 
 const STORAGE_KEY = "canvas.studio.snapshot.v1";
-const POLL_INTERVAL = 3000;
-const MAX_POLLS = 120;
+const TASK_TIMEOUT_MS = 6 * 60 * 1000; // 6 minutes
 
 function createId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function createDefaultNodes(): AppCanvasNode[] {
   return [
@@ -340,29 +337,59 @@ export function CanvasStudio() {
         message: `任务已创建：${start.taskId}，等待回调...`,
       });
 
-      for (let attempt = 0; attempt < MAX_POLLS; attempt += 1) {
-        const task = await getCreativeTask(start.taskId);
-        if (task) {
-          const nextMessage = task.errorMessage || task.message || statusMessage(task.status);
-          patchNode(nodeId, {
-            status: task.status === "FAILED" ? "error" : "running",
-            message: nextMessage,
-          });
+      await new Promise<void>((resolve, reject) => {
+        let done = false;
+        let timeoutId: ReturnType<typeof setTimeout>;
 
-          if (task.status === "FAILED") {
-            throw new Error(task.errorMessage || "图文任务执行失败");
-          }
-          if (task.status === "COMPLETED" && Array.isArray(task.generatedImages) && task.generatedImages.length > 0) {
+        const settle = (fn: () => void) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timeoutId);
+          supabase.removeChannel(channel);
+          fn();
+        };
+
+        const onCompleted = (task: NonNullable<Awaited<ReturnType<typeof getCreativeTask>>>) => {
+          if (Array.isArray(task.generatedImages) && task.generatedImages.length > 0) {
             patchNode(nodeId, { status: "success", message: `已产出 ${task.generatedImages.length} 张图片` });
             createImageResultNode(nodeId, task.generatedImages, start.taskId);
             toast.success("图文节点执行完成");
-            return;
+            settle(resolve);
+          } else {
+            settle(() => reject(new Error("任务完成，但未生成图片")));
           }
-        }
-        await wait(POLL_INTERVAL);
-      }
+        };
 
-      throw new Error("任务轮询超时，请稍后在项目中心查看结果。");
+        const channel = supabase
+          .channel(`cs_image_${start.taskId}`)
+          .on("postgres_changes",
+            { event: "UPDATE", schema: "public", table: "creative_tasks", filter: `id=eq.${start.taskId}` },
+            (payload) => {
+              const row = payload.new as Record<string, unknown>;
+              const status = String(row.status || "");
+              const nextMessage = String(row.error_message || statusMessage(status));
+              patchNode(nodeId, { status: status === "FAILED" ? "error" : "running", message: nextMessage });
+              if (status === "FAILED") {
+                settle(() => reject(new Error(String(row.error_message || "图文任务执行失败"))));
+              } else if (status === "COMPLETED") {
+                void getCreativeTask(start.taskId)
+                  .then((t) => { if (t) onCompleted(t); else settle(() => reject(new Error("图文任务执行失败"))); })
+                  .catch(() => settle(() => reject(new Error("图文任务执行失败"))));
+              }
+            })
+          .subscribe();
+
+        // Race condition guard
+        void getCreativeTask(start.taskId)
+          .then((task) => {
+            if (!task) return;
+            if (task.status === "FAILED") settle(() => reject(new Error(task.errorMessage || "图文任务执行失败")));
+            else if (task.status === "COMPLETED") onCompleted(task);
+          })
+          .catch(() => {});
+
+        timeoutId = setTimeout(() => settle(() => reject(new Error("任务轮询超时，请稍后在项目中心查看结果。"))), TASK_TIMEOUT_MS);
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "图文节点执行失败";
       patchNode(nodeId, { status: "error", message });
@@ -400,33 +427,63 @@ export function CanvasStudio() {
         message: `任务已创建：${start.taskId}，等待生成...`,
       });
 
-      for (let attempt = 0; attempt < MAX_POLLS; attempt += 1) {
-        const task = await getVideoReplicationTask(start.taskId);
-        if (task) {
-          const normalized = (task.status || "").toLowerCase();
-          patchNode(nodeId, {
-            status: normalized === "failed" ? "error" : "running",
-            message: `状态：${task.status}`,
-          });
+      await new Promise<void>((resolve, reject) => {
+        let done = false;
+        let timeoutId: ReturnType<typeof setTimeout>;
 
-          if (normalized === "failed") {
-            throw new Error("视频任务失败，请检查 productId/scriptId 或 API 配置。");
-          }
-          if (normalized === "completed") {
-            const videoUrl = extractVideoUrl(task.result);
-            if (!videoUrl) {
-              throw new Error("任务完成，但未解析到视频 URL。");
+        const settle = (fn: () => void) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timeoutId);
+          supabase.removeChannel(channel);
+          fn();
+        };
+
+        const channel = supabase
+          .channel(`cs_video_${start.taskId}`)
+          .on("postgres_changes",
+            { event: "UPDATE", schema: "public", table: "replications", filter: `id=eq.${start.taskId}` },
+            (payload) => {
+              const row = payload.new as Record<string, unknown>;
+              const normalized = String(row.status || "").toLowerCase();
+              patchNode(nodeId, { status: normalized === "failed" ? "error" : "running", message: `状态：${row.status}` });
+              if (normalized === "failed") {
+                settle(() => reject(new Error("视频任务失败，请检查 productId/scriptId 或 API 配置。")));
+              } else if (normalized === "completed") {
+                const videoUrl = extractVideoUrl(row.result as Record<string, unknown> | undefined);
+                if (!videoUrl) {
+                  settle(() => reject(new Error("任务完成，但未解析到视频 URL。")));
+                } else {
+                  patchNode(nodeId, { status: "success", message: "视频已生成" });
+                  createVideoResultNode(nodeId, videoUrl, start.taskId);
+                  toast.success("视频节点执行完成");
+                  settle(resolve);
+                }
+              }
+            })
+          .subscribe();
+
+        // Race condition guard
+        void getVideoReplicationTask(start.taskId)
+          .then((task) => {
+            if (!task) return;
+            const normalized = (task.status || "").toLowerCase();
+            if (normalized === "failed") settle(() => reject(new Error("视频任务失败，请检查 productId/scriptId 或 API 配置。")));
+            else if (normalized === "completed") {
+              const videoUrl = extractVideoUrl(task.result);
+              if (!videoUrl) settle(() => reject(new Error("任务完成，但未解析到视频 URL。")));
+              else {
+                patchNode(nodeId, { status: "success", message: "视频已生成" });
+                createVideoResultNode(nodeId, videoUrl, start.taskId);
+                toast.success("视频节点执行完成");
+                settle(resolve);
+              }
             }
-            patchNode(nodeId, { status: "success", message: "视频已生成" });
-            createVideoResultNode(nodeId, videoUrl, start.taskId);
-            toast.success("视频节点执行完成");
-            return;
-          }
-        }
-        await wait(POLL_INTERVAL);
-      }
+          })
+          .catch(() => {});
 
-      throw new Error("视频任务轮询超时，请稍后在项目中心查看结果。");
+        timeoutId = setTimeout(() => settle(() => reject(new Error("视频任务轮询超时，请稍后在项目中心查看结果。"))), TASK_TIMEOUT_MS);
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "视频节点执行失败";
       patchNode(nodeId, { status: "error", message });

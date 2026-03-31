@@ -32,7 +32,7 @@ export const IMAGE_MODEL_PARAMS: Record<string, ImageModelParams> = {
     ratios: ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3", "21:9"],
     qualities: ["2K", "4K"],
   },
-  "nano-banana": {
+  "nano-banana-2": {
     ratios: [],   // no size param
     qualities: [],
   },
@@ -56,7 +56,7 @@ export const VIDEO_MODEL_PARAMS: Record<string, VideoModelParams> = {
     durations: ["10", "15"],
     durationSuffix: "s",
   },
-  "veo_3_1-fast": {
+  "veo3.1-fast": {
     orientationType: "aspect_ratio",
     orientationOptions: ["16:9", "9:16", "1:1"],
     sizeType: "resolution",
@@ -84,13 +84,13 @@ const TEXT_MODELS: ModelOption[] = [
 const IMAGE_MODELS: ModelOption[] = [
   { id: "doubao-seedream-4-5-251128", label: "豆包 Seedream 4.5", provider: "bytedance", estimatedTime: "2min" },
   { id: "gemini-3.1-pro-preview", label: "Nano Banana Pro", provider: "google", description: "gemini-3.1-pro-preview", estimatedTime: "1min", isNew: true },
-  { id: "nano-banana", label: "Nano Banana 2", provider: "fal", description: "fal.ai 文生图", estimatedTime: "1min", isNew: true },
+  { id: "nano-banana-2", label: "Nano Banana 2", provider: "fal", description: "fal.ai 文生图", estimatedTime: "1min", isNew: true },
   { id: "grok-3-image", label: "Grok 3 Image", provider: "xai", estimatedTime: "30s" },
 ];
 
 const VIDEO_MODELS: ModelOption[] = [
   { id: "sora-2-all", label: "Sora 2 全能", provider: "openai", estimatedTime: "2min" },
-  { id: "veo_3_1-fast", label: "Veo 3.1 Fast", provider: "google", estimatedTime: "30s", isNew: true },
+  { id: "veo3.1-fast", label: "Veo 3.1 Fast", provider: "google", estimatedTime: "30s", isNew: true },
   { id: "grok-video-3", label: "Grok Video 3", provider: "xai", estimatedTime: "1min" },
 ];
 
@@ -101,7 +101,7 @@ const DIGITAL_HUMAN_MODELS: ModelOption[] = [
 ];
 
 const AUDIO_MODELS: ModelOption[] = [
-  { id: "nextide", label: "NexTide 数字人", provider: "nextide", description: "AI语音克隆与合成", estimatedTime: "15s" },
+  { id: "nextide", label: "NexTide 语音克隆", provider: "nextide", description: "AI语音克隆与合成", estimatedTime: "15s" },
   { id: "suno_music", label: "Suno 音乐生成", provider: "suno", description: "AI作词作曲，生成完整歌曲", estimatedTime: "1min", isNew: true },
   { id: "suno_lyrics", label: "Suno 歌词生成", provider: "suno", description: "根据主题生成歌词文本", estimatedTime: "30s", isNew: true },
 ];
@@ -110,8 +110,8 @@ export function useCanvasModels() {
   const defaults = useMemo(
     () => ({
       text: TEXT_MODELS[0],
-      image: IMAGE_MODELS.find((m) => m.id === "nano-banana") ?? IMAGE_MODELS[0],
-      video: VIDEO_MODELS.find((m) => m.id === "veo_3_1-fast") ?? VIDEO_MODELS[0],
+      image: IMAGE_MODELS.find((m) => m.id === "nano-banana-2") ?? IMAGE_MODELS[0],
+      video: VIDEO_MODELS.find((m) => m.id === "veo3.1-fast") ?? VIDEO_MODELS[0],
       digitalHuman: DIGITAL_HUMAN_MODELS[0],
       audio: AUDIO_MODELS[0],
     }),
