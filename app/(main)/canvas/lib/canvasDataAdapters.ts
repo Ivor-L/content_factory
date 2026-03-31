@@ -258,7 +258,7 @@ export function resolveUpstreamInputs(
 export function runtimeToFlowNodes(
   runtimeNodes: RuntimeCanvasNode[],
 ): Node<MinimalFlowNodeData>[] {
-  const supported = new Set(["text", "image", "video", "audio", "grid"]);
+  const supported = new Set(["text", "image", "video", "audio", "grid", "imagetextgroup", "digitalhuman", "storyboard", "timelinevideo"]);
   return runtimeNodes.map((node) => ({
     id: node.id,
     type: supported.has(node.type) ? node.type : "text",
