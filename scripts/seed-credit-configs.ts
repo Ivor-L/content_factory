@@ -3,6 +3,15 @@ import prisma from "@/lib/prisma";
 const DEFAULT_CREDIT_CONFIGS = [
   // Canvas 图片
   {
+    featureKey: "canvas_grid_split",
+    featureName: "Canvas 九宫格拆图",
+    category: "canvas_image",
+    modelKey: null,
+    amount: 1,
+    enabled: true,
+    description: "Canvas 九宫格图片拆分（固定费用）",
+  },
+  {
     featureKey: "canvas_image:nano-banana",
     featureName: "Canvas 图片 · Nano Banana",
     category: "canvas_image",
@@ -58,6 +67,33 @@ const DEFAULT_CREDIT_CONFIGS = [
     description: "Canvas 视频生成（Grok3）",
   },
   // 分镜
+  {
+    featureKey: "storyboard_breakdown",
+    featureName: "分镜拆解",
+    category: "storyboard",
+    modelKey: null,
+    amount: 1,
+    enabled: true,
+    description: "爆款复刻视频拆解分镜（固定费用）",
+  },
+  {
+    featureKey: "storyboard_image",
+    featureName: "分镜首帧图生成",
+    category: "storyboard",
+    modelKey: null,
+    amount: 1,
+    enabled: true,
+    description: "分镜板首帧图生成，按分镜数计费",
+  },
+  {
+    featureKey: "storyboard_video",
+    featureName: "分镜视频生成",
+    category: "storyboard",
+    modelKey: null,
+    amount: 3,
+    enabled: true,
+    description: "分镜板视频生成（通用），按分镜数计费",
+  },
   {
     featureKey: "storyboard_split",
     featureName: "分镜拆分",
