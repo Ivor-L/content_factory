@@ -19,7 +19,7 @@ const supabase = createClient(
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { status, task_id, segment_id, video_url, message, context } = body;
+    const { status, task_id, segment_id, video_url, message, context, admin_token: bodyAdminToken } = body;
 
     // Effective task_id: n8n sends segment_id, poll service sends task_id
     const effectiveTaskId = task_id || segment_id;
@@ -28,10 +28,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing task_id or segment_id" }, { status: 400 });
     }
 
-    // Auth: n8n callbacks must carry x-admin-token (task_id absent in that case)
-    if (!task_id && segment_id && !isValidAdminWebhookRequest(request)) {
-      console.error("[canvas/video/webhook] Unauthorized n8n callback");
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // Auth: check x-admin-token header OR admin_token in body (n8n sends it in body)
+    if (!task_id && segment_id) {
+      const expectedToken = (process.env.ADMIN_TOKEN || "").trim();
+      const isHeaderAuthed = isValidAdminWebhookRequest(request);
+      const isBodyAuthed = expectedToken && String(bodyAdminToken || "").trim() === expectedToken;
+      if (!isHeaderAuthed && !isBodyAuthed) {
+        console.error("[canvas/video/webhook] Unauthorized n8n callback");
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
     }
 
     console.log("[canvas/video/webhook] Received:", {
