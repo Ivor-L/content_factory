@@ -220,7 +220,7 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
     }
     setBreakdownView('loading');
     try {
-      // Step 1: create script record
+      // Create script + trigger storyboard breakdown in one call
       const scriptRes = await fetch("/api/scripts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -228,6 +228,7 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
           title: item.title || `参考视频 ${item.sourceId}`,
           videoUrl: item.videoUrl,
           description: item.description ?? undefined,
+          scriptPurpose: 'storyboard',
         }),
       });
       if (!scriptRes.ok) {
@@ -236,18 +237,7 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
       }
       const { data: { scriptId } } = await scriptRes.json();
 
-      // Step 2: trigger breakdown
-      const breakRes = await fetch("/api/scripts/breakdown", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scriptId, scriptPurpose: 'storyboard' }),
-      });
-      if (!breakRes.ok) {
-        const err = await breakRes.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error ?? "拆解触发失败");
-      }
-
-      // Step 3: start polling
+      // Start polling for breakdown result
       setPollingScriptId(scriptId);
     } catch (error) {
       console.error("Breakdown failed:", error);

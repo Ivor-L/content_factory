@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, videoUrl, description } = body;
+    const { title, videoUrl, description, scriptPurpose } = body;
 
     if (!title || !videoUrl) {
       return NextResponse.json(
@@ -58,6 +58,9 @@ export async function POST(request: NextRequest) {
     formData.append("userId", userId);
     if (description) {
       formData.append("description", description);
+    }
+    if (scriptPurpose) {
+      formData.append("scriptPurpose", scriptPurpose);
     }
 
     // Call the server action
