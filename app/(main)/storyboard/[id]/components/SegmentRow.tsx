@@ -61,6 +61,7 @@ interface SegmentRowProps {
 
 // ── Row height: video/image columns are 260px wide → 260×9/16 ≈ 146px ────
 const ROW_H = "h-[191px]";
+const MAX_SUBJECT_REFS = 3;
 
 // ── Inline editable text cell (auto-save on blur) ──────────────────────────
 function EditableCell({
@@ -136,23 +137,79 @@ function SubjectRefsModal({
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const replaceInputRef = useRef<HTMLInputElement>(null);
+  const replaceTargetRef = useRef<number | null>(null);
+  const [replacingIndex, setReplacingIndex] = useState<number | null>(null);
+  const canAddMore = list.length < MAX_SUBJECT_REFS;
 
   const handleRemove = (idx: number) => setList((prev) => prev.filter((_, i) => i !== idx));
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!canAddMore) {
+      toast.error(`最多只能添加 ${MAX_SUBJECT_REFS} 张，可点击已有图片替换`);
+      e.target.value = "";
+      return;
+    }
     setUploading(true);
     const formData = new FormData();
     formData.append("file", file);
     try {
       const res = await fetch("/api/upload/image", { method: "POST", body: formData });
-      const { url } = await res.json();
-      if (url) setList((prev) => [...prev, { type: "custom", url, label: "自定义" }]);
-    } catch {
-      toast.error("上传失败");
+      let data: any = null;
+      try { data = await res.json(); } catch { /* ignore */ }
+      if (!res.ok || !data?.url) {
+        throw new Error(data?.error || "上传失败");
+      }
+      setList((prev) => [...prev, { type: "custom", url: data.url, label: "自定义" }]);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "上传失败");
     } finally {
       setUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  const startReplace = (idx: number) => {
+    replaceTargetRef.current = idx;
+    replaceInputRef.current?.click();
+  };
+
+  const handleReplaceSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const targetIdx = replaceTargetRef.current;
+    if (!file || targetIdx === null) {
+      replaceTargetRef.current = null;
+      e.target.value = "";
+      return;
+    }
+    const targetRef = list[targetIdx];
+    if (!targetRef) {
+      replaceTargetRef.current = null;
+      e.target.value = "";
+      return;
+    }
+    setReplacingIndex(targetIdx);
+    const formData = new FormData();
+    formData.append("file", file);
+    if (targetRef.type === "character" || targetRef.type === "product") {
+      formData.append("type", targetRef.type);
+    }
+    try {
+      const res = await fetch("/api/upload/image", { method: "POST", body: formData });
+      let data: any = null;
+      try { data = await res.json(); } catch { /* ignore */ }
+      if (!res.ok || !data?.url) {
+        throw new Error(data?.error || "替换失败");
+      }
+      setList((prev) => prev.map((item, idx) => idx === targetIdx ? { ...item, url: data.url } : item));
+      toast.success(`${targetRef.label || "图片"}已更新`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "替换失败");
+    } finally {
+      setReplacingIndex(null);
+      replaceTargetRef.current = null;
       e.target.value = "";
     }
   };
@@ -162,8 +219,8 @@ function SubjectRefsModal({
     try {
       await onSave(list);
       onClose();
-    } catch {
-      toast.error("保存失败");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "保存失败");
     } finally {
       setSaving(false);
     }
@@ -189,39 +246,66 @@ function SubjectRefsModal({
             <p className="text-sm text-gray-400 dark:text-white/30 text-center py-4">暂无参考图，点击下方添加</p>
           )}
           <div className="grid grid-cols-3 gap-3">
-            {list.map((ref, idx) => (
-              <div key={idx} className="relative group aspect-square rounded-xl overflow-hidden bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={ref.url} alt={ref.label} className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors" />
-                <button
-                  onClick={() => handleRemove(idx)}
-                  className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity rounded-full bg-red-500 p-1 hover:bg-red-600"
+            {list.map((ref, idx) => {
+              const replaceable = ref.type === "character" || ref.type === "product";
+              return (
+                <div
+                  key={idx}
+                  className={cn(
+                    "relative group aspect-square rounded-xl overflow-hidden bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10",
+                    replaceable && "cursor-pointer"
+                  )}
+                  onClick={() => { if (replaceable) startReplace(idx); }}
                 >
-                  <X className="h-3 w-3 text-white" />
-                </button>
-                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent px-2 py-1.5">
-                  <p className="text-[10px] text-white/80 truncate">{ref.label}</p>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={ref.url} alt={ref.label} className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors" />
+                  <button
+                    onClick={(event) => { event.stopPropagation(); handleRemove(idx); }}
+                    className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity rounded-full bg-red-500 p-1 hover:bg-red-600"
+                  >
+                    <X className="h-3 w-3 text-white" />
+                  </button>
+                  {replacingIndex === idx && (
+                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                      <Loader2 className="h-5 w-5 text-white animate-spin" />
+                    </div>
+                  )}
+                  <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1.5 flex items-center justify-between gap-1">
+                    <p className="text-[10px] text-white/80 truncate">{ref.label}</p>
+                    {replaceable && (
+                      <button
+                        type="button"
+                        onClick={(event) => { event.stopPropagation(); startReplace(idx); }}
+                        className="text-[10px] text-white/90 font-medium px-1.5 py-0.5 rounded-full bg-white/20 hover:bg-white/40 transition-colors"
+                      >
+                        替换
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {/* Add button */}
             <label className={cn(
               "aspect-square rounded-xl border-2 border-dashed border-gray-300 dark:border-white/20 flex flex-col items-center justify-center gap-1 cursor-pointer hover:border-gray-400 dark:hover:border-white/40 transition-colors",
-              uploading && "opacity-60 pointer-events-none"
+              (uploading || !canAddMore) && "opacity-60 pointer-events-none",
             )}>
               {uploading ? (
                 <Loader2 className="h-5 w-5 text-gray-400 animate-spin" />
               ) : (
                 <>
                   <Plus className="h-5 w-5 text-gray-400 dark:text-white/30" />
-                  <span className="text-[10px] text-gray-400 dark:text-white/30">添加图片</span>
+                  <span className="text-[10px] text-gray-400 dark:text-white/30">{canAddMore ? "添加图片" : "已达上限"}</span>
                 </>
               )}
               <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />
             </label>
           </div>
+          <p className="text-[11px] text-gray-400 dark:text-white/30 mt-3">
+            最多可保存 {MAX_SUBJECT_REFS} 张，若需替换模特/产品图可直接点击对应图片。
+          </p>
         </div>
 
         {/* Footer */}
@@ -240,6 +324,7 @@ function SubjectRefsModal({
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "保存"}
           </button>
         </div>
+        <input ref={replaceInputRef} type="file" accept="image/*" className="hidden" onChange={handleReplaceSelect} />
       </div>
     </div>,
     document.body
@@ -287,6 +372,8 @@ export function SegmentRow({
 
   const isImageGenerating = segment.status === "IMAGE_GENERATING" || isRegenImageLoading;
   const isVideoGenerating = segment.status === "VIDEO_GENERATING" || isRegenVideoLoading;
+  const isImageFailed = segment.status === "IMAGE_FAILED";
+  const isVideoFailed = segment.status === "VIDEO_FAILED";
   const hasImage = !!segment.generatedImage;
   const hasVideo = !!segment.generatedVideo;
   const videoAiDisabled = isRegenVideoLoading;
@@ -444,13 +531,20 @@ export function SegmentRow({
               {/* Panel fills full 16:9 area */}
               <div className={cn(
                 "absolute inset-0 flex items-center justify-center",
-                isImageGenerating
+                isImageFailed
+                  ? "bg-red-50 dark:bg-red-950/40"
+                  : isImageGenerating
                   ? "bg-gray-200 dark:bg-[#2a2d36]"
                   : isImageDragging ? "bg-blue-100 dark:bg-[#1e3a5f]" : "bg-gray-200 dark:bg-[#2a2d36]"
               )}>
                 {isImageGenerating ? (
                   <div className="absolute inset-0 overflow-hidden">
                     <div className="absolute inset-0 animate-shimmer-sweep w-1/2 bg-gradient-to-r from-transparent via-black/[0.04] dark:via-white/[0.06] to-transparent" />
+                  </div>
+                ) : isImageFailed ? (
+                  <div className="flex flex-col items-center gap-1.5">
+                    <X className="w-7 h-7 text-red-400" />
+                    <span className="text-[11px] text-red-400 font-medium">生图失败</span>
                   </div>
                 ) : (
                   <svg className="w-9 h-9 text-gray-400 dark:text-white/20" viewBox="0 0 24 24" fill="currentColor">
@@ -482,7 +576,7 @@ export function SegmentRow({
                       onClick={() => onRegenImage?.(segment.id)}
                       className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-gray-800 dark:bg-black text-white/70 hover:text-white text-[11px] font-medium transition-colors whitespace-nowrap"
                     >
-                      <Sparkles className="h-3 w-3" />AI 生成
+                      <Sparkles className="h-3 w-3" />{isImageFailed ? "重新生成" : "AI 生成"}
                     </button>
                   </div>
                 )}
@@ -540,20 +634,27 @@ export function SegmentRow({
             </>
           ) : (
             <div className="w-full h-full absolute inset-0"
-              onDragOver={(e) => { e.preventDefault(); if (!isVideoGenerating) setIsVideoDragging(true); }}
+              onDragOver={(e) => { e.preventDefault(); if (!isVideoGenerating && !isVideoFailed) setIsVideoDragging(true); }}
               onDragLeave={(e) => { e.preventDefault(); const r = e.relatedTarget as Node | null; if (!r || !e.currentTarget.contains(r)) setIsVideoDragging(false); }}
               onDrop={handleVideoDrop}
             >
               {/* Panel fills full 16:9 area */}
               <div className={cn(
                 "absolute inset-0 flex items-center justify-center",
-                isVideoGenerating
+                isVideoFailed
+                  ? "bg-red-50 dark:bg-red-950/40"
+                  : isVideoGenerating
                   ? "bg-gray-200 dark:bg-[#2a2d36]"
                   : isVideoDragging ? "bg-purple-100 dark:bg-[#2a1e3f]" : "bg-gray-200 dark:bg-[#2a2d36]"
               )}>
                 {isVideoGenerating ? (
                   <div className="absolute inset-0 overflow-hidden">
                     <div className="absolute inset-0 animate-shimmer-sweep w-1/2 bg-gradient-to-r from-transparent via-black/[0.04] dark:via-white/[0.06] to-transparent" />
+                  </div>
+                ) : isVideoFailed ? (
+                  <div className="flex flex-col items-center gap-1.5">
+                    <X className="w-7 h-7 text-red-400" />
+                    <span className="text-[11px] text-red-400 font-medium">视频生成失败</span>
                   </div>
                 ) : (
                   <svg className="w-9 h-9 text-gray-400 dark:text-white/20" viewBox="0 0 24 24" fill="currentColor">
@@ -589,7 +690,7 @@ export function SegmentRow({
                         videoAiDisabled && "opacity-50 cursor-not-allowed"
                       )}
                     >
-                      <Sparkles className="h-3 w-3" />AI 生成
+                      <Sparkles className="h-3 w-3" />{isVideoFailed ? "重新生成" : "AI 生成"}
                     </button>
                   </div>
                 )}
@@ -645,7 +746,16 @@ export function SegmentRow({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error("patch failed");
+    if (!res.ok) {
+      let message = "保存失败";
+      try {
+        const payload = await res.json();
+        message = payload?.message || payload?.error || message;
+      } catch {
+        // ignore parse errors
+      }
+      throw new Error(message);
+    }
   }
 
   async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {

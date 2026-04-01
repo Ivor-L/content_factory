@@ -260,24 +260,37 @@ export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryb
         (payload) => {
           // payload.new uses DB snake_case column names; map to camelCase SegmentData
           const raw = payload.new as Record<string, unknown>;
-          const updated: Partial<SegmentData> & { id: string } = {
-            id: raw.id as string,
-            status: raw.status as string,
-            generatedImage: (raw.generated_image ?? raw.generatedImage) as string | null | undefined,
-            generatedVideo: (raw.generated_video ?? raw.generatedVideo) as string | null | undefined,
-            imagePrompt: (raw.image_prompt ?? raw.imagePrompt) as string | null | undefined,
-            videoPrompt: (raw.video_prompt ?? raw.videoPrompt) as string | null | undefined,
-            timeRange: (raw.time_range ?? raw.timeRange) as string | null | undefined,
-            originalScript: (raw.original_script ?? raw.originalScript) as string | null | undefined,
-            rewrittenScript: (raw.rewritten_script ?? raw.rewrittenScript) as string | null | undefined,
-            visualDescription: (raw.visual_description ?? raw.visualDescription) as string | null | undefined,
-            cameraNotes: (raw.camera_notes ?? raw.cameraNotes) as string | null | undefined,
-            lightingNotes: (raw.lighting_notes ?? raw.lightingNotes) as string | null | undefined,
-            retryCount: (raw.retry_count ?? raw.retryCount ?? 0) as number,
-            generationParams: (raw.generation_params ?? raw.generationParams) as import("./SegmentRow").GenerationParams | null | undefined,
+          // Build a patch from the raw DB row (snake_case keys from Supabase Realtime).
+          // Only include fields that are explicitly present (not undefined) to avoid
+          // accidentally clearing prompts when a column wasn't changed by the DB update.
+          const rawPatch: Record<string, unknown> = { id: raw.id, status: raw.status };
+          const maybeSet = (key: keyof SegmentData, ...candidates: unknown[]) => {
+            for (const v of candidates) {
+              if (v !== undefined) { rawPatch[key] = v; return; }
+            }
           };
+          maybeSet("generatedImage",    raw.generated_image,    raw.generatedImage);
+          maybeSet("generatedVideo",    raw.generated_video,    raw.generatedVideo);
+          maybeSet("imagePrompt",       raw.image_prompt,       raw.imagePrompt);
+          maybeSet("videoPrompt",       raw.video_prompt,       raw.videoPrompt);
+          maybeSet("timeRange",         raw.time_range,         raw.timeRange);
+          maybeSet("originalScript",    raw.original_script,    raw.originalScript);
+          maybeSet("rewrittenScript",   raw.rewritten_script,   raw.rewrittenScript);
+          maybeSet("visualDescription", raw.visual_description, raw.visualDescription);
+          maybeSet("cameraNotes",       raw.camera_notes,       raw.cameraNotes);
+          maybeSet("lightingNotes",     raw.lighting_notes,     raw.lightingNotes);
+          maybeSet("retryCount",        raw.retry_count ?? raw.retryCount ?? 0);
+          maybeSet("generationParams",  raw.generation_params,  raw.generationParams);
+
+          const newStatus = raw.status as string;
+          if (newStatus === "VIDEO_FAILED") {
+            toast.error("视频生成失败，请重试");
+          } else if (newStatus === "IMAGE_FAILED") {
+            toast.error("首帧图生成失败，请重试");
+          }
+
           setSegments((prev) =>
-            prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s))
+            prev.map((s) => (s.id === (rawPatch.id as string) ? { ...s, ...rawPatch } : s))
           );
         }
       )
