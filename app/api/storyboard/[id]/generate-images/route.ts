@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getRequestUserContext } from "@/lib/authServer";
 import { resolveUserApiKey } from "@/lib/userApiKey";
+import { deductCredits } from "@/lib/credits";
+import { getCreditCost } from "@/lib/creditCosts";
+import { logCreditUsage } from "@/lib/logCreditUsage";
 
 /**
  * Batch trigger image generation for storyboard segments
@@ -99,6 +102,26 @@ export async function POST(
           message: "请先在个人资料中绑定 API Key 后再发起生图任务。",
         },
         { status: 400 }
+      );
+    }
+
+    // 4a. Deduct credits upfront (per segment)
+    try {
+      const costPerSegment = await getCreditCost("storyboard_image", 1);
+      const totalCost = costPerSegment * segments.length;
+      await deductCredits(apiKey, {
+        amount: totalCost,
+        workflowId: "flow_storyboard_image",
+        workflowName: "分镜首帧图生成",
+        reason: "storyboard_image",
+      });
+      logCreditUsage({ featureKey: "storyboard_image", userId, amount: totalCost, success: true });
+    } catch (error) {
+      console.error("[generate-images] Failed to deduct credits:", error);
+      logCreditUsage({ featureKey: "storyboard_image", userId, success: false, errorMessage: error instanceof Error ? error.message : "Unknown" });
+      return NextResponse.json(
+        { error: "积分不足，请充值后重试", message: error instanceof Error ? error.message : "扣积分失败" },
+        { status: 402 }
       );
     }
 

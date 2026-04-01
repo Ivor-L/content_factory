@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { isValidAdminWebhookRequest } from "@/lib/webhookAuth";
 import { syncTaskToSummary } from "@/lib/taskSummary";
+import { getApiKeyForUser } from "@/lib/authServer";
+import { deductCredits } from "@/lib/credits";
+import { getCreditCost } from "@/lib/creditCosts";
+import { logCreditUsage } from "@/lib/logCreditUsage";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -419,21 +423,27 @@ export async function POST(req: NextRequest) {
         task_id: taskId,
         count: segmentData.length,
       });
-    }
 
-    // 4. Deduct credits from user
-    // TODO: Implement credit deduction logic
-    // const task = await prisma.storyboardTask.findUnique({
-    //   where: { id: task_id },
-    //   select: { userId: true }
-    // });
-    // if (task?.userId) {
-    //   await deductCredits({
-    //     userId: task.userId,
-    //     amount: 10, // Cost for breakdown
-    //     reason: `Storyboard breakdown: ${task_id}`
-    //   });
-    // }
+      // 4. Deduct credits from user (only on successful breakdown)
+      if (task?.userId) {
+        try {
+          const apiKey = await getApiKeyForUser(task.userId);
+          if (apiKey) {
+            const cost = await getCreditCost("storyboard_breakdown", 1);
+            await deductCredits(apiKey, {
+              amount: cost,
+              workflowId: "flow_storyboard_disassembly",
+              workflowName: "分镜拆解",
+              reason: "storyboard_breakdown",
+            });
+            logCreditUsage({ featureKey: "storyboard_breakdown", userId: task.userId, amount: cost, success: true });
+          }
+        } catch (error) {
+          console.error("[storyboard-breakdown] Failed to deduct credits:", error);
+          logCreditUsage({ featureKey: "storyboard_breakdown", userId: task.userId, success: false, errorMessage: error instanceof Error ? error.message : "Unknown" });
+        }
+      }
+    }
 
     return NextResponse.json({
       success: true,

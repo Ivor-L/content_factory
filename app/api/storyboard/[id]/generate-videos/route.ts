@@ -3,6 +3,9 @@ import prisma from "@/lib/prisma";
 import { getRequestUserContext } from "@/lib/authServer";
 import { resolveUserApiKey } from "@/lib/userApiKey";
 import type { Prisma } from "@prisma/client";
+import { deductCredits } from "@/lib/credits";
+import { getCreditCost } from "@/lib/creditCosts";
+import { logCreditUsage } from "@/lib/logCreditUsage";
 
 /**
  * Batch trigger video generation for storyboard segments
@@ -93,6 +96,26 @@ export async function POST(
       "https://atomx.top"
     ).replace(/\/+$/, "");
     const callbackUrl = `${callbackBase}/api/webhook/storyboard-video`;
+
+    // 4a. Deduct credits upfront (per segment)
+    try {
+      const costPerSegment = await getCreditCost("storyboard_video", 1);
+      const totalCost = costPerSegment * targetSegments.length;
+      await deductCredits(apiKey, {
+        amount: totalCost,
+        workflowId: "flow_storyboard_video",
+        workflowName: "分镜视频生成",
+        reason: "storyboard_video",
+      });
+      logCreditUsage({ featureKey: "storyboard_video", userId, amount: totalCost, success: true });
+    } catch (error) {
+      console.error("[generate-videos] Failed to deduct credits:", error);
+      logCreditUsage({ featureKey: "storyboard_video", userId, success: false, errorMessage: error instanceof Error ? error.message : "Unknown" });
+      return NextResponse.json(
+        { error: "积分不足，请充值后重试", message: error instanceof Error ? error.message : "扣积分失败" },
+        { status: 402 }
+      );
+    }
 
     // 5. Fire n8n for each segment
     const triggers = targetSegments.map(async (segment) => {
