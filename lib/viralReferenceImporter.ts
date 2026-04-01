@@ -583,6 +583,25 @@ function enrichRawPayload(data: Record<string, unknown>): Prisma.InputJsonValue 
     if (mappedType) return { ...(base as Record<string, unknown>), type: mappedType } as Prisma.InputJsonValue;
   }
 
+  // Instagram: media_type is a number (1=image, 2=video, 8=carousel/album)
+  if (typeof mediaType === "number") {
+    if (mediaType === 2) return { ...(base as Record<string, unknown>), type: "video" } as Prisma.InputJsonValue;
+    if (mediaType === 1 || mediaType === 8) return { ...(base as Record<string, unknown>), type: "image" } as Prisma.InputJsonValue;
+  }
+
+  // Instagram: is_video boolean
+  const isVideoFlag = (base as Record<string, unknown>).is_video;
+  if (isVideoFlag === true) return { ...(base as Record<string, unknown>), type: "video" } as Prisma.InputJsonValue;
+  if (isVideoFlag === false) return { ...(base as Record<string, unknown>), type: "image" } as Prisma.InputJsonValue;
+
+  // Instagram GraphQL: __typename field ("GraphVideo", "GraphImage", "GraphSidecar")
+  const typename = (base as Record<string, unknown>).__typename;
+  if (typeof typename === "string") {
+    const tn = typename.toLowerCase();
+    if (tn.includes("video")) return { ...(base as Record<string, unknown>), type: "video" } as Prisma.InputJsonValue;
+    if (tn.includes("image") || tn.includes("sidecar")) return { ...(base as Record<string, unknown>), type: "image" } as Prisma.InputJsonValue;
+  }
+
   const coverUrl = extractViralReferenceMedia(data).coverUrl;
   const inferred = inferTypeFromCoverUrl(coverUrl);
   if (!inferred) return base;

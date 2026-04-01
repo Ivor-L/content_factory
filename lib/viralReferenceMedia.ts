@@ -67,6 +67,9 @@ const VIDEO_PATHS: Array<Array<string | number>> = [
   ["note", "video_url"],
   ["data", "videoUrl"],
   ["data", "video_url"],
+  // Instagram: video_versions array
+  ["video_versions", 0, "url"],
+  ["video_versions", 0, "src"],
 ];
 
 export function parseRawPayloadObject(raw: unknown): JsonObject | null {
