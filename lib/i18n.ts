@@ -148,11 +148,11 @@ const contentCreationEn = {
       modeLabel: "Video mode",
       modes: {
         voice: {
-          label: "Voice clone · text driven",
+          label: "Text driven",
           description: "AI reads your script with the selected character voice.",
         },
         lip: {
-          label: "Lip sync · audio driven",
+          label: "Audio driven",
           description: "Upload an audio track to drive lip movements.",
         },
       },
@@ -483,11 +483,11 @@ const contentCreationZh = {
       modeLabel: "驱动方式",
       modes: {
         voice: {
-          label: "文字驱动 · 配音合成",
+          label: "文字驱动",
           description: "输入脚本，系统用角色音色朗读并生成画面。",
         },
         lip: {
-          label: "音频驱动 · 口型同步",
+          label: "音频驱动",
           description: "上传音频，驱动口型与表情同步。",
         },
       },
@@ -810,11 +810,11 @@ const contentCreationZhTw = {
       modeLabel: "驅動方式",
       modes: {
         voice: {
-          label: "文字驅動 · 配音合成",
+          label: "文字驅動",
           description: "輸入腳本，由角色音色朗讀並生成畫面。",
         },
         lip: {
-          label: "音訊驅動 · 口型同步",
+          label: "音訊驅動",
           description: "上傳音訊，驅動口型與表情同步。",
         },
       },

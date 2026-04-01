@@ -908,7 +908,7 @@ export default function ReplicationContent({
           setSelectedVideo(null);
         }}
         title={selectedVideo?.product?.name || t.replication.viewDetails}
-        maxWidth="max-w-6xl"
+        maxWidth="max-w-4xl"
       >
         {selectedVideo && (
           <VideoDetailsModal 

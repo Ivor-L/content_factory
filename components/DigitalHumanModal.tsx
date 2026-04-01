@@ -10,7 +10,7 @@ import { toast } from 'react-hot-toast';
 import { createDigitalHumanVideo } from '@/app/actions/digital-human';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Modal } from '@/components/Modal';
+import { Modal, useModalHeader } from '@/components/Modal';
 import { CharacterForm } from '@/components/CharacterForm';
 import { useTenantPath } from '@/hooks/useTenant';
 import {
@@ -137,10 +137,23 @@ export function DigitalHumanModal({
   const audioInputRef = useRef<HTMLInputElement | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [isCompactLayout, setIsCompactLayout] = useState(true);
-  const modes = [
-    { key: 'VOICE_CLONE' as const, label: voiceModeCopy?.label ?? t.storyboard.voiceClone, description: voiceModeCopy?.description, icon: <FileText size={16} /> },
-    { key: 'LIP_SYNC' as const, label: lipModeCopy?.label ?? t.storyboard.lipSync, description: lipModeCopy?.description, icon: <Mic size={16} /> },
-  ];
+  const modes = useMemo(
+    () => [
+      {
+        key: 'VOICE_CLONE' as const,
+        label: voiceModeCopy?.label ?? t.storyboard.voiceClone,
+        description: voiceModeCopy?.description,
+        icon: <FileText size={16} />,
+      },
+      {
+        key: 'LIP_SYNC' as const,
+        label: lipModeCopy?.label ?? t.storyboard.lipSync,
+        description: lipModeCopy?.description,
+        icon: <Mic size={16} />,
+      },
+    ],
+    [voiceModeCopy?.label, voiceModeCopy?.description, lipModeCopy?.label, lipModeCopy?.description, t.storyboard.voiceClone, t.storyboard.lipSync]
+  );
   const [mode, setMode] = useState<typeof modes[number]['key']>('VOICE_CLONE');
   const [isCharacterModalOpen, setIsCharacterModalOpen] = useState(false);
   const [characters, setCharacters] = useState<CharacterOption[]>([]);
@@ -150,12 +163,60 @@ export function DigitalHumanModal({
     () => characters.find((character) => character.id === selectedCharacterId) ?? null,
     [characters, selectedCharacterId]
   );
+  const modeLabelText =
+    digitalCopy?.modeLabel ??
+    t.storyboard.modeLabel ??
+    (isZhLocale ? '驱动方式' : 'Mode');
+  const modalHeader = useModalHeader();
+  const headerPortalActive = Boolean(modalHeader);
+
+  const ModeSwitcher = ({ fullWidth = true }: { fullWidth?: boolean }) => (
+    <nav
+      aria-label={modeLabelText}
+      className={cn('flex w-full', fullWidth ? 'justify-center' : 'justify-end')}
+    >
+      <div
+        className={cn(
+          'flex gap-2 rounded-full border border-gray-200 bg-gray-50/80 p-1.5 dark:border-gray-700 dark:bg-gray-800/70',
+          fullWidth ? 'w-full max-w-xl' : 'w-auto'
+        )}
+      >
+        {modes.map((item) => {
+          const isActive = mode === item.key;
+          return (
+            <button
+              type="button"
+              key={item.key}
+              onClick={() => setMode(item.key)}
+              className={cn(
+                'relative flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20 focus-visible:ring-offset-1 dark:focus-visible:ring-white/30',
+                fullWidth ? 'flex-1' : 'flex-none min-w-[120px]',
+                isActive
+                  ? 'bg-black text-white shadow-sm dark:bg-white dark:text-black'
+                  : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white'
+              )}
+              aria-pressed={isActive}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </nav>
+  );
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) setUserId(user.id);
     });
   }, []);
+
+  useEffect(() => {
+    if (!modalHeader) return;
+    modalHeader.setContent(<ModeSwitcher fullWidth />);
+    return () => modalHeader.setContent(null);
+  }, [modalHeader, mode]);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -615,60 +676,33 @@ export function DigitalHumanModal({
       className={cn('relative h-full bg-white dark:bg-gray-900', layoutClass)}
     >
       {/* Left Content */}
-      <div
-        className={cn(
-          'min-h-0 flex flex-col bg-white dark:bg-gray-900',
-          isCompactLayout
-            ? 'border-b border-gray-200 dark:border-gray-800'
-            : 'rounded-2xl border border-gray-200 dark:border-gray-800'
-        )}
-      >
+      <div className="min-h-0 flex flex-col bg-white dark:bg-gray-900">
         {/* Header */}
         {!hideInternalTitle && (
-          <div className="flex items-center justify-between p-6 border-b dark:border-gray-700">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <User className="text-black dark:text-white" />
-              {digitalTitle}
-            </h2>
-            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 md:hidden">
-              <X size={20} />
-            </button>
+          <div className="flex flex-col gap-4 p-6 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <User className="text-black dark:text-white" />
+                {digitalTitle}
+              </h2>
+              <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 md:hidden">
+                <X size={20} />
+              </button>
+            </div>
+            {!headerPortalActive && !isCompactLayout && <ModeSwitcher fullWidth={false} />}
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="relative flex p-2 gap-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 overflow-hidden">
-          <div className="absolute inset-0 px-2">
-            <div
-              className="h-full rounded-xl bg-black dark:bg-white transition-transform duration-300 ease-out"
-              style={{
-                width: 'calc(50% - 0.5rem)',
-                transform: `translateX(${mode === 'VOICE_CLONE' ? '0%' : 'calc(100% + 0.5rem)'})`
-              }}
-            />
+        {(hideInternalTitle || isCompactLayout) && !headerPortalActive && (
+          <div
+            className={cn(
+              "px-6 pb-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900",
+              hideInternalTitle ? 'pt-4' : 'pt-0'
+            )}
+          >
+            <ModeSwitcher fullWidth />
           </div>
-          {modes.map((item) => (
-            <button
-              key={item.key}
-              onClick={() => setMode(item.key)}
-              className={cn(
-                "flex-1 py-2 rounded-xl text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2 relative",
-                mode === item.key
-                  ? "text-white dark:text-black"
-                  : "text-gray-500 dark:text-gray-400"
-              )}
-            >
-              <span className="relative z-10 flex flex-col items-center gap-1 text-center">
-                <span className="flex items-center gap-2">{item.icon} {item.label}</span>
-                {item.description && (
-                  <span className="text-[11px] font-normal opacity-80 leading-tight">
-                    {item.description}
-                  </span>
-                )}
-              </span>
-            </button>
-          ))}
-        </div>
+        )}
 
         {/* Scrollable Content */}
         <div
@@ -992,7 +1026,7 @@ export function DigitalHumanModal({
         </div>
 
         {/* Footer */}
-      <div className="p-6 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 rounded-b-xl">
+      <div className="px-6 pt-6 border-t dark:border-gray-700">
         <button
           onClick={handleSubmit}
           disabled={loading || uploading || audioTooLong}

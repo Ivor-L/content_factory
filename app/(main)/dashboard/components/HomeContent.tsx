@@ -347,7 +347,7 @@ export function HomeContent() {
                 {t.storyboard?.digitalHuman ?? '数字人视频'}
               </span>
             }
-            maxWidth="max-w-6xl"
+            maxWidth="max-w-4xl"
           >
             <DigitalHumanModal
               hideInternalTitle
