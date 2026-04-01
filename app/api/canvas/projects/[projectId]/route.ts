@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestUserContext } from '@/lib/authServer';
 import {
+  CanvasProjectConflictError,
   CanvasProjectInput,
   deleteCanvasProject,
   getCanvasProject,
@@ -62,6 +63,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
     return NextResponse.json({ data: project });
   } catch (error) {
+    if (error instanceof CanvasProjectConflictError) {
+      return NextResponse.json(
+        {
+          error: {
+            code: error.code,
+            message: error.message,
+          },
+        },
+        { status: 409 },
+      );
+    }
     return NextResponse.json(
       {
         error: {

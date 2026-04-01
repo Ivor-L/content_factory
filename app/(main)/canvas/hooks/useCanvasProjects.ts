@@ -110,6 +110,12 @@ export function useCanvasProjects(
   const initializedRef = useRef(hasInitialProjects);
   const currentProjectIdRef = useRef<string | null>(initialSelection ?? null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const projectsRef = useRef(projects);
+
+  useEffect(() => {
+    projectsRef.current = projects;
+  }, [projects]);
 
   useEffect(() => {
     currentProjectIdRef.current = currentProjectId;
@@ -118,7 +124,9 @@ export function useCanvasProjects(
   const upsertProject = useCallback((record: CanvasProjectRecord) => {
     setProjects((prev) => {
       const filtered = prev.filter((item) => item.id !== record.id);
-      return [record, ...filtered];
+      const next = [record, ...filtered];
+      projectsRef.current = next;
+      return next;
     });
   }, []);
 
@@ -152,9 +160,10 @@ export function useCanvasProjects(
         }
         const rows = Array.isArray(payload.data) ? payload.data : [];
         setProjects(rows);
+        projectsRef.current = rows;
         const previousSelection = currentProjectIdRef.current;
         if (!previousSelection && autoSelectFirstProject && rows.length > 0) {
-          // autoSelectFirstProject disabled — user should choose manually
+          setCurrentProjectId(rows[0].id);
         } else if (
           previousSelection &&
           rows.every((item) => item.id !== previousSelection)
@@ -184,7 +193,7 @@ export function useCanvasProjects(
         abortControllerRef.current.abort();
       }
     };
-  }, []);
+  }, [loadProjects]);
 
   const fetchProjectById = useCallback(
     async (projectId: string, silent = true) => {
@@ -218,24 +227,64 @@ export function useCanvasProjects(
   const saveProjectCanvas = useCallback(
     async (projectId: string, canvasData: unknown, thumbnail?: string | null) => {
       if (!projectId) throw new Error("缺少项目 ID");
-      setError(null);
-      try {
-        const body: Record<string, unknown> = { canvasData };
-        if (thumbnail !== undefined) body.thumbnail = thumbnail;
-        const payload = await requestJson(`/api/canvas/projects/${projectId}`, {
-          method: "PATCH",
-          body: JSON.stringify(body),
-        });
-        if (payload.data) {
-          upsertProject(payload.data as CanvasProjectRecord);
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "保存项目失败";
-        setError(message);
-        throw err;
-      }
+      const runExclusive = () => {
+        return saveQueueRef.current
+          .catch(() => undefined)
+          .then(async () => {
+            setError(null);
+            const project = projectsRef.current.find((item) => item.id === projectId) ?? null;
+            const expectedUpdatedAt = project?.updatedAt ?? null;
+            const body: Record<string, unknown> = {
+              canvasData,
+              expectedUpdatedAt,
+            };
+            if (thumbnail !== undefined) body.thumbnail = thumbnail;
+            const authHeaders = await getAuthHeaders();
+            const response = await fetchWithTimeout(
+              `/api/canvas/projects/${projectId}`,
+              {
+                method: "PATCH",
+                body: JSON.stringify(body),
+                credentials: "include",
+                headers: {
+                  "Content-Type": "application/json",
+                  ...authHeaders,
+                },
+              },
+              DEFAULT_TIMEOUT_MS + 10000,
+            );
+            const payload = await response.json().catch(() => ({}));
+            if (response.status === 409) {
+              await fetchProjectById(projectId, true).catch(() => {});
+              const conflictError = new Error(
+                payload?.error?.message || "画布已在其他窗口更新",
+              );
+              conflictError.name = payload?.error?.code || "CanvasProjectConflictError";
+              setError(conflictError.message);
+              throw conflictError;
+            }
+            if (!response.ok) {
+              const message =
+                payload?.error?.message || response.statusText || "保存项目失败";
+              throw new Error(message);
+            }
+            if (payload.data) {
+              upsertProject(payload.data as CanvasProjectRecord);
+            }
+          });
+      };
+
+      const nextPromise = runExclusive()
+        .catch((err) => {
+          const message = err instanceof Error ? err.message : "保存项目失败";
+          setError(message);
+          throw err;
+        })
+        .finally(() => {});
+      saveQueueRef.current = nextPromise;
+      return nextPromise;
     },
-    [upsertProject],
+    [upsertProject, fetchProjectById],
   );
 
   const createProject = useCallback(
@@ -282,7 +331,11 @@ export function useCanvasProjects(
     async (projectId: string) => {
       if (!projectId) return;
       await requestJson(`/api/canvas/projects/${projectId}`, { method: "DELETE" });
-      setProjects((prev) => prev.filter((p) => p.id !== projectId));
+      setProjects((prev) => {
+        const next = prev.filter((p) => p.id !== projectId);
+        projectsRef.current = next;
+        return next;
+      });
       if (currentProjectIdRef.current === projectId) setCurrentProjectId(null);
     },
     [],

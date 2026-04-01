@@ -23,9 +23,10 @@ export function ResourceTabs({ products, characters }: ResourceTabsProps) {
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<TabKey>("characters");
   const previousTabRef = useRef<TabKey>("characters");
-  const isTabSwitching = previousTabRef.current !== activeTab;
+  const [isTabSwitching, setIsTabSwitching] = useState(false);
 
   useEffect(() => {
+    setIsTabSwitching(previousTabRef.current !== activeTab);
     previousTabRef.current = activeTab;
   }, [activeTab]);
 

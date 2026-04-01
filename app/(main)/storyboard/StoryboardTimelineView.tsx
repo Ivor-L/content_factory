@@ -151,7 +151,7 @@ export function StoryboardTimelineView({ initialTask, mode = 'page' }: Storyboar
 
   const videoTrackEntry =
     orderedTrackEntries.find((entry) => entry.track.type === 'video') ?? orderedTrackEntries[0];
-  const orderedVideoClips = videoTrackEntry?.orderedClips ?? [];
+  const orderedVideoClips = useMemo(() => videoTrackEntry?.orderedClips ?? [], [videoTrackEntry]);
 
   const clipContextMap = useMemo(() => {
     const map = new Map<

@@ -74,21 +74,6 @@ export function proxy(request: NextRequest) {
   const isSiteOnlyRequest = SITE_ONLY_FLAG || isSiteOnlyHost(host);
   const inferredTenantSlug = inferTenantFromHost(request);
 
-  // Canvas runtime SPA fallback:
-  // - serve static assets directly
-  // - rewrite route paths (without file extension) to index.html
-  if (pathname.startsWith('/canvas-runtime')) {
-    const lastSegment = pathname.split('/').pop() || '';
-    const hasFileExtension = lastSegment.includes('.');
-    if (hasFileExtension) {
-      return NextResponse.next();
-    }
-
-    const rewriteUrl = request.nextUrl.clone();
-    rewriteUrl.pathname = '/canvas-runtime/index.html';
-    return NextResponse.rewrite(rewriteUrl);
-  }
-
   if (isSiteOnlyRequest) {
     if (
       pathname.startsWith('/_next') ||

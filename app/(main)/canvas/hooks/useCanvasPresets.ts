@@ -46,7 +46,7 @@ export function useCanvasPresets() {
   }, []);
 
   const savePreset = useCallback(
-    async (name: string, nodeIds: string[], nodes: any[], resources: Record<string, unknown>) => {
+    async (name: string, nodeIds: string[], nodes: any[], resources: unknown) => {
       try {
         const { data } = await supabase.auth.getSession();
         const token = data.session?.access_token;

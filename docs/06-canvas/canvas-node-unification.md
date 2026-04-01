@@ -1,5 +1,7 @@
 ## 无限画布节点统一改造方案
 
+> **2026-04-01 更新**：Vue 版 runtime（`modules/canvas-runtime` + `public/canvas-runtime`）已彻底下线，React 版 `ReactCanvasRoot`/`CanvasStudio` 成为唯一实现。本方案沿用既定的“单卡片 + 面板”设计，但所有代码路径均指向 `app/(main)/canvas/**`。
+
 ### 目标
 - 画布上的每个节点仅以单卡片形式展示内容，标题悬浮在卡片外部。
 - 提示词、模型、资源库、生成按钮等全部进入节点的展开面板，默认收起，点击节点时展开。
@@ -55,7 +57,7 @@
 4. **交互完善**
    - `Canvas.vue`：点击/拖线/面板管理逻辑；`NodeHandleMenu` 只在展开时启用。
 5. **样式统一与构建**
-   - Tailwind/全局 CSS 中定义新卡片样式；跑 `npm run build` 并同步 `public/canvas-runtime/`。
+   - Tailwind/全局 CSS 直接在 Next.js 画布 (`app/(main)/canvas/**/*`) 中维护；执行常规 `npm run build` 即可，无须再手动拷贝 `public/canvas-runtime/`。
 
 ### 任务拆分
 | 编号 | 任务 | 说明 |
@@ -67,14 +69,14 @@
 | T5 | Audio 节点调优 | 调整为统一卡片样式，面板包含口播文本/音色/生成 |
 | T6 | 工作流与 Hooks | 更新 `useWorkflowOrchestrator`、生成 hooks、新节点创建逻辑 |
 | T7 | Canvas 交互与 Handle 菜单 | 点击/展开/拖线行为、面板定位、资源 hover 复用 |
-| T8 | 样式细化与构建 | 统一深色主题、面板样式，`npm run build`，同步 `public/canvas-runtime/` |
+| T8 | 样式细化与构建 | 统一深色主题、面板样式，复用 React 画布的 CSS token，常规 `npm run build` 自动产出 |
 
 完成上述任务后，画布即呈现参考图中“单卡片 + 下方展开面板”的极简形态。
 
 ### 2026-03-25 进度快照
-- ✅ **视频节点合并**：`modules/canvas-runtime/src/components/nodes/VideoNode.vue` 已切换为单卡片 + 面板结构，集成提示词、模型、资源库与生成流程，支持从工作流自动触发。
-- ✅ **Runtime 构建同步**：执行 `npm run build` 并将 `modules/canvas-runtime/dist` 产物回填至 `public/canvas-runtime/`，以便 Next.js 端载入最新前端。
-- ✅ **文本节点极简化**：更新 `TextNode.vue`，折叠态仅保留 “PROMPT / 点击展开以输入提示词 / X 字” 三行信息，面板中只剩更宽的编辑器与复制/删除按钮，去除 AI 润色与冗余提示，交互与参考稿保持一致。
+- ✅ **视频节点合并**：`app/(main)/canvas/components/ReactCanvasRoot.tsx` 内的 `VideoNodeCard` 已切换为单卡片 + 面板结构，集成提示词、模型、资源库与生成流程，支持从工作流自动触发。
+- ✅ **Runtime 构建内联**：React 画布随 Next.js 代码一同编译/部署，无需再把 `modules/canvas-runtime/dist` 拷贝进 `public/canvas-runtime/`。
+- ✅ **文本节点极简化**：`ReactCanvasRoot.tsx` 中的 `TextNodeCard` 折叠态仅保留 “PROMPT / 点击展开以输入提示词 / X 字” 三行信息，面板只剩更宽的编辑器与复制/删除按钮，交互与参考稿保持一致。
 - ✅ **节点触点固定**：Text/Image/Video/Audio 节点都引入 anchor 容器，进出面板时左右黄点（连接 handle）保持贴合卡片两侧，不再随面板位置漂移。
 - ✅ **首尾帧资源可视化**：视频节点面板新增首帧/尾帧 `ResourceHoverList`，支持悬停选择或上传参考图，生成参数会自动引用 `first_frame_image/last_frame_image`。
 - ⏳ **统一交互延伸**：后续需将同款拖线菜单与资源悬停面板复用到视频/音频以外的节点，并按 T7/T8 清单持续收敛。

@@ -237,3 +237,63 @@ export async function POST(request: NextRequest, { params }: Params) {
     },
   });
 }
+
+export async function DELETE(request: NextRequest, { params }: Params) {
+  const { userId } = await getRequestUserContext(request);
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id } = await params;
+  const style = await prisma.writingStyle.findFirst({
+    where: { id, userId },
+    select: {
+      id: true,
+      extractionStatus: true,
+      metadata: true,
+    },
+  });
+
+  if (!style) {
+    return NextResponse.json({ error: "写作风格不存在" }, { status: 404 });
+  }
+
+  const normalizedStatus = String(style.extractionStatus || "").toUpperCase();
+  if (!["PROCESSING", "TRIGGERED"].includes(normalizedStatus)) {
+    return NextResponse.json({ error: "当前没有进行中的提炼任务" }, { status: 409 });
+  }
+
+  const baseMeta =
+    style.metadata && typeof style.metadata === "object" && !Array.isArray(style.metadata)
+      ? (style.metadata as Record<string, any>)
+      : {};
+  const extractMeta =
+    baseMeta.extract && typeof baseMeta.extract === "object" && !Array.isArray(baseMeta.extract)
+      ? (baseMeta.extract as Record<string, any>)
+      : {};
+
+  const nextMetadata = {
+    ...baseMeta,
+    extract: {
+      ...extractMeta,
+      status: "CANCELLED",
+      cancelledAt: new Date().toISOString(),
+      cancelledBy: userId,
+    },
+  };
+
+  await prisma.writingStyle.update({
+    where: { id: style.id },
+    data: {
+      extractionStatus: "IDLE",
+      metadata: nextMetadata,
+    },
+  });
+
+  return NextResponse.json({
+    data: {
+      styleId: style.id,
+      status: "CANCELLED",
+    },
+  });
+}

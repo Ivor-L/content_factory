@@ -281,7 +281,7 @@ export function CreativeQuickStartModal({
         }
       }
     },
-    [fetchStyleDetail, clearSelectedStyle],
+    [fetchStyleDetail, clearSelectedStyle, detailErrorMessage, notReadyMessage],
   );
 
   // ── 文案生成流程 ──────────────────────────────────────────────────────────────

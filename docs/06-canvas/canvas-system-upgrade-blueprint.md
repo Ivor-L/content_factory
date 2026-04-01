@@ -3,21 +3,23 @@
 ## 1. 当前现状（基于代码）
 
 ### 1.1 入口层分裂
-- `/canvas` 页面当前是 iframe 挂载独立运行时：
+- `/canvas` 页面现已直接渲染 React runtime：
   - `app/(main)/canvas/page.tsx`
-  - 指向 `/canvas-runtime/`（`public/canvas-runtime` 构建产物）
-- 同时仓库里还有一套 React 画布实现（未作为主入口）：
+  - `app/(main)/canvas/components/ReactCanvasRoot.tsx`（通过 `ReactCanvasRootLazy` 动态加载）
+- 旧的 Vue iframe runtime（`modules/canvas-runtime` -> `public/canvas-runtime`）已于 2026-04-01 删除，线上只剩 React 栈。
+- 仓库仍保留一套历史版 React 画布实现：
   - `app/(main)/canvas/components/CanvasStudio.tsx`
   - `app/(main)/canvas/components/CanvasNode.tsx`
+  - 该实现与新版 `ReactCanvasRoot` 并存，但未接入最新的节点与工作流模型。
 
 ### 1.2 执行链路分裂
-- iframe 运行时（Vue）主要走 `/api/canvas/*` 代理层：
+- React runtime（`ReactCanvasRoot`）默认走 `/api/canvas/*` 代理层：
   - `app/api/canvas/chat/completions/route.ts`
   - `app/api/canvas/images/generations/route.ts`
   - `app/api/canvas/videos/route.ts`
   - `app/api/canvas/videos/[taskId]/route.ts`
   - 由 `lib/canvasUpstream.ts` 转发到外部上游
-- React 画布（CanvasStudio）直接调用业务 API：
+- 历史 React 画布（CanvasStudio）仍直接调用业务 API：
   - 生图：`/api/xhs-text2img/plan`
   - 复刻视频：`/api/replication/generate`
   - 轮询：`/api/creative-tasks/:id`、`/api/replication/:id`
@@ -104,11 +106,9 @@
 
 ## 5. 分阶段迁移（最稳妥）
 
-## Phase 0（1-2周）：单入口与兼容层
-- `app/(main)/canvas/page.tsx` 增加模式开关：
-  - 新画布（React CanvasStudio）
-  - 兼容画布（iframe canvas-runtime）
-- 保留 iframe 作为兜底，不中断线上业务。
+## Phase 0（已完成）：单入口与兼容层
+- `app/(main)/canvas/page.tsx` 现已默认渲染 React runtime（`ReactCanvasRoot`）。
+- Vue iframe 兼容层已经退场，如需本地验证历史版本，可回滚到 2026-03 之前的 commit。
 
 ## Phase 1（2-3周）：统一执行 API
 - 新增统一 API：
@@ -153,4 +153,3 @@
 3. 提示词修改无需改 n8n 节点代码（仅改模板配置）。  
 4. 回调只对接一个统一事件协议。  
 5. 画布模板新增一个业务流无需新增一套前后端页面。  
-

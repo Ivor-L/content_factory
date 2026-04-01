@@ -41,6 +41,9 @@ export function Text2ImageClient({ searchParams }: Text2ImageClientProps) {
   );
   const initialImageCount = clampImageCount(parsedParams.imageCount);
 
+  const { language } = useLanguage();
+  const languageLabel = useMemo(() => mapLanguageLabel(language), [language]);
+
   const [title, setTitle] = useState(parsedParams.title ?? '');
   const [text, setText] = useState(parsedParams.text ?? '');
   const [imageCount, setImageCount] = useState(initialImageCount);
@@ -585,5 +588,3 @@ function maskApiKey(value: string) {
   if (value.length <= 6) return value;
   return `${value.slice(0, 3)}••••${value.slice(-3)}`;
 }
-  const { language } = useLanguage();
-  const languageLabel = useMemo(() => mapLanguageLabel(language), [language]);

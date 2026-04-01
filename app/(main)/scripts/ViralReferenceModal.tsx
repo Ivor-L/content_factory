@@ -73,6 +73,8 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
 
   const normalizedMediaUrls = normalizeMediaList(item.mediaUrls);
   const preferredCoverImage = chooseBestMediaUrl(item.coverUrl, normalizedMediaUrls);
+  const platformId = (item.platform || '').toLowerCase();
+  const isTiktok = platformId === 'tiktok';
 
   // Check rawPayload.type first — XHS image posts can have a videoUrl (livePhoto/cover)
   // but should still be treated as image content
@@ -84,7 +86,9 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
   })();
   // XHS CDN heuristic: /spectrum/1040g0k0 prefix = video note cover
   const coverIndicatesVideo = typeof item.coverUrl === 'string' && /\/spectrum\/1040g0k0/i.test(item.coverUrl);
-  const isVideo = rawType === 'video'
+  const isVideo = isTiktok
+    ? true
+    : rawType === 'video'
     ? true
     : rawType === 'image'
     ? false
@@ -113,7 +117,7 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
 
   const handleDownload = async () => {
     // For video: download the video file. For images: download current image.
-    const rawUrl = isVideo ? item.videoUrl : currentImage;
+    const rawUrl = isTiktok ? item.videoUrl : (isVideo ? item.videoUrl : currentImage);
     if (!rawUrl) {
       toast.error("没有可下载的内容");
       return;
@@ -122,7 +126,7 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
     const filename = `${item.title || item.sourceId}.${ext}`;
     // Route through server proxy to avoid CORS restrictions on CDN URLs
     const a = document.createElement("a");
-    a.href = buildProxyUrl(rawUrl, filename);
+    a.href = isTiktok ? rawUrl : buildProxyUrl(rawUrl, filename);
     a.download = filename;
     document.body.appendChild(a);
     a.click();
@@ -191,7 +195,7 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
               <video
                 key={item.id}
                 src={buildProxyMediaUrl(item.videoUrl)}
-                poster={preferredCoverImage ? buildProxyImgUrl(preferredCoverImage) : undefined}
+                poster={!isTiktok && preferredCoverImage ? buildProxyImgUrl(preferredCoverImage) : undefined}
                 controls
                 playsInline
                 className="w-full h-full object-contain"

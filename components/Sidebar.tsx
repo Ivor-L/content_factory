@@ -158,7 +158,14 @@ export function Sidebar() {
         .maybeSingle();
 
       if (error) {
-        console.error('Failed to load profile info:', error.message, error.code, error.details);
+        const isClockSkew =
+          error.code === 'PGRST303' || /jwt issued at future/i.test(error.message ?? '');
+        if (!isClockSkew) {
+          console.error('Failed to load profile info:', error.message, error.code, error.details);
+        }
+        setProfileName(fallbackFullName ?? '');
+        setProfileAvatarUrl(fallbackAvatar ?? '');
+        return;
       }
 
       setProfileName(profile?.full_name ?? fallbackFullName ?? '');

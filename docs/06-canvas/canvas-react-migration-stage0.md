@@ -3,11 +3,13 @@
 author: Codex · 2026-03-26
 status: in-progress (Stage 0 complete)
 
+> **2026-04-01 Update**：Vue iframe runtime (`modules/canvas-runtime` + `public/canvas-runtime`) 与 `CanvasAuthBridge` 已退役，React `ReactCanvasRoot` 现为唯一运行时。下方“Vue Runtime Inventory”保留作为历史基线，勿再按照其中的构建流程同步静态产物。
+
 ## 1. Vue Runtime Inventory
 
-| Area | What Exists Today | Notes |
+| Area | What Existed (已下线) | Notes |
 | --- | --- | --- |
-| 技术栈 | Vue 3 + Vite + Naive UI + Vue Flow-ish custom graph | 入口在 `modules/canvas-runtime/src`, 打包后同步到 `public/canvas-runtime/`，通过 iframe 挂载。 |
+| 技术栈 | Vue 3 + Vite + Naive UI + Vue Flow-ish custom graph | 入口位于 `modules/canvas-runtime/src`，曾经打包到 `public/canvas-runtime/` 供 iframe 挂载；现已被 React 版 `ReactCanvasRoot` 取代。 |
 | 核心节点 | `TextNode`, `ImageNode`, `VideoNode`, `AudioNode`, `LLMConfigNode` | 每个节点都实现“常态极简 + 选中展开”的折叠交互，顶部操作条 + 底部提示词/模型。 |
 | 节点交互 | `NodeHandleMenu`, `WorkflowPanel`, `MentionsPicker`, `GlowSpinner` | 包含拖线触点、资源悬停面板、loading overlay（全局 10s 超时兜底）。 |
 | 状态管理 | `stores/canvas.js`, `stores/projects.js`, `stores/resources.js` | 负责 nodes/edges、自动保存、防抖、undo/redo、资源库 CRUD、项目切换。 |
@@ -30,14 +32,14 @@ status: in-progress (Stage 0 complete)
 - 资源库：`resourceLibrary` 支持音色/情感参考、上传、hover 即展示列表。
 - 触点与拖线：每个节点常驻左右 handle，hover 才显，两侧对齐。
 - 极简 UI：正常态只展示结果缩略图与标题，点击展开显示提示词、模型、AI 渲染区。
-- 页面切换：`CanvasAuthBridge` 写 cookie，iframe 与父页同域；postMessage 控制 Sidebar 收起。
+- 页面切换：React 运行时已在同一 Next.js 树中渲染；旧版 `CanvasAuthBridge` + iframe postMessage 逻辑随 runtime 下线而移除。
 
 ## 2. Next.js 宿主能力
 
 - Next.js 16（App Router），React 18，Tailwind +自定义 CSS 变量，`lucide-react` 图标集。
 - 已引入 `@xyflow/react`（React Flow v12）且存在旧版 `CanvasStudio`/`CanvasNode` 实现，可作为 React 画布的基线。
 - 全局状态：尚未统一使用 Zustand/Redux，组件多靠 hooks/local state；`react-hot-toast` 用于全局提醒，`next-themes`、`Sidebar` 控制布局。
-- Supabase auth：`lib/supabaseClient` + `AuthSessionSync`，`CanvasAuthBridge` 已负责 cookie/iframe 桥接。
+- Supabase auth：`lib/supabaseClient` + `AuthSessionSync` 继续工作，已不再需要 `CanvasAuthBridge` 桥接 iframe cookie。
 - API：`app/api/canvas/*` + `lib/canvasProjects.ts` + `lib/canvasUpstream.ts`，数据库已有 `canvas_projects` 表。
 
 **可复用资产**

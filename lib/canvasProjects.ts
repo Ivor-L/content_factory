@@ -2,6 +2,15 @@ import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import prisma from './prisma';
 
+export class CanvasProjectConflictError extends Error {
+  code = 'STALE_CANVAS_VERSION';
+
+  constructor(message = 'Canvas project has a newer version') {
+    super(message);
+    this.name = 'CanvasProjectConflictError';
+  }
+}
+
 export type CanvasViewport = { x: number; y: number; zoom: number };
 export type CanvasData = {
   nodes: unknown[];
@@ -23,6 +32,7 @@ export type CanvasProjectInput = {
   name?: string;
   thumbnail?: string | null;
   canvasData?: unknown;
+  expectedUpdatedAt?: string | null;
 };
 
 type CanvasProjectRow = {
@@ -246,7 +256,9 @@ function toRowFromSql(row: CanvasProjectTableRow): CanvasProjectRow {
   };
 }
 
-function buildPersistenceData(input: CanvasProjectInput): CanvasProjectPersistenceData {
+function buildPersistenceData(
+  input: Pick<CanvasProjectInput, 'name' | 'thumbnail' | 'canvasData'>,
+): CanvasProjectPersistenceData {
   return {
     name: sanitizeName(input.name),
     thumbnail: sanitizeThumbnail(input.thumbnail),
@@ -306,6 +318,7 @@ async function rawUpdateCanvasProject(
   userId: string,
   projectId: string,
   data: CanvasProjectUpdateData,
+  expectedUpdatedAt?: Date | null,
 ): Promise<CanvasProjectRow | null> {
   const updates: Prisma.Sql[] = [];
   if (data.name !== undefined) {
@@ -322,10 +335,13 @@ async function rawUpdateCanvasProject(
   }
   updates.push(Prisma.sql`updated_at = NOW()`);
 
+  const versionClause = expectedUpdatedAt
+    ? Prisma.sql` AND updated_at = ${expectedUpdatedAt}`
+    : Prisma.sql``;
   const query = Prisma.sql`
     UPDATE public.canvas_projects
     SET ${Prisma.join(updates, ', ')}
-    WHERE id = ${projectId} AND user_id = ${userId}
+    WHERE id = ${projectId} AND user_id = ${userId}${versionClause}
     RETURNING id, user_id, name, thumbnail, canvas_data, created_at, updated_at
   `;
   const rows = await prisma.$queryRaw<CanvasProjectTableRow[]>(query);
@@ -445,7 +461,22 @@ export async function updateCanvasProject(
       return toResponse(existing);
     }
 
+    const expectedUpdatedAt = input.expectedUpdatedAt
+      ? new Date(input.expectedUpdatedAt)
+      : null;
+
     if (canvasProjectDelegate) {
+      if (expectedUpdatedAt) {
+        const result = await canvasProjectDelegate.updateMany({
+          where: { id: projectId, userId, updatedAt: expectedUpdatedAt },
+          data,
+        });
+        if (!result.count) {
+          throw new CanvasProjectConflictError();
+        }
+        const row = await canvasProjectDelegate.findFirst({ where: { id: projectId, userId } });
+        return row ? toResponse(row) : null;
+      }
       const row = await canvasProjectDelegate.update({
         where: { id: projectId },
         data,
@@ -453,7 +484,11 @@ export async function updateCanvasProject(
       return toResponse(row);
     }
 
-    const row = await rawUpdateCanvasProject(userId, projectId, data);
+    if (expectedUpdatedAt && existing.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
+      throw new CanvasProjectConflictError();
+    }
+
+    const row = await rawUpdateCanvasProject(userId, projectId, data, expectedUpdatedAt);
     return row ? toResponse(row) : null;
   });
 }

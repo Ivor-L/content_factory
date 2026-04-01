@@ -503,15 +503,14 @@ export function ProductList({ initialProducts, showHeader = true }: ProductListP
     if (!viewingProduct || !isDetailOpen) return;
     const updated = initialProducts.find((p) => p.id === viewingProduct.id);
     if (updated) setViewingProduct(updated);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialProducts]);
+  }, [initialProducts, viewingProduct, isDetailOpen]);
 
   // Subscribe to the specific product being viewed — independent of shouldPoll.
   // This catches updates that arrive AFTER the main subscription tears down
   // (e.g. n8n writes analysis content asynchronously after returning the initial response).
   useEffect(() => {
-    if (!viewingProduct || !isDetailOpen) return;
-    const productId = viewingProduct.id;
+    const productId = viewingProduct?.id;
+    if (!productId || !isDetailOpen) return;
     const channel = supabase
       .channel(`product-detail-${productId}`)
       .on(

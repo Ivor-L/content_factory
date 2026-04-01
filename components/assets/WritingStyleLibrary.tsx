@@ -99,6 +99,7 @@ function prettifyJson(value?: Record<string, any> | null) {
 
 export function WritingStyleLibrary({ showHeader = true }: WritingStyleLibraryProps) {
   const [authToken, setAuthToken] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [styles, setStyles] = useState<WritingStyleSummary[]>([]);
   const [selectedStyleId, setSelectedStyleId] = useState<string | null>(null);
@@ -111,17 +112,21 @@ export function WritingStyleLibrary({ showHeader = true }: WritingStyleLibraryPr
   const [creating, setCreating] = useState(false);
   const [bulkUploading, setBulkUploading] = useState(false);
   const [extracting, setExtracting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [styleName, setStyleName] = useState("");
   const [bulkFile, setBulkFile] = useState<File | null>(null);
   const [bulkInputKey, setBulkInputKey] = useState(0);
   const detailRefreshingRef = useRef(false);
+  const realtimeChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const selectedStyleIdRef = useRef<string | null>(null);
   const [showRawJson, setShowRawJson] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setAuthToken(data.session?.access_token ?? null);
+      setCurrentUserId(data.session?.user?.id ?? null);
       setAuthChecked(true);
     });
 
@@ -129,6 +134,7 @@ export function WritingStyleLibrary({ showHeader = true }: WritingStyleLibraryPr
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setAuthToken(session?.access_token ?? null);
+      setCurrentUserId(session?.user?.id ?? null);
     });
 
     return () => {
@@ -226,6 +232,16 @@ export function WritingStyleLibrary({ showHeader = true }: WritingStyleLibraryPr
     [authToken]
   );
 
+  const fetchStylesRef = useRef(fetchStyles);
+  useEffect(() => {
+    fetchStylesRef.current = fetchStyles;
+  }, [fetchStyles]);
+
+  const fetchStyleDetailRef = useRef(fetchStyleDetail);
+  useEffect(() => {
+    fetchStyleDetailRef.current = fetchStyleDetail;
+  }, [fetchStyleDetail]);
+
   useEffect(() => {
     if (!authChecked || !authToken) return;
     void fetchStyles();
@@ -242,24 +258,62 @@ export function WritingStyleLibrary({ showHeader = true }: WritingStyleLibraryPr
   }, [selectedStyleId, fetchStyleDetail]);
 
   useEffect(() => {
+    selectedStyleIdRef.current = selectedStyleId;
+  }, [selectedStyleId]);
+
+  useEffect(() => {
     setShowRawJson(false);
   }, [selectedStyle?.currentProfile?.id]);
 
   useEffect(() => {
-    if (!selectedStyleId || !authToken) return;
-    const normalized = (selectedStyle?.extractionStatus || "").toUpperCase();
-    if (normalized !== "PROCESSING") return;
-    const timer = window.setInterval(() => {
-      void fetchStyles();
-      void fetchStyleDetail(selectedStyleId, { silent: true });
-    }, 5000);
-    return () => window.clearInterval(timer);
-  }, [authToken, fetchStyleDetail, fetchStyles, selectedStyle?.extractionStatus, selectedStyleId]);
+    if (!authToken || !currentUserId) {
+      if (realtimeChannelRef.current) {
+        void supabase.removeChannel(realtimeChannelRef.current);
+        realtimeChannelRef.current = null;
+      }
+      return;
+    }
+
+    const channel = supabase
+      .channel(`writing-style-extraction-${currentUserId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "writing_styles",
+          filter: `user_id=eq.${currentUserId}`,
+        },
+        (payload) => {
+          const updatedId = (payload.new as { id?: string })?.id;
+          if (!updatedId) return;
+          fetchStylesRef.current?.();
+          if (selectedStyleIdRef.current === updatedId) {
+            fetchStyleDetailRef.current?.(updatedId, { silent: true });
+          }
+        }
+      )
+      .subscribe();
+
+    realtimeChannelRef.current = channel;
+
+    return () => {
+      if (channel) {
+        void supabase.removeChannel(channel);
+      }
+      if (realtimeChannelRef.current === channel) {
+        realtimeChannelRef.current = null;
+      }
+    };
+  }, [authToken, currentUserId]);
+
 
   const selectedStyleSummary = useMemo(
     () => styles.find((item) => item.id === selectedStyleId) || null,
     [styles, selectedStyleId]
   );
+  const normalizedSelectedStatus = (selectedStyle?.extractionStatus || "").toUpperCase();
+  const canCancelExtraction = normalizedSelectedStatus === "PROCESSING" || normalizedSelectedStatus === "TRIGGERED";
 
   const handleCreateStyle = async (event: FormEvent) => {
     event.preventDefault();
@@ -407,6 +461,34 @@ export function WritingStyleLibrary({ showHeader = true }: WritingStyleLibraryPr
       toast.error(error instanceof Error ? error.message : "提炼失败");
     } finally {
       setExtracting(false);
+    }
+  };
+
+  const handleCancelExtraction = async () => {
+    if (!authToken || !selectedStyleId) {
+      toast.error("请先选择写作风格");
+      return;
+    }
+
+    setCancelling(true);
+    try {
+      const res = await fetch(`/api/assets/writing-styles/${selectedStyleId}/extract`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload.error || "取消提炼失败");
+      }
+      toast.success("已取消提炼任务");
+      await fetchStyles();
+      await fetchStyleDetail(selectedStyleId, { silent: true });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "取消提炼失败");
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -571,15 +653,28 @@ export function WritingStyleLibrary({ showHeader = true }: WritingStyleLibraryPr
                       上传批量内容后自动切片，点击“提炼风格”即可生成结构化风格规则。
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void handleExtractStyle()}
-                    disabled={extracting || (selectedStyle?.extractionStatus || "").toUpperCase() === "PROCESSING"}
-                    className="inline-flex items-center gap-2 rounded-xl bg-black px-3 py-2 text-sm font-semibold text-white transition hover:bg-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-gray-100"
-                  >
-                    {extracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                    {extracting ? "提炼中..." : "提炼风格"}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleExtractStyle()}
+                      disabled={extracting || canCancelExtraction}
+                      className="inline-flex items-center gap-2 rounded-xl bg-black px-3 py-2 text-sm font-semibold text-white transition hover:bg-gray-900 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-gray-100"
+                    >
+                      {extracting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      {extracting ? "提炼中..." : "提炼风格"}
+                    </button>
+                    {canCancelExtraction && (
+                      <button
+                        type="button"
+                        onClick={() => void handleCancelExtraction()}
+                        disabled={cancelling}
+                        className="inline-flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:hover:border-gray-600"
+                      >
+                        {cancelling && <Loader2 className="h-4 w-4 animate-spin" />}
+                        {cancelling ? "取消中..." : "取消提炼"}
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
                   <span className={cn("rounded-full border px-2 py-0.5", statusClass(selectedStyle?.extractionStatus))}>

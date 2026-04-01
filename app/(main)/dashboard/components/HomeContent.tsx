@@ -5,36 +5,13 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { ArrowRight, User, Clock, Clapperboard, SendHorizontal, Sparkles, Image, Paperclip, Play, X } from 'lucide-react';
-import Link from 'next/link';
+import { User, Clapperboard, SendHorizontal, Sparkles, Image as ImageIcon, Paperclip, Play, X } from 'lucide-react';
 import { useTenant } from '@/hooks/useTenant';
 import { Modal } from '@/components/Modal';
 import { DigitalHumanModal } from '@/components/DigitalHumanModal';
 import { QuickPosterForm, QuickReplicationForm } from './QuickActionForms';
 import { CreativeQuickStartModal } from './CreativeQuickStart';
-import type { TaskType } from '@/lib/taskSummary';
 import { createCanvasProjectOnServer } from '@/app/(main)/canvas/lib/api';
-import { formatDashboardTimestamp } from '@/lib/formatDashboardTimestamp';
-
-interface HomeContentProps {
-  recentTasks: DashboardTaskSummary[];
-  products: any[];
-}
-
-type DashboardTaskSummary = {
-  id: string;
-  taskType: TaskType;
-  taskId: string;
-  title: string | null;
-  status: string;
-  preview?: string | null;
-  thumbnailUrl?: string | null;
-  progress?: number | null;
-  metadata?: Record<string, unknown> | null;
-  createdAt: string;
-  updatedAt: string;
-  updatedAtFormatted?: string;
-};
 
 type Attachment = {
   id: string;
@@ -45,48 +22,6 @@ type Attachment = {
   uploading: boolean;
 };
 
-type CopyMap = { en: string; zh: string; 'zh-TW': string };
-type LanguageCode = keyof CopyMap;
-type StatusTone = 'success' | 'processing' | 'pending' | 'danger';
-
-const DEFAULT_TYPE_COPY: CopyMap = { en: 'Project', zh: '项目', 'zh-TW': '專案' };
-const DEFAULT_STATUS_COPY: CopyMap = { en: 'Processing', zh: '处理中', 'zh-TW': '處理中' };
-
-const TYPE_LABELS: Record<TaskType, CopyMap> = {
-  creative: { en: 'Creative workspace', zh: '智能创作', 'zh-TW': '智能創作' },
-  poster: { en: 'Poster experiments', zh: '图文创意', 'zh-TW': '圖文創意' },
-  digitalHuman: { en: 'Digital human', zh: '数字人视频', 'zh-TW': '數字人影片' },
-  replication: { en: 'Viral replications', zh: '爆款复刻', 'zh-TW': '爆款復刻' },
-  storyboard: { en: 'Storyboards', zh: '分镜任务', 'zh-TW': '分鏡任務' },
-  knowledgeVideo: { en: 'Knowledge videos', zh: '知识视频', 'zh-TW': '知識影片' },
-  replicationShot: { en: 'Scene clones', zh: '场景复刻', 'zh-TW': '場景復刻' },
-};
-
-const STATUS_DISPLAY: Record<string, { label: CopyMap; tone: StatusTone }> = {
-  COMPLETED: { label: { en: 'Completed', zh: '已完成', 'zh-TW': '已完成' }, tone: 'success' },
-  READY: { label: { en: 'Ready', zh: '可下载', 'zh-TW': '可下載' }, tone: 'success' },
-  ACTIVE: { label: { en: 'Active', zh: '进行中', 'zh-TW': '進行中' }, tone: 'processing' },
-  PUBLISHED: { label: { en: 'Published', zh: '已发布', 'zh-TW': '已發布' }, tone: 'success' },
-  PROCESSING: { label: { en: 'Processing', zh: '处理中', 'zh-TW': '處理中' }, tone: 'processing' },
-  ANALYZING: { label: { en: 'Analyzing', zh: '分析中', 'zh-TW': '分析中' }, tone: 'processing' },
-  RUNNING: { label: { en: 'Running', zh: '运行中', 'zh-TW': '執行中' }, tone: 'processing' },
-  IN_PROGRESS: { label: { en: 'In progress', zh: '处理中', 'zh-TW': '處理中' }, tone: 'processing' },
-  QUEUED: { label: { en: 'Queued', zh: '排队中', 'zh-TW': '排隊中' }, tone: 'pending' },
-  PENDING: { label: { en: 'Queued', zh: '排队中', 'zh-TW': '排隊中' }, tone: 'pending' },
-  FAILED: { label: { en: 'Failed', zh: '失败', 'zh-TW': '失敗' }, tone: 'danger' },
-  ERROR: { label: { en: 'Error', zh: '出错', 'zh-TW': '錯誤' }, tone: 'danger' },
-  BREAKDOWN_COMPLETED: { label: { en: 'Analyzed', zh: '拆解完成', 'zh-TW': '拆解完成' }, tone: 'success' },
-  VIDEO_GENERATION_COMPLETED: { label: { en: 'Video ready', zh: '视频就绪', 'zh-TW': '影片就緒' }, tone: 'success' },
-  IMAGE_GENERATION_COMPLETED: { label: { en: 'Images ready', zh: '首帧图就绪', 'zh-TW': '首幀圖就緒' }, tone: 'success' },
-};
-
-const STATUS_BADGE_CLASSES: Record<StatusTone, string> = {
-  success: 'bg-emerald-50/95 text-emerald-800 border border-emerald-100/70 backdrop-blur-sm',
-  processing: 'bg-sky-50/95 text-sky-800 border border-sky-100/70 backdrop-blur-sm',
-  pending: 'bg-amber-50/95 text-amber-800 border border-amber-100/70 backdrop-blur-sm',
-  danger: 'bg-rose-50/95 text-rose-800 border border-rose-100/70 backdrop-blur-sm',
-};
-
 const PLACEHOLDER_HINTS = [
   '帮我拆解这个爆款视频的分镜结构…',
   '帮我复刻这个爆款视频…',
@@ -95,15 +30,6 @@ const PLACEHOLDER_HINTS = [
   '帮我生成一个数字人口播视频…',
   '帮我生成一张竖版产品海报…',
 ];
-
-const clampProgress = (value: number) => Math.min(100, Math.max(0, Math.round(value)));
-const pickCopy = (map: CopyMap | undefined, lang: LanguageCode, fallback: string) =>
-  map?.[lang] ?? fallback;
-const looksLikeVideoUrl = (url?: string | null) => {
-  if (!url) return false;
-  const normalized = url.split('?')[0]?.toLowerCase() ?? '';
-  return normalized.endsWith('.mp4') || normalized.endsWith('.mov') || normalized.endsWith('.webm');
-};
 
 async function uploadFile(file: File): Promise<string> {
   const isVideo = file.type.startsWith('video/');
@@ -116,8 +42,8 @@ async function uploadFile(file: File): Promise<string> {
   return payload.url;
 }
 
-export function HomeContent({ recentTasks, products: _products }: HomeContentProps) {
-  const { t, language } = useLanguage();
+export function HomeContent() {
+  const { t } = useLanguage();
   const { tenant, tenantSlug, basePath } = useTenant();
   const router = useRouter();
   const pathname = usePathname();
@@ -160,13 +86,12 @@ export function HomeContent({ recentTasks, products: _products }: HomeContentPro
     return () => { if (typingRef.current) clearTimeout(typingRef.current); };
   }, [displayedPlaceholder, typingForward, placeholderIdx]);
 
-  const getTenantPath = (path: string) => {
+  const getTenantPath = useCallback((path: string) => {
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     return `${basePath || ''}${normalizedPath}`;
-  };
+  }, [basePath]);
 
   const heroTenantName = tenant.name || 'NexTide';
-  const langKey = (language ?? 'zh') as LanguageCode;
   const isNextideTenant =
     (tenantSlug?.toLowerCase() ?? '') === 'nextide' || heroTenantName.toLowerCase() === 'nextide';
   const heroTitle = isNextideTenant
@@ -376,7 +301,7 @@ export function HomeContent({ recentTasks, products: _products }: HomeContentPro
                 onClick={() => openQuickAction('poster')}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-200 bg-white/90 px-4 py-3 text-sm font-medium text-gray-700 shadow-sm transition hover:border-[#ffd445] hover:bg-white hover:text-gray-900 dark:border-transparent dark:bg-gray-900/80 dark:text-gray-200 dark:hover:border-[#ffd445] dark:hover:bg-gray-900"
               >
-                <Image className="h-4 w-4" />
+                <ImageIcon className="h-4 w-4" />
                 小红书图文
               </button>
               <button
@@ -390,36 +315,6 @@ export function HomeContent({ recentTasks, products: _products }: HomeContentPro
             </div>
           </div>
         </section>
-
-        {/* Recent Projects (Simplified/Moved down) */}
-        <div className="mb-8">
-            <div className="flex items-center justify-between mb-6 px-2">
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                    <div className="w-1.5 h-6 bg-black dark:bg-white rounded-full"></div>
-                    {(t as any).home?.recentProjects || 'Recent Projects'}
-                </h2>
-                <Link href={getTenantPath('/my-works')} className="text-sm font-bold text-gray-500 hover:text-black dark:hover:text-white flex items-center gap-1 transition-colors">
-                    {(t as any).home?.viewMore || 'View More'} <ArrowRight size={14} />
-                </Link>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5">
-                {recentTasks.length > 0 ? (
-                    recentTasks.map((task) => (
-                        <RecentProjectCard
-                          key={task.id}
-                          task={task}
-                          lang={langKey}
-                          detailHref={`${getTenantPath('/my-works')}?taskId=${encodeURIComponent(task.taskId)}`}
-                        />
-                    ))
-                ) : (
-                    <div className="col-span-full py-12 text-center text-gray-400 bg-white dark:bg-[#1F2127]/50 rounded-2xl border-2 border-dashed border-gray-200 dark:border-[#34363E]">
-                        <p>No recent projects found</p>
-                    </div>
-                )}
-            </div>
-        </div>
 
         {showReplicationModal && (
           <Modal
@@ -466,92 +361,4 @@ export function HomeContent({ recentTasks, products: _products }: HomeContentPro
     </div>
   );
 
-}
-
-interface RecentProjectCardProps {
-  task: DashboardTaskSummary;
-  lang: LanguageCode;
-  detailHref: string;
-}
-
-function RecentProjectCard({ task, lang, detailHref }: RecentProjectCardProps) {
-  const statusKey = (task.status || '').toUpperCase();
-  const statusEntry =
-    STATUS_DISPLAY[statusKey] ?? ({ label: DEFAULT_STATUS_COPY, tone: 'processing' } as {
-      label: CopyMap;
-      tone: StatusTone;
-    });
-  const statusLabel = pickCopy(
-    statusEntry.label,
-    lang,
-    task.status || pickCopy(DEFAULT_STATUS_COPY, lang, 'Processing'),
-  );
-  const typeLabel = pickCopy(
-    TYPE_LABELS[task.taskType],
-    lang,
-    pickCopy(DEFAULT_TYPE_COPY, lang, 'Project'),
-  );
-  const thumbnailIsVideo = looksLikeVideoUrl(task.thumbnailUrl);
-  const timestampSource = task.updatedAtFormatted ?? formatDashboardTimestamp(task.updatedAt);
-  const timestamp = (timestampSource ?? "未知时间").replace(/,\s*/g, " ");
-
-  return (
-    <Link
-      href={detailHref}
-      className="group relative flex aspect-[2/3] sm:aspect-[9/16] w-full flex-col overflow-hidden rounded-3xl border border-white/20 bg-white/10 text-left shadow-lg backdrop-blur dark:border-white/10 dark:bg-white/5"
-    >
-      <div className="absolute inset-0">
-        {task.thumbnailUrl ? (
-          thumbnailIsVideo ? (
-            <video
-              src={task.thumbnailUrl}
-              className="h-full w-full object-cover"
-              autoPlay
-              loop
-              muted
-              playsInline
-            />
-          ) : (
-            <img
-              src={task.thumbnailUrl}
-              alt={task.title || typeLabel}
-              className="h-full w-full object-cover"
-              loading="lazy"
-            />
-          )
-        ) : (
-          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white/60">
-            <Clapperboard className="h-8 w-8" />
-          </div>
-        )}
-      </div>
-      <div className="absolute inset-0 bg-black/45 transition group-hover:bg-black/60" />
-      {statusEntry.tone === 'processing' && (
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="animate-shimmer-sweep absolute inset-0 w-1/2 bg-gradient-to-r from-transparent via-white/[0.25] to-transparent" />
-        </div>
-      )}
-      <div className="relative z-10 flex h-full flex-col justify-between p-5 text-white">
-        <div className="flex flex-col items-start gap-1.5 text-xs font-semibold">
-          <span className="inline-flex items-center rounded-full bg-white/20 px-2.5 py-0.5 leading-5">
-            {typeLabel}
-          </span>
-          <span
-            className={`inline-flex items-center rounded-full px-2.5 py-0.5 leading-5 ${STATUS_BADGE_CLASSES[statusEntry.tone]}`}
-          >
-            {statusLabel}
-          </span>
-        </div>
-        <div>
-          <h3 className="text-sm font-semibold leading-tight line-clamp-1">
-            {task.title || typeLabel}
-          </h3>
-          <p className="mt-2 inline-flex items-center gap-2 text-sm text-white/75">
-            <Clock className="h-4 w-4" />
-            {timestamp}
-          </p>
-        </div>
-      </div>
-    </Link>
-  );
 }

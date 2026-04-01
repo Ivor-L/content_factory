@@ -206,25 +206,6 @@ services:
 
 配置文件位于服务器：`/etc/nginx/conf.d/atomx.conf`
 
-**canvas-runtime SPA 路由关键写法**（两个 location 顺序不能颠倒）：
-
-```nginx
-# 静态资源必须用 ^~ 前缀，防止被下面的正则匹配覆盖
-location ^~ /canvas-runtime/assets/ {
-    proxy_pass http://172.17.0.1:3002;
-}
-
-# SPA 路由：所有 /canvas-runtime 路径都返回 index.html
-location ~ ^/canvas-runtime {
-    rewrite ^ /canvas-runtime/index.html break;
-    proxy_pass http://172.17.0.1:3002;
-}
-
-location / {
-    proxy_pass http://172.17.0.1:3002;
-}
-```
-
 **SSL 证书注意事项**：
 - 通配符证书路径：`/etc/letsencrypt/live/atomx.top/fullchain.pem`
 - 证书覆盖：`*.atomx.top`、`*.supabase.atomx.top`、`atomx.top`
@@ -271,7 +252,6 @@ additional_redirect_urls = ["https://atomx.top", "https://atomx.top/auth/callbac
 | `prisma/schema.prisma not found` (构建时) | Dockerfile 未在 npm ci 前 COPY prisma 目录 | 在 `COPY package.json` 之前加 `COPY prisma ./prisma` |
 | `prisma generate` 跳过 | `npm ci --omit=dev` 导致 prisma CLI 未安装 | 去掉 `--omit=dev` |
 | Docker 内无法连接 127.0.0.1:54322 | 容器内 127.0.0.1 是容器自身，不是宿主机 | 改用 `host.docker.internal`，并配置 `extra_hosts` |
-| `/canvas-runtime` JS 文件返回 HTML | nginx rewrite 覆盖了静态资源请求 | 静态资源 location 加 `^~` 前缀 |
 | `app.atomx.top` 显示错误证书 | nginx 有无 `server_name` 的 catch-all block | 为每个域名添加独立 server block |
 | 本地 `fetch failed` (Supabase Auth) | 隧道未转发 54321 端口，或密钥不匹配 | 本地直接用线上 Supabase URL（无需隧道） |
 | `Invalid supabaseUrl` (运行时) | `NEXT_PUBLIC_*` 变量在构建时烘焙进 JS bundle，运行时 .env 不生效 | docker compose build 时必须通过 `args` 传入，见第 4 节 |

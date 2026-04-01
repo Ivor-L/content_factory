@@ -11,6 +11,8 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
+  type HTMLAttributes,
   type RefObject,
 } from "react";
 import {
@@ -35,6 +37,7 @@ import {
   Handle,
   Position,
   type NodeProps,
+  type Connection,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import clsx from "clsx";
@@ -82,6 +85,7 @@ import { useCanvasShell } from "@/contexts/CanvasShellContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTenant } from "@/hooks/useTenant";
 import { usePathname, useRouter } from "next/navigation";
+import Image from "next/image";
 import { useCanvasProjects } from "../hooks/useCanvasProjects";
 import { useCanvasResources } from "../hooks/useCanvasResources";
 import { useCanvasModels, type ModelOption, VIDEO_MODEL_PARAMS } from "../hooks/useCanvasModels";
@@ -131,6 +135,45 @@ function extractThumbnailFromNodes(runtimeNodes: RuntimeCanvasNode[]): string | 
     }
   }
   return null;
+}
+
+type CanvasImageProps = {
+  src: string;
+  alt: string;
+  imageClassName?: string;
+  draggable?: boolean;
+  sizes?: string;
+  priority?: boolean;
+  onLoad?: (dims: { naturalWidth: number; naturalHeight: number }) => void;
+} & Omit<HTMLAttributes<HTMLDivElement>, "onLoad">;
+
+function CanvasImage({
+  src,
+  alt,
+  imageClassName,
+  draggable = false,
+  sizes = "100vw",
+  priority,
+  onLoad,
+  className,
+  ...rest
+}: CanvasImageProps) {
+  return (
+    <div className={clsx("relative", className)} {...rest}>
+      <Image
+        fill
+        src={src}
+        alt={alt}
+        draggable={draggable}
+        sizes={sizes}
+        priority={priority}
+        className={clsx("object-cover", imageClassName)}
+        onLoadingComplete={(img) => {
+          onLoad?.({ naturalWidth: img.naturalWidth, naturalHeight: img.naturalHeight });
+        }}
+      />
+    </div>
+  );
 }
 
 type CanvasResourceItem = ReturnType<typeof useCanvasResources>["resources"][number];
@@ -189,6 +232,7 @@ const CanvasNodeContext = createContext<CanvasNodeContextValue>({
   patchRuntimeData: () => {},
   focusNode: () => {},
   focusedNodeId: null,
+  selectedNodeIds: new Set<string>(),
   isConnecting: false,
   setNodeStatus: () => {},
   models: {
@@ -253,8 +297,12 @@ function useCardMagnet(ref: RefObject<HTMLElement | null>): CardMagnetState {
     };
   }, [ref]);
 
-  // Per-node mousemove listener with RAF throttling
+  // Per-node mousemove listener with RAF throttling.
+  // Use fresh getBoundingClientRect() inside RAF so canvas pan (CSS transform)
+  // doesn't leave boundsRef stale — captured `el` is stable after mount.
   useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
     const RADIUS = 130;
     let lastMx = 0;
     let lastMy = 0;
@@ -264,20 +312,19 @@ function useCardMagnet(ref: RefObject<HTMLElement | null>): CardMagnetState {
       if (rafRef.current !== null) return; // Already scheduled
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = null;
-        const rect = boundsRef.current;
-        if (!rect) return;
+        const r = el.getBoundingClientRect();
         const mx = lastMx;
         const my = lastMy;
-        const cy = rect.top + rect.height / 2;
-        const distLeft  = Math.sqrt((mx - rect.left)  ** 2 + (my - cy) ** 2);
-        const distRight = Math.sqrt((mx - rect.right) ** 2 + (my - cy) ** 2);
+        const cy = r.top + r.height / 2;
+        const distLeft  = Math.sqrt((mx - r.left)  ** 2 + (my - cy) ** 2);
+        const distRight = Math.sqrt((mx - r.right) ** 2 + (my - cy) ** 2);
         const nearLeft  = distLeft  <= RADIUS;
         const nearRight = distRight <= RADIUS;
         if (nearLeft || nearRight) {
           const activeDist = nearLeft ? distLeft : distRight;
           const t = 1 - activeDist / RADIUS;
           const strength = t * t;
-          const mousePct = ((my - rect.top) / rect.height) * 100;
+          const mousePct = ((my - r.top) / r.height) * 100;
           const magnetPct = 50 + (mousePct - 50) * strength;
           setState({
             showLeft:  nearLeft,
@@ -294,7 +341,7 @@ function useCardMagnet(ref: RefObject<HTMLElement | null>): CardMagnetState {
       document.removeEventListener("mousemove", onMove);
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
-  }, []);
+  }, [ref]);
 
   return state;
 }
@@ -589,8 +636,7 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       .catch(() => {})
       .finally(() => { if (!cancelled) setScStyleLoading(false); });
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showSmartCreate, scAuthToken]);
+  }, [showSmartCreate, scAuthToken, scStyleOptions.length]);
 
   async function handleSmartCreate() {
     if (!scIdeaText.trim() || !scAuthToken) return;
@@ -693,15 +739,13 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             </div>
             {/* Upstream image preview */}
             {upstreamImageUrl ? (
-              <div className="mx-4 mt-3 overflow-hidden rounded-xl">
-                <img
-                  src={upstreamImageUrl}
-                  alt="参考图片"
-                  className="w-full object-cover"
-                  style={{ maxHeight: 120 }}
-                  draggable={false}
-                />
-              </div>
+              <CanvasImage
+                src={upstreamImageUrl}
+                alt="参考图片"
+                className="mx-4 mt-3 w-full overflow-hidden rounded-xl"
+                style={{ maxHeight: 120 }}
+                draggable={false}
+              />
             ) : (
               <div className="mx-4 mt-3 flex h-[72px] items-center justify-center rounded-xl bg-[var(--canvas-hover-sm)]">
                 <span className="text-[11px] text-[var(--canvas-text-30)]">等待上游图片节点</span>
@@ -1463,15 +1507,13 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
         )}
       >
         {outputs[0]?.url ? (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img
+          <CanvasImage
             src={outputs[0].url}
             alt="Generated"
-            className="h-full w-full object-cover"
-            onLoad={(e) => {
-              const img = e.currentTarget;
-              if (img.naturalWidth && img.naturalHeight) {
-                setIntrinsicRatio(img.naturalWidth / img.naturalHeight);
+            className="h-full w-full"
+            onLoad={({ naturalWidth, naturalHeight }) => {
+              if (naturalWidth && naturalHeight) {
+                setIntrinsicRatio(naturalWidth / naturalHeight);
               }
             }}
           />
@@ -1590,6 +1632,7 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const lastFrameUploadRef = useRef<HTMLInputElement>(null);
   const directUploadRef = useRef<HTMLInputElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
+  const [fullscreenUrl, setFullscreenUrl] = useState<string | null>(null);
   const { patchRuntimeData, models, runVideoNode, runStoryboardNode, resources, uploadResource, isConnecting, polishPrompt, focusedNodeId, addDownstreamNodes, openViralModal } = useCanvasNodeContext();
   const { setNodes: rfSetNodes, setEdges: rfSetEdges, getNode: rfGetNode } = useReactFlow();
   const upstream = data.upstreamInputs ?? EMPTY_UPSTREAM;
@@ -2366,7 +2409,7 @@ function ResourceTile({
       )}
     >
       {imageUrl ? (
-        <img src={imageUrl} alt="" className="h-full w-full object-cover" draggable={false} />
+        <CanvasImage src={imageUrl} alt="" className="h-full w-full" draggable={false} />
       ) : (
         <div className="flex h-full w-full items-center justify-center">
           {icon}
@@ -2425,9 +2468,9 @@ function AudioWaveformPlayer({ src }: { src: string }) {
     return () => { audio.removeEventListener("ended", onEnded); audio.removeEventListener("loadedmetadata", onLoaded); };
   }, [src]);
 
-  const tick = useCallback(() => {
+  const tick = useCallback(function tickFrame() {
     if (audioRef.current) setCurrentTime(audioRef.current.currentTime);
-    rafRef.current = requestAnimationFrame(tick);
+    rafRef.current = requestAnimationFrame(tickFrame);
   }, []);
 
   useEffect(() => {
@@ -2871,8 +2914,12 @@ function DigitalHumanNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               }}
             />
           ) : avatarImage ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img src={avatarImage} alt="Avatar" className="h-full w-full object-cover opacity-60" />
+            <CanvasImage
+              src={avatarImage}
+              alt="Avatar"
+              className="h-full w-full"
+              imageClassName="opacity-60"
+            />
           ) : (
             <div className="flex h-full w-full items-center justify-center">
               <UserCircle2 className="h-10 w-10 text-[var(--canvas-text-15)]" />
@@ -3127,8 +3174,7 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                       selectedSegmentId ? "border-[var(--canvas-border-md)] hover:border-[var(--canvas-border-heavy)]" : "border-[var(--canvas-border)] opacity-50"
                     }`}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={photo.url} alt="photo" className="h-full w-full object-cover" />
+                    <CanvasImage src={photo.url} alt="photo" className="h-full w-full" />
                   </button>
                 ))}
               </div>
@@ -3246,8 +3292,7 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                     </div>
                     <div className="aspect-square overflow-hidden rounded-xl bg-[var(--canvas-hover-sm)]">
                       {frameImage ? (
-                        /* eslint-disable-next-line @next/next/no-img-element */
-                        <img src={frameImage} alt={`Shot ${seg.order + 1}`} className="h-full w-full object-cover" />
+                        <CanvasImage src={frameImage} alt={`Shot ${seg.order + 1}`} className="h-full w-full" />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center">
                           <ImageIcon className="h-5 w-5 text-[var(--canvas-text-15)]" />
@@ -3346,8 +3391,7 @@ function StoryboardNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                       <td className="px-4 py-4">
                         <div className="h-28 w-28 overflow-hidden rounded-xl bg-[var(--canvas-hover-sm)]">
                           {frameImage ? (
-                            /* eslint-disable-next-line @next/next/no-img-element */
-                            <img src={frameImage} alt={`Shot ${seg.order + 1}`} className="h-full w-full object-cover" />
+                            <CanvasImage src={frameImage} alt={`Shot ${seg.order + 1}`} className="h-full w-full" />
                           ) : (
                             <div className="flex h-full w-full items-center justify-center">
                               <ImageIcon className="h-6 w-6 text-[var(--canvas-text-15)]" />
@@ -3398,6 +3442,7 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const { patchRuntimeData, runGridNode, splitGridNode, uploadResource, isConnecting, polishPrompt } = useCanvasNodeContext();
   const upstream = data.upstreamInputs ?? EMPTY_UPSTREAM;
   const innerRef = useRef<HTMLDivElement>(null);
+  const [fullscreenUrl, setFullscreenUrl] = useState<string | null>(null);
   const magnet = useCardMagnet(innerRef);
   const title = resolveTitle(data);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -3558,17 +3603,17 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           {/* Result image or placeholder */}
           <div className="relative" style={{ height: containerHeight }}>
             {gridImageUrl ? (
-              <img
+              <CanvasImage
                 src={gridImageUrl}
                 alt="九宫格"
-                className="h-full w-full object-contain"
-                  onLoad={(e) => {
-                    const img = e.currentTarget;
-                    if (img.naturalWidth && img.naturalHeight) {
-                      setIntrinsicRatio(img.naturalWidth / img.naturalHeight);
-                    }
-                  }}
-                />
+                className="h-full w-full"
+                imageClassName="object-contain"
+                onLoad={({ naturalWidth, naturalHeight }) => {
+                  if (naturalWidth && naturalHeight) {
+                    setIntrinsicRatio(naturalWidth / naturalHeight);
+                  }
+                }}
+              />
             ) : (
               <div className="flex h-full w-full items-center justify-center">
                 <Grid3X3 className="h-12 w-12 text-[var(--canvas-text-15)]" />
@@ -3603,7 +3648,7 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             {!imageUrl && upstream.firstImageUrl && (
               <ResourceTile
                 imageUrl={upstream.firstImageUrl}
-                icon={<Image className="h-5 w-5" />}
+                icon={<ImageIcon className="h-5 w-5" />}
                 label="上游图片"
                 onClick={() => {}}
               />
@@ -3703,7 +3748,6 @@ function ImageTextGroupNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       scChannelsRef.current.forEach((ch) => { void supabase.removeChannel(ch); });
       scChannelsRef.current = [];
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -3724,8 +3768,7 @@ function ImageTextGroupNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       .catch(() => {})
       .finally(() => { if (!cancelled) setScStylesLoading(false); });
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scAuthToken]);
+  }, [scAuthToken, scSelectedStyleId, scStyles.length]);
 
   async function handleSmartCreate() {
     if (!scAuthToken || !scSelectedStyleId || scCreating) return;
@@ -3848,10 +3891,11 @@ function ImageTextGroupNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm"
           onClick={() => setFullscreenIdx(null)}
         >
-          <img
+          <CanvasImage
             src={images[fullscreenIdx].url}
             alt={`图片 ${fullscreenIdx + 1}`}
-            className="max-h-[90vh] max-w-[90vw] rounded-2xl object-contain shadow-2xl"
+            className="max-h-[90vh] max-w-[90vw]"
+            imageClassName="rounded-2xl object-contain shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           />
           {/* 关闭按钮 — 右上角 */}
@@ -3964,10 +4008,11 @@ function ImageTextGroupNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                       className="group relative overflow-hidden rounded-xl"
                       onClick={(e) => { e.stopPropagation(); setFullscreenIdx(idx); }}
                     >
-                      <img
+                      <CanvasImage
                         src={img.url}
                         alt={`图片 ${img.index}`}
-                        className="aspect-[3/4] w-full object-cover transition group-hover:brightness-90"
+                        className="aspect-[3/4] w-full"
+                        imageClassName="transition group-hover:brightness-90"
                       />
                       <div className="absolute inset-0 flex items-center justify-center opacity-0 transition group-hover:opacity-100">
                         <Maximize2 className="h-5 w-5 text-white drop-shadow" />
@@ -4032,8 +4077,7 @@ function ImageTextGroupNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                     )}
                   >
                     {s.previewUrl ? (
-                      /* eslint-disable-next-line @next/next/no-img-element */
-                      <img src={s.previewUrl} alt={s.name} className="h-14 w-14 object-cover" />
+                      <CanvasImage src={s.previewUrl} alt={s.name} className="h-14 w-14" />
                     ) : (
                       <div className="flex h-14 w-14 items-center justify-center bg-[var(--canvas-hover)] text-[10px] text-[var(--canvas-text-30)] text-center px-1 leading-tight">
                         {s.name}
@@ -4944,7 +4988,7 @@ export function ReactCanvasRoot({
           setNodes((prev) => [...prev, ...newFlowNodes]);
           setEdges((prev) => {
             let acc = prev;
-            newFlowEdges.forEach((e) => { acc = addEdge(e, acc); });
+            newFlowEdges.forEach((e) => { acc = addEdge(e as Edge, acc); });
             return acc;
           });
           patchRuntimeData(nodeId, { isSplitting: false });
@@ -5116,6 +5160,10 @@ export function ReactCanvasRoot({
         if (!cancelled) {
           const message = error instanceof Error ? error.message : "保存项目失败";
           setAutoSaveError(message);
+          if (error instanceof Error && error.name === "CanvasProjectConflictError") {
+            lastSaveHashRef.current = null;
+            toast.error("检测到该项目在其他页面被更新，已自动同步最新内容", { id: "canvas-conflict" });
+          }
         }
       } finally {
         if (!cancelled) {
@@ -5142,9 +5190,9 @@ export function ReactCanvasRoot({
         edges: flowEdgesToRuntime(edgesRef.current),
         viewport: viewportRef.current,
         resources: resourcesRef.current,
-      }, thumbnail);
+      }, thumbnail).catch(() => {});
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<MinimalFlowNodeData>>[]) => setNodes((current) => applyNodeChanges(changes, current) as Node<MinimalFlowNodeData>[]),
@@ -5699,7 +5747,7 @@ export function ReactCanvasRoot({
       setEdges(newEdges);
       // Fit into view after render
       setTimeout(() => {
-        rfInstanceRef.current?.fitView({ padding: 0.35, duration: 500, maxZoom: 0.7 });
+        rfInstanceRef.current?.fitView({ padding: 0.35, duration: 500 });
       }, 50);
     },
     [],
@@ -6047,11 +6095,10 @@ export function ReactCanvasRoot({
                 >
                   <div className="relative aspect-[4/3] w-full overflow-hidden">
                     {project.thumbnail ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <CanvasImage
                         src={project.thumbnail}
                         alt={project.name || "Canvas project"}
-                        className="h-full w-full object-cover"
+                        className="h-full w-full"
                       />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-black/80 to-black text-[var(--canvas-text-40)]">
@@ -6185,7 +6232,7 @@ export function ReactCanvasRoot({
           setIsDragOver(true);
         }}
         onDragLeave={(e) => {
-          if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
+          if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as globalThis.Node)) {
             setIsDragOver(false);
           }
         }}
@@ -6223,8 +6270,7 @@ export function ReactCanvasRoot({
               {/* Avatar */}
               <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-[var(--canvas-tooltip)]">
                 {avatarUrl ? (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img src={avatarUrl} alt="avatar" className="h-full w-full object-cover" />
+                  <CanvasImage src={avatarUrl} alt="avatar" className="h-full w-full" />
                 ) : (
                   <span className="text-sm font-semibold text-[var(--canvas-text-70)]">{avatarInitial}</span>
                 )}
@@ -6428,7 +6474,7 @@ export function ReactCanvasRoot({
                           return (
                             <button key={char.id} type="button" title={char.name} onClick={handleCharClick}
                               className="h-14 w-14 overflow-hidden rounded-[12px] bg-[var(--canvas-hover)] transition hover:brightness-110 active:scale-95">
-                              {char.avatar ? <img src={char.avatar} alt={char.name} className="h-full w-full object-cover" draggable={false} /> : <UserCircle2 className="h-6 w-6 text-[var(--canvas-text-30)]" />}
+                              {char.avatar ? <CanvasImage src={char.avatar} alt={char.name} className="h-full w-full" draggable={false} /> : <UserCircle2 className="h-6 w-6 text-[var(--canvas-text-30)]" />}
                             </button>
                           );
                         })}
@@ -6457,7 +6503,7 @@ export function ReactCanvasRoot({
                           return (
                             <button key={prod.id} type="button" title={prod.name} onClick={handleProdClick}
                               className="h-14 w-14 overflow-hidden rounded-[12px] bg-[var(--canvas-hover)] transition hover:brightness-110 active:scale-95">
-                              {thumbUrl ? <img src={thumbUrl} alt={prod.name} className="h-full w-full object-cover" draggable={false} /> : <div className="flex h-full w-full items-center justify-center text-[10px] text-[var(--canvas-text-30)] text-center px-1">{prod.name.slice(0, 4)}</div>}
+                              {thumbUrl ? <CanvasImage src={thumbUrl} alt={prod.name} className="h-full w-full" draggable={false} /> : <div className="flex h-full w-full items-center justify-center text-[10px] text-[var(--canvas-text-30)] text-center px-1">{prod.name.slice(0, 4)}</div>}
                             </button>
                           );
                         })}
@@ -6587,7 +6633,7 @@ export function ReactCanvasRoot({
           <div
             className="pointer-events-auto absolute right-0 top-0 h-full w-[380px] z-30 flex flex-col bg-[var(--canvas-panel)] backdrop-blur-2xl shadow-[var(--canvas-shadow-panel)]"
             onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsChatPanelDragOver(true); setIsDragOver(false); }}
-            onDragLeave={(e) => { e.stopPropagation(); if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsChatPanelDragOver(false); }}
+            onDragLeave={(e) => { e.stopPropagation(); if (!e.currentTarget.contains(e.relatedTarget as globalThis.Node)) setIsChatPanelDragOver(false); }}
             onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setIsChatPanelDragOver(false); if (e.dataTransfer.files.length) handleChatAttach(e.dataTransfer.files); }}
           >
 
@@ -6661,8 +6707,7 @@ export function ReactCanvasRoot({
                     {chatAttachments.map((att) => (
                       <div key={att.id} className="group/thumb relative">
                         {att.type === "image" ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={att.localUrl} alt={att.name} className="h-14 w-14 rounded-xl object-cover" />
+                          <CanvasImage src={att.localUrl} alt={att.name} className="h-14 w-14 rounded-xl" />
                         ) : (
                           <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-[var(--canvas-hover)]">
                             <Play className="h-5 w-5 text-[var(--canvas-text-40)]" />
