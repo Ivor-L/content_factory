@@ -139,7 +139,7 @@ export async function GET(request: Request) {
     last_active_at: lastActiveMap[p.id] ?? null,
   }));
 
-  return NextResponse.json({ data, total: authUsers?.total ?? data.length });
+  return NextResponse.json({ data, total: (authUsers as { total?: number })?.total ?? data.length });
 }
 
 export async function POST(request: Request) {

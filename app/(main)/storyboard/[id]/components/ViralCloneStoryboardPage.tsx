@@ -248,6 +248,9 @@ export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryb
           setTask((prev) => ({ ...prev, status: data.status, progress: data.progress || 0 }));
           if (data.status === "COMPLETED" || data.status === "BREAKDOWN_FAILED") {
             router.refresh();
+          } else if (data.status === "BREAKDOWN_COMPLETED") {
+            // Segments were INSERTed by the webhook — fetch them now
+            void fetchLatestStatus();
           }
         }
       )
@@ -281,7 +284,7 @@ export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryb
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [isPollingTerminal, task.id, router]);
+  }, [isPollingTerminal, task.id, router, fetchLatestStatus]);
 
   useEffect(() => {
     if (isPollingTerminal) return;

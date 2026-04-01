@@ -291,6 +291,18 @@ const REFRESH_COPY: CopyMap = {
   "zh-TW": "重新整理",
 };
 
+const LOAD_MORE_COPY: CopyMap = {
+  en: "Load more",
+  zh: "加载更多",
+  "zh-TW": "載入更多",
+};
+
+const LOADING_MORE_COPY: CopyMap = {
+  en: "Loading…",
+  zh: "加载中…",
+  "zh-TW": "載入中…",
+};
+
 const CTA_COPY: CopyMap = {
   en: "Create project",
   zh: "创建新项目",
@@ -361,6 +373,12 @@ const DIGITAL_HUMAN_COUNTDOWN_EXPIRED: CopyMap = {
   zh: "超过预计时间，等待回调",
   "zh-TW": "超過預計時間，等待回調",
 };
+
+interface MyProjectsClientProps {
+  initialTasks?: TaskSummary[];
+  initialHasMore?: boolean;
+  initialPageSize?: number;
+}
 
 function pickCopy(map: CopyMap, language: LanguageCode): string {
   return map[language] ?? map.en;
@@ -448,6 +466,16 @@ type FilterSelectProps<T extends string> = {
   value: T;
   options: FilterSelectOption<T>[];
   onChange: (value: T) => void;
+};
+
+type FetchMode = "reset" | "append";
+
+type FetchOptions = {
+  type: TaskType | "all";
+  status: string;
+  offset: number;
+  mode: FetchMode;
+  signal?: AbortSignal;
 };
 
 function FilterSelect<T extends string>({ label, value, options, onChange }: FilterSelectProps<T>) {
@@ -613,7 +641,11 @@ function CardActionMenu({ onRename, onDelete, disabled }: CardActionMenuProps) {
   );
 }
 
-export function MyProjectsClient() {
+export function MyProjectsClient({
+  initialTasks = [],
+  initialHasMore = false,
+  initialPageSize = 12,
+}: MyProjectsClientProps) {
   const { t, language } = useLanguage();
   const router = useRouter();
   const pathname = usePathname();
@@ -628,8 +660,12 @@ export function MyProjectsClient() {
   const initialStatus = useMemo(() => parseStatusParam(searchParams), [searchParams]);
   const [filterType, setFilterType] = useState<TaskType | "all">(initialType);
   const [filterStatus, setFilterStatus] = useState<string>(initialStatus);
-  const [tasks, setTasks] = useState<TaskSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [tasks, setTasks] = useState<TaskSummary[]>(() => initialTasks);
+  const [hasMore, setHasMore] = useState(initialHasMore);
+  const [pageSize] = useState(initialPageSize);
+  const [offset, setOffset] = useState(initialTasks.length);
+  const [loading, setLoading] = useState(initialTasks.length === 0);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTask, setActiveTask] = useState<TaskSummary | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -642,6 +678,18 @@ export function MyProjectsClient() {
   const [renameValue, setRenameValue] = useState("");
   const [renaming, setRenaming] = useState(false);
   const recentlyClosedTaskRef = useRef<{ taskId?: string | null; id?: string | null }>({});
+  const skipInitialFetchRef = useRef(initialTasks.length > 0);
+  const authHeadersRef = useRef<Record<string, string> | null>(null);
+  const resolveAuthHeaders = useCallback(async () => {
+    if (authHeadersRef.current) {
+      return authHeadersRef.current;
+    }
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+    authHeadersRef.current = headers;
+    return headers;
+  }, []);
   const updateTaskIdParam = useCallback(
     (taskId: string | null) => {
       const params = new URLSearchParams(searchParams?.toString() ?? "");
@@ -759,6 +807,93 @@ export function MyProjectsClient() {
   }, [searchParams]);
 
   useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      authHeadersRef.current = null;
+    });
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // Realtime: listen for task_summaries changes so cards update without manual refresh
+  useEffect(() => {
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const userId = session?.user?.id;
+      if (!userId) return;
+
+      channel = supabase
+        .channel(`my-works-tasks-${userId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'task_summaries',
+            filter: `user_id=eq.${userId}`,
+          },
+          (payload) => {
+            const row = payload.new as Record<string, unknown>;
+            setTasks((prev) =>
+              prev.map((task) =>
+                task.id === (row.id as string)
+                  ? {
+                      ...task,
+                      status: (row.status as string) ?? task.status,
+                      progress: row.progress != null ? (row.progress as number) : task.progress,
+                      thumbnailUrl: (row.thumbnail_url as string | null) ?? task.thumbnailUrl,
+                      title: (row.title as string | null) ?? task.title,
+                      updatedAt: (row.updated_at as string) ?? task.updatedAt,
+                    }
+                  : task,
+              ),
+            );
+          },
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'task_summaries',
+            filter: `user_id=eq.${userId}`,
+          },
+          (payload) => {
+            const row = payload.new as Record<string, unknown>;
+            const inserted: TaskSummary = {
+              id: row.id as string,
+              userId: row.user_id as string,
+              taskType: row.task_type as TaskType,
+              taskId: row.task_id as string,
+              title: (row.title as string | null) ?? null,
+              status: row.status as string,
+              preview: (row.preview as string | null) ?? null,
+              thumbnailUrl: (row.thumbnail_url as string | null) ?? null,
+              progress: row.progress != null ? (row.progress as number) : null,
+              metadata: row.metadata != null ? (row.metadata as Record<string, unknown>) : null,
+              createdAt: row.created_at as string,
+              updatedAt: row.updated_at as string,
+            };
+            setTasks((prev) => {
+              if (prev.some((t) => t.id === inserted.id)) return prev;
+              return [inserted, ...prev];
+            });
+          },
+        )
+        .subscribe();
+    });
+
+    return () => {
+      if (channel) {
+        void supabase.removeChannel(channel);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     const params = new URLSearchParams(searchParams?.toString() ?? "");
     if (filterType === "all") {
       params.delete("type");
@@ -777,47 +912,94 @@ export function MyProjectsClient() {
   }, [filterStatus, filterType, pathname, router, searchParams]);
 
   const fetchTasks = useCallback(
-    async (type: TaskType | "all", status: string, signal?: AbortSignal) => {
-      setLoading(true);
-      setError(null);
+    async ({ type, status, offset: fetchOffset, mode, signal }: FetchOptions) => {
+      const isAppend = mode === "append";
+      if (isAppend) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+        setError(null);
+      }
 
       const params = new URLSearchParams();
       if (type !== "all") params.set("taskType", type);
       if (status !== "all") params.set("status", status);
-      params.set("limit", "50");
+      params.set("limit", pageSize.toString());
+      params.set("offset", fetchOffset.toString());
 
       try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData.session?.access_token;
+        const headers = await resolveAuthHeaders();
         const response = await fetch(`/api/tasks?${params.toString()}`, {
           signal,
           cache: "no-store",
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          headers: { ...headers },
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
+          if (response.status === 401) {
+            authHeadersRef.current = null;
+          }
           throw new Error(payload?.error || loadErrorMessage);
         }
         if (signal?.aborted) return;
+
         const items = Array.isArray(payload?.data) ? (payload.data as TaskSummary[]) : [];
-        items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        setTasks(items);
+        const pagination = (payload?.pagination ?? {}) as { hasMore?: boolean } | undefined;
+
+        setHasMore(Boolean(pagination?.hasMore));
+        setOffset(fetchOffset + items.length);
+
+        if (isAppend) {
+          setTasks((prev) => {
+            if (items.length === 0) return prev;
+            const existingIds = new Set(prev.map((task) => task.id));
+            const merged = [...prev];
+            items.forEach((item) => {
+              if (!existingIds.has(item.id)) {
+                merged.push(item);
+              }
+            });
+            return merged;
+          });
+        } else {
+          setTasks(items);
+        }
       } catch (err) {
         if ((err as Error).name === "AbortError") return;
-        setTasks([]);
-        setError((err as Error).message || loadErrorMessage);
+        const message = (err as Error).message || loadErrorMessage;
+        setError(message);
+        if (!isAppend) {
+          setTasks([]);
+          setHasMore(false);
+          setOffset(0);
+        }
       } finally {
         if (!signal?.aborted) {
-          setLoading(false);
+          if (isAppend) {
+            setLoadingMore(false);
+          } else {
+            setLoading(false);
+          }
         }
       }
     },
-    [loadErrorMessage]
+    [loadErrorMessage, pageSize, resolveAuthHeaders]
   );
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetchTasks(filterType, filterStatus, controller.signal);
+    if (skipInitialFetchRef.current) {
+      skipInitialFetchRef.current = false;
+      return () => controller.abort();
+    }
+    setOffset(0);
+    void fetchTasks({
+      type: filterType,
+      status: filterStatus,
+      offset: 0,
+      mode: "reset",
+      signal: controller.signal,
+    });
     return () => controller.abort();
   }, [fetchTasks, filterStatus, filterType]);
 
@@ -842,7 +1024,9 @@ export function MyProjectsClient() {
   }, [activeTask?.id, highlightTaskId, tasks]);
 
   const handleRefresh = () => {
-    void fetchTasks(filterType, filterStatus);
+    skipInitialFetchRef.current = false;
+    setOffset(0);
+    void fetchTasks({ type: filterType, status: filterStatus, offset: 0, mode: "reset" });
   };
 
   const handleTaskClick = (task: TaskSummary) => {
@@ -956,7 +1140,7 @@ export function MyProjectsClient() {
           updateTaskIdParam(null);
         }
         setActiveTask((prev) => (prev?.id === task.id ? null : prev));
-        await fetchTasks(filterType, filterStatus);
+        await fetchTasks({ type: filterType, status: filterStatus, offset: 0, mode: "reset" });
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "删除失败");
       } finally {
@@ -967,7 +1151,14 @@ export function MyProjectsClient() {
   );
 
   const retryLoad = () => {
-    void fetchTasks(filterType, filterStatus);
+    setOffset(0);
+    skipInitialFetchRef.current = false;
+    void fetchTasks({ type: filterType, status: filterStatus, offset: 0, mode: "reset" });
+  };
+
+  const handleLoadMore = () => {
+    if (loadingMore || !hasMore) return;
+    void fetchTasks({ type: filterType, status: filterStatus, offset, mode: "append" });
   };
 
   return (
@@ -982,7 +1173,7 @@ export function MyProjectsClient() {
             <button
               type="button"
               onClick={handleRefresh}
-              disabled={loading}
+              disabled={loading || loadingMore}
               className={cn(
                 "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition",
                 "border-gray-200 bg-white/90 text-gray-700 shadow-sm hover:bg-white disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-100 dark:hover:bg-gray-800"
@@ -1049,15 +1240,20 @@ export function MyProjectsClient() {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-          {tasks.map((task) => {
-            const typeMeta = TYPE_META[task.taskType];
-            const typeLabel = pickCopy(typeMeta?.label || HEADER_COPY, langKey);
-            const statusKey = (task.status || "").toUpperCase();
-            const statusLabel = pickCopy(
-              STATUS_LABELS[statusKey] || { en: task.status || "Unknown", zh: task.status || "未识别", "zh-TW": task.status || "未識別" },
-              langKey,
-            );
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            {tasks.map((task) => {
+              const typeMeta = TYPE_META[task.taskType];
+              const typeLabel = pickCopy(typeMeta?.label || HEADER_COPY, langKey);
+              const statusKey = (task.status || "").toUpperCase();
+              const statusLabel = pickCopy(
+                STATUS_LABELS[statusKey] || {
+                  en: task.status || "Unknown",
+                  zh: task.status || "未识别",
+                  "zh-TW": task.status || "未識別",
+                },
+                langKey,
+              );
             const statusClass = STATUS_BADGE_CLASS[statusKey] || "bg-white/20 text-white border-white/30";
             const showCountdown =
               task.taskType === "digitalHuman" && DIGITAL_HUMAN_COUNTDOWN_STATUSES.has(statusKey);
@@ -1147,6 +1343,20 @@ export function MyProjectsClient() {
               </div>
             );
           })}
+          </div>
+          {(hasMore || loadingMore) && (
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={handleLoadMore}
+                disabled={loadingMore || !hasMore}
+                className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-5 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+              >
+                {loadingMore && <Loader2 className="h-4 w-4 animate-spin" />}
+                {loadingMore ? pickCopy(LOADING_MORE_COPY, langKey) : pickCopy(LOAD_MORE_COPY, langKey)}
+              </button>
+            </div>
+          )}
         </div>
       )}
       {activeTask && (

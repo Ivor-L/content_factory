@@ -237,7 +237,7 @@ async function attachReplicationResults(
     }
 
     const nextMetadata: Prisma.JsonValue | null =
-      Object.keys(metadataRecord).length > 0 ? metadataRecord : task.metadata;
+      Object.keys(metadataRecord).length > 0 ? (metadataRecord as Prisma.JsonValue) : task.metadata;
 
     return {
       ...task,

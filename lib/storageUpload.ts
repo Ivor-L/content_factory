@@ -32,17 +32,23 @@ export async function uploadToStorage({
     process.env.ALIYUN_OSS_PUBLIC_URL,
   );
 
-  const storagePreference = (process.env.MEDIA_CACHE_STORAGE ?? "oss").toLowerCase();
+  const storagePreference = (process.env.MEDIA_CACHE_STORAGE ?? "auto").toLowerCase();
   const preferOss = storagePreference === "oss" || storagePreference === "auto";
 
   if (preferOss) {
     if (!ossConfigured) {
-      throw new Error(
-        "MEDIA_CACHE_STORAGE is set to oss/auto but Aliyun OSS env vars are missing. " +
-          "Please configure ALIYUN_OSS_* before caching media.",
-      );
+      if (storagePreference === "oss") {
+        // 明确指定 oss 但未配置，报错
+        throw new Error(
+          "MEDIA_CACHE_STORAGE is set to oss but Aliyun OSS env vars are missing. " +
+            "Please configure ALIYUN_OSS_* before caching media.",
+        );
+      }
+      // auto 模式下 OSS 未配置，静默降级到 Supabase
+      console.warn("[storageUpload] OSS not configured, falling back to Supabase storage.");
+    } else {
+      return uploadToOss(path, dataBuffer, contentType);
     }
-    return uploadToOss(path, dataBuffer, contentType);
   }
 
   const client: SupabaseClient = getSupabaseServiceClient(accessToken);

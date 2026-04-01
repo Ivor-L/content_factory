@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Crown, ArrowLeft, Check, Loader2, CalendarDays, ShieldCheck } from 'lucide-react';
@@ -58,6 +58,20 @@ export default function AdminUserDetailPage() {
   const [plan, setPlan] = useState('free');
   const [expiresAt, setExpiresAt] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [nowTs, setNowTs] = useState(() => Date.now());
+  useEffect(() => {
+    setNowTs(Date.now());
+  }, [expiresAt]);
+  const expirationInfo = useMemo(() => {
+    if (!expiresAt) return null;
+    const target = new Date(expiresAt);
+    const diffMs = target.getTime() - nowTs;
+    const days = Math.max(0, Math.ceil(diffMs / 86_400_000));
+    return {
+      label: target.toLocaleDateString('zh-CN'),
+      days,
+    };
+  }, [expiresAt, nowTs]);
 
   useEffect(() => {
     if (!id) return;
@@ -268,8 +282,8 @@ export default function AdminUserDetailPage() {
                 )}
               </div>
               <p className="text-xs text-gray-400 mt-1.5">
-                {expiresAt
-                  ? `到期：${new Date(expiresAt).toLocaleDateString('zh-CN')}（${Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86400000)} 天后）`
+                {expiresAt && expirationInfo
+                  ? `到期：${expirationInfo.label}（${expirationInfo.days} 天后）`
                   : '留空表示永不过期'}
               </p>
             </div>

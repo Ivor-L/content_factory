@@ -22,23 +22,35 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "filename and contentType are required" }, { status: 400 });
   }
 
-  if (!process.env.ALIYUN_OSS_BUCKET || !process.env.ALIYUN_OSS_ACCESS_KEY_ID) {
+  if (
+    !process.env.ALIYUN_OSS_BUCKET ||
+    !process.env.ALIYUN_OSS_ACCESS_KEY_ID ||
+    !process.env.ALIYUN_OSS_ACCESS_KEY_SECRET ||
+    !process.env.ALIYUN_OSS_REGION ||
+    !process.env.ALIYUN_OSS_PUBLIC_URL
+  ) {
     return NextResponse.json({ error: "OSS not configured" }, { status: 503 });
   }
 
-  const ext = String(filename).split(".").pop() || "bin";
-  const folder = contentType.startsWith("video/") ? "storyboard/videos" : "storyboard/images";
-  const key = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  try {
+    const ext = String(filename).split(".").pop() || "bin";
+    const folder = contentType.startsWith("video/") ? "storyboard/videos" : "storyboard/images";
+    const key = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
-  const client = getOssClient();
-  const signedUrl = client.signatureUrl(key, {
-    method: "PUT",
-    expires: 300, // 5 minutes
-    "Content-Type": contentType,
-  } as Parameters<typeof client.signatureUrl>[1]);
+    const client = getOssClient();
+    const signedUrl = client.signatureUrl(key, {
+      method: "PUT",
+      expires: 300, // 5 minutes
+      "Content-Type": contentType,
+    } as Parameters<typeof client.signatureUrl>[1]);
 
-  const cdnHost = (process.env.ALIYUN_OSS_PUBLIC_URL || "").replace(/\/+$/, "");
-  const publicUrl = `${cdnHost}/${encodeURI(key)}`;
+    const cdnHost = (process.env.ALIYUN_OSS_PUBLIC_URL || "").replace(/\/+$/, "");
+    const publicUrl = `${cdnHost}/${encodeURI(key)}`;
 
-  return NextResponse.json({ uploadUrl: signedUrl, publicUrl, key });
+    return NextResponse.json({ uploadUrl: signedUrl, publicUrl, key });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to generate presigned URL";
+    console.error("[upload/presign] error:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

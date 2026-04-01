@@ -22,6 +22,7 @@ import {
   LayoutGrid,
   List as ListIcon,
   ExternalLink,
+  Upload,
 } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { ConfirmModal } from '@/components/ConfirmModal';
@@ -602,6 +603,9 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
   const [scriptToDelete, setScriptToDelete] = useState<string | null>(null);
   const [selectedReplicationScript, setSelectedReplicationScript] = useState<Script | null>(null);
   const [isReplicationModalOpen, setIsReplicationModalOpen] = useState(false);
+  const [newReplicationUploadedUrl, setNewReplicationUploadedUrl] = useState('');
+  const [newReplicationUploading, setNewReplicationUploading] = useState(false);
+  const [newReplicationDragActive, setNewReplicationDragActive] = useState(false);
 
   const [contentPlatform, setContentPlatform] = useState('xiaohongshu');
   const [referenceItems, setReferenceItems] = useState<ViralReferenceItemData[]>([]);
@@ -666,7 +670,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
   const selectedCreatorId = selectedCreator?.id ?? null;
   
   // Replication Mode
-  const [replicationMode, setReplicationMode] = useState<'one-click' | 'storyboard' | 'digital-human'>('one-click');
+  const [replicationMode, setReplicationMode] = useState<'one-click' | 'storyboard' | 'digital-human'>('storyboard');
   const [analysisTab, setAnalysisTab] = useState<'replication' | 'breakdown' | 'storyboard' | 'copy'>('replication');
 
   const [mounted, setMounted] = useState(false);
@@ -710,7 +714,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
       selectedReplicationScript?.blueprint || selectedReplicationScript?.breakdown || null
     );
   }, [selectedReplicationScript?.blueprint, selectedReplicationScript?.breakdown]);
-  const collectorModes = PLATFORM_COLLECTOR_MODES[contentPlatform] ?? [];
+  const collectorModes = useMemo(() => PLATFORM_COLLECTOR_MODES[contentPlatform] ?? [], [contentPlatform]);
   const collectorModeEnabled = collectorModes.length > 0;
   const collectorPlaceholder = useMemo(() => {
     if (collectorMode === "keyword") {
@@ -1383,6 +1387,44 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
     return null; // Or a loading spinner
   }
 
+  const uploadNewReplicationVideo = async (file: File) => {
+    setNewReplicationUploading(true);
+    const toastId = toast.loading('上传视频中...');
+    try {
+      // 尝试预签名直传 OSS
+      const presignRes = await fetch('/api/upload/presign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name, contentType: file.type }),
+      });
+      if (presignRes.ok) {
+        const { uploadUrl, publicUrl } = await presignRes.json();
+        const up = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+        if (!up.ok) throw new Error(`OSS 上传失败 (${up.status})`);
+        setNewReplicationUploadedUrl(publicUrl);
+        toast.success('上传完成', { id: toastId });
+        return;
+      }
+      // 预签名不可用（OSS 未配置），回退到服务端中转
+      const presignErr = await presignRes.json().catch(() => ({}));
+      console.warn('[upload] presign unavailable, falling back to server upload:', presignErr.error);
+      const fd = new FormData();
+      fd.append('file', file);
+      const uploadRes = await fetch('/api/upload/video', { method: 'POST', body: fd });
+      if (!uploadRes.ok) {
+        const errData = await uploadRes.json().catch(() => ({}));
+        throw new Error(errData.error || `上传失败 (${uploadRes.status})`);
+      }
+      const { url } = await uploadRes.json();
+      setNewReplicationUploadedUrl(url);
+      toast.success('上传完成', { id: toastId });
+    } catch (err: any) {
+      toast.error(err.message || '上传失败', { id: toastId });
+    } finally {
+      setNewReplicationUploading(false);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 font-sans">
       <div className="flex justify-between items-center mb-6">
@@ -1445,13 +1487,14 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
         </div>
 
         <AddButton
-          label={t.scripts.newScript}
-          ariaLabel={typeof t.scripts.newScript === "string" ? t.scripts.newScript : "新建脚本"}
+          label="新建复刻"
+          ariaLabel="新建复刻"
           hideLabelOnMobile
           className="px-3 py-2 sm:px-5 sm:py-2.5 rounded-full"
           onClick={() => {
-            setEditingScript(null);
-            setIsModalOpen(true);
+            setSelectedReplicationScript(null);
+            setNewReplicationUploadedUrl('');
+            setIsReplicationModalOpen(true);
           }}
         />
       </div>
@@ -1748,10 +1791,12 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
             <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
               {filteredReferenceItems.map((item) => {
                 const isSelected = selectedReferenceIds.includes(item.id);
-                const displayImageUrl = getReferenceCoverImage(item) ?? REFERENCE_PLACEHOLDER_IMAGE;
+                const isTiktokItem = item.platform === 'tiktok';
+                const rawCoverUrl = getReferenceCoverImage(item) ?? REFERENCE_PLACEHOLDER_IMAGE;
                 const displayVideoUrl = getReferenceVideoUrl(item);
-                const proxiedPosterUrl = toProxyImgUrl(displayImageUrl);
+                const proxiedPosterUrl = !isTiktokItem ? toProxyImgUrl(rawCoverUrl) : undefined;
                 const proxiedVideoUrl = displayVideoUrl ? toProxyMediaUrl(displayVideoUrl) : null;
+                const fallbackImageSrc = !isTiktokItem ? (proxiedPosterUrl ?? REFERENCE_PLACEHOLDER_IMAGE) : REFERENCE_PLACEHOLDER_IMAGE;
                 const scriptPreview = (item.scriptText ?? "").trim();
                 const hasScriptPreview = scriptPreview.length > 0;
                 return (
@@ -1801,19 +1846,21 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                         {isSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
                       </span>
                     )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent z-10" />
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent z-10" />
                   {proxiedVideoUrl ? (
                     <video
                       src={proxiedVideoUrl}
                       poster={proxiedPosterUrl}
                       muted
+                      autoPlay
+                      loop
                       playsInline
                       preload="metadata"
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                     />
                   ) : (
                     <img
-                      src={proxiedPosterUrl}
+                      src={fallbackImageSrc}
                       alt={item.title || 'reference'}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                     />
@@ -1865,10 +1912,12 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
             <div className="space-y-3">
               {filteredReferenceItems.map((item) => {
                 const isSelected = selectedReferenceIds.includes(item.id);
-                const displayImageUrl = getReferenceCoverImage(item) ?? REFERENCE_PLACEHOLDER_IMAGE;
+                const isTiktokItem = item.platform === 'tiktok';
+                const rawCoverUrl = getReferenceCoverImage(item) ?? REFERENCE_PLACEHOLDER_IMAGE;
                 const displayVideoUrl = getReferenceVideoUrl(item);
-                const proxiedPosterUrl = toProxyImgUrl(displayImageUrl);
+                const proxiedPosterUrl = !isTiktokItem ? toProxyImgUrl(rawCoverUrl) : undefined;
                 const proxiedVideoUrl = displayVideoUrl ? toProxyMediaUrl(displayVideoUrl) : null;
+                const fallbackImageSrc = !isTiktokItem ? (proxiedPosterUrl ?? REFERENCE_PLACEHOLDER_IMAGE) : REFERENCE_PLACEHOLDER_IMAGE;
                 return (
                   <div
                     key={item.id}
@@ -1917,13 +1966,15 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                             src={proxiedVideoUrl}
                             poster={proxiedPosterUrl}
                             muted
+                            autoPlay
+                            loop
                             playsInline
                             preload="metadata"
                             className="w-28 h-16 rounded-xl object-cover flex-shrink-0 border border-gray-100 dark:border-gray-800"
                           />
                         ) : (
                           <img
-                            src={proxiedPosterUrl}
+                            src={fallbackImageSrc}
                             alt={item.title || "reference"}
                             className="w-28 h-16 rounded-xl object-cover flex-shrink-0 border border-gray-100 dark:border-gray-800"
                           />
@@ -1996,7 +2047,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                           字幕文案
                         </div>
                         <p className="text-sm text-gray-700 dark:text-gray-100 whitespace-pre-line leading-relaxed line-clamp-5">
-                          {hasScriptPreview ? scriptPreview : "暂无字幕"}
+                          {item.scriptText?.trim() || item.description?.trim() || "暂无字幕"}
                         </p>
                       </div>
                     </div>
@@ -2566,167 +2617,25 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
         onClose={() => {
             setIsReplicationModalOpen(false);
             setSelectedReplicationScript(null);
-            setReplicationMode('one-click');
+            setReplicationMode('storyboard');
             setAnalysisTab('replication');
+            setNewReplicationUploadedUrl('');
+            setNewReplicationDragActive(false);
         }}
-        title={
-            <div className="flex items-center justify-center w-full pr-8 relative">
-                <span className="truncate absolute left-0 max-w-[30%] text-left">{selectedReplicationScript?.title || t.replication.title}</span>
-                
-                {/* Main Function Tabs - Centered */}
-                <div className="bg-gray-100 dark:bg-gray-800/50 p-1 rounded-full inline-flex shrink-0 mx-auto">
-                    <button
-                        onClick={() => setAnalysisTab('replication')}
-                        className={cn(
-                            "px-6 py-1.5 rounded-full text-sm font-bold transition-all flex items-center gap-2 relative z-10",
-                            analysisTab === 'replication' 
-                                ? "text-white dark:text-black" 
-                                : "text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white"
-                        )}
-                    >
-                        {analysisTab === 'replication' && (
-                            <motion.div
-                                layoutId="analysis-tab-bg"
-                                className="absolute inset-0 bg-black dark:bg-yellow-300 rounded-full -z-10 shadow-sm"
-                                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                            />
-                        )}
-                        <Zap size={16} />
-                        爆款复刻
-                    </button>
-                    {/* 爆款拆解 tab hidden – only used by one-click mode */}
-                    <button
-                        onClick={() => setAnalysisTab('breakdown')}
-                        className={cn(
-                            "px-6 py-1.5 rounded-full text-sm font-bold transition-all flex items-center gap-2 relative z-10",
-                            analysisTab === 'breakdown'
-                                ? "text-white dark:text-black"
-                                : "text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white"
-                        )}
-                    >
-                        {analysisTab === 'breakdown' && (
-                            <motion.div
-                                layoutId="analysis-tab-bg"
-                                className="absolute inset-0 bg-black dark:bg-yellow-300 rounded-full -z-10 shadow-sm"
-                                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                            />
-                        )}
-                        <FileJson size={16} />
-                        爆款拆解
-                    </button>
-                    <button
-                        onClick={() => setAnalysisTab('storyboard')}
-                        className={cn(
-                            "px-6 py-1.5 rounded-full text-sm font-bold transition-all flex items-center gap-2 relative z-10",
-                            analysisTab === 'storyboard' 
-                                ? "text-white dark:text-black" 
-                                : "text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white"
-                        )}
-                    >
-                        {analysisTab === 'storyboard' && (
-                            <motion.div
-                                layoutId="analysis-tab-bg"
-                                className="absolute inset-0 bg-black dark:bg-yellow-300 rounded-full -z-10 shadow-sm"
-                                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                            />
-                        )}
-                        <Layers size={16} />
-                        分镜解析
-                    </button>
-                    <button
-                        onClick={() => setAnalysisTab('copy')}
-                        className={cn(
-                            "px-6 py-1.5 rounded-full text-sm font-bold transition-all flex items-center gap-2 relative z-10",
-                            analysisTab === 'copy' 
-                                ? "text-white dark:text-black" 
-                                : "text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white"
-                        )}
-                    >
-                        {analysisTab === 'copy' && (
-                            <motion.div
-                                layoutId="analysis-tab-bg"
-                                className="absolute inset-0 bg-black dark:bg-yellow-300 rounded-full -z-10 shadow-sm"
-                                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                            />
-                        )}
-                        <ScrollText size={16} />
-                        {t.replication.copyTabLabel || '文案解析'}
-                    </button>
-                </div>
-            </div>
-        }
-        maxWidth="max-w-6xl"
+        title="爆款复刻"
+        maxWidth="max-w-4xl"
       >
-        <div className="flex flex-col h-[75vh] relative">
+        <div className="flex flex-col h-[65vh] relative">
             {/* Mode Tabs - Top Right Absolute (Sub-modes only) */}
             <div className="absolute top-0 right-0 z-10 flex gap-2">
                 {/* Sub-modes for Replication (only show when Replication tab is active AND a script is selected) */}
-                {analysisTab === 'replication' && selectedReplicationScript && (
-                    <div className="bg-gray-100 dark:bg-gray-800/50 p-1 rounded-full inline-flex animate-in fade-in slide-in-from-left-2 duration-300 relative">
-                        <button
-                            onClick={() => setReplicationMode('one-click')}
-                            className={cn(
-                                "px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-2 relative z-10",
-                                replicationMode === 'one-click'
-                                    ? "text-black dark:text-white"
-                                    : "text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white"
-                            )}
-                        >
-                            {replicationMode === 'one-click' && (
-                                <motion.div
-                                    layoutId="replication-mode-bg"
-                                    className="absolute inset-0 bg-white dark:bg-gray-700 rounded-full -z-10 shadow-sm"
-                                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                                />
-                            )}
-                            <Zap size={14} />
-                            {replicationModeLabels['one-click']}
-                        </button>
-                        <button
-                            onClick={() => setReplicationMode('storyboard')}
-                            className={cn(
-                                "px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-2 relative z-10",
-                                replicationMode === 'storyboard'
-                                    ? "text-black dark:text-white"
-                                    : "text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white"
-                            )}
-                        >
-                            {replicationMode === 'storyboard' && (
-                                <motion.div
-                                    layoutId="replication-mode-bg"
-                                    className="absolute inset-0 bg-white dark:bg-gray-700 rounded-full -z-10 shadow-sm"
-                                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                                />
-                            )}
-                            <Layers size={14} />
-                            {replicationModeLabels['storyboard']}
-                        </button>
-                        <button
-                            onClick={() => setReplicationMode('digital-human')}
-                            className={cn(
-                                "px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-2 relative z-10",
-                                replicationMode === 'digital-human'
-                                    ? "text-black dark:text-white"
-                                    : "text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white"
-                            )}
-                        >
-                            {replicationMode === 'digital-human' && (
-                                <motion.div
-                                    layoutId="replication-mode-bg"
-                                    className="absolute inset-0 bg-white dark:bg-gray-700 rounded-full -z-10 shadow-sm"
-                                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-                                />
-                            )}
-                            <User size={14} />
-                            {replicationModeLabels['digital-human']}
-                        </button>
-                    </div>
-                )}
+            {/* Mode tabs hidden – storyboard is the only mode */}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 flex-1 min-h-0 lg:pt-0">
-                {/* Left: Video */}
-                <div className="bg-black rounded-xl overflow-hidden flex items-center justify-center relative lg:col-span-3">
+                {/* Left: Video — 9:16 container */}
+                <div className="lg:col-span-3 flex items-center justify-center min-h-0">
+                    <div className="aspect-[9/16] h-full max-w-full bg-black rounded-xl overflow-hidden relative flex items-center justify-center">
                     {selectedReplicationScript?.videoUrl ? (
                         <>
                             <video
@@ -2740,332 +2649,116 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                             />
                             {selectedReplicationScript.status && selectedReplicationScript.status !== 'completed' && (
                                 <div className="absolute inset-0 bg-white/90 dark:bg-gray-900/90 z-20 flex flex-col items-center justify-center">
-                                    <ScriptStatusPoller 
-                                        scriptId={selectedReplicationScript.id} 
+                                    <ScriptStatusPoller
+                                        scriptId={selectedReplicationScript.id}
                                         initialStatus={selectedReplicationScript.status}
                                         initialProgress={selectedReplicationScript.progress}
                                     />
                                 </div>
                             )}
                         </>
+                    ) : newReplicationUploadedUrl ? (
+                        <video
+                            src={newReplicationUploadedUrl}
+                            className="w-full h-full object-contain"
+                            controls
+                            muted
+                            playsInline
+                        />
                     ) : (
-                        <div className="text-white text-center">
-                            <PlayCircle size={64} className="mx-auto mb-4 opacity-50" />
-                            <p>No video preview available</p>
-                        </div>
+                        <label
+                            className={cn(
+                                "flex flex-col items-center justify-center w-full h-full cursor-pointer transition-all",
+                                newReplicationDragActive ? "bg-white/15 border-2 border-dashed border-yellow-400" : "hover:bg-white/5",
+                                newReplicationUploading && "opacity-70 pointer-events-none"
+                            )}
+                            onDragOver={(e) => { e.preventDefault(); setNewReplicationDragActive(true); }}
+                            onDragEnter={(e) => { e.preventDefault(); setNewReplicationDragActive(true); }}
+                            onDragLeave={() => setNewReplicationDragActive(false)}
+                            onDrop={async (e) => {
+                                e.preventDefault();
+                                setNewReplicationDragActive(false);
+                                const file = e.dataTransfer.files?.[0];
+                                if (!file?.type.startsWith('video/')) { toast.error('请上传视频文件'); return; }
+                                await uploadNewReplicationVideo(file);
+                            }}
+                        >
+                            {newReplicationUploading ? (
+                                <>
+                                    <Loader2 size={40} className="text-white/50 animate-spin mb-3" />
+                                    <p className="text-white/60 text-sm">上传中...</p>
+                                </>
+                            ) : (
+                                <>
+                                    <Upload size={40} className="text-white/40 mb-3" />
+                                    <p className="text-white/80 font-medium mb-1">点击或拖拽上传视频</p>
+                                    <p className="text-white/40 text-xs">支持 MP4、MOV 等格式</p>
+                                </>
+                            )}
+                            <input
+                                type="file"
+                                accept="video/*"
+                                className="hidden"
+                                onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) await uploadNewReplicationVideo(file);
+                                }}
+                            />
+                        </label>
                     )}
+                    </div>
                 </div>
                 
                 {/* Right: Replication Form or Breakdown Analysis */}
-                <div className={cn(
-                    "flex flex-col h-full overflow-hidden lg:col-span-2",
-                    analysisTab === 'replication' && "pt-12"
-                )}>
-                    {selectedReplicationScript && (
-                        analysisTab === 'replication' ? (
-                            replicationComingSoon ? (
-                                <div className="flex flex-1 items-center justify-center px-6">
-                                    <EmptyState
-                                        className="w-full"
-                                        fullHeight
-                                        icon={<Zap className="h-6 w-6" />}
-                                        title={t.replication.comingSoon?.title || t.replication.title}
-                                        description={t.replication.comingSoon?.description}
-                                        action={t.replication.comingSoon?.action ? {
-                                            label: t.replication.comingSoon.action,
-                                            onClick: handleComingSoonRedirect,
-                                        } : undefined}
-                                    />
-                                </div>
-                            ) : (
-                                <ReplicationForm 
-                                    products={products} 
-                                    scripts={[selectedReplicationScript]}
-                                    characters={characters}
-                                    preselectedScriptId={selectedReplicationScript.id}
-                                    mode={replicationMode}
-                                    onSuccess={() => {
-                                        setIsReplicationModalOpen(false);
-                                        setSelectedReplicationScript(null);
-                                        setAnalysisTab('replication');
-                                    }}
-                                />
-                            )
-                        ) : analysisTab === 'breakdown' ? (
-                            <div className="h-full overflow-y-auto pr-2 custom-scrollbar space-y-6">
-                                {selectedReplicationScript.blueprint || selectedReplicationScript.breakdown ? (
-                                    (() => {
-                                        const meta = selectedScriptAnalysis.meta || {};
-                                        const sceneCount = selectedScriptAnalysis.scenes.length;
-                                        const statusText = selectedScriptAnalysis.status || 'N/A';
-                                        const sourceLabelMap: Record<string, string> = {
-                                            legacy_blueprint: '旧版 blueprint',
-                                            segments_payload: '新版 segments',
-                                            workflow_data: 'workflow_data',
-                                            unknown: '未知来源',
-                                        };
-                                        return (
-                                            <div className="space-y-5">
-                                                <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
-                                                    <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                                                        <span className="text-xl">🧩</span> 拆解概览
-                                                    </h3>
-                                                    <div className="grid grid-cols-2 gap-3">
-                                                        <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-100 dark:border-gray-700">
-                                                            <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">解析状态</div>
-                                                            <div className="text-sm font-semibold text-gray-900 dark:text-white">{statusText}</div>
-                                                        </div>
-                                                        <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-100 dark:border-gray-700">
-                                                            <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">数据来源</div>
-                                                            <div className="text-sm font-semibold text-gray-900 dark:text-white">{sourceLabelMap[selectedScriptAnalysis.source] || selectedScriptAnalysis.source}</div>
-                                                        </div>
-                                                        <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-100 dark:border-gray-700">
-                                                            <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">镜头数量</div>
-                                                            <div className="text-sm font-semibold text-gray-900 dark:text-white">{sceneCount}</div>
-                                                        </div>
-                                                        <div className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-100 dark:border-gray-700">
-                                                            <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">总时长</div>
-                                                            <div className="text-sm font-semibold text-gray-900 dark:text-white">
-                                                                {String(meta.total_duration || meta.duration || meta.video_duration || 'N/A')}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
-                                                    <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                                                        <span className="text-xl">🎬</span> 视频元数据
-                                                    </h3>
-                                                    <div className="grid grid-cols-2 gap-3">
-                                                        {[
-                                                            { label: '风格', value: meta.art_style },
-                                                            { label: '情绪', value: meta.mood_atmosphere },
-                                                            { label: '画质', value: meta.render_quality },
-                                                            { label: '分析模型', value: meta.analysis_model || meta.model },
-                                                        ].map((item) => (
-                                                            <div key={item.label} className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-gray-100 dark:border-gray-700">
-                                                                <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">{item.label}</div>
-                                                                <div className="text-sm font-medium text-gray-900 dark:text-white">{String(item.value || 'N/A')}</div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-
-                                                {selectedScriptAnalysis.parseError && (
-                                                    <div className="rounded-xl border border-amber-200 bg-amber-50 text-amber-700 px-4 py-3 text-sm">
-                                                        解析提示：{selectedScriptAnalysis.parseError}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })()
-                                ) : (
-                                    <div className="flex flex-col items-center justify-center h-64 text-gray-500 bg-gray-50 dark:bg-gray-800 rounded-xl border border-dashed border-gray-200 dark:border-gray-700">
-                                        <FileJson size={48} className="mb-4 opacity-20" />
-                                        <p>暂无拆解结果</p>
-                                        <p className="text-xs mt-2">请等待分析完成后刷新</p>
-                                    </div>
-                                )}
+                <div className="flex flex-col h-full overflow-hidden lg:col-span-2">
+                    {!selectedReplicationScript ? (
+                        /* New replication flow: show form once video is uploaded */
+                        newReplicationUploadedUrl ? (
+                            <ReplicationForm
+                                products={products}
+                                scripts={[{ id: '__new__', title: '新建复刻', videoUrl: newReplicationUploadedUrl, status: 'completed' }]}
+                                characters={characters}
+                                preselectedScriptId="__new__"
+                                mode="storyboard"
+                                onSuccess={() => {
+                                    setIsReplicationModalOpen(false);
+                                    setNewReplicationUploadedUrl('');
+                                    setAnalysisTab('replication');
+                                }}
+                            />
+                        ) : (
+                            <div className="flex flex-1 items-center justify-center text-gray-400 dark:text-gray-500 text-sm px-6 text-center">
+                                请先在左侧上传视频，上传完成后即可配置分镜参数
                             </div>
-                        ) : analysisTab === 'storyboard' ? (
-                            <div className="h-full overflow-y-auto pr-2 custom-scrollbar space-y-4">
-                                {selectedScriptAnalysis.scenes.length > 0 ? (
-                                    <>
-                                        <div className="flex items-center justify-between bg-gray-50 dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                                            <div className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                                <span className="text-xl">🎞️</span>
-                                                分镜解析明细
-                                            </div>
-                                            <span className="text-xs text-gray-500">共 {selectedScriptAnalysis.scenes.length} 个镜头</span>
-                                        </div>
-                                        {selectedScriptAnalysis.scenes.map((scene) => (
-                                            <div key={`${scene.order}-${scene.id}`} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
-                                                <div className="bg-gray-50 dark:bg-gray-700/50 px-4 py-2 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center gap-3">
-                                                    <span className="font-bold text-sm text-gray-700 dark:text-gray-200">镜头 {scene.order}</span>
-                                                    <div className="flex items-center gap-2 text-xs">
-                                                        {scene.timeRange && (
-                                                            <span className="font-mono bg-gray-200 dark:bg-gray-600 px-2 py-0.5 rounded text-gray-600 dark:text-gray-300">
-                                                                {scene.timeRange}
-                                                            </span>
-                                                        )}
-                                                        {typeof scene.duration === 'number' && (
-                                                            <span className="font-mono bg-gray-200 dark:bg-gray-600 px-2 py-0.5 rounded text-gray-600 dark:text-gray-300">
-                                                                {scene.duration}s
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <div className="p-4 space-y-4">
-                                                    <div className="grid grid-cols-1 gap-3">
-                                                        {scene.imagePrompt && (
-                                                            <div>
-                                                                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Image Prompt</div>
-                                                                <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">{scene.imagePrompt}</p>
-                                                            </div>
-                                                        )}
-                                                        {scene.videoPrompt && (
-                                                            <div>
-                                                                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Video Prompt</div>
-                                                                <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">{scene.videoPrompt}</p>
-                                                            </div>
-                                                        )}
-                                                        {scene.visualDescription && (
-                                                            <div>
-                                                                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Visual Description</div>
-                                                                <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">{scene.visualDescription}</p>
-                                                            </div>
-                                                        )}
-                                                    </div>
-
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                                        {scene.cameraNotes && (
-                                                            <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 border border-gray-100 dark:border-gray-700">
-                                                                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">运镜</div>
-                                                                <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed">{scene.cameraNotes}</p>
-                                                            </div>
-                                                        )}
-                                                        {scene.lightingNotes && (
-                                                            <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 border border-gray-100 dark:border-gray-700">
-                                                                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">光影</div>
-                                                                <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed">{scene.lightingNotes}</p>
-                                                            </div>
-                                                        )}
-                                                    </div>
-
-                                                    {(scene.narrativeRole || scene.universalInstruction || scene.subjectAction) && (
-                                                        <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 border border-gray-100 dark:border-gray-700 space-y-2">
-                                                            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">逻辑意图</div>
-                                                            {scene.narrativeRole && <p className="text-sm text-gray-700 dark:text-gray-200"><span className="font-semibold">功能：</span>{scene.narrativeRole}</p>}
-                                                            {scene.universalInstruction && <p className="text-sm text-gray-700 dark:text-gray-200"><span className="font-semibold">指令：</span>{scene.universalInstruction}</p>}
-                                                            {scene.subjectAction && <p className="text-sm text-gray-700 dark:text-gray-200"><span className="font-semibold">主体动作：</span>{scene.subjectAction}</p>}
-                                                        </div>
-                                                    )}
-
-                                                    {(scene.originalScript || scene.rewrittenScript) && (
-                                                        <div className="grid grid-cols-1 gap-3">
-                                                            {scene.originalScript && (
-                                                                <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 border border-gray-100 dark:border-gray-700">
-                                                                    <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">原始脚本</div>
-                                                                    <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">{scene.originalScript}</p>
-                                                                </div>
-                                                            )}
-                                                            {scene.rewrittenScript && (
-                                                                <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 border border-gray-100 dark:border-gray-700">
-                                                                    <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">改写脚本</div>
-                                                                    <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">{scene.rewrittenScript}</p>
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    )}
-
-                                                    <div className="flex flex-wrap gap-2 text-xs">
-                                                        {scene.referenceFrameUrl && (
-                                                            <a
-                                                                href={toProxyImgUrl(scene.referenceFrameUrl)}
-                                                                target="_blank"
-                                                                rel="noreferrer"
-                                                                className="px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
-                                                            >
-                                                                查看参考帧
-                                                            </a>
-                                                        )}
-                                                        {scene.hasPerson !== null && (
-                                                            <span className="px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200">
-                                                                人物：{scene.hasPerson ? '有' : '无'}
-                                                            </span>
-                                                        )}
-                                                        {scene.hasProduct !== null && (
-                                                            <span className="px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200">
-                                                                产品：{scene.hasProduct ? '有' : '无'}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </>
-                                ) : (
-                                    <div className="flex flex-col items-center justify-center h-64 text-gray-500 bg-gray-50 dark:bg-gray-800 rounded-xl border border-dashed border-gray-200 dark:border-gray-700">
-                                        <Layers size={48} className="mb-4 opacity-20" />
-                                        <p>暂无分镜数据</p>
-                                        <p className="text-xs mt-2">当前脚本回传中没有可解析的镜头数组</p>
-                                    </div>
-                                )}
+                        )
+                    ) : (
+                        replicationComingSoon ? (
+                            <div className="flex flex-1 items-center justify-center px-6">
+                                <EmptyState
+                                    className="w-full"
+                                    fullHeight
+                                    icon={<Zap className="h-6 w-6" />}
+                                    title={t.replication.comingSoon?.title || t.replication.title}
+                                    description={t.replication.comingSoon?.description}
+                                    action={t.replication.comingSoon?.action ? {
+                                        label: t.replication.comingSoon.action,
+                                        onClick: handleComingSoonRedirect,
+                                    } : undefined}
+                                />
                             </div>
                         ) : (
-                            <div className="h-full overflow-y-auto pr-2 custom-scrollbar space-y-6">
-                                <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
-                                    <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                                        <span className="text-xl">📝</span> {t.replication.copySections?.scriptTitle || '视频文案'}
-                                    </h3>
-                                    <div className="space-y-4">
-                                        {['intro', 'body', 'conclusion'].map((key) => {
-                                            const labelMap: Record<string, string> = {
-                                                intro: t.replication.copySections?.intro || '开场钩子',
-                                                body: t.replication.copySections?.body || '价值展开',
-                                                conclusion: t.replication.copySections?.conclusion || '收尾 CTA',
-                                            };
-                                            const content = selectedScriptInsights?.segments?.[key as 'intro' | 'body' | 'conclusion'];
-                                            if (!content) return null;
-                                            return (
-                                                <div key={key} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-700 p-4 shadow-sm">
-                                                    <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">{labelMap[key]}</div>
-                                                    <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-200 whitespace-pre-wrap">{content}</p>
-                                                </div>
-                                            );
-                                        })}
-                                        {selectedScriptInsights?.segments?.description && (
-                                            <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-700 p-4 shadow-sm">
-                                                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">{t.replication.copySections?.description || '背景洞察'}</div>
-                                                <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-200 whitespace-pre-wrap">{selectedScriptInsights.segments.description}</p>
-                                            </div>
-                                        )}
-                                        {!selectedScriptInsights?.copyText && (
-                                            <p className="text-sm text-gray-500 dark:text-gray-400">{t.replication.copySections?.empty || '暂无可用文案，请先完成拆解。'}</p>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-5 border border-gray-200 dark:border-gray-700">
-                                    <h3 className="font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                                        <span className="text-xl">🧠</span> {t.replication.copyInsights?.title || '文案拆解'}
-                                    </h3>
-                                    <div className="space-y-5">
-                                        <div>
-                                            <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">{t.replication.copyInsights?.core || '核心观点'}</div>
-                                            <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed">{selectedScriptInsights?.coreViewpoint || t.replication.copyInsights?.empty || '暂无数据'}</p>
-                                        </div>
-                                        <div className="grid grid-cols-1 gap-4">
-                                            {[{
-                                                label: t.replication.copyInsights?.angles || '爆款选题角度',
-                                                items: selectedScriptInsights?.viralAngles || []
-                                            }, {
-                                                label: t.replication.copyInsights?.structure || '结构逻辑',
-                                                items: selectedScriptInsights?.structureLogic || []
-                                            }, {
-                                                label: t.replication.copyInsights?.golden || '金句',
-                                                items: selectedScriptInsights?.goldenSentences || []
-                                            }, {
-                                                label: t.replication.copyInsights?.pains || '用户痛点',
-                                                items: selectedScriptInsights?.painPoints || []
-                                            }].map(({ label, items }) => (
-                                                <div key={label} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-700 p-4 shadow-sm">
-                                                    <div className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">{label}</div>
-                                                    {items.length > 0 ? (
-                                                        <ul className="space-y-2 text-sm text-gray-700 dark:text-gray-200">
-                                                            {items.map((item, index) => (
-                                                                <li key={`${label}-${index}`} className="leading-relaxed">• {item}</li>
-                                                            ))}
-                                                        </ul>
-                                                    ) : (
-                                                        <p className="text-sm text-gray-500 dark:text-gray-400">{t.replication.copyInsights?.empty || '暂无数据'}</p>
-                                                    )}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                            <ReplicationForm
+                                products={products}
+                                scripts={[selectedReplicationScript]}
+                                characters={characters}
+                                preselectedScriptId={selectedReplicationScript.id}
+                                mode={replicationMode}
+                                onSuccess={() => {
+                                    setIsReplicationModalOpen(false);
+                                    setSelectedReplicationScript(null);
+                                    setAnalysisTab('replication');
+                                }}
+                            />
                         )
                     )}
                 </div>

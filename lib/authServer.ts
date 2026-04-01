@@ -16,11 +16,11 @@ const baseClientOptions = {
   }
 } as const;
 
-const supabaseAnonClient = createClient(supabaseUrl, supabaseAnonKey, baseClientOptions);
+const supabaseAnonClient = createClient(supabaseUrl!, supabaseAnonKey!, baseClientOptions);
 
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseAdminClient = supabaseServiceRoleKey
-  ? createClient(supabaseUrl, supabaseServiceRoleKey, baseClientOptions)
+  ? createClient(supabaseUrl!, supabaseServiceRoleKey, baseClientOptions)
   : null;
 
 function createAuthedClient(token: string) {

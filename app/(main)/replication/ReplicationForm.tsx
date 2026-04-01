@@ -791,25 +791,7 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
               </div>
             )}
 
-            {/* Quantity */}
-            {mode === 'storyboard' && (
-              <div>
-                  <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">{t.replication.quantity}</label>
-                  <input
-                      type="number"
-                      name="quantity"
-                      min="1"
-                      max="10"
-                      value={quantity}
-                      onChange={(e) => {
-                          setQuantity(e.target.value);
-                          savePreference('quantity', e.target.value);
-                      }}
-                      className="w-full px-4 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none h-[38px]"
-                      required
-                  />
-              </div>
-            )}
+            {/* Quantity removed */}
           </div>
 
           {mode === 'storyboard' && (
@@ -844,7 +826,6 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
                         {[
                           { id: 'veo_3_1-fast', label: 'Veo 3.1 Fast', desc: '自然' },
                           { id: 'grok', label: 'Grok', desc: '创意' },
-                          { id: 'digital-human', label: '数字人', desc: '真人感' },
                         ].map((m) => (
                             <button
                                 key={m.id}
@@ -940,22 +921,7 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
                         ))}
                     </div>
                 </div>
-                <div>
-                    <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">{t.replication.quantity}</label>
-                    <input 
-                        type="number" 
-                        name="quantity" 
-                        min="1" 
-                        max="10" 
-                        value={quantity}
-                        onChange={(e) => {
-                            setQuantity(e.target.value);
-                            savePreference('quantity', e.target.value);
-                        }}
-                        className="w-full px-4 py-2 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent outline-none h-[38px]" 
-                        required 
-                    />
-                </div>
+                {/* Quantity removed */}
             </div>
           )}
       </div>
