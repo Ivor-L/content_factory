@@ -9,6 +9,7 @@ import { IMAGE_MODEL_PARAMS, VIDEO_MODEL_PARAMS } from "./useCanvasModels";
 import type { CanvasResourceRecord } from "./useCanvasResources";
 import { supabase } from "@/lib/supabaseClient";
 import { ensureCanvasCreditsAvailable, deductCanvasCredits, resolveCanvasCreditsApiKey } from "@/lib/canvasCredits";
+import { REVERSE_IMAGE_PROMPT, REVERSE_IMAGE_PROMPT_WITH_TEXT } from "@/lib/imageUnderstandingPrompts";
 
 const IMAGE_RATIO_PIXEL_MAP: Record<string, string> = {
   "1:1": "1024x1024",
@@ -327,23 +328,6 @@ async function getJson(url: string) {
   return parsed;
 }
 
-const REVERSE_IMAGE_PROMPT = [
-  "\u53CD\u63A8\u8FD9\u5F20\u56FE\u7684AI\u751F\u56FE\u63D0\u793A\u8BCD\u3002",
-  "\u5305\u62EC\u98CE\u683C\u8C03\u6027\uFF0C\u753B\u9762\u89C6\u89D2\uFF0C\u753B\u9762\u6784\u56FE\uFF0C\u573A\u666F\u5185\u5BB9\uFF0C",
-  "\u4EA7\u54C1\u6446\u653E\u89D2\u5EA6\uFF0C\u4EA7\u54C1\u653E\u5728\u4F4D\u7F6E\uFF0C\u4EC0\u4E48\u4E1C\u897F\u4E0A\uFF0C",
-  "\u573A\u666F\u5143\u7D20\u7684\u5F62\u72B6\uFF0C\u4F4D\u7F6E\uFF0C\u6750\u8D28\u8D28\u611F\u3001\u6574\u4F53\u914D\u8272\u548C\u80CC\u666F\u63CF\u8FF0\u7B49\u7EC6\u8282\uFF0C",
-  "\u8981\u6E05\u6670\u6DB5\u76D6\u753B\u9762\u6240\u6709\u5173\u952E\u4FE1\u606F\uFF0C\u5FFD\u7565\u6587\u6848\u6392\u7248\uFF0C\u589E\u52A0\u6444\u5F71\u6216\u6E32\u67D3\u4E13\u4E1A\u8BCD\u6C47\u3002",
-  "\u9002\u914D\u4E2D\u6587AI\u7ED8\u56FE\u5DE5\u5177\u7684\u63D0\u793A\u8BCD\u903B\u8F91\u3002\u6700\u540E\u5408\u6210\u4E00\u6BB5\u8BDD\u8F93\u51FA\u3002",
-  "\u4E0D\u8981\u751F\u56FE\uFF0C\u8981\u6E05\u6670\u6DB5\u76D6\u753B\u9762\u6240\u6709\u5173\u952E\u4FE1\u606F\uFF0C\u5FFD\u7565\u6587\u6848\u6392\u7248\uFF0C",
-  "\u589E\u52A0\u6444\u5F71\u6216\u6E32\u67D3\u4E13\u4E1A\u8BCD\u6C47\uFF0C\u9002\u914D\u4E2D\u6587AI\u7ED8\u56FE\u5DE5\u5177\u7684\u63D0\u793A\u8BCD\u903B\u8F91\u3002",
-  "\u300C\u8F93\u51FA\u8981\u6C42\u300D",
-  "1. \u53EA\u8F93\u51FA\u6700\u7EC8\u7684\u4E00\u6BB5\u63D0\u793A\u8BCD\u3002",
-  "2. \u4E0D\u8981\u4EFB\u4F55\u89E3\u91CA\u8BF4\u660E\uFF0C\u4E0D\u8981\u5C0F\u6807\u9898\uFF0C\u4E0D\u8981\u5206\u70B9\u3002",
-  "3. \u7981\u6B62\u8F93\u51FA\u300C\u4EE5\u4E0B\u662F\u2026\u300D\u3001\u300CAI\u7ED8\u56FE\u63D0\u793A\u8BCD\uFF1A\u300D\u3001\u300C\u63D0\u793A\u8BCD\u5982\u4E0B\uFF1A\u300D\u7B49\u524D\u7F00\u3002",
-  "4. \u4E0D\u8981\u52A0\u5F15\u53F7\uFF0C\u4E0D\u8981\u52A0\u7ED3\u5C3E\u603B\u7ED3\uFF0C\u53EA\u4FDD\u7559\u63D0\u793A\u8BCD\u672C\u8EAB\u3002",
-].join("");
-
-const REVERSE_IMAGE_PROMPT_WITH_TEXT = "# Role\n你是一位精通视觉传达与提示词工程的顶级平面设计师。你的任务是将用户提供的参考图，拆解为一套极其专业、可直接用于 AI 生图（如 Midjourney, Stable Diffusion, Flux）的结构化 JSON 数据。\n\n# Constraints\n1. **仅输出 JSON 格式**：严禁输出任何开场白、解释性文字或结尾总结。\n2. **专业术语驱动**：必须使用平面设计（Layout）、摄影（Photography）及视觉心理学专业词汇（如：Rule of Thirds, Negative Space, Leading Lines, Chiaroscuro 等）。\n3. **第一视角描述**：所有描述应为具体的画面事实，严禁使用\"建议、这里可以、要求AI\"等第三方指导语言。\n4. **结构完整性**：必须涵盖视觉方案、摄影/人物细节、排版/版式、视觉逻辑四个核心维度。\n\n# Output JSON Structure (Standard)\n{\n  \"master_visual_brief\": \"整体设计风格、核心理念、色彩美学与情感基调的综合描述\",\n  \"photography_and_character\": {\n    \"character_specs\": \"样貌、发型、妆容等视觉特征\",\n    \"outfit_and_styling\": \"服装材质、配饰款式、穿着方式\",\n    \"pose_and_action\": \"精确的人物动态、关节指向、肌肉张力及表情细节（如：Contrapposto, 3/4 View）\",\n    \"camera_and_lighting\": \"摄影机位（如：Low Angle Shot）、镜头语言、光影布局与氛围渲染\"\n  },\n  \"graphic_design_layout\": {\n    \"structure\": \"版面构图逻辑（如：Grid System, Diagonal Composition）\",\n    \"elements\": \"各区域文案布局、装饰元素、背景纹理的具体设计样式\",\n    \"layering_and_depth\": \"图层前后关系（如：Foreground model overlapping background typography）\"\n  },\n  \"visual_logic_and_flow\": {\n    \"color_theory\": \"配色方案及其对视觉情绪的引导\",\n    \"eye_tracking\": \"视觉动线分析（如：Z-pattern, F-pattern）\",\n    \"balance\": \"画面重心分布与元素间的视觉张力平衡\"\n  },\n  \"raw_prompt_tags\": \"提取上述精华生成的英文生图标签组（Prompt Tags），用于直接复制生图\"\n}\n\n# Workflow\n1. 深度扫描参考图的视觉层次。\n2. 将图像信息转化为平面设计领域的专业描述。\n3. 按照定义的 JSON 结构填充内容，确保细节详实。\n4. 在 raw_prompt_tags 中将描述转化为高质量的英文 Prompt 关键词。\n\n请开始你的拆解：";
 
 export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): UseCanvasOrchestratorResult {
   const { getNode, getUpstreamInputs, patchRuntimeData, setNodeStatus, models, addResource } = options;

@@ -99,8 +99,14 @@ export function deriveCopyInsights(params: {
     body: cleanText(breakdown.body),
     conclusion: cleanText(breakdown.conclusion),
   };
+  const originalCopy = cleanText(
+    (breakdown as any)?.originalCopy ?? (breakdown as any)?.original_copy,
+  );
 
-  const copyText = uniqueNonEmpty([segments.intro, segments.body, segments.conclusion]).join("\n\n");
+  const segmentedCopy = uniqueNonEmpty([segments.intro, segments.body, segments.conclusion]).join(
+    "\n\n",
+  );
+  const copyText = originalCopy || segmentedCopy;
   const combinedForSentences = segments.description
     ? `${segments.description}\n${copyText}`
     : copyText;

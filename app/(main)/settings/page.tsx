@@ -16,6 +16,8 @@ function maskApiKey(value: string) {
   return `${value.slice(0, 4)}...${value.slice(-4)}`;
 }
 
+const PASSWORD_MIN_LENGTH = 8;
+
 export default function SettingsPage() {
   const { t } = useLanguage();
   const [fullName, setFullName] = useState('');
@@ -40,6 +42,12 @@ export default function SettingsPage() {
   const [creditsLoading, setCreditsLoading] = useState(false);
   const [creditsError, setCreditsError] = useState<string | null>(null);
   const [creditsUpdatedAt, setCreditsUpdatedAt] = useState<string | null>(null);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordConfirmInput, setPasswordConfirmInput] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const profileSnapshotRef = useRef({ fullName: '', avatarUrl: '' });
   const profileFetchedRef = useRef(false);
@@ -401,6 +409,54 @@ export default function SettingsPage() {
     setIsApiEditing(false);
   };
 
+  const handlePasswordSave = async (e: FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+    const trimmedPassword = passwordInput.trim();
+    const trimmedConfirm = passwordConfirmInput.trim();
+
+    if (trimmedPassword.length < PASSWORD_MIN_LENGTH) {
+      const message =
+        t.settings.passwordTooShort ?? `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`;
+      setPasswordError(message);
+      toast.error(message);
+      return;
+    }
+
+    if (trimmedPassword !== trimmedConfirm) {
+      const message = t.settings.passwordMismatch ?? 'Passwords do not match.';
+      setPasswordError(message);
+      toast.error(message);
+      return;
+    }
+
+    setPasswordSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        const message = t.settings.loginRequired ?? 'Please sign in first.';
+        setPasswordError(message);
+        toast.error(message);
+        return;
+      }
+
+      const { error } = await supabase.auth.updateUser({ password: trimmedPassword });
+      if (error) throw error;
+
+      setPasswordInput('');
+      setPasswordConfirmInput('');
+      setPasswordError(null);
+      toast.success(t.settings.passwordUpdated ?? 'Password updated successfully.');
+    } catch (error) {
+      console.error('Error updating password:', error);
+      const message = t.settings.passwordUpdateFailed ?? 'Failed to update password.';
+      setPasswordError(message);
+      toast.error(message);
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
+
   const handleCopyApiKey = async () => {
     const value = apiKeyInput.trim();
     if (!value) {
@@ -716,6 +772,99 @@ export default function SettingsPage() {
               )}
             </div>
           </div>
+        </form>
+
+        <form
+          onSubmit={handlePasswordSave}
+          className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-8 border border-gray-100 dark:border-gray-700"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">{t.settings.passwordSectionTitle}</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{t.settings.passwordSectionSubtitle}</p>
+            </div>
+            <button
+              type="submit"
+              disabled={
+                passwordSaving ||
+                !passwordInput.trim() ||
+                !passwordConfirmInput.trim()
+              }
+              className="btn-openclaw flex items-center gap-2 px-6 py-2 text-sm font-bold uppercase tracking-wide disabled:opacity-60"
+            >
+              {passwordSaving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} strokeWidth={3} />}
+              {passwordSaving ? t.common.loading : t.settings.passwordSaveCta}
+            </button>
+          </div>
+
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            <div className="space-y-3">
+              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300">
+                {t.settings.newPasswordLabel}
+              </label>
+              <div className="relative">
+                <input
+                  type={passwordVisible ? 'text' : 'password'}
+                  value={passwordInput}
+                  onChange={(event) => {
+                    setPasswordInput(event.target.value);
+                    setPasswordError(null);
+                  }}
+                  minLength={PASSWORD_MIN_LENGTH}
+                  autoComplete="new-password"
+                  placeholder={t.settings.passwordPlaceholder}
+                  disabled={passwordSaving}
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-4 py-3 pr-12 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
+                <button
+                  type="button"
+                  onClick={() => setPasswordVisible((prev) => !prev)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  {passwordVisible ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300">
+                {t.settings.confirmPasswordLabel}
+              </label>
+              <div className="relative">
+                <input
+                  type={confirmPasswordVisible ? 'text' : 'password'}
+                  value={passwordConfirmInput}
+                  onChange={(event) => {
+                    setPasswordConfirmInput(event.target.value);
+                    setPasswordError(null);
+                  }}
+                  minLength={PASSWORD_MIN_LENGTH}
+                  autoComplete="new-password"
+                  placeholder={t.settings.passwordConfirmPlaceholder}
+                  disabled={passwordSaving}
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-4 py-3 pr-12 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
+                <button
+                  type="button"
+                  onClick={() => setConfirmPasswordVisible((prev) => !prev)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  {confirmPasswordVisible ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {passwordError && (
+            <p className="mt-4 text-sm text-red-500 dark:text-red-400 flex items-center gap-2">
+              <AlertTriangle size={16} />
+              {passwordError}
+            </p>
+          )}
+
+          <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            {t.settings.passwordHelper}
+          </p>
         </form>
 
       </div>

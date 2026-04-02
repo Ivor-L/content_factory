@@ -24,6 +24,13 @@ export async function createScript(formData: FormData) {
   const scriptPurpose = normalizeScriptPurpose(formData.get('scriptPurpose'));
   const targetLanguage = String(formData.get('targetLanguage') || formData.get('target_language') || '').trim();
   const targetCountry = String(formData.get('targetCountry') || formData.get('target_country') || '').trim();
+  const skipBreakdownInput = formData.get('skipBreakdown');
+  const skipBreakdown =
+    typeof skipBreakdownInput === 'string'
+      ? skipBreakdownInput === 'true' || skipBreakdownInput === '1'
+      : skipBreakdownInput === true;
+  const initialStatus = skipBreakdown ? 'completed' : undefined;
+  const initialProgress = skipBreakdown ? 100 : undefined;
 
   if (!title || !videoUrl) {
     throw new Error('Title and Video URL are required');
@@ -53,23 +60,27 @@ export async function createScript(formData: FormData) {
             videoUrl,
             breakdown: JSON.stringify(initialBreakdown),
             userId: userId, // Save user ID
+            status: initialStatus,
+            progress: initialProgress,
         },
     });
   }
 
   // Trigger breakdown workflow based on scriptPurpose
-  triggerScriptBreakdown({
-    scriptId: script.id,
-    title: script.title,
-    videoUrl: script.videoUrl,
-    description,
-    userId: userId,
-    scriptPurpose,
-    targetLanguage,
-    targetCountry,
-  }).catch((error) => {
-    console.error('Failed to trigger script breakdown', { scriptId: script.id, error });
-  });
+  if (!skipBreakdown) {
+    triggerScriptBreakdown({
+      scriptId: script.id,
+      title: script.title,
+      videoUrl: script.videoUrl,
+      description,
+      userId: userId,
+      scriptPurpose,
+      targetLanguage,
+      targetCountry,
+    }).catch((error) => {
+      console.error('Failed to trigger script breakdown', { scriptId: script.id, error });
+    });
+  }
 
   revalidatePath('/scripts');
   return script;
@@ -77,7 +88,7 @@ export async function createScript(formData: FormData) {
 
 export async function deleteScript(id: string) {
     if (!id) throw new Error('ID is required');
-    await prisma.script.delete({
+    await prisma.script.deleteMany({
         where: { id }
     });
     revalidatePath('/scripts');

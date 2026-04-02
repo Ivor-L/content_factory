@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
-import { Loader2, RefreshCw, Play, Upload, Sparkles, Plus, X } from "lucide-react";
+import { Loader2, RefreshCw, Play, Upload, Sparkles, Plus, X, Trash2 } from "lucide-react";
 import { ImageEditorModal } from "./ImageEditorModal";
 import { VideoEditorModal } from "./VideoEditorModal";
 import { toast } from "react-hot-toast";
@@ -57,6 +57,7 @@ interface SegmentRowProps {
   onSegmentUpdated?: (segmentId: string, updates: Partial<SegmentData>) => void;
   isRegenImageLoading?: boolean;
   isRegenVideoLoading?: boolean;
+  onDelete?: (segmentId: string) => void;
 }
 
 // ── Row height: video/image columns are 260px wide → 260×9/16 ≈ 146px ────
@@ -344,6 +345,7 @@ export function SegmentRow({
   onSegmentUpdated,
   isRegenImageLoading,
   isRegenVideoLoading,
+  onDelete,
 }: SegmentRowProps) {
   const [imageEditorOpen, setImageEditorOpen] = useState(false);
   const [videoPlaying, setVideoPlaying] = useState(false);
@@ -421,7 +423,7 @@ export function SegmentRow({
     <>
       {/* Fixed-height row: 146px = 260px wide × 9/16 */}
       <div className={cn(
-        "grid grid-cols-[minmax(160px,1fr)_minmax(160px,1fr)_minmax(160px,1fr)_120px_340px_340px] gap-0 border-b border-gray-200 dark:border-white/10",
+        "grid grid-cols-[minmax(160px,1fr)_minmax(160px,1fr)_minmax(160px,1fr)_120px_340px_340px] gap-0 border-b border-gray-200 dark:border-white/10 group/row",
         ROW_H
       )}>
 
@@ -437,6 +439,15 @@ export function SegmentRow({
             <span className="text-[10px] bg-gray-100 dark:bg-white/5 px-1.5 py-0.5 rounded text-gray-400 dark:text-white/40">
               {segment.duration}s
             </span>
+            {onDelete && (
+              <button
+                onClick={() => onDelete(segment.id)}
+                className="ml-auto p-0.5 rounded opacity-0 group-hover/row:opacity-100 hover:bg-red-50 dark:hover:bg-red-500/10 text-gray-300 dark:text-white/20 hover:text-red-400 dark:hover:text-red-400 transition-all"
+                title="删除分镜"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            )}
           </div>
           <EditableCell
             value={segment.rewrittenScript || segment.originalScript || ""}

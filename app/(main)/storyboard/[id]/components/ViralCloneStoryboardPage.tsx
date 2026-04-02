@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
+import { AnimatePresence, motion } from "framer-motion";
 import { AiGlowSpinner } from "@/components/AiGlowSpinner";
 import { SegmentRow, type SegmentData } from "./SegmentRow";
 import { StoryboardPageHeader } from "./StoryboardPageHeader";
@@ -190,6 +191,37 @@ function BreakdownLoadingMessage() {
   );
 }
 
+function InsertDivider({ onInsert, tooltip }: { onInsert: () => void; tooltip: string }) {
+  return (
+    <div className="group/divider relative h-2 flex items-center cursor-pointer z-20" onClick={onInsert}>
+      {/* Invisible hover zone */}
+      <div className="absolute inset-0 -top-2 -bottom-2" />
+      {/* Visible line + button — only on hover */}
+      <div className="relative w-full flex items-center opacity-0 group-hover/divider:opacity-100 transition-opacity duration-150">
+        <div className="flex-1 h-[2px] bg-yellow-400 dark:bg-yellow-500 rounded-full" />
+        {/* Plus circle + tooltip */}
+        <div className="relative flex-shrink-0 mx-1.5">
+          {/* Tooltip bubble */}
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 pointer-events-none">
+            <div className="bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-[11px] font-medium px-2.5 py-1.5 rounded-lg whitespace-nowrap shadow-lg">
+              {tooltip}
+            </div>
+            {/* Caret */}
+            <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-x-[5px] border-x-transparent border-t-[5px] border-t-gray-900 dark:border-t-white" />
+          </div>
+          {/* Plus circle */}
+          <div className="w-5 h-5 rounded-full bg-yellow-400 dark:bg-yellow-500 flex items-center justify-center shadow-sm">
+            <svg className="w-3 h-3 text-white" viewBox="0 0 12 12" fill="currentColor">
+              <path d="M6.5 1.5a.5.5 0 0 0-1 0V5.5H1.5a.5.5 0 0 0 0 1H5.5v4a.5.5 0 0 0 1 0V6.5h4a.5.5 0 0 0 0-1H6.5V1.5z" />
+            </svg>
+          </div>
+        </div>
+        <div className="flex-1 h-[2px] bg-yellow-400 dark:bg-yellow-500 rounded-full" />
+      </div>
+    </div>
+  );
+}
+
 export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryboardPageProps) {
   const router = useRouter();
   const [task, setTask] = useState(initialTask);
@@ -201,6 +233,7 @@ export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryb
   const [videoModel, setVideoModel] = useState("veo3.1-fast");
   const [imageModel, setImageModel] = useState("nano-banana-pro");
   const [generatingTimedOut, setGeneratingTimedOut] = useState(false);
+  const [editStatus, setEditStatus] = useState<"idle" | "pending" | "done" | "error">("idle");
   const generatingStartRef = useRef<number | null>(null);
 
   // isPollingTerminal: only stop polling/subscriptions when the task is truly done.
@@ -247,6 +280,9 @@ export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryb
           const data = payload.new as { status: string; progress: number };
           setTask((prev) => ({ ...prev, status: data.status, progress: data.progress || 0 }));
           if (data.status === "COMPLETED" || data.status === "BREAKDOWN_FAILED") {
+            if (data.status === "COMPLETED") {
+              setEditStatus((prev) => prev === "pending" ? "done" : prev);
+            }
             router.refresh();
           } else if (data.status === "BREAKDOWN_COMPLETED") {
             // Segments were INSERTed by the webhook — fetch them now
@@ -466,6 +502,72 @@ export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryb
     );
   };
 
+  const handleDeleteSegment = async (segmentId: string) => {
+    try {
+      const res = await fetch(`/api/storyboard/segments/${segmentId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error || "删除失败");
+      }
+      setSegments((prev) => {
+        const filtered = prev.filter((s) => s.id !== segmentId);
+        // Re-number order client-side to stay in sync
+        return filtered.map((s, i) => ({ ...s, order: i }));
+      });
+      toast.success("分镜已删除");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "删除失败");
+    }
+  };
+
+  const handleInsertSegment = async (afterOrder: number) => {
+    try {
+      const res = await fetch(`/api/storyboard/${task.id}/segments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          segments: [{}],
+          insertAt: afterOrder + 1,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error || "插入失败");
+      }
+      const data = await res.json();
+      const newSeg = data.segments?.[0] as SegmentData | undefined;
+      if (!newSeg) return;
+      setSegments((prev) => {
+        const insertIdx = afterOrder + 1;
+        const next = [...prev];
+        next.splice(insertIdx, 0, { ...newSeg, retryCount: 0 });
+        return next.map((s, i) => ({ ...s, order: i }));
+      });
+      toast.success("已插入新分镜");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "插入失败");
+    }
+  };
+
+  const handleStartEdit = async (voiceId: string) => {
+    setEditStatus("pending");
+    try {
+      const res = await fetch(`/api/storyboard/${task.id}/auto-edit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ voiceId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error || "触发剪辑失败");
+      }
+      toast.success("剪辑已开始，完成后将自动更新");
+    } catch (e) {
+      setEditStatus("error");
+      toast.error(e instanceof Error ? e.message : "触发剪辑失败");
+    }
+  };
+
   const statusInfo = getStatusInfo(task.status);
 
   // Sync horizontal scroll between the sticky header row and the data rows
@@ -495,7 +597,6 @@ export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryb
       <StoryboardPageHeader
         taskId={task.id}
         taskName={task.name || task.product?.name || task.character?.name || `分镜 ${task.id.slice(-6).toUpperCase()}`}
-        activeTab="storyboard"
         isTerminal={isTerminal}
         statusLabel={statusInfo.label}
         progress={task.progress}
@@ -512,6 +613,9 @@ export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryb
         onVideoModelChange={setVideoModel}
         imageModel={imageModel}
         onImageModelChange={setImageModel}
+        hasVideos={hasAnyVideo}
+        editStatus={editStatus}
+        onStartEdit={handleStartEdit}
       />
 
       {/* Breakdown pending state */}
@@ -596,22 +700,46 @@ export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryb
             className="overflow-x-auto"
           >
             <div className="min-w-[960px]">
-              {segments.map((segment) => (
-                <SegmentRow
-                  key={segment.id}
-                  segment={segment}
-                  taskId={task.id}
-                  imageModel={task.imageModel}
-                  videoModel={task.videoModel}
-                  productImages={extractProductImages(task.product?.images)}
-                  characterAvatar={task.character?.avatar || null}
-                  onRegenImage={handleRegenImage}
-                  onRegenVideo={handleRegenVideo}
-                  onSegmentUpdated={handleSegmentUpdated}
-                  isRegenImageLoading={regenImageLoading[segment.id]}
-                  isRegenVideoLoading={regenVideoLoading[segment.id]}
-                />
-              ))}
+              <AnimatePresence initial={false}>
+                {segments.map((segment, idx) => (
+                  <motion.div
+                    key={segment.id}
+                    initial={{ opacity: 0, scaleY: 0.6, originY: 0 }}
+                    animate={{ opacity: 1, scaleY: 1 }}
+                    exit={{ opacity: 0, scaleY: 0, originY: 0 }}
+                    transition={{ duration: 0.22, ease: [0.25, 0.46, 0.45, 0.94] }}
+                  >
+                    {idx === 0 && (
+                      <InsertDivider
+                        onInsert={() => handleInsertSegment(-1)}
+                        tooltip="在最前面新增一个分镜"
+                      />
+                    )}
+                    <SegmentRow
+                      segment={segment}
+                      taskId={task.id}
+                      imageModel={task.imageModel}
+                      videoModel={task.videoModel}
+                      productImages={extractProductImages(task.product?.images)}
+                      characterAvatar={task.character?.avatar || null}
+                      onRegenImage={handleRegenImage}
+                      onRegenVideo={handleRegenVideo}
+                      onSegmentUpdated={handleSegmentUpdated}
+                      isRegenImageLoading={regenImageLoading[segment.id]}
+                      isRegenVideoLoading={regenVideoLoading[segment.id]}
+                      onDelete={handleDeleteSegment}
+                    />
+                    <InsertDivider
+                      onInsert={() => handleInsertSegment(segment.order)}
+                      tooltip={
+                        idx < segments.length - 1
+                          ? `在分镜${segment.order + 1}和分镜${segment.order + 2}之间新增一个分镜`
+                          : "在最后面新增一个分镜"
+                      }
+                    />
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </div>
           </div>
         </div>

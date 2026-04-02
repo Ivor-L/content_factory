@@ -27,6 +27,17 @@ const REFERER_OVERRIDES: Array<{ test: (hostname: string) => boolean; referer: s
 ];
 
 const DEFAULT_REFERER = "https://www.xiaohongshu.com/";
+const MEDIA_PROXY_BRIDGE_URL = (() => {
+  const url = process.env.MEDIA_PROXY_BRIDGE_URL?.trim();
+  if (!url) return null;
+  try {
+    return new URL(url).toString();
+  } catch {
+    console.warn("[proxy/download] Ignoring invalid MEDIA_PROXY_BRIDGE_URL:", url);
+    return null;
+  }
+})();
+const MEDIA_PROXY_BRIDGE_HOST = MEDIA_PROXY_BRIDGE_URL ? new URL(MEDIA_PROXY_BRIDGE_URL).hostname : null;
 
 function buildOriginHeaders(targetUrl: URL): Record<string, string> {
   const headers: Record<string, string> = { ...BASE_ORIGIN_HEADERS };
@@ -67,18 +78,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const upstream = await fetch(rawUrl, {
-      headers: buildOriginHeaders(targetUrl),
-      // Follow redirects (default)
-    });
-
-    if (!upstream.ok) {
-      console.error("[proxy/download] Upstream error", upstream.status, rawUrl.slice(0, 80));
-      return NextResponse.json(
-        { error: `Upstream returned ${upstream.status}` },
-        { status: 502 }
-      );
-    }
+    const upstream = await fetchWithFallback(rawUrl, targetUrl, buildOriginHeaders(targetUrl));
 
     const contentType =
       upstream.headers.get("content-type") ?? "application/octet-stream";
@@ -110,5 +110,53 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[proxy/download] Fetch failed", error);
     return NextResponse.json({ error: "Proxy request failed" }, { status: 502 });
+  }
+}
+
+async function fetchWithFallback(
+  rawUrl: string,
+  target: URL,
+  headers: Record<string, string>,
+): Promise<Response> {
+  let directError: unknown;
+  try {
+    const direct = await fetch(rawUrl, { headers });
+    if (direct.ok) {
+      return direct;
+    }
+    console.error("[proxy/download] Upstream error", direct.status, rawUrl.slice(0, 80));
+    direct.body?.cancel();
+    directError = new Error(`Upstream returned ${direct.status}`);
+  } catch (error) {
+    directError = error;
+  }
+
+  const shouldFallback =
+    MEDIA_PROXY_BRIDGE_URL &&
+    MEDIA_PROXY_BRIDGE_HOST &&
+    target.hostname !== MEDIA_PROXY_BRIDGE_HOST;
+
+  if (!shouldFallback || !MEDIA_PROXY_BRIDGE_URL) {
+    if (directError instanceof Error) throw directError;
+    throw new Error("Upstream fetch failed");
+  }
+
+  const bridgeUrl = new URL(MEDIA_PROXY_BRIDGE_URL);
+  bridgeUrl.searchParams.set("url", rawUrl);
+
+  try {
+    const fallback = await fetch(bridgeUrl.toString(), {
+      headers: { Accept: "*/*" },
+    });
+    if (fallback.ok) {
+      return fallback;
+    }
+    fallback.body?.cancel();
+    throw new Error(`Fallback returned ${fallback.status}`);
+  } catch (error) {
+    if (directError instanceof Error) {
+      throw new AggregateError([directError, error as Error], "Both upstream and fallback fetches failed");
+    }
+    throw error;
   }
 }

@@ -795,7 +795,6 @@ export function StoryboardTimelineView({ initialTask, mode = 'page' }: Storyboar
         <StoryboardPageHeader
           taskId={initialTask.id}
           taskName={headerTitle}
-          activeTab="timeline"
           isTerminal={true}
           rightExtra={timelineActions}
         />

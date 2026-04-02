@@ -86,7 +86,14 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json({
-    data: items.map((item) => hydrateViralReferenceMedia(item)),
+    data: items.map((item) => {
+      const hydrated = hydrateViralReferenceMedia(item);
+      // Hoist rawPayload.scriptText to top-level so the UI can access it without diving into rawPayload
+      const rp = item.rawPayload;
+      const scriptText =
+        typeof (rp as any)?.scriptText === "string" ? (rp as any).scriptText : null;
+      return scriptText ? { ...hydrated, scriptText } : hydrated;
+    }),
     nextCursor,
     total,
   });

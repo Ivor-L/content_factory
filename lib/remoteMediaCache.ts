@@ -31,6 +31,18 @@ const MEDIA_CACHE_REFERER_OVERRIDES: Array<{ test: (hostname: string) => boolean
   },
 ];
 const MEDIA_CACHE_DEFAULT_REFERER = "https://www.xiaohongshu.com/";
+const MEDIA_PROXY_BRIDGE_URL = (() => {
+  const url = process.env.MEDIA_PROXY_BRIDGE_URL?.trim();
+  if (!url) return null;
+  try {
+    // Validate URL format eagerly to fail fast on misconfiguration.
+    return new URL(url).toString();
+  } catch {
+    console.warn("[media-cache] Ignoring invalid MEDIA_PROXY_BRIDGE_URL:", url);
+    return null;
+  }
+})();
+const MEDIA_PROXY_BRIDGE_HOST = MEDIA_PROXY_BRIDGE_URL ? new URL(MEDIA_PROXY_BRIDGE_URL).hostname : null;
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 const EXTRA_SELF_HOSTS = (() => {
   const hosts: string[] = [];
@@ -117,13 +129,7 @@ async function cacheSingleUrl(url: string, context: CacheContext): Promise<strin
   }
 
   const target = new URL(url);
-  const response = await fetch(url, {
-    headers: buildFetchHeaders(target),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Upstream returned ${response.status}`);
-  }
+  const response = await fetchWithFallback(url, target, buildFetchHeaders(target));
 
   const contentType = response.headers.get("content-type") ?? "application/octet-stream";
   const contentLengthHeader = response.headers.get("content-length");
@@ -156,6 +162,53 @@ async function cacheSingleUrl(url: string, context: CacheContext): Promise<strin
   });
 
   return publicUrl;
+}
+
+async function fetchWithFallback(
+  url: string,
+  target: URL,
+  headers: Record<string, string>,
+): Promise<Response> {
+  let directError: unknown;
+  try {
+    const direct = await fetch(url, { headers });
+    if (direct.ok) {
+      return direct;
+    }
+    direct.body?.cancel();
+    directError = new Error(`Upstream returned ${direct.status}`);
+  } catch (error) {
+    directError = error;
+  }
+
+  const shouldFallback =
+    MEDIA_PROXY_BRIDGE_URL &&
+    MEDIA_PROXY_BRIDGE_HOST &&
+    target.hostname !== MEDIA_PROXY_BRIDGE_HOST;
+
+  if (!shouldFallback || !MEDIA_PROXY_BRIDGE_URL) {
+    if (directError instanceof Error) throw directError;
+    throw new Error("Upstream fetch failed");
+  }
+
+  const bridgeUrl = new URL(MEDIA_PROXY_BRIDGE_URL);
+  bridgeUrl.searchParams.set("url", url);
+
+  try {
+    const fallback = await fetch(bridgeUrl.toString(), {
+      headers: { Accept: "*/*" },
+    });
+    if (fallback.ok) {
+      return fallback;
+    }
+    fallback.body?.cancel();
+    throw new Error(`Fallback returned ${fallback.status}`);
+  } catch (error) {
+    if (directError instanceof Error) {
+      throw new AggregateError([directError, error as Error], "Both upstream and fallback fetches failed");
+    }
+    throw error;
+  }
 }
 
 function isCacheableUrl(rawUrl: string) {

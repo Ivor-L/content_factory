@@ -41,10 +41,11 @@ import {
   Volume2,
   VolumeX,
   Copy,
+  Film,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import { toast } from "react-hot-toast";
-import type { CreativeTaskDetail } from "@/types/creative";
+import type { CreativeTaskDetail, StylePresetLite } from "@/types/creative";
 
 type LanguageCode = "en" | "zh" | "zh-TW";
 type CopyMap = Record<LanguageCode, string>;
@@ -1030,6 +1031,10 @@ export function MyProjectsClient({
   };
 
   const handleTaskClick = (task: TaskSummary) => {
+    if (task.taskType === "storyboard") {
+      router.push(`${basePath}/storyboard/${task.taskId}`);
+      return;
+    }
     setActiveTask(task);
     updateTaskIdParam(task.taskId);
   };
@@ -1363,6 +1368,7 @@ export function MyProjectsClient({
         <TaskDetailModal
           task={activeTask}
           langKey={langKey}
+          basePath={basePath}
           onClose={closeActiveTask}
           onOpen={() => handleOpenTask(activeTask)}
           onDownload={(images) => handleDownloadTask(activeTask, images)}
@@ -1433,6 +1439,7 @@ export function MyProjectsClient({
 interface TaskDetailModalProps {
   task: TaskSummary;
   langKey: LanguageCode;
+  basePath: string;
   onClose: () => void;
   onOpen: () => void;
   onDownload: (images?: string[]) => void;
@@ -1442,7 +1449,7 @@ interface TaskDetailModalProps {
   onDigitalHumanLaunch?: (script: string, taskId: string) => void;
 }
 
-function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete, deleting, onPosterLaunch, onDigitalHumanLaunch }: TaskDetailModalProps) {
+function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload, onDelete, deleting, onPosterLaunch, onDigitalHumanLaunch }: TaskDetailModalProps) {
   const handleBackdropClick = (event: React.MouseEvent<HTMLDivElement>) => {
     if (event.target === event.currentTarget) {
       onClose();
@@ -1470,6 +1477,14 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
   const [replicationDetailLoading, setReplicationDetailLoading] = useState(false);
   const [replicationDetailError, setReplicationDetailError] = useState<string | null>(null);
   const [downloadingOverride, setDownloadingOverride] = useState(false);
+  const [t2vStatus, setT2vStatus] = useState<'idle' | 'pending' | 'done' | 'error'>('idle');
+  const [t2vStoryboardId, setT2vStoryboardId] = useState<string | null>(null);
+  const [t2vError, setT2vError] = useState<string | null>(null);
+  const [t2vStyleModalOpen, setT2vStyleModalOpen] = useState(false);
+  const [t2vStyles, setT2vStyles] = useState<(StylePresetLite & { metadata?: unknown })[]>([]);
+  const [t2vStylesLoading, setT2vStylesLoading] = useState(false);
+  const [t2vSelectedStyleId, setT2vSelectedStyleId] = useState<string | null>(null);
+  const [t2vAllowText, setT2vAllowText] = useState(false);
 
   useEffect(() => {
     if (!shouldFetchReplicationDetail) {
@@ -1596,6 +1611,14 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
           setImages(imgs.length ? imgs : task.thumbnailUrl ? [task.thumbnailUrl] : []);
           setImageIndex(0);
           setCreativeDetailError(null);
+          // 恢复 t2v 状态（关闭弹窗后重新打开仍能显示生成中或结果）
+          const customMeta = (detail?.metadata?.custom as Record<string, unknown> | null | undefined);
+          if (customMeta?.t2v_status === 'done' && typeof customMeta?.t2v_storyboard_id === 'string') {
+            setT2vStoryboardId(customMeta.t2v_storyboard_id);
+            setT2vStatus('done');
+          } else if (customMeta?.t2v_status === 'processing') {
+            setT2vStatus('pending');
+          }
         })
         .catch((error: unknown) => {
           if (cancelled) return;
@@ -1637,6 +1660,37 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
     setCreativeDetailError(null);
     setCreativeDetailLoading(false);
   }, [behavesLikeCreative, isPoster, isText2ImagePoster, task, previewImageUrl]);
+
+  // Subscribe to creative_tasks changes to detect t2v completion
+  useEffect(() => {
+    if (!isCreative || t2vStatus !== 'pending') return;
+
+    const channel = supabase
+      .channel(`t2v-${task.taskId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'creative_tasks',
+          filter: `id=eq.${task.taskId}`,
+        },
+        (payload) => {
+          const row = payload.new as Record<string, unknown>;
+          const meta = row.metadata as Record<string, unknown> | null;
+          const custom = meta?.custom as Record<string, unknown> | null | undefined;
+          if (custom?.t2v_status === 'done' && typeof custom?.t2v_storyboard_id === 'string') {
+            setT2vStoryboardId(custom.t2v_storyboard_id);
+            setT2vStatus('done');
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isCreative, t2vStatus, task.taskId]);
 
   const showImageGallery = (behavesLikeCreative || (isPoster && !isText2ImagePoster)) && !hasVideo;
   const primaryActionLabel = showImageGallery && images.length > 1
@@ -1747,6 +1801,82 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
     onDigitalHumanLaunch?.(scriptText, task.taskId);
   };
 
+
+  const handleT2VLaunch = async () => {
+    if (!scriptReady) {
+      toast.error("文案仍在生成，稍后再试");
+      return;
+    }
+    if (t2vStatus === 'pending') return;
+
+    // 先加载风格列表，再弹出选择弹窗
+    setT2vStyleModalOpen(true);
+    setT2vStylesLoading(true);
+    setT2vSelectedStyleId(null);
+    setT2vAllowText(false);
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const res = await fetch('/api/assets/styles?limit=50', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const payload = await res.json();
+        setT2vStyles(Array.isArray(payload?.data) ? payload.data : []);
+      }
+    } catch {
+      // 静默失败，允许继续
+    } finally {
+      setT2vStylesLoading(false);
+    }
+  };
+
+  const handleT2VConfirm = async () => {
+    const selectedStyle = t2vStyles.find((s) => s.id === t2vSelectedStyleId) ?? null;
+    setT2vStyleModalOpen(false);
+    setT2vStatus('pending');
+    setT2vError(null);
+    setT2vStoryboardId(null);
+
+    const styleRaw = selectedStyle?.name ?? '';
+    const styleNorm = (selectedStyle?.spec as Record<string, unknown> | null | undefined)?.['styleNorm'] as string | undefined
+      ?? selectedStyle?.name
+      ?? '写实';
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const response = await fetch('/api/my-works/t2v', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          taskId: task.taskId,
+          title: scriptTitle,
+          scriptText,
+          styleId: selectedStyle?.id ?? undefined,
+          creativeStyleRaw: styleRaw,
+          creativeStyleNorm: styleNorm,
+          allowText: t2vAllowText,
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(err?.error || '触发失败');
+      }
+
+      toast.success("分镜生成中，大约需要2-3分钟");
+    } catch (error) {
+      setT2vStatus('error');
+      setT2vError(error instanceof Error ? error.message : '生成失败，请重试');
+      toast.error("分镜生成失败");
+    }
+  };
+
   const handleCopyText = async (text?: string | null) => {
     if (!text) return;
     try {
@@ -1813,9 +1943,7 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
     onDownload();
   };
 
-  return (
-    <>
-      {createPortal(
+  const mainPortal = createPortal(
     <div
       className="fixed inset-0 z-[9999] flex items-stretch justify-center overflow-y-auto bg-black/75 backdrop-blur-sm p-3 sm:p-6"
       onClick={handleBackdropClick}
@@ -1830,7 +1958,8 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
           <X className="h-4 w-4" />
         </button>
 
-        {/* Left: Media preview */}
+        {/* Left: Media preview — hidden for text-only creative tasks */}
+        {!(isCreative && !hasVideo && images.length === 0 && !imageLoading) && (
         <div className="flex w-full flex-shrink-0 items-center justify-center bg-black min-h-[240px] sm:min-h-[320px] lg:min-h-0 lg:w-[45%]">
           {showImageGallery ? (
             <div className="relative flex h-full w-full items-center justify-center">
@@ -1930,6 +2059,7 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
             </div>
           )}
         </div>
+        )}
 
         {/* Right: Info + actions */}
         <div className="flex flex-1 flex-col overflow-hidden">
@@ -1948,6 +2078,9 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
             {/* Title */}
             <div>
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">{task.title || typeLabel}</h2>
+              {isCreative && (
+                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">{formatTimestamp(task.createdAt, LANGUAGE_LOCALES[langKey])}</p>
+              )}
               {(creativeDetail?.ideaText ?? task.preview) && (
                 <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400 leading-relaxed whitespace-pre-wrap">
                   {creativeDetail?.ideaText ?? task.preview}
@@ -1957,10 +2090,12 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
 
             {/* Key info: created date (+ type-specific) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {!isCreative && (
               <div className="rounded-2xl border border-gray-100 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-900/60 sm:col-span-2">
                 <p className="text-xs font-medium text-gray-400 dark:text-gray-500">{pickCopy(DATE_LABEL_COPY.created, langKey)}</p>
                 <p className="mt-0.5 text-sm font-semibold text-gray-900 dark:text-white">{formatTimestamp(task.createdAt, LANGUAGE_LOCALES[langKey])}</p>
               </div>
+              )}
 
               {/* Digital human: show drive type */}
               {isDigitalHuman && digitalHumanType && (
@@ -2065,46 +2200,13 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
 
             {isCreative && (
               <div className="rounded-3xl border border-gray-100 bg-gray-50/80 p-4 space-y-3 dark:border-gray-800 dark:bg-gray-900/40">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white">创作文案</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {creativeDetailLoading
-                        ? "AI 正在生成，请稍候…"
-                        : scriptReady
-                          ? "可直接用于生成图文或数字人口播"
-                          : creativeDetailError || "稍后刷新以获取完整文案"}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={handlePosterLaunch}
-                      disabled={!scriptReady || creativeDetailLoading}
-                      className={cn(
-                        "inline-flex items-center rounded-full border px-4 py-1.5 text-xs font-semibold transition",
-                        scriptReady && !creativeDetailLoading
-                          ? "border-gray-900 text-gray-900 hover:bg-gray-900 hover:text-white dark:border-white dark:text-white dark:hover:bg-white dark:hover:text-gray-900"
-                          : "border-gray-200 text-gray-400 dark:border-gray-700 dark:text-gray-600 cursor-not-allowed"
-                      )}
-                    >
-                      生成图文
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDigitalHumanLaunch}
-                      disabled={!scriptReady || creativeDetailLoading}
-                      className={cn(
-                        "inline-flex items-center rounded-full border px-4 py-1.5 text-xs font-semibold transition",
-                        scriptReady && !creativeDetailLoading
-                          ? "border-gray-900 text-gray-900 hover:bg-gray-900 hover:text-white dark:border-white dark:text-white dark:hover:bg-white dark:hover:text-gray-900"
-                          : "border-gray-200 text-gray-400 dark:border-gray-700 dark:text-gray-600 cursor-not-allowed"
-                      )}
-                    >
-                      生成数字人
-                    </button>
-                  </div>
-                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {creativeDetailLoading
+                    ? "AI 正在生成，请稍候…"
+                    : scriptReady
+                      ? "创作文案"
+                      : creativeDetailError || "稍后刷新以获取完整文案"}
+                </p>
 
                 {scriptReady ? (
                   <>
@@ -2164,43 +2266,230 @@ function TaskDetailModal({ task, langKey, onClose, onOpen, onDownload, onDelete,
 
           {/* Fixed bottom actions */}
           <div className="border-t border-gray-100 bg-white p-4 dark:border-gray-800 dark:bg-gray-950">
-            <div className="flex gap-3">
-              {isStoryboard ? (
+            {isCreative ? (
+              <div className="space-y-2">
+                {/* Row 1: 生成图文 + 生成数字人 */}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handlePosterLaunch}
+                    disabled={!scriptReady}
+                    className="flex-1 inline-flex items-center justify-center gap-2 rounded-full border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                  >
+                    <ImageIcon className="h-4 w-4" />
+                    生成图文
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDigitalHumanLaunch}
+                    disabled={!scriptReady}
+                    className="flex-1 inline-flex items-center justify-center gap-2 rounded-full border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                  >
+                    <UserRound className="h-4 w-4" />
+                    生成数字人
+                  </button>
+                </div>
+                {/* Row 2: 分镜视频 + 删除 */}
+                <div className="flex gap-2 items-center">
+                  {t2vStatus === 'done' && t2vStoryboardId ? (
+                    <a
+                      href={`${basePath}/storyboard/${t2vStoryboardId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 inline-flex items-center justify-center gap-2 rounded-full bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100"
+                    >
+                      <Film className="h-4 w-4" />
+                      在分镜板中打开
+                    </a>
+                  ) : t2vStatus === 'pending' ? (
+                    <div className="flex-1 inline-flex items-center gap-2 rounded-full border border-gray-200 px-4 py-2.5 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                      <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
+                      分镜生成中…可关闭弹窗稍后查看
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleT2VLaunch}
+                      disabled={!scriptReady}
+                      className="flex-1 inline-flex items-center justify-center gap-2 rounded-full border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                    >
+                      <Film className="h-4 w-4" />
+                      {t2vStatus === 'error' ? '重试分镜视频' : '生成分镜视频'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={onDelete}
+                    disabled={deleting}
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-rose-200 px-4 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-60 dark:border-rose-500/40 dark:text-rose-300 dark:hover:bg-rose-900/20"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    {deleting ? "删除中..." : "删除"}
+                  </button>
+                </div>
+                {/* T2V 错误提示 */}
+                {t2vStatus === 'error' && t2vError && (
+                  <p className="text-xs text-rose-500 dark:text-rose-400 pl-1">{t2vError}</p>
+                )}
+              </div>
+            ) : (
+              <div className="flex gap-3">
+                {isStoryboard ? (
+                  <button
+                    type="button"
+                    onClick={onOpen}
+                    className="flex-1 inline-flex items-center justify-center gap-2 rounded-full bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    打开任务
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handlePrimaryButtonClick}
+                    disabled={downloadingOverride}
+                    className="flex-1 inline-flex items-center justify-center gap-2 rounded-full bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100"
+                  >
+                    <Download className={cn("h-4 w-4", downloadingOverride && "animate-spin")} />
+                    {downloadingOverride ? "准备中..." : primaryActionLabel}
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={onOpen}
-                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-full bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100"
+                  onClick={onDelete}
+                  disabled={deleting}
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-rose-200 px-5 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-60 dark:border-rose-500/40 dark:text-rose-300 dark:hover:bg-rose-900/20"
                 >
-                  <ExternalLink className="h-4 w-4" />
-                  打开任务
+                  <Trash2 className="h-4 w-4" />
+                  {deleting ? "删除中..." : "删除"}
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handlePrimaryButtonClick}
-                  disabled={downloadingOverride}
-                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-full bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100"
-                >
-                  <Download className={cn("h-4 w-4", downloadingOverride && "animate-spin")} />
-                  {downloadingOverride ? "准备中..." : primaryActionLabel}
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={onDelete}
-                disabled={deleting}
-                className="inline-flex items-center justify-center gap-2 rounded-full border border-rose-200 px-5 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-60 dark:border-rose-500/40 dark:text-rose-300 dark:hover:bg-rose-900/20"
-              >
-                <Trash2 className="h-4 w-4" />
-                {deleting ? "删除中..." : "删除"}
-              </button>
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
         </div>,
         document.body
-      )}
+      );
+
+  // 风格选择弹窗（第二个 portal，浮在详情弹窗上方）
+  const stylePickerPortal = t2vStyleModalOpen ? createPortal(
+    <div
+      className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) setT2vStyleModalOpen(false); }}
+    >
+      <div className="relative w-full max-w-lg rounded-3xl bg-white shadow-2xl dark:bg-gray-950 overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-800">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white">选择视觉风格</h3>
+          <button
+            type="button"
+            onClick={() => setT2vStyleModalOpen(false)}
+            className="rounded-full border border-gray-200 bg-white/80 p-1.5 text-gray-500 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Style grid */}
+        <div className="px-6 pt-4 pb-2 max-h-72 overflow-y-auto">
+          {t2vStylesLoading ? (
+            <div className="flex items-center justify-center py-10 text-gray-400">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : t2vStyles.length === 0 ? (
+            <p className="py-8 text-center text-sm text-gray-400">暂无可用风格，可在风格库中添加</p>
+          ) : (
+            <div className="grid grid-cols-3 gap-2.5">
+              {t2vStyles.map((style) => {
+                const isActive = style.id === t2vSelectedStyleId;
+                return (
+                  <button
+                    key={style.id}
+                    type="button"
+                    onClick={() => setT2vSelectedStyleId(isActive ? null : style.id)}
+                    className={cn(
+                      "relative flex flex-col items-center gap-1.5 rounded-2xl border p-2.5 text-left transition",
+                      isActive
+                        ? "border-gray-900 bg-gray-50 dark:border-white dark:bg-gray-800"
+                        : "border-gray-100 bg-white hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-600"
+                    )}
+                  >
+                    {style.previewUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={style.previewUrl} alt={style.name} className="h-16 w-full rounded-xl object-cover" />
+                    ) : (
+                      <div className="flex h-16 w-full items-center justify-center rounded-xl bg-gray-100 text-sm font-semibold text-gray-500 dark:bg-gray-800">
+                        {(style.name || '').slice(0, 2)}
+                      </div>
+                    )}
+                    <p className="w-full truncate text-center text-xs font-medium text-gray-700 dark:text-gray-300">
+                      {style.name}
+                    </p>
+                    {isActive && (
+                      <div className="absolute right-1.5 top-1.5 rounded-full bg-gray-900 p-0.5 dark:bg-white">
+                        <Check className="h-3 w-3 text-white dark:text-gray-900" />
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Allow text toggle */}
+        <div className="px-6 py-3 border-t border-gray-100 dark:border-gray-800">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <div
+              role="checkbox"
+              aria-checked={t2vAllowText}
+              tabIndex={0}
+              onClick={() => setT2vAllowText((v) => !v)}
+              onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); setT2vAllowText((v) => !v); } }}
+              className={cn(
+                "relative h-5 w-9 flex-shrink-0 rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400",
+                t2vAllowText ? "bg-gray-900 border-gray-900 dark:bg-white dark:border-white" : "bg-gray-200 border-gray-200 dark:bg-gray-700 dark:border-gray-700"
+              )}
+            >
+              <span className={cn(
+                "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform dark:bg-gray-900",
+                t2vAllowText ? "translate-x-4" : "translate-x-0.5"
+              )} />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-800 dark:text-gray-200">允许文字出现在视频中</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500">开启后视频可包含字幕/标题文字叠加</p>
+            </div>
+          </label>
+        </div>
+
+        {/* Footer buttons */}
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100 dark:border-gray-800">
+          <button
+            type="button"
+            onClick={() => setT2vStyleModalOpen(false)}
+            className="rounded-full border border-gray-200 px-5 py-2 text-sm font-semibold text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={handleT2VConfirm}
+            className="rounded-full bg-gray-900 px-5 py-2 text-sm font-semibold text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100"
+          >
+            开始生成
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  return (
+    <>
+      {mainPortal}
+      {stylePickerPortal}
     </>
   );
 }

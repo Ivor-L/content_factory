@@ -546,6 +546,63 @@ export async function generateFromScript(scriptContent: string): Promise<Replica
   }
 }
 
+export interface CopyRemixTriggerOptions {
+  replicationId: string;
+  scriptId?: string | null;
+  videoUrl: string;
+  apiKey?: string;
+  callbackUrl: string;
+  workflowId?: string;
+  styleId?: string | null;
+  styleSnapshot?: Record<string, unknown> | null;
+  styleProfile?: Record<string, unknown> | null;
+  userId?: string | null;
+  originalCopy?: string | null;
+  ideaText?: string | null;
+}
+
+export async function triggerCopyRemix(
+  options: CopyRemixTriggerOptions,
+): Promise<{ success: boolean; message: string }> {
+  const webhookUrl =
+    process.env.N8N_COPY_REMIX_WEBHOOK ||
+    "https://hooks.atomx.top/webhook/2chuang_web_v2";
+
+  if (!webhookUrl) {
+    throw new Error("N8N copy remix webhook is not configured");
+  }
+
+  const payload: Record<string, unknown> = {
+    replication_id: options.replicationId,
+    video_url: options.videoUrl,
+    callback_url: options.callbackUrl,
+    source: "copy_remix",
+  };
+
+  if (options.scriptId) payload.script_id = options.scriptId;
+  if (options.apiKey) payload.api_key = options.apiKey;
+  if (options.workflowId) payload.workflow_id = options.workflowId;
+  if (options.styleId) payload.style_id = options.styleId;
+  if (options.styleSnapshot) payload.style_snapshot = options.styleSnapshot;
+  if (options.styleProfile) payload.style_profile = options.styleProfile;
+  if (options.userId) payload.user_id = options.userId;
+  if (options.originalCopy) payload.original_copy = options.originalCopy;
+  if (options.ideaText) payload.idea_text = options.ideaText;
+
+  const response = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => response.statusText);
+    throw new Error(`Copy remix webhook failed: ${response.status} ${text}`);
+  }
+
+  return { success: true, message: "Copy remix workflow triggered" };
+}
+
 export interface DHScriptTriggerOptions {
   scriptId: string;
   replicationId: string;
@@ -893,4 +950,106 @@ export async function triggerImageTextGenerate(
     const err = await response.text().catch(() => response.statusText);
     throw new Error(`[n8n] image-text generate trigger failed: ${response.status} ${err}`);
   }
+}
+
+export interface T2VShot {
+  shot_idx: number;
+  speech_text: string;
+  estimated_duration: number;
+  image_prompt: string;
+  video_prompt: string;
+}
+
+export async function triggerT2V(params: {
+  taskId: string;
+  title: string;
+  scriptText: string;
+  apiKey?: string;
+  callbackUrl: string;
+  creativeStyleRaw?: string;
+  creativeStyleNorm?: string;
+  styleProfileText?: string;
+  allowText?: boolean;
+}): Promise<{ ok: boolean }> {
+  const webhookUrl = process.env.N8N_T2V_WEBHOOK || 'https://hooks.atomx.top/webhook/t2v_web';
+
+  const allowText = params.allowText ?? false;
+
+  let styleProfileJson: unknown = null;
+  if (params.styleProfileText) {
+    try {
+      styleProfileJson = JSON.parse(params.styleProfileText);
+    } catch {
+      styleProfileJson = params.styleProfileText;
+    }
+  }
+
+  const payload = {
+    task_id: params.taskId,
+    title: params.title,
+    topic: params.title,
+    script_text: params.scriptText,
+    callback_url: params.callbackUrl,
+    '基础信息': {
+      api_key: params.apiKey || '',
+    },
+    creative_style_raw: params.creativeStyleRaw ?? '',
+    creative_style_norm: params.creativeStyleNorm ?? '写实',
+    style_profile_json: styleProfileJson,
+    route: allowText ? 'A' : 'B',
+    allow_text_raw: allowText ? '是' : '否',
+    allow_text_bool: allowText,
+  };
+
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const err = await response.text().catch(() => response.statusText);
+    throw new Error(`[n8n] t2v trigger failed: ${response.status} ${err}`);
+  }
+
+  return { ok: true };
+}
+
+export async function triggerAutoEdit(params: {
+  taskId: string;
+  voiceId: string;
+  minimaxKey: string;
+  videoUrls: string[];
+  textArray: string[];
+  callbackUrl: string;
+  bgmUrl?: string;
+  speed?: number;
+  wantSubtitles?: boolean;
+}): Promise<{ ok: boolean }> {
+  const webhookUrl = process.env.N8N_AUTO_EDIT_WEBHOOK || 'https://hooks.atomx.top/webhook/cup_web';
+
+  const payload = {
+    task_id: params.taskId,
+    voice_id: params.voiceId,
+    minimax_key: params.minimaxKey,
+    video: params.videoUrls,
+    text_array: params.textArray,
+    callback_url: params.callbackUrl,
+    bgm_url: params.bgmUrl ?? '',
+    speed: params.speed ?? 1.2,
+    want_subtitles: params.wantSubtitles ?? true,
+  };
+
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const err = await response.text().catch(() => response.statusText);
+    throw new Error(`[n8n] auto-edit trigger failed: ${response.status} ${err}`);
+  }
+
+  return { ok: true };
 }

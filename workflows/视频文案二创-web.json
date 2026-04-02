@@ -1,0 +1,617 @@
+{
+  "name": "视频文案二创-web",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "2chuang_web",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        -112
+      ],
+      "id": "96bcc1ef-45d3-4b59-a556-b51f067bd580",
+      "name": "Webhook",
+      "webhookId": "1d96fef1-09de-4b7e-bc17-a9d49a6cd45f"
+    },
+    {
+      "parameters": {
+        "jsCode": "const incoming = ($json && typeof $json === 'object') ? $json : {};\nconst root = incoming.body && typeof incoming.body === 'object' && Object.keys(incoming.body).length\n  ? incoming.body\n  : incoming;\n\nconst CR = String.fromCharCode(13);\n\nfunction pickFirst(...vals) {\n  for (const v of vals) {\n    if (v === undefined || v === null) continue;\n    const str = typeof v === 'string' ? v.trim() : v;\n    if (typeof str === 'string' && str.length === 0) continue;\n    return str;\n  }\n  return undefined;\n}\n\nfunction toCleanString(value) {\n  if (value === undefined || value === null) return '';\n  if (typeof value === 'string') {\n    const normalized = value.split(CR).join(' ');\n    return normalized.replace(/\\s+/g, ' ').trim();\n  }\n  return String(value);\n}\n\nfunction safeParseObject(value) {\n  if (value === undefined || value === null) return null;\n  if (typeof value === 'object' && !Array.isArray(value)) return value;\n  if (typeof value === 'string') {\n    const trimmed = value.trim();\n    if (!trimmed) return null;\n    try {\n      const parsed = JSON.parse(trimmed);\n      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;\n    } catch {}\n  }\n  return null;\n}\n\nfunction clampWordCount(value, fallback = 600) {\n  if (!Number.isFinite(value)) return fallback;\n  return Math.max(120, Math.min(1600, Math.round(value)));\n}\n\n// 解析语言偏好：支持 language 或 output_language 字段\nconst rawLang = pickFirst(root.language, root.output_language, '简体中文');\nconst outputLanguage = (rawLang.includes('繁') || rawLang.toLowerCase().includes('traditional') || rawLang.toLowerCase().includes('tw') || rawLang.toLowerCase().includes('hk')) \n  ? '繁体中文' \n  : '简体中文';\n\nconst workflowId = pickFirst(root.workflow_id, root.workflowId, 'flow_creative_script');\nconst workflowName = pickFirst(root.workflow_name, root.workflowName, '首页智能创作');\nconst taskId = pickFirst(root.task_id, root.taskId, root.replication_id, root.replicationId);\nif (!taskId) throw new Error('task_id is required');\n\nconst userId = pickFirst(root.user_id, root.userId);\nif (!userId) throw new Error('user_id is required');\n\nconst ideaText = toCleanString(pickFirst(root.idea_text, root.ideaText, root.text, root.content, root.topic, root.prompt));\nif (!ideaText) throw new Error('idea_text is required');\n\nreturn [{\n  json: {\n    task_id: taskId,\n    replication_id: pickFirst(root.replication_id, root.replicationId, taskId),\n    user_id: userId,\n    idea_text: ideaText,\n    output_language: outputLanguage, // 关键：传给 AI 的指令\n    target_word_count: clampWordCount(Number(pickFirst(root.word_count, root.wordCount, 600))),\n    workflow_id: workflowId,\n    workflow_name: workflowName,\n    api_key: pickFirst(root.api_key, root.apiKey, ''),\n    callback_url: pickFirst(root.callback_url, root.callbackUrl, ''),\n    app_url: pickFirst(root.app_url, root.appUrl, ''),\n    style_rules: safeParseObject(root.style_rules ?? root.styleRules ?? null),\n    source: pickFirst(root.source, 'creative_workspace'),\n    raw_body: root\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -96,
+        -112
+      ],
+      "id": "f54cf41c-e91a-40b6-b413-7f777716641a",
+      "name": "标准化输入"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-5.4-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-5.4-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        432,
+        128
+      ],
+      "id": "f235424a-509d-4ef4-b5fa-4f9a13b0ca9f",
+      "name": "gpt5",
+      "credentials": {
+        "openAiApi": {
+          "id": "135VogulxeCGwJaN",
+          "name": "聚保盆-云雾通用api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "gpt-4o"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1232,
+        112
+      ],
+      "id": "579e02e1-c29a-4cff-bce0-e189b85e87f2",
+      "name": "gpt7",
+      "credentials": {
+        "openAiApi": {
+          "id": "135VogulxeCGwJaN",
+          "name": "聚保盆-云雾通用api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={\n  \"idea\": {{ JSON.stringify($('构建创作上下文').item.json.idea_text) }},\n  \"target_word_count\": {{ $('构建创作上下文').item.json.target_word_count || 600 }},\n  \"style_summary_text\": {{ JSON.stringify($('构建创作上下文').item.json.style_summary_text || '') }},\n  \"style_rules\": {{ JSON.stringify($('构建创作上下文').item.json.style_rules ?? null, null, 2) }},\n  \"style_context\": {{ JSON.stringify($('构建创作上下文').item.json.style_context ?? {}, null, 2) }},\n  \"plan_payload\": {{ JSON.stringify($('构建创作上下文').item.json.plan_payload ?? {}, null, 2) }}\n}",
+        "needsFallback": true,
+        "options": {
+          "systemMessage": "=你是“创作策划官”，需要把用户想法转化成结构化的创作策划案。\n请严格输出 JSON，字段：\n- angle: string，覆盖观点与切入角度\n- hook_options: array(3) of strings，分别给出不同开场（包含情绪/反问/对比等）\n- outline: array，元素为 { section, purpose, bullets }，覆盖 Hook→矛盾→洞察→方法→案例→CTA\n- claims_to_verify: array of { claim, risk_level, safe_rewrite }，列出需要模糊化或补充数据的说法\n- search_keywords: array(5-8) of短语，供后续检索\n- style_constraints: array，总结 tone / 节奏 / 禁忌\n- cta_templates: array(1-2)，给出可复用 CTA 模板\n若 style_summary_text 或 style_rules 为空，也要给出合理默认。严格 JSON 输出，勿添加额外文字。\n 【语言要求】必须使用 {{ $('标准化输入').item.json.output_language }} 进行输出。"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        576,
+        -112
+      ],
+      "id": "902565c8-c7d5-4373-8e3d-f1bde33de769",
+      "name": "AI-策划/扩写提纲"
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * 核心逻辑：从杂乱的字符串中提取第一个合法的 JSON 对象\n * 采用括号平衡计数法，能够有效处理重复生成的 JSON 或包含 Markdown 标签的情况\n */\nfunction robustExtractJson(str) {\n  if (typeof str !== 'string') return null;\n\n  // 1. 预处理：去除可能的 Unicode 零宽字符或干扰项\n  const cleanStr = str.replace(/[\\u200B-\\u200D\\uFEFF]/g, '').trim();\n\n  let firstOpenBracket = cleanStr.indexOf('{');\n  if (firstOpenBracket === -1) return null;\n\n  let stack = 0;\n  let jsonCandidate = \"\";\n  let found = false;\n\n  // 2. 括号平衡查找\n  for (let i = firstOpenBracket; i < cleanStr.length; i++) {\n    const char = cleanStr[i];\n    if (char === '{') stack++;\n    if (char === '}') stack--;\n\n    if (stack === 0 && i > firstOpenBracket) {\n      jsonCandidate = cleanStr.slice(firstOpenBracket, i + 1);\n      found = true;\n      break;\n    }\n  }\n\n  if (!found) return null;\n\n  // 3. 尝试解析\n  try {\n    return JSON.parse(jsonCandidate);\n  } catch (e) {\n    // 4. 容错处理：如果解析失败，尝试清洗掉内部可能存在的 Markdown 干扰\n    try {\n      const secondaryClean = jsonCandidate\n        .replace(/\\\\n/g, '\\n') // 处理转义换行\n        .replace(/```json/g, '')\n        .replace(/```/g, '');\n      return JSON.parse(secondaryClean);\n    } catch (e2) {\n      console.error(\"JSON Parsing failed after cleaning:\", e2);\n      return null;\n    }\n  }\n}\n\n// 获取 n8n 输入\nconst item = $input.first();\nconst rawOutput = item.json?.output ?? '';\n\n// 执行提取\nconst parsed = robustExtractJson(rawOutput);\n\n// 如果解析依然失败，抛出详细错误\nif (!parsed) {\n  throw new Error('解析失败：输入内容不包含合法的 JSON 结构。请检查大模型输出格式。');\n}\n\n// 返回处理后的数据结构\nreturn [\n  {\n    json: {\n      ...item.json, // 保留原始数据\n      parsed_output: parsed, // 存储解析后的完整对象\n      // 展开常用字段，并提供防御性空值\n      angle: parsed.angle || '',\n      hook_options: Array.isArray(parsed.hook_options) ? parsed.hook_options : [],\n      outline: Array.isArray(parsed.outline) ? parsed.outline : [],\n      claims_to_verify: Array.isArray(parsed.claims_to_verify) ? parsed.claims_to_verify : [],\n      search_keywords: Array.isArray(parsed.search_keywords) ? parsed.search_keywords : [],\n      style_constraints: Array.isArray(parsed.style_constraints) ? parsed.style_constraints : [],\n      cta_templates: Array.isArray(parsed.cta_templates) ? parsed.cta_templates : [],\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        928,
+        -112
+      ],
+      "id": "99abf16f-343b-4b04-b8e7-e5de0e4aba5e",
+      "name": "解析策划结果"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={\n  \"idea\": {{ JSON.stringify($('构建创作上下文').item.json.idea_text) }},\n  \"target_word_count\": {{ $('构建创作上下文').item.json.target_word_count || 600 }},\n  \"history_warning\": {{ $('构建创作上下文').item.json.history_warning ? '\"insufficient\"' : '\"ok\"' }},\n  \"style_summary_text\": {{ JSON.stringify($('构建创作上下文').item.json.style_summary_text || '') }},\n  \"style_rules\": {{ JSON.stringify($('构建创作上下文').item.json.style_rules ?? null, null, 2) }},\n  \"style_context\": {{ JSON.stringify($('构建创作上下文').item.json.style_context ?? {}, null, 2) }},\n  \"plan\": {{ JSON.stringify($json.plan ?? {}, null, 2) }}\n}",
+        "needsFallback": true,
+        "options": {
+          "systemMessage": "==你是“小红书文案生成器”。你的任务：按照 style_rules 生成一条内容，并输出 5 个不同写法的标题。\n\n【核心指令】\n\n输出语言：必须严格使用 {{ $('标准化输入').item.json.output_language }}。\n\n如果是繁体中文，请使用港台地区的习惯表达（例如：用“贴文”代替“笔记”，用“质感”代替“高级感”）。\n\n【硬性输出 JSON 结构（必须严格一致）】\n{\n\"标题\": \"1、标题1\\n2、标题2\\n3、标题3\\n4、标题4\\n5、标题5\",\n\"正文\": \"……\",\n\"标签\": [\"#...\",\"#...\"]\n}\n\n【规则】\n\n行业、语气、人设、结构：以 style_rules 为唯一依据。\n\n标题必须 5 条，正文需满足 target_word_count 字数要求。\n\n输出必须是一个合法 JSON，不要 Markdown 代码块，不要多余解释。"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        1152,
+        -112
+      ],
+      "id": "a1713640-5d93-448b-94ac-4ed1593a9ab9",
+      "name": "AI小红书正文及标题撰写"
+    },
+    {
+      "parameters": {
+        "jsCode": "function stripFence(s) {\n  s = String(s ?? '').trim();\n  // 使用 \\`{3} 替代连续的反引号，防止代码在编辑器中被截断\n  return s\n    .replace(/^\\`{3}(?:json|JSON)?\\s*/i, '')\n    .replace(/\\s*\\`{3}$/, '')\n    .trim();\n}\n\nfunction extractJsonObjectString(s) {\n  s = String(s ?? '');\n  const first = s.indexOf('{');\n  const last = s.lastIndexOf('}');\n  if (first === -1 || last === -1 || last <= first) return '';\n  return s.slice(first, last + 1);\n}\n\nfunction safeParse(s) {\n  try {\n    return JSON.parse(s);\n  } catch (e) {\n    return null;\n  }\n}\n\nfunction normalizeTags(v) {\n  if (Array.isArray(v)) {\n    return v.map(x => String(x || '').trim()).filter(Boolean);\n  }\n  if (typeof v === 'string') {\n    return v\n      .split(/[\\n,，\\s]+/)\n      .map(x => x.trim())\n      .filter(Boolean)\n      .map(x => x.startsWith('#') ? x : `#${x}`);\n  }\n  return [];\n}\n\n// 1. 获取输入数据\nconst inputData = $input.first();\nconst rawOutputText = String(inputData.json?.output ?? '').trim();\n\n// 2. 提取并解析 JSON\nconst cleanedText = extractJsonObjectString(stripFence(rawOutputText));\nconst parsedResult = safeParse(cleanedText);\n\nif (!parsedResult) {\n  throw new Error('解析失败：AI 输出的内容不是有效的 JSON。原始输出：' + rawOutputText.slice(0, 100));\n}\n\n// 3. 提取字段（兼容简繁体 Key 名）\nconst finalTitle = parsedResult['标题'] || parsedResult['標題'] || parsedResult.title || '';\nconst finalContent = parsedResult['正文'] || parsedResult['正文'] || parsedResult.script_content || parsedResult.content || '';\nconst finalHashtags = normalizeTags(parsedResult['标签'] ?? parsedResult['標籤'] ?? parsedResult.hashtags ?? []);\n\n// 4. 返回结果\nreturn [\n  {\n    json: {\n      ...inputData.json,\n      parsed_output: parsedResult,\n      \n      // 统一标准英文字段输出\n      title: finalTitle,\n      script_content: finalContent,\n      hashtags: finalHashtags,\n\n      // 保持中文 Key 的兼容性\n      标题: finalTitle,\n      正文: finalContent,\n      标签: finalHashtags\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1504,
+        -112
+      ],
+      "id": "9ef8dca6-6914-48e4-81b6-74d16a0538b8",
+      "name": "整理输出"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('构建创作上下文').item.json.callback_url || ($('构建创作上下文').item.json.app_url ? $('构建创作上下文').item.json.app_url + '/api/webhook/replication/script' : '') }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  replication_id: $('标准化输入').item.json.replication_id,\n  task_id: $('标准化输入').item.json.task_id,\n  status: 'script_ready',\n\n  // 英文字段\n  title: $json.title,\n  script_content: $json.script_content,\n  hashtags: $json.hashtags,\n\n  // 中文字段\n  标题: $json.title,\n  正文: $json.script_content,\n  标签: $json.hashtags,\n\n  workflow_id: $('标准化输入').item.json.workflow_id,\n  workflow_name: $('标准化输入').item.json.workflow_name,\n  user_id: $('标准化输入').item.json.user_id,\n  source: $('标准化输入').item.json.source\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1728,
+        -112
+      ],
+      "id": "87a100d1-281e-45b0-8522-6c5d8680f072",
+      "name": "回调系统"
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $('标准化输入').item.json || {};\nconst current = $json || {};\n\nfunction ensureArray(value) {\n  if (Array.isArray(value)) return value;\n  if (value === undefined || value === null || value === '') return [];\n  return [value];\n}\n\nfunction asText(value) {\n  if (value === undefined || value === null) return '';\n  if (typeof value === 'string') return value.trim();\n  return String(value).trim();\n}\n\nfunction pickFirst(...values) {\n  for (const v of values) {\n    if (v === undefined || v === null) continue;\n    if (typeof v === 'string' && v.trim() === '') continue;\n    return v;\n  }\n  return undefined;\n}\n\nfunction summarizeList(label, items, formatter) {\n  const arr = ensureArray(items)\n    .map((item, index) => {\n      try {\n        return formatter(item, index);\n      } catch {\n        return '';\n      }\n    })\n    .map(v => asText(v))\n    .filter(Boolean);\n\n  if (!arr.length) return '';\n  return `${label}:\\n- ${arr.join('\\n- ')}`;\n}\n\nfunction normalizeStyleContext(rawStyleRules) {\n  const rules = rawStyleRules && typeof rawStyleRules === 'object' ? rawStyleRules : {};\n\n  const evidence = rules.evidence && typeof rules.evidence === 'object' ? rules.evidence : {};\n  const tone = rules.tone && typeof rules.tone === 'object' ? rules.tone : {};\n  const structure = rules.structure && typeof rules.structure === 'object' ? rules.structure : {};\n  const language = rules.language && typeof rules.language === 'object' ? rules.language : {};\n  const taboo = rules.taboo && typeof rules.taboo === 'object' ? rules.taboo : {};\n  const persona = rules.persona && typeof rules.persona === 'object' ? rules.persona : {};\n  const rhythm = rules.rhythm && typeof rules.rhythm === 'object' ? rules.rhythm : {};\n\n  const representativeSnippets = ensureArray(\n    evidence.representative_snippets || evidence.representativeSnippets\n  );\n  const openingPatterns = ensureArray(\n    structure.opening_patterns || structure.openingPatterns\n  );\n  const paragraphPatterns = ensureArray(\n    structure.paragraph_patterns || structure.paragraphPatterns\n  );\n  const ctaPatterns = ensureArray(\n    structure.cta_patterns || structure.ctaPatterns\n  );\n  const keywords = ensureArray(language.keywords);\n  const avoided = ensureArray(taboo.avoid || taboo.forbidden || taboo.words);\n  const pacingMarkers = ensureArray(\n    rhythm.pacing_markers || rhythm.pacingMarkers\n  );\n\n  return {\n    source: 'derived_from_style_rules',\n    docCount: Number(\n      pickFirst(\n        rules.sample_count,\n        rules.sampleCount,\n        evidence.sample_count,\n        evidence.sampleCount,\n        0\n      )\n    ) || 0,\n    caseCount: representativeSnippets.length,\n    isInsufficient: representativeSnippets.length === 0,\n    fetchError: null,\n\n    styleSummaries: [\n      {\n        docTitle: 'style_rules',\n        domain: asText(persona.domain || persona.field || persona.track),\n        tone: [\n          asText(tone.main),\n          asText(tone.voice),\n          asText(tone.style)\n        ].filter(Boolean).join(' / '),\n        keyMoves: [\n          asText(structure.core_logic || structure.coreLogic),\n          asText(language.expression_preference || language.expressionPreference),\n          asText(rhythm.pace || rhythm.speed)\n        ].filter(Boolean).join('｜')\n      }\n    ].filter(item => item.domain || item.tone || item.keyMoves),\n\n    writingBlocks: [\n      ...openingPatterns.map(v => ({ label: '开头', pattern: asText(v) })),\n      ...paragraphPatterns.map(v => ({ label: '段落推进', pattern: asText(v) })),\n      ...ctaPatterns.map(v => ({ label: '结尾CTA', pattern: asText(v) }))\n    ].filter(item => item.pattern),\n\n    rawTextExcerpts: representativeSnippets.map(item => ({\n      docTitle: asText(item.docTitle || item.title || '样例片段'),\n      text: asText(item.snippet || item.text),\n      note: asText(item.note)\n    })).filter(item => item.text),\n\n    extracted: {\n      keywords,\n      avoided,\n      pacingMarkers,\n      tone,\n      structure,\n      language,\n      taboo,\n      persona,\n      rhythm,\n      evidence\n    }\n  };\n}\n\nconst explicitStyleContext =\n  input.style_context ||\n  input.styleContext ||\n  null;\n\nconst style =\n  explicitStyleContext && typeof explicitStyleContext === 'object'\n    ? explicitStyleContext\n    : normalizeStyleContext(input.style_rules);\n\nconst summaryParts = [];\n\nsummaryParts.push(`样本文档：${style.docCount || 0} 篇`);\nsummaryParts.push(`案例片段：${style.caseCount || 0} 条`);\n\nif (style.source) {\n  summaryParts.push(`来源：${style.source}`);\n}\n\nconst toneSummary = summarizeList(\n  '风格提炼',\n  style.styleSummaries,\n  (item) => {\n    const bits = [\n      asText(item.docTitle),\n      asText(item.domain) ? `领域：${asText(item.domain)}` : '',\n      asText(item.tone) ? `口吻：${asText(item.tone)}` : '',\n      asText(item.keyMoves) ? `招式：${asText(item.keyMoves)}` : ''\n    ].filter(Boolean);\n    return bits.join('｜');\n  }\n);\nif (toneSummary) summaryParts.push(toneSummary);\n\nconst blockSummary = summarizeList(\n  '结构模板',\n  style.writingBlocks,\n  (item) => {\n    const left = asText(item.label || item.purpose || '模块');\n    const right = asText(item.pattern || item.template || item.text);\n    return right ? `${left} → ${right}` : '';\n  }\n);\nif (blockSummary) summaryParts.push(blockSummary);\n\nconst excerptSummary = summarizeList(\n  '样例片段',\n  style.rawTextExcerpts,\n  (item) => {\n    const title = asText(item.docTitle || '样例');\n    const note = asText(item.note);\n    const text = asText(item.text);\n    return [title, note ? `说明：${note}` : '', text].filter(Boolean).join('｜');\n  }\n);\nif (excerptSummary) summaryParts.push(excerptSummary);\n\nif (style.isInsufficient) {\n  summaryParts.push('⚠️ 历史样本不足，当前仅基于 style_rules 做风格推断。');\n}\n\nconst styleSummaryText = summaryParts.filter(Boolean).join('\\n\\n');\n\nconst planPayload = {\n  idea: pickFirst(input.idea_text, input.idea, ''),\n  target_word_count: Number(\n    pickFirst(input.target_word_count, input.word_count, input.wordCount, 600)\n  ) || 600,\n  style_rules: input.style_rules ?? null,\n  style_context: style,\n  warnings: {\n    insufficient_history: Boolean(style.isInsufficient),\n    fetch_error: style.fetchError || null\n  }\n};\n\nreturn [\n  {\n    json: {\n      ...input,\n      balance_check: current,\n      plan_payload: planPayload,\n      style_summary_text: styleSummaryText,\n      style_context: style,\n      history_warning: Boolean(style.isInsufficient)\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        -112
+      ],
+      "id": "66ef8a15-79d7-411b-9f0f-2812bdb5948d",
+      "name": "构建创作上下文"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  ok: true,\n  status: 'accepted',\n  workflow_id: $('标准化输入').item.json.workflow_id,\n  workflow_name: $('标准化输入').item.json.workflow_name,\n  task_id: $('标准化输入').item.json.task_id,\n  replication_id: $('标准化输入').item.json.replication_id\n} }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        128,
+        -112
+      ],
+      "id": "8bc9fe49-c749-40fe-95da-d36630df67a2",
+      "name": "Respond-Started"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "gpt-4o"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        560,
+        128
+      ],
+      "id": "f22518e1-b3b0-4cb7-ad75-3d819332a200",
+      "name": "gpt",
+      "credentials": {
+        "openAiApi": {
+          "id": "135VogulxeCGwJaN",
+          "name": "聚保盆-云雾通用api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-5.4-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-5.4-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1120,
+        112
+      ],
+      "id": "7329501b-ebc8-4557-9318-36f71a958aac",
+      "name": "gpt6",
+      "credentials": {
+        "openAiApi": {
+          "id": "135VogulxeCGwJaN",
+          "name": "聚保盆-云雾通用api"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "hooks.atomx.top",
+            "x-real-ip": "221.192.237.82",
+            "x-forwarded-for": "221.192.237.82",
+            "x-forwarded-proto": "https",
+            "connection": "close",
+            "content-length": "5908",
+            "content-type": "application/json",
+            "accept": "*/*",
+            "accept-language": "*",
+            "sec-fetch-mode": "cors",
+            "user-agent": "node",
+            "accept-encoding": "br, gzip, deflate"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "task_id": "255d835f-4292-4c86-b47f-f9412ba62415",
+            "replication_id": "255d835f-4292-4c86-b47f-f9412ba62415",
+            "user_id": "db74f72f-9f0e-4d42-8b9d-b34c890f5eea",
+            "idea_text": "未来人人都不用上班",
+            "word_count": 800,
+            "style_rules": {
+              "evidence": {
+                "sample_count": 22,
+                "representative_snippets": [
+                  {
+                    "note": "强调反直觉开头、经济现象的逻辑引导。",
+                    "snippet": "东西越降价，大家越不买，越不买商家就只能继续降价。经济学家管这个叫通货紧缩。"
+                  },
+                  {
+                    "note": "使用强联想案例引发情感共鸣。",
+                    "snippet": "工资涨了，发际线却退了，体检报告也从亚健康升为高危预警。"
+                  },
+                  {
+                    "note": "解释行为背后的认知模式，引导读者思考。",
+                    "snippet": "99%的人在围观，1%的人在应用，差距就在认知，那怎么提升认知呢？"
+                  }
+                ]
+              },
+              "cta_rules": {
+                "cta_templates": [
+                  "如果你希望见到更多这样的深度解读，请点赞分享。",
+                  "在评论区告诉我，你是不是也有这样的经历？",
+                  "分享给你的朋友，让他们也少掉入这些坑！"
+                ],
+                "comment_keyword_rules": [
+                  "以'你怎么看？'或'你是否同意这一点？'结尾引导评论。",
+                  "针对疑问的最后句需设置二选一互动问题。"
+                ]
+              },
+              "guardrails": {
+                "claims_and_risk": [
+                  "必须加强关键经济理论或数据概念的准确性与解释适配。",
+                  "禁止将假设等同于事实作为论据展开。"
+                ],
+                "exaggeration_limits": {
+                  "max_per_chars": 800,
+                  "replacement_suggestions": [
+                    {
+                      "to": "失业率呈逐年上升趋势。",
+                      "from": "失业率飙升到天花板！"
+                    },
+                    {
+                      "to": "财富自由可以减少相当一部分经济压力。",
+                      "from": "财富自由让所有问题迎刃而解！"
+                    }
+                  ]
+                }
+              },
+              "style_core": {
+                "pov": "第一人称说教式与第三人称陈述式交替，最大化兼顾说服力和客观性",
+                "tone": {
+                  "core": [
+                    "通俗",
+                    "犀利",
+                    "幽默",
+                    "略带煽动性"
+                  ],
+                  "limits": "禁止出现过度夸张或情绪化表达，避免煽动社会对立或过负面的语调。"
+                },
+                "rhythm": {
+                  "paragraph_rule": "一个概念或论点控制在1-2段以内，每段不超过90字。",
+                  "max_sentence_chars": 60,
+                  "short_sentence_ratio": 0.65,
+                  "highlight_line_every_n_paragraphs": 2
+                },
+                "persona": "洞察敏锐的观察者，兼具理性分析和情绪共鸣能力",
+                "lexical_signature": {
+                  "avoid_words": [
+                    "贫穷羞耻",
+                    "绝对化",
+                    "阶级固定"
+                  ],
+                  "banned_words": [
+                    "政治敏感词汇",
+                    "明显不实的夸大描述"
+                  ],
+                  "high_frequency_words": [
+                    "经济压力",
+                    "认知提升",
+                    "盈余思维",
+                    "富人思维",
+                    "财富自由"
+                  ]
+                }
+              },
+              "opening_rules": {
+                "hook_templates": [
+                  "为什么越便宜的东西，大家越不敢买？",
+                  "99%的人都误会了这个道理，你还在犯错吗？",
+                  "你现在以为自己在节省，可能正在赔一生。",
+                  "这样做，不仅能赚钱，还能稳住内心。"
+                ],
+                "first_screen_constraints": [
+                  "必须在前三句点出核心问题或现象，引发用户兴趣。",
+                  "首屏文字不超过130字。",
+                  "必须用设问句或反直觉概念作为钩子。"
+                ]
+              },
+              "structure_bank": {
+                "blueprints": [
+                  {
+                    "name": "社会现象解构",
+                    "notes": "通过具体案例切入，用简单经济/职场道理解构复杂现象，结尾提供可实施建议。",
+                    "sections": [
+                      "现象描述",
+                      "深层原因",
+                      "影响解析",
+                      "个人启示"
+                    ]
+                  },
+                  {
+                    "name": "个人成长框架分享",
+                    "notes": "从读者潜在痛点入手，结合兼顾通俗解释和行动方案。",
+                    "sections": [
+                      "问题引出",
+                      "误区澄清",
+                      "方法框架",
+                      "案例支持",
+                      "总结优化"
+                    ]
+                  }
+                ],
+                "subtitle_patterns": [
+                  "为什么会___？",
+                  "如何提升___？",
+                  "三个关键词告诉你___",
+                  "现象背后的___"
+                ],
+                "transition_patterns": [
+                  "这背后的逻辑是___",
+                  "那为什么会这样呢？",
+                  "接下来，我来拆解一下___",
+                  "从这个现象可以得出一个结论：___"
+                ]
+              },
+              "domain_inference": {
+                "gaps": "缺少针对不同受众层级（如学生、新手理财者）的结构化建议；缺乏对数据引用来源的完整性和权威性保障。",
+                "topics": [
+                  "经济学基础",
+                  "职场困境",
+                  "个人成长与投资",
+                  "社会现象解析"
+                ],
+                "content_goal": "深入浅出地分析现象，提供有针对性的思考与建议，激发读者的共鸣或行动。",
+                "adaptation_strategy": "增加更丰富的分类示例，比如以学生、职场新人和资深专业人士作为细化对象，提供层层适配的延伸内容；同时引入可验证的数据出处或技术背景支撑逻辑分析。",
+                "dominant_card_types": [
+                  "口播评论",
+                  "思路拆解",
+                  "情绪共鸣"
+                ],
+                "target_audience_guess": "年轻的职场人、对个人财富管理和社会经济现象感兴趣的普通用户"
+              },
+              "quality_checklist": [
+                "中心思想是否明确",
+                "是否有不必要的臆测或不够严谨的论断",
+                "段落逻辑与数字排列是否准确呈现"
+              ],
+              "failure_modes_and_fixes": [
+                {
+                  "fix": "增加积极的出路和实际可行的改善建议，减少描述中的情绪化语言。",
+                  "failure": "语调或内容过于负面，可能引发用户情绪低落或排斥"
+                },
+                {
+                  "fix": "删除冗余数据引用，转而以更简练的语言点明逻辑关系。",
+                  "failure": "内容数据堆积但缺乏转换价值"
+                }
+              ],
+              "paragraph_and_layout_rules": {
+                "list_rules": [
+                  "单层列表优先使用数字序列（如第一、第二），用于条理化逐步拆解。",
+                  "避免层叠的复合列表，单层条目不超过6条。"
+                ],
+                "examples_rules": [
+                  "案例添加应优先选取真实贴近生活的实例，不必过于专业化。",
+                  "每篇文章至少列举1-2个高度简洁的实例化点。"
+                ],
+                "emphasis_box_rules": [
+                  "重要句必须用斜体或加粗引起视觉注意，控制在每屏幕演示不多于2次。",
+                  "避免将标重点的文字重复强调两次以上。"
+                ],
+                "paragraph_length_rules": [
+                  "每段内容不超过4行，单屏展示最佳控制在3行以内。",
+                  "尽量避免连续超过150字无分段的区域。"
+                ]
+              }
+            },
+            "style_id": null,
+            "language": "简体",
+            "api_key": "sk_aLO8hb0hNm2PYMJ07Loak8Fzjm3Q-KEuWIPLTDQUu_8",
+            "callback_url": "https://nextide.cpolar.top/api/webhook/creative-task/script",
+            "app_url": "https://nextide.cpolar.top",
+            "admin_token": "dev-sync-token-1774007442",
+            "workflow_id": "flow_writing"
+          },
+          "webhookUrl": "http://localhost:5678/webhook/chuangzuo_web",
+          "executionMode": "production"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "标准化输入",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "标准化输入": {
+      "main": [
+        [
+          {
+            "node": "Respond-Started",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gpt5": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI-策划/扩写提纲",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gpt7": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI小红书正文及标题撰写",
+            "type": "ai_languageModel",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "AI-策划/扩写提纲": {
+      "main": [
+        [
+          {
+            "node": "解析策划结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析策划结果": {
+      "main": [
+        [
+          {
+            "node": "AI小红书正文及标题撰写",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI小红书正文及标题撰写": {
+      "main": [
+        [
+          {
+            "node": "整理输出",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "整理输出": {
+      "main": [
+        [
+          {
+            "node": "回调系统",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "构建创作上下文": {
+      "main": [
+        [
+          {
+            "node": "AI-策划/扩写提纲",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond-Started": {
+      "main": [
+        [
+          {
+            "node": "构建创作上下文",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gpt": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI-策划/扩写提纲",
+            "type": "ai_languageModel",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "gpt6": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI小红书正文及标题撰写",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "c86dd388-777b-4ed8-aad1-e49cfbeb390a",
+  "meta": {
+    "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
+  },
+  "id": "IcdPrVAikZTNm5B3",
+  "tags": []
+}

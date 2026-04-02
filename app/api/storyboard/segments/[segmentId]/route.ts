@@ -83,3 +83,57 @@ export async function PATCH(
   }
 }
 
+/**
+ * DELETE /api/storyboard/segments/[segmentId]
+ * Delete a segment and compact the order of remaining segments.
+ */
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ segmentId: string }> }
+) {
+  try {
+    const { userId } = await getRequestUserContext(req);
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { segmentId } = await params;
+
+    const segment = await prisma.storyboardSegment.findFirst({
+      where: { id: segmentId },
+      include: { task: { select: { userId: true, id: true } } },
+    });
+
+    if (!segment) {
+      return NextResponse.json({ error: "Segment not found" }, { status: 404 });
+    }
+    if (segment.task.userId !== userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.storyboardSegment.delete({ where: { id: segmentId } });
+      // Compact order of remaining segments
+      const remaining = await tx.storyboardSegment.findMany({
+        where: { taskId: segment.task.id },
+        orderBy: { order: "asc" },
+        select: { id: true },
+      });
+      for (let i = 0; i < remaining.length; i++) {
+        await tx.storyboardSegment.update({
+          where: { id: remaining[i].id },
+          data: { order: i },
+        });
+      }
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("[segment-delete] Error:", error);
+    return NextResponse.json(
+      { error: "Internal server error", message: error instanceof Error ? error.message : "Unknown" },
+      { status: 500 }
+    );
+  }
+}
+

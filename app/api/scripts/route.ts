@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, videoUrl, description, scriptPurpose } = body;
+    const { title, videoUrl, description, scriptPurpose, skipBreakdown } = body;
 
     if (!title || !videoUrl) {
       return NextResponse.json(
@@ -61,6 +61,12 @@ export async function POST(request: NextRequest) {
     }
     if (scriptPurpose) {
       formData.append("scriptPurpose", scriptPurpose);
+    }
+    if (typeof skipBreakdown !== "undefined") {
+      formData.append(
+        "skipBreakdown",
+        skipBreakdown === true || skipBreakdown === "true" || skipBreakdown === 1 ? "true" : "false",
+      );
     }
 
     // Call the server action

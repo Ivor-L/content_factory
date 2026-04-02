@@ -435,22 +435,22 @@ export async function POST(
   };
   const webhookUrl = getXhsText2ImgWebhookUrl();
 
-  try {
-    const response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+  // Fire-and-forget — n8n 通过 callback_url 回传结果到 /api/webhook/image-text-result
+  // 不等待响应，避免 nginx 504 超时
+  fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }).then(async (response) => {
     if (!response.ok) {
       const raw = await response.text().catch(() => "");
       let message = raw;
       try {
         const parsed = JSON.parse(raw);
         message = parsed?.error || parsed?.message || raw;
-      } catch {
-        // ignore parse errors
-      }
+      } catch { /* ignore */ }
       const errorMessage = message || "触发图文工作流失败";
+      console.error("[image-text-replication/generate] webhook returned error:", errorMessage);
       await prisma.$transaction([
         prisma.creativeTask.update({
           where: { id },
@@ -458,18 +458,13 @@ export async function POST(
         }),
         prisma.taskSummary.updateMany({
           where: { taskType: "poster", taskId: id },
-          data: {
-            status: "FAILED",
-            preview: errorMessage.slice(0, 140),
-            updatedAt: new Date(),
-          },
+          data: { status: "FAILED", preview: errorMessage.slice(0, 140), updatedAt: new Date() },
         }),
-      ]);
-      return NextResponse.json({ error: errorMessage }, { status: 502 });
+      ]).catch(() => {});
     }
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? `触发自动化失败：${error.message}` : "触发自动化失败";
+  }).catch(async (err) => {
+    const errorMessage = err instanceof Error ? `触发自动化失败：${err.message}` : "触发自动化失败";
+    console.error("[image-text-replication/generate] webhook trigger error:", errorMessage);
     await prisma.$transaction([
       prisma.creativeTask.update({
         where: { id },
@@ -477,15 +472,10 @@ export async function POST(
       }),
       prisma.taskSummary.updateMany({
         where: { taskType: "poster", taskId: id },
-        data: {
-          status: "FAILED",
-          preview: errorMessage.slice(0, 140),
-          updatedAt: new Date(),
-        },
+        data: { status: "FAILED", preview: errorMessage.slice(0, 140), updatedAt: new Date() },
       }),
-    ]);
-    return NextResponse.json({ error: errorMessage }, { status: 502 });
-  }
+    ]).catch(() => {});
+  });
 
   return NextResponse.json({ taskId: id, status: "GENERATE_PENDING" });
 }

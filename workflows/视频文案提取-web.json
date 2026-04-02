@@ -1,0 +1,337 @@
+{
+  "name": "视频文案提取-web",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "extract_video_text",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a5a9962e-d4d0-4617-b74b-87f57c09a071",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -920,
+        -60
+      ],
+      "webhookId": "7580ef34-fa45-43c9-b618-99e5c3a3e7a5"
+    },
+    {
+      "parameters": {
+        "jsCode": "const incoming = ($json.body && typeof $json.body === 'object') ? $json.body : $json;\nconst pick = (...vals) => {\n  for (const v of vals) {\n    if (v === undefined || v === null) continue;\n    const str = typeof v === 'string' ? v.trim() : v;\n    if (typeof str === 'string' && !str) continue;\n    return str;\n  }\n  return '';\n};\nconst video_url = pick(incoming.video_url, incoming.videoUrl, incoming.url);\nconst audio_url = pick(incoming.audio_url, incoming.audioUrl);\nconst finalUrl = video_url || audio_url;\nconst language = pick(incoming.language, incoming.lang, 'auto');\nconst taskId = pick(incoming.task_id, incoming.taskId, incoming.replication_id, incoming.replicationId);\nreturn [{\n  json: {\n    task_id: taskId || null,\n    video_url: finalUrl,\n    request_language: language.toLowerCase(),\n    raw: incoming\n  }\n}];"
+      },
+      "id": "8a7b77b5-4b2e-4f29-9d3f-2f4a4f4765e5",
+      "name": "标准化输入",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -700,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ !!$json.video_url }}",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    },
+                    "rightValue": ""
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "hasVideo"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d422ae6e-6580-4e7f-b49e-fa509db6b149",
+      "name": "Switch-视频检测",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -500,
+        -70
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": false, \"code\": \"VIDEO_URL_MISSING\", \"message\": \"video_url is required\" } }}",
+        "options": {}
+      },
+      "id": "de63fee8-70f7-4178-923a-82f9c94b43ef",
+      "name": "Respond-缺少视频",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        -190
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.video_url }}",
+        "options": {}
+      },
+      "id": "cb4858c1-b0a5-4158-a55c-3214ce91be82",
+      "name": "下载视频",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -300,
+        -20
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "fileName": "=/tmp/{{ $execution.id }}.mp4",
+        "dataPropertyName": "video_data",
+        "options": {}
+      },
+      "id": "68040f44-f199-45ab-9c0a-28d49ce6fbc9",
+      "name": "保存视频到本地",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        -80,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=ffmpeg -y -i /tmp/{{ $execution.id }}.mp4 -vn -acodec pcm_s16le -ar 16000 -ac 1 /tmp/{{ $execution.id }}.wav"
+      },
+      "id": "482671dc-b692-4d59-9593-ac88eb514ac7",
+      "name": "FFmpeg提取音频",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        120,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "filePath": "=/tmp/{{ $execution.id }}.wav",
+        "dataPropertyName": "audio_data"
+      },
+      "id": "204c7b27-76ff-41a0-81f7-737db60a61e5",
+      "name": "读取音频文件",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        320,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://yunwu.ai/v1/audio/transcriptions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "model", "value": "whisper-1" },
+            { "name": "language", "value": "={{ $json.request_language || 'auto' }}" },
+            { "name": "response_format", "value": "json" }
+          ]
+        },
+        "sendBinaryData": true,
+        "binaryPropertyName": "audio_data",
+        "options": {}
+      },
+      "id": "086dff9c-08d6-4a85-80f7-5a615d2577d0",
+      "name": "请求Whisper接口",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 5,
+      "position": [
+        520,
+        -20
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "bJpI0nVbCobY1peu",
+          "name": "聚保盆通用api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $json.text || $json.result?.text || '';\nconst normalized = text.replace(/\r?\n+/g, '\n').trim();\nconst charCount = normalized.replace(/\s+/g, '').length;\nconst wordEstimate = charCount ? Math.max(1, Math.round(charCount / 2)) : 0;\nreturn [{\n  json: {\n    success: !!normalized,\n    transcript: normalized,\n    words_estimate: wordEstimate,\n    language: $('标准化输入').item.json.request_language || 'auto',\n    task_id: $('标准化输入').item.json.task_id,\n    raw: $json\n  }\n}];"
+      },
+      "id": "2d7ff536-44db-4257-9585-370e44d1b4ad",
+      "name": "格式化输出",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "command": "=rm -f /tmp/{{ $execution.id }}.mp4 /tmp/{{ $execution.id }}.wav"
+      },
+      "id": "69d3e7ae-c334-4f06-bf03-136a699e0df2",
+      "name": "清理临时文件",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        520,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: $json.success, data: { transcript: $json.transcript, words_estimate: $json.words_estimate, language: $json.language, task_id: $json.task_id } } }}",
+        "options": {}
+      },
+      "id": "5f95e5b2-b606-4825-9da2-c69b7018d627",
+      "name": "Respond-成功",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        940,
+        -20
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "标准化输入",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "标准化输入": {
+      "main": [
+        [
+          {
+            "node": "Switch-视频检测",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch-视频检测": {
+      "main": [
+        [
+          {
+            "node": "下载视频",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond-缺少视频",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "下载视频": {
+      "main": [
+        [
+          {
+            "node": "保存视频到本地",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "保存视频到本地": {
+      "main": [
+        [
+          {
+            "node": "FFmpeg提取音频",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FFmpeg提取音频": {
+      "main": [
+        [
+          {
+            "node": "读取音频文件",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读取音频文件": {
+      "main": [
+        [
+          {
+            "node": "请求Whisper接口",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "请求Whisper接口": {
+      "main": [
+        [
+          {
+            "node": "格式化输出",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "清理临时文件",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "格式化输出": {
+      "main": [
+        [
+          {
+            "node": "Respond-成功",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

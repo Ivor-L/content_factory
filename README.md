@@ -164,6 +164,28 @@ worker 会把 Yunwu 的结构化结果写回 `history_docs` / `story_assets` / `
 - `POST/DELETE /api/creative-tasks/:id/assets`：关联或移除素材
 - `GET /api/voice-profiles`：查看/创建口吻画像
 
+## ♻️ Project Retention & Cleanup
+
+- 「我的项目」中的创作任务会基于 `updatedAt` 自动保留 **5 天**，到期后后台会清除任务本身及其阶段记录，释放数据库与对象存储空间。
+- 保留天数可通过环境变量 `CREATIVE_TASK_RETENTION_HOURS` 调整（默认 120 小时 / 5 天）。
+- 部署时请将一个受信任的定时器（如 Vercel Cron、Supabase Scheduler、n8n）指向新建的内部接口：
+
+  ```http
+  POST /api/internal/cleanup/creative-tasks
+  x-admin-token: <ADMIN_TOKEN>
+  Content-Type: application/json
+
+  {
+    "retentionHours": 120,
+    "limit": 200,
+    "dryRun": false
+  }
+  ```
+
+  - `x-admin-token` 必须等于 `ADMIN_TOKEN`，避免被公开访问。
+  - 忽略 body 或设置 `dryRun: true` 可做试跑；`GET` 请求默认等价于 dry-run，并支持 `?hours=120&limit=50` 这样的查询参数。
+  - 接口返回会携带被扫描/删除的任务 ID，可写入日志或告警系统。
+
 ## 🤝 Contributing
 
 1. Fork the repository.

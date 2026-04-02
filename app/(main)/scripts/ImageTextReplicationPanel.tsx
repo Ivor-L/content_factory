@@ -2,10 +2,20 @@
 
 /* eslint-disable @next/next/no-img-element -- Replication panel shows third-party/source images and generated outputs */
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronRight, Copy, Loader2, RotateCcw, Sparkles, Upload } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, Check, ChevronRight, Copy, Loader2, RotateCcw, Sparkles, Upload } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { supabase } from "@/lib/supabaseClient";
+import { IMAGE_UNDERSTANDING_PROMPT_KNOWLEDGE_SHARE } from "@/lib/imageUnderstandingPrompts";
+
+function hashString(input: string): string {
+  let hash = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    hash = (hash << 5) - hash + input.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36);
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -53,6 +63,8 @@ const STATUS_LABELS: Record<string, string> = {
   GENERATE_FAILED: "生成失败",
   COMPLETED: "生成完成",
 };
+
+type AnalysisStatus = "idle" | "running" | "success" | "error";
 
 const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
@@ -143,8 +155,49 @@ export function ImageTextReplicationPanel({
   const [topicHint, setTopicHint] = useState("");
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
+  const fallbackSource = useMemo(() => (sourceText?.trim() || sourceTitle?.trim() || ""), [sourceText, sourceTitle]);
+  const hasSourceImages = sourceImages.length > 0;
+  const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>(hasSourceImages ? "idle" : "success");
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [analysisProgress, setAnalysisProgress] = useState<{ current: number; total: number }>({
+    current: 0,
+    total: sourceImages.length,
+  });
+  const [analysisText, setAnalysisText] = useState(hasSourceImages ? "" : fallbackSource);
+  const [analysisSavedAt, setAnalysisSavedAt] = useState<number | null>(null);
+  const [analysisExpanded, setAnalysisExpanded] = useState(!hasSourceImages);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sourceImagesKey = useMemo(() => sourceImages.join("|"), [sourceImages]);
+  const analysisStorageKey = useMemo(() => {
+    const normalizedPlatform = (sourcePlatform || "unknown").toLowerCase();
+    const trimmedId = sourceId?.trim();
+    const trimmedUrl = sourceUrl?.trim();
+    const fallbackIdentifier = sourceImagesKey ? `img:${hashString(sourceImagesKey)}` : null;
+    const identifier = trimmedId
+      ? `id:${trimmedId}`
+      : trimmedUrl
+        ? `url:${trimmedUrl}`
+        : fallbackIdentifier;
+    if (!identifier) return null;
+    return `image-text-analysis:${normalizedPlatform}:${identifier}`;
+  }, [sourcePlatform, sourceId, sourceUrl, sourceImagesKey]);
+
+  const persistAnalysisResult = useCallback(
+    (text: string) => {
+      if (!analysisStorageKey || typeof window === "undefined") return;
+      const trimmed = text.trim();
+      if (!trimmed) {
+        window.localStorage.removeItem(analysisStorageKey);
+        setAnalysisSavedAt(null);
+        return;
+      }
+      const payload = { version: 1, text: trimmed, savedAt: Date.now() };
+      window.localStorage.setItem(analysisStorageKey, JSON.stringify(payload));
+      setAnalysisSavedAt(payload.savedAt);
+    },
+    [analysisStorageKey],
+  );
 
   const fetchPresets = useCallback(async () => {
     if (!authToken) return;
@@ -200,6 +253,52 @@ export function ImageTextReplicationPanel({
     return () => stopPoll();
   }, []);
 
+  useEffect(() => {
+    const hasImages = sourceImages.length > 0;
+    let nextText = hasImages ? "" : fallbackSource;
+    let nextStatus: AnalysisStatus = hasImages ? "idle" : "success";
+    let savedAt: number | null = null;
+
+    if (analysisStorageKey && typeof window !== "undefined") {
+      const stored = window.localStorage.getItem(analysisStorageKey);
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored) as { text?: string; savedAt?: number };
+          if (typeof parsed?.text === "string" && parsed.text.trim()) {
+            nextText = parsed.text;
+            nextStatus = "success";
+            savedAt = typeof parsed.savedAt === "number" ? parsed.savedAt : null;
+          }
+        } catch (error) {
+          console.warn("[replication-panel] Failed to parse stored analysis result", error);
+        }
+      }
+    }
+
+    setAnalysisStatus(nextStatus);
+    setAnalysisError(null);
+    setAnalysisProgress({
+      current: nextStatus === "success" ? sourceImages.length : 0,
+      total: sourceImages.length,
+    });
+    setAnalysisText(nextText);
+    setAnalysisSavedAt(savedAt);
+    setAnalysisExpanded(hasImages ? nextStatus !== "success" : true);
+  }, [analysisStorageKey, fallbackSource, sourceImages.length, sourceImagesKey]);
+
+  const requiresAnalysis = hasSourceImages;
+
+  useEffect(() => {
+    if (!analysisStorageKey || typeof window === "undefined") return;
+    if (analysisStatus !== "success") return;
+    const trimmed = analysisText.trim();
+    if (!trimmed) return;
+    const timer = window.setTimeout(() => {
+      persistAnalysisResult(trimmed);
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [analysisText, analysisStatus, analysisStorageKey, persistAnalysisResult]);
+
   function stopPoll() {
     if (pollRef.current) {
       clearInterval(pollRef.current);
@@ -229,13 +328,19 @@ export function ImageTextReplicationPanel({
   async function createTaskIfNeeded(): Promise<string | null> {
     if (task?.id && task.status === "BREAKDOWN_COMPLETED") return task.id;
     setStartError(null);
+    const fallbackSource = (sourceText?.trim() || sourceTitle?.trim() || "").trim();
+    const normalizedSourceText = (analysisText.trim() || fallbackSource).trim();
+    if (!normalizedSourceText) {
+      toast.error("未获取到图文内容，请先完成解析或手动填写关键信息");
+      return null;
+    }
     try {
       const res = await fetch("/api/image-text-replication/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sourceTitle,
-          sourceText,
+          sourceText: normalizedSourceText,
           sourceImages,
           sourcePlatform,
           sourceId,
@@ -269,6 +374,16 @@ export function ImageTextReplicationPanel({
   }
 
   async function handleGenerate() {
+    if (requiresAnalysis && (analysisStatus !== "success" || !analysisText.trim())) {
+      const reason =
+        analysisStatus === "running"
+          ? "正在解析参考图，请稍候"
+          : analysisStatus === "error"
+            ? "解析失败，请重新解析后再尝试"
+            : "请先完成图文解析";
+      toast.error(reason);
+      return;
+    }
     if (!selectedPresetId) {
       toast.error("请先选择风格模板");
       return;
@@ -370,6 +485,70 @@ export function ImageTextReplicationPanel({
     }
   }
 
+  const toAbsoluteUrl = useCallback((url: string) => {
+    if (!url) return url;
+    if (/^https?:/i.test(url) || url.startsWith("data:")) return url;
+    if (typeof window !== "undefined" && url.startsWith("/")) {
+      return `${window.location.origin}${url}`;
+    }
+    return url;
+  }, []);
+
+  const handleAnalyzeImages = useCallback(async () => {
+    if (sourceImages.length === 0) {
+      toast.error("当前参考没有可解析的图片");
+      return;
+    }
+    setAnalysisStatus("running");
+    setAnalysisError(null);
+    setAnalysisProgress({ current: 0, total: sourceImages.length });
+    setAnalysisSavedAt(null);
+    setAnalysisExpanded(false);
+    const aggregated: string[] = [];
+    try {
+      for (let i = 0; i < sourceImages.length; i += 1) {
+        const imageUrl = sourceImages[i];
+        if (!imageUrl) continue;
+        const normalizedUrl = toAbsoluteUrl(imageUrl);
+        if (!normalizedUrl) {
+          throw new Error(`第 ${i + 1} 张图片链接无效`);
+        }
+        setAnalysisProgress({ current: i + 1, total: sourceImages.length });
+        const res = await fetch("/api/canvas/image-understanding", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imageUrl: normalizedUrl,
+            prompt: IMAGE_UNDERSTANDING_PROMPT_KNOWLEDGE_SHARE,
+            model: "gemini-3.1-flash-lite-preview",
+          }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const message = payload?.error || `第 ${i + 1} 张解析失败`;
+          throw new Error(message);
+        }
+        const rawText = typeof payload?.result === "string" ? payload.result.trim() : "";
+        const prefix = sourceImages.length > 1 ? `图${i + 1}` : "图文解析";
+        aggregated.push(rawText ? `${prefix}：${rawText}` : `${prefix}：未能解析出有效信息`);
+      }
+      const combinedText = aggregated.join("\n\n");
+      setAnalysisText(combinedText);
+      setAnalysisStatus("success");
+      setAnalysisProgress({ current: sourceImages.length, total: sourceImages.length });
+       persistAnalysisResult(combinedText);
+      toast.success("图文解析完成");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "图文解析失败";
+      if (aggregated.length > 0) {
+        setAnalysisText(aggregated.join("\n\n"));
+      }
+      setAnalysisError(message);
+      setAnalysisStatus("error");
+      toast.error(message);
+    }
+  }, [persistAnalysisResult, sourceImages, toAbsoluteUrl]);
+
   // ── Render ───────────────────────────────────────────────────────────────
 
   if (task?.status === "GENERATE_PENDING") {
@@ -400,21 +579,87 @@ export function ImageTextReplicationPanel({
     );
   }
 
+  const trimmedAnalysisText = analysisText.trim();
+  const analysisReady = requiresAnalysis ? analysisStatus === "success" && trimmedAnalysisText.length > 0 : true;
+  let generationBlockedReason: string | null = null;
+  if (requiresAnalysis && !analysisReady) {
+    if (analysisStatus === "running") {
+      generationBlockedReason = "正在解析参考图…";
+    } else if (analysisStatus === "error") {
+      generationBlockedReason = "解析失败，请重新解析";
+    } else {
+      generationBlockedReason = "请先完成图文解析";
+    }
+  }
+  const step2ChipLabel = !requiresAnalysis
+    ? "直接生成"
+    : analysisStatus === "running"
+      ? "解析中"
+      : analysisStatus === "error"
+        ? "解析失败"
+        : analysisReady
+          ? "解析完成"
+          : "等待解析";
+  const step2ChipClass =
+    step2ChipLabel === "解析完成" || step2ChipLabel === "直接生成"
+      ? "bg-green-100 text-green-700"
+      : step2ChipLabel === "解析失败"
+        ? "bg-red-100 text-red-600"
+        : "bg-yellow-100 text-yellow-700";
+
   // 默认直接展示模板选择，不先触发分析
   return (
     <>
-      <StylePickerView
-        presets={presets}
-        presetsLoading={presetsLoading}
-        selectedPresetId={selectedPresetId}
-        onSelectPreset={setSelectedPresetId}
-        onOpenUploadModal={() => setUploadModalOpen(true)}
-        startError={startError}
-        topicHint={topicHint}
-        onTopicHintChange={setTopicHint}
-        onGenerate={handleGenerate}
-        generating={generating}
-      />
+      <div className="flex flex-col gap-5 p-5">
+        <AnalysisStepCard
+          sourceImagesCount={sourceImages.length}
+          canAnalyze={requiresAnalysis}
+          analysisStatus={analysisStatus}
+          analysisProgress={analysisProgress}
+          analysisText={analysisText}
+          onAnalysisTextChange={setAnalysisText}
+          onAnalyze={handleAnalyzeImages}
+          analysisError={analysisError}
+          analysisResultVisible={analysisExpanded}
+          onToggleAnalysisResult={() => setAnalysisExpanded((prev) => !prev)}
+          analysisSavedAt={analysisSavedAt}
+        />
+        <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/60 p-5 space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">步骤 2</p>
+              <h3 className="text-base font-semibold text-gray-900 dark:text-white">图文生成</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                选择一个图文风格，并结合上一步解析结果生成新的图文。
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center rounded-full border border-gray-200 dark:border-gray-700 px-3 py-1 text-xs font-medium text-gray-700 dark:text-gray-200">
+                风格模板
+              </span>
+              {requiresAnalysis && (
+                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${step2ChipClass}`}>
+                  {step2ChipLabel}
+                </span>
+              )}
+            </div>
+          </div>
+          <StylePickerView
+            presets={presets}
+            presetsLoading={presetsLoading}
+            selectedPresetId={selectedPresetId}
+            onSelectPreset={setSelectedPresetId}
+            onOpenUploadModal={() => setUploadModalOpen(true)}
+            startError={startError}
+            topicHint={topicHint}
+            onTopicHintChange={setTopicHint}
+            onGenerate={handleGenerate}
+            generating={generating}
+            disableGenerate={Boolean(generationBlockedReason)}
+            disableReason={generationBlockedReason ?? undefined}
+          />
+        </div>
+      </div>
       <UploadStyleModal
         open={uploadModalOpen}
         styleName={styleName}
@@ -432,6 +677,188 @@ export function ImageTextReplicationPanel({
 }
 
 // ─── Sub-views ────────────────────────────────────────────────────────────────
+
+type AnalysisStepCardProps = {
+  sourceImagesCount: number;
+  canAnalyze: boolean;
+  analysisStatus: AnalysisStatus;
+  analysisProgress: { current: number; total: number };
+  analysisText: string;
+  onAnalysisTextChange: (value: string) => void;
+  onAnalyze: () => void;
+  analysisError: string | null;
+  analysisResultVisible: boolean;
+  onToggleAnalysisResult: () => void;
+  analysisSavedAt: number | null;
+};
+
+function AnalysisStepCard({
+  sourceImagesCount,
+  canAnalyze,
+  analysisStatus,
+  analysisProgress,
+  analysisText,
+  onAnalysisTextChange,
+  onAnalyze,
+  analysisError,
+  analysisResultVisible,
+  onToggleAnalysisResult,
+  analysisSavedAt,
+}: AnalysisStepCardProps) {
+  const [copied, setCopied] = useState(false);
+  const hasText = analysisText.trim().length > 0;
+  const statusLabelMap: Record<AnalysisStatus, string> = {
+    idle: "等待解析",
+    running: "解析中",
+    success: "解析完成",
+    error: "解析失败",
+  };
+  const statusColorMap: Record<AnalysisStatus, string> = {
+    idle: "bg-gray-100 text-gray-600",
+    running: "bg-yellow-100 text-yellow-700",
+    success: "bg-green-100 text-green-700",
+    error: "bg-red-100 text-red-600",
+  };
+  const statusLabel = canAnalyze ? statusLabelMap[analysisStatus] : "无需解析";
+  const statusClass = canAnalyze ? statusColorMap[analysisStatus] : "bg-blue-100 text-blue-700";
+  const canViewResult = canAnalyze && analysisStatus === "success" && hasText;
+  const showTextarea = !canAnalyze || analysisStatus !== "success" || analysisResultVisible;
+  const previewSnippet = hasText ? analysisText.trim().slice(0, 160) : "";
+  const savedAtLabel = analysisSavedAt
+    ? new Intl.DateTimeFormat("zh-CN", {
+        month: "numeric",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(analysisSavedAt))
+    : null;
+  const primaryButtonLabel =
+    analysisStatus === "running"
+      ? `解析中 (${Math.min(analysisProgress.current, analysisProgress.total)}/${analysisProgress.total || 1})`
+      : canViewResult
+        ? analysisResultVisible
+          ? "隐藏拆解结果"
+          : "查看拆解结果"
+        : "开始解析";
+  const primaryButtonDisabled = !canAnalyze || analysisStatus === "running";
+
+  useEffect(() => {
+    if (!hasText) setCopied(false);
+  }, [hasText]);
+
+  const handleCopy = async () => {
+    if (!hasText) return;
+    try {
+      await navigator.clipboard.writeText(analysisText.trim());
+      setCopied(true);
+      toast.success("解析结果已复制");
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      toast.error("复制失败，请重试");
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/60 p-5 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">步骤 1</p>
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white">图文解析</h3>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            系统会逐张解析参考图的主体、构图与风格，为后续生成提供模板。
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center rounded-full border border-gray-200 dark:border-gray-700 px-3 py-1 text-xs font-medium text-gray-700 dark:text-gray-200">
+            参考图 {sourceImagesCount} 张
+          </span>
+          <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${statusClass}`}>
+            {statusLabel}
+          </span>
+        </div>
+      </div>
+      {analysisError && (
+        <div className="text-xs text-red-600 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/40 px-3 py-2 rounded-xl">
+          {analysisError}
+        </div>
+      )}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold text-gray-900 dark:text-white">图文解析结果</p>
+          <button
+            type="button"
+            onClick={handleCopy}
+            disabled={!hasText || analysisStatus === "running"}
+            className="text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white disabled:opacity-40"
+          >
+            {copied ? "已复制" : "复制"}
+          </button>
+        </div>
+        {showTextarea ? (
+          <textarea
+            value={analysisText}
+            onChange={(e) => onAnalysisTextChange(e.target.value)}
+            placeholder="点击“开始解析”后，这里会自动填充每张参考图的视觉要点，你也可以手动补充或修改。"
+            rows={5}
+            className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-yellow-400 focus:border-transparent resize-none"
+          />
+        ) : (
+          <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40 px-3 py-3 text-sm text-gray-600 dark:text-gray-300">
+            <p>拆解完成，点击“查看拆解结果”以展开内容。</p>
+            {previewSnippet && (
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 line-clamp-3 whitespace-pre-line">
+                {previewSnippet}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        {canAnalyze ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (analysisStatus === "running") return;
+                if (canViewResult) {
+                  onToggleAnalysisResult();
+                } else {
+                  onAnalyze();
+                }
+              }}
+              disabled={primaryButtonDisabled}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 text-white dark:bg-white dark:text-gray-900 px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
+            >
+              {analysisStatus === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {primaryButtonLabel}
+            </button>
+            {canViewResult && (
+              <button
+                type="button"
+                onClick={onAnalyze}
+                disabled={analysisStatus === "running"}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm font-semibold text-gray-700 dark:text-gray-200 px-4 py-2.5 disabled:opacity-60"
+              >
+                <RotateCcw className="h-4 w-4" />
+                重新解析
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-300">
+            <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0" />
+            <span>当前参考未包含图片，将直接使用已有文案，请自行补充解析内容。</span>
+          </div>
+        )}
+        {savedAtLabel && (
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            已自动保存 {savedAtLabel}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function LoadingView({ label }: { label: string }) {
   return (
@@ -469,6 +896,8 @@ function StylePickerView({
   onTopicHintChange,
   onGenerate,
   generating,
+  disableGenerate,
+  disableReason,
 }: {
   presets: StylePreset[];
   presetsLoading: boolean;
@@ -480,9 +909,13 @@ function StylePickerView({
   onTopicHintChange: (v: string) => void;
   onGenerate: () => void;
   generating: boolean;
+  disableGenerate?: boolean;
+  disableReason?: string;
 }) {
+  const isGenerateDisabled = generating || !selectedPresetId || Boolean(disableGenerate);
+
   return (
-    <div className="flex flex-col gap-5 p-5">
+    <div className="flex flex-col gap-5">
       {/* Section: style choice */}
       <div>
         <div className="flex items-center justify-between mb-3">
@@ -570,7 +1003,7 @@ function StylePickerView({
       <button
         type="button"
         onClick={onGenerate}
-        disabled={generating || !selectedPresetId}
+        disabled={isGenerateDisabled}
         className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
       >
         {generating ? (
@@ -580,6 +1013,9 @@ function StylePickerView({
         )}
         {generating ? "生成中…" : "开始生成"}
       </button>
+      {disableReason && isGenerateDisabled && !generating && (
+        <p className="text-xs text-amber-600 text-center">{disableReason}</p>
+      )}
     </div>
   );
 }

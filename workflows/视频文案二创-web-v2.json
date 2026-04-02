@@ -1,0 +1,245 @@
+{
+  "name": "视频文案二创-web-v2",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "2chuang_web_v2",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        -80
+      ],
+      "id": "c7b4b0f9-6408-4b59-9637-2cc8f381f897",
+      "name": "Webhook",
+      "webhookId": "2f8f43f0-3c3f-4f54-8a4a-25a043f0a2a7"
+    },
+    {
+      "parameters": {
+        "jsCode": "const incoming = ($json && typeof $json === 'object') ? $json : {};\nconst root = incoming.body && typeof incoming.body === 'object' && Object.keys(incoming.body).length\n  ? incoming.body\n  : incoming;\n\nfunction pick(...vals) {\n  for (const v of vals) {\n    if (v === undefined || v === null) continue;\n    const s = typeof v === 'string' ? v.trim() : v;\n    if (typeof s === 'string' && !s) continue;\n    return s;\n  }\n  return undefined;\n}\n\nconst taskId = pick(root.task_id, root.taskId, root.replication_id, root.replicationId);\nif (!taskId) throw new Error('task_id / replication_id is required');\nconst userId = pick(root.user_id, root.userId);\nif (!userId) throw new Error('user_id is required');\nconst videoUrl = pick(root.video_url, root.videoUrl);\nif (!videoUrl) throw new Error('video_url is required');\n\nconst outputLanguage = pick(root.output_language, root.language, '简体中文');\nconst styleId = pick(root.style_id, root.styleId);\nconst styleSnapshot = typeof root.style_snapshot === 'object' ? root.style_snapshot : null;\nif (!styleId || !styleSnapshot) throw new Error('style_id + style_snapshot are required');\n\nreturn [{\n  json: {\n    task_id: taskId,\n    replication_id: taskId,\n    user_id: userId,\n    video_url: videoUrl,\n    style_id: styleId,\n    style_snapshot: styleSnapshot,\n    output_language: outputLanguage,\n    target_word_count: Number(pick(root.word_count, root.wordCount, 500)) || 500,\n    api_key: pick(root.api_key, root.apiKey, ''),\n    callback_url: pick(root.callback_url, root.callbackUrl, ''),\n    raw_body: root\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        -80
+      ],
+      "id": "21dc9151-8b55-4085-b3fd-1a346ac64ece",
+      "name": "标准化输入v2"
+    },
+    {
+      "parameters": {
+        "url": "https://hooks.atomx.top/webhook/extract_video_text",
+        "responseFormat": "json",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ {\n  \"video_url\": $json.video_url,\n  \"task_id\": $json.task_id\n} }"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -240,
+        -80
+      ],
+      "id": "c77a9483-84af-4cd0-9da6-2c4cff6d9274",
+      "name": "提取口播文本"
+    },
+    {
+      "parameters": {
+        "jsCode": "const transcript = $json?.data?.text || $json?.text || '';\nif (!transcript) {\n  throw new Error('extract_video_text 返回为空，无法继续');\n}\nreturn [{\n  json: {\n    ...$json,\n    transcript,\n    structured: {\n      transcript,\n      scenes: []\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        -80
+      ],
+      "id": "0b6990fa-f1aa-46b2-a280-23ce8c8b40ef",
+      "name": "整理口播文本"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={\n  \"transcript\": {{ JSON.stringify($json.transcript) }}\n}",
+        "needsFallback": true,
+        "options": {
+          "systemMessage": "你是一位专业的短视频拆解师。现在给你一份逐字稿，请严格输出 JSON：\n{\n  \"summary\": string，总结视频卖点；\n  \"blueprint\": {\n    \"meta\": {\"total_duration\":\"\",\"mood\":\"\",\"style\":\"\"},\n    \"scene_breakdown\": [ {\"id\":1,\"time_range\":\"00:00-00:03\",\"visual_specs\":{ \"camera\":\"\",\"subject_action\":\"\",\"lighting_environment\":\"\",\"auxiliary_elements\":\"\"},\"abstract_logic\":{\"narrative_role\":\"\",\"beats\":\"\"},\"voiceover\":\"\" } ... ]\n  }\n}\n输出必须是合法 JSON，不能包含其它文字。"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        240,
+        -80
+      ],
+      "id": "9e1bab0f-1a94-4da6-8c32-8cbba24566f4",
+      "name": "拆解爆款结构",
+      "credentials": {
+        "openAiApi": {
+          "id": "135VogulxeCGwJaN",
+          "name": "聚保盆-云雾通用api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const output = $json?.output;\nlet parsed = null;\nif (typeof output === 'string') {\n  try {\n    parsed = JSON.parse(output);\n  } catch (err) {\n    const cleaned = output.replace(/```json/g, '').replace(/```/g, '').trim();\n    try {\n      parsed = JSON.parse(cleaned);\n    } catch (e2) {\n      throw err;\n    }\n  }\n}\nif (!parsed) throw new Error('拆解结果解析失败');\nreturn [{\n  json: {\n    transcript: $('整理口播文本').item.json.transcript,\n    summary: parsed.summary || '',\n    blueprint: parsed.blueprint || {}\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        -80
+      ],
+      "id": "e68cd201-aa2f-499d-8a38-85b28657de7a",
+      "name": "解析拆解JSON"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={\n  \"transcript\": {{ JSON.stringify($json.transcript) }},\n  \"summary\": {{ JSON.stringify($json.summary) }},\n  \"blueprint\": {{ JSON.stringify($json.blueprint, null, 2) }},\n  \"style_snapshot\": {{ JSON.stringify($('标准化输入v2').item.json.style_snapshot || {}) }},\n  \"output_language\": {{ JSON.stringify($('标准化输入v2').item.json.output_language) }},\n  \"target_word_count\": {{ $('标准化输入v2').item.json.target_word_count || 500 }}\n}",
+        "needsFallback": true,
+        "options": {
+          "systemMessage": "你是一名资深脚本创作人。请基于给定的【视频逐字稿】和【蓝图拆解】，并完全遵循 style_snapshot 中的语气、句式、禁忌，重新创作一份短视频口播文案。输出结构：\n{\n  \"original_copy\": string, // 对原文案进行清洗与精华凸显\n  \"remix_copy\": string, // 全新角度的二创文案\n  \"highlights\": [string], // 3-4 个可视化亮点\n}\n必须是合法 JSON，语言使用 output_language。字数在 target_word_count ±15%。"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        736,
+        -80
+      ],
+      "id": "5dc4a8c1-d9a3-42ce-8543-4584a63f6fbf",
+      "name": "AI-二创写作",
+      "credentials": {
+        "openAiApi": {
+          "id": "135VogulxeCGwJaN",
+          "name": "聚保盆-云雾通用api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const resultRaw = $json?.output;\nlet parsed = null;\nif (typeof resultRaw === 'string') {\n  try {\n    parsed = JSON.parse(resultRaw);\n  } catch (err) {\n    const cleaned = resultRaw.replace(/```json/g, '').replace(/```/g, '').trim();\n    parsed = JSON.parse(cleaned);\n  }\n}\nif (!parsed) throw new Error('AI-二创写作 输出为空');\nreturn [{\n  json: {\n    original_copy: parsed.original_copy || '',\n    remix_copy: parsed.remix_copy || '',\n    highlights: Array.isArray(parsed.highlights) ? parsed.highlights : [],\n    blueprint: $('解析拆解JSON').item.json.blueprint,\n    transcript: $('解析拆解JSON').item.json.transcript,\n    summary: $('解析拆解JSON').item.json.summary,\n    metadata: $('标准化输入v2').item.json\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        976,
+        -80
+      ],
+      "id": "cb364c63-7ef6-4e88-ab1f-ee035f8b1065",
+      "name": "构建响应"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ {\n  \"success\": true,\n  \"data\": {\n    \"original_copy\": $json.original_copy,\n    \"remix_copy\": $json.remix_copy,\n    \"highlights\": $json.highlights,\n    \"summary\": $json.summary,\n    \"blueprint\": $json.blueprint,\n    \"transcript\": $json.transcript\n  }\n} }",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1216,
+        -80
+      ],
+      "id": "cc770da2-7174-4a1b-9a11-2582c8aaf91c",
+      "name": "Respond"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "标准化输入v2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "标准化输入v2": {
+      "main": [
+        [
+          {
+            "node": "提取口播文本",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提取口播文本": {
+      "main": [
+        [
+          {
+            "node": "整理口播文本",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "整理口播文本": {
+      "main": [
+        [
+          {
+            "node": "拆解爆款结构",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "拆解爆款结构": {
+      "main": [
+        [
+          {
+            "node": "解析拆解JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析拆解JSON": {
+      "main": [
+        [
+          {
+            "node": "AI-二创写作",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI-二创写作": {
+      "main": [
+        [
+          {
+            "node": "构建响应",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "构建响应": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

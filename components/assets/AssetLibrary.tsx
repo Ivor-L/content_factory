@@ -2680,7 +2680,6 @@ function FileInput({
           isDragActive &&
             "border-gray-900/60 dark:border-white/50 bg-gray-50 dark:bg-gray-900/70"
         )}
-        onClick={() => inputRef.current?.click()}
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}

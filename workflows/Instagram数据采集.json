@@ -1,0 +1,477 @@
+{
+  "name": "Instagram数据采集",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "instagram_scraper",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        64
+      ],
+      "id": "bd9a94b4-5e73-4aa2-8271-27a797bd8ece",
+      "name": "Webhook",
+      "webhookId": "1d96fef1-09de-4b7e-bc17-a9d49a6cd45f"
+    },
+    {
+      "parameters": {
+        "url": "https://api.tikhub.io/api/v1/instagram/v3/extract_shortcode",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "url",
+              "value": "={{ $json.body.url }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_FIXED_API_KEY_HERE"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f6a62159-7864-4410-b653-2c871337e53e",
+      "name": "提取短码",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -96,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.data }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "a7cc42a8-ab2b-436e-ad7b-7465bf1825dd",
+      "name": "检查是否提取成功",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        128,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.tikhub.io/api/v1/instagram/v3/get_post_info_by_code",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "code",
+              "value": "={{ $json.data }}"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_FIXED_API_KEY_HERE"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e0f6d35a-23ab-443f-87b9-9a163ac22863",
+      "name": "获取帖子详情",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        352,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const rawData = $json.data;\nlet items = [];\n\n// TikHub的data可能是字符串包裹的JSON，也可能是直接的对象，做一层安全解析\nif (typeof rawData === 'string') {\n  try {\n    const parsed = JSON.parse(rawData);\n    items = parsed.items || [];\n  } catch(e) {}\n} else if (rawData && rawData.items) {\n  items = rawData.items;\n}\n\nconst postInfo = items[0] || {};\n\nreturn [{\n  json: {\n    status: \"success\",\n    message: \"帖子数据采集成功\",\n    post_data: {\n      shortcode: postInfo.code || $('提取短码').item.json.data,\n      post_id: postInfo.id,\n      media_type: postInfo.media_type, // 1=图片, 2=视频, 8=合集\n      like_count: postInfo.like_count || 0,\n      comment_count: postInfo.comment_count || 0,\n      caption_text: postInfo.caption?.text || \"\",\n      publish_time: postInfo.taken_at, \n      author: {\n        username: postInfo.user?.username,\n        full_name: postInfo.user?.full_name,\n        profile_pic_url: postInfo.user?.profile_pic_url\n      },\n      media_assets: {\n        images: postInfo.image_versions2 || [],\n        videos: postInfo.video_versions || [],\n        carousel: postInfo.carousel_media || []\n      }\n    },\n    // 保留原始完整数据供扩展\n    raw_details: postInfo \n  }\n}];"
+      },
+      "id": "e1d7fe84-9678-48ee-b367-f5b64591b8b5",
+      "name": "格式化帖子数据",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    status: \"error\",\n    message: \"短码提取失败，请检查 URL 格式或 API Token 是否有效\",\n    raw_response: $json\n  }\n}];"
+      },
+      "id": "b464e0a0-fd22-4903-b6e0-bc5a7b5332fb",
+      "name": "提取失败响应",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "308fcd42-c2ba-49a9-8875-f0e392b49df6",
+      "name": "返回成功响应",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        800,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "0406b2a7-11be-4082-8f3b-0b13782f1238",
+      "name": "返回失败响应",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        576,
+        256
+      ]
+    }
+  ],
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "hooks.atomx.top",
+            "x-real-ip": "221.192.237.82",
+            "x-forwarded-for": "221.192.237.82",
+            "x-forwarded-proto": "https",
+            "connection": "close",
+            "content-length": "5908",
+            "content-type": "application/json",
+            "accept": "*/*",
+            "accept-language": "*",
+            "sec-fetch-mode": "cors",
+            "user-agent": "node",
+            "accept-encoding": "br, gzip, deflate"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "task_id": "255d835f-4292-4c86-b47f-f9412ba62415",
+            "replication_id": "255d835f-4292-4c86-b47f-f9412ba62415",
+            "user_id": "db74f72f-9f0e-4d42-8b9d-b34c890f5eea",
+            "idea_text": "未来人人都不用上班",
+            "word_count": 800,
+            "style_rules": {
+              "evidence": {
+                "sample_count": 22,
+                "representative_snippets": [
+                  {
+                    "note": "强调反直觉开头、经济现象的逻辑引导。",
+                    "snippet": "东西越降价，大家越不买，越不买商家就只能继续降价。经济学家管这个叫通货紧缩。"
+                  },
+                  {
+                    "note": "使用强联想案例引发情感共鸣。",
+                    "snippet": "工资涨了，发际线却退了，体检报告也从亚健康升为高危预警。"
+                  },
+                  {
+                    "note": "解释行为背后的认知模式，引导读者思考。",
+                    "snippet": "99%的人在围观，1%的人在应用，差距就在认知，那怎么提升认知呢？"
+                  }
+                ]
+              },
+              "cta_rules": {
+                "cta_templates": [
+                  "如果你希望见到更多这样的深度解读，请点赞分享。",
+                  "在评论区告诉我，你是不是也有这样的经历？",
+                  "分享给你的朋友，让他们也少掉入这些坑！"
+                ],
+                "comment_keyword_rules": [
+                  "以'你怎么看？'或'你是否同意这一点？'结尾引导评论。",
+                  "针对疑问的最后句需设置二选一互动问题。"
+                ]
+              },
+              "guardrails": {
+                "claims_and_risk": [
+                  "必须加强关键经济理论或数据概念的准确性与解释适配。",
+                  "禁止将假设等同于事实作为论据展开。"
+                ],
+                "exaggeration_limits": {
+                  "max_per_chars": 800,
+                  "replacement_suggestions": [
+                    {
+                      "to": "失业率呈逐年上升趋势。",
+                      "from": "失业率飙升到天花板！"
+                    },
+                    {
+                      "to": "财富自由可以减少相当一部分经济压力。",
+                      "from": "财富自由让所有问题迎刃而解！"
+                    }
+                  ]
+                }
+              },
+              "style_core": {
+                "pov": "第一人称说教式与第三人称陈述式交替，最大化兼顾说服力和客观性",
+                "tone": {
+                  "core": [
+                    "通俗",
+                    "犀利",
+                    "幽默",
+                    "略带煽动性"
+                  ],
+                  "limits": "禁止出现过度夸张或情绪化表达，避免煽动社会对立或过负面的语调。"
+                },
+                "rhythm": {
+                  "paragraph_rule": "一个概念或论点控制在1-2段以内，每段不超过90字。",
+                  "max_sentence_chars": 60,
+                  "short_sentence_ratio": 0.65,
+                  "highlight_line_every_n_paragraphs": 2
+                },
+                "persona": "洞察敏锐的观察者，兼具理性分析和情绪共鸣能力",
+                "lexical_signature": {
+                  "avoid_words": [
+                    "贫穷羞耻",
+                    "绝对化",
+                    "阶级固定"
+                  ],
+                  "banned_words": [
+                    "政治敏感词汇",
+                    "明显不实的夸大描述"
+                  ],
+                  "high_frequency_words": [
+                    "经济压力",
+                    "认知提升",
+                    "盈余思维",
+                    "富人思维",
+                    "财富自由"
+                  ]
+                }
+              },
+              "opening_rules": {
+                "hook_templates": [
+                  "为什么越便宜的东西，大家越不敢买？",
+                  "99%的人都误会了这个道理，你还在犯错吗？",
+                  "你现在以为自己在节省，可能正在赔一生。",
+                  "这样做，不仅能赚钱，还能稳住内心。"
+                ],
+                "first_screen_constraints": [
+                  "必须在前三句点出核心问题或现象，引发用户兴趣。",
+                  "首屏文字不超过130字。",
+                  "必须用设问句或反直觉概念作为钩子。"
+                ]
+              },
+              "structure_bank": {
+                "blueprints": [
+                  {
+                    "name": "社会现象解构",
+                    "notes": "通过具体案例切入，用简单经济/职场道理解构复杂现象，结尾提供可实施建议。",
+                    "sections": [
+                      "现象描述",
+                      "深层原因",
+                      "影响解析",
+                      "个人启示"
+                    ]
+                  },
+                  {
+                    "name": "个人成长框架分享",
+                    "notes": "从读者潜在痛点入手，结合兼顾通俗解释和行动方案。",
+                    "sections": [
+                      "问题引出",
+                      "误区澄清",
+                      "方法框架",
+                      "案例支持",
+                      "总结优化"
+                    ]
+                  }
+                ],
+                "subtitle_patterns": [
+                  "为什么会___？",
+                  "如何提升___？",
+                  "三个关键词告诉你___",
+                  "现象背后的___"
+                ],
+                "transition_patterns": [
+                  "这背后的逻辑是___",
+                  "那为什么会这样呢？",
+                  "接下来，我来拆解一下___",
+                  "从这个现象可以得出一个结论：___"
+                ]
+              },
+              "domain_inference": {
+                "gaps": "缺少针对不同受众层级（如学生、新手理财者）的结构化建议；缺乏对数据引用来源的完整性和权威性保障。",
+                "topics": [
+                  "经济学基础",
+                  "职场困境",
+                  "个人成长与投资",
+                  "社会现象解析"
+                ],
+                "content_goal": "深入浅出地分析现象，提供有针对性的思考与建议，激发读者的共鸣或行动。",
+                "adaptation_strategy": "增加更丰富的分类示例，比如以学生、职场新人和资深专业人士作为细化对象，提供层层适配的延伸内容；同时引入可验证的数据出处或技术背景支撑逻辑分析。",
+                "dominant_card_types": [
+                  "口播评论",
+                  "思路拆解",
+                  "情绪共鸣"
+                ],
+                "target_audience_guess": "年轻的职场人、对个人财富管理和社会经济现象感兴趣的普通用户"
+              },
+              "quality_checklist": [
+                "中心思想是否明确",
+                "是否有不必要的臆测或不够严谨的论断",
+                "段落逻辑与数字排列是否准确呈现"
+              ],
+              "failure_modes_and_fixes": [
+                {
+                  "fix": "增加积极的出路和实际可行的改善建议，减少描述中的情绪化语言。",
+                  "failure": "语调或内容过于负面，可能引发用户情绪低落或排斥"
+                },
+                {
+                  "fix": "删除冗余数据引用，转而以更简练的语言点明逻辑关系。",
+                  "failure": "内容数据堆积但缺乏转换价值"
+                }
+              ],
+              "paragraph_and_layout_rules": {
+                "list_rules": [
+                  "单层列表优先使用数字序列（如第一、第二），用于条理化逐步拆解。",
+                  "避免层叠的复合列表，单层条目不超过6条。"
+                ],
+                "examples_rules": [
+                  "案例添加应优先选取真实贴近生活的实例，不必过于专业化。",
+                  "每篇文章至少列举1-2个高度简洁的实例化点。"
+                ],
+                "emphasis_box_rules": [
+                  "重要句必须用斜体或加粗引起视觉注意，控制在每屏幕演示不多于2次。",
+                  "避免将标重点的文字重复强调两次以上。"
+                ],
+                "paragraph_length_rules": [
+                  "每段内容不超过4行，单屏展示最佳控制在3行以内。",
+                  "尽量避免连续超过150字无分段的区域。"
+                ]
+              }
+            },
+            "style_id": null,
+            "language": "简体",
+            "api_key": "sk_aLO8hb0hNm2PYMJ07Loak8Fzjm3Q-KEuWIPLTDQUu_8",
+            "callback_url": "https://nextide.cpolar.top/api/webhook/creative-task/script",
+            "app_url": "https://nextide.cpolar.top",
+            "admin_token": "dev-sync-token-1774007442",
+            "workflow_id": "flow_writing"
+          },
+          "webhookUrl": "http://localhost:5678/webhook/chuangzuo_web",
+          "executionMode": "production"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "提取短码": {
+      "main": [
+        [
+          {
+            "node": "检查是否提取成功",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "检查是否提取成功": {
+      "main": [
+        [
+          {
+            "node": "获取帖子详情",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "提取失败响应",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "获取帖子详情": {
+      "main": [
+        [
+          {
+            "node": "格式化帖子数据",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "提取短码",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "格式化帖子数据": {
+      "main": [
+        [
+          {
+            "node": "返回成功响应",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提取失败响应": {
+      "main": [
+        [
+          {
+            "node": "返回失败响应",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "0cfd9c3d-23f8-4080-afa8-9e52e0043ac7",
+  "meta": {
+    "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
+  },
+  "id": "DdJi2WShIQwNKfck",
+  "tags": []
+}

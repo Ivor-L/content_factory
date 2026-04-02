@@ -118,6 +118,19 @@ export async function POST(
     }
 
     // 5. Fire n8n for each segment
+    const breakdown = task.detailedBreakdown as Record<string, unknown> | null;
+    const style = (breakdown?.style as Record<string, unknown>) ?? {};
+
+    const styleProfileRaw = (style.styleProfileText as string) ?? "";
+    let styleProfileJson: unknown = null;
+    if (styleProfileRaw) {
+      try {
+        styleProfileJson = JSON.parse(styleProfileRaw);
+      } catch {
+        styleProfileJson = styleProfileRaw; // fallback: pass as-is
+      }
+    }
+
     const triggers = targetSegments.map(async (segment) => {
       const payload = {
         segment_id: segment.id,
@@ -129,6 +142,9 @@ export async function POST(
         callback_url: callbackUrl,
         api_key: apiKey,
         admin_token: process.env.ADMIN_TOKEN,
+        creative_style_raw: (style.creativeStyleRaw as string) ?? "",
+        creative_style_norm: (style.creativeStyleNorm as string) ?? "写实",
+        style_profile_json: styleProfileJson,
       };
 
       try {

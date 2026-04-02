@@ -29,11 +29,20 @@ const SELF_HOSTED_HOSTS = [
   ...EXTRA_SELF_HOSTS,
 ];
 
+const DIRECT_ALLOW_HOST_PATTERNS = [
+  /instagram/i,
+  /fbcdn/i,
+  /facebook/i,
+];
+
 export function needsProxy(url: string): boolean {
   try {
     const { hostname } = new URL(url);
     // If it's our own storage, load directly
     if (SELF_HOSTED_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`))) {
+      return false;
+    }
+    if (DIRECT_ALLOW_HOST_PATTERNS.some((pattern) => pattern.test(hostname))) {
       return false;
     }
     // Everything else (xhscdn.com, tiktokcdn.com, etc.) goes through proxy
@@ -49,6 +58,10 @@ export function needsProxy(url: string): boolean {
  */
 export function toProxyUrl(url: string, filename: string): string {
   if (!needsProxy(url)) return url;
+  return `/api/proxy/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`;
+}
+
+export function toForcedProxyUrl(url: string, filename: string): string {
   return `/api/proxy/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`;
 }
 

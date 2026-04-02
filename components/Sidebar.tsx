@@ -2,7 +2,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { Home, Repeat, Sparkles, Settings, Languages, Clapperboard, Key, Users, History, ChevronUp, Activity, Zap, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, LayoutGrid, User, LogOut, Film, Folder, BookOpen, Gift, Sun, Moon, Download } from 'lucide-react';
+import { Home, Repeat, Sparkles, Settings, Languages, Clapperboard, Users, History, ChevronUp, Activity, Zap, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, LayoutGrid, User, LogOut, Film, Folder, BookOpen, Gift, Sun, Moon, Download } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -671,8 +671,8 @@ export function Sidebar() {
                     onClick={() => setIsUserMenuOpen(false)}
                     className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                   >
-                    <Key size={16} />
-                    {t.userBlock?.api || 'API_key & Settings'}
+                    <Settings size={16} />
+                    {t.userBlock?.api || 'System Settings'}
                   </Link>
                   
                   <button

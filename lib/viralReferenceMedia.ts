@@ -21,6 +21,8 @@ const COVER_PATHS: Array<Array<string | number>> = [
   ["poster_url"],
   ["imageUrl"],
   ["image_url"],
+  ["media", "coverUrl"],
+  ["media", "cover_url"],
   ["cover", "url"],
   ["cover", "urlDefault"],
   ["cover", "url_default"],
@@ -51,6 +53,8 @@ const COVER_PATHS: Array<Array<string | number>> = [
 const VIDEO_PATHS: Array<Array<string | number>> = [
   ["videoUrl"],
   ["video_url"],
+  ["media", "videoUrl"],
+  ["media", "video_url"],
   ["playUrl"],
   ["play_url"],
   ["raw", "videoUrl"],
@@ -195,6 +199,10 @@ function extractUrlFromUnknown(value: unknown): string | null {
     value.playAddr,
     value.play_addr,
     value.src,
+    value.coverUrl,
+    value.cover_url,
+    value.videoUrl,
+    value.video_url,
   ];
   for (const candidate of candidates) {
     const url = sanitizeUrl(candidate);

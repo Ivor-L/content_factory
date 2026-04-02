@@ -22,7 +22,7 @@ import {
   DIGITAL_HUMAN_MAX_SECONDS,
   DIGITAL_HUMAN_SAFETY,
 } from "@/lib/digitalHumanLimits";
-import { DHScriptPreviewModal, type DHScriptData } from "@/components/DHScriptPreviewModal";
+import { DHSetupModal } from "@/components/DHSetupModal";
 
 interface ReplicationFormProps {
   products: { id: string; name: string; images?: string }[];
@@ -306,54 +306,14 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
   const [digitalTaskTitle, setDigitalTaskTitle] = useState("");
   const [digitalIdea, setDigitalIdea] = useState("");
   const [digitalAudience, setDigitalAudience] = useState("");
-  const [digitalWordCount, setDigitalWordCount] = useState(String(DIGITAL_WORD_LIMIT));
   const digitalPrefillRef = useRef<string | null>(null);
-
-  // Two-stage digital human flow
-  const [pendingReplicationId, setPendingReplicationId] = useState<string | null>(null);
-  const [dhScriptData, setDhScriptData] = useState<DHScriptData | null>(null);
-  const [isPolling, setIsPolling] = useState(false);
+  const [isDHSetupOpen, setIsDHSetupOpen] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
     });
   }, []);
-
-  // Poll replication status after Stage 1 is triggered
-  useEffect(() => {
-    if (!pendingReplicationId || !isPolling || !session?.access_token) return;
-
-    let stopped = false;
-    const poll = async () => {
-      try {
-        const res = await fetch(`/api/replication/${pendingReplicationId}`, {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        });
-        if (!res.ok) return;
-        const { data } = await res.json();
-        if (stopped) return;
-
-        if (data.status === "script_ready") {
-          setIsPolling(false);
-          setLoading(false);
-          setDhScriptData(data.result as DHScriptData);
-        } else if (data.status === "script_failed") {
-          setIsPolling(false);
-          setLoading(false);
-          toast.error(data.result?.error || "文案生成失败，请重试");
-          setPendingReplicationId(null);
-        }
-      } catch {}
-    };
-
-    const interval = setInterval(poll, 3000);
-    poll(); // immediate first check
-    return () => {
-      stopped = true;
-      clearInterval(interval);
-    };
-  }, [pendingReplicationId, isPolling, session?.access_token]);
 
   // Update selectedScript when preselectedScriptId changes
   useEffect(() => {
@@ -477,14 +437,6 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
         setDigitalAudience(fallbackAudience);
       }
     }
-    if (!digitalWordCount.trim()) {
-      const approxWords = copyInsights?.copyText
-        ? Math.round(copyInsights.copyText.replace(/\\s+/g, " ").length / 2)
-        : DIGITAL_WORD_LIMIT;
-      setDigitalWordCount(
-        String(Math.max(DIGITAL_WORD_MIN, Math.min(DIGITAL_WORD_LIMIT, approxWords)))
-      );
-    }
     digitalPrefillRef.current = key;
   }, [
     mode,
@@ -495,7 +447,6 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
     digitalTaskTitle,
     digitalIdea,
     digitalAudience,
-    digitalWordCount,
     t.replication.digitalHumanModeLabel,
   ]);
 
@@ -506,7 +457,6 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
         return;
     }
     setLoading(true);
-    let startedPolling = false;
 
     try {
       if (mode === 'storyboard') {
@@ -558,69 +508,13 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
         router.push(`${storyboardBasePath}/${result.taskId}`);
 
       } else if (mode === 'digital-human') {
-        if (!selectedCharacter) {
-          toast.error(t.characters.selectCharacter);
-          setLoading(false);
-          return;
-        }
         if (!session?.access_token) {
           toast.error(t.replication.digitalHumanAuthError || "请先登录以创建数字人脚本");
           setLoading(false);
           return;
         }
-
-        const headers: HeadersInit = {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        };
-        const ideaText =
-          digitalIdea.trim() ||
-          copyInsights?.copyText ||
-          copyInsights?.coreViewpoint ||
-          currentScript?.title ||
-          "Digital Human Script";
-        const fallbackAudience =
-          digitalAudience.trim() ||
-          copyInsights?.painPoints?.[0] ||
-          copyInsights?.coreViewpoint ||
-          undefined;
-
-        const desiredWordCount = (() => {
-          const parsed = Number(digitalWordCount.trim());
-          if (!Number.isFinite(parsed)) return DIGITAL_WORD_LIMIT;
-          return Math.max(DIGITAL_WORD_MIN, Math.min(DIGITAL_WORD_LIMIT, Math.round(parsed)));
-        })();
-
-        const payload = {
-          scriptId: selectedScript,
-          characterId: selectedCharacter,
-          wordCount: desiredWordCount,
-          ideaText,
-          audience: fallbackAudience,
-          title: digitalTaskTitle.trim(),
-        };
-
-        const response = await fetch("/api/replication/digital-human", {
-          method: "POST",
-          headers,
-          body: JSON.stringify(payload),
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || `Failed with status ${response.status}`);
-        }
-
-        const resData = await response.json().catch(() => ({}));
-        const replicationId = resData.data?.replicationId;
-        if (!replicationId) throw new Error("未获取到 replicationId");
-
-        // Start polling — keep loading=true, show inline status in button
-        startedPolling = true;
-        setPendingReplicationId(replicationId);
-        setIsPolling(true);
-        // loading stays true until script_ready (handled in polling effect)
-        toast.success("文案生成中，请稍候…", { icon: "🤖", duration: 3000 });
+        // Open the standalone setup modal; all further logic is handled there
+        setIsDHSetupOpen(true);
 
       } else {
         // Existing One-Click Logic
@@ -661,7 +555,7 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
       console.error(error);
       toast.error(error.message || "Failed to start replication.");
     } finally {
-      if (!startedPolling) setLoading(false);
+      setLoading(false);
     }
   }
 
@@ -729,8 +623,8 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
             </div>
             )}
 
-            {/* Character Selection - Storyboard & Digital Human */}
-            {(mode === 'storyboard' || mode === 'digital-human') && (
+            {/* Character Selection - Storyboard only */}
+            {mode === 'storyboard' && (
               <div>
                   <label className="block text-sm font-bold text-gray-900 dark:text-white mb-2">{t.characters.selectCharacter}</label>
                   <Combobox
@@ -942,7 +836,7 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                {isPolling ? "文案生成中…" : t.replication.processing}
+                {t.replication.processing}
             </>
           ) : isScriptProcessing ? (
             <>
@@ -1006,21 +900,34 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
             }} 
         />
       </Modal>
-      {dhScriptData && pendingReplicationId && session?.access_token && (
-        <DHScriptPreviewModal
-          replicationId={pendingReplicationId}
-          scriptData={dhScriptData}
+      {isDHSetupOpen && session?.access_token && (
+        <DHSetupModal
+          scriptId={selectedScript}
+          ideaText={
+            digitalIdea.trim() ||
+            copyInsights?.copyText ||
+            copyInsights?.coreViewpoint ||
+            currentScript?.title ||
+            "Digital Human Script"
+          }
+          audience={
+            digitalAudience.trim() ||
+            copyInsights?.painPoints?.[0] ||
+            copyInsights?.coreViewpoint
+          }
+          title={digitalTaskTitle.trim()}
+          characters={characters}
           authToken={session.access_token}
-          onConfirmed={(videoId) => {
-            setDhScriptData(null);
-            setPendingReplicationId(null);
+          onConfirmed={() => {
+            setIsDHSetupOpen(false);
             toast.success("视频生成已启动", { icon: "🎬" });
             onSuccess?.();
             router.push(myProjectsDigitalHumanPath);
           }}
-          onClose={() => {
-            setDhScriptData(null);
-            setPendingReplicationId(null);
+          onClose={() => setIsDHSetupOpen(false)}
+          onAddCharacter={() => {
+            setIsDHSetupOpen(false);
+            setIsCharacterModalOpen(true);
           }}
         />
       )}

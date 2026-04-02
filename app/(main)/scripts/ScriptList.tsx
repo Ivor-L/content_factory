@@ -24,12 +24,13 @@ import {
   ExternalLink,
   Upload,
 } from "lucide-react";
-import { Modal } from "@/components/Modal";
+import { Modal, useModalHeader } from "@/components/Modal";
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { ScriptForm } from "@/components/ScriptForm";
 import { EmptyState } from "@/components/EmptyState";
 import { AddButton } from "@/components/AddButton";
 import ReplicationForm from "@/app/(main)/replication/ReplicationForm";
+import { CopyRemixPanel } from "@/app/(main)/replication/CopyRemixPanel";
 import { ViralReferenceModal } from "./ViralReferenceModal";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "react-hot-toast";
@@ -95,7 +96,7 @@ const PLATFORM_COLLECTOR_MODES: Record<string, CollectorMode[]> = {
   xiaohongshu: [],
   tiktok: ["keyword", "creator", "video"],
   facebook: ["creator", "video"],
-  instagram: ["creator", "video"],
+  instagram: ["video"],
 };
 
 type StatPayload = Record<string, number | string | null>;
@@ -309,18 +310,12 @@ function extractReferenceScriptText(
   if (!ref) return null;
   const payload = parseRawPayload(ref.rawPayload);
   const scriptText =
+    getStringFromPath(payload, ["scriptText"]) ??
     getStringFromPath(payload, ["script_text"]) ??
+    getStringFromPath(payload, ["data", "scriptText"]) ??
     getStringFromPath(payload, ["data", "script_text"]) ??
     getStringFromPath(payload, ["raw", "script_text"]);
   if (scriptText) return scriptText.trim();
-
-  const fallback =
-    getStringFromPath(payload, ["raw", "text"]) ?? getStringFromPath(payload, ["text"]);
-  if (fallback) return fallback.trim();
-
-  if (typeof ref.description === "string" && ref.description.trim()) {
-    return ref.description.trim();
-  }
   return null;
 }
 
@@ -606,6 +601,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
   const [newReplicationUploadedUrl, setNewReplicationUploadedUrl] = useState('');
   const [newReplicationUploading, setNewReplicationUploading] = useState(false);
   const [newReplicationDragActive, setNewReplicationDragActive] = useState(false);
+  const [replicationViewTab, setReplicationViewTab] = useState<'storyboard' | 'copy'>('storyboard');
 
   const [contentPlatform, setContentPlatform] = useState('xiaohongshu');
   const [referenceItems, setReferenceItems] = useState<ViralReferenceItemData[]>([]);
@@ -617,6 +613,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
   const debouncedReferenceQuery = useDebouncedValue(referenceQuery, 400);
   const [selectedReferenceItem, setSelectedReferenceItem] = useState<ViralReferenceItemData | null>(null);
   const [isReferenceModalOpen, setIsReferenceModalOpen] = useState(false);
+  const [extractingReferenceIds, setExtractingReferenceIds] = useState<Set<string>>(new Set());
   const [referenceSelectionMode, setReferenceSelectionMode] = useState(false);
   const [selectedReferenceIds, setSelectedReferenceIds] = useState<string[]>([]);
   const [referenceDeleting, setReferenceDeleting] = useState(false);
@@ -720,8 +717,11 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
     if (collectorMode === "keyword") {
       return "每行一个关键词，例如：\n护肤品测评\n厨房收纳";
     }
+    if (contentPlatform === "instagram") {
+      return "每行一个作品链接，仅支持具体内容（帖子 / Reels）链接。";
+    }
     return "每行一个链接，支持达人主页或具体内容链接。";
-  }, [collectorMode]);
+  }, [collectorMode, contentPlatform]);
 
   useEffect(() => {
     if (!selectedReplicationScript) return;
@@ -735,12 +735,28 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
     }
   }, [initialScripts, selectedReplicationScript]);
 
+  useEffect(() => {
+    setReplicationViewTab('storyboard');
+  }, [selectedReplicationScript?.id, newReplicationUploadedUrl]);
+
   const handleComingSoonRedirect = useCallback(() => {
     setIsReplicationModalOpen(false);
     setSelectedReplicationScript(null);
     setAnalysisTab('replication');
     setActiveTab('viral-content');
   }, [setActiveTab, setAnalysisTab, setIsReplicationModalOpen, setSelectedReplicationScript]);
+
+  const fallbackReplicationScript = useMemo(() => {
+    if (!newReplicationUploadedUrl) return null;
+    return {
+      id: '__new__',
+      title: '新建复刻',
+      videoUrl: newReplicationUploadedUrl,
+      status: 'completed',
+      createdAt: new Date().toISOString(),
+    } as Script;
+  }, [newReplicationUploadedUrl]);
+  const activeReplicationScript = selectedReplicationScript || fallbackReplicationScript;
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -876,7 +892,11 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
         const data: ViralReferenceItemData[] = Array.isArray(payload?.data) ? payload.data : [];
         const normalizedData = data.map((item) => ({
           ...item,
-          scriptText: extractReferenceScriptText(item),
+          // Prefer the top-level scriptText hoisted by the API (rawPayload.scriptText).
+          // Only fall back to rawPayload field extraction if API didn't return it.
+          scriptText: typeof item.scriptText === "string" && item.scriptText.trim()
+            ? item.scriptText
+            : extractReferenceScriptText(item),
         }));
         setReferenceItems((prev) => {
           const base = reset ? normalizedData : [...prev, ...normalizedData];
@@ -1111,6 +1131,11 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'viral_reference_items' },
+        handleChange,
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'viral_reference_items' },
         handleChange,
       )
       .on(
@@ -1389,9 +1414,58 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
 
   const uploadNewReplicationVideo = async (file: File) => {
     setNewReplicationUploading(true);
+    setSelectedReplicationScript(null);
     const toastId = toast.loading('上传视频中...');
+
+    const finalize = () => {
+      setNewReplicationUploading(false);
+      toast.dismiss(toastId);
+    };
+
+    const createScriptRecord = async (videoUrl: string) => {
+      toast.loading('正在创建脚本...', { id: toastId });
+      const titleBase = file.name?.replace(/\.[^.]+$/, '') || '新建复刻脚本';
+      try {
+        const res = await fetch('/api/scripts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: titleBase,
+            videoUrl,
+            scriptPurpose: 'storyboard',
+            description: '',
+            skipBreakdown: true,
+          }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(payload.error || `脚本创建失败 (${res.status})`);
+        }
+        const scriptId = payload.data?.scriptId;
+        if (!scriptId) throw new Error('脚本创建返回缺少 ID');
+        const nextScript: Script = {
+          id: scriptId,
+          title: payload.data?.title || titleBase,
+          videoUrl,
+          blueprint: null,
+          breakdown: null,
+          progress: 0,
+          error: null,
+          createdAt: new Date().toISOString(),
+        };
+        setSelectedReplicationScript(nextScript);
+        setNewReplicationUploadedUrl(videoUrl);
+        setReplicationViewTab('storyboard');
+        setAnalysisTab('replication');
+        toast.success('脚本已创建', { id: toastId });
+        router.refresh();
+      } catch (creationErr: any) {
+        toast.error(creationErr.message || '脚本创建失败', { id: toastId });
+        throw creationErr;
+      }
+    };
+
     try {
-      // 尝试预签名直传 OSS
       const presignRes = await fetch('/api/upload/presign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1399,13 +1473,15 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
       });
       if (presignRes.ok) {
         const { uploadUrl, publicUrl } = await presignRes.json();
-        const up = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+        const up = await fetch(uploadUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': file.type },
+          body: file,
+        });
         if (!up.ok) throw new Error(`OSS 上传失败 (${up.status})`);
-        setNewReplicationUploadedUrl(publicUrl);
-        toast.success('上传完成', { id: toastId });
+        await createScriptRecord(publicUrl);
         return;
       }
-      // 预签名不可用（OSS 未配置），回退到服务端中转
       const presignErr = await presignRes.json().catch(() => ({}));
       console.warn('[upload] presign unavailable, falling back to server upload:', presignErr.error);
       const fd = new FormData();
@@ -1416,12 +1492,11 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
         throw new Error(errData.error || `上传失败 (${uploadRes.status})`);
       }
       const { url } = await uploadRes.json();
-      setNewReplicationUploadedUrl(url);
-      toast.success('上传完成', { id: toastId });
+      await createScriptRecord(url);
     } catch (err: any) {
       toast.error(err.message || '上传失败', { id: toastId });
     } finally {
-      setNewReplicationUploading(false);
+      finalize();
     }
   };
 
@@ -2626,11 +2701,11 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
         maxWidth="max-w-4xl"
       >
         <div className="flex flex-col h-[65vh] relative">
-            {/* Mode Tabs - Top Right Absolute (Sub-modes only) */}
-            <div className="absolute top-0 right-0 z-10 flex gap-2">
-                {/* Sub-modes for Replication (only show when Replication tab is active AND a script is selected) */}
-            {/* Mode tabs hidden – storyboard is the only mode */}
-            </div>
+            <ReplicationTabsHeader
+              visible={Boolean(activeReplicationScript)}
+              activeTab={replicationViewTab}
+              onChange={setReplicationViewTab}
+            />
 
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 flex-1 min-h-0 lg:pt-0">
                 {/* Left: Video — 9:16 container */}
@@ -2709,57 +2784,53 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                     </div>
                 </div>
                 
-                {/* Right: Replication Form or Breakdown Analysis */}
+                {/* Right: Replication Workspace */}
                 <div className="flex flex-col h-full overflow-hidden lg:col-span-2">
-                    {!selectedReplicationScript ? (
-                        /* New replication flow: show form once video is uploaded */
-                        newReplicationUploadedUrl ? (
-                            <ReplicationForm
-                                products={products}
-                                scripts={[{ id: '__new__', title: '新建复刻', videoUrl: newReplicationUploadedUrl, status: 'completed' }]}
-                                characters={characters}
-                                preselectedScriptId="__new__"
-                                mode="storyboard"
-                                onSuccess={() => {
-                                    setIsReplicationModalOpen(false);
-                                    setNewReplicationUploadedUrl('');
-                                    setAnalysisTab('replication');
-                                }}
+                    {!activeReplicationScript ? (
+                        <div className="flex flex-1 items-center justify-center text-gray-400 dark:text-gray-500 text-sm px-6 text-center">
+                            请先在左侧上传视频，上传完成后即可配置分镜或口播复刻
+                        </div>
+                    ) : replicationComingSoon && selectedReplicationScript ? (
+                        <div className="flex flex-1 items-center justify-center px-6">
+                            <EmptyState
+                                className="w-full"
+                                fullHeight
+                                icon={<Zap className="h-6 w-6" />}
+                                title={t.replication.comingSoon?.title || t.replication.title}
+                                description={t.replication.comingSoon?.description}
+                                action={t.replication.comingSoon?.action ? {
+                                    label: t.replication.comingSoon.action,
+                                    onClick: handleComingSoonRedirect,
+                                } : undefined}
                             />
-                        ) : (
-                            <div className="flex flex-1 items-center justify-center text-gray-400 dark:text-gray-500 text-sm px-6 text-center">
-                                请先在左侧上传视频，上传完成后即可配置分镜参数
-                            </div>
-                        )
+                        </div>
                     ) : (
-                        replicationComingSoon ? (
-                            <div className="flex flex-1 items-center justify-center px-6">
-                                <EmptyState
-                                    className="w-full"
-                                    fullHeight
-                                    icon={<Zap className="h-6 w-6" />}
-                                    title={t.replication.comingSoon?.title || t.replication.title}
-                                    description={t.replication.comingSoon?.description}
-                                    action={t.replication.comingSoon?.action ? {
-                                        label: t.replication.comingSoon.action,
-                                        onClick: handleComingSoonRedirect,
-                                    } : undefined}
-                                />
+                        <div className="flex flex-col h-full">
+                            <div className="flex-1 min-h-0">
+                                {replicationViewTab === 'storyboard' ? (
+                                    <ReplicationForm
+                                        key={activeReplicationScript.id}
+                                        products={products}
+                                        scripts={[activeReplicationScript]}
+                                        characters={characters}
+                                        preselectedScriptId={activeReplicationScript.id}
+                                        mode="storyboard"
+                                        onSuccess={() => {
+                                            setIsReplicationModalOpen(false);
+                                            setSelectedReplicationScript(null);
+                                            setAnalysisTab('replication');
+                                        }}
+                                    />
+                                ) : (
+                                    <CopyRemixPanel
+                                        script={selectedReplicationScript ?? activeReplicationScript}
+                                        copyInsights={selectedReplicationScript ? selectedScriptInsights : null}
+                                        videoUrl={activeReplicationScript.videoUrl || newReplicationUploadedUrl}
+                                        isVideoUploaded={Boolean(newReplicationUploadedUrl)}
+                                    />
+                                )}
                             </div>
-                        ) : (
-                            <ReplicationForm
-                                products={products}
-                                scripts={[selectedReplicationScript]}
-                                characters={characters}
-                                preselectedScriptId={selectedReplicationScript.id}
-                                mode={replicationMode}
-                                onSuccess={() => {
-                                    setIsReplicationModalOpen(false);
-                                    setSelectedReplicationScript(null);
-                                    setAnalysisTab('replication');
-                                }}
-                            />
-                        )
+                        </div>
                     )}
                 </div>
             </div>
@@ -2769,9 +2840,33 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
       {isReferenceModalOpen && (
         <ViralReferenceModal
           item={selectedReferenceItem}
+          isExtracting={selectedReferenceItem ? extractingReferenceIds.has(selectedReferenceItem.id) : false}
           onClose={() => {
             setIsReferenceModalOpen(false);
             setSelectedReferenceItem(null);
+          }}
+          onExtractionStarted={(itemId) => {
+            setExtractingReferenceIds((prev) => new Set(prev).add(itemId));
+          }}
+          onExtractionFailed={(itemId) => {
+            setExtractingReferenceIds((prev) => {
+              const next = new Set(prev);
+              next.delete(itemId);
+              return next;
+            });
+          }}
+          onExtracted={(itemId, scriptText) => {
+            setExtractingReferenceIds((prev) => {
+              const next = new Set(prev);
+              next.delete(itemId);
+              return next;
+            });
+            setReferenceItems((prev) =>
+              prev.map((it) => it.id === itemId ? { ...it, scriptText } : it)
+            );
+            setSelectedReferenceItem((prev) =>
+              prev?.id === itemId ? { ...prev, scriptText } : prev
+            );
           }}
         />
       )}
@@ -2788,4 +2883,51 @@ function useDebouncedValue<T>(value: T, delay = 350) {
   }, [value, delay]);
 
   return debounced;
+}
+
+function ReplicationTabsHeader({
+  visible,
+  activeTab,
+  onChange,
+}: {
+  visible: boolean;
+  activeTab: 'storyboard' | 'copy';
+  onChange: (tab: 'storyboard' | 'copy') => void;
+}) {
+  const header = useModalHeader();
+
+  useEffect(() => {
+    if (!header) return;
+    if (!visible) {
+      header.setContent(null);
+      return () => header.setContent(null);
+    }
+
+    const node = (
+      <div className="flex items-center justify-center gap-3">
+        {[
+          { id: 'storyboard' as const, label: '复刻分镜' },
+          { id: 'copy' as const, label: '复刻口播' },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => onChange(tab.id)}
+            className={cn(
+              "px-4 py-1.5 text-sm font-semibold rounded-full transition-all",
+              activeTab === tab.id
+                ? "bg-black text-white dark:bg-white dark:text-black"
+                : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+    );
+
+    header.setContent(node);
+    return () => header.setContent(null);
+  }, [header, visible, activeTab, onChange]);
+
+  return null;
 }

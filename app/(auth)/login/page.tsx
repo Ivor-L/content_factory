@@ -142,15 +142,36 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        email,
-        token: otp,
-        type: 'email',
+      const response = await fetch('/api/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp }),
       });
 
-      if (error) throw error;
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        const message = payload?.error || 'Invalid verification code';
+        throw new Error(message);
+      }
 
-      await syncServerSession(data.session?.access_token ?? null);
+      const payload = await response.json();
+      const session = payload?.session;
+
+      if (session?.access_token) {
+        const { data, error } = await supabase.auth.setSession({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+        });
+
+        if (error) {
+          throw error;
+        }
+
+        await syncServerSession(data.session?.access_token ?? null);
+      } else {
+        await syncServerSession(null);
+      }
+
       localStorage.setItem('login_timestamp', Date.now().toString());
       toast.success('Login successful');
       router.push(tenantDashboardPath);

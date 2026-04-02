@@ -51,6 +51,10 @@ Using the SSL-secured domain.
     > 开发/内测若暂时拿不到 service role key，可以留空。系统会自动回退为使用 anon key 写入 `uploads` bucket（确保 bucket 策略允许 INSERT）。
 *   **NEXT_PUBLIC_SUPABASE_BUCKET:** Defaults to `uploads`. Override only if you provisioned a different public bucket for asset uploads.
 
+### Data Retention
+
+*   **CREATIVE_TASK_RETENTION_HOURS:** Optional positive integer (hours) that controls how long entries in 「我的项目」 (`creative_tasks`) are kept after最后一次更新。默认 `120`（5 天）。部署方可按需延长或缩短，同时确保对应的定时任务调用 `/api/internal/cleanup/creative-tasks`。
+
 ### N8N Webhooks
 Endpoints for various automation workflows.
 
@@ -82,6 +86,15 @@ These variables drive the NexAPI gateway (frontend console + `/api/nexapi/proxy/
     NEXAPI_EXTRA_ROUTES=hk-pop|香港 POP|https://hk.aiapi.atomx.top|apac,edge-cdn|Edge CDN|https://edge.aiapi.atomx.top|global
     ```
     When configured, these routes automatically appear in the API Console health table and are available via the `X-NexAPI-Route` header.
+
+### Media Proxy Bridge (Optional)
+When the local network无法直接访问海外 CDN（如 Instagram、TikTok、Facebook），可配置一个桥接下载服务，供 `/api/proxy/download` 与媒体缓存回退使用。
+
+* **MEDIA_PROXY_BRIDGE_URL:** 完整的 HTTP(S) 地址，服务需支持通过 `?url=` 查询参数拉取对应资源并原样返回。例如：
+  ```
+  MEDIA_PROXY_BRIDGE_URL=https://imageproxy.zhongzhuan.chat/api/proxy/download
+  ```
+  未配置时，系统仅尝试直接拉取原始 CDN 资源。
 
 ## 3. Running the Application
 

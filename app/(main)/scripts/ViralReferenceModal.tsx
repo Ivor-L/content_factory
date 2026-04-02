@@ -2,12 +2,15 @@
 
 /* eslint-disable @next/next/no-img-element -- Modal displays proxied remote media and carousel thumbnails */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { X, Download, Zap, ExternalLink, ChevronLeft, ChevronRight, ArrowLeft, Copy, Check, Loader2 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { ImageTextReplicationPanel } from "./ImageTextReplicationPanel";
-import { toProxyUrl, toProxyImgUrl, toProxyMediaUrl } from "@/lib/mediaProxy";
+import { CopyRemixPanel } from "@/app/(main)/replication/CopyRemixPanel";
+import { toProxyUrl, toProxyImgUrl, toProxyMediaUrl, toForcedProxyUrl } from "@/lib/mediaProxy";
 import { chooseBestMediaUrl, isLikelyBlockedXhsUrl } from "@/lib/viralReferenceMedia";
+import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 
 type StatPayload = Record<string, number | string | null>;
 
@@ -39,24 +42,45 @@ type ViralReferenceItemData = {
   publishedAt?: string | null;
   creator?: ViralCreatorData | null;
   rawPayload?: unknown;
+  scriptText?: string | null;
 };
 
 interface ViralReferenceModalProps {
   item: ViralReferenceItemData | null;
   onClose: () => void;
+  onExtracted?: (itemId: string, scriptText: string) => void;
+  onExtractionStarted?: (itemId: string) => void;
+  onExtractionFailed?: (itemId: string) => void;
+  isExtracting?: boolean;
 }
 
 type BreakdownView = 'idle' | 'loading' | 'done' | 'failed';
 
-type BreakdownSegment = {
-  order?: number;
-  time_range?: string;
-  original_script?: string;
-  dialogue_vo_zh?: string;
-  visual_description?: string;
-  visual_content_description?: string;
-  camera_notes?: string;
-  [key: string]: unknown;
+type WritingStyleSummary = {
+  id: string;
+  name: string;
+  description?: string | null;
+  channel?: string | null;
+};
+
+type WritingStyleDetail = WritingStyleSummary & Record<string, any>;
+
+type CopyInsights = {
+  copyText?: string;
+  segments?: {
+    intro?: string | null;
+    body?: string | null;
+    conclusion?: string | null;
+  };
+};
+
+const parseResult = (value?: string | null) => {
+  if (!value) return {};
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
 };
 
 function normalizeMediaList(media?: (string | null)[] | null): string[] {
@@ -96,58 +120,170 @@ function CopyButton({ text, className }: { text: string; className?: string }) {
   );
 }
 
-function formatSegmentsAsText(segments: BreakdownSegment[]): string {
-  return segments
-    .map((seg, idx) => {
-      const order = seg.order ?? idx + 1;
-      const time = seg.time_range ? ` [${seg.time_range}]` : "";
-      const script = seg.original_script || seg.dialogue_vo_zh || "";
-      const visual = seg.visual_description || seg.visual_content_description || "";
-      const camera = seg.camera_notes || "";
-      const parts = [`【第${order}幕${time}】`];
-      if (script) parts.push(`台词：${script}`);
-      if (visual) parts.push(`画面：${visual}`);
-      if (camera) parts.push(`镜头：${camera}`);
-      return parts.join("\n");
-    })
-    .join("\n\n");
-}
 
-export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps) {
+export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionStarted, onExtractionFailed, isExtracting }: ViralReferenceModalProps) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [showImageTextPanel, setShowImageTextPanel] = useState(false);
   const [breakdownView, setBreakdownView] = useState<BreakdownView>('idle');
-  const [breakdownSegments, setBreakdownSegments] = useState<BreakdownSegment[]>([]);
-  const [pollingScriptId, setPollingScriptId] = useState<string | null>(null);
+  const [showBreakdownPanel, setShowBreakdownPanel] = useState(false);
+  const [copyInsights, setCopyInsights] = useState<CopyInsights | null>(null);
+  const pendingExtractionRef = useRef(false);
+
+  const platformId = (item?.platform || '').toLowerCase();
+  const isTiktok = platformId === 'tiktok';
+
+  // Check rawPayload.type first — XHS image posts can include a videoUrl but still be image-only content.
+  // Normalize to lowercase to handle mixed-case variants from upstream APIs.
+  const rawType = (() => {
+    if (!item) return null;
+    try {
+      const p = typeof item.rawPayload === 'string' ? JSON.parse(item.rawPayload) : item.rawPayload;
+      const t = (p as any)?.type ?? (p as any)?.data?.type ?? null;
+      return typeof t === 'string' ? t.toLowerCase() : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  // XHS CDN heuristic: /spectrum/1040g0k0 prefix == video note cover.
+  const coverIndicatesVideo = typeof item?.coverUrl === 'string' && /\/spectrum\/1040g0k0/i.test(item.coverUrl);
+
+  const isVideo = (() => {
+    if (!item) return false;
+    if (isTiktok) return true;
+    if (rawType === 'video') return true;
+    if (rawType === 'image' || rawType === 'normal') return false;
+    if (coverIndicatesVideo) return true;
+    return !!item.videoUrl;
+  })();
+
+  const normalizeText = (value?: string | null) => (typeof value === "string" ? value.trim() : "");
+  // scriptText can come from the top-level field (hydrated by the list API) or from rawPayload.scriptText
+  const rawPayloadScriptText = (() => {
+    const rp = item?.rawPayload;
+    if (rp && typeof rp === "object" && !Array.isArray(rp)) {
+      const v = (rp as Record<string, unknown>).scriptText;
+      if (typeof v === "string") return v.trim();
+    }
+    return "";
+  })();
+  const existingCopyText = normalizeText(item?.scriptText) || rawPayloadScriptText;
+  const hasExistingCopy = isVideo && existingCopyText.length > 0;
+  const normalizedDescription = normalizeText(item?.description);
+  const extractedCopy = normalizeText(copyInsights?.copyText) || existingCopyText;
+  const hasCopyText = Boolean(extractedCopy);
+  const isExtractingCopy = breakdownView === "loading";
+
+  useEffect(() => {
+    if (isExtracting) {
+      // Extraction is in progress (started before modal was closed) — restore loading state.
+      pendingExtractionRef.current = true;
+      setBreakdownView('loading');
+      setCopyInsights(null);
+      setShowBreakdownPanel(false);
+    } else if (hasExistingCopy) {
+      setCopyInsights({ copyText: existingCopyText });
+      setBreakdownView('done');
+      setShowBreakdownPanel(false);
+    } else {
+      setCopyInsights(null);
+      setBreakdownView('idle');
+      setShowBreakdownPanel(false);
+    }
+  }, [item?.id, isExtracting, hasExistingCopy, existingCopyText]);
+
+  // Subscribe to Supabase realtime so async n8n callback updates the UI automatically.
+  useEffect(() => {
+    if (!item?.id) return;
+    const channel = supabase
+      .channel(`viral-ref-extract-${item.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "viral_reference_items",
+          filter: `id=eq.${item.id}`,
+        },
+        (payload) => {
+          if (!pendingExtractionRef.current) return;
+          const rawPayload = (payload.new as any)?.raw_payload ?? (payload.new as any)?.rawPayload;
+          const scriptText =
+            typeof rawPayload?.scriptText === "string" ? rawPayload.scriptText.trim() :
+            typeof rawPayload?.script_text === "string" ? rawPayload.script_text.trim() : "";
+          if (!scriptText) return;
+          pendingExtractionRef.current = false;
+          setCopyInsights({ copyText: scriptText });
+          setBreakdownView("done");
+          setShowBreakdownPanel(true);
+          toast.success("口播文案提取完成");
+          if (onExtracted && item.id) {
+            onExtracted(item.id, scriptText);
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [item?.id, onExtracted]);
+
+  // Polling fallback: when waiting for async extraction, poll every 5s in case
+  // Supabase realtime is not configured for this table.
+  const applyExtractedText = useCallback((scriptText: string) => {
+    pendingExtractionRef.current = false;
+    setCopyInsights({ copyText: scriptText });
+    setBreakdownView("done");
+    setShowBreakdownPanel(true);
+    toast.success("口播文案提取完成");
+    if (onExtracted && item?.id) {
+      onExtracted(item.id, scriptText);
+    }
+    // onExtracted in parent will remove from extractingItemIds automatically
+  }, [item?.id, onExtracted]);
+
+  useEffect(() => {
+    if (breakdownView !== "loading" || !item?.id) return;
+
+    const INTERVAL = 5000;
+    const MAX_ATTEMPTS = 60; // 5 min max
+    let attempts = 0;
+
+    const timer = setInterval(async () => {
+      if (!pendingExtractionRef.current) {
+        clearInterval(timer);
+        return;
+      }
+      attempts += 1;
+      if (attempts > MAX_ATTEMPTS) {
+        clearInterval(timer);
+        pendingExtractionRef.current = false;
+        setBreakdownView("idle");
+        toast.error("提取超时，请重试");
+        return;
+      }
+      try {
+        const res = await fetch(`/api/viral-references/${item.id}`);
+        if (!res.ok) return;
+        const payload = await res.json().catch(() => ({}));
+        const scriptText = payload?.data?.scriptText;
+        if (typeof scriptText === "string" && scriptText.trim()) {
+          clearInterval(timer);
+          applyExtractedText(scriptText.trim());
+        }
+      } catch {
+        // ignore transient errors, keep polling
+      }
+    }, INTERVAL);
+
+    return () => clearInterval(timer);
+  }, [breakdownView, item?.id, applyExtractedText]);
 
   if (!item) return null;
 
   const normalizedMediaUrls = normalizeMediaList(item.mediaUrls);
   const preferredCoverImage = chooseBestMediaUrl(item.coverUrl, normalizedMediaUrls);
-  const platformId = (item.platform || '').toLowerCase();
-  const isTiktok = platformId === 'tiktok';
-
-  // Check rawPayload.type first — XHS image posts can have a videoUrl (livePhoto/cover)
-  // but should still be treated as image content.
-  // Normalize to lowercase to handle "Video"/"Image" variants (e.g. from Instagram Apify).
-  const rawType = (() => {
-    try {
-      const p = typeof item.rawPayload === 'string' ? JSON.parse(item.rawPayload) : item.rawPayload;
-      const t = (p as any)?.type ?? (p as any)?.data?.type ?? null;
-      return typeof t === 'string' ? t.toLowerCase() : null;
-    } catch { return null; }
-  })();
-  // XHS CDN heuristic: /spectrum/1040g0k0 prefix = video note cover
-  const coverIndicatesVideo = typeof item.coverUrl === 'string' && /\/spectrum\/1040g0k0/i.test(item.coverUrl);
-  const isVideo = isTiktok
-    ? true
-    : rawType === 'video'
-    ? true
-    : rawType === 'image' || rawType === 'normal'
-    ? false
-    : coverIndicatesVideo
-    ? true
-    : !!item.videoUrl;
 
   // Image list (only used when no video)
   const baseImageCandidates = normalizedMediaUrls.length ? normalizedMediaUrls : (preferredCoverImage ? [preferredCoverImage] : []);
@@ -158,6 +294,7 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
   }
   const hasMultipleImages = imageList.length > 1;
   const currentImage = imageList[currentImageIndex] ?? null;
+  const posterCandidate = !isTiktok ? (preferredCoverImage || imageList[0] || null) : null;
 
   const goPrevImage = () =>
     setCurrentImageIndex((prev) => (prev - 1 + imageList.length) % imageList.length);
@@ -168,6 +305,27 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
   const buildProxyImgUrl = (url: string) => toProxyImgUrl(url);
   const buildProxyMediaUrl = (url: string) => toProxyMediaUrl(url);
 
+  const shouldForceProxy = (url: string | null | undefined) => {
+    if (!url) return false;
+    try {
+      const { hostname } = new URL(url);
+      return /instagram|facebook|fbcdn/i.test(hostname);
+    } catch {
+      return false;
+    }
+  };
+
+  const getPlaybackSrc = (url: string) =>
+    shouldForceProxy(url) ? url : buildProxyMediaUrl(url);
+
+  const getPosterSrc = (url: string) =>
+    shouldForceProxy(url) ? toForcedProxyUrl(url, "img") : buildProxyImgUrl(url);
+
+  const getImageSrc = (url: string) =>
+    shouldForceProxy(url) ? toForcedProxyUrl(url, "img") : buildProxyImgUrl(url);
+
+  const canTriggerCopyBreakdown = isVideo && !shouldForceProxy(item.videoUrl || item.sourceUrl);
+
   const handleDownload = async () => {
     const rawUrl = isVideo ? item.videoUrl : currentImage;
     if (!rawUrl) {
@@ -176,6 +334,10 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
     }
     const ext = isVideo ? "mp4" : "jpg";
     const filename = `${item.title || item.sourceId}.${ext}`;
+    if (shouldForceProxy(rawUrl)) {
+      window.open(rawUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
     const a = document.createElement("a");
     a.href = buildProxyUrl(rawUrl, filename);
     a.download = filename;
@@ -184,138 +346,104 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
     document.body.removeChild(a);
   };
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const pollBreakdown = useCallback(async (scriptId: string) => {
-    try {
-      const res = await fetch(`/api/scripts/${scriptId}/status`);
-      if (!res.ok) return;
-      const json = await res.json();
-      const { status, breakdown } = json.data ?? {};
-      if (status === 'completed' && breakdown) {
-        const segments: BreakdownSegment[] =
-          breakdown.scene_breakdown ?? breakdown.segments ?? [];
-        setBreakdownSegments(segments);
-        setBreakdownView('done');
-        setPollingScriptId(null);
-      } else if (status === 'failed' || status === 'error') {
-        setBreakdownView('failed');
-        setPollingScriptId(null);
-        toast.error("拆解失败，请稍后重试");
-      }
-    } catch {
-      // ignore transient errors, keep polling
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!pollingScriptId || breakdownView !== 'loading') return;
-    const interval = setInterval(() => pollBreakdown(pollingScriptId), 3000);
-    return () => clearInterval(interval);
-  }, [pollingScriptId, breakdownView, pollBreakdown]);
-
   const handleBreakdown = async () => {
     if (!isVideo) {
       setShowImageTextPanel(true);
       return;
     }
+    if (hasExistingCopy && existingCopyText) {
+      setCopyInsights({ copyText: existingCopyText });
+      setBreakdownView('done');
+      setShowBreakdownPanel(true);
+      return;
+    }
     setBreakdownView('loading');
+    setCopyInsights(null);
+    setShowBreakdownPanel(false);
+    pendingExtractionRef.current = true;
+    if (onExtractionStarted && item?.id) {
+      onExtractionStarted(item.id);
+    }
     try {
-      // Create script + trigger storyboard breakdown in one call
-      const scriptRes = await fetch("/api/scripts", {
+      const res = await fetch("/api/replication/copy/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: item.title || `参考视频 ${item.sourceId}`,
           videoUrl: item.videoUrl,
-          description: item.description ?? undefined,
-          scriptPurpose: 'storyboard',
+          referenceItemId: item.id,
+          sourcePlatform: item.platform,
+          noteDescription: item.description || null,
         }),
       });
-      if (!scriptRes.ok) {
-        const err = await scriptRes.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error ?? "创建记录失败");
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(payload.error || `提取失败 (${res.status})`);
       }
-      const { data: { scriptId } } = await scriptRes.json();
 
-      // Start polling for breakdown result
-      setPollingScriptId(scriptId);
+      // Async path: n8n will call /callback and Supabase realtime will notify us.
+      if (payload.data?.status === "pending") {
+        // Stay in loading state; realtime subscription will handle completion.
+        return;
+      }
+
+      // Sync fallback: n8n responded immediately with the transcript.
+      const text =
+        payload.data?.text ||
+        payload.data?.transcript ||
+        payload.data?.result?.text ||
+        payload.data?.copyText;
+      if (!text) throw new Error("未获取到文案");
+      pendingExtractionRef.current = false;
+      setCopyInsights({ copyText: text });
+      setBreakdownView('done');
+      setShowBreakdownPanel(true);
+      if (onExtracted && item?.id) {
+        onExtracted(item.id, text);
+      }
     } catch (error) {
-      console.error("Breakdown failed:", error);
-      toast.error(error instanceof Error ? error.message : "操作失败，请稍后重试");
+      pendingExtractionRef.current = false;
+      if (onExtractionFailed && item?.id) {
+        onExtractionFailed(item.id);
+      }
+      console.error("Copy extract failed:", error);
+      toast.error(error instanceof Error ? error.message : "提取失败，请稍后重试");
       setBreakdownView('idle');
     }
+  };
+
+  const handleCancelBreakdown = () => {
+    setBreakdownView('idle');
+    setCopyInsights(null);
+    setShowBreakdownPanel(false);
   };
 
   const displayAuthor = item.creator?.displayName || item.creator?.creatorHandle || "未知作者";
 
   // ── Breakdown results panel (right side) ──
   const renderBreakdownPanel = () => {
-    const originalText = item.description || item.title || "";
-    const segmentsText = formatSegmentsAsText(breakdownSegments);
-    const fullText = [originalText && `【原文】\n${originalText}`, segmentsText && `【拆解】\n${segmentsText}`]
-      .filter(Boolean).join("\n\n");
-
     return (
       <>
-        {/* Header */}
         <div className="flex items-center gap-3 p-5 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <button
             type="button"
-            onClick={() => { setBreakdownView('idle'); setBreakdownSegments([]); setPollingScriptId(null); }}
+            onClick={() => { setShowBreakdownPanel(false); }}
             className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
           >
             <ArrowLeft className="w-4 h-4 text-gray-600 dark:text-gray-400" />
           </button>
-          <h3 className="font-semibold text-gray-900 dark:text-white text-sm">爆款拆解结果</h3>
-          {fullText && <CopyButton text={fullText} className="ml-auto" />}
+          <h3 className="font-semibold text-gray-900 dark:text-white text-sm">口播复刻</h3>
         </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-5">
-          {/* Original text */}
-          {originalText && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">原文</span>
-                <CopyButton text={originalText} />
-              </div>
-              <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap bg-gray-50 dark:bg-gray-800 rounded-xl p-3">
-                {originalText}
-              </p>
-            </div>
-          )}
-
-          {/* Segments */}
-          {breakdownSegments.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                  场景拆解 · {breakdownSegments.length} 幕
-                </span>
-                <CopyButton text={segmentsText} />
-              </div>
-              <div className="space-y-3">
-                {breakdownSegments.map((seg, idx) => {
-                  const order = seg.order ?? idx + 1;
-                  const script = seg.original_script || seg.dialogue_vo_zh || "";
-                  const visual = seg.visual_description || seg.visual_content_description || "";
-                  const camera = seg.camera_notes || "";
-                  const segText = [script && `台词：${script}`, visual && `画面：${visual}`, camera && `镜头：${camera}`].filter(Boolean).join("\n");
-                  return (
-                    <div key={idx} className="bg-gray-50 dark:bg-gray-800 rounded-xl p-3">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-                          第{order}幕{seg.time_range ? ` · ${seg.time_range}` : ""}
-                        </span>
-                        {segText && <CopyButton text={segText} />}
-                      </div>
-                      {script && <p className="text-xs text-gray-700 dark:text-gray-300 mb-1">💬 {script}</p>}
-                      {visual && <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">🎬 {visual}</p>}
-                      {camera && <p className="text-xs text-gray-400 dark:text-gray-500">📷 {camera}</p>}
-                    </div>
-                  );
-                })}
-              </div>
+        <div className="flex-1 min-h-0 p-4">
+          {copyInsights ? (
+            <CopyRemixPanel
+              script={null}
+              copyInsights={copyInsights}
+              videoUrl={item.videoUrl || undefined}
+              isVideoUploaded={Boolean(item.videoUrl)}
+            />
+          ) : (
+            <div className="h-full flex items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+              暂无口播文案，请重新提取
             </div>
           )}
         </div>
@@ -336,7 +464,7 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-4 right-4 z-50 p-2 rounded-full bg-black/20 hover:bg-black/40 text-white backdrop-blur-sm transition-all"
+                  className="absolute top-4 right-4 z-50 p-2 rounded-full bg-black/20 hover:bg-black/40 text-white backdrop-blur-sm transition-all"
         >
           <X className="w-5 h-5" />
         </button>
@@ -347,10 +475,11 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
             <div className="relative flex-1 flex items-center justify-center" style={{ minHeight: 320 }}>
               <video
                 key={item.id}
-                src={buildProxyMediaUrl(item.videoUrl)}
-                poster={!isTiktok && preferredCoverImage ? buildProxyImgUrl(preferredCoverImage) : undefined}
+                src={getPlaybackSrc(item.videoUrl)}
+                poster={posterCandidate ? getPosterSrc(posterCandidate) : undefined}
                 controls
                 playsInline
+                preload="metadata"
                 className="w-full h-full object-contain"
                 style={{ maxHeight: "90vh" }}
               />
@@ -362,7 +491,7 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
               <div className="relative flex-1 flex items-center justify-center" style={{ minHeight: 320 }}>
                 {currentImage ? (
                   <img
-                    src={buildProxyImgUrl(currentImage)}
+                    src={getImageSrc(currentImage)}
                     alt={item.title || "image"}
                     className="w-full h-full object-contain"
                     style={{ maxHeight: hasMultipleImages ? "calc(90vh - 100px)" : "90vh" }}
@@ -414,8 +543,8 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
                           : "border-transparent opacity-50 hover:opacity-80"
                       }`}
                     >
-                      <img
-                        src={buildProxyImgUrl(url)}
+                        <img
+                          src={getImageSrc(url)}
                         alt={`图片 ${index + 1}`}
                         className="w-full h-full object-cover"
                       />
@@ -454,31 +583,37 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
                 />
               </div>
             </>
-          ) : breakdownView === 'loading' ? (
-            /* Loading state */
+          ) : breakdownView === 'loading' ? (            /* Loading state */
             <>
               <div className="flex items-center gap-3 p-5 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
                 <button
                   type="button"
-                  onClick={() => { setBreakdownView('idle'); setPollingScriptId(null); }}
+                  onClick={handleCancelBreakdown}
                   className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                 >
                   <ArrowLeft className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                 </button>
-                <h3 className="font-semibold text-gray-900 dark:text-white text-sm">爆款拆解</h3>
+                <h3 className="font-semibold text-gray-900 dark:text-white text-sm">口播复刻</h3>
               </div>
-              <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
-                <Loader2 className="w-10 h-10 text-indigo-500 animate-spin" />
-                <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
-                  AI 正在拆解视频内容…<br />
-                  <span className="text-xs">通常需要 30–90 秒，请稍候</span>
-                </p>
+              <div className="flex-1 flex flex-col items-center justify-center gap-5 p-8">
+                <Loader2 className="w-10 h-10 text-gray-700 dark:text-gray-300 animate-spin" />
+                <div className="text-center space-y-1.5">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">AI 正在提取口播文案…</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">通常 30 秒内完成，稍候即可查看结果</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">可关闭弹窗，稍后重新打开查看</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCancelBreakdown}
+                  className="mt-2 px-5 py-2 rounded-xl border border-gray-300 dark:border-gray-600 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                >
+                  取消拆解
+                </button>
               </div>
             </>
-          ) : breakdownView === 'done' ? (
+          ) : (breakdownView === 'done' && showBreakdownPanel) ? (
             renderBreakdownPanel()
-          ) : (
-            /* Default info view */
+          ) : (            /* Default info view */
             <>
               {/* Author info + 查看原文 */}
               <div className="flex items-center justify-between p-5 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
@@ -517,13 +652,64 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
                     {item.title}
                   </h2>
                 )}
-                {item.description && (
-                  <div className="flex items-start gap-1">
-                    <p className="flex-1 text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
-                      {item.description}
-                    </p>
-                    <CopyButton text={item.description} />
-                  </div>
+                {isVideo ? (
+                  hasCopyText ? (
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                        口播文案
+                      </p>
+                      <div className="flex items-start gap-1">
+                        <p className="flex-1 text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
+                          {extractedCopy}
+                        </p>
+                        <CopyButton text={extractedCopy} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40 p-4 text-sm text-gray-600 dark:text-gray-300 space-y-3">
+                      <p className="font-semibold text-gray-800 dark:text-gray-100">暂无口播文案</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        点击下方或使用下列按钮提取视频中的口播内容，方便直接复刻。
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleBreakdown}
+                        disabled={!canTriggerCopyBreakdown || isExtractingCopy}
+                        className={cn(
+                          "inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all",
+                          canTriggerCopyBreakdown
+                            ? "bg-gray-900 text-white hover:bg-gray-800 dark:bg-white dark:text-gray-900"
+                            : "bg-gray-200 text-gray-500 cursor-not-allowed",
+                        )}
+                      >
+                        {isExtractingCopy ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            提取中...
+                          </>
+                        ) : (
+                          <>
+                            <Zap className="w-3.5 h-3.5" />
+                            提取口播文案
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )
+                ) : (
+                  normalizedDescription && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                        原帖文案
+                      </p>
+                      <div className="flex items-start gap-1">
+                        <p className="flex-1 text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
+                          {normalizedDescription}
+                        </p>
+                        <CopyButton text={normalizedDescription} />
+                      </div>
+                    </div>
+                  )
                 )}
                 {item.publishedAt && (
                   <p className="text-xs text-gray-400">
@@ -559,23 +745,36 @@ export function ViralReferenceModal({ item, onClose }: ViralReferenceModalProps)
               </div>
 
               {/* Bottom action buttons */}
-              <div className="p-5 border-t border-gray-200 dark:border-gray-700 flex gap-3 flex-shrink-0">
+              <div className="p-5 border-t border-gray-200 dark:border-gray-700 flex gap-3 flex-shrink-0 flex-wrap">
                 <button
                   type="button"
                   onClick={handleDownload}
-                  className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-900 dark:text-white font-medium transition-colors"
+                  className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-900 dark:text-white font-medium transition-colors"
                 >
                   <Download className="w-4 h-4" />
                   下载
                 </button>
-                <button
-                  type="button"
-                  onClick={handleBreakdown}
-                  className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold transition-all shadow-md"
-                >
-                  <Zap className="w-4 h-4" />
-                  {isVideo ? "爆款拆解" : "图文复刻"}
-                </button>
+                {!shouldForceProxy(item.videoUrl || item.sourceUrl) && (
+                  breakdownView === 'done' ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowBreakdownPanel(true)}
+                      className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gray-900 hover:bg-gray-800 dark:bg-white dark:hover:bg-gray-100 text-white dark:text-gray-900 font-semibold transition-all shadow-md"
+                    >
+                      <Zap className="w-4 h-4" />
+                      一键二创
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleBreakdown}
+                      className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold transition-all shadow-md"
+                    >
+                      <Zap className="w-4 h-4" />
+                      {isVideo ? "口播复刻" : "图文复刻"}
+                    </button>
+                  )
+                )}
               </div>
             </>
           )}
