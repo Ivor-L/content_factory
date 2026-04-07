@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { isValidAdminWebhookRequest } from "@/lib/webhookAuth";
+import { syncTaskToSummary } from "@/lib/taskSummary";
+import { emitStoryboardTaskUpsert } from "@/lib/storyboardEvents";
 
 /**
  * POST /api/canvas/grid/webhook
@@ -28,10 +30,19 @@ export async function POST(request: NextRequest) {
     const payload = body as Record<string, unknown>;
     console.log("[canvas/grid/webhook] Received:", JSON.stringify(payload).slice(0, 500));
 
-    // 提取 taskId
-    const taskId = String(payload.taskId || payload.task_id || payload.record_id || "").trim();
+    // 提取 taskId（优先从 query 参数，兼容 n8n 不透传 body 的情况）
+    const queryTaskId = request.nextUrl.searchParams.get("taskId") || request.nextUrl.searchParams.get("task_id") || "";
+    const taskId = String(queryTaskId || payload.taskId || payload.task_id || payload.record_id || "").trim();
     if (!taskId) {
       return NextResponse.json({ error: "taskId is required" }, { status: 400 });
+    }
+
+    const taskRecord = await (prisma as any).storyboardTask.findFirst({
+      where: { OR: [{ id: taskId }, { taskId }] },
+    });
+
+    if (!taskRecord) {
+      return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
 
     const rawStatus = String(payload.status || "").toUpperCase();
@@ -84,10 +95,12 @@ export async function POST(request: NextRequest) {
     console.log("[canvas/grid/webhook] taskId:", taskId, "imageUrl:", imageUrl || "(none)", "status:", rawStatus);
 
     if (isFailed) {
-      await (prisma as any).storyboardTask.updateMany({
-        where: { OR: [{ id: taskId }, { taskId }] },
+      const failedTask = await (prisma as any).storyboardTask.update({
+        where: { id: taskRecord.id },
         data: { status: "FAILED", progress: 0 },
       });
+      emitStoryboardTaskUpsert(failedTask);
+      await syncTaskToSummary({ taskType: "storyboard", taskId: failedTask.id, operation: "update" });
       return NextResponse.json({ ok: true });
     }
 
@@ -95,14 +108,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "image_url is required for success callback" }, { status: 400 });
     }
 
-    await (prisma as any).storyboardTask.updateMany({
-      where: { OR: [{ id: taskId }, { taskId }] },
+    const completedTask = await (prisma as any).storyboardTask.update({
+      where: { id: taskRecord.id },
       data: {
         status: "COMPLETED",
         storyboardImageUrl: imageUrl,
+        coverImage: imageUrl,
         progress: 100,
       },
     });
+
+    emitStoryboardTaskUpsert(completedTask);
+    await syncTaskToSummary({ taskType: "storyboard", taskId: completedTask.id, operation: "update" });
 
     return NextResponse.json({ ok: true });
   } catch (error) {

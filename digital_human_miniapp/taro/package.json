@@ -1,0 +1,40 @@
+{
+  "name": "digital-human-miniapp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "数字人小程序",
+  "templateInfo": {
+    "name": "default",
+    "typescript": true,
+    "css": "sass"
+  },
+  "scripts": {
+    "build:weapp": "taro build --type weapp",
+    "dev:weapp": "taro build --type weapp --watch",
+    "build:h5": "taro build --type h5",
+    "dev:h5": "taro build --type h5 --watch"
+  },
+  "browserslist": [
+    "last 3 Chrome versions",
+    "last 3 Firefox versions",
+    "last 3 Safari versions",
+    "last 3 ie versions"
+  ],
+  "dependencies": {
+    "@tarojs/components": "4.x",
+    "@tarojs/plugin-framework-react": "4.x",
+    "@tarojs/react": "4.x",
+    "@tarojs/runtime": "4.x",
+    "@tarojs/taro": "4.x",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0"
+  },
+  "devDependencies": {
+    "@tarojs/cli": "4.x",
+    "@tarojs/plugin-platform-weapp": "4.x",
+    "@tarojs/plugin-platform-h5": "4.x",
+    "@types/react": "^18.0.0",
+    "typescript": "^5.0.0",
+    "sass": "^1.0.0"
+  }
+}

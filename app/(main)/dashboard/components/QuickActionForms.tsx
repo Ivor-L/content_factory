@@ -2,9 +2,9 @@
 
 /* eslint-disable @next/next/no-img-element -- Style previews use remote images with dynamic host sources */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, CheckCircle2, Loader2, Sparkles } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2, Sparkles, Grid3x3, UploadCloud } from 'lucide-react';
 import ReplicationModuleForm from '@/app/(main)/replication/ReplicationForm';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase } from '@/lib/supabaseClient';
@@ -12,6 +12,7 @@ import { toast } from 'react-hot-toast';
 import { cn } from '@/lib/utils';
 import { clampPosterCount, DEFAULT_POSTER_COUNT, POSTER_COUNT_MAX, POSTER_COUNT_MIN } from '@/lib/posterConfig';
 import type { StylePresetLite } from '@/types/creative';
+import { useTenant } from '@/hooks/useTenant';
 
 type Product = { id: string; name: string; images?: string | null };
 type Script = {
@@ -533,6 +534,336 @@ export function QuickPosterForm({ onClose, initialIdeaText = '' }: QuickPosterFo
               {copy.newTask?.direct?.submit ?? '图文创作'}
             </>
           )}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+interface QuickGridFormProps {
+  onClose: () => void;
+}
+
+const GRID_CONTENT_TYPES = [
+  { value: '剧情故事', helper: '情节驱动，适合剧情或口播广告' },
+  { value: '产品展示', helper: '突出产品外观、材质与质检细节' },
+  { value: '卖点展示', helper: '逐条拆解卖点，适合带货场景' },
+];
+
+const GRID_ASPECT_RATIOS = [
+  { value: '1:1', label: '1:1 · 九宫格' },
+  { value: '9:16', label: '9:16 · 竖屏' },
+  { value: '16:9', label: '16:9 · 横屏' },
+];
+
+export function QuickGridForm({ onClose }: QuickGridFormProps) {
+  const router = useRouter();
+  const { basePath } = useTenant();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [ideaText, setIdeaText] = useState('');
+  const [contentType, setContentType] = useState(GRID_CONTENT_TYPES[0].value);
+  const [aspectRatio, setAspectRatio] = useState(GRID_ASPECT_RATIOS[0].value);
+  const [uploading, setUploading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  const handlePickFile = () => {
+    if (uploading || submitting) return;
+    fileInputRef.current?.click();
+  };
+
+  const extractFileFromDataTransfer = (dataTransfer: DataTransfer | null): File | null => {
+    if (!dataTransfer) return null;
+    if (dataTransfer.files && dataTransfer.files.length > 0) {
+      return dataTransfer.files[0] ?? null;
+    }
+    if (dataTransfer.items && dataTransfer.items.length > 0) {
+      for (const item of Array.from(dataTransfer.items)) {
+        if (item.kind === 'file') {
+          const file = item.getAsFile();
+          if (file) return file;
+        }
+      }
+    }
+    return null;
+  };
+
+  const uploadReference = async (file: File | undefined | null) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('请上传图片格式的参考图');
+      return;
+    }
+    const nextPreview = URL.createObjectURL(file);
+    setPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return nextPreview;
+    });
+    setImageUrl(null);
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const response = await fetch('/api/upload/image', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.url) {
+        throw new Error((payload as { error?: string }).error || '上传失败，请重试');
+      }
+      setImageUrl(payload.url as string);
+      toast.success('已上传参考图');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '上传失败');
+      setImageUrl(null);
+      setPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    void uploadReference(file);
+    event.target.value = '';
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'copy';
+    }
+    setIsDragging(false);
+    const file = extractFileFromDataTransfer(event.dataTransfer);
+    if (file) void uploadReference(file);
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'copy';
+    }
+    if (!isDragging) setIsDragging(true);
+  };
+
+  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+      setIsDragging(false);
+    }
+  };
+
+  const canSubmit = Boolean(imageUrl) && ideaText.trim().length > 0 && !uploading && !submitting;
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!imageUrl) {
+      toast.error('请先上传一张参考图');
+      return;
+    }
+    if (!ideaText.trim()) {
+      toast.error('请填写脚本或创意描述');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const response = await fetch('/api/canvas/grid', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scriptContent: ideaText.trim(),
+          imageUrl,
+          contentType,
+          aspectRatio,
+        }),
+        credentials: 'include',
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error((payload as { error?: string }).error || '创建失败');
+      }
+      const taskId = (payload as { data?: { taskId?: string } })?.data?.taskId;
+      toast.success('九宫格任务已创建，稍后在“我的项目”查看');
+      onClose();
+      const tenantPrefix = basePath || '';
+      const target = `${tenantPrefix}/my-works${taskId ? `?taskId=${taskId}` : ''}`;
+      router.push(target || '/my-works');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '创建失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleClearImage = () => {
+    setImageUrl(null);
+    setPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-4 dark:border-gray-800 dark:bg-gray-900/40">
+        <div className="flex items-start gap-3">
+          <div className="rounded-xl bg-[var(--tenant-primary-soft,#d1fae5)] p-2 text-[var(--tenant-primary-strong,#14532d)] dark:bg-[var(--tenant-primary,#16a34a)]/20 dark:text-[var(--tenant-primary-foreground,#fefce8)]">
+            <Grid3x3 className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-base font-semibold text-gray-900 dark:text-white">九宫格创作</p>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">上传一张参考图并描述剧情，自动生成 3x3 故事版。</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        <div>
+          <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">参考图</label>
+          <div
+            className={cn(
+              'relative flex aspect-square w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed p-4 text-center transition',
+              previewUrl
+                ? 'border-transparent bg-gray-900/5 dark:bg-white/5'
+                : isDragging
+                  ? 'border-[var(--tenant-primary,#16a34a)] bg-[var(--tenant-primary-soft,#ecfdf5)] dark:bg-[var(--tenant-primary,#16a34a)]/10'
+                  : 'border-gray-200 bg-white hover:border-[var(--tenant-primary,#16a34a)] dark:border-gray-800 dark:bg-gray-900'
+            )}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            {previewUrl ? (
+              <>
+                <img src={previewUrl} alt="九宫格参考图" className="h-full w-full rounded-xl object-cover" />
+                <div className="absolute inset-x-0 bottom-4 flex justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleClearImage}
+                    className="rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white"
+                  >
+                    移除
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePickFile}
+                    className="rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-gray-900 shadow"
+                  >
+                    替换
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <UploadCloud className="h-8 w-8 text-gray-400" />
+                <p className="mt-3 text-sm font-medium text-gray-900 dark:text-gray-100">拖拽到此处或点击上传</p>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">支持 JPG/PNG，建议包含产品或主角形象</p>
+                <button
+                  type="button"
+                  onClick={handlePickFile}
+                  disabled={uploading || submitting}
+                  className="mt-4 rounded-full bg-[var(--tenant-primary,#16a34a)] px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--tenant-primary,#16a34a)]/90 disabled:cursor-not-allowed disabled:bg-gray-300"
+                >
+                  {uploading ? '上传中…' : '选择图片'}
+                </button>
+              </>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-4">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">脚本 / 想法</label>
+            <textarea
+              value={ideaText}
+              onChange={(event) => setIdeaText(event.target.value)}
+              rows={6}
+              placeholder="示例：3 个镜头展示博主拆箱、试用、展示发光肌，强调保湿 + 实拍质感。"
+              className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400 focus:border-[var(--tenant-primary,#16a34a)] focus:ring-2 focus:ring-[var(--tenant-primary,#16a34a)]/30 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100"
+            />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">内容类型</label>
+              <div className="space-y-2">
+                {GRID_CONTENT_TYPES.map((option) => (
+                  <label
+                    key={option.value}
+                    className={cn(
+                      'flex cursor-pointer items-start gap-3 rounded-2xl border px-3 py-2 text-sm shadow-sm transition',
+                      contentType === option.value
+                        ? 'border-[var(--tenant-primary,#16a34a)] bg-[var(--tenant-primary-soft,#e8f7ef)] text-[var(--tenant-primary-strong,#14532d)] dark:border-[var(--tenant-primary,#16a34a)] dark:bg-[var(--tenant-primary,#16a34a)]/15 dark:text-[var(--tenant-primary-foreground,#fefce8)]'
+                        : 'border-gray-200 bg-white text-gray-700 hover:border-[var(--tenant-primary,#16a34a)]/40 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-200'
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      className="mt-1 h-4 w-4 text-[var(--tenant-primary,#16a34a)]"
+                      name="grid-content-type"
+                      value={option.value}
+                      checked={contentType === option.value}
+                      onChange={() => setContentType(option.value)}
+                    />
+                    <div>
+                      <p className="font-semibold">{option.value}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{option.helper}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-200">画面比例</label>
+              <select
+                value={aspectRatio}
+                onChange={(event) => setAspectRatio(event.target.value)}
+                className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-2 text-sm shadow-sm outline-none transition focus:border-[var(--tenant-primary,#16a34a)] focus:ring-2 focus:ring-[var(--tenant-primary,#16a34a)]/30 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100"
+              >
+                {GRID_ASPECT_RATIOS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-3">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 transition hover:border-gray-300 hover:text-gray-900 dark:border-gray-700 dark:text-gray-300"
+        >
+          取消
+        </button>
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          className="inline-flex items-center gap-2 rounded-full bg-[var(--tenant-primary,#16a34a)] px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-[var(--tenant-primary,#16a34a)]/90 disabled:cursor-not-allowed disabled:bg-gray-300"
+        >
+          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          {submitting ? '创建中…' : '开始生成九宫格'}
         </button>
       </div>
     </form>

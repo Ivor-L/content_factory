@@ -8,7 +8,9 @@ export default defineConfig(({mode}) => {
   const port = Number(env.VITE_PORT || env.PORT || 3100);
   const proxyTarget = env.VITE_API_PROXY_TARGET || env.VITE_API_BASE_URL || 'http://localhost:3000';
   const shouldProxy = env.VITE_DISABLE_PROXY !== 'true';
+  const base = mode === 'production' ? (env.VITE_BASE_PATH || '/miniapp/') : '/';
   return {
+    base,
     plugins: [react(), tailwindcss()],
     define: {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),

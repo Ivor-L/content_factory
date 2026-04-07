@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import {
   Loader2,
   RefreshCcw,
+  RotateCcw,
   LayoutGrid,
   Sparkles,
   Image as ImageIcon,
@@ -1568,10 +1569,61 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
   const replicationPromptReady = Boolean(replicationGeneratedScript || replicationPromptText);
 
   const normalizedMetadataVideo = metadataVideoUrl && metadataVideoUrl.startsWith("http") ? metadataVideoUrl : null;
+  const fetchStoryboardDetail = useCallback(async () => {
+    if (!isStoryboard) {
+      setStoryboardDetail(null);
+      setStoryboardError(null);
+      setStoryboardLoading(false);
+      return;
+    }
+    const requestId = ++storyboardRequestIdRef.current;
+    setStoryboardLoading(true);
+    setStoryboardError(null);
+    try {
+      const response = await fetch(`/api/canvas/grid?taskId=${task.taskId}`, {
+        cache: "no-store",
+        credentials: "include",
+      });
+      if (response.status === 404) {
+        if (storyboardRequestIdRef.current === requestId) {
+          setStoryboardDetail(null);
+        }
+        return;
+      }
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error((payload as { error?: string }).error || "加载九宫格失败");
+      }
+      if (storyboardRequestIdRef.current !== requestId) return;
+      setStoryboardDetail({
+        storyboardImageUrl: typeof payload?.storyboard_image_url === "string" ? payload.storyboard_image_url : null,
+        status: payload?.status ? String(payload.status).toUpperCase() : null,
+        progress: typeof payload?.progress === "number" ? payload.progress : null,
+      });
+    } catch (error) {
+      if (storyboardRequestIdRef.current !== requestId) return;
+      setStoryboardError(error instanceof Error ? error.message : "加载九宫格失败");
+      setStoryboardDetail(null);
+    } finally {
+      if (storyboardRequestIdRef.current === requestId) {
+        setStoryboardLoading(false);
+      }
+    }
+  }, [isStoryboard, task.taskId]);
+
+  useEffect(() => {
+    void fetchStoryboardDetail();
+  }, [fetchStoryboardDetail]);
+
   const primaryVideoUrl = normalizedMetadataVideo || replicationVideoUrl || fallbackVideoUrlFromThumbnail;
+  const storyboardImageUrl = isStoryboard
+    ? storyboardDetail?.storyboardImageUrl || task.thumbnailUrl || null
+    : null;
   const hasVideo = Boolean(primaryVideoUrl);
 
-  const previewImageUrl = replicationThumbnailUrl || task.thumbnailUrl || null;
+  const previewImageUrl = isStoryboard
+    ? storyboardImageUrl
+    : replicationThumbnailUrl || task.thumbnailUrl || null;
 
   // Load images for creative (text2image) tasks
   const [images, setImages] = useState<string[]>(() =>
@@ -1699,17 +1751,45 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
       ? "下载视频"
       : "下载";
 
+  const storyboardStatusKey = isStoryboard
+    ? (storyboardDetail?.status || statusKey || task.status || "").toUpperCase()
+    : statusKey;
+  const storyboardProgress = isStoryboard ? storyboardDetail?.progress ?? task.progress ?? null : null;
+  const storyboardHasImage = Boolean(isStoryboard && storyboardImageUrl);
+  const splitInProgressStatusKeys = ["SPLIT_PENDING", "BREAKDOWN_PENDING", "BREAKDOWN_PROCESSING"];
+  const storyboardSplitInProgress = Boolean(
+    isStoryboard && (splittingStoryboard || splitInProgressStatusKeys.includes(storyboardStatusKey))
+  );
+  const storyboardSplitCompleted = Boolean(isStoryboard && storyboardStatusKey === "SPLIT_COMPLETED");
+  const canSplitStoryboard = Boolean(
+    isStoryboard && storyboardHasImage && !storyboardSplitCompleted && !storyboardSplitInProgress && !storyboardLoading
+  );
+  const storyboardProgressLabel = typeof storyboardProgress === "number" ? `${Math.round(storyboardProgress)}%` : null;
+  const storyboardStatusHelper = storyboardSplitCompleted
+    ? "拆解完成，可查看分镜结果。"
+    : storyboardSplitInProgress
+      ? "拆解任务执行中，请稍后刷新状态。"
+      : storyboardHasImage
+        ? "九宫格已生成，可立即触发拆解。"
+        : "九宫格生成完成后才能继续拆解。";
+  const storyboardSplitHelper = storyboardSplitCompleted
+    ? "拆解完成，可直接打开分镜板查看 9 张分镜。"
+    : storyboardSplitInProgress
+      ? "AI 正在拆解九宫格，预计 2-3 分钟完成。"
+      : "系统会读取九宫格并生成逐帧分镜。";
+
   const detailStatusClass = (() => {
-    if (["COMPLETED", "READY", "ACTIVE", "PUBLISHED"].includes(statusKey)) {
+    const key = isStoryboard ? storyboardStatusKey : statusKey;
+    if (["COMPLETED", "READY", "ACTIVE", "PUBLISHED"].includes(key)) {
       return "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800";
     }
-    if (["PROCESSING", "ANALYZING", "RUNNING", "IN_PROGRESS"].includes(statusKey)) {
+    if (["PROCESSING", "ANALYZING", "RUNNING", "IN_PROGRESS"].includes(key)) {
       return "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-900/20 dark:text-sky-300 dark:border-sky-800";
     }
-    if (["PENDING", "QUEUED"].includes(statusKey)) {
+    if (["PENDING", "QUEUED"].includes(key)) {
       return "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800";
     }
-    if (["FAILED", "ERROR"].includes(statusKey)) {
+    if (["FAILED", "ERROR"].includes(key)) {
       return "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:border-rose-800";
     }
     return "bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700";
@@ -1745,6 +1825,12 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
     : null;
 
   const isStoryboard = task.taskType === "storyboard";
+  const [storyboardDetail, setStoryboardDetail] = useState<{ storyboardImageUrl?: string | null; status?: string | null; progress?: number | null } | null>(null);
+  const [storyboardLoading, setStoryboardLoading] = useState(false);
+  const [storyboardError, setStoryboardError] = useState<string | null>(null);
+  const storyboardRequestIdRef = useRef(0);
+  const [splittingStoryboard, setSplittingStoryboard] = useState(false);
+  const [splitError, setSplitError] = useState<string | null>(null);
   const [creativeDetail, setCreativeDetail] = useState<CreativeTaskDetail | null>(null);
   const [creativeDetailLoading, setCreativeDetailLoading] = useState(false);
   const [creativeDetailError, setCreativeDetailError] = useState<string | null>(null);
@@ -1943,6 +2029,80 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
     onDownload();
   };
 
+  const handleStoryboardStatusRefresh = useCallback(() => {
+    if (!isStoryboard) return;
+    setSplitError(null);
+    void fetchStoryboardDetail();
+  }, [fetchStoryboardDetail, isStoryboard]);
+
+  const handleStoryboardSplit = useCallback(async () => {
+    if (!isStoryboard || splittingStoryboard) return;
+    if (!storyboardImageUrl) {
+      const message = "九宫格尚未生成，暂时无法拆解";
+      setSplitError(message);
+      toast.error(message);
+      return;
+    }
+    setSplitError(null);
+    setSplittingStoryboard(true);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) {
+        throw new Error("登录已过期，请重新登录后再试");
+      }
+      const response = await fetch("/api/storyboard-gen/split", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          taskId: task.taskId,
+          storyboardImageUrl,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 403) {
+          throw new Error((payload as { error?: string }).error || "请先绑定 API Key 后再拆解");
+        }
+        if (response.status === 401) {
+          throw new Error("登录已过期，请重新登录后再试");
+        }
+        throw new Error((payload as { error?: string }).error || "拆解失败，请稍后重试");
+      }
+      toast.success("拆解任务已提交");
+      await fetchStoryboardDetail();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "触发拆解失败";
+      setSplitError(message);
+      toast.error(message);
+    } finally {
+      setSplittingStoryboard(false);
+    }
+  }, [fetchStoryboardDetail, isStoryboard, splittingStoryboard, storyboardImageUrl, task.taskId]);
+
+  const handleRetryDigitalHuman = async () => {
+    if (!isDigitalHuman) return;
+    setRetrying(true);
+    try {
+      const response = await fetch(`/api/digital-human/videos/${task.taskId}/retry`, {
+        method: "POST",
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error((payload as { error?: string }).error ?? "重试失败");
+      }
+      toast.success("重试任务已发起，请稍候");
+      onClose();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "重试失败");
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   const mainPortal = createPortal(
     <div
       className="fixed inset-0 z-[9999] flex items-stretch justify-center overflow-y-auto bg-black/75 backdrop-blur-sm p-3 sm:p-6"
@@ -2062,6 +2222,136 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
         )}
 
         {/* Right: Info + actions */}
+        {isStoryboard ? (
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-auto p-6 pb-2 space-y-5">
+              <div className="flex flex-wrap items-center gap-2 pr-10">
+                <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                  {typeLabel}
+                </span>
+                <span className={cn("inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold", detailStatusClass)}>
+                  {statusLabel}
+                </span>
+              </div>
+
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">{task.title || typeLabel}</h2>
+                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">{formatTimestamp(task.createdAt, LANGUAGE_LOCALES[langKey])}</p>
+                {task.preview && (
+                  <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400 leading-relaxed whitespace-pre-wrap">
+                    {task.preview}
+                  </p>
+                )}
+              </div>
+
+              <div className="rounded-3xl border border-gray-100 bg-white/80 p-4 space-y-3 dark:border-gray-800 dark:bg-gray-900/30">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">九宫格状态</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {storyboardLoading ? "同步中..." : statusLabel}
+                    </p>
+                  </div>
+                  {storyboardLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                  ) : storyboardProgressLabel ? (
+                    <span className="rounded-full bg-gray-900/5 px-3 py-1 text-xs font-semibold text-gray-700 dark:bg-white/10 dark:text-white">
+                      {storyboardProgressLabel}
+                    </span>
+                  ) : null}
+                </div>
+                <div
+                  className={cn(
+                    "rounded-2xl px-3 py-2 text-sm leading-relaxed",
+                    storyboardError
+                      ? "bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-200"
+                      : "bg-gray-50 text-gray-700 dark:bg-gray-950/50 dark:text-gray-300",
+                  )}
+                >
+                  {storyboardError || storyboardStatusHelper}
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-[var(--tenant-primary,#16a34a)]/20 bg-white/90 p-4 shadow-sm dark:border-[var(--tenant-primary,#16a34a)]/30 dark:bg-gray-900/40 space-y-4">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">分镜拆解</p>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{storyboardSplitHelper}</p>
+                </div>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  {storyboardSplitCompleted ? (
+                    <button
+                      type="button"
+                      onClick={onOpen}
+                      className="flex-1 inline-flex items-center justify-center gap-2 rounded-full bg-[var(--tenant-primary,#16a34a)] px-5 py-2.5 text-sm font-semibold text-white shadow transition hover:bg-[var(--tenant-primary,#16a34a)]/90 dark:text-gray-900 dark:bg-[var(--tenant-primary-foreground,#fefce8)] dark:hover:bg-[var(--tenant-primary-foreground,#fefce8)]/80"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      查看拆解结果
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleStoryboardSplit}
+                      disabled={!canSplitStoryboard}
+                      className={cn(
+                        "flex-1 inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold text-white shadow transition disabled:cursor-not-allowed disabled:bg-gray-300",
+                        canSplitStoryboard
+                          ? "bg-[var(--tenant-primary,#16a34a)] hover:bg-[var(--tenant-primary,#16a34a)]/90"
+                          : "bg-gray-300",
+                      )}
+                    >
+                      {storyboardSplitInProgress ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-4 w-4" />
+                      )}
+                      {storyboardSplitInProgress ? "拆解中..." : "一键拆解"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleStoryboardStatusRefresh}
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                  >
+                    <RefreshCcw
+                      className={cn(
+                        "h-4 w-4",
+                        storyboardLoading && !storyboardSplitInProgress ? "animate-spin" : undefined,
+                      )}
+                    />
+                    刷新状态
+                  </button>
+                </div>
+                {!storyboardHasImage && !storyboardLoading && (
+                  <p className="text-xs text-amber-500 dark:text-amber-400">九宫格完成后才能触发拆解。</p>
+                )}
+                {splitError && (
+                  <p className="text-xs text-rose-500 dark:text-rose-400">{splitError}</p>
+                )}
+              </div>
+            </div>
+            <div className="border-t border-gray-100 p-6 dark:border-gray-900">
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={onOpen}
+                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-full bg-[var(--tenant-primary,#16a34a)] px-5 py-2.5 text-sm font-semibold text-white shadow transition hover:bg-[var(--tenant-primary,#16a34a)]/90 dark:text-gray-900 dark:bg-[var(--tenant-primary-foreground,#fefce8)] dark:hover:bg-[var(--tenant-primary-foreground,#fefce8)]/80"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  {storyboardSplitCompleted ? "查看拆解结果" : "打开分镜任务"}
+                </button>
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  disabled={deleting}
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-rose-200 px-5 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-60 dark:border-rose-500/40 dark:text-rose-300 dark:hover:bg-rose-900/20"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {deleting ? "删除中..." : "删除"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
         <div className="flex flex-1 flex-col overflow-hidden">
           {/* Scrollable info area */}
           <div className="flex-1 overflow-y-auto p-6 pb-2 space-y-5">
@@ -2343,6 +2633,16 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
                     <ExternalLink className="h-4 w-4" />
                     打开任务
                   </button>
+                ) : isDigitalHuman && statusKey === "FAILED" ? (
+                  <button
+                    type="button"
+                    onClick={handleRetryDigitalHuman}
+                    disabled={retrying}
+                    className="flex-1 inline-flex items-center justify-center gap-2 rounded-full bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100"
+                  >
+                    <RotateCcw className={cn("h-4 w-4", retrying && "animate-spin")} />
+                    {retrying ? "重试中..." : "重新生成"}
+                  </button>
                 ) : (
                   <button
                     type="button"
@@ -2367,10 +2667,11 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
             )}
           </div>
         </div>
+        )}
       </div>
-        </div>,
-        document.body
-      );
+    </div>,
+    document.body
+  );
 
   // 风格选择弹窗（第二个 portal，浮在详情弹窗上方）
   const stylePickerPortal = t2vStyleModalOpen ? createPortal(
@@ -2416,7 +2717,6 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
                     )}
                   >
                     {style.previewUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
                       <img src={style.previewUrl} alt={style.name} className="h-16 w-full rounded-xl object-cover" />
                     ) : (
                       <div className="flex h-16 w-full items-center justify-center rounded-xl bg-gray-100 text-sm font-semibold text-gray-500 dark:bg-gray-800">

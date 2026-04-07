@@ -372,6 +372,45 @@ export async function listCanvasProjects(userId: string, limit = 100): Promise<C
   });
 }
 
+// Like listCanvasProjectsMeta, but also fetches canvasData for the first (most-recent) project
+// using two concurrent DB queries — eliminates the second serial HTTP round-trip from the client.
+export async function listCanvasProjectsWithFirstFull(userId: string, limit = 50): Promise<CanvasProjectResponse[]> {
+  const take = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 200) : 50;
+  return withCanvasProjectsTable(async () => {
+    if (canvasProjectDelegate) {
+      const [metaRows, firstRows] = await Promise.all([
+        canvasProjectDelegate.findMany({
+          where: { userId },
+          orderBy: { updatedAt: 'desc' },
+          take,
+          select: { id: true, userId: true, name: true, thumbnail: true, createdAt: true, updatedAt: true },
+        }),
+        canvasProjectDelegate.findMany({
+          where: { userId },
+          orderBy: { updatedAt: 'desc' },
+          take: 1,
+        }),
+      ]);
+      const firstFull = (firstRows as CanvasProjectRow[])[0] ?? null;
+      return (metaRows as CanvasProjectRow[]).map((r, i) => {
+        if (i === 0 && firstFull && firstFull.id === r.id) {
+          return toResponse(firstFull);
+        }
+        return {
+          id: r.id,
+          name: r.name,
+          thumbnail: r.thumbnail ?? '',
+          canvasData: null as unknown as CanvasData,
+          createdAt: r.createdAt.toISOString(),
+          updatedAt: r.updatedAt.toISOString(),
+        };
+      });
+    }
+    // Raw SQL fallback: just return meta (client will do a second request as before)
+    return listCanvasProjectsMeta(userId, limit);
+  });
+}
+
 export async function listCanvasProjectsMeta(userId: string, limit = 50): Promise<CanvasProjectResponse[]> {
   const take = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 200) : 50;
   return withCanvasProjectsTable(async () => {

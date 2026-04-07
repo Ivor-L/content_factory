@@ -4,6 +4,7 @@ import {
   CanvasProjectInput,
   createCanvasProject,
   listCanvasProjectsMeta,
+  listCanvasProjectsWithFirstFull,
 } from '@/lib/canvasProjects';
 
 export async function GET(request: NextRequest) {
@@ -18,9 +19,12 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const limitParam = Number(searchParams.get('limit'));
   const limit = Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 50;
+  const withFirst = searchParams.get('withFirst') === 'true';
 
   try {
-    const projects = await listCanvasProjectsMeta(userId, limit);
+    const projects = withFirst
+      ? await listCanvasProjectsWithFirstFull(userId, limit)
+      : await listCanvasProjectsMeta(userId, limit);
     return NextResponse.json({ data: projects });
   } catch (error) {
     return NextResponse.json(

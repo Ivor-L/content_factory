@@ -111,6 +111,37 @@ function toDataUrl(content: string, mime = "image/png") {
   return `data:${mime};base64,${content}`;
 }
 
+const DATA_URL_REGEX = /^data:(.+);base64,(.*)$/i;
+const CANVAS_PERF_TRACING = process.env.NODE_ENV !== "production";
+const PERF_LOG_THROTTLE_MS = 2000;
+
+function isDataUrl(value: unknown): value is string {
+  return typeof value === "string" && value.startsWith("data:");
+}
+
+function dataUrlToFile(dataUrl: string, fallbackName: string): File | null {
+  const match = dataUrl.match(DATA_URL_REGEX);
+  if (!match) return null;
+  const mime = match[1];
+  const base64 = match[2];
+  let binary: string;
+  if (typeof atob !== "function") return null;
+  binary = atob(base64);
+  try {
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const extension =
+      mime.split("/")[1]?.split("+")[0]?.replace(/[^a-z0-9]/gi, "") || "bin";
+    const name = fallbackName.includes(".") ? fallbackName : `${fallbackName}.${extension}`;
+    return new File([bytes], name, { type: mime });
+  } catch {
+    return null;
+  }
+}
+
 function collectUrlCandidates(record: unknown): string[] {
   if (!record) return [];
   if (typeof record === "string") {
@@ -332,6 +363,132 @@ async function getJson(url: string) {
 export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): UseCanvasOrchestratorResult {
   const { getNode, getUpstreamInputs, patchRuntimeData, setNodeStatus, models, addResource } = options;
   const runningNodeIds = useRef(new Set<string>());
+  const dataUrlPerfLogRef = useRef(0);
+
+  const uploadResource = useCallback(
+    async (file: File, options: UploadOptions) => {
+      if (!(file instanceof File)) {
+        throw new Error("请选择要上传的文件");
+      }
+
+      // Try OSS presign direct upload first (bypasses Next.js body size limit)
+      const presignResponse = await fetch("/api/upload/presign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, contentType: file.type }),
+        credentials: "include",
+        cache: "no-store",
+      });
+
+      if (presignResponse.ok) {
+        const { uploadUrl, publicUrl } = await presignResponse.json();
+        const putResponse = await fetch(uploadUrl, {
+          method: "PUT",
+          headers: { "Content-Type": file.type },
+          body: file,
+        });
+        if (!putResponse.ok) throw new Error("上传失败");
+        const resource = addResource({
+          type: options.type,
+          variant: options.variant || undefined,
+          name: options.name || file.name,
+          url: publicUrl,
+        });
+        toast.success("资源上传成功");
+        return resource;
+      }
+
+      // Fallback: upload via server API
+      const endpointMap: Record<string, string> = {
+        image: "/api/upload/image",
+        video: "/api/upload/video",
+        audio: "/api/upload/audio",
+        text: "/api/upload/image",
+      };
+      const endpoint = endpointMap[options.type] || "/api/upload/image";
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+        cache: "no-store",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.url) {
+        const message = extractErrorMessage(payload, "上传失败");
+        throw new Error(message);
+      }
+      const resource = addResource({
+        type: options.type,
+        variant: options.variant || undefined,
+        name: options.name || file.name,
+        url: payload.url,
+      });
+      toast.success("资源上传成功");
+      return resource;
+    },
+    [addResource],
+  );
+
+  const persistDataUrl = useCallback(
+    async (
+      url: string,
+      fallbackName: string,
+      options: UploadOptions,
+      errorMessage = "图片上传失败",
+    ): Promise<string> => {
+      const shouldTrace = CANVAS_PERF_TRACING && typeof performance !== "undefined";
+      const startedAt = shouldTrace ? performance.now() : 0;
+      if (!isDataUrl(url)) return url;
+      const file = dataUrlToFile(url, fallbackName);
+      if (!file) {
+        throw new Error(errorMessage);
+      }
+      const uploadOptions: UploadOptions = {
+        ...options,
+        name: options.name ?? file.name,
+      };
+      const resource = await uploadResource(file, uploadOptions);
+      if (shouldTrace) {
+        const duration = performance.now() - startedAt;
+        if (duration > 15 && performance.now() - dataUrlPerfLogRef.current > PERF_LOG_THROTTLE_MS) {
+          const sizeKb = Math.round((file.size / 1024) * 10) / 10;
+          console.info(
+            `[canvas][perf] persistDataUrl ${uploadOptions.type} ~${sizeKb}KB took ${duration.toFixed(1)}ms`,
+          );
+          dataUrlPerfLogRef.current = performance.now();
+        }
+      }
+      return resource.url;
+    },
+    [uploadResource],
+  );
+
+  const persistNodeAsset = useCallback(
+    async (
+      nodeId: string,
+      value: string | undefined | null,
+      fallbackName: string,
+      options: UploadOptions,
+      errorMessage: string,
+      patchKeys?: string[],
+    ): Promise<string | undefined | null> => {
+      if (typeof value !== "string" || value.length === 0) return value ?? undefined;
+      if (!isDataUrl(value)) return value;
+      const uploaded = await persistDataUrl(value, fallbackName, options, errorMessage);
+      if (patchKeys && patchKeys.length > 0) {
+        const patch: Record<string, string> = {};
+        patchKeys.forEach((key) => {
+          patch[key] = uploaded;
+        });
+        patchRuntimeData(nodeId, patch);
+      }
+      return uploaded;
+    },
+    [patchRuntimeData, persistDataUrl],
+  );
 
   const runImageNode = useCallback(
     async (nodeId: string) => {
@@ -427,8 +584,22 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
           url,
           createdAt: Date.now(),
         }));
+        const generatedAt = Date.now();
+        const persistedOutputs = await Promise.all(
+          outputs.map(async (output, index) => {
+            if (!isDataUrl(output.url)) {
+              return output;
+            }
+            const file = dataUrlToFile(output.url, `canvas-image-${generatedAt}-${index + 1}`);
+            if (!file) {
+              return output;
+            }
+            const resource = await uploadResource(file, { type: "image", name: file.name });
+            return { ...output, url: resource.url };
+          }),
+        );
         patchRuntimeData(nodeId, {
-          outputs,
+          outputs: persistedOutputs,
           lastCompletedAt: Date.now(),
           lastRequest: payload,
         });
@@ -443,7 +614,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         runningNodeIds.current.delete(nodeId);
       }
     },
-    [getNode, getUpstreamInputs, models, patchRuntimeData, setNodeStatus],
+    [getNode, getUpstreamInputs, models, patchRuntimeData, setNodeStatus, uploadResource],
   );
 
   const waitForVideoTask = useCallback(
@@ -513,16 +684,16 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
       const durationStr = String(durationRaw).replace(/s$/, "").trim();
       const durationInt = Math.max(4, parseInt(durationStr, 10) || 8);
       // Own first/last frame takes precedence; fall back to upstream image output
-      const firstFrame =
-        runtimeData.firstFrameImage ||
-        runtimeData.first_frame_image ||
+      let firstFrame =
+        (typeof runtimeData.firstFrameImage === "string" && runtimeData.firstFrameImage.trim()) ||
+        (typeof runtimeData.first_frame_image === "string" && runtimeData.first_frame_image.trim()) ||
         upstream.firstImageUrl ||
         undefined;
-      const lastFrame = runtimeData.lastFrameImage || runtimeData.last_frame_image || undefined;
+      let lastFrame = runtimeData.lastFrameImage || runtimeData.last_frame_image || undefined;
       const country = String(runtimeData.country || "").trim();
       const sellingPointsJson = String(runtimeData.sellingPointsJson || "").trim();
       const blueprint = runtimeData.blueprint;
-      const productImageUrl = String(runtimeData.productImageUrl || "").trim();
+      let productImageUrl = String(runtimeData.productImageUrl || "").trim();
 
       if (!prompt) {
         toast.error("请先输入提示词");
@@ -543,6 +714,40 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
       });
 
       try {
+        if (firstFrame) {
+          firstFrame =
+            (await persistNodeAsset(
+              nodeId,
+              firstFrame,
+              `video-first-frame-${nodeId}`,
+              { type: "image", name: `video-first-frame-${nodeId}.png` },
+              "首帧图片上传失败",
+              ["firstFrameImage", "first_frame_image"],
+            )) ?? firstFrame;
+        }
+        if (lastFrame) {
+          lastFrame =
+            (await persistNodeAsset(
+              nodeId,
+              lastFrame,
+              `video-last-frame-${nodeId}`,
+              { type: "image", name: `video-last-frame-${nodeId}.png` },
+              "尾帧图片上传失败",
+              ["lastFrameImage", "last_frame_image"],
+            )) ?? lastFrame;
+        }
+        if (productImageUrl) {
+          productImageUrl =
+            (await persistNodeAsset(
+              nodeId,
+              productImageUrl,
+              `video-product-${nodeId}`,
+              { type: "image", name: `video-product-${nodeId}.png` },
+              "产品图上传失败",
+              ["productImageUrl"],
+            )) ?? productImageUrl;
+        }
+
         let payload: Record<string, unknown>;
         const veoModels = new Set(["veo_3_1-fast", "veo_3_1", "veo3", "veo3-fast"]);
 
@@ -595,13 +800,19 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         await postJson("/api/canvas/videos", payload);
 
         const url = await waitForVideoTask(nodeId, nodeId);
+        const persistedVideoUrl = await persistDataUrl(
+          url,
+          `video-output-${nodeId}`,
+          { type: "video", name: `canvas-video-${nodeId}.mp4` },
+          "视频上传失败",
+        );
         const outputRecord = {
           id: createOutputId("video"),
-          url,
+          url: persistedVideoUrl,
           createdAt: Date.now(),
         };
         patchRuntimeData(nodeId, {
-          outputUrl: url,
+          outputUrl: persistedVideoUrl,
           lastCompletedAt: Date.now(),
           lastTaskStatus: "completed",
           outputs: [outputRecord],
@@ -610,7 +821,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
           type: "video",
           variant: "output",
           name: `视频输出 ${new Date().toLocaleTimeString()}`,
-          url,
+          url: persistedVideoUrl,
           metadata: { nodeId },
         });
         setNodeStatus(nodeId, "success");
@@ -624,7 +835,17 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         runningNodeIds.current.delete(nodeId);
       }
     },
-    [addResource, getNode, getUpstreamInputs, models, patchRuntimeData, waitForVideoTask, setNodeStatus],
+    [
+      addResource,
+      getNode,
+      getUpstreamInputs,
+      models,
+      patchRuntimeData,
+      waitForVideoTask,
+      setNodeStatus,
+      persistNodeAsset,
+      persistDataUrl,
+    ],
   );
 
   const pollAudioTask = useCallback(
@@ -716,13 +937,25 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
           if (!taskId) throw new Error("未获取到音乐任务 ID");
           patchRuntimeData(nodeId, { audioTaskId: taskId, audioTaskStatus: "queued" });
           const audioUrl = await pollSunoMusicTask(taskId, nodeId);
-          patchRuntimeData(nodeId, {
+          const persistedAudioUrl = await persistDataUrl(
             audioUrl,
+            `suno-music-${taskId}`,
+            { type: "audio", name: `suno-music-${taskId}.mp3` },
+            "音乐上传失败",
+          );
+          patchRuntimeData(nodeId, {
+            audioUrl: persistedAudioUrl,
             audioTaskStatus: "completed",
             lastCompletedAt: Date.now(),
-            outputs: [{ id: createOutputId("suno"), url: audioUrl, createdAt: Date.now() }],
+            outputs: [{ id: createOutputId("suno"), url: persistedAudioUrl, createdAt: Date.now() }],
           });
-          addResource({ type: "audio", variant: "output", name: `Suno 音乐 ${new Date().toLocaleTimeString()}`, url: audioUrl, metadata: { nodeId } });
+          addResource({
+            type: "audio",
+            variant: "output",
+            name: `Suno 音乐 ${new Date().toLocaleTimeString()}`,
+            url: persistedAudioUrl,
+            metadata: { nodeId },
+          });
           setNodeStatus(nodeId, "success");
           toast.success("音乐生成完成");
         } catch (error) {
@@ -767,8 +1000,8 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
 
       // --- Standard TTS audio ---
       const script = String(runtimeData.script || runtimeData.content || upstream.effectivePrompt || "").trim();
-      const voiceReference = String(runtimeData.voiceReference || runtimeData.voiceReferenceUrl || "").trim();
-      const emotionReference = String(runtimeData.emotionReference || runtimeData.emotionReferenceUrl || "").trim();
+      let voiceReference = String(runtimeData.voiceReference || runtimeData.voiceReferenceUrl || "").trim();
+      let emotionReference = String(runtimeData.emotionReference || runtimeData.emotionReferenceUrl || "").trim();
 
       if (!script) {
         toast.error("请先输入口播文本");
@@ -782,6 +1015,26 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
       }
 
       setNodeStatus(nodeId, "running");
+      voiceReference =
+        (await persistNodeAsset(
+          nodeId,
+          voiceReference,
+          `audio-voice-ref-${nodeId}`,
+          { type: "audio", name: `audio-voice-ref-${nodeId}.wav` },
+          "音色参考上传失败",
+          ["voiceReference"],
+        )) ?? voiceReference;
+      if (emotionReference) {
+        emotionReference =
+          (await persistNodeAsset(
+            nodeId,
+            emotionReference,
+            `audio-emotion-ref-${nodeId}`,
+            { type: "audio", name: `audio-emotion-ref-${nodeId}.wav` },
+            "情绪参考上传失败",
+            ["emotionReference", "emotionReferenceUrl"],
+          )) ?? emotionReference;
+      }
       patchRuntimeData(nodeId, {
         audioTaskId: null,
         audioTaskStatus: null,
@@ -801,14 +1054,20 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         }
         patchRuntimeData(nodeId, { audioTaskId: taskId, audioTaskStatus: "queued" });
         const audioUrl = await pollAudioTask(taskId, nodeId);
-        patchRuntimeData(nodeId, {
+        const persistedAudioUrl = await persistDataUrl(
           audioUrl,
+          `audio-output-${taskId}`,
+          { type: "audio", name: `canvas-audio-${taskId}.mp3` },
+          "语音上传失败",
+        );
+        patchRuntimeData(nodeId, {
+          audioUrl: persistedAudioUrl,
           audioTaskStatus: "completed",
           lastCompletedAt: Date.now(),
           outputs: [
             {
               id: createOutputId("audio"),
-              url: audioUrl,
+              url: persistedAudioUrl,
               createdAt: Date.now(),
             },
           ],
@@ -817,7 +1076,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
           type: "audio",
           variant: "output",
           name: `语音输出 ${new Date().toLocaleTimeString()}`,
-          url: audioUrl,
+          url: persistedAudioUrl,
           metadata: { nodeId },
         });
         setNodeStatus(nodeId, "success");
@@ -831,7 +1090,18 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         runningNodeIds.current.delete(nodeId);
       }
     },
-    [addResource, getNode, getUpstreamInputs, models, patchRuntimeData, pollAudioTask, pollSunoMusicTask, setNodeStatus],
+    [
+      addResource,
+      getNode,
+      getUpstreamInputs,
+      models,
+      patchRuntimeData,
+      pollAudioTask,
+      pollSunoMusicTask,
+      setNodeStatus,
+      persistNodeAsset,
+      persistDataUrl,
+    ],
   );
 
   const waitForDigitalHumanJob = useCallback(
@@ -899,10 +1169,10 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
       const upstream = getUpstreamInputs(nodeId);
       const scriptContent = String(runtimeData.script || runtimeData.scriptContent || runtimeData.content || upstream.effectivePrompt || "").trim();
       // Upstream audio (from audio node) can supply the voice reference
-      const audioUrl = String(runtimeData.voiceReference || runtimeData.audioUrl || runtimeData.voiceReferenceUrl || upstream.firstAudioUrl || "").trim();
-      const emoAudioUrl = String(runtimeData.emoAudioUrl || "").trim() || null;
+      let audioUrl = String(runtimeData.voiceReference || runtimeData.audioUrl || runtimeData.voiceReferenceUrl || upstream.firstAudioUrl || "").trim();
+      let emoAudioUrl = String(runtimeData.emoAudioUrl || "").trim() || null;
       // Upstream image (from image node) can supply the avatar
-      const imageUrl = String(runtimeData.avatarImage || runtimeData.imageUrl || upstream.firstImageUrl || "").trim();
+      let imageUrl = String(runtimeData.avatarImage || runtimeData.imageUrl || upstream.firstImageUrl || "").trim();
 
       if (!scriptContent) {
         toast.error("请先输入文案");
@@ -921,6 +1191,35 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
       }
 
       setNodeStatus(nodeId, "running");
+      audioUrl =
+        (await persistNodeAsset(
+          nodeId,
+          audioUrl,
+          `digital-human-audio-${nodeId}`,
+          { type: "audio", name: `digital-human-audio-${nodeId}.wav` },
+          "音色音频上传失败",
+          ["audioUrl", "voiceReference"],
+        )) ?? audioUrl;
+      if (emoAudioUrl) {
+        emoAudioUrl =
+          (await persistNodeAsset(
+            nodeId,
+            emoAudioUrl,
+            `digital-human-emo-audio-${nodeId}`,
+            { type: "audio", name: `digital-human-emo-${nodeId}.wav` },
+            "情绪音频上传失败",
+            ["emoAudioUrl"],
+          )) ?? emoAudioUrl;
+      }
+      imageUrl =
+        (await persistNodeAsset(
+          nodeId,
+          imageUrl,
+          `digital-human-avatar-${nodeId}`,
+          { type: "image", name: `digital-human-avatar-${nodeId}.png` },
+          "数字人形象图上传失败",
+          ["avatarImage", "imageUrl"],
+        )) ?? imageUrl;
       patchRuntimeData(nodeId, {
         dhVideoId: null,
         dhStatus: null,
@@ -943,17 +1242,23 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         }
         patchRuntimeData(nodeId, { dhVideoId: videoId, dhStatus: "GENERATING" });
         const resultUrl = await waitForDigitalHumanJob(videoId, nodeId);
+        const persistedResultUrl = await persistDataUrl(
+          resultUrl,
+          `digital-human-output-${videoId}`,
+          { type: "video", name: `digital-human-${videoId}.mp4` },
+          "数字人视频上传失败",
+        );
         patchRuntimeData(nodeId, {
-          outputUrl: resultUrl,
+          outputUrl: persistedResultUrl,
           dhStatus: "COMPLETED",
           lastCompletedAt: Date.now(),
-          outputs: [{ id: createOutputId("dh"), url: resultUrl, createdAt: Date.now() }],
+          outputs: [{ id: createOutputId("dh"), url: persistedResultUrl, createdAt: Date.now() }],
         });
         addResource({
           type: "video",
           variant: "output",
           name: `数字人视频 ${new Date().toLocaleTimeString()}`,
-          url: resultUrl,
+          url: persistedResultUrl,
           metadata: { nodeId },
         });
         setNodeStatus(nodeId, "success");
@@ -967,7 +1272,94 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         runningNodeIds.current.delete(nodeId);
       }
     },
-    [addResource, getNode, getUpstreamInputs, patchRuntimeData, waitForDigitalHumanJob, setNodeStatus],
+    [
+      addResource,
+      getNode,
+      getUpstreamInputs,
+      patchRuntimeData,
+      waitForDigitalHumanJob,
+      setNodeStatus,
+      persistNodeAsset,
+      persistDataUrl,
+    ],
+  );
+
+  const persistStoryboardSegments = useCallback(
+    async (segments: unknown[], taskId: string): Promise<unknown[]> => {
+      if (!Array.isArray(segments)) return [];
+      return Promise.all(
+        segments.map(async (segment, index) => {
+          if (!segment || typeof segment !== "object") return segment;
+          const updated = { ...(segment as Record<string, any>) };
+          if (typeof updated.generatedImage === "string" && isDataUrl(updated.generatedImage)) {
+            updated.generatedImage = await persistDataUrl(
+              updated.generatedImage,
+              `storyboard-image-${taskId}-${index + 1}`,
+              { type: "image", name: `storyboard-image-${taskId}-${index + 1}.png` },
+              "分镜图片上传失败",
+            );
+          }
+          if (typeof updated.generatedVideo === "string" && isDataUrl(updated.generatedVideo)) {
+            updated.generatedVideo = await persistDataUrl(
+              updated.generatedVideo,
+              `storyboard-video-${taskId}-${index + 1}`,
+              { type: "video", name: `storyboard-video-${taskId}-${index + 1}.mp4` },
+              "分镜视频上传失败",
+            );
+          }
+          if (updated.generationParams && typeof updated.generationParams === "object") {
+            const params = { ...(updated.generationParams as Record<string, any>) };
+            let mutated = false;
+            if (typeof params.reference_frame_url === "string" && isDataUrl(params.reference_frame_url)) {
+              params.reference_frame_url = await persistDataUrl(
+                params.reference_frame_url,
+                `storyboard-ref-${taskId}-${index + 1}`,
+                { type: "image", name: `storyboard-ref-${taskId}-${index + 1}.png` },
+                "参考帧上传失败",
+              );
+              mutated = true;
+            }
+            if (Array.isArray(params.subject_refs)) {
+              const refs = await Promise.all(
+                params.subject_refs.map(async (ref: any, refIdx: number) => {
+                  if (!ref || typeof ref !== "object" || typeof ref.url !== "string") return ref;
+                  if (!isDataUrl(ref.url)) return ref;
+                  const nextUrl = await persistDataUrl(
+                    ref.url,
+                    `storyboard-subject-${taskId}-${index + 1}-${refIdx + 1}`,
+                    { type: "image", name: `storyboard-subject-${taskId}-${index + 1}-${refIdx + 1}.png` },
+                    "参考图上传失败",
+                  );
+                  return { ...ref, url: nextUrl };
+                }),
+              );
+              params.subject_refs = refs;
+              mutated = true;
+            }
+            if (Array.isArray(params.image_history)) {
+              const history = await Promise.all(
+                params.image_history.map(async (entry: any, historyIdx: number) => {
+                  if (typeof entry !== "string" || !isDataUrl(entry)) return entry;
+                  return persistDataUrl(
+                    entry,
+                    `storyboard-history-${taskId}-${index + 1}-${historyIdx + 1}`,
+                    { type: "image", name: `storyboard-history-${taskId}-${index + 1}-${historyIdx + 1}.png` },
+                    "历史图片上传失败",
+                  );
+                }),
+              );
+              params.image_history = history;
+              mutated = true;
+            }
+            if (mutated) {
+              updated.generationParams = params;
+            }
+          }
+          return updated;
+        }),
+      );
+    },
+    [persistDataUrl],
   );
 
   const waitForStoryboardTask = useCallback(
@@ -1038,7 +1430,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
       runningNodeIds.current.add(nodeId);
       const runtimeData = (node.data.runtime?.data || {}) as Record<string, any>;
       const upstream = getUpstreamInputs(nodeId);
-      const videoUrl = String(runtimeData.videoUrl || runtimeData.outputUrl || runtimeData.url || upstream.firstVideoUrl || "").trim();
+      let videoUrl = String(runtimeData.videoUrl || runtimeData.outputUrl || runtimeData.url || upstream.firstVideoUrl || "").trim();
 
       if (!videoUrl) {
         toast.error("请先提供视频 URL");
@@ -1055,6 +1447,15 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
       });
 
       try {
+        videoUrl =
+          (await persistNodeAsset(
+            nodeId,
+            videoUrl,
+            `storyboard-video-${nodeId}`,
+            { type: "video", name: `storyboard-video-${nodeId}.mp4` },
+            "视频上传失败",
+            ["videoUrl"],
+          )) ?? videoUrl;
         const response = await postJson("/api/canvas/storyboard", { videoUrl });
         const record = response as { data?: { taskId?: string } };
         const taskId = record?.data?.taskId;
@@ -1063,13 +1464,14 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         }
         patchRuntimeData(nodeId, { sbTaskId: taskId, sbStatus: "BREAKDOWN_PENDING" });
         const segments = await waitForStoryboardTask(taskId, nodeId);
+        const persistedSegments = await persistStoryboardSegments(segments, taskId);
         patchRuntimeData(nodeId, {
-          sbSegments: segments,
+          sbSegments: persistedSegments,
           sbStatus: "BREAKDOWN_COMPLETED",
           lastCompletedAt: Date.now(),
         });
         setNodeStatus(nodeId, "success");
-        toast.success(`分镜拆解完成，共 ${(segments as unknown[]).length} 个镜头`);
+        toast.success(`分镜拆解完成，共 ${(persistedSegments as unknown[]).length} 个镜头`);
       } catch (error) {
         const message = error instanceof Error ? error.message : "分镜拆解失败";
         patchRuntimeData(nodeId, { lastRunError: message });
@@ -1079,7 +1481,15 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         runningNodeIds.current.delete(nodeId);
       }
     },
-    [getNode, getUpstreamInputs, patchRuntimeData, waitForStoryboardTask, setNodeStatus],
+    [
+      getNode,
+      getUpstreamInputs,
+      patchRuntimeData,
+      waitForStoryboardTask,
+      setNodeStatus,
+      persistNodeAsset,
+      persistStoryboardSegments,
+    ],
   );
 
   const runTextNode = useCallback(
@@ -1176,73 +1586,6 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
       runningNodeIds.current.delete(nodeId);
     },
     [getNode, getUpstreamInputs, patchRuntimeData, setNodeStatus],
-  );
-
-  const uploadResource = useCallback(
-    async (file: File, options: UploadOptions) => {
-      if (!(file instanceof File)) {
-        throw new Error("请选择要上传的文件");
-      }
-
-      // Try OSS presign direct upload first (bypasses Next.js body size limit)
-      const presignResponse = await fetch("/api/upload/presign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: file.name, contentType: file.type }),
-        credentials: "include",
-        cache: "no-store",
-      });
-
-      if (presignResponse.ok) {
-        const { uploadUrl, publicUrl } = await presignResponse.json();
-        const putResponse = await fetch(uploadUrl, {
-          method: "PUT",
-          headers: { "Content-Type": file.type },
-          body: file,
-        });
-        if (!putResponse.ok) throw new Error("上传失败");
-        const resource = addResource({
-          type: options.type,
-          variant: options.variant || undefined,
-          name: options.name || file.name,
-          url: publicUrl,
-        });
-        toast.success("资源上传成功");
-        return resource;
-      }
-
-      // Fallback: upload via server API
-      const endpointMap: Record<string, string> = {
-        image: "/api/upload/image",
-        video: "/api/upload/video",
-        audio: "/api/upload/audio",
-        text: "/api/upload/image",
-      };
-      const endpoint = endpointMap[options.type] || "/api/upload/image";
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const response = await fetch(endpoint, {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-        cache: "no-store",
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload?.url) {
-        const message = extractErrorMessage(payload, "上传失败");
-        throw new Error(message);
-      }
-      const resource = addResource({
-        type: options.type,
-        variant: options.variant || undefined,
-        name: options.name || file.name,
-        url: payload.url,
-      });
-      toast.success("资源上传成功");
-      return resource;
-    },
-    [addResource],
   );
 
   const waitForGridTask = useCallback(
@@ -1356,7 +1699,17 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
 
         patchRuntimeData(nodeId, { gridTaskId: taskId });
         const gridImageUrl = await waitForGridTask(taskId, nodeId);
-        patchRuntimeData(nodeId, { gridImageUrl, gridProgress: 100, lastCompletedAt: Date.now() });
+        const persistedGridUrl = await persistDataUrl(
+          gridImageUrl,
+          `grid-${taskId}`,
+          { type: "image", name: `grid-${taskId}.png` },
+          "九宫格图片上传失败",
+        );
+        patchRuntimeData(nodeId, {
+          gridImageUrl: persistedGridUrl,
+          gridProgress: 100,
+          lastCompletedAt: Date.now(),
+        });
         setNodeStatus(nodeId, "success");
         toast.success("九宫格生成完成");
       } catch (error) {
@@ -1368,7 +1721,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         runningNodeIds.current.delete(nodeId);
       }
     },
-    [getNode, getUpstreamInputs, patchRuntimeData, waitForGridTask, setNodeStatus],
+    [getNode, getUpstreamInputs, patchRuntimeData, waitForGridTask, setNodeStatus, persistDataUrl],
   );
 
   const GRID_SPLIT_POLL_INTERVAL_MS = 5000;
@@ -1378,10 +1731,19 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
     async (nodeId: string): Promise<string[]> => {
       const node = getNode(nodeId);
       const runtimeData = (node?.data?.runtime?.data ?? {}) as Record<string, unknown>;
-      const gridImageUrl = typeof runtimeData.gridImageUrl === "string" ? runtimeData.gridImageUrl : "";
+      let gridImageUrl = typeof runtimeData.gridImageUrl === "string" ? runtimeData.gridImageUrl : "";
       if (!gridImageUrl) {
         toast.error("请先生成九宫格图");
         return [];
+      }
+      if (isDataUrl(gridImageUrl)) {
+        gridImageUrl = await persistDataUrl(
+          gridImageUrl,
+          `grid-${nodeId}-source`,
+          { type: "image", name: `grid-${nodeId}-source.png` },
+          "九宫格图片上传失败",
+        );
+        patchRuntimeData(nodeId, { gridImageUrl });
       }
       patchRuntimeData(nodeId, { isSplitting: true, status: "running" });
       try {
@@ -1397,8 +1759,53 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         if (!taskId) throw new Error("未获取到任务 ID");
 
         return new Promise((resolve, reject) => {
-          let timeoutId: NodeJS.Timeout;
-          const channel = supabase
+          let timeoutId: ReturnType<typeof setTimeout> | undefined;
+          let settled = false;
+          let channel: ReturnType<typeof supabase.channel> | null = null;
+
+          const cleanup = () => {
+            if (timeoutId) clearTimeout(timeoutId);
+            if (channel) supabase.removeChannel(channel);
+          };
+
+          const handleFailure = (error: Error) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            patchRuntimeData(nodeId, { isSplitting: false, status: "idle" });
+            reject(error);
+          };
+
+          const handleSuccess = async (imageUrls: string[]) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            if (!imageUrls.length) {
+              patchRuntimeData(nodeId, { isSplitting: false, status: "idle" });
+              reject(new Error("未获取到拆分图片"));
+              return;
+            }
+            try {
+              const persisted = await Promise.all(
+                imageUrls.map((url, idx) =>
+                  persistDataUrl(
+                    url,
+                    `grid-split-${taskId}-${idx + 1}`,
+                    { type: "image", name: `grid-split-${taskId}-${idx + 1}.png` },
+                    "拆分图片上传失败",
+                  ),
+                ),
+              );
+              patchRuntimeData(nodeId, { isSplitting: false, status: "idle" });
+              resolve(persisted);
+            } catch (error) {
+              const normalizedError = error instanceof Error ? error : new Error("拆分图片上传失败");
+              patchRuntimeData(nodeId, { isSplitting: false, status: "idle" });
+              reject(normalizedError);
+            }
+          };
+
+          channel = supabase
             .channel(`grid-split-${taskId}`)
             .on(
               "postgres_changes",
@@ -1414,26 +1821,16 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
                 const imageUrls = (record.image_urls ?? []) as string[];
 
                 if (status === "SUCCESS" || status === "COMPLETED") {
-                  if (!imageUrls.length) {
-                    reject(new Error("未获取到拆分图片"));
-                  } else {
-                    clearTimeout(timeoutId);
-                    channel.unsubscribe();
-                    patchRuntimeData(nodeId, { isSplitting: false, status: "idle" });
-                    resolve(imageUrls);
-                  }
+                  void handleSuccess(imageUrls);
                 } else if (status === "FAILED") {
-                  clearTimeout(timeoutId);
-                  channel.unsubscribe();
-                  reject(new Error("拆分任务失败"));
+                  handleFailure(new Error("拆分任务失败"));
                 }
-              }
+              },
             )
             .subscribe();
 
           timeoutId = setTimeout(() => {
-            channel.unsubscribe();
-            reject(new Error("拆分超时，请稍后重试"));
+            handleFailure(new Error("拆分超时，请稍后重试"));
           }, GRID_SPLIT_MAX_ATTEMPTS * GRID_SPLIT_POLL_INTERVAL_MS);
         });
       } catch (err) {
@@ -1441,7 +1838,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         throw err;
       }
     },
-    [getNode, patchRuntimeData],
+    [getNode, patchRuntimeData, persistDataUrl],
   );
 
   const reverseImagePrompt = useCallback(

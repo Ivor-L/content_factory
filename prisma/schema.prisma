@@ -1023,6 +1023,7 @@ model profiles {
   avatar_url      String?
   website         String?
   api_key         String?   @unique
+  wechat_openid   String?   @unique @map("wechat_openid")
   user_no         BigInt?   @unique
   role            String    @default("free")
   plan            String    @default("free")

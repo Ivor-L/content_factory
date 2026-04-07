@@ -71,6 +71,8 @@ export class MissingApiKeyError extends Error {
   }
 }
 
+import { supabase } from '../lib/supabase';
+
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 const shouldIncludeCredentials = API_BASE_URL.length === 0;
 
@@ -91,18 +93,20 @@ function getStoredApiKey() {
   return localStorage.getItem('API_KEY');
 }
 
+async function getAuthHeader(): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (token) return { 'Authorization': `Bearer ${token}` };
+  // 降级：使用 API Key
+  const apiKey = getStoredApiKey();
+  if (apiKey) return { 'X-User-Api-Key': apiKey };
+  return {};
+}
+
 async function request<T = any>(path: string, options: RequestOptions = {}): Promise<T> {
   const url = resolveUrl(path);
-  const headers: Record<string, string> = { ...(options.headers || {}) };
-  const apiKey = getStoredApiKey();
-
-  if (options.requiresApiKey && !apiKey) {
-    throw new MissingApiKeyError();
-  }
-
-  if (apiKey) {
-    headers['X-User-Api-Key'] = apiKey;
-  }
+  const authHeader = await getAuthHeader();
+  const headers: Record<string, string> = { ...authHeader, ...(options.headers || {}) };
 
   const init: RequestInit = {
     method: options.method || (options.body ? 'POST' : 'GET'),

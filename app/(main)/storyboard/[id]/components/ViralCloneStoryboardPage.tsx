@@ -233,7 +233,9 @@ export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryb
   const [videoModel, setVideoModel] = useState("veo3.1-fast");
   const [imageModel, setImageModel] = useState("nano-banana-pro");
   const [generatingTimedOut, setGeneratingTimedOut] = useState(false);
-  const [editStatus, setEditStatus] = useState<"idle" | "pending" | "done" | "error">("idle");
+  const [editStatus, setEditStatus] = useState<"idle" | "pending" | "done" | "error">(
+    initialTask.finalVideoUrl ? "done" : "idle"
+  );
   const generatingStartRef = useRef<number | null>(null);
 
   // isPollingTerminal: only stop polling/subscriptions when the task is truly done.
@@ -277,8 +279,13 @@ export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryb
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "storyboard_tasks", filter: `id=eq.${task.id}` },
         (payload) => {
-          const data = payload.new as { status: string; progress: number };
-          setTask((prev) => ({ ...prev, status: data.status, progress: data.progress || 0 }));
+          const data = payload.new as { status: string; progress: number; final_video_url?: string | null };
+          setTask((prev) => ({
+            ...prev,
+            status: data.status,
+            progress: data.progress || 0,
+            ...(data.final_video_url ? { finalVideoUrl: data.final_video_url } : {}),
+          }));
           if (data.status === "COMPLETED" || data.status === "BREAKDOWN_FAILED") {
             if (data.status === "COMPLETED") {
               setEditStatus((prev) => prev === "pending" ? "done" : prev);
@@ -642,9 +649,11 @@ export function ViralCloneStoryboardPage({ task: initialTask }: ViralCloneStoryb
       )}
 
       {/* Completed - final video */}
-      {task.status === "COMPLETED" && task.finalVideoUrl && (
+      {task.finalVideoUrl && (
         <div className="mx-4 mt-4 rounded-xl border border-green-500/30 bg-green-500/10 p-4">
-          <p className="text-sm font-semibold text-green-400 mb-3">最终视频已生成</p>
+          <p className="text-sm font-semibold text-green-400 mb-3">
+            {task.status === "MERGING" ? "上次剪辑结果（剪辑中…）" : "最终视频已生成"}
+          </p>
           <video src={task.finalVideoUrl} controls className="w-full max-w-sm rounded-xl" />
           <a
             href={task.finalVideoUrl}

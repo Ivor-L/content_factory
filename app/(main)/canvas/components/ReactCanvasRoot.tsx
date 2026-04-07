@@ -55,11 +55,13 @@ import {
   ImagePlus,
   Layers,
   Locate,
+  Loader2,
   Maximize2,
   MessageSquare,
   MousePointer2,
   Music,
   Pencil,
+  Save,
   Trash2,
   Pause,
   Paperclip,
@@ -71,6 +73,8 @@ import {
   Sparkles,
   Smile,
   Upload,
+  AlertTriangle,
+  CheckCircle2,
   UserCircle2,
   Video,
   X,
@@ -106,6 +110,9 @@ import {
 } from "../lib/canvasDataAdapters";
 import type { CanvasProjectRecord } from "../types";
 import type { RuntimeCanvasNode } from "../lib/canvasDataAdapters";
+
+const CANVAS_PERF_TRACING = process.env.NODE_ENV !== "production";
+const PERF_LOG_THROTTLE_MS = 2000;
 
 function resolveLanguageLabel(lang?: string | null): string {
   if (lang === "zh-TW") return "繁体";
@@ -1359,6 +1366,41 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
     : [];
   const referenceImage = typeof (data.runtime.data as Record<string, unknown>).referenceImage === "string"
     ? ((data.runtime.data as Record<string, unknown>).referenceImage as string) : "";
+  const referenceImages = useMemo(() => {
+    const seen = new Set<string>();
+    const list: string[] = [];
+    const push = (value?: string) => {
+      if (typeof value === "string" && value.trim().length > 0 && !seen.has(value)) {
+        seen.add(value);
+        list.push(value);
+      }
+    };
+    push(referenceImage);
+    (upstream.imageUrls || []).forEach((url) => push(url));
+    return list;
+  }, [referenceImage, upstream.imageUrls]);
+  const referenceGallery = useMemo(() => {
+    const upstreamList = upstream.imageUrls || [];
+    return referenceImages.map((url) => ({
+      url,
+      isManual: Boolean(referenceImage) && url === referenceImage,
+      upstreamIndex: upstreamList.findIndex((item) => item === url),
+    }));
+  }, [referenceImages, referenceImage, upstream.imageUrls]);
+  const referenceListItems = useMemo(
+    () => referenceGallery.filter((item) => !item.isManual),
+    [referenceGallery],
+  );
+  const referenceListCount = referenceListItems.length;
+  const referenceCount = referenceImages.length;
+  const hasManualReference = Boolean(referenceImage);
+  const hasUpstreamReferences = (upstream.imageUrls || []).length > 0;
+  const referenceTileLabel = hasManualReference
+    ? "当前手动参考 · 点击更换"
+    : hasUpstreamReferences
+      ? "上游图片已作为参考图（点击覆盖）"
+      : "添加参考图";
+  const resourceTileImageUrl = hasManualReference ? referenceImage : "";
   const lastRunError = typeof (data.runtime.data as Record<string, unknown>).lastRunError === "string"
     ? ((data.runtime.data as Record<string, unknown>).lastRunError as string) : "";
   const isRunning = data.status === "running";
@@ -1485,9 +1527,14 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
         </div>
       )}
       <div className="mb-1.5 flex items-center justify-between px-1">
-        <div className="flex items-center">
+        <div className="flex items-center gap-1.5">
           <ImageIcon className="h-3.5 w-3.5 text-[var(--canvas-text-50)]" />
           <EditableNodeLabel title={title} nodeId={id} patchRuntimeData={patchRuntimeData} />
+          {referenceCount > 1 && (
+            <span className="rounded-full bg-[var(--canvas-hover)] px-1.5 py-0.5 text-[10px] text-[var(--canvas-text-40)]">
+              {referenceCount} 张参考
+            </span>
+          )}
         </div>
       </div>
       {/* inner relative div: handles position relative to card area only */}
@@ -1535,35 +1582,33 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="mb-2 flex items-center gap-2">
-            <ResourceTile
-              imageUrl={referenceImage || upstream.firstImageUrl || undefined}
-              icon={<ImagePlus className="h-5 w-5" />}
-              label={upstream.firstImageUrl && !referenceImage ? "上游图片将用作参考图（点击更换）" : "添加参考图"}
-              onClick={(e) => { e.stopPropagation(); referenceUploadRef.current?.click(); }}
-            />
-            <button type="button" disabled={isPolishing || !prompt.trim()}
-              onClick={async (e) => {
-                e.stopPropagation();
-                setIsPolishing(true);
-                try {
-                  const polished = await polishPrompt(prompt);
-                  patchRuntimeData(id, { prompt: polished });
-                } catch {
-                  // silently fail
-                } finally {
-                  setIsPolishing(false);
-                }
-              }}
-              className="flex h-8 items-center gap-1.5 rounded-[10px] bg-[var(--canvas-hover)] px-2.5 text-[var(--canvas-text-40)] transition hover:bg-[var(--canvas-hover-lg)] hover:text-[var(--canvas-text-60)] disabled:opacity-40"
-              title="AI润色">
-              {isPolishing ? (
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--canvas-border-md)] border-t-white/60" />
-              ) : (
-                <Sparkles className="h-3.5 w-3.5" />
-              )}
-              <span className="text-xs">AI润色</span>
-            </button>
+          <div className="mb-2">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 pr-1">
+              <ResourceTile
+                imageUrl={resourceTileImageUrl || undefined}
+                icon={<ImagePlus className="h-5 w-5" />}
+                label={referenceTileLabel}
+                onClick={(e) => { e.stopPropagation(); referenceUploadRef.current?.click(); }}
+              />
+              {referenceListItems.map((item, idx) => (
+                <button
+                  key={`${item.url}_${idx}`}
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setFullscreenUrl(item.url); }}
+                  className="group relative h-[52px] w-[52px] flex-shrink-0 overflow-hidden rounded-[14px] border border-[var(--canvas-border-md)] bg-[var(--canvas-hover)] transition hover:border-[var(--canvas-border-strong)]"
+                  title={item.upstreamIndex >= 0 ? `上游节点 · 第 ${item.upstreamIndex + 1} 张` : "参考图"}
+                >
+                  <CanvasImage src={item.url} alt="" className="h-full w-full object-cover" draggable={false} />
+                  <span className="pointer-events-none absolute bottom-1 left-1 rounded-md bg-black/60 px-1 text-[9px] text-white/90">
+                    {item.upstreamIndex >= 0 ? `上游${item.upstreamIndex + 1}` : `参考${idx + 1}`}
+                  </span>
+                  <span className="pointer-events-none absolute right-1 top-1 rounded-md bg-black/45 px-1 text-[9px] text-white/80 opacity-0 transition group-hover:opacity-100">放大</span>
+                </button>
+              ))}
+            </div>
+            {referenceListCount === 0 && (
+              <p className="text-[11px] text-[var(--canvas-text-30)]">连接图片节点后会自动显示在此处</p>
+            )}
           </div>
           {isPolishing ? (
             <div className="flex-1 space-y-2.5 py-1 animate-pulse">
@@ -4613,6 +4658,8 @@ export function ReactCanvasRoot({
   const [viewportKey, setViewportKey] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [autoSaveError, setAutoSaveError] = useState<string | null>(null);
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  const [isManualSaving, setIsManualSaving] = useState(false);
   const lastSaveHashRef = useRef<number | null>(null);
   const [creditsLabel, setCreditsLabel] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string>("");
@@ -4696,6 +4743,8 @@ export function ReactCanvasRoot({
   // Prevents onPaneClick from dismissing the picker immediately after onConnectEnd creates it
   const suppressNextPaneClickRef = useRef(false);
   const [visibleProjectError, setVisibleProjectError] = useState<string | null>(null);
+  const patchRuntimePerfLogRef = useRef(0);
+  const autosavePerfLogRef = useRef(0);
   const toggleExpanded = useCallback((nodeId: string, nextState?: boolean) => {
     setNodes((prev) =>
       prev.map((node) =>
@@ -4732,8 +4781,10 @@ export function ReactCanvasRoot({
     [toggleExpanded],
   );
   const patchRuntimeData = useCallback((nodeId: string, patch: Record<string, unknown>) => {
-    setNodes((prev) =>
-      prev.map((node) => {
+    const shouldTrace = CANVAS_PERF_TRACING && typeof performance !== "undefined";
+    const startedAt = shouldTrace ? performance.now() : 0;
+    setNodes((prev) => {
+      const nextNodes = prev.map((node) => {
         if (node.id !== nodeId) return node;
         const nextRuntime = {
           ...node.data.runtime,
@@ -4747,8 +4798,19 @@ export function ReactCanvasRoot({
             summary: summarizeNodeData(nextRuntime),
           },
         };
-      }),
-    );
+      });
+      if (shouldTrace) {
+        const duration = performance.now() - startedAt;
+        const now = performance.now();
+        if (duration > 8 && now - patchRuntimePerfLogRef.current > PERF_LOG_THROTTLE_MS) {
+          console.info(
+            `[canvas][perf] patchRuntimeData (${prev.length} nodes) took ${duration.toFixed(1)}ms`,
+          );
+          patchRuntimePerfLogRef.current = now;
+        }
+      }
+      return nextNodes;
+    });
   }, []);
   const setNodeStatus = useCallback(
     (nodeId: string, status: MinimalFlowNodeData["status"], statusMessage?: string) => {
@@ -5136,6 +5198,8 @@ export function ReactCanvasRoot({
     if (!currentProjectId || hydratingRef.current) return;
     let cancelled = false;
     const timer = setTimeout(async () => {
+      const shouldTrace = CANVAS_PERF_TRACING && typeof performance !== "undefined";
+      const snapshotStart = shouldTrace ? performance.now() : 0;
       const runtimeNodes = flowNodesToRuntime(nodes);
       const runtimeEdges = flowEdgesToRuntime(edges);
       // Cheap hash: skip save if nothing actually changed
@@ -5146,12 +5210,31 @@ export function ReactCanvasRoot({
       setIsSaving(true);
       try {
         const thumbnail = extractThumbnailFromNodes(runtimeNodes);
+        if (shouldTrace) {
+          const snapshotDuration = performance.now() - snapshotStart;
+          if (snapshotDuration > 10 && performance.now() - autosavePerfLogRef.current > PERF_LOG_THROTTLE_MS) {
+            console.info(
+              `[canvas][perf] autosave snapshot (${nodes.length} nodes, ${resources.length} resources) took ${snapshotDuration.toFixed(1)}ms`,
+            );
+          }
+        }
+        const saveStartedAt = shouldTrace ? performance.now() : 0;
         await saveProjectCanvas(currentProjectId, {
           nodes: runtimeNodes,
           edges: runtimeEdges,
           viewport,
           resources,
         }, thumbnail);
+        if (shouldTrace) {
+          const saveDuration = performance.now() - (snapshotStart || 0);
+          const requestDuration = performance.now() - saveStartedAt;
+          if (requestDuration > 50 && performance.now() - autosavePerfLogRef.current > PERF_LOG_THROTTLE_MS) {
+            console.info(
+              `[canvas][perf] autosave request took ${requestDuration.toFixed(0)}ms (total ${saveDuration.toFixed(0)}ms)`,
+            );
+            autosavePerfLogRef.current = performance.now();
+          }
+        }
         if (!cancelled) {
           lastSaveHashRef.current = hash;
           setAutoSaveError(null);

@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { getRequestUserContext } from "@/lib/authServer";
+import { syncTaskToSummary } from "@/lib/taskSummary";
+import { emitStoryboardTaskUpsert } from "@/lib/storyboardEvents";
 
 export async function GET(request: NextRequest) {
   const taskId = request.nextUrl.searchParams.get("taskId");
@@ -28,6 +31,11 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const { userId } = await getRequestUserContext(request);
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const body = await request.json().catch(() => ({}));
   const { contentType, scriptContent, imageUrl, aspectRatio } = body as Record<string, unknown>;
 
@@ -55,13 +63,18 @@ export async function POST(request: NextRequest) {
         videoType: "grid",
         imageModel: "nanoBananapro",
         videoModel: "veo_3_1-fast",
+        userId,
+        progress: 5,
       },
     });
 
-    await (prisma as any).storyboardTask.update({
+    const syncedTask = await (prisma as any).storyboardTask.update({
       where: { id: task.id },
       data: { taskId: task.id },
     });
+
+    emitStoryboardTaskUpsert(syncedTask);
+    await syncTaskToSummary({ taskType: "storyboard", taskId: syncedTask.id, operation: "create" });
 
     const webhookUrl =
       process.env.N8N_STORYBOARD_GEN_WEBHOOK?.trim() ||
@@ -79,7 +92,7 @@ export async function POST(request: NextRequest) {
       content_type: mappedContentType,
       aspectRatio: String(aspectRatio || "9:16"),
       style_mode: "auto",
-      callback_url: `${callbackBase}/api/canvas/grid/webhook`,
+      callback_url: `${callbackBase}/api/canvas/grid/webhook?taskId=${task.id}`,
       admin_token: process.env.ADMIN_TOKEN,
     };
 
@@ -94,7 +107,7 @@ export async function POST(request: NextRequest) {
       console.error("[canvas/grid] webhook fire failed:", err);
     });
 
-    return NextResponse.json({ data: { taskId: task.id } });
+    return NextResponse.json({ data: { taskId: syncedTask.id } });
   } catch (error) {
     console.error("[canvas/grid] POST error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

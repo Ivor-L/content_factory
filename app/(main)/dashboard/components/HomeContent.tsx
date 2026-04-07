@@ -5,11 +5,11 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { User, Clapperboard, SendHorizontal, Sparkles, Image as ImageIcon, Paperclip, Play, X } from 'lucide-react';
+import { User, Grid3x3, SendHorizontal, Sparkles, Image as ImageIcon, Paperclip, Play, X } from 'lucide-react';
 import { useTenant } from '@/hooks/useTenant';
 import { Modal } from '@/components/Modal';
 import { DigitalHumanModal } from '@/components/DigitalHumanModal';
-import { QuickPosterForm, QuickReplicationForm } from './QuickActionForms';
+import { QuickPosterForm, QuickGridForm } from './QuickActionForms';
 import { CreativeQuickStartModal } from './CreativeQuickStart';
 import { createCanvasProjectOnServer } from '@/app/(main)/canvas/lib/api';
 
@@ -47,7 +47,7 @@ export function HomeContent() {
   const { tenant, tenantSlug, basePath } = useTenant();
   const router = useRouter();
   const pathname = usePathname();
-  const [showReplicationModal, setShowReplicationModal] = useState(false);
+  const [showGridModal, setShowGridModal] = useState(false);
   const [showPosterModal, setShowPosterModal] = useState(false);
   const [showCreativeModal, setShowCreativeModal] = useState(false);
   const [showDigitalHumanModal, setShowDigitalHumanModal] = useState(false);
@@ -144,9 +144,9 @@ export function HomeContent() {
   };
 
   const openQuickAction = useCallback(
-    (action: 'creative' | 'replication' | 'poster' | 'digitalHuman') => {
+    (action: 'creative' | 'grid' | 'poster' | 'digitalHuman') => {
       if (action === 'creative') { setShowCreativeModal(true); return; }
-      if (action === 'replication') { setShowReplicationModal(true); return; }
+      if (action === 'grid') { setShowGridModal(true); return; }
       if (action === 'poster') { setShowPosterModal(true); return; }
       if (action === 'digitalHuman') { setShowDigitalHumanModal(true); return; }
     },
@@ -290,11 +290,11 @@ export function HomeContent() {
               </button>
               <button
                 type="button"
-                onClick={() => openQuickAction('replication')}
+                onClick={() => openQuickAction('grid')}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-200 bg-white/90 px-4 py-3 text-sm font-medium text-gray-700 shadow-sm transition hover:border-[#ffd445] hover:bg-white hover:text-gray-900 dark:border-transparent dark:bg-gray-900/80 dark:text-gray-200 dark:hover:border-[#ffd445] dark:hover:bg-gray-900"
               >
-                <Clapperboard className="h-4 w-4" />
-                视频复刻
+                <Grid3x3 className="h-4 w-4" />
+                九宫格创作
               </button>
               <button
                 type="button"
@@ -316,14 +316,14 @@ export function HomeContent() {
           </div>
         </section>
 
-        {showReplicationModal && (
+        {showGridModal && (
           <Modal
-            isOpen={showReplicationModal}
-            onClose={() => setShowReplicationModal(false)}
-            title={<span className="text-base font-semibold">视频复刻</span>}
+            isOpen={showGridModal}
+            onClose={() => setShowGridModal(false)}
+            title={<span className="text-base font-semibold">九宫格创作</span>}
             maxWidth="max-w-4xl"
           >
-            <QuickReplicationForm onClose={() => setShowReplicationModal(false)} />
+            <QuickGridForm onClose={() => setShowGridModal(false)} />
           </Modal>
         )}
 

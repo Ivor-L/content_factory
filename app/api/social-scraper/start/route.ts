@@ -251,6 +251,7 @@ type InstagramWorkflowResponse = {
   message?: string;
   post_data?: InstagramPostData | null;
   raw_details?: Record<string, unknown> | null;
+  [key: string]: unknown;
 };
 
 type InstagramPostData = {
@@ -273,6 +274,11 @@ type InstagramMediaAssets = {
   images?: unknown;
   videos?: unknown;
   carousel?: unknown;
+};
+
+type InstagramPostCoercionResult = {
+  post: InstagramPostData;
+  rawDetails: Record<string, unknown> | null;
 };
 
 type InstagramWorkflowError = {
@@ -309,10 +315,229 @@ async function collectInstagramQueueItems(urls: string[]): Promise<{
 
 async function buildInstagramQueueItem(url: string): Promise<RawQueueItem | null> {
   const payload = await triggerInstagramWorkflow(url);
-  if (!payload.post_data) {
+  const coerced = coerceInstagramPostPayload(payload);
+  if (!coerced) {
     return null;
   }
-  return normalizeInstagramPost(payload.post_data, payload.raw_details ?? null, url);
+  return normalizeInstagramPost(coerced.post, coerced.rawDetails, url);
+}
+
+function coerceInstagramPostPayload(payload: InstagramWorkflowResponse): InstagramPostCoercionResult | null {
+  if (payload.post_data) {
+    return { post: payload.post_data, rawDetails: payload.raw_details ?? null };
+  }
+  const loosePost = convertLooseInstagramPayload(payload);
+  if (!loosePost) {
+    return null;
+  }
+  const rawDetails =
+    (payload.raw_details && typeof payload.raw_details === "object"
+      ? (payload.raw_details as Record<string, unknown>)
+      : toPlainObject(payload)) ?? null;
+  return { post: loosePost, rawDetails };
+}
+
+function convertLooseInstagramPayload(payload: InstagramWorkflowResponse): InstagramPostData | null {
+  const record = toPlainObject(payload);
+  if (!record) return null;
+
+  const authorObj = toPlainObject(record["author"]);
+  const statsObj = toPlainObject(record["stats"]);
+  const mediaObj = toPlainObject(record["media"]);
+
+  const shortcode =
+    sanitizeText(record["shortcode"]) ??
+    sanitizeText(record["code"]) ??
+    sanitizeText(record["id"]);
+  const postId =
+    sanitizeText(record["post_id"]) ??
+    sanitizeText(record["id"]) ??
+    sanitizeText(record["source_id"]);
+
+  if (!shortcode && !postId) {
+    return null;
+  }
+
+  const captionText =
+    sanitizeText(record["caption_text"]) ??
+    sanitizeText(record["caption"]) ??
+    sanitizeText(record["description"]);
+  const publishTime =
+    record["publish_time"] ??
+    record["publishTime"] ??
+    record["taken_at"] ??
+    record["takenAt"] ??
+    record["timestamp"] ??
+    record["created_at"] ??
+    record["createdAt"] ??
+    null;
+
+  const likeCount =
+    normalizeCount(record["like_count"]) ??
+    normalizeCount(statsObj?.["like_count"]);
+  const commentCount =
+    normalizeCount(record["comment_count"]) ??
+    normalizeCount(statsObj?.["comment_count"]);
+
+  const normalizedAuthor = authorObj
+    ? {
+        username: sanitizeText(authorObj["username"]) ?? undefined,
+        full_name:
+          sanitizeText(authorObj["full_name"]) ??
+          sanitizeText(authorObj["nickname"]) ??
+          undefined,
+        profile_pic_url:
+          sanitizeText(authorObj["profile_pic_url"]) ??
+          sanitizeText(authorObj["avatar"]) ??
+          undefined,
+      }
+    : undefined;
+
+  const author =
+    normalizedAuthor &&
+    (normalizedAuthor.username ||
+      normalizedAuthor.full_name ||
+      normalizedAuthor.profile_pic_url)
+      ? normalizedAuthor
+      : undefined;
+
+  const mediaAssets = buildMediaAssetsFromLooseMedia(mediaObj, record);
+
+  return {
+    shortcode: shortcode ?? undefined,
+    post_id: postId ?? undefined,
+    media_type: normalizeMediaTypeValue(
+      record["media_type"] ?? mediaObj?.["type"],
+    ),
+    like_count: likeCount,
+    comment_count: commentCount,
+    caption_text: captionText ?? undefined,
+    publish_time: publishTime ?? undefined,
+    author,
+    media_assets: mediaAssets ?? undefined,
+  };
+}
+
+function toPlainObject(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function normalizeCount(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = Number(value.replace(/,/g, "").trim());
+    if (Number.isFinite(normalized)) {
+      return normalized;
+    }
+  }
+  return undefined;
+}
+
+function normalizeMediaTypeValue(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  const text = sanitizeText(value);
+  if (!text) return undefined;
+  const lower = text.toLowerCase();
+  if (lower.includes("video")) return 2;
+  if (lower.includes("carousel") || lower.includes("album") || lower.includes("sidecar")) {
+    return 8;
+  }
+  if (lower.includes("image") || lower.includes("photo") || lower.includes("picture")) {
+    return 1;
+  }
+  const parsed = Number(lower);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function buildMediaAssetsFromLooseMedia(
+  mediaValue: Record<string, unknown> | null,
+  root: Record<string, unknown>,
+): InstagramMediaAssets | null {
+  const images: string[] = [];
+  const videos: string[] = [];
+  const carousel: unknown[] = [];
+
+  const pushImage = (value: unknown) => {
+    const url = normalizeMediaUrl(value);
+    if (url) images.push(url);
+  };
+  const pushVideo = (value: unknown) => {
+    const url = normalizeMediaUrl(value);
+    if (url) videos.push(url);
+  };
+  const pushCarousel = (value: unknown) => {
+    if (!value) return;
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        carousel.push(entry);
+        if (typeof entry === "string") {
+          const url = normalizeMediaUrl(entry);
+          if (url) {
+            (isVideoLikeUrl(url) ? videos : images).push(url);
+          }
+          continue;
+        }
+        if (entry && typeof entry === "object") {
+          const entryObj = entry as Record<string, unknown>;
+          pushImage(
+            entryObj["image_url"] ??
+              entryObj["cover_url"] ??
+              entryObj["display_url"] ??
+              entryObj["thumbnail_url"],
+          );
+          pushVideo(entryObj["video_url"] ?? entryObj["media_url"]);
+        }
+      }
+      return;
+    }
+    carousel.push(value);
+  };
+
+  pushImage(
+    mediaValue?.["cover_url"] ??
+      mediaValue?.["coverUrl"] ??
+      mediaValue?.["image_url"] ??
+      mediaValue?.["imageUrl"] ??
+      mediaValue?.["thumbnail_url"] ??
+      mediaValue?.["thumbnailUrl"],
+  );
+  pushVideo(
+    mediaValue?.["video_url"] ??
+      mediaValue?.["videoUrl"] ??
+      mediaValue?.["media_url"] ??
+      mediaValue?.["mediaUrl"],
+  );
+  pushCarousel(
+    mediaValue?.["album"] ??
+      mediaValue?.["carousel"] ??
+      mediaValue?.["children"] ??
+      mediaValue?.["items"],
+  );
+
+  pushImage(
+    root["cover_url"] ??
+      root["coverUrl"] ??
+      root["image_url"] ??
+      root["imageUrl"] ??
+      root["thumbnail_url"] ??
+      root["thumbnailUrl"],
+  );
+  pushVideo(root["video_url"] ?? root["videoUrl"] ?? root["media_url"] ?? root["mediaUrl"]);
+  pushCarousel(root["album"] ?? root["carousel"] ?? root["media_album"]);
+
+  const assets: InstagramMediaAssets = {};
+  if (images.length) assets.images = images;
+  if (videos.length) assets.videos = videos;
+  if (carousel.length) assets.carousel = carousel;
+
+  return Object.keys(assets).length ? assets : null;
 }
 
 async function triggerInstagramWorkflow(url: string): Promise<InstagramWorkflowResponse> {
@@ -341,7 +566,7 @@ async function triggerInstagramWorkflow(url: string): Promise<InstagramWorkflowR
     throw new Error(payload.message || "Instagram 采集失败");
   }
   if (!payload.post_data) {
-    throw new Error("Instagram 采集器未返回帖子内容");
+    console.warn("[social-scraper] Instagram workflow missing post_data, falling back to loose payload.");
   }
 
   return payload;

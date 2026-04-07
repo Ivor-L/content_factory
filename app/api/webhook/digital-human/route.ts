@@ -445,66 +445,105 @@ export async function POST(request: Request) {
       );
     }
 
-    const shouldDeductCredits =
-      updateStatus === "COMPLETED" && task.status !== "COMPLETED";
-
-    await prisma.digitalHumanVideo.update({
-      where: { id: taskId },
-      data: {
-        status: updateStatus,
-        resultUrl: videoUrl || task.resultUrl,
-      },
-    });
-
-    await syncTaskToSummary({
-      taskType: 'digitalHuman',
-      taskId: taskId,
-      operation: 'update',
-    });
-
-    if (task.sourceTaskId) {
-      const creativeTask = await prisma.creativeTask.findUnique({
-        where: { id: task.sourceTaskId },
-        select: { id: true, metadata: true },
+    // 只在成功且有视频URL时更新resultUrl，失败时不覆盖
+    if (updateStatus === "COMPLETED" && videoUrl) {
+      await prisma.digitalHumanVideo.update({
+        where: { id: taskId },
+        data: {
+          status: updateStatus,
+          resultUrl: videoUrl,
+        },
       });
-      if (creativeTask) {
+
+      await syncTaskToSummary({
+        taskType: 'digitalHuman',
+        taskId: taskId,
+        operation: 'update',
+      });
+
+      if (task.sourceTaskId) {
+        const creativeTask = await prisma.creativeTask.findUnique({
+          where: { id: task.sourceTaskId },
+          select: { id: true, metadata: true },
+        });
+        if (creativeTask) {
+          try {
+            const nextMetadata = setTaskActionStatus(
+              parseMetadata(creativeTask.metadata),
+              "digitalHuman",
+              {
+                status: "ready",
+                jobId: task.id,
+              }
+            );
+            await prisma.creativeTask.update({
+              where: { id: creativeTask.id },
+              data: { metadata: nextMetadata as Prisma.InputJsonValue },
+            });
+          } catch (metaError) {
+            console.error("Failed to sync digital human status to creative task", {
+              creativeTaskId: creativeTask.id,
+              metaError,
+            });
+          }
+        }
+      }
+
+      // 只在成功时扣积分
+      if (task.status !== "COMPLETED") {
         try {
-          const nextMetadata = setTaskActionStatus(
-            parseMetadata(creativeTask.metadata),
-            "digitalHuman",
-            {
-              status: updateStatus === "COMPLETED" ? "ready" : "error",
-              jobId: task.id,
-              error:
-                updateStatus === "COMPLETED"
-                  ? undefined
-                  : (payloadData.error as string | undefined) ??
-                    (bodyData.error as string | undefined) ??
-                    undefined,
-            }
-          );
-          await prisma.creativeTask.update({
-            where: { id: creativeTask.id },
-            data: { metadata: nextMetadata as Prisma.InputJsonValue },
-          });
-        } catch (metaError) {
-          console.error("Failed to sync digital human status to creative task", {
-            creativeTaskId: creativeTask.id,
-            metaError,
+          await deductCreditsForDigitalHuman(task.userId, workflowIdForCredits);
+        } catch (error) {
+          console.error("Failed to deduct credits for digital human task", {
+            taskId,
+            workflowId: workflowIdForCredits,
+            error,
           });
         }
       }
-    }
+    } else if (updateStatus === "FAILED") {
+      // 失败时只更新状态，不更新resultUrl，不扣积分
+      await prisma.digitalHumanVideo.update({
+        where: { id: taskId },
+        data: { status: updateStatus },
+      });
 
-    if (shouldDeductCredits) {
-      try {
-        await deductCreditsForDigitalHuman(task.userId, workflowIdForCredits);
-      } catch (error) {
-        console.error("Failed to deduct credits for digital human task", {
-          taskId,
-          workflowId: workflowIdForCredits,
-          error,
+      await syncTaskToSummary({
+        taskType: 'digitalHuman',
+        taskId: taskId,
+        operation: 'update',
+      });
+
+      if (task.sourceTaskId) {
+        const creativeTask = await prisma.creativeTask.findUnique({
+          where: { id: task.sourceTaskId },
+          select: { id: true, metadata: true },
         });
+        if (creativeTask) {
+          try {
+            const nextMetadata = setTaskActionStatus(
+              parseMetadata(creativeTask.metadata),
+              "digitalHuman",
+              {
+                status: "error",
+                jobId: task.id,
+                error:
+                  (payloadData.error as string | undefined) ??
+                  (bodyData.error as string | undefined) ??
+                  "Task failed",
+              }
+            );
+            await prisma.creativeTask.update({
+              where: { id: creativeTask.id },
+              data: { metadata: nextMetadata as Prisma.InputJsonValue },
+            });
+          } catch (metaError) {
+            console.error("Failed to sync digital human status to creative task", {
+              creativeTaskId: creativeTask.id,
+              metaError,
+            });
+          }
+        }
       }
     }
 

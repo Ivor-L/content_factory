@@ -608,6 +608,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
   const [referenceLoading, setReferenceLoading] = useState(false);
   const [referenceError, setReferenceError] = useState<string | null>(null);
   const [referenceHasMore, setReferenceHasMore] = useState(false);
+  const [activeVideoIds, setActiveVideoIds] = useState<Set<string>>(new Set());
   const referenceCursorRef = useRef<string | null>(null);
   const [referenceQuery, setReferenceQuery] = useState('');
   const debouncedReferenceQuery = useDebouncedValue(referenceQuery, 400);
@@ -1923,20 +1924,44 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                     )}
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent z-10" />
                   {proxiedVideoUrl ? (
-                    <video
-                      src={proxiedVideoUrl}
-                      poster={proxiedPosterUrl}
-                      muted
-                      autoPlay
-                      loop
-                      playsInline
-                      preload="metadata"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-                    />
+                    activeVideoIds.has(item.id) ? (
+                      <video
+                        src={proxiedVideoUrl}
+                        poster={proxiedPosterUrl}
+                        muted
+                        autoPlay
+                        loop
+                        playsInline
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                      />
+                    ) : (
+                      <>
+                        <img
+                          src={proxiedPosterUrl ?? REFERENCE_PLACEHOLDER_IMAGE}
+                          alt={item.title || 'reference'}
+                          loading="lazy"
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveVideoIds((prev) => new Set(prev).add(item.id));
+                          }}
+                          className="absolute inset-0 z-20 flex items-center justify-center"
+                          aria-label="播放视频"
+                        >
+                          <span className="flex items-center justify-center w-12 h-12 rounded-full bg-black/50 backdrop-blur-sm text-white">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 ml-0.5"><path d="M8 5v14l11-7z"/></svg>
+                          </span>
+                        </button>
+                      </>
+                    )
                   ) : (
                     <img
                       src={fallbackImageSrc}
                       alt={item.title || 'reference'}
+                      loading="lazy"
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                     />
                   )}
@@ -2037,20 +2062,44 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                           </button>
                         )}
                         {proxiedVideoUrl ? (
-                          <video
-                            src={proxiedVideoUrl}
-                            poster={proxiedPosterUrl}
-                            muted
-                            autoPlay
-                            loop
-                            playsInline
-                            preload="metadata"
-                            className="w-28 h-16 rounded-xl object-cover flex-shrink-0 border border-gray-100 dark:border-gray-800"
-                          />
+                          activeVideoIds.has(item.id) ? (
+                            <video
+                              src={proxiedVideoUrl}
+                              poster={proxiedPosterUrl}
+                              muted
+                              autoPlay
+                              loop
+                              playsInline
+                              className="w-28 h-16 rounded-xl object-cover flex-shrink-0 border border-gray-100 dark:border-gray-800"
+                            />
+                          ) : (
+                            <div className="relative w-28 h-16 flex-shrink-0">
+                              <img
+                                src={proxiedPosterUrl ?? REFERENCE_PLACEHOLDER_IMAGE}
+                                alt={item.title || 'reference'}
+                                loading="lazy"
+                                className="w-full h-full rounded-xl object-cover border border-gray-100 dark:border-gray-800"
+                              />
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveVideoIds((prev) => new Set(prev).add(item.id));
+                                }}
+                                className="absolute inset-0 flex items-center justify-center rounded-xl"
+                                aria-label="播放视频"
+                              >
+                                <span className="flex items-center justify-center w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm text-white">
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 ml-0.5"><path d="M8 5v14l11-7z"/></svg>
+                                </span>
+                              </button>
+                            </div>
+                          )
                         ) : (
                           <img
                             src={fallbackImageSrc}
                             alt={item.title || "reference"}
+                            loading="lazy"
                             className="w-28 h-16 rounded-xl object-cover flex-shrink-0 border border-gray-100 dark:border-gray-800"
                           />
                         )}

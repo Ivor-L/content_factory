@@ -1,0 +1,48 @@
+.records-page
+  height: 100vh
+  padding: 32rpx
+
+.record-card
+  background: #fff
+  border-radius: 32rpx
+  overflow: hidden
+  margin-bottom: 24rpx
+
+.record-video
+  width: 100%
+  height: 360rpx
+
+.record-info
+  padding: 24rpx 32rpx
+
+.record-row
+  display: flex
+  align-items: center
+  justify-content: space-between
+  margin-bottom: 12rpx
+
+.record-type
+  font-size: 26rpx
+  font-weight: 600
+  color: #000
+
+.record-status
+  font-size: 24rpx
+  font-weight: 600
+
+.record-script
+  font-size: 26rpx
+  color: #444
+  line-height: 1.5
+  margin-bottom: 12rpx
+
+.record-date
+  font-size: 22rpx
+  color: #bbb
+
+.empty-text
+  display: block
+  text-align: center
+  padding: 120rpx 0
+  font-size: 28rpx
+  color: #888

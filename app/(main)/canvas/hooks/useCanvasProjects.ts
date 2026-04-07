@@ -143,7 +143,7 @@ export function useCanvasProjects(
       try {
         const authHeaders = await getAuthHeaders();
         const response = await fetchWithTimeout(
-          "/api/canvas/projects?limit=50",
+          "/api/canvas/projects?limit=50&withFirst=true",
           {
             credentials: "include",
             headers: {
