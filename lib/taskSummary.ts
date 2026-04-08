@@ -7,7 +7,8 @@ export type TaskType =
   | 'replication'
   | 'storyboard'
   | 'knowledgeVideo'
-  | 'replicationShot';
+  | 'replicationShot'
+  | 'grid';
 
 export interface SyncTaskOptions {
   taskType: TaskType;
@@ -176,6 +177,25 @@ async function fetchTaskData(taskType: TaskType, taskId: string): Promise<any> {
         },
       });
 
+    case 'grid':
+      return prisma.storyboardTask.findUnique({
+        where: { id: taskId },
+        select: {
+          id: true,
+          userId: true,
+          status: true,
+          scriptContent: true,
+          coverImage: true,
+          storyboardImageUrl: true,
+          storyboardImages: true,
+          videoType: true,
+          detailedBreakdown: true,
+          progress: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
     case 'knowledgeVideo':
       return prisma.knowledgeVideoTask.findUnique({
         where: { id: taskId },
@@ -309,6 +329,32 @@ function extractSummaryData(taskType: TaskType, taskData: any): any {
         progress: taskData.progress,
       };
 
+    case 'grid': {
+      const detailed = normalizeJsonRecord(taskData.detailedBreakdown);
+      const storyboardImages = Array.isArray(taskData.storyboardImages)
+        ? taskData.storyboardImages.filter((url: unknown): url is string => typeof url === 'string' && url.trim().length > 0)
+        : [];
+      const metadata: Record<string, unknown> = {};
+      if (storyboardImages.length) {
+        metadata.storyboardImages = storyboardImages;
+      }
+      if (detailed?.splitStoryboardTaskId) {
+        metadata.splitStoryboardId = detailed.splitStoryboardTaskId;
+      }
+      if (taskData.storyboardImageUrl || taskData.coverImage) {
+        metadata.gridImageUrl = taskData.storyboardImageUrl || taskData.coverImage;
+      }
+      return {
+        ...base,
+        title: '九宫格任务',
+        status: taskData.status,
+        preview: taskData.scriptContent?.substring(0, 100),
+        thumbnailUrl: taskData.storyboardImageUrl || taskData.coverImage,
+        progress: taskData.progress,
+        metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+      };
+    }
+
     case 'knowledgeVideo':
       return {
         ...base,
@@ -390,6 +436,25 @@ function extractImageFromLayoutResult(layoutJson?: any): string | null {
   }
 }
 
+function normalizeJsonRecord(value: unknown): Record<string, unknown> | null {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return { ...(value as Record<string, unknown>) };
+  }
+  return null;
+}
+
 /**
  * 批量同步所有任务到 TaskSummary（用于初始化或修复数据）
  */
@@ -404,6 +469,7 @@ export async function syncAllTasks(userId?: string): Promise<void> {
     'storyboard',
     'knowledgeVideo',
     'replicationShot',
+    'grid',
   ];
 
   for (const taskType of taskTypes) {
@@ -449,7 +515,21 @@ async function fetchAllTasksByType(taskType: TaskType, userId?: string): Promise
       // Replication 没有直接的 userId，需要通过 product 或 script 关联
       return prisma.replication.findMany({ select: { id: true } });
     case 'storyboard':
-      return prisma.storyboardTask.findMany({ where, select: { id: true } });
+      return prisma.storyboardTask.findMany({
+        where: {
+          ...where,
+          NOT: { videoType: 'grid' },
+        },
+        select: { id: true },
+      });
+    case 'grid':
+      return prisma.storyboardTask.findMany({
+        where: {
+          ...where,
+          videoType: 'grid',
+        },
+        select: { id: true },
+      });
     case 'knowledgeVideo':
       return prisma.knowledgeVideoTask.findMany({ where, select: { id: true } });
     case 'replicationShot':

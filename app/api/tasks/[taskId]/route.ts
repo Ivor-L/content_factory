@@ -44,6 +44,7 @@ async function deleteUnderlyingTask(
       });
       break;
     case "storyboard":
+    case "grid":
       await prisma.storyboardTask.deleteMany({ where: { id: taskId, userId } });
       break;
     case "knowledgeVideo":

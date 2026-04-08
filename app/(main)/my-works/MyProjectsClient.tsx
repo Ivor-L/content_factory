@@ -110,6 +110,13 @@ function normalizeHttpUrl(raw: string | null): string | null {
   return /^https?:\/\//i.test(trimmed) ? trimmed : null;
 }
 
+function getStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter((item): item is string => Boolean(item));
+}
+
 // Routes relative to basePath (no leading slash except for the leading basePath)
 const TASK_TYPE_ROUTE_PATHS: Record<TaskType, (taskId: string) => string> = {
   creative: (id) => `/my-works?taskId=${id}`,
@@ -119,6 +126,7 @@ const TASK_TYPE_ROUTE_PATHS: Record<TaskType, (taskId: string) => string> = {
   storyboard: (id) => `/storyboard/${id}`,
   knowledgeVideo: (id) => `/knowledge-videos/${id}`,
   replicationShot: (id) => `/replication-shot/${id}`,
+  grid: (id) => `/my-works?taskId=${id}`,
 };
 
 const isText2ImagePosterTask = (task: TaskSummary) =>
@@ -170,6 +178,13 @@ const TYPE_META: Record<
     accent: "from-blue-100/80 via-sky-50 to-white",
     badge: "bg-blue-50 text-blue-800 border-blue-100",
     icon: Clapperboard,
+  },
+  grid: {
+    label: { en: "Nine-grid tasks", zh: "九宫格任务", "zh-TW": "九宮格任務" },
+    description: { en: "Grid drafts & splits", zh: "九宫格拆解", "zh-TW": "九宮格拆解" },
+    accent: "from-teal-100/80 via-emerald-50 to-white",
+    badge: "bg-teal-50 text-teal-800 border-teal-100",
+    icon: LayoutGrid,
   },
   storyboard: {
     label: { en: "Storyboards", zh: "分镜任务", "zh-TW": "分鏡任務" },
@@ -243,6 +258,8 @@ const STATUS_LABELS: Record<string, CopyMap> = {
   BREAKDOWN_PROCESSING: { en: "Analyzing", zh: "拆解中", "zh-TW": "拆解中" },
   BREAKDOWN_COMPLETED: { en: "Analyzed", zh: "拆解完成", "zh-TW": "拆解完成" },
   BREAKDOWN_FAILED: { en: "Failed", zh: "拆解失败", "zh-TW": "拆解失敗" },
+  SPLIT_PENDING: { en: "Queued", zh: "拆解排队", "zh-TW": "拆解排隊" },
+  SPLIT_COMPLETED: { en: "Split ready", zh: "拆解完成", "zh-TW": "拆解完成" },
   IMAGE_GENERATING: { en: "Generating", zh: "生成首帧图", "zh-TW": "生成首幀圖" },
   IMAGE_GENERATION_COMPLETED: { en: "Images ready", zh: "首帧图就绪", "zh-TW": "首幀圖就緒" },
   VIDEO_GENERATING: { en: "Generating", zh: "生成视频", "zh-TW": "生成影片" },
@@ -269,6 +286,8 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
   PENDING: "bg-amber-50 text-amber-700 border-amber-100",
   BREAKDOWN_PENDING: "bg-amber-50 text-amber-700 border-amber-100",
   PENDING_IMAGE: "bg-amber-50 text-amber-700 border-amber-100",
+  SPLIT_PENDING: "bg-amber-50 text-amber-700 border-amber-100",
+  SPLIT_COMPLETED: "bg-emerald-50 text-emerald-700 border-emerald-100",
   FAILED: "bg-rose-50 text-rose-700 border-rose-100",
   ERROR: "bg-rose-50 text-rose-700 border-rose-100",
   BREAKDOWN_FAILED: "bg-rose-50 text-rose-700 border-rose-100",
@@ -1054,6 +1073,17 @@ export function MyProjectsClient({
       router.push(`${basePath}/xhs-poster?taskId=${task.taskId}`);
       return;
     }
+    if (task.taskType === "grid") {
+      const splitId = (() => {
+        const meta = toRecord(task.metadata);
+        const value = meta?.splitStoryboardId;
+        return typeof value === "string" && value.trim() ? value.trim() : null;
+      })();
+      if (splitId) {
+        router.push(`${basePath}/storyboard/${splitId}`);
+        return;
+      }
+    }
     const relativePath = TASK_TYPE_ROUTE_PATHS[task.taskType]?.(task.taskId);
     if (relativePath) {
       // relativePath starts with '/', basePath has no trailing slash
@@ -1451,11 +1481,19 @@ interface TaskDetailModalProps {
 }
 
 function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload, onDelete, deleting, onPosterLaunch, onDigitalHumanLaunch }: TaskDetailModalProps) {
+  const router = useRouter();
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
   const handleBackdropClick = (event: React.MouseEvent<HTMLDivElement>) => {
     if (event.target === event.currentTarget) {
       onClose();
     }
   };
+
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      setPortalRoot(document.body);
+    }
+  }, []);
 
   const typeMeta = TYPE_META[task.taskType];
   const typeLabel = pickCopy(typeMeta?.label || HEADER_COPY, langKey);
@@ -1470,8 +1508,11 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
   const isCreative = task.taskType === "creative";
   const isPoster = task.taskType === "poster";
   const isDigitalHuman = task.taskType === "digitalHuman";
+  const isGrid = task.taskType === "grid";
+  const isStoryboard = task.taskType === "storyboard";
   const isText2ImagePoster = isText2ImagePosterTask(task);
   const behavesLikeCreative = isCreative || isText2ImagePoster;
+  const gridMetadata = isGrid ? metadataRecord : null;
 
   const shouldFetchReplicationDetail = isReplication;
   const [replicationDetail, setReplicationDetail] = useState<ReplicationDetailPayload | null>(null);
@@ -1486,6 +1527,27 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
   const [t2vStylesLoading, setT2vStylesLoading] = useState(false);
   const [t2vSelectedStyleId, setT2vSelectedStyleId] = useState<string | null>(null);
   const [t2vAllowText, setT2vAllowText] = useState(false);
+  const gridStoryboardImages = isGrid ? getStringArray(gridMetadata?.storyboardImages as unknown) : [];
+  const gridSplitStoryboardIdFromMeta =
+    isGrid && typeof (gridMetadata?.splitStoryboardId as unknown) === "string"
+      ? (gridMetadata?.splitStoryboardId as string)
+      : null;
+  const [gridSplitStoryboardId, setGridSplitStoryboardId] = useState<string | null>(gridSplitStoryboardIdFromMeta);
+  const [gridSplitLoading, setGridSplitLoading] = useState(false);
+  const [gridSplitError, setGridSplitError] = useState<string | null>(null);
+  const [storyboardDetail, setStoryboardDetail] = useState<{
+    storyboardImageUrl?: string | null;
+    status?: string | null;
+    progress?: number | null;
+  } | null>(null);
+  const [storyboardLoading, setStoryboardLoading] = useState(false);
+  const [storyboardError, setStoryboardError] = useState<string | null>(null);
+  const storyboardRequestIdRef = useRef(0);
+  const [splittingStoryboard, setSplittingStoryboard] = useState(false);
+  const [splitError, setSplitError] = useState<string | null>(null);
+  const [creativeDetail, setCreativeDetail] = useState<CreativeTaskDetail | null>(null);
+  const [creativeDetailLoading, setCreativeDetailLoading] = useState(false);
+  const [creativeDetailError, setCreativeDetailError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!shouldFetchReplicationDetail) {
@@ -1619,11 +1681,17 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
   const storyboardImageUrl = isStoryboard
     ? storyboardDetail?.storyboardImageUrl || task.thumbnailUrl || null
     : null;
+  const gridMetadataImage =
+    isGrid && typeof gridMetadata?.gridImageUrl === "string" && gridMetadata.gridImageUrl.trim()
+      ? gridMetadata.gridImageUrl
+      : null;
   const hasVideo = Boolean(primaryVideoUrl);
 
   const previewImageUrl = isStoryboard
     ? storyboardImageUrl
-    : replicationThumbnailUrl || task.thumbnailUrl || null;
+    : isGrid
+      ? gridMetadataImage || task.thumbnailUrl || null
+      : replicationThumbnailUrl || task.thumbnailUrl || null;
 
   // Load images for creative (text2image) tasks
   const [images, setImages] = useState<string[]>(() =>
@@ -1744,9 +1812,16 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
     };
   }, [isCreative, t2vStatus, task.taskId]);
 
+  useEffect(() => {
+    if (!isGrid) return;
+    setGridSplitStoryboardId(gridSplitStoryboardIdFromMeta);
+  }, [isGrid, gridSplitStoryboardIdFromMeta]);
+
   const showImageGallery = (behavesLikeCreative || (isPoster && !isText2ImagePoster)) && !hasVideo;
   const primaryActionLabel = showImageGallery && images.length > 1
     ? `下载全部 (${images.length})`
+    : isGrid && gridSplitStoryboardId
+      ? "查看分镜任务"
     : isReplication && replicationVideoUrl
       ? "下载视频"
       : "下载";
@@ -1777,16 +1852,35 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
     : storyboardSplitInProgress
       ? "AI 正在拆解九宫格，预计 2-3 分钟完成。"
       : "系统会读取九宫格并生成逐帧分镜。";
+  const gridMainImageUrl = isGrid ? (gridMetadataImage || previewImageUrl || task.thumbnailUrl || null) : null;
+  const gridSplitInProgress = Boolean(
+    isGrid && (gridSplitLoading || splitInProgressStatusKeys.includes(statusKey)),
+  );
+  const gridSplitCompleted = Boolean(
+    isGrid && (statusKey === "SPLIT_COMPLETED" || gridSplitStoryboardId),
+  );
+  const gridStatusHelper = gridSplitCompleted
+    ? "拆解完成，可查看分镜任务。"
+    : gridSplitInProgress
+      ? "拆解任务执行中，请稍后刷新状态。"
+      : gridMainImageUrl
+        ? "九宫格已生成，可立即触发拆解。"
+        : "九宫格生成完成后才能继续拆解。";
+  const gridSplitHelper = gridSplitCompleted
+    ? "拆解完成，可直接打开分镜板查看 9 张分镜。"
+    : gridSplitInProgress
+      ? "AI 正在拆解九宫格，预计 2-3 分钟完成。"
+      : "系统会读取九宫格并生成逐帧分镜。";
 
   const detailStatusClass = (() => {
     const key = isStoryboard ? storyboardStatusKey : statusKey;
-    if (["COMPLETED", "READY", "ACTIVE", "PUBLISHED"].includes(key)) {
+    if (["COMPLETED", "READY", "ACTIVE", "PUBLISHED", "SPLIT_COMPLETED", "BREAKDOWN_COMPLETED"].includes(key)) {
       return "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800";
     }
-    if (["PROCESSING", "ANALYZING", "RUNNING", "IN_PROGRESS"].includes(key)) {
+    if (["PROCESSING", "ANALYZING", "RUNNING", "IN_PROGRESS", "BREAKDOWN_PROCESSING"].includes(key)) {
       return "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-900/20 dark:text-sky-300 dark:border-sky-800";
     }
-    if (["PENDING", "QUEUED"].includes(key)) {
+    if (["PENDING", "QUEUED", "SPLIT_PENDING", "BREAKDOWN_PENDING"].includes(key)) {
       return "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800";
     }
     if (["FAILED", "ERROR"].includes(key)) {
@@ -1824,16 +1918,6 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
     ? (getMetadataString(task.metadata, "type") || "默认")
     : null;
 
-  const isStoryboard = task.taskType === "storyboard";
-  const [storyboardDetail, setStoryboardDetail] = useState<{ storyboardImageUrl?: string | null; status?: string | null; progress?: number | null } | null>(null);
-  const [storyboardLoading, setStoryboardLoading] = useState(false);
-  const [storyboardError, setStoryboardError] = useState<string | null>(null);
-  const storyboardRequestIdRef = useRef(0);
-  const [splittingStoryboard, setSplittingStoryboard] = useState(false);
-  const [splitError, setSplitError] = useState<string | null>(null);
-  const [creativeDetail, setCreativeDetail] = useState<CreativeTaskDetail | null>(null);
-  const [creativeDetailLoading, setCreativeDetailLoading] = useState(false);
-  const [creativeDetailError, setCreativeDetailError] = useState<string | null>(null);
   const draftStage = creativeDetail?.metadata?.stages?.draft;
   const topicStage = creativeDetail?.metadata?.stages?.topic;
   const scriptText =
@@ -2010,6 +2094,16 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
       onOpen();
       return;
     }
+    if (isGrid) {
+      if (gridSplitStoryboardId) {
+        handleOpenGridStoryboard();
+        return;
+      }
+      if (gridMainImageUrl) {
+        onDownload([gridMainImageUrl]);
+        return;
+      }
+    }
     if (showImageGallery) {
       onDownload(images);
       return;
@@ -2083,6 +2177,50 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
     }
   }, [fetchStoryboardDetail, isStoryboard, splittingStoryboard, storyboardImageUrl, task.taskId]);
 
+  const handleGridSplit = useCallback(async () => {
+    if (!isGrid || gridSplitLoading) return;
+    if (!gridMainImageUrl) {
+      const message = "九宫格尚未生成，暂时无法拆解";
+      setGridSplitError(message);
+      toast.error(message);
+      return;
+    }
+    setGridSplitError(null);
+    setGridSplitLoading(true);
+    try {
+      const response = await fetch(`/api/grid-tasks/${task.taskId}/split`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error((payload as { error?: string }).error || "拆解失败，请稍后重试");
+      }
+      const storyboardId =
+        typeof (payload as { data?: { storyboardId?: string } }).data?.storyboardId === "string"
+          ? (payload as { data?: { storyboardId?: string } }).data!.storyboardId!
+          : null;
+      if (storyboardId) {
+        setGridSplitStoryboardId(storyboardId);
+        toast.success("拆解完成，可查看分镜任务");
+      } else {
+        toast.success("拆解任务已提交");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "触发拆解失败";
+      setGridSplitError(message);
+      toast.error(message);
+    } finally {
+      setGridSplitLoading(false);
+    }
+  }, [gridMainImageUrl, gridSplitLoading, isGrid, task.taskId]);
+
+  const handleOpenGridStoryboard = useCallback(() => {
+    if (!gridSplitStoryboardId) return;
+    router.push(`${basePath}/storyboard/${gridSplitStoryboardId}`);
+    onClose();
+  }, [basePath, gridSplitStoryboardId, onClose, router]);
+
   const handleRetryDigitalHuman = async () => {
     if (!isDigitalHuman) return;
     setRetrying(true);
@@ -2103,7 +2241,7 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
     }
   };
 
-  const mainPortal = createPortal(
+  const mainPortal = portalRoot ? createPortal(
     <div
       className="fixed inset-0 z-[9999] flex items-stretch justify-center overflow-y-auto bg-black/75 backdrop-blur-sm p-3 sm:p-6"
       onClick={handleBackdropClick}
@@ -2338,6 +2476,144 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
                 >
                   <ExternalLink className="h-4 w-4" />
                   {storyboardSplitCompleted ? "查看拆解结果" : "打开分镜任务"}
+                </button>
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  disabled={deleting}
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-rose-200 px-5 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-60 dark:border-rose-500/40 dark:text-rose-300 dark:hover:bg-rose-900/20"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {deleting ? "删除中..." : "删除"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : isGrid ? (
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-auto p-6 pb-2 space-y-5">
+              <div className="flex flex-wrap items-center gap-2 pr-10">
+                <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                  {typeLabel}
+                </span>
+                <span className={cn("inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold", detailStatusClass)}>
+                  {statusLabel}
+                </span>
+              </div>
+
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">{task.title || typeLabel}</h2>
+                <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">{formatTimestamp(task.createdAt, LANGUAGE_LOCALES[langKey])}</p>
+                {task.preview && (
+                  <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400 leading-relaxed whitespace-pre-wrap">
+                    {task.preview}
+                  </p>
+                )}
+              </div>
+
+              <div className="rounded-3xl border border-gray-100 bg-white/80 p-4 space-y-3 dark:border-gray-800 dark:bg-gray-900/30">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">九宫格状态</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{statusLabel}</p>
+                  </div>
+                  {gridSplitInProgress && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
+                </div>
+                <div
+                  className={cn(
+                    "rounded-2xl px-3 py-2 text-sm leading-relaxed",
+                    gridSplitError
+                      ? "bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-200"
+                      : "bg-gray-50 text-gray-700 dark:bg-gray-950/50 dark:text-gray-300",
+                  )}
+                >
+                  {gridSplitError || gridStatusHelper}
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-[var(--tenant-primary,#16a34a)]/20 bg-white/90 p-4 shadow-sm dark:border-[var(--tenant-primary,#16a34a)]/30 dark:bg-gray-900/40 space-y-4">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">分镜拆解</p>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{gridSplitHelper}</p>
+                </div>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  {gridSplitCompleted ? (
+                    <button
+                      type="button"
+                      onClick={handleOpenGridStoryboard}
+                      className="flex-1 inline-flex items-center justify-center gap-2 rounded-full bg-[var(--tenant-primary,#16a34a)] px-5 py-2.5 text-sm font-semibold text-white shadow transition hover:bg-[var(--tenant-primary,#16a34a)]/90 dark:text-gray-900 dark:bg-[var(--tenant-primary-foreground,#fefce8)] dark:hover:bg-[var(--tenant-primary-foreground,#fefce8)]/80"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      查看分镜任务
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleGridSplit}
+                      disabled={gridSplitLoading || !gridMainImageUrl}
+                      className={cn(
+                        "flex-1 inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold text-white shadow transition disabled:cursor-not-allowed disabled:bg-gray-300",
+                        gridMainImageUrl ? "bg-[var(--tenant-primary,#16a34a)] hover:bg-[var(--tenant-primary,#16a34a)]/90" : "bg-gray-300",
+                      )}
+                    >
+                      {gridSplitLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      {gridSplitLoading ? "拆解中..." : "一键拆解"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGridSplitError(null);
+                      toast.success("已记录，请稍后刷新列表查看最新状态");
+                    }}
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-gray-200 px-5 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                  >
+                    <RefreshCcw className="h-4 w-4" />
+                    刷新提示
+                  </button>
+                </div>
+                {!gridMainImageUrl && (
+                  <p className="text-xs text-amber-500 dark:text-amber-400">九宫格完成后才能触发拆解。</p>
+                )}
+                {gridSplitError && (
+                  <p className="text-xs text-rose-500 dark:text-rose-400">{gridSplitError}</p>
+                )}
+              </div>
+
+              {gridStoryboardImages.length > 0 && (
+                <div className="rounded-3xl border border-gray-100 bg-white/80 p-4 space-y-3 dark:border-gray-800 dark:bg-gray-900/30">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white">拆解预览</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">最新 9 张拆解图</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {gridStoryboardImages.slice(0, 9).map((url, index) => (
+                      <img
+                        key={`${url}-${index}`}
+                        src={url}
+                        alt={`grid-${index + 1}`}
+                        className="h-20 w-full rounded-xl object-cover"
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="border-t border-gray-100 p-6 dark:border-gray-900">
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={
+                    gridSplitStoryboardId
+                      ? handleOpenGridStoryboard
+                      : () => (gridMainImageUrl ? onDownload([gridMainImageUrl]) : onDownload())
+                  }
+                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-full bg-[var(--tenant-primary,#16a34a)] px-5 py-2.5 text-sm font-semibold text-white shadow transition hover:bg-[var(--tenant-primary,#16a34a)]/90 dark:text-gray-900 dark:bg-[var(--tenant-primary-foreground,#fefce8)] dark:hover:bg-[var(--tenant-primary-foreground,#fefce8)]/80"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  {gridSplitStoryboardId ? "查看分镜任务" : "下载九宫格"}
                 </button>
                 <button
                   type="button"
@@ -2670,11 +2946,11 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
         )}
       </div>
     </div>,
-    document.body
-  );
+    portalRoot
+  ) : null;
 
   // 风格选择弹窗（第二个 portal，浮在详情弹窗上方）
-  const stylePickerPortal = t2vStyleModalOpen ? createPortal(
+  const stylePickerPortal = portalRoot && t2vStyleModalOpen ? createPortal(
     <div
       className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
       onClick={(e) => { if (e.target === e.currentTarget) setT2vStyleModalOpen(false); }}
@@ -2783,7 +3059,7 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
         </div>
       </div>
     </div>,
-    document.body
+    portalRoot
   ) : null;
 
   return (

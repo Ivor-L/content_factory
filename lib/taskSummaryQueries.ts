@@ -12,6 +12,7 @@ export const VALID_TASK_TYPES: TaskType[] = [
   'storyboard',
   'knowledgeVideo',
   'replicationShot',
+  'grid',
 ];
 
 const COMPLETED_STATUSES = new Set([

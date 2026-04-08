@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
     });
 
     emitStoryboardTaskUpsert(syncedTask);
-    await syncTaskToSummary({ taskType: "storyboard", taskId: syncedTask.id, operation: "create" });
+    await syncTaskToSummary({ taskType: "grid", taskId: syncedTask.id, operation: "create" });
 
     const webhookUrl =
       process.env.N8N_STORYBOARD_GEN_WEBHOOK?.trim() ||

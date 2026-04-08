@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
         data: { status: "FAILED", progress: 0 },
       });
       emitStoryboardTaskUpsert(failedTask);
-      await syncTaskToSummary({ taskType: "storyboard", taskId: failedTask.id, operation: "update" });
+      await syncTaskToSummary({ taskType: "grid", taskId: failedTask.id, operation: "update" });
       return NextResponse.json({ ok: true });
     }
 
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
     });
 
     emitStoryboardTaskUpsert(completedTask);
-    await syncTaskToSummary({ taskType: "storyboard", taskId: completedTask.id, operation: "update" });
+    await syncTaskToSummary({ taskType: "grid", taskId: completedTask.id, operation: "update" });
 
     return NextResponse.json({ ok: true });
   } catch (error) {
