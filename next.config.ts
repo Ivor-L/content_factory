@@ -21,6 +21,16 @@ const nextConfig: NextConfig = {
         hostname: 'oss.atomx.top',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'flowonn.oss-cn-shenzhen.aliyuncs.com',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'oss.flowonn.com',
+        pathname: '/**',
+      },
     ],
   },
   experimental: {
