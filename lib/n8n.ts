@@ -325,7 +325,7 @@ export async function generateReplication(
   script: any,
   options: ReplicationOptions
 ): Promise<{ success: boolean; message: string }> {
-  const soraProvider = 'kie';
+  const soraProvider = options.soraProvider ?? 'kie';
   const webhookUrl = process.env.N8N_REPLICATION_WEBHOOK;
   const normalizedWorkflowIdForCredits =
     typeof options.workflowIdForCredits === 'string' && options.workflowIdForCredits.trim()

@@ -166,7 +166,7 @@ export function useCanvasProjects(
           setCurrentProjectId(rows[0].id);
         } else if (
           previousSelection &&
-          rows.every((item) => item.id !== previousSelection)
+          rows.every((item: { id: string }) => item.id !== previousSelection)
         ) {
           setCurrentProjectId(autoSelectFirstProject && rows.length > 0 ? rows[0].id : null);
         }

@@ -1755,7 +1755,10 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         if (apiKey) {
           await deductCanvasCredits(apiKey, "grid-split", {});
         }
-        const taskId = typeof resp?.data?.taskId === "string" ? (resp.data.taskId as string) : String(resp?.data?.taskId ?? "");
+        const responseData = resp as { data?: { taskId?: string } } | null;
+        const taskId = typeof responseData?.data?.taskId === "string"
+          ? responseData.data.taskId
+          : String(responseData?.data?.taskId ?? "");
         if (!taskId) throw new Error("未获取到任务 ID");
 
         return new Promise((resolve, reject) => {

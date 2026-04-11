@@ -111,6 +111,7 @@ export function CopyRemixPanel({
   const LAST_STYLE_KEY = "copy_remix_last_style_id";
   const EXTRACT_PENDING_TTL = 10 * 60 * 1000; // 10 min
   const extractPendingKey = (id: string) => `extract_pending_${id}`;
+  const scriptId = script?.id;
 
   const [viewMode, setViewMode] = useState<"original" | "remix">("original");
   const [status, setStatus] = useState<CopyStatus>("idle");
@@ -214,9 +215,9 @@ export function CopyRemixPanel({
               setStatus("ready");
               toast.success("二创文案已生成");
               // Persist to localStorage so it survives modal close/reopen
-              if (script?.id && script.id !== "__new__" && typeof window !== "undefined") {
+              if (scriptId && scriptId !== "__new__" && typeof window !== "undefined") {
                 window.localStorage.setItem(
-                  REMIX_COPY_KEY(script.id),
+                  REMIX_COPY_KEY(scriptId),
                   JSON.stringify({ copy: nextCopy, savedAt: Date.now() }),
                 );
               }
@@ -243,7 +244,7 @@ export function CopyRemixPanel({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [pendingId]);
+  }, [pendingId, scriptId]);
 
   const fetchStyleDetail = useCallback(
     async (styleId: string) => {

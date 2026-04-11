@@ -28,7 +28,7 @@ export async function createScript(formData: FormData) {
   const skipBreakdown =
     typeof skipBreakdownInput === 'string'
       ? skipBreakdownInput === 'true' || skipBreakdownInput === '1'
-      : skipBreakdownInput === true;
+      : false;
   const initialStatus = skipBreakdown ? 'completed' : undefined;
   const initialProgress = skipBreakdown ? 100 : undefined;
 

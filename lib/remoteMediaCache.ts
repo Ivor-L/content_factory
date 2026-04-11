@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Buffer } from "node:buffer";
 import { uploadToStorage } from "./storageUpload";
 import { supabaseAdmin } from "./supabaseAdmin";
+import { isOssHostname } from "./oss";
 
 const MEDIA_CACHE_BUCKET = process.env.MEDIA_CACHE_BUCKET?.trim() || "proxy-cache";
 const MEDIA_CACHE_PREFIX = process.env.MEDIA_CACHE_PREFIX?.trim() || "viral-media";
@@ -218,6 +219,9 @@ function isCacheableUrl(rawUrl: string) {
       return false;
     }
     if (SELF_HOSTED_HOSTS.has(parsed.hostname)) {
+      return false;
+    }
+    if (isOssHostname(parsed.hostname)) {
       return false;
     }
     return true;

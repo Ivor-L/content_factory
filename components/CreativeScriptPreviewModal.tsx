@@ -132,7 +132,12 @@ export function CreativeScriptPreviewModal({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `请求失败 ${res.status}`);
-      toast.success("视频生成已启动，请稍候");
+      const jobCount = Number(data?.data?.jobCount ?? data?.jobCount ?? 1);
+      if (jobCount > 1) {
+        toast.success(`已拆分并提交 ${jobCount} 段数字人任务，系统将依次生成。`);
+      } else {
+        toast.success("视频生成已启动，请稍候");
+      }
       onVideoConfirmed(data.data?.videoId ?? "");
     } catch (err: any) {
       toast.error(err.message || "视频生成失败，请重试");

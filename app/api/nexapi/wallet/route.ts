@@ -10,9 +10,9 @@ export async function GET(request: Request) {
   }
 
   const wallet = await ensureWallet(ctx.userId);
-  const transactions = await prisma.transactions.findMany({
-    where: { user_id: ctx.userId },
-    orderBy: { created_at: 'desc' },
+  const transactions = await prisma.transaction.findMany({
+    where: { userId: ctx.userId },
+    orderBy: { createdAt: 'desc' },
     take: 20,
   });
 
@@ -26,10 +26,10 @@ export async function GET(request: Request) {
     transactions: transactions.map((tx) => ({
       id: tx.id,
       type: tx.type,
-      amountCredits: tx.amount_credits.toString(),
-      amountCny: tx.amount_cny ? Number(tx.amount_cny) : null,
+      amountCredits: tx.amountCredits.toString(),
+      amountCny: tx.amountCny ? Number(tx.amountCny) : null,
       channel: tx.channel,
-      createdAt: tx.created_at,
+      createdAt: tx.createdAt,
     })),
   });
 }

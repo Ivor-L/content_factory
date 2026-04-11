@@ -104,7 +104,7 @@ export async function adjustWalletCreditsInTransaction(
       amountCny: typeof amountCny === 'number' ? amountCny : undefined,
       channel,
       refId,
-      meta: meta ? meta : undefined,
+      meta: meta ? (meta as Prisma.InputJsonValue) : undefined,
     },
   });
 

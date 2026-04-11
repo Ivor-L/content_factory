@@ -41,6 +41,7 @@ export async function createRunningHubTask(params: {
   webhookUrl?: string;
   workflow?: string;
   addMetadata?: boolean;
+  context?: Record<string, unknown>;
 }) {
   return runningHubRequest<{ taskId: string; taskStatus?: string }>(
     "/task/openapi/create",
@@ -51,6 +52,7 @@ export async function createRunningHubTask(params: {
       webhookUrl: params.webhookUrl,
       workflow: params.workflow,
       addMetadata: params.addMetadata ?? true,
+      context: params.context,
     },
   );
 }

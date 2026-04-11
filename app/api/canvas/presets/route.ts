@@ -9,9 +9,9 @@ const PresetSchema = z.object({
     id: z.string(),
     type: z.string(),
     position: z.object({ x: z.number(), y: z.number() }),
-    data: z.record(z.unknown()),
+    data: z.record(z.string(), z.unknown()),
   })),
-  resources: z.record(z.string()),
+  resources: z.record(z.string(), z.string()),
 });
 
 export async function GET(request: NextRequest) {

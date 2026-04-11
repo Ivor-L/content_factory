@@ -1519,6 +1519,7 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
   const [replicationDetailLoading, setReplicationDetailLoading] = useState(false);
   const [replicationDetailError, setReplicationDetailError] = useState<string | null>(null);
   const [downloadingOverride, setDownloadingOverride] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [t2vStatus, setT2vStatus] = useState<'idle' | 'pending' | 'done' | 'error'>('idle');
   const [t2vStoryboardId, setT2vStoryboardId] = useState<string | null>(null);
   const [t2vError, setT2vError] = useState<string | null>(null);

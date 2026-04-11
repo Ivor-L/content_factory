@@ -18,62 +18,7 @@ import {
   analyzeScriptDuration,
   formatScriptDurationMessage,
 } from '@/lib/digitalHumanLimits';
-
-const PRIMARY_BREAK_CHARS = new Set<string>([
-  '。',
-  '！',
-  '!',
-  '？',
-  '?',
-  '；',
-  ';',
-  '，',
-  ',',
-  '、',
-  '：',
-  ':',
-  '.',
-  '\n',
-]);
-const SECONDARY_BREAK_CHARS = new Set<string>([' ', '\t']);
-
-function findBreakPoint(chunk: string): number {
-  for (const charset of [PRIMARY_BREAK_CHARS, SECONDARY_BREAK_CHARS]) {
-    for (let i = chunk.length - 1; i >= 0; i -= 1) {
-      if (charset.has(chunk[i])) {
-        return i + 1;
-      }
-    }
-  }
-  return -1;
-}
-
-function splitScriptIntoChunks(script: string, maxChars: number): string[] {
-  const safeLimit = Math.max(1, Math.floor(maxChars));
-  const normalized = (script ?? '').replace(/\r\n/g, '\n').trim();
-  if (!normalized) return [];
-
-  const chunks: string[] = [];
-  let cursor = 0;
-  while (cursor < normalized.length) {
-    const remaining = normalized.length - cursor;
-    if (remaining <= safeLimit) {
-      chunks.push(normalized.slice(cursor).trim());
-      break;
-    }
-
-    const tentativeEnd = cursor + safeLimit;
-    const slice = normalized.slice(cursor, tentativeEnd);
-    let breakPoint = findBreakPoint(slice);
-    if (breakPoint <= 0) breakPoint = safeLimit;
-
-    const segment = normalized.slice(cursor, cursor + breakPoint).trim();
-    if (segment) chunks.push(segment);
-    cursor += breakPoint;
-  }
-
-  return chunks;
-}
+import { splitScriptIntoChunks } from '@/lib/digitalHumanScript';
 
 interface DigitalHumanModalProps {
   onClose: () => void;
@@ -104,33 +49,34 @@ export function DigitalHumanModal({
   const { t, language } = useLanguage();
   const normalizedLanguage = (language || '').toLowerCase();
   const isZhLocale = normalizedLanguage.startsWith('zh');
-  const digitalCopy = t.contentCreation?.newTask?.digitalHuman;
+  const digitalCopy = (t.contentCreation?.newTask?.digitalHuman ?? {}) as Record<string, any>;
+  const storyboardCopy = t.storyboard as Record<string, any>;
   const voiceModeCopy = digitalCopy?.modes?.voice;
   const lipModeCopy = digitalCopy?.modes?.lip;
-  const digitalTitle = digitalCopy?.title ?? t.storyboard.digitalHuman;
+  const digitalTitle = digitalCopy?.title ?? storyboardCopy.digitalHuman;
   const characterLabel = digitalCopy?.characterLabel ?? t.characters.selectCharacter;
   const characterCreateLabel = digitalCopy?.characterCreate ?? t.characters.newCharacter;
   const characterEmptyCopy = digitalCopy?.characterEmpty ?? t.characters.noCharacters;
   const characterMissingVoiceCopy = digitalCopy?.characterMissingVoice;
-  const scriptLabel = digitalCopy?.scriptLabel ?? t.storyboard.voiceoverScript;
-  const scriptPlaceholder = digitalCopy?.scriptPlaceholder ?? t.storyboard.voiceoverPlaceholder;
-  const audioLabelCopy = digitalCopy?.audioLabel ?? t.storyboard.voiceRef;
-  const audioPlaceholderCopy = digitalCopy?.audioPlaceholder ?? t.storyboard.voiceRefPlaceholder;
+  const scriptLabel = digitalCopy?.scriptLabel ?? storyboardCopy.voiceoverScript;
+  const scriptPlaceholder = digitalCopy?.scriptPlaceholder ?? storyboardCopy.voiceoverPlaceholder;
+  const audioLabelCopy = digitalCopy?.audioLabel ?? storyboardCopy.voiceRef;
+  const audioPlaceholderCopy = digitalCopy?.audioPlaceholder ?? storyboardCopy.voiceRefPlaceholder;
   const audioDurationLabel =
-    digitalCopy?.audioDurationLabel ?? t.storyboard.audioDurationLabel ?? "Detected duration";
+    digitalCopy?.audioDurationLabel ?? storyboardCopy.audioDurationLabel ?? "Detected duration";
   const uploadHint =
-    digitalCopy?.uploadHint ?? t.storyboard.uploadHint ?? "Click or drag audio file to upload";
+    digitalCopy?.uploadHint ?? storyboardCopy.uploadHint ?? "Click or drag audio file to upload";
   const replaceAudioLabel =
-    digitalCopy?.replaceAudio ?? t.storyboard.replaceAudio ?? "Replace audio";
+    digitalCopy?.replaceAudio ?? storyboardCopy.replaceAudio ?? "Replace audio";
   const removeAudioLabel =
-    digitalCopy?.removeAudio ?? t.storyboard.removeAudio ?? "Remove audio";
-  const defaultVoiceLabel = digitalCopy?.defaultVoiceLabel ?? t.storyboard.voiceRef;
-  const stickyNote = digitalCopy?.stickyNote ?? t.storyboard.digitalHumanNote;
-  const submitLabel = digitalCopy?.submit ?? t.storyboard.generateDigitalHumanVideo;
-  const generatingLabel = digitalCopy?.generating ?? t.storyboard.generatingDigitalHumanVideo;
+    digitalCopy?.removeAudio ?? storyboardCopy.removeAudio ?? "Remove audio";
+  const defaultVoiceLabel = digitalCopy?.defaultVoiceLabel ?? storyboardCopy.voiceRef;
+  const stickyNote = digitalCopy?.stickyNote ?? storyboardCopy.digitalHumanNote;
+  const submitLabel = digitalCopy?.submit ?? storyboardCopy.generateDigitalHumanVideo;
+  const generatingLabel = digitalCopy?.generating ?? storyboardCopy.generatingDigitalHumanVideo;
   const characterRequiredMessage = digitalCopy?.characterRequired ?? t.characters.selectCharacterWarning;
   const audioRequiredMessage = digitalCopy?.audioRequired ?? t.characters.uploadVoice;
-  const scriptRequiredMessage = digitalCopy?.scriptRequired ?? t.storyboard.voiceoverScript;
+  const scriptRequiredMessage = digitalCopy?.scriptRequired ?? storyboardCopy.voiceoverScript;
   const router = useRouter();
   const myProjectsPath = useTenantPath('/my-works?type=digitalHuman');
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -165,45 +111,48 @@ export function DigitalHumanModal({
   );
   const modeLabelText =
     digitalCopy?.modeLabel ??
-    t.storyboard.modeLabel ??
+    storyboardCopy.modeLabel ??
     (isZhLocale ? '驱动方式' : 'Mode');
   const modalHeader = useModalHeader();
   const headerPortalActive = Boolean(modalHeader);
 
-  const ModeSwitcher = ({ fullWidth = true }: { fullWidth?: boolean }) => (
-    <nav
-      aria-label={modeLabelText}
-      className={cn('flex w-full', fullWidth ? 'justify-center' : 'justify-end')}
-    >
-      <div
-        className={cn(
-          'flex gap-2 rounded-full border border-gray-200 bg-gray-50/80 p-1.5 dark:border-gray-700 dark:bg-gray-800/70',
-          fullWidth ? 'w-full max-w-xl' : 'w-auto'
-        )}
+  const ModeSwitcher = useCallback(
+    ({ fullWidth = true }: { fullWidth?: boolean }) => (
+      <nav
+        aria-label={modeLabelText}
+        className={cn('flex w-full', fullWidth ? 'justify-center' : 'justify-end')}
       >
-        {modes.map((item) => {
-          const isActive = mode === item.key;
-          return (
-            <button
-              type="button"
-              key={item.key}
-              onClick={() => setMode(item.key)}
-              className={cn(
-                'relative flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20 focus-visible:ring-offset-1 dark:focus-visible:ring-white/30',
-                fullWidth ? 'flex-1' : 'flex-none min-w-[120px]',
-                isActive
-                  ? 'bg-black text-white shadow-sm dark:bg-white dark:text-black'
-                  : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white'
-              )}
-              aria-pressed={isActive}
-            >
-              {item.icon}
-              <span>{item.label}</span>
-            </button>
-          );
-        })}
-      </div>
-    </nav>
+        <div
+          className={cn(
+            'flex gap-2 rounded-full border border-gray-200 bg-gray-50/80 p-1.5 dark:border-gray-700 dark:bg-gray-800/70',
+            fullWidth ? 'w-full max-w-xl' : 'w-auto'
+          )}
+        >
+          {modes.map((item) => {
+            const isActive = mode === item.key;
+            return (
+              <button
+                type="button"
+                key={item.key}
+                onClick={() => setMode(item.key)}
+                className={cn(
+                  'relative flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20 focus-visible:ring-offset-1 dark:focus-visible:ring-white/30',
+                  fullWidth ? 'flex-1' : 'flex-none min-w-[120px]',
+                  isActive
+                    ? 'bg-black text-white shadow-sm dark:bg-white dark:text-black'
+                    : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white'
+                )}
+                aria-pressed={isActive}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+    ),
+    [mode, modeLabelText, modes]
   );
 
   useEffect(() => {
@@ -216,7 +165,7 @@ export function DigitalHumanModal({
     if (!modalHeader) return;
     modalHeader.setContent(<ModeSwitcher fullWidth />);
     return () => modalHeader.setContent(null);
-  }, [modalHeader, mode]);
+  }, [modalHeader, ModeSwitcher]);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -544,12 +493,12 @@ export function DigitalHumanModal({
 
     const jobCount = trimmedScriptChunks.length;
     const isSplitFlow = jobCount > 1;
-    const loadingMessage = isSplitFlow
+  const loadingMessage = isSplitFlow
       ? isZhLocale
         ? `正在提交 ${jobCount} 段数字人任务...`
         : `Submitting ${jobCount} split digital human jobs...`
-      : t.contentCreation?.newTask?.digitalHuman?.submitting ??
-        t.storyboard.generatingDigitalHumanVideo ??
+      : digitalCopy?.submitting ??
+        storyboardCopy.generatingDigitalHumanVideo ??
         'Submitting digital human job...';
     const successMessage = isSplitFlow
       ? isZhLocale

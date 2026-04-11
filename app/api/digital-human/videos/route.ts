@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getRequestUserContext } from '@/lib/authServer';
-import { createDigitalHumanJob, type DigitalHumanMode } from '@/lib/digitalHumanJob';
+import { createDigitalHumanJobs, type DigitalHumanMode } from '@/lib/digitalHumanJob';
 
 function serializeVideo(video: Awaited<ReturnType<typeof prisma.digitalHumanVideo.findFirst>> & { id: string }) {
   if (!video) return null;
@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
       : undefined;
 
   try {
-    const video = await createDigitalHumanJob({
+    const batch = await createDigitalHumanJobs({
       type,
       imageUrl: payload.imageUrl,
       audioUrl: payload.audioUrl,
@@ -102,9 +102,22 @@ export async function POST(request: NextRequest) {
       durationSeconds,
       userId,
       sourceTaskId,
+      splitIfNeeded: false,
     });
+    const video = batch.jobs[0];
+    if (!video) {
+      return NextResponse.json({ error: 'Failed to create digital human job' }, { status: 500 });
+    }
 
-    return NextResponse.json({ data: serializeVideo(video) }, { status: 201 });
+    return NextResponse.json(
+      {
+        data: serializeVideo(video),
+        videoIds: batch.jobs.map((job) => job.id),
+        jobCount: batch.jobs.length,
+        split: batch.isSplit,
+      },
+      { status: 201 }
+    );
   } catch (error) {
     console.error('Failed to create digital human job via API', error);
     return NextResponse.json(

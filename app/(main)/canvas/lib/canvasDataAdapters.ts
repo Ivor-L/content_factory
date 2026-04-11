@@ -1,6 +1,7 @@
 "use client";
 
-import type { Edge, Node } from "@xyflow/react";
+import type { CSSProperties } from "react";
+import type { Edge, EdgeMarkerType, Node } from "@xyflow/react";
 
 export type RuntimeCanvasNode = {
   id: string;
@@ -15,9 +16,9 @@ export type RuntimeCanvasEdge = {
   target: string;
   sourceHandle?: string;
   targetHandle?: string;
-  markerEnd?: unknown;
+  markerEnd?: EdgeMarkerType;
   animated?: boolean;
-  style?: Record<string, unknown>;
+  style?: CSSProperties;
 };
 
 export type RuntimeCanvasData = {
@@ -286,9 +287,9 @@ export function flowEdgesToRuntime(edges: Edge[]): RuntimeCanvasEdge[] {
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    sourceHandle: edge.sourceHandle,
-    targetHandle: edge.targetHandle,
-    markerEnd: edge.markerEnd,
+    sourceHandle: edge.sourceHandle ?? undefined,
+    targetHandle: edge.targetHandle ?? undefined,
+    markerEnd: edge.markerEnd as EdgeMarkerType | undefined,
     animated: edge.animated,
     style: edge.style,
   }));
@@ -299,9 +300,9 @@ export function runtimeEdgesToFlowEdges(runtimeEdges: RuntimeCanvasEdge[]): Edge
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    sourceHandle: edge.sourceHandle,
-    targetHandle: edge.targetHandle,
-    markerEnd: edge.markerEnd,
+    sourceHandle: edge.sourceHandle ?? undefined,
+    targetHandle: edge.targetHandle ?? undefined,
+    markerEnd: edge.markerEnd as EdgeMarkerType | undefined,
     animated: edge.animated,
     style: edge.style,
     type: "smoothstep",

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestUserContext } from "@/lib/authServer";
-import { createDigitalHumanJob } from "@/lib/digitalHumanJob";
+import { createDigitalHumanJobs } from "@/lib/digitalHumanJob";
 import prisma from "@/lib/prisma";
 
 export async function POST(request: NextRequest) {
@@ -27,15 +27,25 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const job = await createDigitalHumanJob({
+    const batch = await createDigitalHumanJobs({
       type: "VOICE_CLONE",
       imageUrl,
       audioUrl,
       script: scriptContent,
       userId,
+      splitIfNeeded: false,
     });
+    const job = batch.jobs[0];
+    if (!job) {
+      return NextResponse.json({ error: "Failed to create digital human job" }, { status: 500 });
+    }
 
-    return NextResponse.json({ data: { id: job.id, status: job.status } });
+    return NextResponse.json({
+      data: { id: job.id, status: job.status },
+      videoIds: batch.jobs.map((item) => item.id),
+      jobCount: batch.jobs.length,
+      split: batch.isSplit,
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to create digital human job" },

@@ -3,8 +3,9 @@ import { supabase } from "@/lib/supabaseClient";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
     const authHeader = request.headers.get("authorization");
     const token = authHeader?.replace("Bearer ", "");
@@ -20,7 +21,7 @@ export async function GET(
     const { data, error } = await supabase
       .from("canvas_presets")
       .select("*")
-      .eq("id", params.id)
+      .eq("id", id)
       .eq("user_id", user.id)
       .single();
 
@@ -38,8 +39,9 @@ export async function GET(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
     const authHeader = request.headers.get("authorization");
     const token = authHeader?.replace("Bearer ", "");
@@ -55,7 +57,7 @@ export async function DELETE(
     const { error } = await supabase
       .from("canvas_presets")
       .delete()
-      .eq("id", params.id)
+      .eq("id", id)
       .eq("user_id", user.id);
 
     if (error) throw error;

@@ -89,7 +89,7 @@ const CANVAS_CREDIT_DEFAULTS: Record<CanvasCreditKind, CanvasCreditDefaults> = {
   },
 };
 
-const MODEL_WORKFLOW_PRESETS: Record<CanvasCreditKind, ModelWorkflowPreset[]> = {
+const MODEL_WORKFLOW_PRESETS: Partial<Record<CanvasCreditKind, ModelWorkflowPreset[]>> = {
   image: [
     {
       aliases: ["nano banana pro", "nanobananapro", "nano-banana-pro", "gemini-3-pro-image-preview", "gemini-3.1-pro-preview"],
@@ -220,7 +220,7 @@ function resolveWorkflowByModel(
   if (!modelName) return {};
 
   const normalized = normalizeModelToken(modelName);
-  const presets = MODEL_WORKFLOW_PRESETS[kind];
+  const presets = MODEL_WORKFLOW_PRESETS[kind] ?? [];
   for (const preset of presets) {
     const matched = preset.aliases.some((alias) => normalizeModelToken(alias) === normalized);
     if (matched) {

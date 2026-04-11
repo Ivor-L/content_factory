@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestUserContext } from "@/lib/authServer";
 import prisma from "@/lib/prisma";
-import { createDigitalHumanJob } from "@/lib/digitalHumanJob";
-import {
-  analyzeScriptDuration,
-  formatScriptDurationMessage,
-} from "@/lib/digitalHumanLimits";
+import { createDigitalHumanJobs } from "@/lib/digitalHumanJob";
+import { analyzeScriptDuration } from "@/lib/digitalHumanLimits";
 
 /**
  * POST /api/replication/digital-human/confirm
@@ -109,21 +106,8 @@ export async function POST(request: NextRequest) {
   }
 
   const durationStats = analyzeScriptDuration(scriptContent);
-  if (durationStats.needSplit) {
-    return NextResponse.json(
-      {
-        error: formatScriptDurationMessage(durationStats, { locale: "zh" }),
-        meta: {
-          durationSeconds: durationStats.estimatedSeconds,
-          limitSeconds: durationStats.limitSeconds,
-          limitChars: durationStats.limitChars,
-        },
-      },
-      { status: 400 }
-    );
-  }
 
-  const job = await createDigitalHumanJob({
+  const batch = await createDigitalHumanJobs({
     type: "VOICE_CLONE",
     imageUrl: character.avatar,
     audioUrl: character.voiceId,
@@ -131,6 +115,11 @@ export async function POST(request: NextRequest) {
     durationSeconds: durationStats.estimatedSeconds,
     userId,
   });
+  const jobs = batch.jobs;
+  const firstJob = jobs[0];
+  if (!firstJob) {
+    return NextResponse.json({ error: "未能创建数字人任务" }, { status: 500 });
+  }
 
   // 更新 replication 为 processing，记录最终文案和 videoId
   await prisma.replication.update({
@@ -140,11 +129,24 @@ export async function POST(request: NextRequest) {
       result: JSON.stringify({
         ...resultData,
         script_content: scriptContent,
-        video_id: job.id,
+        video_id: firstJob.id,
+        video_ids: jobs.map((job) => job.id),
+        job_count: jobs.length,
+        split_by_system: batch.isSplit,
         confirmed_at: new Date().toISOString(),
       }),
     },
   });
 
-  return NextResponse.json({ data: { videoId: job.id } }, { status: 201 });
+  return NextResponse.json(
+    {
+      data: {
+        videoId: firstJob.id,
+        videoIds: jobs.map((job) => job.id),
+        jobCount: jobs.length,
+        split: batch.isSplit,
+      },
+    },
+    { status: 201 }
+  );
 }

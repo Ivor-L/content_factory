@@ -836,7 +836,7 @@ function AnalysisStepCard({
               <button
                 type="button"
                 onClick={onAnalyze}
-                disabled={analysisStatus === "running"}
+                disabled={false}
                 className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm font-semibold text-gray-700 dark:text-gray-200 px-4 py-2.5 disabled:opacity-60"
               >
                 <RotateCcw className="h-4 w-4" />

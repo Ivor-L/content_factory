@@ -42,6 +42,9 @@ export function needsProxy(url: string): boolean {
     if (SELF_HOSTED_HOSTS.some((h) => hostname === h || hostname.endsWith(`.${h}`))) {
       return false;
     }
+    if (hostname.endsWith(".aliyuncs.com")) {
+      return false;
+    }
     if (DIRECT_ALLOW_HOST_PATTERNS.some((pattern) => pattern.test(hostname))) {
       return false;
     }

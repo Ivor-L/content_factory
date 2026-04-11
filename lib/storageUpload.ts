@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseServiceClient } from "./supabaseAdmin";
 import { uploadToOss } from "./ossUpload";
+import { hasOssUploadConfig } from "./oss";
 
 interface UploadOptions {
   bucket: string;
@@ -24,13 +25,7 @@ export async function uploadToStorage({
     body instanceof Buffer ? body : Buffer.from(body as ArrayBuffer);
 
   // Use OSS if configured, otherwise fall back to Supabase
-  const ossConfigured = Boolean(
-    process.env.ALIYUN_OSS_BUCKET &&
-    process.env.ALIYUN_OSS_ACCESS_KEY_ID &&
-    process.env.ALIYUN_OSS_ACCESS_KEY_SECRET &&
-    process.env.ALIYUN_OSS_REGION &&
-    process.env.ALIYUN_OSS_PUBLIC_URL,
-  );
+  const ossConfigured = hasOssUploadConfig();
 
   const storagePreference = (process.env.MEDIA_CACHE_STORAGE ?? "auto").toLowerCase();
   const preferOss = storagePreference === "oss" || storagePreference === "auto";

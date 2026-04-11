@@ -2,6 +2,8 @@ import prisma from '@/lib/prisma';
 import { parseMetadata } from '@/lib/creativeTaskService';
 import { setTaskActionStatus } from '@/lib/creativeTaskUtils';
 import { toInputJson } from '@/lib/jsonUtils';
+import { analyzeScriptDuration } from '@/lib/digitalHumanLimits';
+import { planDigitalHumanScript } from '@/lib/digitalHumanScript';
 import { syncTaskToSummary } from '@/lib/taskSummary';
 
 export type DigitalHumanMode = 'LIP_SYNC' | 'VOICE_CLONE';
@@ -15,6 +17,10 @@ export interface CreateDigitalHumanJobOptions {
   durationSeconds?: number | null;
   userId?: string | null;
   sourceTaskId?: string | null;
+}
+
+export interface CreateDigitalHumanScriptJobsOptions extends CreateDigitalHumanJobOptions {
+  splitIfNeeded?: boolean;
 }
 
 function estimateCreditsWorkflow(durationSeconds?: number | null) {
@@ -179,4 +185,45 @@ export async function createDigitalHumanJob(options: CreateDigitalHumanJobOption
     }
     throw error;
   }
+}
+
+export async function createDigitalHumanJobs(options: CreateDigitalHumanScriptJobsOptions) {
+  const { splitIfNeeded = true, script, type } = options;
+  const shouldSplit = splitIfNeeded && type === 'VOICE_CLONE' && typeof script === 'string';
+  const plan = shouldSplit
+    ? planDigitalHumanScript(script || '')
+    : {
+        normalizedScript: typeof script === 'string' ? script.trim() : '',
+        chunks: [typeof script === 'string' ? script.trim() : ''].filter((chunk) => chunk.length > 0),
+        stats: null,
+        isSplit: false,
+      };
+
+  const splitChunks = type === 'VOICE_CLONE' ? plan.chunks : [];
+  const jobChunks = type === 'VOICE_CLONE' ? plan.chunks : [undefined];
+
+  if (type === 'VOICE_CLONE' && splitChunks.length === 0) {
+    throw new Error('VOICE_CLONE mode requires script content');
+  }
+
+  const jobs: Awaited<ReturnType<typeof createDigitalHumanJob>>[] = [];
+  for (const chunk of jobChunks) {
+    const chunkDurationSeconds =
+      type === 'VOICE_CLONE' && typeof chunk === 'string'
+        ? analyzeScriptDuration(chunk).estimatedSeconds
+        : options.durationSeconds ?? null;
+    const job = await createDigitalHumanJob({
+      ...options,
+      durationSeconds: chunkDurationSeconds,
+      script: type === 'VOICE_CLONE' ? chunk : undefined,
+    });
+    jobs.push(job);
+  }
+
+  return {
+    jobs,
+    chunks: splitChunks,
+    stats: plan.stats,
+    isSplit: type === 'VOICE_CLONE' ? plan.isSplit : false,
+  };
 }

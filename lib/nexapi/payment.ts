@@ -58,20 +58,16 @@ export async function createRechargeOrder(
   });
 
   const client = getAlipayClient();
-  const payUrl = await client.exec(
-    'alipay.trade.page.pay',
-    {
-      bizContent: {
-        out_trade_no: order.id,
-        product_code: 'FAST_INSTANT_TRADE_PAY',
-        total_amount: amountCny.toFixed(2),
-        subject: `NexAPI积分${credits.toString()}点`,
-      },
-      notifyUrl: process.env.ALIPAY_NOTIFY_URL,
-      returnUrl: process.env.ALIPAY_RETURN_URL,
+  const payUrl = client.pageExecute('alipay.trade.page.pay', 'GET', {
+    bizContent: {
+      out_trade_no: order.id,
+      product_code: 'FAST_INSTANT_TRADE_PAY',
+      total_amount: amountCny.toFixed(2),
+      subject: `NexAPI积分${credits.toString()}点`,
     },
-    { method: 'GET' }
-  );
+    notifyUrl: process.env.ALIPAY_NOTIFY_URL,
+    returnUrl: process.env.ALIPAY_RETURN_URL,
+  });
 
   await prisma.rechargeOrder.update({
     where: { id: order.id },

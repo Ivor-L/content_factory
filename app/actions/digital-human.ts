@@ -1,7 +1,7 @@
 
 'use server';
 
-import { createDigitalHumanJob, type DigitalHumanMode } from '@/lib/digitalHumanJob';
+import { createDigitalHumanJobs, type DigitalHumanMode } from '@/lib/digitalHumanJob';
 
 export async function createDigitalHumanVideo(formData: FormData) {
   const type = formData.get('type') as DigitalHumanMode | null;
@@ -22,7 +22,7 @@ export async function createDigitalHumanVideo(formData: FormData) {
   const durationSeconds =
     Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : null;
 
-  await createDigitalHumanJob({
+  await createDigitalHumanJobs({
     type,
     imageUrl,
     audioUrl,

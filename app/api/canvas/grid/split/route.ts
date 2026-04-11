@@ -14,9 +14,12 @@ const API_KEY = process.env.RUNNINGHUB_API_KEY || "d75f6f54beb14fee8b7379b354493
 const CALLBACK_BASE_URL = (process.env.CANVAS_VIDEO_POLL_CALLBACK_BASE_URL || "").replace(/\/+$/, "") || "https://atomx.top";
 
 export async function POST(request: NextRequest) {
-  const { userId } = await getRequestUserContext(request);
+  const { userId, apiKey } = await getRequestUserContext(request);
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!apiKey) {
+    return NextResponse.json({ error: "Missing API key" }, { status: 403 });
   }
 
   const body = await request.json().catch(() => null);
@@ -34,13 +37,12 @@ export async function POST(request: NextRequest) {
 
   try {
     const creditCost = await getCreditCost("canvas_grid_split", 100);
-    const deductResult = await deductCredits(userId, creditCost, "canvas_grid_split");
-    if (!deductResult.success) {
-      return NextResponse.json(
-        { error: deductResult.message || "积分不足" },
-        { status: 402 }
-      );
-    }
+    await deductCredits(apiKey, {
+      amount: creditCost,
+      workflowId: GRID_SPLIT_WORKFLOW_ID,
+      workflowName: "Canvas Grid Split",
+      reason: "canvas_grid_split",
+    });
 
     const nodeInfoList: RunningHubNodePatch[] = [
       { nodeId: "35", fieldName: "image", fieldValue: imageUrl.trim() },
@@ -72,4 +74,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

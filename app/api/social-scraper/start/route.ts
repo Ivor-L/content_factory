@@ -412,7 +412,7 @@ function convertLooseInstagramPayload(payload: InstagramWorkflowResponse): Insta
     like_count: likeCount,
     comment_count: commentCount,
     caption_text: captionText ?? undefined,
-    publish_time: publishTime ?? undefined,
+    publish_time: publishTime as string | number | undefined,
     author,
     media_assets: mediaAssets ?? undefined,
   };

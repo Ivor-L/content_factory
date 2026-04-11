@@ -508,7 +508,7 @@ export async function updateCanvasProject(
       if (expectedUpdatedAt) {
         const result = await canvasProjectDelegate.updateMany({
           where: { id: projectId, userId, updatedAt: expectedUpdatedAt },
-          data,
+          data: data as Prisma.CanvasProjectUpdateManyMutationInput,
         });
         if (!result.count) {
           throw new CanvasProjectConflictError();
