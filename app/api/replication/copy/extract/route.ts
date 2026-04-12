@@ -83,9 +83,21 @@ export async function POST(request: NextRequest) {
 
   // Build callback URL so n8n can POST the result back asynchronously.
   const callbackBase = (process.env.N8N_CALLBACK_BASE_URL || "").replace(/\/+$/, "");
-  const callbackUrl = callbackBase
-    ? `${callbackBase}/api/replication/copy/extract/callback`
-    : null;
+  let callbackUrl: string | null = null;
+  if (callbackBase) {
+    try {
+      const callback = new URL(`${callbackBase}/api/replication/copy/extract/callback`);
+      if (scriptId) callback.searchParams.set("script_id", scriptId);
+      if (referenceItemId) callback.searchParams.set("reference_item_id", referenceItemId);
+      callbackUrl = callback.toString();
+    } catch (error) {
+      console.error("[replication/copy/extract] invalid callback base url", {
+        callbackBase,
+        error,
+      });
+      callbackUrl = null;
+    }
+  }
 
   const payload: Record<string, unknown> = {
     video_url: videoUrl,

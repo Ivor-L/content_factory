@@ -179,7 +179,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const text = $json.text || $json.result?.text || '';\nconst normalized = text.replace(/\\r?\\n+/g, '\\n').trim();\nconst charCount = normalized.replace(/\\s+/g, '').length;\nconst wordEstimate = charCount ? Math.max(1, Math.round(charCount / 2)) : 0;\nconst input = $('标准化输入').item.json;\nreturn [{\n  json: {\n    success: !!normalized,\n    transcript: normalized,\n    words_estimate: wordEstimate,\n    language: input.request_language || 'auto',\n    task_id: input.task_id,\n    callback_url: input.callback_url || null,\n    script_id: input.script_id || null,\n    reference_item_id: input.reference_item_id || null,\n    raw: $json\n  }\n}];"
+        "jsCode": "const text = $json.text || $json.result?.text || '';\nconst normalized = text.replace(/\\r?\\n+/g, '\\n').trim();\nconst charCount = normalized.replace(/\\s+/g, '').length;\nconst wordEstimate = charCount ? Math.max(1, Math.round(charCount / 2)) : 0;\nconst input = $('标准化输入').item.json || {};\nconst raw = input.raw && typeof input.raw === 'object' ? input.raw : {};\nconst scriptId = input.script_id || input.scriptId || raw.script_id || raw.scriptId || null;\nconst referenceItemId = input.reference_item_id || input.referenceItemId || raw.reference_item_id || raw.referenceItemId || null;\nreturn [{\n  json: {\n    success: !!normalized,\n    transcript: normalized,\n    words_estimate: wordEstimate,\n    language: input.request_language || 'auto',\n    task_id: input.task_id,\n    callback_url: input.callback_url || null,\n    script_id: scriptId,\n    reference_item_id: referenceItemId,\n    raw: $json\n  }\n}];"
       },
       "id": "2d7ff536-44db-4257-9585-370e44d1b4ad",
       "name": "格式化输出",
