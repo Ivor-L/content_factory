@@ -6,6 +6,43 @@ const webhookUrl =
   process.env.N8N_EXTRACT_VIDEO_TEXT_WEBHOOK ||
   "https://hooks.atomx.top/webhook/extract_video_text";
 
+function normalizeWebhookEnvelope(rawData: any): any {
+  const normalized = Array.isArray(rawData) ? rawData[0] ?? null : rawData;
+  if (
+    normalized &&
+    typeof normalized === "object" &&
+    normalized.data &&
+    typeof normalized.data === "object"
+  ) {
+    return normalized.data;
+  }
+  return normalized;
+}
+
+function extractTextFromEnvelope(envelope: any): string {
+  const candidates = [
+    envelope?.text,
+    envelope?.transcript,
+    envelope?.result?.text,
+    envelope?.copyText,
+    envelope?.copy_text,
+    envelope?.raw?.text,
+    envelope?.data?.text,
+    envelope?.data?.transcript,
+    envelope?.data?.result?.text,
+    envelope?.data?.copyText,
+    envelope?.data?.copy_text,
+    envelope?.data?.raw?.text,
+  ];
+
+  for (const value of candidates) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
 export async function POST(request: NextRequest) {
   const { userId } = await getRequestUserContext(request);
   if (!userId) {
@@ -69,15 +106,42 @@ export async function POST(request: NextRequest) {
   // n8n will call callback_url when done.
   if (callbackUrl) {
     // Intentionally not awaited — runs in background.
+    // If n8n returns transcript synchronously, we still persist it here as a fallback,
+    // so UI won't depend on callback_url being correctly handled by the workflow.
     fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    }).catch((err) => {
-      console.error("[replication/copy/extract] background fetch error", err);
-    });
+    })
+      .then(async (res) => {
+        const rawData = await res.json().catch(() => null);
+        if (!res.ok) {
+          console.error("[replication/copy/extract] background fetch failed", {
+            status: res.status,
+            body: rawData,
+          });
+          return;
+        }
 
-    return NextResponse.json({ data: { status: "pending" } });
+        const envelope = normalizeWebhookEnvelope(rawData);
+        const extractedText = extractTextFromEnvelope(envelope);
+        if (!extractedText) return;
+
+        try {
+          await persistExtractedText({ scriptId, referenceItemId, extractedText, script });
+        } catch (persistError) {
+          console.error("[replication/copy/extract] background persist error", persistError);
+        }
+      })
+      .catch((err) => {
+        console.error("[replication/copy/extract] background fetch error", err);
+      });
+
+    return NextResponse.json({
+      data: {
+        status: "pending",
+      },
+    });
   }
 
   // ── Sync fallback (no callback URL configured) ────────────────────────────
@@ -96,18 +160,8 @@ export async function POST(request: NextRequest) {
       throw new Error(message);
     }
 
-    const normalized = Array.isArray(rawData) ? rawData[0] ?? null : rawData;
-    const envelope =
-      normalized && typeof normalized === "object" && normalized.data && typeof normalized.data === "object"
-        ? normalized.data
-        : normalized;
-
-    const extractedText =
-      envelope?.text ||
-      envelope?.transcript ||
-      envelope?.result?.text ||
-      envelope?.copyText ||
-      "";
+    const envelope = normalizeWebhookEnvelope(rawData);
+    const extractedText = extractTextFromEnvelope(envelope);
 
     if (!extractedText) {
       throw new Error("未获取到文案内容");
@@ -131,7 +185,7 @@ export async function POST(request: NextRequest) {
         wordsEstimate,
         language,
         taskId: taskRef,
-        raw: envelope ?? normalized ?? rawData,
+        raw: envelope ?? rawData,
       },
     });
   } catch (error) {

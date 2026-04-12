@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { persistExtractedText } from "../route";
 
+function firstNonEmptyString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
 /**
  * n8n calls this endpoint after async video subtitle extraction.
  * Expected body (array or object):
@@ -17,19 +24,48 @@ export async function POST(request: NextRequest) {
 
   // n8n may wrap the result in an array
   const data = Array.isArray(body) ? body[0] ?? {} : body;
+  const nested =
+    data && typeof data === "object" && data.data && typeof data.data === "object"
+      ? data.data
+      : null;
 
-  const extractedText: string =
-    typeof data.transcript === "string" ? data.transcript.trim() :
-    typeof data.text === "string" ? data.text.trim() :
-    typeof data.raw?.text === "string" ? data.raw.text.trim() : "";
+  const extractedText = firstNonEmptyString(
+    data?.transcript,
+    data?.text,
+    data?.result?.text,
+    data?.copyText,
+    data?.copy_text,
+    data?.raw?.text,
+    nested?.transcript,
+    nested?.text,
+    nested?.result?.text,
+    nested?.copyText,
+    nested?.copy_text,
+    nested?.raw?.text,
+  );
 
   if (!extractedText) {
-    console.warn("[extract/callback] received empty transcript");
+    console.warn("[extract/callback] received empty transcript", { body: data });
     return NextResponse.json({ error: "empty transcript" }, { status: 422 });
   }
 
-  const scriptId = typeof data.script_id === "string" && data.script_id ? data.script_id : undefined;
-  const referenceItemId = typeof data.reference_item_id === "string" && data.reference_item_id ? data.reference_item_id : undefined;
+  const scriptId = firstNonEmptyString(
+    data?.script_id,
+    data?.scriptId,
+    nested?.script_id,
+    nested?.scriptId,
+    request.nextUrl.searchParams.get("script_id"),
+    request.nextUrl.searchParams.get("scriptId"),
+  ) || undefined;
+
+  const referenceItemId = firstNonEmptyString(
+    data?.reference_item_id,
+    data?.referenceItemId,
+    nested?.reference_item_id,
+    nested?.referenceItemId,
+    request.nextUrl.searchParams.get("reference_item_id"),
+    request.nextUrl.searchParams.get("referenceItemId"),
+  ) || undefined;
 
   try {
     await persistExtractedText({ scriptId, referenceItemId, extractedText });

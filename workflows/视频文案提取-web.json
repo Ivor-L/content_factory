@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const incoming = ($json.body && typeof $json.body === 'object') ? $json.body : $json;\nconst pick = (...vals) => {\n  for (const v of vals) {\n    if (v === undefined || v === null) continue;\n    const str = typeof v === 'string' ? v.trim() : v;\n    if (typeof str === 'string' && !str) continue;\n    return str;\n  }\n  return '';\n};\nconst video_url = pick(incoming.video_url, incoming.videoUrl, incoming.url);\nconst audio_url = pick(incoming.audio_url, incoming.audioUrl);\nconst finalUrl = video_url || audio_url;\nconst language = pick(incoming.language, incoming.lang, 'auto');\nconst taskId = pick(incoming.task_id, incoming.taskId, incoming.replication_id, incoming.replicationId);\nreturn [{\n  json: {\n    task_id: taskId || null,\n    video_url: finalUrl,\n    request_language: language.toLowerCase(),\n    raw: incoming\n  }\n}];"
+        "jsCode": "const incoming = ($json.body && typeof $json.body === 'object') ? $json.body : $json;\nconst pick = (...vals) => {\n  for (const v of vals) {\n    if (v === undefined || v === null) continue;\n    const str = typeof v === 'string' ? v.trim() : v;\n    if (typeof str === 'string' && !str) continue;\n    return str;\n  }\n  return '';\n};\nconst video_url = pick(incoming.video_url, incoming.videoUrl, incoming.url);\nconst audio_url = pick(incoming.audio_url, incoming.audioUrl);\nconst finalUrl = video_url || audio_url;\nconst language = pick(incoming.language, incoming.lang, 'auto');\nconst taskId = pick(incoming.task_id, incoming.taskId, incoming.replication_id, incoming.replicationId);\nconst callbackUrl = pick(incoming.callback_url, incoming.callbackUrl);\nconst scriptId = pick(incoming.script_id, incoming.scriptId);\nconst referenceItemId = pick(incoming.reference_item_id, incoming.referenceItemId);\nreturn [{\n  json: {\n    task_id: taskId || null,\n    video_url: finalUrl,\n    request_language: language.toLowerCase(),\n    callback_url: callbackUrl || null,\n    script_id: scriptId || null,\n    reference_item_id: referenceItemId || null,\n    raw: incoming\n  }\n}];"
       },
       "id": "8a7b77b5-4b2e-4f29-9d3f-2f4a4f4765e5",
       "name": "标准化输入",
@@ -179,7 +179,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const text = $json.text || $json.result?.text || '';\nconst normalized = text.replace(/\r?\n+/g, '\n').trim();\nconst charCount = normalized.replace(/\s+/g, '').length;\nconst wordEstimate = charCount ? Math.max(1, Math.round(charCount / 2)) : 0;\nreturn [{\n  json: {\n    success: !!normalized,\n    transcript: normalized,\n    words_estimate: wordEstimate,\n    language: $('标准化输入').item.json.request_language || 'auto',\n    task_id: $('标准化输入').item.json.task_id,\n    raw: $json\n  }\n}];"
+        "jsCode": "const text = $json.text || $json.result?.text || '';\nconst normalized = text.replace(/\\r?\\n+/g, '\\n').trim();\nconst charCount = normalized.replace(/\\s+/g, '').length;\nconst wordEstimate = charCount ? Math.max(1, Math.round(charCount / 2)) : 0;\nconst input = $('标准化输入').item.json;\nreturn [{\n  json: {\n    success: !!normalized,\n    transcript: normalized,\n    words_estimate: wordEstimate,\n    language: input.request_language || 'auto',\n    task_id: input.task_id,\n    callback_url: input.callback_url || null,\n    script_id: input.script_id || null,\n    reference_item_id: input.reference_item_id || null,\n    raw: $json\n  }\n}];"
       },
       "id": "2d7ff536-44db-4257-9585-370e44d1b4ad",
       "name": "格式化输出",
@@ -205,8 +205,60 @@
     },
     {
       "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ !!$json.callback_url }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "rightValue": ""
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "df8e7d66-9eb4-4f97-b7d1-74f8bfd20ac8",
+      "name": "IF-是否回调",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        940,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { success: $json.success, transcript: $json.transcript, words_estimate: $json.words_estimate, language: $json.language, task_id: $json.task_id, script_id: $json.script_id, reference_item_id: $json.reference_item_id, data: { transcript: $json.transcript, text: $json.transcript, words_estimate: $json.words_estimate, language: $json.language, task_id: $json.task_id, script_id: $json.script_id, reference_item_id: $json.reference_item_id } } }}",
+        "options": {}
+      },
+      "id": "670f414e-9cd3-4669-aa95-c50a5e51f364",
+      "name": "回调应用",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1160,
+        -140
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { success: $json.success, data: { transcript: $json.transcript, words_estimate: $json.words_estimate, language: $json.language, task_id: $json.task_id } } }}",
+        "responseBody": "={{ { success: $json.success, data: { transcript: $json.transcript, words_estimate: $json.words_estimate, language: $json.language, task_id: $json.task_id, script_id: $json.script_id, reference_item_id: $json.reference_item_id } } }}",
         "options": {}
       },
       "id": "5f95e5b2-b606-4825-9da2-c69b7018d627",
@@ -326,7 +378,23 @@
       "main": [
         [
           {
+            "node": "IF-是否回调",
+            "type": "main",
+            "index": 0
+          },
+          {
             "node": "Respond-成功",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF-是否回调": {
+      "main": [
+        [
+          {
+            "node": "回调应用",
             "type": "main",
             "index": 0
           }

@@ -110,6 +110,7 @@ import {
 } from "../lib/canvasDataAdapters";
 import type { CanvasProjectRecord } from "../types";
 import type { RuntimeCanvasNode } from "../lib/canvasDataAdapters";
+import { toForcedProxyUrl } from "@/lib/mediaProxy";
 
 const CANVAS_PERF_TRACING = process.env.NODE_ENV !== "production";
 const PERF_LOG_THROTTLE_MS = 2000;
@@ -118,6 +119,71 @@ function resolveLanguageLabel(lang?: string | null): string {
   if (lang === "zh-TW") return "繁体";
   if (lang === "en") return "English";
   return "简体";
+}
+
+function inferFileExtension(url: string, fallback: string): string {
+  try {
+    const target = new URL(url, "https://local.canvas");
+    const filename = target.pathname.split("/").pop() || "";
+    const match = filename.match(/\.([a-zA-Z0-9]{2,5})$/);
+    if (match?.[1]) return match[1].toLowerCase();
+  } catch {
+    // ignore and fallback
+  }
+  return fallback;
+}
+
+function sanitizeFilename(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "download";
+  const sanitized = trimmed.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/_+/g, "_");
+  return sanitized.slice(0, 120) || "download";
+}
+
+function triggerForcedDownload(url: string, filename: string) {
+  if (!url || typeof document === "undefined") return;
+  const safeName = sanitizeFilename(filename);
+  const anchor = document.createElement("a");
+  anchor.href = toForcedProxyUrl(url, safeName);
+  anchor.setAttribute("download", safeName);
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+}
+
+function triggerCanvasDownload(url: string, prefix: string, fallbackExt: string) {
+  const ext = inferFileExtension(url, fallbackExt);
+  triggerForcedDownload(url, `${sanitizeFilename(prefix)}.${ext}`);
+}
+
+const CANVAS_DRAFT_STORAGE_PREFIX = "canvas-project-draft:";
+
+function getCanvasDraftStorageKey(projectId: string): string {
+  return `${CANVAS_DRAFT_STORAGE_PREFIX}${projectId}`;
+}
+
+function readCanvasDraft(projectId: string): unknown | null {
+  if (typeof window === "undefined" || !projectId) return null;
+  try {
+    const raw = window.localStorage.getItem(getCanvasDraftStorageKey(projectId));
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function writeCanvasDraft(projectId: string, canvasData: Record<string, unknown>) {
+  if (typeof window === "undefined" || !projectId) return;
+  try {
+    window.localStorage.setItem(getCanvasDraftStorageKey(projectId), JSON.stringify({
+      ...canvasData,
+      savedAt: Date.now(),
+    }));
+  } catch {
+    // ignore storage write failures
+  }
 }
 
 function extractThumbnailFromNodes(runtimeNodes: RuntimeCanvasNode[]): string | null {
@@ -1443,6 +1509,7 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   };
 
   return (
+    <>
     <CardMagnetContext.Provider value={magnet}>
     <div style={{ width: containerWidth }} className="relative select-none">
       {props.selected && (
@@ -1498,14 +1565,16 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           </div>
           <div className="h-4 w-px bg-[var(--canvas-hover)]" />
           <div className="group/tip relative">
-            <a
-              href={currentImageUrl}
-              download
-              onClick={(e) => e.stopPropagation()}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerCanvasDownload(currentImageUrl, `canvas-image-${id.slice(-6)}`, "png");
+              }}
               className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95"
             >
               <Download className="h-4 w-4" />
-            </a>
+            </button>
             <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">下载图片</span>
           </div>
           <div className="h-4 w-px bg-[var(--canvas-hover)]" />
@@ -1668,6 +1737,44 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       <input ref={directUploadRef} type="file" accept="image/*" className="hidden" onChange={handleDirectUpload} />
     </div>
     </CardMagnetContext.Provider>
+    {fullscreenUrl && typeof document !== "undefined" && createPortal(
+      <div
+        className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+        onClick={() => setFullscreenUrl(null)}
+      >
+        <CanvasImage
+          src={fullscreenUrl}
+          alt="预览图片"
+          className="max-h-[90vh] max-w-[90vw]"
+          imageClassName="rounded-2xl object-contain shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        />
+        <div className="fixed right-6 top-6 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerCanvasDownload(fullscreenUrl, `canvas-image-${id.slice(-6)}`, "png");
+            }}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition hover:bg-white/20"
+          >
+            <Download className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setFullscreenUrl(null);
+            }}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition hover:bg-white/20"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+      </div>,
+      document.body,
+    )}
+    </>
   );
 }
 
@@ -1815,14 +1922,16 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               </div>
               <div className="h-4 w-px bg-[var(--canvas-hover)]" />
               <div className="group/tip relative">
-                <a
-                  href={outputUrl}
-                  download
-                  onClick={(e) => e.stopPropagation()}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    triggerCanvasDownload(outputUrl, `canvas-video-${id.slice(-6)}`, "mp4");
+                  }}
                   className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95"
                 >
                   <Download className="h-4 w-4" />
-                </a>
+                </button>
                 <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">下载视频</span>
               </div>
               <div className="h-4 w-px bg-[var(--canvas-hover)]" />
@@ -2001,6 +2110,43 @@ function VideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       <input ref={directUploadRef} type="file" accept="video/*" className="hidden" onChange={handleDirectUpload} />
     </div>
     </CardMagnetContext.Provider>
+    {fullscreenUrl && typeof document !== "undefined" && createPortal(
+      <div
+        className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+        onClick={() => setFullscreenUrl(null)}
+      >
+        <video
+          src={fullscreenUrl}
+          controls
+          autoPlay
+          className="max-h-[90vh] max-w-[90vw] rounded-2xl"
+          onClick={(e) => e.stopPropagation()}
+        />
+        <div className="fixed right-6 top-6 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerCanvasDownload(fullscreenUrl, `canvas-video-${id.slice(-6)}`, "mp4");
+            }}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition hover:bg-white/20"
+          >
+            <Download className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setFullscreenUrl(null);
+            }}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition hover:bg-white/20"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+      </div>,
+      document.body,
+    )}
     </>
   );
 }
@@ -2674,14 +2820,16 @@ function AudioNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       {props.selected && audioUrl && (
         <div className="absolute bottom-full left-1/2 z-10 -translate-x-1/2 -translate-y-2 flex items-center rounded-full bg-[var(--canvas-surface)] shadow-[var(--canvas-shadow-sm)]">
           <div className="group/tip relative">
-            <a
-              href={audioUrl}
-              download
-              onClick={(e) => e.stopPropagation()}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerCanvasDownload(audioUrl, `canvas-audio-${id.slice(-6)}`, "mp3");
+              }}
               className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95"
             >
               <Download className="h-4 w-4" />
-            </a>
+            </button>
             <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 -translate-y-1.5 whitespace-nowrap rounded-md bg-[var(--canvas-tooltip)] px-2 py-1 text-[11px] text-[var(--canvas-text-80)] opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100">下载音频</span>
           </div>
           <div className="h-4 w-px bg-[var(--canvas-hover)]" />
@@ -3550,6 +3698,7 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   };
 
   return (
+    <>
     <CardMagnetContext.Provider value={magnet}>
     <div style={{ width: containerWidth }} className="relative select-none">
       {!gridImageUrl && props.selected && (
@@ -3582,7 +3731,10 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           <div className="group/tip relative">
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); window.open(gridImageUrl, "_blank"); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerCanvasDownload(gridImageUrl, `canvas-grid-${id.slice(-6)}`, "png");
+              }}
               className="flex items-center justify-center rounded-full p-2.5 text-[var(--canvas-text-60)] transition hover:bg-[var(--canvas-hover)] hover:text-[var(--canvas-text)] active:scale-95"
             >
               <Download className="h-4 w-4" />
@@ -3760,6 +3912,44 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
     </div>
     </CardMagnetContext.Provider>
+    {fullscreenUrl && typeof document !== "undefined" && createPortal(
+      <div
+        className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+        onClick={() => setFullscreenUrl(null)}
+      >
+        <CanvasImage
+          src={fullscreenUrl}
+          alt="九宫格预览"
+          className="max-h-[90vh] max-w-[90vw]"
+          imageClassName="rounded-2xl object-contain shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        />
+        <div className="fixed right-6 top-6 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerCanvasDownload(fullscreenUrl, `canvas-grid-${id.slice(-6)}`, "png");
+            }}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition hover:bg-white/20"
+          >
+            <Download className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setFullscreenUrl(null);
+            }}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-sm transition hover:bg-white/20"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+      </div>,
+      document.body,
+    )}
+    </>
   );
 }
 
@@ -3913,13 +4103,7 @@ function ImageTextGroupNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
     setIsDownloading(true);
     try {
       for (const img of images) {
-        const a = document.createElement("a");
-        a.href = img.url;
-        a.download = img.url.split("/").pop() || `image_${img.index}.jpg`;
-        a.target = "_blank";
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        triggerCanvasDownload(img.url, `canvas-itg-${img.index}`, "jpg");
         await new Promise((r) => setTimeout(r, 200));
       }
       toast.success(`已下载 ${images.length} 张图片`);
@@ -4657,6 +4841,7 @@ export function ReactCanvasRoot({
   const [viewport, setViewport] = useState(DEFAULT_VIEWPORT);
   const [viewportKey, setViewportKey] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
+  const [isHydrating, setIsHydrating] = useState(false);
   const [autoSaveError, setAutoSaveError] = useState<string | null>(null);
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [isManualSaving, setIsManualSaving] = useState(false);
@@ -4710,6 +4895,8 @@ export function ReactCanvasRoot({
   const resourcesRef = useRef(resources);
   const currentProjectIdRef2 = useRef(currentProjectId);
   const saveProjectCanvasRef = useRef(saveProjectCanvas);
+  const authTokenRef = useRef<string | null>(null);
+  const restoredDraftProjectRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     nodesRef.current = nodes;
   }, [nodes]);
@@ -4728,6 +4915,48 @@ export function ReactCanvasRoot({
   useEffect(() => {
     saveProjectCanvasRef.current = saveProjectCanvas;
   }, [saveProjectCanvas]);
+  useEffect(() => {
+    let active = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active) return;
+      authTokenRef.current = data.session?.access_token ?? null;
+    });
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      authTokenRef.current = session?.access_token ?? null;
+    });
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+  const flushProjectCanvasKeepalive = useCallback((projectId: string | null | undefined) => {
+    if (!projectId || typeof window === "undefined") return;
+    const runtimeNodes = flowNodesToRuntime(nodesRef.current);
+    const thumbnail = extractThumbnailFromNodes(runtimeNodes);
+    const body = JSON.stringify({
+      canvasData: {
+        nodes: runtimeNodes,
+        edges: flowEdgesToRuntime(edgesRef.current),
+        viewport: viewportRef.current,
+        resources: resourcesRef.current,
+      },
+      thumbnail,
+    });
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (authTokenRef.current) {
+      headers.Authorization = `Bearer ${authTokenRef.current}`;
+    }
+    void fetch(`/api/canvas/projects/${projectId}`, {
+      method: "PATCH",
+      credentials: "include",
+      cache: "no-store",
+      keepalive: true,
+      headers,
+      body,
+    }).catch(() => {});
+  }, []);
   const getNodeById = useCallback(
     (nodeId: string) => nodesRef.current.find((node) => node.id === nodeId),
     [],
@@ -4971,13 +5200,8 @@ export function ReactCanvasRoot({
       toast.error("选中节点没有输出资源");
       return;
     }
-    urls.forEach((url) => {
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = url.split("/").pop() || "download";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+    urls.forEach((url, idx) => {
+      triggerCanvasDownload(url, `canvas-batch-${idx + 1}`, "bin");
     });
     toast.success(`已下载 ${urls.length} 个文件`);
   }, [selectedNodeIds, nodes]);
@@ -5152,6 +5376,8 @@ export function ReactCanvasRoot({
   useEffect(() => {
     if (!currentProject) {
       lastHydratedRef.current = null;
+      hydratingRef.current = false;
+      setIsHydrating(false);
       return;
     }
     const last = lastHydratedRef.current;
@@ -5163,39 +5389,95 @@ export function ReactCanvasRoot({
     // If no canvasData, fetch it first
     if (!hasData) {
       hydratingRef.current = true;
+      setIsHydrating(true);
       fetchProjectById(currentProject.id, false)
         .then((project) => {
           if (project?.canvasData) {
             const normalized = normalizeRuntimeCanvasData(project.canvasData, initialPrompt);
-            setNodes(runtimeToFlowNodes(normalized.nodes));
-            setEdges(runtimeEdgesToFlowEdges(normalized.edges));
-            syncFromCanvasData(normalized.resources);
-            setViewport(normalized.viewport);
+            let hydrated = normalized;
+            const shouldTryDraft =
+              normalized.nodes.length === 0 &&
+              normalized.edges.length === 0 &&
+              normalized.resources.length === 0;
+            if (shouldTryDraft) {
+              const draftRaw = readCanvasDraft(currentProject.id);
+              const draftNormalized = normalizeRuntimeCanvasData(draftRaw, initialPrompt);
+              const hasDraftContent =
+                draftNormalized.nodes.length > 0 ||
+                draftNormalized.edges.length > 0 ||
+                draftNormalized.resources.length > 0;
+              if (hasDraftContent) {
+                hydrated = draftNormalized;
+                if (!restoredDraftProjectRef.current.has(currentProject.id)) {
+                  restoredDraftProjectRef.current.add(currentProject.id);
+                  toast.success("已恢复本地草稿");
+                }
+              }
+            }
+            setNodes(runtimeToFlowNodes(hydrated.nodes));
+            setEdges(runtimeEdgesToFlowEdges(hydrated.edges));
+            syncFromCanvasData(hydrated.resources);
+            setViewport(hydrated.viewport);
             setViewportKey((key) => key + 1);
           }
         })
         .finally(() => {
           hydratingRef.current = false;
+          setIsHydrating(false);
         });
       return;
     }
 
     hydratingRef.current = true;
+    setIsHydrating(true);
     const normalized = normalizeRuntimeCanvasData(currentProject.canvasData, initialPrompt);
-    setNodes(runtimeToFlowNodes(normalized.nodes));
-    setEdges(runtimeEdgesToFlowEdges(normalized.edges));
-    syncFromCanvasData(normalized.resources);
-    setViewport(normalized.viewport);
+    let hydrated = normalized;
+    const shouldTryDraft =
+      normalized.nodes.length === 0 &&
+      normalized.edges.length === 0 &&
+      normalized.resources.length === 0;
+    if (shouldTryDraft) {
+      const draftRaw = readCanvasDraft(currentProject.id);
+      const draftNormalized = normalizeRuntimeCanvasData(draftRaw, initialPrompt);
+      const hasDraftContent =
+        draftNormalized.nodes.length > 0 ||
+        draftNormalized.edges.length > 0 ||
+        draftNormalized.resources.length > 0;
+      if (hasDraftContent) {
+        hydrated = draftNormalized;
+        if (!restoredDraftProjectRef.current.has(currentProject.id)) {
+          restoredDraftProjectRef.current.add(currentProject.id);
+          toast.success("已恢复本地草稿");
+        }
+      }
+    }
+    setNodes(runtimeToFlowNodes(hydrated.nodes));
+    setEdges(runtimeEdgesToFlowEdges(hydrated.edges));
+    syncFromCanvasData(hydrated.resources);
+    setViewport(hydrated.viewport);
     setViewportKey((key) => key + 1);
     const timeout = setTimeout(() => {
       hydratingRef.current = false;
+      setIsHydrating(false);
     }, 300);
     return () => clearTimeout(timeout);
   }, [currentProject, initialPrompt, syncFromCanvasData, fetchProjectById]);
 
+  useEffect(() => {
+    if (!currentProjectId || hydratingRef.current || isHydrating) return;
+    const timer = setTimeout(() => {
+      writeCanvasDraft(currentProjectId, {
+        nodes: flowNodesToRuntime(nodes),
+        edges: flowEdgesToRuntime(edges),
+        viewport,
+        resources,
+      });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [currentProjectId, nodes, edges, viewport, resources, isHydrating]);
 
   useEffect(() => {
-    if (!currentProjectId || hydratingRef.current) return;
+    if (!currentProjectId || hydratingRef.current || isHydrating) return;
     let cancelled = false;
     const timer = setTimeout(async () => {
       const shouldTrace = CANVAS_PERF_TRACING && typeof performance !== "undefined";
@@ -5258,14 +5540,14 @@ export function ReactCanvasRoot({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [currentProjectId, edges, nodes, resources, viewport, saveProjectCanvas]);
+  }, [currentProjectId, edges, nodes, resources, viewport, saveProjectCanvas, isHydrating]);
 
   // Flush any pending unsaved state when the component unmounts (SPA navigation away from canvas).
   // The debounce cleanup cancels the timer, so we fire one final save using refs.
   useEffect(() => {
     return () => {
       const projectId = currentProjectIdRef2.current;
-      if (!projectId || hydratingRef.current) return;
+      if (!projectId) return;
       const runtimeNodes = flowNodesToRuntime(nodesRef.current);
       const thumbnail = extractThumbnailFromNodes(runtimeNodes);
       void saveProjectCanvasRef.current(projectId, {
@@ -5273,9 +5555,33 @@ export function ReactCanvasRoot({
         edges: flowEdgesToRuntime(edgesRef.current),
         viewport: viewportRef.current,
         resources: resourcesRef.current,
-      }, thumbnail).catch(() => {});
+      }, thumbnail).catch(() => {
+        flushProjectCanvasKeepalive(projectId);
+      });
     };
-  }, []);
+  }, [flushProjectCanvasKeepalive]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const flush = () => {
+      flushProjectCanvasKeepalive(currentProjectIdRef2.current);
+    };
+    const handlePageHide = () => flush();
+    const handleBeforeUnload = () => flush();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        flush();
+      }
+    };
+    window.addEventListener("pagehide", handlePageHide);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [flushProjectCanvasKeepalive]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<Node<MinimalFlowNodeData>>[]) => setNodes((current) => applyNodeChanges(changes, current) as Node<MinimalFlowNodeData>[]),
@@ -5699,14 +6005,15 @@ export function ReactCanvasRoot({
           nodes: flowNodesToRuntime(nodesRef.current),
           edges: flowEdgesToRuntime(edgesRef.current),
           viewport: viewportRef.current,
-          resources,
+          resources: resourcesRef.current,
         });
       } catch {
-        // best-effort; navigate regardless
+        flushProjectCanvasKeepalive(currentProjectId);
+        toast.error("保存未完成，已切换为后台重试保存");
       }
     }
     selectProject(null);
-  }, [currentProjectId, saveProjectCanvas, resources, selectProject]);
+  }, [currentProjectId, saveProjectCanvas, selectProject, flushProjectCanvasKeepalive]);
 
   // File drag-and-drop onto canvas — creates image or video node at drop position
   const handleCanvasDrop = useCallback(
