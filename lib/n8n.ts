@@ -559,6 +559,7 @@ export interface CopyRemixTriggerOptions {
   userId?: string | null;
   originalCopy?: string | null;
   ideaText?: string | null;
+  wordCount?: number;
 }
 
 export async function triggerCopyRemix(
@@ -584,10 +585,17 @@ export async function triggerCopyRemix(
   if (options.workflowId) payload.workflow_id = options.workflowId;
   if (options.styleId) payload.style_id = options.styleId;
   if (options.styleSnapshot) payload.style_snapshot = options.styleSnapshot;
-  if (options.styleProfile) payload.style_profile = options.styleProfile;
+  if (options.styleProfile) {
+    payload.style_profile = options.styleProfile;
+    payload.style_profile_json = options.styleProfile;
+  }
   if (options.userId) payload.user_id = options.userId;
   if (options.originalCopy) payload.original_copy = options.originalCopy;
   if (options.ideaText) payload.idea_text = options.ideaText;
+  if (typeof options.wordCount === "number" && Number.isFinite(options.wordCount)) {
+    payload.word_count = options.wordCount;
+    payload.target_word_count = options.wordCount;
+  }
 
   const response = await fetch(webhookUrl, {
     method: "POST",

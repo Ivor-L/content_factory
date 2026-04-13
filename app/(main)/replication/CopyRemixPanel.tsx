@@ -5,7 +5,6 @@ import { toast } from "react-hot-toast";
 import { Check, Loader2, UserCircle2, Zap } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
-import { useLanguage } from "@/contexts/LanguageContext";
 import { Modal } from "@/components/Modal";
 import { DigitalHumanModal } from "@/components/DigitalHumanModal";
 
@@ -38,10 +37,17 @@ type WritingStyleSummary = {
   name: string;
   description?: string | null;
   channel?: string | null;
-  currentProfile?: { id: string; status: string };
+  currentProfileId?: string | null;
 };
 
-type WritingStyleDetail = WritingStyleSummary & Record<string, any>;
+const REMIX_WORD_COUNT_MIN = 120;
+const REMIX_WORD_COUNT_MAX = 1600;
+const REMIX_WORD_COUNT_DEFAULT = 500;
+
+const clampRemixWordCount = (value: number): number => {
+  if (!Number.isFinite(value)) return REMIX_WORD_COUNT_DEFAULT;
+  return Math.max(REMIX_WORD_COUNT_MIN, Math.min(REMIX_WORD_COUNT_MAX, Math.round(value)));
+};
 
 const parseResult = (value?: string | null) => {
   if (!value) return {};
@@ -107,7 +113,6 @@ export function CopyRemixPanel({
   isVideoUploaded,
   videoUrl,
 }: CopyRemixPanelProps) {
-  const { t } = useLanguage();
   const LAST_STYLE_KEY = "copy_remix_last_style_id";
   const EXTRACT_PENDING_TTL = 10 * 60 * 1000; // 10 min
   const extractPendingKey = (id: string) => `extract_pending_${id}`;
@@ -126,9 +131,7 @@ export function CopyRemixPanel({
   const [styleOptions, setStyleOptions] = useState<WritingStyleSummary[]>([]);
   const [styleOptionsLoading, setStyleOptionsLoading] = useState(false);
   const [styleError, setStyleError] = useState<string | null>(null);
-  const [selectedStyle, setSelectedStyle] = useState<WritingStyleDetail | null>(null);
-  const [styleDetailLoading, setStyleDetailLoading] = useState(false);
-  const styleCache = useRef<Record<string, WritingStyleDetail | undefined>>({});
+  const [selectedStyle, setSelectedStyle] = useState<WritingStyleSummary | null>(null);
 
   const derivedOriginal = useMemo(() => {
     if (copyInsights?.copyText) return copyInsights.copyText;
@@ -142,6 +145,7 @@ export function CopyRemixPanel({
   }, [copyInsights]);
   const [baseCopy, setBaseCopy] = useState(derivedOriginal);
   const [ideaText, setIdeaText] = useState("");
+  const [wordCountInput, setWordCountInput] = useState<string>(String(REMIX_WORD_COUNT_DEFAULT));
   const [showIdeaInput, setShowIdeaInput] = useState(false);
   const baseCopyRef = useRef(baseCopy);
 
@@ -152,6 +156,7 @@ export function CopyRemixPanel({
   useEffect(() => {
     setBaseCopy(derivedOriginal);
     setIdeaText("");
+    setWordCountInput(String(REMIX_WORD_COUNT_DEFAULT));
     setShowIdeaInput(false);
   }, [derivedOriginal, script?.id]);
 
@@ -246,51 +251,12 @@ export function CopyRemixPanel({
     };
   }, [pendingId, scriptId]);
 
-  const fetchStyleDetail = useCallback(
-    async (styleId: string) => {
-      if (!authToken) return null;
-      if (styleCache.current[styleId]) {
-        const cached = styleCache.current[styleId]!;
-        setSelectedStyle(cached);
-        if (typeof window !== "undefined") {
-          localStorage.setItem(LAST_STYLE_KEY, cached.id);
-        }
-        return cached;
-      }
-      setStyleDetailLoading(true);
-      setStyleError(null);
-      try {
-        const res = await fetch(`/api/assets/writing-styles/${styleId}`, {
-          headers: { Authorization: `Bearer ${authToken}` },
-          cache: "no-store",
-        });
-        const payload = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(payload?.error || "获取写作风格详情失败");
-        }
-        const detail = payload?.data as WritingStyleDetail;
-        styleCache.current[styleId] = detail;
-        setSelectedStyle(detail);
-        if (typeof window !== "undefined") {
-          localStorage.setItem(LAST_STYLE_KEY, detail.id);
-        }
-        return detail;
-      } catch (err) {
-        setStyleError(err instanceof Error ? err.message : "获取写作风格详情失败");
-        return null;
-      } finally {
-        setStyleDetailLoading(false);
-      }
-    },
-    [authToken],
-  );
-
   const loadStyleOptions = useCallback(async () => {
     if (!authToken) return;
     setStyleOptionsLoading(true);
     setStyleError(null);
     try {
-      const res = await fetch("/api/assets/writing-styles?limit=50", {
+      const res = await fetch("/api/assets/writing-styles?limit=50&mode=selector", {
         headers: { Authorization: `Bearer ${authToken}` },
         cache: "no-store",
       });
@@ -298,14 +264,21 @@ export function CopyRemixPanel({
       if (!res.ok) {
         throw new Error(payload?.error || "加载写作风格失败");
       }
-      const rows = Array.isArray(payload?.data) ? payload.data : [];
+      const rows = (Array.isArray(payload?.data) ? payload.data : []) as WritingStyleSummary[];
       setStyleOptions(rows);
-      if (!selectedStyle && rows.length > 0) {
-        const lastId =
-          typeof window !== "undefined" ? localStorage.getItem(LAST_STYLE_KEY) : null;
-        if (lastId) {
-          void fetchStyleDetail(lastId);
+      if (rows.length > 0) {
+        const preferredId =
+          selectedStyle?.id ||
+          (typeof window !== "undefined" ? localStorage.getItem(LAST_STYLE_KEY) : null);
+        const preferred = (preferredId && rows.find((item) => item.id === preferredId)) || rows[0];
+        if (preferred) {
+          setSelectedStyle(preferred);
+          if (typeof window !== "undefined") {
+            localStorage.setItem(LAST_STYLE_KEY, preferred.id);
+          }
         }
+      } else {
+        setSelectedStyle(null);
       }
     } catch (err) {
       setStyleOptions([]);
@@ -313,22 +286,19 @@ export function CopyRemixPanel({
     } finally {
       setStyleOptionsLoading(false);
     }
-  }, [authToken, fetchStyleDetail, selectedStyle]);
+  }, [authToken, selectedStyle?.id]);
 
   useEffect(() => {
-    if (styleModalOpen) {
+    if (styleModalOpen && styleOptions.length === 0 && !styleOptionsLoading) {
       void loadStyleOptions();
     }
-  }, [styleModalOpen, loadStyleOptions]);
+  }, [styleModalOpen, loadStyleOptions, styleOptions.length, styleOptionsLoading]);
 
   useEffect(() => {
-    if (!authToken || selectedStyle) return;
-    if (typeof window === "undefined") return;
-    const lastId = localStorage.getItem(LAST_STYLE_KEY);
-    if (lastId) {
-      void fetchStyleDetail(lastId);
-    }
-  }, [authToken, fetchStyleDetail, selectedStyle]);
+    if (!authToken) return;
+    if (styleOptions.length > 0 || styleOptionsLoading) return;
+    void loadStyleOptions();
+  }, [authToken, loadStyleOptions, styleOptions.length, styleOptionsLoading]);
 
   const extractCopyFromBreakdown = useCallback((raw?: string | null) => {
     if (!raw) return "";
@@ -633,10 +603,14 @@ export function CopyRemixPanel({
     setStatus("pending");
     setError(null);
     try {
+      const requestedWordCount = clampRemixWordCount(
+        Number(wordCountInput || REMIX_WORD_COUNT_DEFAULT),
+      );
       const payload: Record<string, unknown> = {
         videoUrl: resolvedVideoUrl,
         styleId: selectedStyle.id,
-        styleSnapshot: selectedStyle,
+        word_count: requestedWordCount,
+        wordCount: requestedWordCount,
       };
       if (script && script.id) {
         payload.scriptId = script.id;
@@ -660,13 +634,14 @@ export function CopyRemixPanel({
       if (!replicationId) throw new Error("缺少 replicationId");
       setPendingId(replicationId);
       setShowIdeaInput(false);
+      setWordCountInput(String(requestedWordCount));
       toast.success("已提交二创请求", { icon: "✍️" });
     } catch (err) {
       setSubmitting(false);
       setStatus("idle");
       toast.error(err instanceof Error ? err.message : "触发失败");
     }
-  }, [script, selectedStyle, videoUrl, baseCopy, ideaText]);
+  }, [script, selectedStyle, videoUrl, baseCopy, ideaText, wordCountInput]);
 
   const hasVideo = Boolean(script?.videoUrl || videoUrl);
   const needsScriptWarning = Boolean(script && script.id === "__new__");
@@ -825,12 +800,48 @@ export function CopyRemixPanel({
             )}
           />
         </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+            目标字数
+          </span>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={REMIX_WORD_COUNT_MIN}
+            max={REMIX_WORD_COUNT_MAX}
+            step={10}
+            value={wordCountInput}
+            onChange={(event) => {
+              const cleaned = event.target.value.replace(/[^\d]/g, "");
+              setWordCountInput(cleaned);
+            }}
+            onBlur={() => {
+              const normalized = clampRemixWordCount(
+                Number(wordCountInput || REMIX_WORD_COUNT_DEFAULT),
+              );
+              setWordCountInput(String(normalized));
+            }}
+            placeholder={`默认 ${REMIX_WORD_COUNT_DEFAULT}`}
+            className={cn(
+              "w-full rounded-xl border px-3 py-2 text-sm bg-white dark:bg-gray-900",
+              "border-gray-200 focus:border-gray-900 focus:ring-0",
+              "dark:border-gray-700 dark:focus:border-gray-300",
+            )}
+          />
+          <p className="text-xs text-gray-400 dark:text-gray-500">
+            建议范围 {REMIX_WORD_COUNT_MIN}-{REMIX_WORD_COUNT_MAX} 字。
+          </p>
+        </label>
         <div className="flex items-center justify-between">
           <p className="text-xs text-gray-400 dark:text-gray-500">
             可提前描述新的切入点或产品观点，便于二创聚焦。留空则直接参考原视频。
           </p>
           <button
-            onClick={() => { setShowIdeaInput(false); setIdeaText(""); }}
+            onClick={() => {
+              setShowIdeaInput(false);
+              setIdeaText("");
+              setWordCountInput(String(REMIX_WORD_COUNT_DEFAULT));
+            }}
             className="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 ml-3 shrink-0"
           >
             取消
@@ -882,7 +893,7 @@ export function CopyRemixPanel({
           onClose={() => setStyleModalOpen(false)}
           title="选择写作风格"
         >
-          {styleOptionsLoading || styleDetailLoading ? (
+          {styleOptionsLoading ? (
             <div className="py-10 text-center text-gray-500">加载中...</div>
           ) : styleError ? (
             <div className="py-10 text-center text-red-500 text-sm">{styleError}</div>
@@ -896,12 +907,12 @@ export function CopyRemixPanel({
                 <button
                   key={style.id}
                   onClick={() => {
-                    void fetchStyleDetail(style.id)?.then((detail) => {
-                      if (detail) {
-                        setStyleModalOpen(false);
-                        toast.success(`已选择「${detail.name}」`);
-                      }
-                    });
+                    setSelectedStyle(style);
+                    if (typeof window !== "undefined") {
+                      localStorage.setItem(LAST_STYLE_KEY, style.id);
+                    }
+                    setStyleModalOpen(false);
+                    toast.success(`已选择「${style.name}」`);
                   }}
                   className={cn(
                     "w-full border rounded-xl px-4 py-3 text-left transition-all",

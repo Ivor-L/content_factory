@@ -13,6 +13,25 @@ export async function GET(request: NextRequest) {
   const limit = Number.isFinite(limitParam)
     ? Math.min(Math.max(limitParam, 1), 200)
     : 50;
+  const mode = String(searchParams.get("mode") ?? "").trim().toLowerCase();
+
+  if (mode === "selector") {
+    const styles = await prisma.writingStyle.findMany({
+      where: { userId },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        channel: true,
+        currentProfileId: true,
+        updatedAt: true,
+      },
+      orderBy: { updatedAt: "desc" },
+      take: limit,
+    });
+
+    return NextResponse.json({ data: styles });
+  }
 
   const styles = await prisma.writingStyle.findMany({
     where: { userId },

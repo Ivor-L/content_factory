@@ -1,20 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { getRequestUserContext } from "@/lib/authServer";
 import { triggerCopyRemix } from "@/lib/n8n";
 import { syncTaskToSummary } from "@/lib/taskSummary";
 
 type JsonRecord = Record<string, unknown>;
 
-const safeJsonParse = <T = unknown>(value: unknown): T | null => {
-  if (!value) return null;
-  if (typeof value === "object") return value as T;
-  if (typeof value !== "string") return null;
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
+const WORD_COUNT_MIN = 120;
+const WORD_COUNT_MAX = 1600;
+
+const normalizeWordCount = (value: unknown): number | undefined => {
+  if (value === null || value === undefined) return undefined;
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+      ? Number(value.trim())
+      : Number.NaN;
+  if (!Number.isFinite(parsed)) return undefined;
+  return Math.max(WORD_COUNT_MIN, Math.min(WORD_COUNT_MAX, Math.round(parsed)));
 };
 
 export async function POST(request: NextRequest) {
@@ -40,12 +45,11 @@ export async function POST(request: NextRequest) {
 
   const styleId =
     typeof body?.styleId === "string" ? body.styleId.trim() : typeof body?.style_id === "string" ? body.style_id.trim() : "";
-  const styleSnapshotRaw =
-    body?.styleSnapshot ?? body?.style_snapshot ?? null;
-  const styleSnapshot =
-    typeof styleSnapshotRaw === "object" && styleSnapshotRaw ? styleSnapshotRaw : safeJsonParse<JsonRecord>(styleSnapshotRaw);
+  const requestedWordCount = normalizeWordCount(
+    body?.word_count ?? body?.wordCount,
+  );
 
-  if (!styleId || !styleSnapshot) {
+  if (!styleId) {
     return NextResponse.json(
       { error: "请选择写作风格" },
       { status: 400 },
@@ -70,8 +74,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "缺少视频地址" }, { status: 400 });
   }
 
+  const styleFromDb = await prisma.writingStyle.findFirst({
+    where: { id: styleId, userId },
+    include: {
+      currentProfile: true,
+    },
+  });
+  if (!styleFromDb) {
+    return NextResponse.json({ error: "写作风格不存在或无权限" }, { status: 404 });
+  }
+
+  const styleSnapshot = JSON.parse(JSON.stringify(styleFromDb)) as JsonRecord;
   const styleProfile =
     (styleSnapshot as any)?.currentProfile?.profile ||
+    (styleSnapshot as any)?.currentProfile?.profileJson ||
+    (styleSnapshot as any)?.profileJson ||
     (styleSnapshot as any)?.profile ||
     null;
 
@@ -87,9 +104,11 @@ export async function POST(request: NextRequest) {
         videoUrl: resolvedVideoUrl,
         userId,
         styleId,
-        styleSnapshot,
+        styleSnapshot: styleSnapshot as Prisma.InputJsonValue,
         originalCopy: originalCopy ?? null,
-      },
+        ideaText: ideaText ?? null,
+        wordCount: requestedWordCount ?? null,
+      } as Prisma.InputJsonValue,
     },
   });
 
@@ -109,6 +128,7 @@ export async function POST(request: NextRequest) {
       userId,
       originalCopy: originalCopy || undefined,
       ideaText: ideaText || undefined,
+      wordCount: requestedWordCount,
       styleId,
       styleSnapshot: styleSnapshot as JsonRecord,
       styleProfile: styleProfile || undefined,
