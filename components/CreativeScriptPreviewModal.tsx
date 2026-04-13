@@ -68,9 +68,15 @@ export function CreativeScriptPreviewModal({
     if (!showVideoOptions || characters.length > 0) return;
     setLoadingCharacters(true);
     fetch("/api/characters", { headers: { Authorization: `Bearer ${authToken}` } })
-      .then((r) => r.json())
+      .then(async (r) => {
+        const payload = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          throw new Error(payload?.error || "角色加载失败");
+        }
+        return payload;
+      })
       .then((data) => {
-        const list: CharacterOption[] = data?.data ?? [];
+        const list: CharacterOption[] = Array.isArray(data) ? data : (data?.data ?? []);
         setCharacters(list);
         if (list.length > 0) setSelectedCharacterId(list[0].id);
       })

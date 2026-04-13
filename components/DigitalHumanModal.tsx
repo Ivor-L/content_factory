@@ -70,6 +70,9 @@ export function DigitalHumanModal({
     digitalCopy?.replaceAudio ?? storyboardCopy.replaceAudio ?? "Replace audio";
   const removeAudioLabel =
     digitalCopy?.removeAudio ?? storyboardCopy.removeAudio ?? "Remove audio";
+  const presetVoiceStatusCopy =
+    digitalCopy?.presetVoiceStatus ??
+    (isZhLocale ? '已使用角色预设音色' : 'Using character default voice');
   const defaultVoiceLabel = digitalCopy?.defaultVoiceLabel ?? storyboardCopy.voiceRef;
   const stickyNote = digitalCopy?.stickyNote ?? storyboardCopy.digitalHumanNote;
   const submitLabel = digitalCopy?.submit ?? storyboardCopy.generateDigitalHumanVideo;
@@ -210,6 +213,7 @@ export function DigitalHumanModal({
       .then((data) => {
         if (isMounted) {
           setCharacters(data);
+          setSelectedCharacterId((prev) => prev ?? data[0]?.id ?? null);
         }
       })
       .catch((error) => {
@@ -247,11 +251,11 @@ export function DigitalHumanModal({
         const voiceUrl = selectedCharacter.voiceId;
         setAudioUrl(voiceUrl);
         setAudioFile(null);
-        getDuration(voiceUrl).then((duration) => {
-          if (!cancelled) {
-            setAudioDuration(duration);
-          }
-        });
+        if (!cancelled) {
+          // Character default voices may come from domains without CORS metadata support.
+          // Keep duration neutral and only measure user-uploaded audio files.
+          setAudioDuration(0);
+        }
       } else {
         setAudioUrl('');
         setAudioFile(null);
@@ -346,6 +350,7 @@ export function DigitalHumanModal({
     return { chunkSeconds, limitChars, limitSeconds, estimatedSeconds };
   }, [splitMeta, scriptStats]);
   const scriptHasContent = script.trim().length > 0;
+  const hasUploadedVoice = Boolean(audioFile);
   const scriptTooLong = mode === 'VOICE_CLONE' && scriptHasContent && scriptStats.needSplit;
   const audioLimitSeconds = DIGITAL_HUMAN_MAX_SECONDS;
   const audioTooLong = audioDuration > audioLimitSeconds;
@@ -380,7 +385,6 @@ export function DigitalHumanModal({
         audio.src = url;
       } else {
         audio.src = source;
-        audio.crossOrigin = 'anonymous';
       }
 
       audio.onloadedmetadata = () => {
@@ -548,10 +552,14 @@ export function DigitalHumanModal({
       onClose();
     } catch (error) {
       console.error(error);
+      const errorMessage =
+        error instanceof Error && error.message
+          ? `${failureMessage}${isZhLocale ? '：' : ': '}${error.message}`
+          : failureMessage;
       if (toastId) {
-        toast.error(failureMessage, { id: toastId });
+        toast.error(errorMessage, { id: toastId });
       } else {
-        toast.error(failureMessage);
+        toast.error(errorMessage);
       }
     } finally {
       setLoading(false);
@@ -796,12 +804,18 @@ export function DigitalHumanModal({
                                 {audioFile ? audioFile.name : voicePlaceholder}
                               </span>
                             </div>
-                            <audio
-                              controls
-                              src={audioUrl}
-                              className="h-9 w-40 shrink-0"
-                              onClick={(e) => e.stopPropagation()}
-                            />
+                            {hasUploadedVoice ? (
+                              <audio
+                                controls
+                                src={audioUrl}
+                                className="h-9 w-40 shrink-0"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            ) : (
+                              <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+                                {presetVoiceStatusCopy}
+                              </span>
+                            )}
                           </div>
                         ) : (
                           <div className="flex flex-col items-center justify-center gap-1 text-center pointer-events-none text-gray-500 dark:text-gray-400">

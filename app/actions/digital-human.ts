@@ -2,6 +2,7 @@
 'use server';
 
 import { createDigitalHumanJobs, type DigitalHumanMode } from '@/lib/digitalHumanJob';
+import { getServerRequestUserContext } from '@/lib/serverRequestContext';
 
 export async function createDigitalHumanVideo(formData: FormData) {
   const type = formData.get('type') as DigitalHumanMode | null;
@@ -10,13 +11,17 @@ export async function createDigitalHumanVideo(formData: FormData) {
   const emoAudioUrl = (formData.get('emoAudioUrl') as string | null) || undefined;
   const script = (formData.get('script') as string | null) || undefined;
   const duration = formData.get('duration');
-  const userId = (formData.get('userId') as string | null) || undefined;
+  const clientUserId = (formData.get('userId') as string | null) || undefined;
   const rawSourceTaskId = (formData.get('sourceTaskId') as string | null)?.trim();
   const sourceTaskId = rawSourceTaskId && rawSourceTaskId.length > 0 ? rawSourceTaskId : undefined;
 
   if (!type || !imageUrl || !audioUrl) {
     throw new Error('Missing required fields');
   }
+
+  // Fallback to server-side session user to avoid client race conditions.
+  const { userId: requestUserId } = await getServerRequestUserContext();
+  const userId = clientUserId || requestUserId || undefined;
 
   const parsedDuration = duration != null ? Number(duration) : NaN;
   const durationSeconds =
