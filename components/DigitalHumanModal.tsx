@@ -84,6 +84,7 @@ export function DigitalHumanModal({
   const myProjectsPath = useTenantPath('/my-works?type=digitalHuman');
   const containerRef = useRef<HTMLDivElement | null>(null);
   const audioInputRef = useRef<HTMLInputElement | null>(null);
+  const submitLockRef = useRef(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [isCompactLayout, setIsCompactLayout] = useState(true);
   const modes = useMemo(
@@ -311,6 +312,7 @@ export function DigitalHumanModal({
   
   const [audioDragActive, setAudioDragActive] = useState(false);
   const [audioDuration, setAudioDuration] = useState<number>(0);
+  const nestedModalZIndex = 'z-[11000]';
   const hasCharacterVoice = Boolean(selectedCharacter?.voiceId);
   const shouldShowVoiceUpload = mode === 'LIP_SYNC' || !hasCharacterVoice;
   const shouldShowEmoUpload = mode === 'VOICE_CLONE';
@@ -483,6 +485,7 @@ export function DigitalHumanModal({
   };
 
   const submitDigitalHumanJobs = async (scriptChunks?: string[]) => {
+    if (submitLockRef.current) return;
     const trimmedScriptChunks =
       mode === 'VOICE_CLONE'
         ? (scriptChunks ?? [script])
@@ -518,6 +521,7 @@ export function DigitalHumanModal({
       : 'Failed to create task';
 
     const toastId = isSplitFlow ? toast.loading(loadingMessage) : undefined;
+    submitLockRef.current = true;
     setLoading(true);
     try {
       for (const chunk of trimmedScriptChunks) {
@@ -563,6 +567,7 @@ export function DigitalHumanModal({
       }
     } finally {
       setLoading(false);
+      submitLockRef.current = false;
     }
   };
 
@@ -991,6 +996,7 @@ export function DigitalHumanModal({
         {/* Footer */}
       <div className="px-6 pt-6 border-t dark:border-gray-700">
         <button
+          type="button"
           onClick={handleSubmit}
           disabled={loading || uploading || audioTooLong}
           className="btn-openclaw w-full py-3 font-bold flex items-center justify-center gap-2"
@@ -1054,6 +1060,7 @@ export function DigitalHumanModal({
       onClose={closeSplitModal}
       title={isZhLocale ? '字数超限，拆分生成？' : 'Script Too Long'}
       maxWidth="max-w-2xl"
+      zIndex={nestedModalZIndex}
     >
       <div className="space-y-5 text-sm text-gray-700 dark:text-gray-200">
         <p>
@@ -1081,12 +1088,14 @@ export function DigitalHumanModal({
         </p>
         <div className="flex justify-end gap-3 pt-2">
           <button
+            type="button"
             onClick={closeSplitModal}
             className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-200 bg-white/90 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800"
           >
             {isZhLocale ? '返回修改' : 'Edit Script'}
           </button>
           <button
+            type="button"
             onClick={handleSplitConfirm}
             className="btn-openclaw inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold"
           >
@@ -1100,6 +1109,7 @@ export function DigitalHumanModal({
       onClose={() => setIsCharacterModalOpen(false)}
       title={t.characters.formTitle}
       maxWidth="max-w-xl"
+      zIndex={nestedModalZIndex}
     >
       <CharacterForm onSuccess={handleCharacterModalSuccess} key={Number(isCharacterModalOpen)} />
     </Modal>
