@@ -74,10 +74,10 @@ const REFERENCE_PLACEHOLDER_IMAGE = "/logo/logo-icon.svg";
 const VIDEO_URL_PATTERN = /\.(mp4|mov|m3u8)(\?|$)/i;
 
 const VIRAL_PLATFORMS = [
-  { id: "xiaohongshu", label: "小红书", badge: "XHS" },
-  { id: "tiktok", label: "TikTok", badge: "TT" },
-  { id: "facebook", label: "Facebook", badge: "FB" },
-  { id: "instagram", label: "Instagram", badge: "IG" },
+  { id: "xiaohongshu", badge: "XHS" },
+  { id: "tiktok", badge: "TT" },
+  { id: "facebook", badge: "FB" },
+  { id: "instagram", badge: "IG" },
 ];
 
 type ReferenceContentType = "all" | "video" | "image";
@@ -85,12 +85,6 @@ const REFERENCE_CONTENT_FILTERS: ReferenceContentType[] = ["all", "video", "imag
 type ReferenceViewMode = "grid" | "list";
 
 type CollectorMode = "keyword" | "creator" | "video";
-
-const COLLECTOR_MODE_LABELS: Record<CollectorMode, string> = {
-  keyword: "关键词采集",
-  creator: "达人链接",
-  video: "视频链接",
-};
 
 const PLATFORM_COLLECTOR_MODES: Record<string, CollectorMode[]> = {
   xiaohongshu: [],
@@ -164,8 +158,28 @@ function formatDateLabel(value?: string | null, locale = "zh-CN") {
   return date.toLocaleDateString(locale, { month: "short", day: "numeric" });
 }
 
-function getPlatformLabel(id: string) {
-  return VIRAL_PLATFORMS.find((platform) => platform.id === id)?.label ?? id;
+function getPlatformLabel(id: string, language: "zh" | "zh-TW" | "en" = "zh") {
+  const byLocale: Record<"zh" | "zh-TW" | "en", Record<string, string>> = {
+    zh: {
+      xiaohongshu: "小红书",
+      tiktok: "TikTok",
+      facebook: "Facebook",
+      instagram: "Instagram",
+    },
+    "zh-TW": {
+      xiaohongshu: "小紅書",
+      tiktok: "TikTok",
+      facebook: "Facebook",
+      instagram: "Instagram",
+    },
+    en: {
+      xiaohongshu: "Xiaohongshu",
+      tiktok: "TikTok",
+      facebook: "Facebook",
+      instagram: "Instagram",
+    },
+  };
+  return byLocale[language]?.[id] ?? id;
 }
 
 function getReferenceContentLabel(
@@ -173,8 +187,16 @@ function getReferenceContentLabel(
     ViralReferenceItemData,
     "sourceType" | "videoUrl" | "rawPayload" | "mediaUrls"
   > | null,
+  language: "zh" | "zh-TW" | "en" = "zh",
 ) {
-  return isVideoReference(ref) ? "视频" : "图文";
+  if (isVideoReference(ref)) {
+    if (language === "en") return "Video";
+    if (language === "zh-TW") return "影片";
+    return "视频";
+  }
+  if (language === "en") return "Graphic";
+  if (language === "zh-TW") return "圖文";
+  return "图文";
 }
 
 function getStatNumber(item: ViralReferenceItemData, key: keyof StatPayload): number {
@@ -590,6 +612,348 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
     }),
     [t],
   );
+  const scriptUi = useMemo(() => {
+    if (language === "en") {
+      return {
+        collectorModeLabels: {
+          keyword: "Keyword Search",
+          creator: "Creator URL",
+          video: "Post URL",
+        } as Record<CollectorMode, string>,
+        sortLabels: {
+          recent: "Latest",
+          likes: "Likes",
+          collects: "Saves",
+          comments: "Comments",
+        },
+        collectorPlaceholderKeyword:
+          "One keyword per line, for example:\nSkincare review\nKitchen organizer",
+        collectorPlaceholderInstagram:
+          "One post URL per line. Only post/reel URLs are supported.",
+        collectorPlaceholderDefault:
+          "One URL per line. Supports creator profile URLs or post URLs.",
+        referenceSearchPlaceholder: "Search viral references",
+        creatorSearchPlaceholder: "Search creators",
+        collectorNeedKeyword: "Please enter at least one keyword.",
+        collectorNeedLink: "Please enter at least one URL.",
+        collectorSubmitted: "Collection task submitted. Please refresh in a moment.",
+        collectorSubmitFailed: "Failed to submit collection task.",
+        collectData: "Collect Data",
+        collectorTitle: "Data Collector",
+        collectorKeywordList: "Keyword List",
+        collectorLinkList: "URL List",
+        collectorPerKeyword: "Results per keyword",
+        collectorHint:
+          "Collection usually finishes within tens of seconds. The latest data will refresh automatically.",
+        cancel: "Cancel",
+        submit: "Start Collecting",
+        submitting: "Submitting...",
+        collectorUnsupported: "This platform does not support built-in collecting yet. Please use the browser extension.",
+        viewModeGrid: "Cards",
+        viewModeList: "List",
+        batchSelect: "Batch Select",
+        batchCancel: "Cancel Batch",
+        selectPage: "Select Page",
+        deselectPage: "Deselect Page",
+        deleting: "Deleting...",
+        deleteAction: "Delete",
+        noVideo: "No Video",
+        noLinkForAutoCollect: "No valid URL available for auto collect",
+        openCollectPageFailed: "Failed to open collection page",
+        noteNoCollectLink: "This note does not have a collectible URL yet",
+        openedCollectAssistant: "Collection helper opened in a new tab",
+        noteNoViewLink: "This note does not have a viewable URL yet",
+        referenceNoViewLink: "This reference does not have a viewable URL",
+        deletedReferenceOne: "Reference deleted",
+        missingCreatorId: "Creator ID not found, unable to sync",
+        creatorNoLinkToCollect: "No note URL available, unable to start collection",
+        openedSyncAssistant: "Collection helper opened. Please finish sync in the new tab",
+        creatorSyncingSuffix: " syncing",
+        creatingUploadToast: "Uploading video...",
+        creatingScriptToast: "Creating script...",
+        newReplicationScriptTitle: "New Replication Script",
+        createScriptFailed: "Failed to create script",
+        missingScriptId: "Missing script ID in response",
+        scriptCreated: "Script created",
+        uploadFailed: "Upload failed",
+        invalidVideoFile: "Please upload a video file",
+        uploadInProgress: "Uploading...",
+        clickOrDropUpload: "Click or drag to upload video",
+        supportFormats: "Supports MP4, MOV, and more",
+        uploadFirstHint: "Upload a video on the left to configure storyboard or copy remix",
+        newReplication: "Start New Replication",
+        replicationTitle: "Viral Replication",
+        referenceUntitled: "Untitled note",
+        referenceUnknownAuthor: "Unknown author",
+        directSource: "Open Source",
+        subtitleCopy: "Subtitle Copy",
+        subtitleEmpty: "No subtitles yet",
+        referencesEmptyTitle: "No viral references yet",
+        referencesEmptyDescription: "Try changing filters or wait for the collector to sync.",
+        creatorsEmptyTitle: "No benchmark creators yet",
+        creatorsEmptyDescription: "Sync creators through the collector plugin or adjust filters.",
+        creatorUnnamed: "Unnamed creator",
+        creatorTitleFallback: "Creator",
+        creatorDetailTitle: "Creator Details",
+        creatorStatsFans: "Fans",
+        creatorStatsLikes: "Likes",
+        creatorStatsWorks: "Posts",
+        view: "View",
+        viewProfile: "View Profile",
+        latestContent: "Latest content",
+        syncing: "Syncing...",
+        syncLatestNotes: "Sync Latest Notes",
+        refreshList: "Refresh List",
+        collectNotes: "Collected Notes",
+        sortByPublishTime: "By publish time",
+        sortByLikes: "By likes",
+        loadingFallback: "Loading...",
+        unknownDate: "Unknown date",
+        noteNoDescription: "No description",
+        goSync: "Sync",
+        goView: "View",
+        notesEmptyTitle: "No notes yet",
+        notesEmptyDescription: "No notes collected for this creator yet. Try syncing and check again.",
+        loadMore: "Load More",
+        noMore: "No more data",
+        playVideo: "Play video",
+        replicationTabs: {
+          storyboard: "Storyboard Clone",
+          copy: "Copy Clone",
+        },
+      } as const;
+    }
+    if (language === "zh-TW") {
+      return {
+        collectorModeLabels: {
+          keyword: "關鍵詞採集",
+          creator: "達人連結",
+          video: "影片連結",
+        } as Record<CollectorMode, string>,
+        sortLabels: {
+          recent: "最新",
+          likes: "按讚",
+          collects: "收藏",
+          comments: "留言",
+        },
+        collectorPlaceholderKeyword: "每行一個關鍵詞，例如：\n保養品測評\n廚房收納",
+        collectorPlaceholderInstagram:
+          "每行一個作品連結，僅支援貼文 / Reels 連結。",
+        collectorPlaceholderDefault:
+          "每行一個連結，支援達人主頁或具體內容連結。",
+        referenceSearchPlaceholder: "搜尋參考爆款",
+        creatorSearchPlaceholder: "搜尋創作者",
+        collectorNeedKeyword: "請至少輸入一個關鍵詞",
+        collectorNeedLink: "請至少輸入一個連結",
+        collectorSubmitted: "採集任務已提交，請稍後重新整理查看",
+        collectorSubmitFailed: "提交採集任務失敗",
+        collectData: "資料採集",
+        collectorTitle: "資料採集",
+        collectorKeywordList: "關鍵詞列表",
+        collectorLinkList: "連結列表",
+        collectorPerKeyword: "每個關鍵詞抓取數量",
+        collectorHint: "採集任務提交後通常需要幾十秒完成，完成後系統會自動刷新最新內容。",
+        cancel: "取消",
+        submit: "開始採集",
+        submitting: "提交中...",
+        collectorUnsupported: "目前平台暫不支援內建採集，請使用瀏覽器插件同步內容。",
+        viewModeGrid: "卡片",
+        viewModeList: "列表",
+        batchSelect: "批量選擇",
+        batchCancel: "取消批量",
+        selectPage: "全選本頁",
+        deselectPage: "取消全選",
+        deleting: "刪除中...",
+        deleteAction: "刪除",
+        noVideo: "無影片",
+        noLinkForAutoCollect: "未找到可跳轉的連結",
+        openCollectPageFailed: "無法打開採集頁面",
+        noteNoCollectLink: "該筆記暫無可採集連結",
+        openedCollectAssistant: "已在新分頁打開採集助手",
+        noteNoViewLink: "該筆記暫無可訪問連結",
+        referenceNoViewLink: "該內容沒有可訪問連結",
+        deletedReferenceOne: "已刪除該參考",
+        missingCreatorId: "未找到創作者 ID，無法同步",
+        creatorNoLinkToCollect: "暫無筆記連結，無法跳轉採集",
+        openedSyncAssistant: "已打開採集助手，請在新分頁完成同步",
+        creatorSyncingSuffix: "同步中",
+        creatingUploadToast: "上傳影片中...",
+        creatingScriptToast: "正在建立腳本...",
+        newReplicationScriptTitle: "新建復刻腳本",
+        createScriptFailed: "腳本建立失敗",
+        missingScriptId: "腳本建立回傳缺少 ID",
+        scriptCreated: "腳本已建立",
+        uploadFailed: "上傳失敗",
+        invalidVideoFile: "請上傳影片檔案",
+        uploadInProgress: "上傳中...",
+        clickOrDropUpload: "點擊或拖拽上傳影片",
+        supportFormats: "支援 MP4、MOV 等格式",
+        uploadFirstHint: "請先在左側上傳影片，完成後即可配置分鏡或口播復刻",
+        newReplication: "爆款復刻",
+        replicationTitle: "爆款復刻",
+        referenceUntitled: "未命名筆記",
+        referenceUnknownAuthor: "未知作者",
+        directSource: "直達原文",
+        subtitleCopy: "字幕文案",
+        subtitleEmpty: "暫無字幕",
+        referencesEmptyTitle: "暫無參考爆款",
+        referencesEmptyDescription: "可切換篩選條件，或等待採集器同步完成。",
+        creatorsEmptyTitle: "暫無對標創作者",
+        creatorsEmptyDescription: "請先透過採集插件同步博主，或調整篩選條件。",
+        creatorUnnamed: "未命名創作者",
+        creatorTitleFallback: "創作者",
+        creatorDetailTitle: "創作者詳情",
+        creatorStatsFans: "粉絲",
+        creatorStatsLikes: "獲讚",
+        creatorStatsWorks: "作品",
+        view: "查看",
+        viewProfile: "查看主頁",
+        latestContent: "最新內容",
+        syncing: "同步中...",
+        syncLatestNotes: "同步最新筆記",
+        refreshList: "刷新列表",
+        collectNotes: "採集筆記",
+        sortByPublishTime: "按發布時間",
+        sortByLikes: "按按讚數",
+        loadingFallback: "載入中...",
+        unknownDate: "未知日期",
+        noteNoDescription: "暫無簡介",
+        goSync: "去同步",
+        goView: "去查看",
+        notesEmptyTitle: "暫無筆記",
+        notesEmptyDescription: "該創作者暫無採集筆記，可稍後再試或手動同步。",
+        loadMore: "載入更多",
+        noMore: "沒有更多了",
+        playVideo: "播放影片",
+        replicationTabs: {
+          storyboard: "復刻分鏡",
+          copy: "復刻口播",
+        },
+      } as const;
+    }
+    return {
+      collectorModeLabels: {
+        keyword: "关键词采集",
+        creator: "达人链接",
+        video: "视频链接",
+      } as Record<CollectorMode, string>,
+      sortLabels: {
+        recent: "最新",
+        likes: "点赞",
+        collects: "收藏",
+        comments: "评论",
+      },
+      collectorPlaceholderKeyword: "每行一个关键词，例如：\n护肤品测评\n厨房收纳",
+      collectorPlaceholderInstagram:
+        "每行一个作品链接，仅支持具体内容（帖子 / Reels）链接。",
+      collectorPlaceholderDefault: "每行一个链接，支持达人主页或具体内容链接。",
+      referenceSearchPlaceholder: "搜索参考爆款",
+      creatorSearchPlaceholder: "搜索创作者",
+      collectorNeedKeyword: "请至少填写一个关键词",
+      collectorNeedLink: "请至少填写一个链接",
+      collectorSubmitted: "采集任务已提交，请稍候刷新查看",
+      collectorSubmitFailed: "提交采集任务失败",
+      collectData: "数据采集",
+      collectorTitle: "数据采集",
+      collectorKeywordList: "关键词列表",
+      collectorLinkList: "链接列表",
+      collectorPerKeyword: "每个关键词抓取条数",
+      collectorHint: "采集任务提交后通常需要几十秒完成，完成后系统会自动刷新最新内容。",
+      cancel: "取消",
+      submit: "开始采集",
+      submitting: "提交中...",
+      collectorUnsupported: "当前平台暂不支持内置采集，请使用浏览器插件同步内容。",
+      viewModeGrid: "卡片",
+      viewModeList: "列表",
+      batchSelect: "批量选择",
+      batchCancel: "取消批量",
+      selectPage: "全选本页",
+      deselectPage: "取消全选",
+      deleting: "删除中...",
+      deleteAction: "删除",
+      noVideo: "No Video",
+      noLinkForAutoCollect: "未找到可跳转的链接",
+      openCollectPageFailed: "无法打开采集页面",
+      noteNoCollectLink: "该笔记暂无可采集的链接",
+      openedCollectAssistant: "已在新标签页打开采集助手",
+      noteNoViewLink: "该笔记暂无可访问链接",
+      referenceNoViewLink: "该条内容没有可访问的链接",
+      deletedReferenceOne: "已删除该参考",
+      missingCreatorId: "未找到创作者 ID，无法同步",
+      creatorNoLinkToCollect: "暂无笔记链接，无法跳转采集",
+      openedSyncAssistant: "已打开采集助手，请在新标签页完成同步",
+      creatorSyncingSuffix: "同步中",
+      creatingUploadToast: "上传视频中...",
+      creatingScriptToast: "正在创建脚本...",
+      newReplicationScriptTitle: "新建复刻脚本",
+      createScriptFailed: "脚本创建失败",
+      missingScriptId: "脚本创建返回缺少 ID",
+      scriptCreated: "脚本已创建",
+      uploadFailed: "上传失败",
+      invalidVideoFile: "请上传视频文件",
+      uploadInProgress: "上传中...",
+      clickOrDropUpload: "点击或拖拽上传视频",
+      supportFormats: "支持 MP4、MOV 等格式",
+      uploadFirstHint: "请先在左侧上传视频，上传完成后即可配置分镜或口播复刻",
+      newReplication: "新建复刻",
+      replicationTitle: "爆款复刻",
+      referenceUntitled: "未命名笔记",
+      referenceUnknownAuthor: "未知作者",
+      directSource: "直达原文",
+      subtitleCopy: "字幕文案",
+      subtitleEmpty: "暂无字幕",
+      referencesEmptyTitle: "暂无参考爆款",
+      referencesEmptyDescription: "尝试切换筛选条件或等待采集器同步完成。",
+      creatorsEmptyTitle: "暂无对标创作者",
+      creatorsEmptyDescription: "请先通过采集插件同步博主或调整筛选条件。",
+      creatorUnnamed: "未命名创作者",
+      creatorTitleFallback: "创作者",
+      creatorDetailTitle: "创作者详情",
+      creatorStatsFans: "粉丝",
+      creatorStatsLikes: "获赞",
+      creatorStatsWorks: "作品",
+      view: "查看",
+      viewProfile: "查看主页",
+      latestContent: "最新内容",
+      syncing: "同步中...",
+      syncLatestNotes: "同步最新笔记",
+      refreshList: "刷新列表",
+      collectNotes: "采集笔记",
+      sortByPublishTime: "按发布时间",
+      sortByLikes: "按点赞数",
+      loadingFallback: "加载中...",
+      unknownDate: "未知日期",
+      noteNoDescription: "暂无简介",
+      goSync: "去同步",
+      goView: "去查看",
+      notesEmptyTitle: "暂无笔记",
+      notesEmptyDescription: "该创作者还没有采集到笔记，请尝试同步功能或稍后再试。",
+      loadMore: "加载更多",
+      noMore: "没有更多了",
+      playVideo: "播放视频",
+      replicationTabs: {
+        storyboard: "复刻分镜",
+        copy: "复刻口播",
+      },
+    } as const;
+  }, [language]);
+  const uiDateLocale = language === "en" ? "en-US" : language === "zh-TW" ? "zh-TW" : "zh-CN";
+  const deletedReferencesMessage = useCallback(
+    (count: number) => {
+      if (language === "en") return `Deleted ${count} references`;
+      if (language === "zh-TW") return `已刪除 ${count} 條參考`;
+      return `已删除 ${count} 条参考`;
+    },
+    [language],
+  );
+  const deletedCreatorsMessage = useCallback(
+    (count: number) => {
+      if (language === "en") return `Deleted ${count} creators`;
+      if (language === "zh-TW") return `已刪除 ${count} 位創作者`;
+      return `已删除 ${count} 位创作者`;
+    },
+    [language],
+  );
   const replicationComingSoon = REPLICATION_COMING_SOON;
   const [activeTab, setActiveTab] = useState<ScriptTab>('my-templates');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -716,13 +1080,13 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
   const collectorModeEnabled = collectorModes.length > 0;
   const collectorPlaceholder = useMemo(() => {
     if (collectorMode === "keyword") {
-      return "每行一个关键词，例如：\n护肤品测评\n厨房收纳";
+      return scriptUi.collectorPlaceholderKeyword;
     }
     if (contentPlatform === "instagram") {
-      return "每行一个作品链接，仅支持具体内容（帖子 / Reels）链接。";
+      return scriptUi.collectorPlaceholderInstagram;
     }
-    return "每行一个链接，支持达人主页或具体内容链接。";
-  }, [collectorMode, contentPlatform]);
+    return scriptUi.collectorPlaceholderDefault;
+  }, [collectorMode, contentPlatform, scriptUi]);
 
   useEffect(() => {
     if (!selectedReplicationScript) return;
@@ -751,12 +1115,12 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
     if (!newReplicationUploadedUrl) return null;
     return {
       id: '__new__',
-      title: '新建复刻',
+      title: scriptUi.newReplication,
       videoUrl: newReplicationUploadedUrl,
       status: 'completed',
       createdAt: new Date().toISOString(),
     } as Script;
-  }, [newReplicationUploadedUrl]);
+  }, [newReplicationUploadedUrl, scriptUi.newReplication]);
   const activeReplicationScript = selectedReplicationScript || fallbackReplicationScript;
 
   useEffect(() => {
@@ -806,7 +1170,11 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
     if (!collectorModeEnabled) return;
     const entries = parseCollectorEntries(collectorInput);
     if (entries.length === 0) {
-      toast.error(collectorMode === "keyword" ? "请至少填写一个关键词" : "请至少填写一个链接");
+      toast.error(
+        collectorMode === "keyword"
+          ? scriptUi.collectorNeedKeyword
+          : scriptUi.collectorNeedLink,
+      );
       return;
     }
     setCollectorSubmitting(true);
@@ -823,9 +1191,13 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(payload?.error || t.common.error);
+        throw new Error(
+          (language === "zh" ? payload?.error : null) ||
+            scriptUi.collectorSubmitFailed ||
+            t.common.error,
+        );
       }
-      toast.success(payload?.message || "采集任务已提交，请稍候刷新查看");
+      toast.success((language === "zh" ? payload?.message : null) || scriptUi.collectorSubmitted);
       setCollectorInput("");
       setIsCollectorModalOpen(false);
     } catch (error) {
@@ -839,7 +1211,9 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
     collectorMode,
     collectorModeEnabled,
     contentPlatform,
+    language,
     parseCollectorEntries,
+    scriptUi,
     t.common.error,
   ]);
 
@@ -932,7 +1306,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
     (rawUrl: string | null | undefined, mode: 'single' | 'blogger' | 'profile', creatorId?: string | null) => {
       if (typeof window === "undefined") return false;
       if (!rawUrl) {
-        toast.error("未找到可跳转的链接");
+        toast.error(scriptUi.noLinkForAutoCollect);
         return false;
       }
       try {
@@ -948,11 +1322,11 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
         return true;
       } catch (error) {
         console.error("Failed to open auto collect url", error);
-        toast.error("无法打开采集页面");
+        toast.error(scriptUi.openCollectPageFailed);
         return false;
       }
     },
-    [],
+    [scriptUi.noLinkForAutoCollect, scriptUi.openCollectPageFailed],
   );
 
   useEffect(() => {
@@ -1085,25 +1459,25 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
   const handleNoteAutoSync = useCallback(
     (note: ViralReferenceItemData) => {
       if (!note.sourceUrl) {
-        toast.error("该笔记暂无可采集的链接");
+        toast.error(scriptUi.noteNoCollectLink);
         return;
       }
       const success = openAutoCollectWindow(note.sourceUrl, "single", selectedCreatorId);
       if (success) {
-        toast.success("已在新标签页打开采集助手");
+        toast.success(scriptUi.openedCollectAssistant);
       }
     },
-    [openAutoCollectWindow, selectedCreatorId],
+    [openAutoCollectWindow, scriptUi.noteNoCollectLink, scriptUi.openedCollectAssistant, selectedCreatorId],
   );
 
   const handleNoteView = useCallback((note: ViralReferenceItemData) => {
     if (typeof window === "undefined") return;
     if (!note.sourceUrl) {
-      toast.error("该笔记暂无可访问链接");
+      toast.error(scriptUi.noteNoViewLink);
       return;
     }
     window.open(note.sourceUrl, "_blank", "noreferrer");
-  }, []);
+  }, [scriptUi.noteNoViewLink]);
 
   useEffect(() => {
     fetchReferences(true);
@@ -1236,9 +1610,9 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
     if (item.sourceUrl) {
       window.open(item.sourceUrl, "_blank", "noreferrer");
     } else {
-      toast.error("该条内容没有可访问的链接");
+      toast.error(scriptUi.referenceNoViewLink);
     }
-  }, []);
+  }, [scriptUi.referenceNoViewLink]);
 
   const handleQuickDeleteReference = useCallback(
     async (id: string) => {
@@ -1256,12 +1630,12 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
           throw new Error(payload?.error || `Failed to delete reference (${res.status})`);
         }
         setReferenceItems((prev) => prev.filter((item) => item.id !== id));
-        toast.success("已删除该参考");
+        toast.success(scriptUi.deletedReferenceOne);
       } catch (error) {
         toast.error(error instanceof Error ? error.message : t.common.error);
       }
     },
-    [t.common.error],
+    [scriptUi.deletedReferenceOne, t.common.error],
   );
 
   const handleToggleCreatorSelectionMode = useCallback(() => {
@@ -1294,13 +1668,13 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
       setReferenceSelectionMode(false);
       suppressedReferenceRealtimeEventsRef.current += selectedReferenceIds.length;
       await fetchReferences(true);
-      toast.success(`已删除 ${payload?.deleted ?? selectedReferenceIds.length} 条参考`);
+      toast.success(deletedReferencesMessage(payload?.deleted ?? selectedReferenceIds.length));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t.common.error);
     } finally {
       setReferenceDeleting(false);
     }
-  }, [selectedReferenceIds, t.common.error, fetchReferences]);
+  }, [deletedReferencesMessage, selectedReferenceIds, t.common.error, fetchReferences]);
 
   const closeCreatorModal = useCallback(() => {
     setSelectedCreator(null);
@@ -1334,13 +1708,13 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
       }
       setSelectedCreatorIds([]);
       setCreatorSelectionMode(false);
-      toast.success(`已删除 ${payload?.deleted ?? selectedCreatorIds.length} 位创作者`);
+      toast.success(deletedCreatorsMessage(payload?.deleted ?? selectedCreatorIds.length));
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t.common.error);
     } finally {
       setCreatorDeleting(false);
     }
-  }, [selectedCreatorIds, selectedCreator, closeCreatorModal, t.common.error]);
+  }, [deletedCreatorsMessage, selectedCreatorIds, selectedCreator, closeCreatorModal, t.common.error]);
 
   const handleCreatorCardClick = useCallback((creator: ViralCreatorData) => {
     if (creatorSelectionMode) {
@@ -1363,7 +1737,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
         : (selectedCreatorId ?? "").trim();
 
     if (!normalizedId) {
-      toast.error("未找到创作者 ID，无法同步");
+      toast.error(scriptUi.missingCreatorId);
       return;
     }
 
@@ -1371,13 +1745,13 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
     const latestNote = creatorNotes[0];
     const targetUrl = latestNote?.sourceUrl || selectedCreator?.profileUrl;
     if (!targetUrl) {
-      toast.error("暂无笔记链接，无法跳转采集");
+      toast.error(scriptUi.creatorNoLinkToCollect);
       return;
     }
     const mode = latestNote?.sourceUrl ? "single" : "blogger";
     const opened = openAutoCollectWindow(targetUrl, mode, normalizedId);
     if (opened) {
-      toast.success("已打开采集助手，请在新标签页完成同步");
+      toast.success(scriptUi.openedSyncAssistant);
     } else {
       return;
     }
@@ -1398,8 +1772,8 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
         throw new Error(message);
       }
       toast.success(
-        payload?.message ||
-          `${selectedCreator?.displayName || selectedCreator?.creatorHandle || "创作者"}同步中`,
+        (language === "zh" ? payload?.message : null) ||
+          `${selectedCreator?.displayName || selectedCreator?.creatorHandle || scriptUi.creatorTitleFallback}${scriptUi.creatorSyncingSuffix}`,
       );
       await loadCreatorReferences(true);
     } catch (error) {
@@ -1407,7 +1781,20 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
     } finally {
       setCreatorSyncing(false);
     }
-  }, [selectedCreatorId, selectedCreator, creatorNotes, openAutoCollectWindow, loadCreatorReferences, t.common.error]);
+  }, [
+    creatorNotes,
+    language,
+    loadCreatorReferences,
+    openAutoCollectWindow,
+    scriptUi.creatorNoLinkToCollect,
+    scriptUi.creatorSyncingSuffix,
+    scriptUi.creatorTitleFallback,
+    scriptUi.missingCreatorId,
+    scriptUi.openedSyncAssistant,
+    selectedCreator,
+    selectedCreatorId,
+    t.common.error,
+  ]);
 
   if (!mounted) {
     return null; // Or a loading spinner
@@ -1416,7 +1803,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
   const uploadNewReplicationVideo = async (file: File) => {
     setNewReplicationUploading(true);
     setSelectedReplicationScript(null);
-    const toastId = toast.loading('上传视频中...');
+    const toastId = toast.loading(scriptUi.creatingUploadToast);
 
     const finalize = () => {
       setNewReplicationUploading(false);
@@ -1424,8 +1811,8 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
     };
 
     const createScriptRecord = async (videoUrl: string) => {
-      toast.loading('正在创建脚本...', { id: toastId });
-      const titleBase = file.name?.replace(/\.[^.]+$/, '') || '新建复刻脚本';
+      toast.loading(scriptUi.creatingScriptToast, { id: toastId });
+      const titleBase = file.name?.replace(/\.[^.]+$/, '') || scriptUi.newReplicationScriptTitle;
       try {
         const res = await fetch('/api/scripts', {
           method: 'POST',
@@ -1440,10 +1827,10 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
         });
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) {
-          throw new Error(payload.error || `脚本创建失败 (${res.status})`);
+          throw new Error((language === "zh" ? payload?.error : null) || `${scriptUi.createScriptFailed} (${res.status})`);
         }
         const scriptId = payload.data?.scriptId;
-        if (!scriptId) throw new Error('脚本创建返回缺少 ID');
+        if (!scriptId) throw new Error(scriptUi.missingScriptId);
         const nextScript: Script = {
           id: scriptId,
           title: payload.data?.title || titleBase,
@@ -1458,10 +1845,10 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
         setNewReplicationUploadedUrl(videoUrl);
         setReplicationViewTab('storyboard');
         setAnalysisTab('replication');
-        toast.success('脚本已创建', { id: toastId });
+        toast.success(scriptUi.scriptCreated, { id: toastId });
         router.refresh();
       } catch (creationErr: any) {
-        toast.error(creationErr.message || '脚本创建失败', { id: toastId });
+        toast.error(creationErr.message || scriptUi.createScriptFailed, { id: toastId });
         throw creationErr;
       }
     };
@@ -1479,7 +1866,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
           headers: { 'Content-Type': file.type },
           body: file,
         });
-        if (!up.ok) throw new Error(`OSS 上传失败 (${up.status})`);
+        if (!up.ok) throw new Error(`${scriptUi.uploadFailed} (${up.status})`);
         await createScriptRecord(publicUrl);
         return;
       }
@@ -1490,12 +1877,12 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
       const uploadRes = await fetch('/api/upload/video', { method: 'POST', body: fd });
       if (!uploadRes.ok) {
         const errData = await uploadRes.json().catch(() => ({}));
-        throw new Error(errData.error || `上传失败 (${uploadRes.status})`);
+        throw new Error((language === "zh" ? errData?.error : null) || `${scriptUi.uploadFailed} (${uploadRes.status})`);
       }
       const { url } = await uploadRes.json();
       await createScriptRecord(url);
     } catch (err: any) {
-      toast.error(err.message || '上传失败', { id: toastId });
+      toast.error(err.message || scriptUi.uploadFailed, { id: toastId });
     } finally {
       finalize();
     }
@@ -1533,7 +1920,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                         : "text-base sm:text-lg text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
                 )}
             >
-                {t.scripts.viralTemplates || "参考爆款"}
+                {t.scripts.viralTemplates || "Viral Templates"}
                 {activeTab === 'viral-content' && (
                     <motion.div
                         layoutId="script-tab-underline"
@@ -1551,7 +1938,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                         : "text-base sm:text-lg text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
                 )}
             >
-                {t.scripts?.creatorBenchmarks || "对标作者"}
+                {t.scripts?.creatorBenchmarks || "Creator Benchmarks"}
                 {activeTab === 'creators' && (
                     <motion.div
                         layoutId="script-tab-underline"
@@ -1563,8 +1950,8 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
         </div>
 
         <AddButton
-          label="新建复刻"
-          ariaLabel="新建复刻"
+          label={scriptUi.newReplication}
+          ariaLabel={scriptUi.newReplication}
           hideLabelOnMobile
           className="px-3 py-2 sm:px-5 sm:py-2.5 rounded-full"
           onClick={() => {
@@ -1625,7 +2012,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                     ) : (
                     <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 bg-gray-50 dark:bg-gray-800">
                         <PlayCircle size={32} />
-                        <span className="text-xs mt-2">No Video</span>
+                        <span className="text-xs mt-2">{scriptUi.noVideo}</span>
                     </div>
                     )}
                 </div>
@@ -1703,7 +2090,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                     : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-transparent hover:bg-gray-200 dark:hover:bg-gray-700"
                 )}
               >
-                {platform.label}
+                {getPlatformLabel(platform.id, language)}
               </button>
             ))}
           </div>
@@ -1714,7 +2101,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
               <input
                 value={referenceQuery}
                 onChange={(e) => setReferenceQuery(e.target.value)}
-                placeholder={t.common.search || "搜索参考爆款"}
+                placeholder={t.common.search || scriptUi.referenceSearchPlaceholder}
                 className="w-full pl-10 pr-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent"
               />
             </div>
@@ -1735,7 +2122,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                   >
                     <Icon className="h-4 w-4" />
                     <span className="hidden sm:inline">
-                      {mode === "grid" ? "卡片" : "列表"}
+                      {mode === "grid" ? scriptUi.viewModeGrid : scriptUi.viewModeList}
                     </span>
                   </button>
                 );
@@ -1746,7 +2133,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
               onClick={() => fetchReferences(true)}
               className="px-4 py-2 text-sm font-semibold rounded-lg bg-black text-white dark:bg-white dark:text-black"
             >
-              {t.common.refresh || "刷新"}
+              {t.common.refresh || "Refresh"}
             </button>
             <button
               type="button"
@@ -1759,7 +2146,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                   : "border-dashed border-gray-300 text-gray-400 cursor-not-allowed",
               )}
             >
-              数据采集
+              {scriptUi.collectData}
             </button>
             <button
               type="button"
@@ -1771,7 +2158,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                   : "border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
               )}
             >
-              {referenceSelectionMode ? "取消批量" : "批量选择"}
+              {referenceSelectionMode ? scriptUi.batchCancel : scriptUi.batchSelect}
             </button>
             {referenceSelectionMode && (
               <button
@@ -1785,7 +2172,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                     : "border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800",
                 )}
               >
-                {allVisibleReferencesSelected ? "取消全选" : "全选本页"}
+                {allVisibleReferencesSelected ? scriptUi.deselectPage : scriptUi.selectPage}
               </button>
             )}
             {referenceSelectionMode && (
@@ -1796,7 +2183,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                 className="inline-flex items-center gap-1 px-4 py-2 text-sm font-semibold rounded-lg bg-red-600 text-white disabled:opacity-50"
               >
                 <Trash2 className="h-4 w-4" />
-                {referenceDeleting ? '删除中...' : `删除(${selectedReferenceIds.length})`}
+                {referenceDeleting ? scriptUi.deleting : `${scriptUi.deleteAction}(${selectedReferenceIds.length})`}
               </button>
             )}
           </div>
@@ -1834,10 +2221,10 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
             <div className="flex items-center gap-1.5">
               {(
                 [
-                  { value: "recent", label: "最新" },
-                  { value: "likes", label: "点赞" },
-                  { value: "collects", label: "收藏" },
-                  { value: "comments", label: "评论" },
+                  { value: "recent", label: scriptUi.sortLabels.recent },
+                  { value: "likes", label: scriptUi.sortLabels.likes },
+                  { value: "collects", label: scriptUi.sortLabels.collects },
+                  { value: "comments", label: scriptUi.sortLabels.comments },
                 ] as const
               ).map(({ value, label }) => (
                 <button
@@ -1949,7 +2336,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                             setActiveVideoIds((prev) => new Set(prev).add(item.id));
                           }}
                           className="absolute inset-0 z-20 flex items-center justify-center"
-                          aria-label="播放视频"
+                          aria-label={scriptUi.playVideo}
                         >
                           <span className="flex items-center justify-center w-12 h-12 rounded-full bg-black/50 backdrop-blur-sm text-white">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 ml-0.5"><path d="M8 5v14l11-7z"/></svg>
@@ -1967,10 +2354,10 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                   )}
                   <div className="absolute top-3 left-3 z-20 flex gap-2">
                     <span className="px-2 py-1 text-[10px] uppercase font-bold tracking-widest rounded-full bg-white/90 text-gray-900">
-                      {getPlatformLabel(item.platform)}
+                      {getPlatformLabel(item.platform, language)}
                     </span>
                     <span className="px-2 py-1 text-[10px] rounded-full bg-black/70 text-white shadow">
-                      {getReferenceContentLabel(item)}
+                      {getReferenceContentLabel(item, language)}
                     </span>
                     {item.category && (
                       <span className="px-2 py-1 text-[10px] rounded-full bg-black/60 backdrop-blur text-white border border-white/10">
@@ -1980,7 +2367,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                   </div>
                   <div className="absolute bottom-0 left-0 right-0 z-20 p-3 sm:p-4 space-y-2">
                     <p className="text-xs sm:text-sm font-semibold line-clamp-2 leading-tight">
-                      {item.title || item.description || "未命名笔记"}
+                      {item.title || item.description || scriptUi.referenceUntitled}
                     </p>
                     <div className="flex items-center gap-3 text-[10px] sm:text-[11px] uppercase tracking-wide text-white/80">
                       {item.stats?.likes != null && (
@@ -2000,8 +2387,8 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                       )}
                     </div>
                     <div className="flex items-center justify-between text-[9px] sm:text-[10px] text-white/70">
-                      <span>{item.creator?.displayName || item.creator?.creatorHandle || "未知作者"}</span>
-                      <span>{formatDateLabel(item.publishedAt, language === 'en' ? 'en-US' : 'zh-CN')}</span>
+                      <span>{item.creator?.displayName || item.creator?.creatorHandle || scriptUi.referenceUnknownAuthor}</span>
+                      <span>{formatDateLabel(item.publishedAt, uiDateLocale)}</span>
                     </div>
                   </div>
                   </div>
@@ -2087,7 +2474,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                                   setActiveVideoIds((prev) => new Set(prev).add(item.id));
                                 }}
                                 className="absolute inset-0 flex items-center justify-center rounded-xl"
-                                aria-label="播放视频"
+                                aria-label={scriptUi.playVideo}
                               >
                                 <span className="flex items-center justify-center w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm text-white">
                                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 ml-0.5"><path d="M8 5v14l11-7z"/></svg>
@@ -2106,10 +2493,10 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                         <div className="min-w-0 flex-1 space-y-1">
                           <div className="flex items-center gap-2 text-[11px] uppercase text-gray-500 dark:text-gray-400">
                             <span className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200">
-                              {getPlatformLabel(item.platform)}
+                              {getPlatformLabel(item.platform, language)}
                             </span>
                             <span className="px-2 py-0.5 rounded-full bg-black/80 text-white text-[10px]">
-                              {getReferenceContentLabel(item)}
+                              {getReferenceContentLabel(item, language)}
                             </span>
                             {item.category && (
                               <span className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-300">
@@ -2118,11 +2505,11 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                             )}
                           </div>
                           <p className="text-sm font-semibold text-gray-900 dark:text-white line-clamp-2">
-                            {item.title || item.description || "未命名笔记"}
+                            {item.title || item.description || scriptUi.referenceUntitled}
                           </p>
                           <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
-                            <span>{item.creator?.displayName || item.creator?.creatorHandle || "未知作者"}</span>
-                            <span>{formatDateLabel(item.publishedAt, language === 'en' ? 'en-US' : 'zh-CN')}</span>
+                            <span>{item.creator?.displayName || item.creator?.creatorHandle || scriptUi.referenceUnknownAuthor}</span>
+                            <span>{formatDateLabel(item.publishedAt, uiDateLocale)}</span>
                           </div>
                         </div>
                         <div className="hidden lg:flex flex-col items-end gap-1 text-xs text-gray-600 dark:text-gray-300">
@@ -2148,7 +2535,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                                 handleReferenceOpen(item);
                               }}
                               className="p-2 rounded-full border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
-                              title="直达原文"
+                              title={scriptUi.directSource}
                             >
                               <ExternalLink className="h-4 w-4" />
                             </button>
@@ -2159,7 +2546,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                                 handleQuickDeleteReference(item.id);
                               }}
                               className="p-2 rounded-full border border-gray-200 dark:border-gray-700 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10"
-                              title="删除"
+                              title={scriptUi.deleteAction}
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
@@ -2168,10 +2555,10 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                       </div>
                       <div className="w-full md:w-5/12 border-t border-gray-100 dark:border-gray-800 pt-3 md:pt-0 md:border-t-0 md:border-l md:border-gray-200 dark:md:border-gray-700 md:pl-6">
                         <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
-                          字幕文案
+                          {scriptUi.subtitleCopy}
                         </div>
                         <p className="text-sm text-gray-700 dark:text-gray-100 whitespace-pre-line leading-relaxed line-clamp-5">
-                          {item.scriptText?.trim() || item.description?.trim() || "暂无字幕"}
+                          {item.scriptText?.trim() || item.description?.trim() || scriptUi.subtitleEmpty}
                         </p>
                       </div>
                     </div>
@@ -2184,8 +2571,8 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
           {filteredReferenceItems.length === 0 && !referenceLoading && (
             <EmptyState
               icon={<AlertTriangle className="h-6 w-6 text-gray-400" />}
-              title="暂无参考爆款"
-              description="尝试切换筛选条件或等待采集器同步完成。"
+              title={scriptUi.referencesEmptyTitle}
+              description={scriptUi.referencesEmptyDescription}
             />
           )}
 
@@ -2197,11 +2584,11 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                 onClick={() => fetchReferences(false)}
                 className="px-6 py-2 rounded-full border border-gray-200 dark:border-gray-700 text-sm font-semibold hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
               >
-                {referenceLoading ? t.common.loading : (t.common.loadMore || "加载更多")}
+                {referenceLoading ? t.common.loading : (t.common.loadMore || scriptUi.loadMore)}
               </button>
             ) : (
               <span className="text-xs text-gray-400">
-                {filteredReferenceItems.length > 0 ? (t.common.noMoreData || "没有更多了") : ''}
+                {filteredReferenceItems.length > 0 ? (t.common.noMoreData || scriptUi.noMore) : ''}
               </span>
             )}
             </div>
@@ -2226,7 +2613,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                     : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-transparent hover:bg-gray-200 dark:hover:bg-gray-700"
                 )}
               >
-                {platform.label}
+                {getPlatformLabel(platform.id, language)}
               </button>
             ))}
           </div>
@@ -2237,7 +2624,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
               <input
                 value={creatorQuery}
                 onChange={(e) => setCreatorQuery(e.target.value)}
-                placeholder="搜索创作者"
+                placeholder={scriptUi.creatorSearchPlaceholder}
                 className="w-full pl-10 pr-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent"
               />
             </div>
@@ -2246,7 +2633,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
               onClick={() => fetchCreators(true)}
               className="px-4 py-2 text-sm font-semibold rounded-lg bg-black text-white dark:bg-white dark:text-black"
             >
-              {t.common.refresh || "刷新"}
+              {t.common.refresh || "Refresh"}
             </button>
             <button
               type="button"
@@ -2258,7 +2645,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                   : "border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
               )}
             >
-              {creatorSelectionMode ? "取消批量" : "批量选择"}
+              {creatorSelectionMode ? scriptUi.batchCancel : scriptUi.batchSelect}
             </button>
             {creatorSelectionMode && (
               <button
@@ -2268,7 +2655,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                 className="inline-flex items-center gap-1 px-4 py-2 text-sm font-semibold rounded-lg bg-red-600 text-white disabled:opacity-50"
               >
                 <Trash2 className="h-4 w-4" />
-                {creatorDeleting ? '删除中...' : `删除(${selectedCreatorIds.length})`}
+                {creatorDeleting ? scriptUi.deleting : `${scriptUi.deleteAction}(${selectedCreatorIds.length})`}
               </button>
             )}
           </div>
@@ -2328,8 +2715,8 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                     </div>
                   )}
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{creator.displayName || creator.creatorHandle || '未命名创作者'}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{getPlatformLabel(creator.platform)}</p>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{creator.displayName || creator.creatorHandle || scriptUi.creatorUnnamed}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{getPlatformLabel(creator.platform, language)}</p>
                   </div>
                   {creator.profileUrl && (
                     <a
@@ -2339,14 +2726,14 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                       className="ml-auto text-xs text-primary underline"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      {t.common.view || '查看'}
+                      {t.common.view || scriptUi.view}
                     </a>
                   )}
                 </div>
                 <div className="flex flex-wrap gap-3 text-xs text-gray-600 dark:text-gray-300">
-                  <span>粉丝 {formatCount(creator.stats?.fans)}</span>
-                  <span>获赞 {formatCount(creator.stats?.likes)}</span>
-                  <span>作品 {formatCount(creator.referenceCount)}</span>
+                  <span>{scriptUi.creatorStatsFans} {formatCount(creator.stats?.fans)}</span>
+                  <span>{scriptUi.creatorStatsLikes} {formatCount(creator.stats?.likes)}</span>
+                  <span>{scriptUi.creatorStatsWorks} {formatCount(creator.referenceCount)}</span>
                   </div>
                   {creator.recentReference && (
                     <div className="rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-800 border border-gray-100 dark:border-gray-700">
@@ -2357,15 +2744,15 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                         className="w-full h-36 object-cover"
                       />
                       <span className="absolute top-2 left-2 px-2 py-1 text-[10px] rounded-full bg-black/70 text-white">
-                        {getReferenceContentLabel(creator.recentReference)}
+                        {getReferenceContentLabel(creator.recentReference, language)}
                       </span>
                     </div>
                     <div className="p-3 space-y-1">
                       <p className="text-xs font-semibold text-gray-900 dark:text-white line-clamp-2">
-                        {creator.recentReference.title || creator.recentReference.description || '最新内容'}
+                        {creator.recentReference.title || creator.recentReference.description || scriptUi.latestContent}
                       </p>
                       <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                        {formatDateLabel(creator.recentReference.publishedAt, language === 'en' ? 'en-US' : 'zh-CN')}
+                        {formatDateLabel(creator.recentReference.publishedAt, uiDateLocale)}
                       </p>
                     </div>
                     </div>
@@ -2378,8 +2765,8 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
           {creatorItems.length === 0 && !creatorLoading && (
             <EmptyState
               icon={<User className="h-6 w-6 text-gray-400" />}
-              title="暂无对标创作者"
-              description="请先通过采集插件同步博主或调整筛选条件。"
+              title={scriptUi.creatorsEmptyTitle}
+              description={scriptUi.creatorsEmptyDescription}
             />
           )}
 
@@ -2391,11 +2778,11 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                 onClick={() => fetchCreators(false)}
                 className="px-6 py-2 rounded-full border border-gray-200 dark:border-gray-700 text-sm font-semibold hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
               >
-                {creatorLoading ? t.common.loading : (t.common.loadMore || '加载更多')}
+                {creatorLoading ? t.common.loading : (t.common.loadMore || scriptUi.loadMore)}
               </button>
             ) : (
               <span className="text-xs text-gray-400">
-                {creatorItems.length > 0 ? (t.common.noMoreData || '没有更多了') : ''}
+                {creatorItems.length > 0 ? (t.common.noMoreData || scriptUi.noMore) : ''}
               </span>
             )}
           </div>
@@ -2407,8 +2794,8 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
         onClose={closeCreatorModal}
         title={
           selectedCreator
-            ? `${selectedCreator.displayName || selectedCreator.creatorHandle || '创作者'} · ${getPlatformLabel(selectedCreator.platform)}`
-            : '创作者详情'
+            ? `${selectedCreator.displayName || selectedCreator.creatorHandle || scriptUi.creatorTitleFallback} · ${getPlatformLabel(selectedCreator.platform, language)}`
+            : scriptUi.creatorDetailTitle
         }
         maxWidth="max-w-5xl"
       >
@@ -2429,25 +2816,25 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                 )}
                 <div>
                   <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                    {selectedCreator.displayName || selectedCreator.creatorHandle || '未命名创作者'}
+                    {selectedCreator.displayName || selectedCreator.creatorHandle || scriptUi.creatorUnnamed}
                   </p>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {getPlatformLabel(selectedCreator.platform)}
+                    {getPlatformLabel(selectedCreator.platform, language)}
                     {selectedCreator.creatorHandle ? ` · @${selectedCreator.creatorHandle}` : ''}
                   </p>
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
-                  <p className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">粉丝</p>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">{scriptUi.creatorStatsFans}</p>
                   <p className="text-sm font-semibold text-gray-900 dark:text-white">{formatCount(selectedCreator.stats?.fans)}</p>
                 </div>
                 <div className="px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
-                  <p className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">获赞</p>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">{scriptUi.creatorStatsLikes}</p>
                   <p className="text-sm font-semibold text-gray-900 dark:text-white">{formatCount(selectedCreator.stats?.likes)}</p>
                 </div>
                 <div className="px-3 py-2 bg-gray-50 dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700">
-                  <p className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">作品</p>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">{scriptUi.creatorStatsWorks}</p>
                   <p className="text-sm font-semibold text-gray-900 dark:text-white">{formatCount(selectedCreator.referenceCount)}</p>
                 </div>
                 {selectedCreator.profileUrl && (
@@ -2455,9 +2842,9 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                     href={selectedCreator.profileUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
-                  >
-                    {t.common.view || '查看主页'}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
+                >
+                    {t.common.view || scriptUi.viewProfile}
                   </a>
                 )}
                 <button
@@ -2469,12 +2856,12 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                   {creatorSyncing ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      同步中...
+                      {scriptUi.syncing}
                     </>
                   ) : (
                     <>
                       <RefreshCcw className="h-4 w-4" />
-                      同步最新笔记
+                      {scriptUi.syncLatestNotes}
                     </>
                   )}
                 </button>
@@ -2485,7 +2872,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-60"
                 >
                   <RefreshCcw className="h-4 w-4" />
-                  {creatorNotesLoading ? (t.common.loading || '加载中') : (t.common.refresh || '刷新列表')}
+                  {creatorNotesLoading ? (t.common.loading || scriptUi.loadingFallback) : (t.common.refresh || scriptUi.refreshList)}
                 </button>
               </div>
             </div>
@@ -2497,11 +2884,11 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
             )}
 
             <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-              <p className="text-sm font-semibold text-gray-900 dark:text-white">采集笔记</p>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">{scriptUi.collectNotes}</p>
               <div className="inline-flex bg-gray-100 dark:bg-gray-800/70 rounded-full p-1 text-xs font-semibold text-gray-500 dark:text-gray-300">
                 {[
-                  { id: "recent" as const, label: "按发布时间" },
-                  { id: "likes" as const, label: "按点赞数" },
+                  { id: "recent" as const, label: scriptUi.sortByPublishTime },
+                  { id: "likes" as const, label: scriptUi.sortByLikes },
                 ].map((option) => (
                   <button
                     key={option.id}
@@ -2523,14 +2910,14 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
             {creatorNotesLoading && creatorNotes.length === 0 ? (
               <div className="flex items-center justify-center py-16 text-gray-500 dark:text-gray-400">
                 <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                {t.common.loading || '加载中'}
+                {t.common.loading || scriptUi.loadingFallback}
               </div>
             ) : (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {creatorNotes.map((note) => {
                     const publishedLabel =
-                      formatDateLabel(note.publishedAt, language === 'en' ? 'en-US' : 'zh-CN') || '未知日期';
+                      formatDateLabel(note.publishedAt, uiDateLocale) || scriptUi.unknownDate;
                     return (
                       <div
                         key={note.id}
@@ -2549,11 +2936,11 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                         <div className="p-4 space-y-3">
                           <div className="flex items-start justify-between gap-3">
                             <p className="text-sm font-semibold text-gray-900 dark:text-white line-clamp-2">
-                              {note.title || note.description || '未命名笔记'}
+                              {note.title || note.description || scriptUi.referenceUntitled}
                             </p>
                           </div>
                           <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-3">
-                            {note.description || '暂无简介'}
+                            {note.description || scriptUi.noteNoDescription}
                           </p>
                           <div className="flex items-center gap-4 text-[11px] text-gray-500 dark:text-gray-400">
                             <span>❤️ {formatCount(note.stats?.likes as number | string | null | undefined)}</span>
@@ -2564,7 +2951,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                               onClick={() => handleNoteAutoSync(note)}
                               className="flex-1 inline-flex items-center justify-center rounded-xl bg-black text-white text-xs font-semibold py-2 hover:bg-gray-900"
                             >
-                              去同步
+                              {scriptUi.goSync}
                             </button>
                             <button
                               type="button"
@@ -2577,7 +2964,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                                   : "border-dashed border-gray-200 text-gray-400 cursor-not-allowed",
                               )}
                             >
-                              去查看
+                              {scriptUi.goView}
                             </button>
                           </div>
                         </div>
@@ -2589,8 +2976,8 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                 {creatorNotes.length === 0 && !creatorNotesLoading && (
                   <EmptyState
                     icon={<ScrollText className="h-6 w-6 text-gray-400" />}
-                    title="暂无笔记"
-                    description="该创作者还没有采集到笔记，请尝试同步功能或稍后再试。"
+                    title={scriptUi.notesEmptyTitle}
+                    description={scriptUi.notesEmptyDescription}
                   />
                 )}
               </>
@@ -2604,11 +2991,11 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                   onClick={() => loadCreatorReferences(false)}
                   className="px-6 py-2 rounded-full border border-gray-200 dark:border-gray-700 text-sm font-semibold hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
                 >
-                  {creatorNotesLoading ? t.common.loading : (t.common.loadMore || '加载更多')}
+                  {creatorNotesLoading ? t.common.loading : (t.common.loadMore || scriptUi.loadMore)}
                 </button>
               ) : creatorNotes.length > 0 ? (
                 <span className="text-xs text-gray-400">
-                  {t.common.noMoreData || '没有更多了'}
+                  {t.common.noMoreData || scriptUi.noMore}
                 </span>
               ) : null}
             </div>
@@ -2622,7 +3009,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
           setIsCollectorModalOpen(false);
           setCollectorInput("");
         }}
-        title={`${getPlatformLabel(contentPlatform)} · 数据采集`}
+        title={`${getPlatformLabel(contentPlatform, language)} · ${scriptUi.collectorTitle}`}
         maxWidth="max-w-xl"
       >
         {collectorModeEnabled ? (
@@ -2640,13 +3027,13 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                       : "border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300",
                   )}
                 >
-                  {COLLECTOR_MODE_LABELS[mode]}
+                  {scriptUi.collectorModeLabels[mode]}
                 </button>
               ))}
             </div>
             <div>
               <label className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2 block">
-                {collectorMode === "keyword" ? "关键词列表" : "链接列表"}
+                {collectorMode === "keyword" ? scriptUi.collectorKeywordList : scriptUi.collectorLinkList}
               </label>
               <textarea
                 value={collectorInput}
@@ -2658,7 +3045,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
             {collectorMode === "keyword" && (
               <div className="flex items-center gap-3">
                 <label className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                  每个关键词抓取条数
+                  {scriptUi.collectorPerKeyword}
                 </label>
                 <input
                   type="number"
@@ -2671,7 +3058,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
               </div>
             )}
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              采集任务提交后通常需要几十秒完成，完成后系统会自动刷新最新内容。
+              {scriptUi.collectorHint}
             </p>
             <div className="flex justify-end gap-2">
               <button
@@ -2682,7 +3069,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                 }}
                 className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800"
               >
-                取消
+                {scriptUi.cancel}
               </button>
               <button
                 type="button"
@@ -2693,17 +3080,17 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                 {collectorSubmitting ? (
                   <span className="inline-flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    提交中...
+                    {scriptUi.submitting}
                   </span>
                 ) : (
-                  "开始采集"
+                  scriptUi.submit
                 )}
               </button>
             </div>
           </div>
         ) : (
           <div className="text-sm text-gray-500">
-            当前平台暂不支持内置采集，请使用浏览器插件同步内容。
+            {scriptUi.collectorUnsupported}
           </div>
         )}
       </Modal>
@@ -2746,7 +3133,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
             setNewReplicationUploadedUrl('');
             setNewReplicationDragActive(false);
         }}
-        title="爆款复刻"
+        title={scriptUi.replicationTitle}
         maxWidth="max-w-4xl"
       >
         <div className="flex flex-col h-[65vh] relative">
@@ -2803,20 +3190,20 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                                 e.preventDefault();
                                 setNewReplicationDragActive(false);
                                 const file = e.dataTransfer.files?.[0];
-                                if (!file?.type.startsWith('video/')) { toast.error('请上传视频文件'); return; }
+                                if (!file?.type.startsWith('video/')) { toast.error(scriptUi.invalidVideoFile); return; }
                                 await uploadNewReplicationVideo(file);
                             }}
                         >
                             {newReplicationUploading ? (
                                 <>
                                     <Loader2 size={40} className="text-white/50 animate-spin mb-3" />
-                                    <p className="text-white/60 text-sm">上传中...</p>
+                                    <p className="text-white/60 text-sm">{scriptUi.uploadInProgress}</p>
                                 </>
                             ) : (
                                 <>
                                     <Upload size={40} className="text-white/40 mb-3" />
-                                    <p className="text-white/80 font-medium mb-1">点击或拖拽上传视频</p>
-                                    <p className="text-white/40 text-xs">支持 MP4、MOV 等格式</p>
+                                    <p className="text-white/80 font-medium mb-1">{scriptUi.clickOrDropUpload}</p>
+                                    <p className="text-white/40 text-xs">{scriptUi.supportFormats}</p>
                                 </>
                             )}
                             <input
@@ -2837,7 +3224,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                 <div className="flex flex-col h-full overflow-hidden lg:col-span-2">
                     {!activeReplicationScript ? (
                         <div className="flex flex-1 items-center justify-center text-gray-400 dark:text-gray-500 text-sm px-6 text-center">
-                            请先在左侧上传视频，上传完成后即可配置分镜或口播复刻
+                            {scriptUi.uploadFirstHint}
                         </div>
                     ) : replicationComingSoon && selectedReplicationScript ? (
                         <div className="flex flex-1 items-center justify-center px-6">
@@ -2944,6 +3331,26 @@ function ReplicationTabsHeader({
   onChange: (tab: 'storyboard' | 'copy') => void;
 }) {
   const header = useModalHeader();
+  const { language } = useLanguage();
+
+  const tabLabels = useMemo(() => {
+    if (language === "en") {
+      return {
+        storyboard: "Storyboard Clone",
+        copy: "Copy Clone",
+      } as const;
+    }
+    if (language === "zh-TW") {
+      return {
+        storyboard: "復刻分鏡",
+        copy: "復刻口播",
+      } as const;
+    }
+    return {
+      storyboard: "复刻分镜",
+      copy: "复刻口播",
+    } as const;
+  }, [language]);
 
   useEffect(() => {
     if (!header) return;
@@ -2955,8 +3362,8 @@ function ReplicationTabsHeader({
     const node = (
       <div className="flex items-center justify-center gap-3">
         {[
-          { id: 'storyboard' as const, label: '复刻分镜' },
-          { id: 'copy' as const, label: '复刻口播' },
+          { id: 'storyboard' as const, label: tabLabels.storyboard },
+          { id: 'copy' as const, label: tabLabels.copy },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -2976,7 +3383,7 @@ function ReplicationTabsHeader({
 
     header.setContent(node);
     return () => header.setContent(null);
-  }, [header, visible, activeTab, onChange]);
+  }, [header, visible, activeTab, onChange, tabLabels]);
 
   return null;
 }

@@ -170,7 +170,7 @@ export async function POST(request: Request) {
 
   if (!APIFY_TOKEN) {
     return NextResponse.json(
-      { error: "Server missing SOCIAL_SCRAPER_APIFY_TOKEN / APIFY_TOKEN configuration." },
+      { error: "Server missing SOCIAL_SCRAPER_APIFY_TOKEN / APIFY_API_TOKEN / APIFY_TOKEN configuration." },
       { status: 500 },
     );
   }

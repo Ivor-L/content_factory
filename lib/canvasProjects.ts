@@ -207,13 +207,6 @@ function normalizeCanvasData(raw: unknown): CanvasData {
   const edges = Array.isArray(source.edges) ? source.edges : [];
   const resources = Array.isArray(source.resources) ? source.resources : undefined;
 
-  console.log('[canvasProjects] normalizeCanvasData:', {
-    nodesCount: nodes.length,
-    edgesCount: edges.length,
-    resourcesCount: resources?.length ?? 0,
-    hasViewport: !!source.viewport,
-  });
-
   return {
     nodes,
     edges,

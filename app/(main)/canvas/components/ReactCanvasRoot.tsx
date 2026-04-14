@@ -210,6 +210,104 @@ function extractThumbnailFromNodes(runtimeNodes: RuntimeCanvasNode[]): string | 
   return null;
 }
 
+function collectUpstreamInputsByTarget(
+  nodes: Node<MinimalFlowNodeData>[],
+  edges: Edge[],
+): Map<string, UpstreamInputs> {
+  const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+  const buckets = new Map<
+    string,
+    {
+      textContents: string[];
+      imageUrls: string[];
+      videoUrls: string[];
+      audioUrls: string[];
+    }
+  >();
+
+  const ensureBucket = (targetId: string) => {
+    let bucket = buckets.get(targetId);
+    if (!bucket) {
+      bucket = { textContents: [], imageUrls: [], videoUrls: [], audioUrls: [] };
+      buckets.set(targetId, bucket);
+    }
+    return bucket;
+  };
+
+  for (const edge of edges) {
+    const sourceNode = nodeMap.get(edge.source);
+    if (!sourceNode) continue;
+    const bucket = ensureBucket(edge.target);
+    const runtimeData = (sourceNode.data.runtime?.data || {}) as Record<string, unknown>;
+    const sourceType = sourceNode.type || sourceNode.data.runtime?.type || "";
+
+    if (sourceType === "text") {
+      const text = String(runtimeData.content ?? "").trim();
+      if (text) bucket.textContents.push(text);
+      continue;
+    }
+    if (sourceType === "image") {
+      const outputs = Array.isArray(runtimeData.outputs) ? runtimeData.outputs : [];
+      for (const out of outputs) {
+        const url =
+          typeof out === "string"
+            ? out
+            : typeof (out as Record<string, unknown>).url === "string"
+            ? ((out as Record<string, unknown>).url as string)
+            : "";
+        if (url) bucket.imageUrls.push(url);
+      }
+      continue;
+    }
+    if (sourceType === "video" || sourceType === "digitalhuman") {
+      const url = String(runtimeData.outputUrl ?? "").trim();
+      if (url) bucket.videoUrls.push(url);
+      continue;
+    }
+    if (sourceType === "audio") {
+      const url = String(runtimeData.audioUrl ?? "").trim();
+      if (url) bucket.audioUrls.push(url);
+    }
+  }
+
+  const result = new Map<string, UpstreamInputs>();
+  buckets.forEach((bucket, targetId) => {
+    result.set(targetId, {
+      textContents: bucket.textContents,
+      imageUrls: bucket.imageUrls,
+      videoUrls: bucket.videoUrls,
+      audioUrls: bucket.audioUrls,
+      effectivePrompt: bucket.textContents[0] ?? "",
+      firstImageUrl: bucket.imageUrls[0] ?? "",
+      firstVideoUrl: bucket.videoUrls[0] ?? "",
+      firstAudioUrl: bucket.audioUrls[0] ?? "",
+    });
+  });
+  return result;
+}
+
+function shallowArrayEqual(a: string[], b: string[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function upstreamInputsEqual(a: UpstreamInputs, b: UpstreamInputs): boolean {
+  return (
+    a.effectivePrompt === b.effectivePrompt &&
+    a.firstImageUrl === b.firstImageUrl &&
+    a.firstVideoUrl === b.firstVideoUrl &&
+    a.firstAudioUrl === b.firstAudioUrl &&
+    shallowArrayEqual(a.textContents, b.textContents) &&
+    shallowArrayEqual(a.imageUrls, b.imageUrls) &&
+    shallowArrayEqual(a.videoUrls, b.videoUrls) &&
+    shallowArrayEqual(a.audioUrls, b.audioUrls)
+  );
+}
+
 type CanvasImageProps = {
   src: string;
   alt: string;
@@ -250,6 +348,11 @@ function CanvasImage({
 }
 
 type CanvasResourceItem = ReturnType<typeof useCanvasResources>["resources"][number];
+type DecoratedNodeCacheEntry = {
+  baseNode: Node<MinimalFlowNodeData>;
+  decoratedNode: Node<MinimalFlowNodeData>;
+  upstreamInputs: UpstreamInputs;
+};
 
 type CanvasNodeContextValue = {
   toggleExpanded: (nodeId: string, expanded?: boolean) => void;
@@ -347,51 +450,26 @@ const CardMagnetContext = createContext<CardMagnetState>(DEFAULT_MAGNET);
 
 function useCardMagnet(ref: RefObject<HTMLElement | null>): CardMagnetState {
   const [state, setState] = useState<CardMagnetState>(DEFAULT_MAGNET);
-  const boundsRef = useRef<{ top: number; left: number; right: number; height: number } | null>(null);
   const rafRef = useRef<number | null>(null);
 
-  // Update bounds on resize/scroll
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const updateBounds = () => {
-      const r = el.getBoundingClientRect();
-      boundsRef.current = { top: r.top, left: r.left, right: r.right, height: r.height };
-    };
-    updateBounds();
-    const ro = new ResizeObserver(updateBounds);
-    ro.observe(el);
-    window.addEventListener("scroll", updateBounds, { passive: true, capture: true });
-    window.addEventListener("resize", updateBounds, { passive: true });
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("scroll", updateBounds, { capture: true });
-      window.removeEventListener("resize", updateBounds);
-    };
-  }, [ref]);
-
-  // Per-node mousemove listener with RAF throttling.
-  // Use fresh getBoundingClientRect() inside RAF so canvas pan (CSS transform)
-  // doesn't leave boundsRef stale — captured `el` is stable after mount.
+  // Node-local pointer tracking keeps listener count low as node count grows.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     const RADIUS = 130;
     let lastMx = 0;
     let lastMy = 0;
-    const onMove = (e: MouseEvent) => {
-      lastMx = e.clientX;
-      lastMy = e.clientY;
-      if (rafRef.current !== null) return; // Already scheduled
+    const scheduleUpdate = () => {
+      if (rafRef.current !== null) return;
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = null;
         const r = el.getBoundingClientRect();
         const mx = lastMx;
         const my = lastMy;
         const cy = r.top + r.height / 2;
-        const distLeft  = Math.sqrt((mx - r.left)  ** 2 + (my - cy) ** 2);
+        const distLeft = Math.sqrt((mx - r.left) ** 2 + (my - cy) ** 2);
         const distRight = Math.sqrt((mx - r.right) ** 2 + (my - cy) ** 2);
-        const nearLeft  = distLeft  <= RADIUS;
+        const nearLeft = distLeft <= RADIUS;
         const nearRight = distRight <= RADIUS;
         if (nearLeft || nearRight) {
           const activeDist = nearLeft ? distLeft : distRight;
@@ -399,19 +477,40 @@ function useCardMagnet(ref: RefObject<HTMLElement | null>): CardMagnetState {
           const strength = t * t;
           const mousePct = ((my - r.top) / r.height) * 100;
           const magnetPct = 50 + (mousePct - 50) * strength;
-          setState({
-            showLeft:  nearLeft,
+          const next = {
+            showLeft: nearLeft,
             showRight: nearRight,
-            magnetY:   Math.max(5, Math.min(95, magnetPct)),
+            magnetY: Math.max(5, Math.min(95, magnetPct)),
+          };
+          setState((prev) => {
+            const nearlySameY = Math.abs(prev.magnetY - next.magnetY) < 0.2;
+            if (
+              prev.showLeft === next.showLeft &&
+              prev.showRight === next.showRight &&
+              nearlySameY
+            ) {
+              return prev;
+            }
+            return next;
           });
-        } else {
-          setState((prev) => (prev.showLeft || prev.showRight ? DEFAULT_MAGNET : prev));
+          return;
         }
+        setState((prev) => (prev.showLeft || prev.showRight ? DEFAULT_MAGNET : prev));
       });
     };
-    document.addEventListener("mousemove", onMove);
+    const onMove = (e: MouseEvent) => {
+      lastMx = e.clientX;
+      lastMy = e.clientY;
+      scheduleUpdate();
+    };
+    const onLeave = () => {
+      setState((prev) => (prev.showLeft || prev.showRight ? DEFAULT_MAGNET : prev));
+    };
+    el.addEventListener("mousemove", onMove);
+    el.addEventListener("mouseleave", onLeave);
     return () => {
-      document.removeEventListener("mousemove", onMove);
+      el.removeEventListener("mousemove", onMove);
+      el.removeEventListener("mouseleave", onLeave);
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
   }, [ref]);
@@ -4812,6 +4911,7 @@ export function ReactCanvasRoot({
 }: ReactCanvasRootProps) {
   const preferredAutoSelect =
     typeof autoSelectFirstProject === "boolean" ? autoSelectFirstProject : !forceProjectList;
+  const shouldPreloadFirstProjectData = !forceProjectList || Boolean(initialProjectId);
   const {
     projects,
     currentProject,
@@ -4827,6 +4927,7 @@ export function ReactCanvasRoot({
     error: projectError,
   } = useCanvasProjects(initialProjectId, initialProjects, {
     autoSelectFirstProject: preferredAutoSelect,
+    preloadFirstProjectData: shouldPreloadFirstProjectData,
   });
   const { resources, addResource, updateResource, removeResource, syncFromCanvasData } =
     useCanvasResources();
@@ -4843,9 +4944,6 @@ export function ReactCanvasRoot({
   const [isSaving, setIsSaving] = useState(false);
   const [isHydrating, setIsHydrating] = useState(false);
   const [autoSaveError, setAutoSaveError] = useState<string | null>(null);
-  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
-  const [isManualSaving, setIsManualSaving] = useState(false);
-  const lastSaveHashRef = useRef<number | null>(null);
   const [creditsLabel, setCreditsLabel] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string>("");
   const [avatarInitial, setAvatarInitial] = useState<string>("?");
@@ -4894,9 +4992,12 @@ export function ReactCanvasRoot({
   const viewportRef = useRef(viewport);
   const resourcesRef = useRef(resources);
   const currentProjectIdRef2 = useRef(currentProjectId);
+  const currentProjectUpdatedAtRef = useRef<string | null>(currentProject?.updatedAt ?? null);
   const saveProjectCanvasRef = useRef(saveProjectCanvas);
   const authTokenRef = useRef<string | null>(null);
   const restoredDraftProjectRef = useRef<Set<string>>(new Set());
+  const persistenceReadyProjectRef = useRef<string | null>(null);
+  const decoratedNodeCacheRef = useRef<Map<string, DecoratedNodeCacheEntry>>(new Map());
   useEffect(() => {
     nodesRef.current = nodes;
   }, [nodes]);
@@ -4911,7 +5012,11 @@ export function ReactCanvasRoot({
   }, [resources]);
   useEffect(() => {
     currentProjectIdRef2.current = currentProjectId;
+    persistenceReadyProjectRef.current = null;
   }, [currentProjectId]);
+  useEffect(() => {
+    currentProjectUpdatedAtRef.current = currentProject?.updatedAt ?? null;
+  }, [currentProject?.updatedAt]);
   useEffect(() => {
     saveProjectCanvasRef.current = saveProjectCanvas;
   }, [saveProjectCanvas]);
@@ -4933,9 +5038,11 @@ export function ReactCanvasRoot({
   }, []);
   const flushProjectCanvasKeepalive = useCallback((projectId: string | null | undefined) => {
     if (!projectId || typeof window === "undefined") return;
+    if (hydratingRef.current) return;
+    if (persistenceReadyProjectRef.current !== projectId) return;
     const runtimeNodes = flowNodesToRuntime(nodesRef.current);
     const thumbnail = extractThumbnailFromNodes(runtimeNodes);
-    const body = JSON.stringify({
+    const payload: Record<string, unknown> = {
       canvasData: {
         nodes: runtimeNodes,
         edges: flowEdgesToRuntime(edgesRef.current),
@@ -4943,7 +5050,11 @@ export function ReactCanvasRoot({
         resources: resourcesRef.current,
       },
       thumbnail,
-    });
+    };
+    if (currentProjectUpdatedAtRef.current) {
+      payload.expectedUpdatedAt = currentProjectUpdatedAtRef.current;
+    }
+    const body = JSON.stringify(payload);
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (authTokenRef.current) {
       headers.Authorization = `Bearer ${authTokenRef.current}`;
@@ -5354,20 +5465,40 @@ export function ReactCanvasRoot({
     ],
   );
 
-  // Inject live upstream inputs into every node's data.
-  // Recomputes whenever any node data changes OR any edge is added/removed,
-  // giving each node card an always-fresh view of what its upstream provides.
-  const nodesWithUpstream = useMemo<Node<MinimalFlowNodeData>[]>(
-    () =>
-      nodes.map((node) => ({
+  const nodesWithUpstream = useMemo<Node<MinimalFlowNodeData>[]>(() => {
+    const upstreamByTarget = collectUpstreamInputsByTarget(nodes, edges);
+    const previousCache = decoratedNodeCacheRef.current;
+    const nextCache = new Map<string, DecoratedNodeCacheEntry>();
+
+    const decorated = nodes.map((node) => {
+      const upstream = upstreamByTarget.get(node.id) ?? EMPTY_UPSTREAM;
+      const cached = previousCache.get(node.id);
+      if (
+        cached &&
+        cached.baseNode === node &&
+        upstreamInputsEqual(cached.upstreamInputs, upstream)
+      ) {
+        nextCache.set(node.id, cached);
+        return cached.decoratedNode;
+      }
+      const decoratedNode: Node<MinimalFlowNodeData> = {
         ...node,
         data: {
           ...node.data,
-          upstreamInputs: resolveUpstreamInputs(node.id, nodes, edges),
+          upstreamInputs: upstream,
         },
-      })),
-    [nodes, edges],
-  );
+      };
+      nextCache.set(node.id, {
+        baseNode: node,
+        decoratedNode,
+        upstreamInputs: upstream,
+      });
+      return decoratedNode;
+    });
+
+    decoratedNodeCacheRef.current = nextCache;
+    return decorated;
+  }, [nodes, edges]);
 
   useEffect(() => {
     setFocusedNodeId(null);
@@ -5377,6 +5508,7 @@ export function ReactCanvasRoot({
     if (!currentProject) {
       lastHydratedRef.current = null;
       hydratingRef.current = false;
+      persistenceReadyProjectRef.current = null;
       setIsHydrating(false);
       return;
     }
@@ -5419,6 +5551,7 @@ export function ReactCanvasRoot({
             syncFromCanvasData(hydrated.resources);
             setViewport(hydrated.viewport);
             setViewportKey((key) => key + 1);
+            persistenceReadyProjectRef.current = currentProject.id;
           }
         })
         .finally(() => {
@@ -5456,6 +5589,7 @@ export function ReactCanvasRoot({
     syncFromCanvasData(hydrated.resources);
     setViewport(hydrated.viewport);
     setViewportKey((key) => key + 1);
+    persistenceReadyProjectRef.current = currentProject.id;
     const timeout = setTimeout(() => {
       hydratingRef.current = false;
       setIsHydrating(false);
@@ -5465,6 +5599,7 @@ export function ReactCanvasRoot({
 
   useEffect(() => {
     if (!currentProjectId || hydratingRef.current || isHydrating) return;
+    if (persistenceReadyProjectRef.current !== currentProjectId) return;
     const timer = setTimeout(() => {
       writeCanvasDraft(currentProjectId, {
         nodes: flowNodesToRuntime(nodes),
@@ -5478,16 +5613,13 @@ export function ReactCanvasRoot({
 
   useEffect(() => {
     if (!currentProjectId || hydratingRef.current || isHydrating) return;
+    if (persistenceReadyProjectRef.current !== currentProjectId) return;
     let cancelled = false;
     const timer = setTimeout(async () => {
       const shouldTrace = CANVAS_PERF_TRACING && typeof performance !== "undefined";
       const snapshotStart = shouldTrace ? performance.now() : 0;
       const runtimeNodes = flowNodesToRuntime(nodes);
       const runtimeEdges = flowEdgesToRuntime(edges);
-      // Cheap hash: skip save if nothing actually changed
-      const hashInput = JSON.stringify({ n: runtimeNodes, e: runtimeEdges, v: viewport, r: resources.map((r) => r.id) });
-      const hash = hashInput.split("").reduce((acc, ch) => (Math.imul(31, acc) + ch.charCodeAt(0)) | 0, 0);
-      if (hash === lastSaveHashRef.current) return;
 
       setIsSaving(true);
       try {
@@ -5518,7 +5650,6 @@ export function ReactCanvasRoot({
           }
         }
         if (!cancelled) {
-          lastSaveHashRef.current = hash;
           setAutoSaveError(null);
         }
       } catch (error) {
@@ -5526,7 +5657,6 @@ export function ReactCanvasRoot({
           const message = error instanceof Error ? error.message : "保存项目失败";
           setAutoSaveError(message);
           if (error instanceof Error && error.name === "CanvasProjectConflictError") {
-            lastSaveHashRef.current = null;
             toast.error("检测到该项目在其他页面被更新，已自动同步最新内容", { id: "canvas-conflict" });
           }
         }
@@ -5548,6 +5678,7 @@ export function ReactCanvasRoot({
     return () => {
       const projectId = currentProjectIdRef2.current;
       if (!projectId) return;
+      if (persistenceReadyProjectRef.current !== projectId) return;
       const runtimeNodes = flowNodesToRuntime(nodesRef.current);
       const thumbnail = extractThumbnailFromNodes(runtimeNodes);
       void saveProjectCanvasRef.current(projectId, {
@@ -5999,7 +6130,7 @@ export function ReactCanvasRoot({
   // Back button: flush-save then clear the selected project.
   // The URL-sync effect below will then call router.replace('?view=projects').
   const handleBackToList = useCallback(async () => {
-    if (currentProjectId) {
+    if (currentProjectId && persistenceReadyProjectRef.current === currentProjectId) {
       try {
         await saveProjectCanvas(currentProjectId, {
           nodes: flowNodesToRuntime(nodesRef.current),

@@ -69,6 +69,9 @@ cp .vibe/credentials.env.example .vibe/credentials.env
 - `N8N_REPLICATION_SCENE_WEBHOOK`（可选）
 - `N8N_XHS_TEXT2IMG_WEBHOOK`（图文排版生图触发入口，可回退到 `https://hooks.atomx.top/webhook/xhs_text2img_web`）
 - `N8N_API_URL`（历史/调试用默认 webhook base，见 [api.ts](file:///Users/kaka/Desktop/软件开发/content-factory-web%203/lib/api.ts)）
+- `N8N_SOCIAL_SCRAPER_WEBHOOK`（TikTok/Facebook/Instagram 采集入口，默认 `https://hooks.atomx.top/webhook/social_scrape`）
+- `SOCIAL_SCRAPER_APIFY_TOKEN`（必填；用于启动 Apify Actor。缺失时 Facebook/TikTok/Instagram 采集会直接失败）
+- `SOCIAL_SCRAPER_WEBHOOK_SECRET`（可选；用于 `/api/webhook/social-scraper` 回调鉴权）
 
 ### 3.4 外部积分系统
 

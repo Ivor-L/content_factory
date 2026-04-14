@@ -12,6 +12,22 @@ type RouteParams = {
   params: Promise<{ projectId: string }>;
 };
 
+function toMetaProject(project: {
+  id: string;
+  name: string;
+  thumbnail: string;
+  createdAt: string;
+  updatedAt: string;
+}) {
+  return {
+    id: project.id,
+    name: project.name,
+    thumbnail: project.thumbnail,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+  };
+}
+
 function notFound() {
   return NextResponse.json({ error: 'Project not found' }, { status: 404 });
 }
@@ -55,11 +71,32 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   if (!body) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
+  if (
+    body.canvasData !== undefined &&
+    (body.canvasData === null ||
+      typeof body.canvasData !== 'object' ||
+      Array.isArray(body.canvasData))
+  ) {
+    return NextResponse.json(
+      {
+        error: {
+          code: 'INVALID_CANVAS_DATA',
+          message: 'Invalid canvasData payload',
+        },
+      },
+      { status: 400 },
+    );
+  }
 
   try {
     const project = await updateCanvasProject(userId, projectId, body);
     if (!project) {
       return notFound();
+    }
+    const { searchParams } = new URL(request.url);
+    const responseMode = searchParams.get('response');
+    if (responseMode === 'meta') {
+      return NextResponse.json({ data: toMetaProject(project) });
     }
     return NextResponse.json({ data: project });
   } catch (error) {

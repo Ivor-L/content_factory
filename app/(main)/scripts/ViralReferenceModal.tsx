@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- Modal displays proxied remote media and carousel thumbnails */
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { X, Download, Zap, ExternalLink, ChevronLeft, ChevronRight, ArrowLeft, Copy, Check, Loader2 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { ImageTextReplicationPanel } from "./ImageTextReplicationPanel";
@@ -11,6 +11,7 @@ import { toProxyUrl, toProxyImgUrl, toProxyMediaUrl, toForcedProxyUrl } from "@/
 import { chooseBestMediaUrl, isLikelyBlockedXhsUrl } from "@/lib/viralReferenceMedia";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 type StatPayload = Record<string, number | string | null>;
 
@@ -88,16 +89,30 @@ function normalizeMediaList(media?: (string | null)[] | null): string[] {
   return media.filter((url): url is string => typeof url === "string" && url.trim().length > 0);
 }
 
-function formatCount(value?: number | string | null) {
+function formatCount(value?: number | string | null, language: "zh" | "zh-TW" | "en" = "zh") {
   if (value == null) return "0";
   const num = typeof value === "string" ? Number(value) : value;
   if (!Number.isFinite(num)) return "0";
-  if (num >= 10000) return `${(num / 10000).toFixed(1)}万`;
+  if (num >= 10000) {
+    if (language === "en") return `${(num / 1000).toFixed(1)}k`;
+    if (language === "zh-TW") return `${(num / 10000).toFixed(1)}萬`;
+    return `${(num / 10000).toFixed(1)}万`;
+  }
   if (num >= 1000) return `${(num / 1000).toFixed(1)}k`;
   return `${Math.round(num)}`;
 }
 
-function CopyButton({ text, className }: { text: string; className?: string }) {
+function CopyButton({
+  text,
+  className,
+  title,
+  failedToast,
+}: {
+  text: string;
+  className?: string;
+  title: string;
+  failedToast: string;
+}) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
     try {
@@ -105,7 +120,7 @@ function CopyButton({ text, className }: { text: string; className?: string }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error("复制失败");
+      toast.error(failedToast);
     }
   };
   return (
@@ -113,7 +128,7 @@ function CopyButton({ text, className }: { text: string; className?: string }) {
       type="button"
       onClick={handleCopy}
       className={`p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex-shrink-0 ${className ?? ""}`}
-      title="复制"
+      title={title}
     >
       {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5 text-gray-400" />}
     </button>
@@ -122,6 +137,112 @@ function CopyButton({ text, className }: { text: string; className?: string }) {
 
 
 export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionStarted, onExtractionFailed, isExtracting }: ViralReferenceModalProps) {
+  const { language } = useLanguage();
+  const ui = useMemo(() => {
+    if (language === "en") {
+      return {
+        copyFailed: "Copy failed",
+        copyTitle: "Copy",
+        copyDone: "Voice-over copy extracted",
+        extractTimeout: "Extraction timed out. Please try again.",
+        noDownload: "No downloadable media found",
+        extractFailed: "Extraction failed, please try again later",
+        noCopyExtracted: "No copy text returned",
+        unknownAuthor: "Unknown creator",
+        copyCloneTitle: "Copy Remix",
+        copyUnavailable: "No copy available. Please extract again.",
+        noMedia: "No media available",
+        imageAltPrefix: "Image",
+        imageCloneTitle: "Graphic Remix",
+        extractingTitle: "Copy Remix",
+        extractingMain: "AI is extracting voice-over copy...",
+        extractingHint1: "Usually completes in about 30 seconds.",
+        extractingHint2: "You can close this modal and reopen later.",
+        cancelExtract: "Cancel",
+        xhsLabel: "Xiaohongshu",
+        viewSource: "View Source",
+        voiceCopy: "Voice-over Copy",
+        noVoiceCopy: "No voice-over copy yet",
+        noVoiceCopyHint: "Extract the spoken copy below, then start remix quickly.",
+        extracting: "Extracting...",
+        extractVoiceCopy: "Extract Voice-over Copy",
+        originalPostCopy: "Original Post Copy",
+        download: "Download",
+        oneClickRemix: "One-click Remix",
+        actionVoiceClone: "Voice Clone",
+        actionGraphicClone: "Graphic Clone",
+        dateLocale: "en-US",
+      } as const;
+    }
+    if (language === "zh-TW") {
+      return {
+        copyFailed: "複製失敗",
+        copyTitle: "複製",
+        copyDone: "口播文案提取完成",
+        extractTimeout: "提取逾時，請重試",
+        noDownload: "沒有可下載的內容",
+        extractFailed: "提取失敗，請稍後重試",
+        noCopyExtracted: "未獲取到文案",
+        unknownAuthor: "未知作者",
+        copyCloneTitle: "口播復刻",
+        copyUnavailable: "暫無口播文案，請重新提取",
+        noMedia: "無可用媒體",
+        imageAltPrefix: "圖片",
+        imageCloneTitle: "圖文復刻",
+        extractingTitle: "口播復刻",
+        extractingMain: "AI 正在提取口播文案…",
+        extractingHint1: "通常 30 秒內完成，稍後即可查看結果",
+        extractingHint2: "可先關閉彈窗，稍後重新打開查看",
+        cancelExtract: "取消拆解",
+        xhsLabel: "小紅書",
+        viewSource: "查看原文",
+        voiceCopy: "口播文案",
+        noVoiceCopy: "暫無口播文案",
+        noVoiceCopyHint: "點擊下方按鈕提取視頻口播內容，方便快速復刻。",
+        extracting: "提取中...",
+        extractVoiceCopy: "提取口播文案",
+        originalPostCopy: "原帖文案",
+        download: "下載",
+        oneClickRemix: "一鍵二創",
+        actionVoiceClone: "口播復刻",
+        actionGraphicClone: "圖文復刻",
+        dateLocale: "zh-TW",
+      } as const;
+    }
+    return {
+      copyFailed: "复制失败",
+      copyTitle: "复制",
+      copyDone: "口播文案提取完成",
+      extractTimeout: "提取超时，请重试",
+      noDownload: "没有可下载的内容",
+      extractFailed: "提取失败，请稍后重试",
+      noCopyExtracted: "未获取到文案",
+      unknownAuthor: "未知作者",
+      copyCloneTitle: "口播复刻",
+      copyUnavailable: "暂无口播文案，请重新提取",
+      noMedia: "无可用媒体",
+      imageAltPrefix: "图片",
+      imageCloneTitle: "图文复刻",
+      extractingTitle: "口播复刻",
+      extractingMain: "AI 正在提取口播文案…",
+      extractingHint1: "通常 30 秒内完成，稍候即可查看结果",
+      extractingHint2: "可关闭弹窗，稍后重新打开查看",
+      cancelExtract: "取消拆解",
+      xhsLabel: "小红书",
+      viewSource: "查看原文",
+      voiceCopy: "口播文案",
+      noVoiceCopy: "暂无口播文案",
+      noVoiceCopyHint: "点击下方或使用下列按钮提取视频中的口播内容，方便直接复刻。",
+      extracting: "提取中...",
+      extractVoiceCopy: "提取口播文案",
+      originalPostCopy: "原帖文案",
+      download: "下载",
+      oneClickRemix: "一键二创",
+      actionVoiceClone: "口播复刻",
+      actionGraphicClone: "图文复刻",
+      dateLocale: "zh-CN",
+    } as const;
+  }, [language]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [showImageTextPanel, setShowImageTextPanel] = useState(false);
   const [breakdownView, setBreakdownView] = useState<BreakdownView>('idle');
@@ -130,6 +251,7 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
   const pendingExtractionRef = useRef(false);
 
   const platformId = (item?.platform || '').toLowerCase();
+  const extractLanguage = language === "zh-TW" ? "zh-TW" : "zh-CN";
   const isTiktok = platformId === 'tiktok';
 
   // Check rawPayload.type first — XHS image posts can include a videoUrl but still be image-only content.
@@ -216,7 +338,7 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
           setCopyInsights({ copyText: scriptText });
           setBreakdownView("done");
           setShowBreakdownPanel(true);
-          toast.success("口播文案提取完成");
+          toast.success(ui.copyDone);
           if (onExtracted && item.id) {
             onExtracted(item.id, scriptText);
           }
@@ -227,7 +349,7 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [item?.id, onExtracted]);
+  }, [item?.id, onExtracted, ui.copyDone]);
 
   // Polling fallback: when waiting for async extraction, poll every 5s in case
   // Supabase realtime is not configured for this table.
@@ -236,12 +358,12 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
     setCopyInsights({ copyText: scriptText });
     setBreakdownView("done");
     setShowBreakdownPanel(true);
-    toast.success("口播文案提取完成");
+    toast.success(ui.copyDone);
     if (onExtracted && item?.id) {
       onExtracted(item.id, scriptText);
     }
     // onExtracted in parent will remove from extractingItemIds automatically
-  }, [item?.id, onExtracted]);
+  }, [item?.id, onExtracted, ui.copyDone]);
 
   useEffect(() => {
     if (breakdownView !== "loading" || !item?.id) return;
@@ -260,7 +382,7 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
         clearInterval(timer);
         pendingExtractionRef.current = false;
         setBreakdownView("idle");
-        toast.error("提取超时，请重试");
+        toast.error(ui.extractTimeout);
         return;
       }
       try {
@@ -278,7 +400,7 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
     }, INTERVAL);
 
     return () => clearInterval(timer);
-  }, [breakdownView, item?.id, applyExtractedText]);
+  }, [breakdownView, item?.id, applyExtractedText, ui.extractTimeout]);
 
   if (!item) return null;
 
@@ -329,7 +451,7 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
   const handleDownload = async () => {
     const rawUrl = isVideo ? item.videoUrl : currentImage;
     if (!rawUrl) {
-      toast.error("没有可下载的内容");
+      toast.error(ui.noDownload);
       return;
     }
     const ext = isVideo ? "mp4" : "jpg";
@@ -373,11 +495,14 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
           referenceItemId: item.id,
           sourcePlatform: item.platform,
           noteDescription: item.description || null,
+          language: extractLanguage,
         }),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(payload.error || `提取失败 (${res.status})`);
+        throw new Error(
+          (language === "zh" ? payload?.error : null) || `${ui.extractFailed} (${res.status})`,
+        );
       }
 
       // Async path: n8n will call /callback and Supabase realtime will notify us.
@@ -392,7 +517,7 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
         payload.data?.transcript ||
         payload.data?.result?.text ||
         payload.data?.copyText;
-      if (!text) throw new Error("未获取到文案");
+      if (!text) throw new Error(ui.noCopyExtracted);
       pendingExtractionRef.current = false;
       setCopyInsights({ copyText: text });
       setBreakdownView('done');
@@ -406,7 +531,7 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
         onExtractionFailed(item.id);
       }
       console.error("Copy extract failed:", error);
-      toast.error(error instanceof Error ? error.message : "提取失败，请稍后重试");
+      toast.error(error instanceof Error ? error.message : ui.extractFailed);
       setBreakdownView('idle');
     }
   };
@@ -417,7 +542,7 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
     setShowBreakdownPanel(false);
   };
 
-  const displayAuthor = item.creator?.displayName || item.creator?.creatorHandle || "未知作者";
+  const displayAuthor = item.creator?.displayName || item.creator?.creatorHandle || ui.unknownAuthor;
 
   // ── Breakdown results panel (right side) ──
   const renderBreakdownPanel = () => {
@@ -431,7 +556,7 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
           >
             <ArrowLeft className="w-4 h-4 text-gray-600 dark:text-gray-400" />
           </button>
-          <h3 className="font-semibold text-gray-900 dark:text-white text-sm">口播复刻</h3>
+          <h3 className="font-semibold text-gray-900 dark:text-white text-sm">{ui.copyCloneTitle}</h3>
         </div>
         <div className="flex-1 min-h-0 p-4">
           {copyInsights ? (
@@ -443,7 +568,7 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
             />
           ) : (
             <div className="h-full flex items-center justify-center text-sm text-gray-500 dark:text-gray-400">
-              暂无口播文案，请重新提取
+              {ui.copyUnavailable}
             </div>
           )}
         </div>
@@ -498,7 +623,7 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
                   />
                 ) : (
                   <div className="flex items-center justify-center text-white/50 text-sm min-h-[320px]">
-                    无可用媒体
+                    {ui.noMedia}
                   </div>
                 )}
 
@@ -545,7 +670,7 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
                     >
                         <img
                           src={getImageSrc(url)}
-                        alt={`图片 ${index + 1}`}
+                        alt={`${ui.imageAltPrefix} ${index + 1}`}
                         className="w-full h-full object-cover"
                       />
                     </button>
@@ -569,7 +694,7 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
                 >
                   <ArrowLeft className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                 </button>
-                <h3 className="font-semibold text-gray-900 dark:text-white text-sm">图文复刻</h3>
+                <h3 className="font-semibold text-gray-900 dark:text-white text-sm">{ui.imageCloneTitle}</h3>
               </div>
               <div className="flex-1 overflow-y-auto">
                 <ImageTextReplicationPanel
@@ -593,21 +718,21 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
                 >
                   <ArrowLeft className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                 </button>
-                <h3 className="font-semibold text-gray-900 dark:text-white text-sm">口播复刻</h3>
+                <h3 className="font-semibold text-gray-900 dark:text-white text-sm">{ui.extractingTitle}</h3>
               </div>
               <div className="flex-1 flex flex-col items-center justify-center gap-5 p-8">
                 <Loader2 className="w-10 h-10 text-gray-700 dark:text-gray-300 animate-spin" />
                 <div className="text-center space-y-1.5">
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">AI 正在提取口播文案…</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">通常 30 秒内完成，稍候即可查看结果</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">可关闭弹窗，稍后重新打开查看</p>
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">{ui.extractingMain}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{ui.extractingHint1}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{ui.extractingHint2}</p>
                 </div>
                 <button
                   type="button"
                   onClick={handleCancelBreakdown}
                   className="mt-2 px-5 py-2 rounded-xl border border-gray-300 dark:border-gray-600 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                 >
-                  取消拆解
+                  {ui.cancelExtract}
                 </button>
               </div>
             </>
@@ -628,7 +753,7 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
                       {displayAuthor}
                     </h3>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {item.platform === "xiaohongshu" ? "小红书" : item.platform}
+                      {item.platform === "xiaohongshu" ? ui.xhsLabel : item.platform}
                     </p>
                   </div>
                 </div>
@@ -640,7 +765,7 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-500 hover:bg-red-600 text-white text-xs font-medium transition-colors flex-shrink-0"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
-                    查看原文
+                    {ui.viewSource}
                   </a>
                 )}
               </div>
@@ -656,20 +781,20 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
                   hasCopyText ? (
                     <div className="space-y-2">
                       <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                        口播文案
+                        {ui.voiceCopy}
                       </p>
                       <div className="flex items-start gap-1">
                         <p className="flex-1 text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
                           {extractedCopy}
                         </p>
-                        <CopyButton text={extractedCopy} />
+                        <CopyButton text={extractedCopy} title={ui.copyTitle} failedToast={ui.copyFailed} />
                       </div>
                     </div>
                   ) : (
                     <div className="rounded-2xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40 p-4 text-sm text-gray-600 dark:text-gray-300 space-y-3">
-                      <p className="font-semibold text-gray-800 dark:text-gray-100">暂无口播文案</p>
+                      <p className="font-semibold text-gray-800 dark:text-gray-100">{ui.noVoiceCopy}</p>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
-                        点击下方或使用下列按钮提取视频中的口播内容，方便直接复刻。
+                        {ui.noVoiceCopyHint}
                       </p>
                       <button
                         type="button"
@@ -685,12 +810,12 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
                         {isExtractingCopy ? (
                           <>
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            提取中...
+                            {ui.extracting}
                           </>
                         ) : (
                           <>
                             <Zap className="w-3.5 h-3.5" />
-                            提取口播文案
+                            {ui.extractVoiceCopy}
                           </>
                         )}
                       </button>
@@ -700,20 +825,20 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
                   normalizedDescription && (
                     <div className="space-y-2">
                       <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                        原帖文案
+                        {ui.originalPostCopy}
                       </p>
                       <div className="flex items-start gap-1">
                         <p className="flex-1 text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
                           {normalizedDescription}
                         </p>
-                        <CopyButton text={normalizedDescription} />
+                        <CopyButton text={normalizedDescription} title={ui.copyTitle} failedToast={ui.copyFailed} />
                       </div>
                     </div>
                   )
                 )}
                 {item.publishedAt && (
                   <p className="text-xs text-gray-400">
-                    {new Date(item.publishedAt).toLocaleDateString("zh-CN", {
+                    {new Date(item.publishedAt).toLocaleDateString(ui.dateLocale, {
                       year: "numeric",
                       month: "2-digit",
                       day: "2-digit",
@@ -725,19 +850,19 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
                     {item.stats.likes != null && Number(item.stats.likes) > 0 && (
                       <div className="flex items-center gap-1.5">
                         <span>❤️</span>
-                        <span>{formatCount(item.stats.likes)}</span>
+                        <span>{formatCount(item.stats.likes, language)}</span>
                       </div>
                     )}
                     {item.stats.collects != null && Number(item.stats.collects) > 0 && (
                       <div className="flex items-center gap-1.5">
                         <span>⭐</span>
-                        <span>{formatCount(item.stats.collects)}</span>
+                        <span>{formatCount(item.stats.collects, language)}</span>
                       </div>
                     )}
                     {item.stats.comments != null && Number(item.stats.comments) > 0 && (
                       <div className="flex items-center gap-1.5">
                         <span>💬</span>
-                        <span>{formatCount(item.stats.comments)}</span>
+                        <span>{formatCount(item.stats.comments, language)}</span>
                       </div>
                     )}
                   </div>
@@ -752,7 +877,7 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
                   className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-900 dark:text-white font-medium transition-colors"
                 >
                   <Download className="w-4 h-4" />
-                  下载
+                  {ui.download}
                 </button>
                 {!shouldForceProxy(item.videoUrl || item.sourceUrl) && (
                   breakdownView === 'done' ? (
@@ -762,7 +887,7 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
                       className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gray-900 hover:bg-gray-800 dark:bg-white dark:hover:bg-gray-100 text-white dark:text-gray-900 font-semibold transition-all shadow-md"
                     >
                       <Zap className="w-4 h-4" />
-                      一键二创
+                      {ui.oneClickRemix}
                     </button>
                   ) : (
                     <button
@@ -771,7 +896,7 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
                       className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-semibold transition-all shadow-md"
                     >
                       <Zap className="w-4 h-4" />
-                      {isVideo ? "口播复刻" : "图文复刻"}
+                      {isVideo ? ui.actionVoiceClone : ui.actionGraphicClone}
                     </button>
                   )
                 )}

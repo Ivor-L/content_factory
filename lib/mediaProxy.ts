@@ -6,18 +6,35 @@
  * hotlink-protection restrictions.
  */
 
-const EXTRA_SELF_HOSTS = (() => {
-  const hosts: string[] = [];
-  const ossPublicUrl = process.env.ALIYUN_OSS_PUBLIC_URL;
-  if (ossPublicUrl) {
-    try {
-      const parsed = new URL(ossPublicUrl.startsWith("http") ? ossPublicUrl : `https://${ossPublicUrl}`);
-      if (parsed.hostname) hosts.push(parsed.hostname);
-    } catch {
-      // ignore malformed OSS host
-    }
+function parseEnvHost(urlLike: string | undefined): string | null {
+  if (!urlLike) return null;
+  try {
+    const parsed = new URL(urlLike.startsWith("http") ? urlLike : `https://${urlLike}`);
+    return parsed.hostname || null;
+  } catch {
+    return null;
   }
-  return hosts;
+}
+
+const EXTRA_SELF_HOSTS = (() => {
+  const hosts = new Set<string>();
+  const envCandidates = [
+    process.env.NEXT_PUBLIC_ALIYUN_OSS_PUBLIC_URL,
+    process.env.ALIYUN_OSS_PUBLIC_URL,
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+  ];
+
+  for (const candidate of envCandidates) {
+    const host = parseEnvHost(candidate);
+    if (host) hosts.add(host);
+  }
+
+  // Known first-party media hosts used in this project.
+  hosts.add("oss.atomx.top");
+  hosts.add("oss.flowonn.com");
+
+  return Array.from(hosts);
 })();
 
 const SELF_HOSTED_HOSTS = [

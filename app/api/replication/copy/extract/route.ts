@@ -6,6 +6,22 @@ const webhookUrl =
   process.env.N8N_EXTRACT_VIDEO_TEXT_WEBHOOK ||
   "https://hooks.atomx.top/webhook/extract_video_text";
 
+function normalizeExtractLanguage(raw: unknown): "zh-CN" | "zh-TW" {
+  const value = String(raw ?? "").trim().toLowerCase();
+  if (!value) return "zh-CN";
+  if (
+    value === "zh-tw" ||
+    value === "zh-hk" ||
+    value === "tw" ||
+    value === "hk" ||
+    value.includes("traditional") ||
+    value.includes("繁")
+  ) {
+    return "zh-TW";
+  }
+  return "zh-CN";
+}
+
 function normalizeWebhookEnvelope(rawData: any): any {
   const normalized = Array.isArray(rawData) ? rawData[0] ?? null : rawData;
   if (
@@ -60,6 +76,9 @@ export async function POST(request: NextRequest) {
   const referenceItemId = typeof body.referenceItemId === "string" ? body.referenceItemId : undefined;
   const sourcePlatform = typeof body.sourcePlatform === "string" ? body.sourcePlatform : undefined;
   const noteDescription = typeof body.noteDescription === "string" ? body.noteDescription.trim() : undefined;
+  const language = normalizeExtractLanguage(
+    body?.language ?? body?.target_language ?? body?.targetLanguage ?? body?.lang,
+  );
   let videoUrl =
     typeof body.videoUrl === "string" ? body.videoUrl.trim() : undefined;
 
@@ -108,6 +127,8 @@ export async function POST(request: NextRequest) {
     source_platform: sourcePlatform,
     note_description: noteDescription || null,
     reference_item_id: referenceItemId || null,
+    language,
+    target_language: language,
     // If callback_url is present, n8n should POST the result there instead of
     // responding synchronously. If null, n8n responds synchronously (dev / fallback).
     callback_url: callbackUrl,

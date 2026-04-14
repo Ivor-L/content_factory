@@ -13,6 +13,7 @@ type CanvasProjectResponse = {
 
 type UseCanvasProjectsOptions = {
   autoSelectFirstProject?: boolean;
+  preloadFirstProjectData?: boolean;
 };
 
 const DEFAULT_TIMEOUT_MS =
@@ -92,7 +93,7 @@ export function useCanvasProjects(
   initialProjects?: CanvasProjectRecord[],
   options?: UseCanvasProjectsOptions,
 ) {
-  const { autoSelectFirstProject = true } = options ?? {};
+  const { autoSelectFirstProject = true, preloadFirstProjectData = true } = options ?? {};
   const normalizedInitialProjects = Array.isArray(initialProjects) ? initialProjects : [];
   const hasInitialProjects = normalizedInitialProjects.length > 0;
   const initialSelection =
@@ -123,8 +124,18 @@ export function useCanvasProjects(
 
   const upsertProject = useCallback((record: CanvasProjectRecord) => {
     setProjects((prev) => {
-      const filtered = prev.filter((item) => item.id !== record.id);
-      const next = [record, ...filtered];
+      const existing = prev.find((item) => item.id === record.id);
+      const mergedCanvasData =
+        record.canvasData !== undefined && record.canvasData !== null
+          ? record.canvasData
+          : existing?.canvasData;
+      const mergedRecord: CanvasProjectRecord = {
+        ...(existing ?? {}),
+        ...record,
+        ...(mergedCanvasData !== undefined ? { canvasData: mergedCanvasData } : {}),
+      };
+      const filtered = prev.filter((item) => item.id !== mergedRecord.id);
+      const next = [mergedRecord, ...filtered];
       projectsRef.current = next;
       return next;
     });
@@ -142,8 +153,9 @@ export function useCanvasProjects(
       setError(null);
       try {
         const authHeaders = await getAuthHeaders();
+        const withFirst = preloadFirstProjectData ? "true" : "false";
         const response = await fetchWithTimeout(
-          "/api/canvas/projects?limit=50&withFirst=true",
+          `/api/canvas/projects?limit=50&withFirst=${withFirst}`,
           {
             credentials: "include",
             headers: {
@@ -182,7 +194,7 @@ export function useCanvasProjects(
         if (!silent) setLoading(false);
       }
     },
-    [autoSelectFirstProject],
+    [autoSelectFirstProject, preloadFirstProjectData],
   );
 
   useEffect(() => {
@@ -241,7 +253,7 @@ export function useCanvasProjects(
             if (thumbnail !== undefined) body.thumbnail = thumbnail;
             const authHeaders = await getAuthHeaders();
             const response = await fetchWithTimeout(
-              `/api/canvas/projects/${projectId}`,
+              `/api/canvas/projects/${projectId}?response=meta`,
               {
                 method: "PATCH",
                 body: JSON.stringify(body),
