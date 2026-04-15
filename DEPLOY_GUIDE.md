@@ -217,16 +217,28 @@ services:
 
 1. 本地代码改好后，push 到 Git
 2. 服务器上进入项目目录：`cd /root/content-factory-web`
-3. 拉取代码并重新构建启动（**必须加 `--build`，否则代码不生效**）：
+3. 先同步模板中新增加的环境变量到线上 `.env`（只补缺失项，不覆盖已有值）：
    ```bash
-   git pull && docker compose up -d --build
+   ./scripts/sync-env-from-template.sh .env.production.example .env
    ```
-4. 查看日志确认启动成功：
+4. 发布前校验运行时环境变量（缺失会直接报错）：
+   ```bash
+   ./scripts/validate-runtime-env.sh --mode=runtime
+   ```
+5. 使用安全发布脚本（已内置“补齐缺失变量 + env 校验 + `git pull --ff-only` + `docker compose up -d --build`）：
+   ```bash
+   ./scripts/deploy-safe.sh
+   ```
+6. 查看日志确认启动成功：
    ```bash
    docker compose logs -f web
    ```
 
 > ⚠️ **常见陷阱**：`docker compose up -d`（不带 `--build`）只会重启已有镜像，不会重新编译代码。每次改动代码后必须加 `--build`。
+>
+> ⚠️ **强规则**：线上 `.env` 只能手工维护，不要在发布流程中执行任何覆盖命令（如 `cp xxx .env`）。一旦覆盖，Apify 等密钥会“看似发布成功、功能实际失效”。
+>
+> ⚠️ **推荐规范**：新增环境变量后，统一更新 `.env.production.example`，发布时由 `sync-env-from-template.sh` 自动补齐到线上 `.env`，避免“本地有、线上漏配”。
 
 ---
 

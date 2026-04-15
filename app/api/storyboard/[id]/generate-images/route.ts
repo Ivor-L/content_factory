@@ -78,18 +78,19 @@ export async function POST(
       model,
     });
 
-    // 3. Get webhook URL from env
-    const webhookUrl = process.env.N8N_IMAGE_GEN_WEBHOOK;
-    if (!webhookUrl) {
-      console.error("[generate-images] N8N_IMAGE_GEN_WEBHOOK not configured");
-      return NextResponse.json(
-        { error: "Image generation service not configured" },
-        { status: 500 }
-      );
-    }
+    // 3. Resolve webhook URL (env first, then stable fallback)
+    const webhookUrl =
+      process.env.N8N_IMAGE_GEN_WEBHOOK?.trim() ||
+      process.env.N8N_STORYBOARD_IMAGE_WEBHOOK?.trim() ||
+      "https://hooks.atomx.top/webhook/storyboard-image-generate";
 
     // 4. Resolve api_key + trigger image generation for each segment
-    const callbackUrl = `${process.env.N8N_CALLBACK_BASE_URL || process.env.NEXT_PUBLIC_APP_URL}/api/webhook/storyboard-image`;
+    const callbackBase = (
+      process.env.N8N_CALLBACK_BASE_URL ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      req.nextUrl.origin
+    ).replace(/\/+$/, "");
+    const callbackUrl = `${callbackBase}/api/webhook/storyboard-image`;
     const apiKey = await resolveUserApiKey({
       userId,
       explicitApiKey: contextApiKey,
