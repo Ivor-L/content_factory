@@ -157,6 +157,28 @@ export default function LoginPage() {
       const payload = await response.json();
       const session = payload?.session;
 
+      const triggerProvisionCredits = async (accessToken: string | null | undefined) => {
+        if (!accessToken) return;
+        try {
+          const provisionRes = await fetch('/api/auth/provision-credits', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+            credentials: 'same-origin',
+            cache: 'no-store',
+            keepalive: true,
+          });
+          if (!provisionRes.ok) {
+            console.warn('[auth] Failed to provision credits after OTP login', {
+              status: provisionRes.status,
+            });
+          }
+        } catch (error) {
+          console.warn('[auth] Failed to provision credits after OTP login', error);
+        }
+      };
+
       if (session?.access_token) {
         const { data, error } = await supabase.auth.setSession({
           access_token: session.access_token,
@@ -168,6 +190,7 @@ export default function LoginPage() {
         }
 
         await syncServerSession(data.session?.access_token ?? null);
+        void triggerProvisionCredits(data.session?.access_token ?? session.access_token);
       } else {
         await syncServerSession(null);
       }
@@ -196,6 +219,25 @@ export default function LoginPage() {
       if (error) throw error;
 
       await syncServerSession(data.session?.access_token ?? null);
+      if (data.session?.access_token) {
+        fetch('/api/auth/provision-credits', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${data.session.access_token}`,
+          },
+          credentials: 'same-origin',
+          cache: 'no-store',
+          keepalive: true,
+        }).then((res) => {
+          if (!res.ok) {
+            console.warn('[auth] Failed to provision credits after password login', {
+              status: res.status,
+            });
+          }
+        }).catch((error) => {
+          console.warn('[auth] Failed to provision credits after password login', error);
+        });
+      }
       localStorage.setItem('login_timestamp', Date.now().toString());
       toast.success('Login successful');
       router.push(tenantDashboardPath);
