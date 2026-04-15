@@ -2,6 +2,8 @@
 set -eu
 
 MODE="runtime"
+PROJECT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+ENV_FILE="${ENV_FILE:-$PROJECT_DIR/.env}"
 
 for arg in "$@"; do
   case "$arg" in
@@ -22,7 +24,31 @@ log_warn() {
 }
 
 get_env() {
-  eval "printf '%s' \"\${$1-}\""
+  name="$1"
+  eval "value=\${$name-}"
+  if [ -n "${value:-}" ]; then
+    printf '%s' "$value"
+    return 0
+  fi
+
+  if [ -f "$ENV_FILE" ]; then
+    # Read value from .env without executing it in shell.
+    line="$(grep -E "^[[:space:]]*${name}=" "$ENV_FILE" | tail -n 1 || true)"
+    if [ -n "$line" ]; then
+      value="${line#*=}"
+      # trim CR for files edited on Windows
+      value="$(printf '%s' "$value" | tr -d '\r')"
+      # strip optional surrounding quotes
+      case "$value" in
+        \"*\") value="${value#\"}"; value="${value%\"}" ;;
+        \'*\') value="${value#\'}"; value="${value%\'}" ;;
+      esac
+      printf '%s' "$value"
+      return 0
+    fi
+  fi
+
+  printf '%s' ""
 }
 
 is_placeholder() {
