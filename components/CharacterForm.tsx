@@ -40,14 +40,14 @@ export function CharacterForm({ onSuccess, initialData }: CharacterFormProps) {
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await fetch('/api/upload', {
+      const res = await fetch('/api/upload/audio', {
         method: 'POST',
         body: formData,
       });
 
-      if (!res.ok) throw new Error(t.common.uploadFailed || 'Upload failed');
+      const data = await res.json().catch(() => ({} as { error?: string; url?: string }));
+      if (!res.ok) throw new Error(data?.error || t.common.uploadFailed || 'Upload failed');
 
-      const data = await res.json();
       setVoiceId(data.url);
     } catch (error) {
       console.error('Error uploading voice file:', error);
@@ -122,15 +122,16 @@ export function CharacterForm({ onSuccess, initialData }: CharacterFormProps) {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('type', 'character');
 
-      const res = await fetch('/api/upload', {
+      const res = await fetch('/api/upload/image', {
         method: 'POST',
         body: formData,
       });
 
-      if (!res.ok) throw new Error(t.common.uploadFailed || 'Upload failed');
+      const data = await res.json().catch(() => ({} as { error?: string; url?: string }));
+      if (!res.ok) throw new Error(data?.error || t.common.uploadFailed || 'Upload failed');
 
-      const data = await res.json();
       setAvatar(data.url);
     } catch (error) {
       console.error('Error uploading file:', error);

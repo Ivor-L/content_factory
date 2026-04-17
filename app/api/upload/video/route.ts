@@ -2,11 +2,13 @@ import { Buffer } from "node:buffer";
 import { NextRequest, NextResponse } from "next/server";
 import { uploadToStorage } from "@/lib/storageUpload";
 import { getAssetBucket } from "@/lib/storagePaths";
+import { getRequestUserContext } from "@/lib/authServer";
 
 export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   try {
+    const { token } = await getRequestUserContext(request);
     const formData = await request.formData();
     const file = formData.get("file");
     if (!file || !(file instanceof Blob)) {
@@ -24,6 +26,7 @@ export async function POST(request: NextRequest) {
       body: buffer,
       contentType: file.type || "video/mp4",
       upsert: false,
+      accessToken: token,
     });
 
     return NextResponse.json({ url: result.publicUrl });
