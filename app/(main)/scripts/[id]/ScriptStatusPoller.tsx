@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -18,9 +18,11 @@ export default function ScriptStatusPoller({ scriptId, initialStatus, initialPro
   const { t } = useLanguage();
   const [status, setStatus] = useState(initialStatus);
   const [progress, setProgress] = useState(initialProgress);
+  const finalRefreshedRef = useRef(false);
 
   useEffect(() => {
-    if (status === "completed" || status === "failed") return;
+    const initial = (initialStatus || "").toLowerCase();
+    if (initial === "completed" || initial === "failed") return;
 
     const channel = supabase
       .channel(`script-${scriptId}`)
@@ -31,7 +33,9 @@ export default function ScriptStatusPoller({ scriptId, initialStatus, initialPro
           const data = payload.new as { status: string; progress?: number };
           setStatus(data.status);
           if (data.progress !== undefined) setProgress(data.progress);
-          if (data.status === "completed" || data.status === "failed") {
+          const nextStatus = (data.status || "").toLowerCase();
+          if ((nextStatus === "completed" || nextStatus === "failed") && !finalRefreshedRef.current) {
+            finalRefreshedRef.current = true;
             router.refresh();
           }
         }
@@ -39,7 +43,7 @@ export default function ScriptStatusPoller({ scriptId, initialStatus, initialPro
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [scriptId, status, router]);
+  }, [scriptId, router, initialStatus]);
 
   if (status === "completed") {
     return null;

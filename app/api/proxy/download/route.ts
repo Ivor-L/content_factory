@@ -88,24 +88,37 @@ export async function GET(request: NextRequest) {
     if (contentLength && parseInt(contentLength, 10) > MAX_BYTES) {
       return NextResponse.json({ error: "File too large" }, { status: 413 });
     }
+    if (!upstream.body) {
+      return NextResponse.json({ error: "Empty upstream response" }, { status: 502 });
+    }
 
-    // Stream the body back to the client
-    const body = await upstream.arrayBuffer();
+    const headers = new Headers();
+    headers.set("Content-Type", contentType);
+    if (contentLength) {
+      headers.set("Content-Length", contentLength);
+    }
+    const acceptRanges = upstream.headers.get("accept-ranges");
+    if (acceptRanges) {
+      headers.set("Accept-Ranges", acceptRanges);
+    }
+    if (inline) {
+      const etag = upstream.headers.get("etag");
+      const lastModified = upstream.headers.get("last-modified");
+      if (etag) headers.set("ETag", etag);
+      if (lastModified) headers.set("Last-Modified", lastModified);
+      headers.set(
+        "Cache-Control",
+        inlineMode === "media" ? "public, max-age=3600" : "public, max-age=86400",
+      );
+    } else {
+      headers.set("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+      headers.set("Cache-Control", "no-store");
+    }
 
-    return new NextResponse(body, {
+    // Stream upstream directly instead of buffering whole file in memory.
+    return new NextResponse(upstream.body, {
       status: 200,
-      headers: {
-        "Content-Type": contentType,
-        "Content-Length": String(body.byteLength),
-        ...(inline
-          ? {
-              "Cache-Control": inlineMode === "media" ? "public, max-age=3600" : "public, max-age=86400",
-            }
-          : {
-              "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
-              "Cache-Control": "no-store",
-            }),
-      },
+      headers,
     });
   } catch (error) {
     console.error("[proxy/download] Fetch failed", error);

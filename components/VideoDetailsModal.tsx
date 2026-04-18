@@ -4,6 +4,7 @@
 
 import { useLanguage } from '@/contexts/LanguageContext';
 import { cn } from '@/lib/utils';
+import { toForcedProxyUrl } from '@/lib/mediaProxy';
 import { Download, Share2, Check, ChevronDown, Calendar, Clock, Languages, Monitor, Maximize, Copy, AlertTriangle, Globe, Play } from 'lucide-react';
 import { deleteVideos } from "@/app/actions/video";
 import { useRouter } from "next/navigation";
@@ -81,6 +82,58 @@ function resolveMediaUrl(value: unknown): string | null {
     );
   }
   return null;
+}
+
+function isMobileBrowser(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  const isTouchMac = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || isTouchMac;
+}
+
+function toDownloadUrl(url: string, filename: string): string {
+  try {
+    const base = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
+    const parsed = new URL(url, base);
+    if (parsed.pathname === '/api/proxy/download') {
+      parsed.searchParams.set('filename', filename);
+      if (typeof window !== 'undefined' && parsed.origin === window.location.origin) {
+        return `${parsed.pathname}?${parsed.searchParams.toString()}`;
+      }
+      return parsed.toString();
+    }
+  } catch {
+    // fall through
+  }
+  return toForcedProxyUrl(url, filename);
+}
+
+function triggerDownload(
+  rawUrl: string,
+  filename: string,
+  options?: { preferDirectNavigationOnMobile?: boolean },
+) {
+  const downloadUrl = toDownloadUrl(rawUrl, filename);
+  if (
+    options?.preferDirectNavigationOnMobile &&
+    typeof window !== 'undefined' &&
+    isMobileBrowser()
+  ) {
+    const opened = window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+    if (!opened) {
+      window.location.assign(downloadUrl);
+    }
+    return;
+  }
+
+  const anchor = document.createElement('a');
+  anchor.href = downloadUrl;
+  anchor.setAttribute('download', filename);
+  anchor.setAttribute('target', '_blank');
+  anchor.setAttribute('rel', 'noopener noreferrer');
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
 }
 
 interface VideoDetailsModalProps {
@@ -261,15 +314,13 @@ export function VideoDetailsModal({ item, onClose }: VideoDetailsModalProps) {
     }
 
     try {
-      const anchor = document.createElement('a');
-      anchor.href = downloadUrl;
       const urlWithoutQuery = downloadUrl.split('?')[0];
       const extension = urlWithoutQuery.includes('.') ? urlWithoutQuery.split('.').pop() : 'mp4';
-      anchor.setAttribute('download', `${item.type || 'video'}-${item.id}.${extension}`);
-      anchor.setAttribute('target', '_blank');
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
+      triggerDownload(
+        downloadUrl,
+        `${item.type || 'video'}-${item.id}.${extension}`,
+        { preferDirectNavigationOnMobile: true },
+      );
     } catch (error) {
       console.error('Failed to download video', error);
       toast.error(t.common.error);

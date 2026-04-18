@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
@@ -18,6 +18,7 @@ interface ReplicationDetailProps {
 
 export default function ReplicationDetail({ replication }: ReplicationDetailProps) {
   const router = useRouter();
+  const finalRefreshedRef = useRef(false);
 
   useEffect(() => {
     if (replication.status !== "pending") return;
@@ -29,7 +30,8 @@ export default function ReplicationDetail({ replication }: ReplicationDetailProp
         { event: "UPDATE", schema: "public", table: "replications", filter: `id=eq.${replication.id}` },
         (payload) => {
           const data = payload.new as { status: string };
-          if (data.status !== "pending") {
+          if (data.status !== "pending" && !finalRefreshedRef.current) {
+            finalRefreshedRef.current = true;
             router.refresh();
           }
         }

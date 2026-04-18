@@ -121,14 +121,20 @@ ssh root@47.107.158.233
 
 ## 第三步：配置环境变量
 
-确保 `.env` 文件使用的是生产环境配置。
-您可以直接复制 `.env.production`：
+确保服务器上的 `.env` 由运维手工维护（不要在发版时覆盖）。
 
 ```bash
-cp .env.production .env
+# 仅首次部署建议从模板创建，后续不要再次覆盖
+cp -n .env.production.example .env
 ```
 
-**注意**: 检查 `.env` 中的 `DATABASE_URL` 和 `NEXT_PUBLIC_SUPABASE_URL` 是否正确指向了您的 Supabase 服务。
+并至少检查以下关键项（留空会导致对应功能上线后失败）：
+
+```bash
+grep -E "DATABASE_URL|DIRECT_URL|NEXT_PUBLIC_SUPABASE_URL|NEXT_PUBLIC_SUPABASE_ANON_KEY|NEXT_PUBLIC_APP_URL|ADMIN_TOKEN|N8N_CALLBACK_BASE_URL|SOCIAL_SCRAPER_APIFY_TOKEN|N8N_SOCIAL_SCRAPER_WEBHOOK" .env
+```
+
+**注意**：不要使用 `cp .env.production .env` 这类命令覆盖现有 `.env`，否则会导致线上密钥丢失。
 
 ## 第四步：启动应用 (Docker)
 

@@ -37,6 +37,7 @@ export default async function MyProjectsPage() {
       userId,
       limit: INITIAL_PAGE_SIZE,
       offset: 0,
+      includeEnrichment: false,
     });
 
     initialTasks = tasks.map((task) => ({

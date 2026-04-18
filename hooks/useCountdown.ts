@@ -20,6 +20,46 @@ export interface UseCountdownResult {
 
 const DEFAULT_INTERVAL = 1000;
 
+type Listener = (now: number) => void;
+type TickerEntry = {
+  listeners: Set<Listener>;
+  timerId: number | null;
+};
+
+const tickerRegistry = new Map<number, TickerEntry>();
+
+function subscribeTicker(intervalMs: number, listener: Listener): () => void {
+  let entry = tickerRegistry.get(intervalMs);
+  if (!entry) {
+    entry = {
+      listeners: new Set(),
+      timerId: null,
+    };
+    tickerRegistry.set(intervalMs, entry);
+  }
+
+  entry.listeners.add(listener);
+
+  if (entry.timerId == null && typeof window !== "undefined") {
+    entry.timerId = window.setInterval(() => {
+      const now = Date.now();
+      entry?.listeners.forEach((notify) => notify(now));
+    }, intervalMs);
+  }
+
+  return () => {
+    const current = tickerRegistry.get(intervalMs);
+    if (!current) return;
+    current.listeners.delete(listener);
+    if (current.listeners.size === 0) {
+      if (current.timerId != null) {
+        window.clearInterval(current.timerId);
+      }
+      tickerRegistry.delete(intervalMs);
+    }
+  };
+}
+
 export function useCountdown(targetTime: CountdownInput, options?: UseCountdownOptions): UseCountdownResult {
   const intervalMs = options?.intervalMs ?? DEFAULT_INTERVAL;
   const targetTimestamp = useMemo(() => {
@@ -40,8 +80,8 @@ export function useCountdown(targetTime: CountdownInput, options?: UseCountdownO
   useEffect(() => {
     if (!targetTimestamp) return undefined;
     setNow(Date.now());
-    const id = window.setInterval(() => setNow(Date.now()), intervalMs);
-    return () => window.clearInterval(id);
+    const unsubscribe = subscribeTicker(intervalMs, setNow);
+    return () => unsubscribe();
   }, [intervalMs, targetTimestamp]);
 
   const remainingMs = targetTimestamp ? Math.max(targetTimestamp - now, 0) : 0;

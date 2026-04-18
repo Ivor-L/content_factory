@@ -32,7 +32,7 @@ import { AddButton } from "@/components/AddButton";
 import ReplicationForm from "@/app/(main)/replication/ReplicationForm";
 import { CopyRemixPanel } from "@/app/(main)/replication/CopyRemixPanel";
 import { ViralReferenceModal } from "./ViralReferenceModal";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { toast } from "react-hot-toast";
 import { deleteScript } from "./actions";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -57,6 +57,18 @@ interface Script {
   error?: string | null;
   blueprint?: string | null;
 }
+
+type ScriptFormSuccessPayload = {
+  id: string;
+  title: string;
+  videoUrl: string | null;
+  breakdown?: string | null;
+  createdAt?: string | Date;
+  status?: string;
+  progress?: number;
+  error?: string | null;
+  blueprint?: string | null;
+};
 
 interface Character {
   id: string;
@@ -599,7 +611,6 @@ function parseScriptAnalysisPayload(blueprintRaw?: string | null): ParsedScriptA
 }
 
 export function ScriptList({ initialScripts, products, characters }: ScriptListProps) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const { t: i18nText, language } = useLanguage();
   const t = i18nText as any;
@@ -955,6 +966,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
     [language],
   );
   const replicationComingSoon = REPLICATION_COMING_SOON;
+  const [scripts, setScripts] = useState<Script[]>(initialScripts);
   const [activeTab, setActiveTab] = useState<ScriptTab>('my-templates');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingScript, setEditingScript] = useState<Script | null>(null);
@@ -1038,6 +1050,10 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setScripts(initialScripts);
+  }, [initialScripts]);
+
+  useEffect(() => {
     const tabParam = searchParams?.get('tab');
     if (isScriptTab(tabParam)) {
       setActiveTab((prev) => (prev === tabParam ? prev : tabParam));
@@ -1090,7 +1106,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
 
   useEffect(() => {
     if (!selectedReplicationScript) return;
-    const latest = initialScripts.find((script) => script.id === selectedReplicationScript.id);
+    const latest = scripts.find((script) => script.id === selectedReplicationScript.id);
     if (!latest) {
       setSelectedReplicationScript(null);
       return;
@@ -1098,7 +1114,74 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
     if (latest !== selectedReplicationScript) {
       setSelectedReplicationScript(latest);
     }
-  }, [initialScripts, selectedReplicationScript]);
+  }, [scripts, selectedReplicationScript]);
+
+  useEffect(() => {
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let active = true;
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!active) return;
+      const userId = session?.user?.id;
+      if (!userId) return;
+
+      const normalize = (row: Record<string, unknown>): Script => ({
+        id: String(row.id),
+        title: String(row.title ?? ""),
+        videoUrl: typeof row.videoUrl === "string" ? row.videoUrl : null,
+        breakdown: typeof row.breakdown === "string" ? row.breakdown : null,
+        blueprint: typeof row.blueprint === "string" ? row.blueprint : null,
+        status: typeof row.status === "string" ? row.status : undefined,
+        progress: typeof row.progress === "number" ? row.progress : 0,
+        error: typeof row.error === "string" ? row.error : null,
+        createdAt:
+          typeof row.createdAt === "string"
+            ? row.createdAt
+            : (typeof row.created_at === "string" ? row.created_at : new Date().toISOString()),
+      });
+
+      channel = supabase
+        .channel(`scripts-list-${userId}`)
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "scripts", filter: `userId=eq.${userId}` },
+          (payload) => {
+            const updated = normalize(payload.new as Record<string, unknown>);
+            setScripts((prev) =>
+              prev.map((script) => (script.id === updated.id ? { ...script, ...updated } : script)),
+            );
+          },
+        )
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "scripts", filter: `userId=eq.${userId}` },
+          (payload) => {
+            const inserted = normalize(payload.new as Record<string, unknown>);
+            setScripts((prev) => {
+              if (prev.some((script) => script.id === inserted.id)) return prev;
+              return [inserted, ...prev];
+            });
+          },
+        )
+        .on(
+          "postgres_changes",
+          { event: "DELETE", schema: "public", table: "scripts", filter: `userId=eq.${userId}` },
+          (payload) => {
+            const deletedId = String((payload.old as Record<string, unknown>)?.id ?? "");
+            if (!deletedId) return;
+            setScripts((prev) => prev.filter((script) => script.id !== deletedId));
+          },
+        )
+        .subscribe();
+    });
+
+    return () => {
+      active = false;
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     setReplicationViewTab('storyboard');
@@ -1534,10 +1617,34 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
     loadCreatorReferences(true);
   }, [selectedCreatorId, loadCreatorReferences]);
 
-  const handleScriptCreated = () => {
+  const handleScriptCreated = (script?: ScriptFormSuccessPayload) => {
     setIsModalOpen(false);
     setEditingScript(null);
-    router.refresh();
+    if (!script) return;
+    setScripts((prev) => {
+      const createdAt =
+        typeof script.createdAt === "string"
+          ? script.createdAt
+          : (script.createdAt ? String(script.createdAt) : new Date().toISOString());
+      const normalized: Script = {
+        id: script.id,
+        title: script.title,
+        videoUrl: script.videoUrl,
+        breakdown: script.breakdown ?? null,
+        status: script.status,
+        progress: script.progress ?? 0,
+        error: script.error ?? null,
+        blueprint: script.blueprint ?? null,
+        createdAt,
+      };
+      const index = prev.findIndex((item) => item.id === normalized.id);
+      if (index === -1) {
+        return [normalized, ...prev];
+      }
+      const next = [...prev];
+      next[index] = { ...next[index], ...normalized };
+      return next;
+    });
   };
 
   const handleDeleteClick = (e: React.MouseEvent, id: string) => {
@@ -1562,7 +1669,10 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                 border: '1px solid #bbf7d0',
             },
         });
-        router.refresh();
+        setScripts((prev) => prev.filter((script) => script.id !== scriptToDelete));
+        if (selectedReplicationScript?.id === scriptToDelete) {
+          setSelectedReplicationScript(null);
+        }
     } catch (error) {
         console.error(error);
         toast.error(t.common.error);
@@ -1841,12 +1951,15 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
           error: null,
           createdAt: new Date().toISOString(),
         };
+        setScripts((prev) => {
+          if (prev.some((script) => script.id === nextScript.id)) return prev;
+          return [nextScript, ...prev];
+        });
         setSelectedReplicationScript(nextScript);
         setNewReplicationUploadedUrl(videoUrl);
         setReplicationViewTab('storyboard');
         setAnalysisTab('replication');
         toast.success(scriptUi.scriptCreated, { id: toastId });
-        router.refresh();
       } catch (creationErr: any) {
         toast.error(creationErr.message || scriptUi.createScriptFailed, { id: toastId });
         throw creationErr;
@@ -1965,7 +2078,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
       {activeTab === 'my-templates' && (
         // My Templates View
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            {initialScripts.map((script) => (
+            {scripts.map((script) => (
             <div 
                 key={script.id} 
                 onClick={() => {
@@ -2054,7 +2167,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
         </div>
             ))}
             
-            {initialScripts.length === 0 && (
+            {scripts.length === 0 && (
               <div className="col-span-full">
                 <EmptyState
                   icon={<ScrollText className="h-6 w-6" />}

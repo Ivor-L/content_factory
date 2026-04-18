@@ -253,6 +253,8 @@ export type FetchUserTaskSummariesParams = {
   status?: string | null;
   limit?: number;
   offset?: number;
+  includeEnrichment?: boolean;
+  includeTotal?: boolean;
 };
 
 type FetchResult = {
@@ -274,6 +276,8 @@ export async function fetchUserTaskSummaries({
   status,
   limit: rawLimit,
   offset: rawOffset,
+  includeEnrichment = true,
+  includeTotal = true,
 }: FetchUserTaskSummariesParams): Promise<FetchResult> {
   if (!userId) {
     throw new Error('User ID is required to fetch task summaries');
@@ -299,24 +303,34 @@ export async function fetchUserTaskSummaries({
     where.status = status;
   }
 
-  const [tasks, total] = await Promise.all([
-    prisma.taskSummary.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-      skip: offset,
-    }),
-    prisma.taskSummary.count({ where }),
-  ]);
+  const take = includeTotal ? limit : limit + 1;
+  const tasksFetched = await prisma.taskSummary.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    take,
+    skip: offset,
+  });
+  const hasExtraForPagination = !includeTotal && tasksFetched.length > limit;
+  const tasks = hasExtraForPagination ? tasksFetched.slice(0, limit) : tasksFetched;
 
-  const reconciledTasks = await reconcilePosterSummaries(tasks) as TaskSummaryRecord[];
-  const tasksWithReplication = await attachReplicationResults(reconciledTasks) as TaskSummaryRecord[];
+  let total = 0;
+  if (includeTotal) {
+    total = await prisma.taskSummary.count({ where });
+  } else {
+    total = offset + tasks.length + (hasExtraForPagination ? 1 : 0);
+  }
+
+  let resultTasks = tasks as TaskSummaryRecord[];
+  if (includeEnrichment) {
+    const reconciledTasks = await reconcilePosterSummaries(tasks as TaskSummaryRecord[]) as TaskSummaryRecord[];
+    resultTasks = await attachReplicationResults(reconciledTasks) as TaskSummaryRecord[];
+  }
 
   return {
-    tasks: tasksWithReplication,
+    tasks: resultTasks,
     total,
     limit,
     offset,
-    hasMore: offset + tasksWithReplication.length < total,
+    hasMore: includeTotal ? offset + resultTasks.length < total : hasExtraForPagination,
   };
 }

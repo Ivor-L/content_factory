@@ -24,11 +24,29 @@ export async function GET(
       status: true,
       type: true,
       result: true,
+      product: {
+        select: {
+          userId: true,
+        },
+      },
+      script: {
+        select: {
+          userId: true,
+        },
+      },
       updatedAt: true,
     },
   });
 
   if (!replication) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const belongsToCurrentUser =
+    (replication.product?.userId && replication.product.userId === userId) ||
+    (replication.script?.userId && replication.script.userId === userId);
+
+  if (!belongsToCurrentUser) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

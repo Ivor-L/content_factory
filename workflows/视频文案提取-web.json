@@ -1,206 +1,45 @@
 {
-  "name": "视频文案提取-web",
   "nodes": [
     {
       "parameters": {
-        "httpMethod": "POST",
-        "path": "extract_video_text",
-        "responseMode": "responseNode",
-        "options": {}
-      },
-      "id": "a5a9962e-d4d0-4617-b74b-87f57c09a071",
-      "name": "Webhook",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [
-        -920,
-        -60
-      ],
-      "webhookId": "7580ef34-fa45-43c9-b618-99e5c3a3e7a5"
-    },
-    {
-      "parameters": {
-        "jsCode": "const incoming = ($json.body && typeof $json.body === 'object') ? $json.body : $json;\nconst pick = (...vals) => {\n  for (const v of vals) {\n    if (v === undefined || v === null) continue;\n    const str = typeof v === 'string' ? v.trim() : v;\n    if (typeof str === 'string' && !str) continue;\n    return str;\n  }\n  return '';\n};\nconst video_url = pick(incoming.video_url, incoming.videoUrl, incoming.url);\nconst audio_url = pick(incoming.audio_url, incoming.audioUrl);\nconst finalUrl = video_url || audio_url;\nconst language = pick(incoming.language, incoming.lang, 'auto');\nconst taskId = pick(incoming.task_id, incoming.taskId, incoming.replication_id, incoming.replicationId);\nconst callbackUrl = pick(incoming.callback_url, incoming.callbackUrl);\nconst scriptId = pick(incoming.script_id, incoming.scriptId);\nconst referenceItemId = pick(incoming.reference_item_id, incoming.referenceItemId);\nreturn [{\n  json: {\n    task_id: taskId || null,\n    video_url: finalUrl,\n    request_language: language.toLowerCase(),\n    callback_url: callbackUrl || null,\n    script_id: scriptId || null,\n    reference_item_id: referenceItemId || null,\n    raw: incoming\n  }\n}];"
-      },
-      "id": "8a7b77b5-4b2e-4f29-9d3f-2f4a4f4765e5",
-      "name": "标准化输入",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -700,
-        -60
-      ]
-    },
-    {
-      "parameters": {
-        "rules": {
-          "values": [
+        "method": "POST",
+        "url": "={{ $('Webhook').item.json.body.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "conditions": {
-                "options": {
-                  "caseSensitive": true,
-                  "leftValue": "",
-                  "typeValidation": "strict",
-                  "version": 2
-                },
-                "conditions": [
-                  {
-                    "leftValue": "={{ !!$json.video_url }}",
-                    "operator": {
-                      "type": "boolean",
-                      "operation": "true",
-                      "singleValue": true
-                    },
-                    "rightValue": ""
-                  }
-                ],
-                "combinator": "and"
-              },
-              "renameOutput": true,
-              "outputKey": "hasVideo"
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"transcript\": \"{{ $json.transcript }}\",\n  \"script_id\": \"{{ $json.script_id }}\",\n  \"reference_item_id\": \"{{ $json.reference_item_id }}\"\n}",
         "options": {}
       },
-      "id": "d422ae6e-6580-4e7f-b49e-fa509db6b149",
-      "name": "Switch-视频检测",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3.2,
+      "id": "a4750bf5-5b67-4467-acf1-6590c00085d3",
+      "name": "回调前端",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
-        -500,
-        -70
+        -448,
+        -320
       ]
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { \"success\": false, \"code\": \"VIDEO_URL_MISSING\", \"message\": \"video_url is required\" } }}",
+        "responseBody": "={{ { success: $json.success, data: { transcript: $json.transcript, words_estimate: $json.words_estimate, language: $json.language, task_id: $json.task_id } } }}",
         "options": {}
       },
-      "id": "de63fee8-70f7-4178-923a-82f9c94b43ef",
-      "name": "Respond-缺少视频",
+      "id": "b050c1d4-489c-47fe-a605-7187d3a09ce3",
+      "name": "Respond-成功",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
-        -300,
-        -190
-      ]
-    },
-    {
-      "parameters": {
-        "url": "={{ $json.video_url }}",
-        "options": {}
-      },
-      "id": "cb4858c1-b0a5-4158-a55c-3214ce91be82",
-      "name": "下载视频",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -300,
-        -20
-      ],
-      "continueOnFail": true
-    },
-    {
-      "parameters": {
-        "fileName": "=/tmp/{{ $execution.id }}.mp4",
-        "dataPropertyName": "video_data",
-        "options": {}
-      },
-      "id": "68040f44-f199-45ab-9c0a-28d49ce6fbc9",
-      "name": "保存视频到本地",
-      "type": "n8n-nodes-base.writeBinaryFile",
-      "typeVersion": 1,
-      "position": [
-        -80,
-        -20
-      ]
-    },
-    {
-      "parameters": {
-        "command": "=ffmpeg -y -i /tmp/{{ $execution.id }}.mp4 -vn -acodec pcm_s16le -ar 16000 -ac 1 /tmp/{{ $execution.id }}.wav"
-      },
-      "id": "482671dc-b692-4d59-9593-ac88eb514ac7",
-      "name": "FFmpeg提取音频",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
-      "position": [
-        120,
-        -20
-      ]
-    },
-    {
-      "parameters": {
-        "filePath": "=/tmp/{{ $execution.id }}.wav",
-        "dataPropertyName": "audio_data"
-      },
-      "id": "204c7b27-76ff-41a0-81f7-737db60a61e5",
-      "name": "读取音频文件",
-      "type": "n8n-nodes-base.readBinaryFile",
-      "typeVersion": 1,
-      "position": [
-        320,
-        -20
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://yunwu.ai/v1/audio/transcriptions",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            { "name": "model", "value": "whisper-1" },
-            { "name": "language", "value": "={{ $json.request_language || 'auto' }}" },
-            { "name": "response_format", "value": "json" }
-          ]
-        },
-        "sendBinaryData": true,
-        "binaryPropertyName": "audio_data",
-        "options": {}
-      },
-      "id": "086dff9c-08d6-4a85-80f7-5a615d2577d0",
-      "name": "请求Whisper接口",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 5,
-      "position": [
-        520,
-        -20
-      ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "bJpI0nVbCobY1peu",
-          "name": "聚保盆通用api"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const text = $json.text || $json.result?.text || '';\nconst normalized = text.replace(/\\r?\\n+/g, '\\n').trim();\nconst charCount = normalized.replace(/\\s+/g, '').length;\nconst wordEstimate = charCount ? Math.max(1, Math.round(charCount / 2)) : 0;\nconst input = $('标准化输入').item.json || {};\nconst raw = input.raw && typeof input.raw === 'object' ? input.raw : {};\nconst scriptId = input.script_id || input.scriptId || raw.script_id || raw.scriptId || null;\nconst referenceItemId = input.reference_item_id || input.referenceItemId || raw.reference_item_id || raw.referenceItemId || null;\nreturn [{\n  json: {\n    success: !!normalized,\n    transcript: normalized,\n    words_estimate: wordEstimate,\n    language: input.request_language || 'auto',\n    task_id: input.task_id,\n    callback_url: input.callback_url || null,\n    script_id: scriptId,\n    reference_item_id: referenceItemId,\n    raw: $json\n  }\n}];"
-      },
-      "id": "2d7ff536-44db-4257-9585-370e44d1b4ad",
-      "name": "格式化输出",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        720,
-        -20
-      ]
-    },
-    {
-      "parameters": {
-        "command": "=rm -f /tmp/{{ $execution.id }}.mp4 /tmp/{{ $execution.id }}.wav"
-      },
-      "id": "69d3e7ae-c334-4f06-bf03-136a699e0df2",
-      "name": "清理临时文件",
-      "type": "n8n-nodes-base.executeCommand",
-      "typeVersion": 1,
-      "position": [
-        520,
-        -200
+        -448,
+        -128
       ]
     },
     {
@@ -210,68 +49,140 @@
             "caseSensitive": true,
             "leftValue": "",
             "typeValidation": "strict",
-            "version": 2
+            "version": 1
           },
           "conditions": [
             {
-              "leftValue": "={{ !!$json.callback_url }}",
+              "id": "d04085f3-52b8-410e-8598-1f190e51ad51",
+              "leftValue": "={{ $('Webhook').item.json.body.callback_url }}",
+              "rightValue": "",
               "operator": {
-                "type": "boolean",
-                "operation": "true",
+                "type": "string",
+                "operation": "notEmpty",
                 "singleValue": true
-              },
-              "rightValue": ""
+              }
             }
           ],
           "combinator": "and"
         },
         "options": {}
       },
-      "id": "df8e7d66-9eb4-4f97-b7d1-74f8bfd20ac8",
-      "name": "IF-是否回调",
+      "id": "31354803-fda1-437a-861e-64e5d74d0bcc",
+      "name": "判断是否有Callback",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        940,
-        -140
+        -672,
+        -224
       ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const incoming = ($json.body && typeof $json.body === 'object') ? $json.body : $json;\nconst pick = (...vals) => {\n  for (const v of vals) {\n    if (v === undefined || v === null) continue;\n    const str = typeof v === 'string' ? v.trim() : v;\n    if (typeof str === 'string' && !str) continue;\n    return str;\n  }\n  return '';\n};\nconst video_url = pick(incoming.video_url, incoming.videoUrl, incoming.url);\nconst audio_url = pick(incoming.audio_url, incoming.audioUrl);\nconst finalUrl = video_url || audio_url;\nconst language = pick(incoming.language, incoming.lang, 'auto');\nconst taskId = pick(incoming.task_id, incoming.taskId, incoming.replication_id, incoming.replicationId);\nreturn [{\n  json: {\n    task_id: taskId || null,\n    video_url: finalUrl,\n    request_language: language.toLowerCase(),\n    raw: incoming\n  }\n}];"
+      },
+      "id": "c2289d04-6167-4e9f-9742-4d3832152735",
+      "name": "标准化输入",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1792,
+        -224
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "extract_video_text",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "ce7af90a-07da-48e3-b1e1-31eb9851eb05",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2016,
+        -224
+      ],
+      "webhookId": "7580ef34-fa45-43c9-b618-99e5c3a3e7a5"
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $json.callback_url }}",
+        "url": "https://api.coze.cn/v1/workflow/run",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer pat_VAGZeoOHZBijGIbxpWl3fnqzt7XTug3lEGNPSp7sfMf0IyvkTeiWq5FwduSGN9y9"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { success: $json.success, transcript: $json.transcript, words_estimate: $json.words_estimate, language: $json.language, task_id: $json.task_id, script_id: $json.script_id, reference_item_id: $json.reference_item_id, data: { transcript: $json.transcript, text: $json.transcript, words_estimate: $json.words_estimate, language: $json.language, task_id: $json.task_id, script_id: $json.script_id, reference_item_id: $json.reference_item_id } } }}",
-        "options": {}
+        "jsonBody": "={\n  \"workflow_id\": \"7590316121456607266\",\n  \"parameters\": {\n    \"input\": \"{{ $json.video_url }}\"\n  }\n}",
+        "options": {
+          "timeout": 120000
+        }
       },
-      "id": "670f414e-9cd3-4669-aa95-c50a5e51f364",
-      "name": "回调应用",
+      "id": "c295e884-0e01-48c3-8e5e-17fd55baf7e9",
+      "name": "调用Coze工作流",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1160,
-        -140
-      ],
-      "continueOnFail": true
+        -1440,
+        -224
+      ]
     },
     {
       "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ { success: $json.success, data: { transcript: $json.transcript, words_estimate: $json.words_estimate, language: $json.language, task_id: $json.task_id, script_id: $json.script_id, reference_item_id: $json.reference_item_id } } }}",
-        "options": {}
+        "jsCode": "const items = $input.all();\nconst out = [];\n\n// 尝试获取上游标准化输入的数据（使用 $node 语法跨节点获取数据）\nlet standardInput = {};\ntry {\n    standardInput = $node['标准化输入'].item.json || {};\n} catch(e) {\n    // 容错：如果找不到上游节点，给个空对象\n}\nconst rawInput = standardInput.raw || {};\n\nfor (const item of items) {\n    // 获取 HTTP 节点返回的 JSON\n    let cozeResponse = item.json || {};\n    \n    // 防御性编程：如果 n8n 把整个结果包成了一个数组 [ {code: 0 ...} ]，提取第一项\n    if (Array.isArray(cozeResponse) && cozeResponse.length > 0) {\n        cozeResponse = cozeResponse[0];\n    }\n\n    let transcript = \"\";\n    let success = false;\n\n    try {\n        // 核心解析逻辑：判断状态码为 0，且 data 有内容\n        if (cozeResponse.code === 0 && cozeResponse.data) {\n            \n            // data 是一个被包裹的 JSON 字符串，需要 JSON.parse 解包\n            const parsedData = JSON.parse(cozeResponse.data);\n            \n            // 提取最终的 output 字段\n            if (parsedData.output) {\n               transcript = parsedData.output.trim();\n               success = true;\n            }\n        }\n    } catch (e) {\n        console.error(\"解析 Coze 返回失败:\", e);\n    }\n\n    // 计算字数估算 (简单除以 2 估算英文词数/中文词数)\n    const charCount = transcript.replace(/\\s+/g, '').length;\n    const wordEstimate = charCount ? Math.max(1, Math.round(charCount / 2)) : 0;\n\n    // 组装最终传给后端/前端的数据结构\n    out.push({\n        json: {\n            success: success,\n            transcript: transcript,\n            words_estimate: wordEstimate,\n            language: standardInput.request_language || 'auto',\n            task_id: standardInput.task_id || null,\n            callback_url: rawInput.callback_url || '',\n            script_id: rawInput.script_id || '',\n            reference_item_id: rawInput.reference_item_id || '',\n            raw: cozeResponse // 保留原始数据方便后续排错\n        }\n    });\n}\n\nreturn out;"
       },
-      "id": "5f95e5b2-b606-4825-9da2-c69b7018d627",
-      "name": "Respond-成功",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
+      "id": "8f6bc2d0-1a00-4632-9f4d-ec3f8a805d83",
+      "name": "格式化输出(适配Coze)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
-        940,
-        -20
+        -1120,
+        -224
       ]
     }
   ],
   "connections": {
+    "判断是否有Callback": {
+      "main": [
+        [
+          {
+            "node": "回调前端",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond-成功",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "标准化输入": {
+      "main": [
+        [
+          {
+            "node": "调用Coze工作流",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Webhook": {
       "main": [
         [
@@ -283,123 +194,64 @@
         ]
       ]
     },
-    "标准化输入": {
+    "调用Coze工作流": {
       "main": [
         [
           {
-            "node": "Switch-视频检测",
+            "node": "格式化输出(适配Coze)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Switch-视频检测": {
+    "格式化输出(适配Coze)": {
       "main": [
         [
           {
-            "node": "下载视频",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Respond-缺少视频",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "下载视频": {
-      "main": [
-        [
-          {
-            "node": "保存视频到本地",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "保存视频到本地": {
-      "main": [
-        [
-          {
-            "node": "FFmpeg提取音频",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "FFmpeg提取音频": {
-      "main": [
-        [
-          {
-            "node": "读取音频文件",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "读取音频文件": {
-      "main": [
-        [
-          {
-            "node": "请求Whisper接口",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "请求Whisper接口": {
-      "main": [
-        [
-          {
-            "node": "格式化输出",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "清理临时文件",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "格式化输出": {
-      "main": [
-        [
-          {
-            "node": "IF-是否回调",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Respond-成功",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF-是否回调": {
-      "main": [
-        [
-          {
-            "node": "回调应用",
+            "node": "判断是否有Callback",
             "type": "main",
             "index": 0
           }
         ]
       ]
     }
+  },
+  "pinData": {
+    "Webhook": [
+      {
+        "headers": {
+          "host": "hooks.atomx.top",
+          "x-real-ip": "47.107.158.233",
+          "x-forwarded-for": "47.107.158.233",
+          "x-forwarded-proto": "https",
+          "connection": "close",
+          "content-length": "401",
+          "content-type": "application/json",
+          "accept": "*/*",
+          "accept-language": "*",
+          "sec-fetch-mode": "cors",
+          "user-agent": "node",
+          "accept-encoding": "br, gzip, deflate"
+        },
+        "params": {},
+        "query": {},
+        "body": {
+          "video_url": "https://supabase-api.atomx.top/storage/v1/object/public/uploads/storyboard/videos/1775900279711-ktz8cwnj77o.mp4",
+          "script_id": "cmnu57ds9003001pjegi2dv5w",
+          "user_id": "db74f72f-9f0e-4d42-8b9d-b34c890f5eea",
+          "extract_type": "subtitle",
+          "content_hint": "video_subtitle_only",
+          "note_description": null,
+          "reference_item_id": null,
+          "callback_url": "https://atomx.top/api/replication/copy/extract/callback"
+        },
+        "webhookUrl": "http://localhost:5678/webhook/extract_video_text",
+        "executionMode": "production"
+      }
+    ]
+  },
+  "meta": {
+    "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
   }
 }

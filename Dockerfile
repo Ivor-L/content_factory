@@ -90,7 +90,9 @@ RUN rm -f prisma.config.ts
 
 # Copy entrypoint script
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/validate-runtime-env.sh ./scripts/validate-runtime-env.sh
 RUN chmod +x docker-entrypoint.sh
+RUN chmod +x ./scripts/validate-runtime-env.sh
 
 USER nextjs
 

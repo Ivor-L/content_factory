@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- Product imagery is user-provided and may reside on arbitrary remote hosts */
 
-import { useState, useEffect, useMemo, useTransition } from 'react';
+import { useState, useEffect, useMemo, useTransition, useRef, useCallback } from 'react';
 import { Modal } from '@/components/Modal';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { ProductForm } from '@/components/ProductForm';
@@ -289,6 +289,7 @@ export function ProductList({ initialProducts, showHeader = true }: ProductListP
   
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
+  const refreshThrottleRef = useRef<number>(0);
 
   const { t } = useLanguage();
 
@@ -342,6 +343,17 @@ export function ProductList({ initialProducts, showHeader = true }: ProductListP
       return meta?.isAnalyzing && !meta?.isTimedOut;
     });
   }, [initialProducts, productStatusMap]);
+
+  const triggerRefresh = useCallback((cooldownMs = 1200) => {
+    const nowTs = Date.now();
+    if (nowTs - refreshThrottleRef.current < cooldownMs) {
+      return;
+    }
+    refreshThrottleRef.current = nowTs;
+    startTransition(() => {
+      router.refresh();
+    });
+  }, [router, startTransition]);
 
   const renderStructuredAnalysis = (structured: StructuredAnalysis) => {
     const {
@@ -466,31 +478,53 @@ export function ProductList({ initialProducts, showHeader = true }: ProductListP
   useEffect(() => {
     if (!shouldPoll) return;
 
-    const processingIds = new Set(
+    const processingIdsRef = {
+      current: new Set(
       initialProducts
         .filter((p) => productStatusMap[p.id]?.isAnalyzing && !productStatusMap[p.id]?.isTimedOut)
         .map((p) => p.id)
-    );
-    if (processingIds.size === 0) return;
+      ),
+    };
+    if (processingIdsRef.current.size === 0) return;
 
-    const channel = supabase
-      .channel('product-status-watch')
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'products' },
-        (payload) => {
-          const updatedId = (payload.new as { id?: string })?.id;
-          if (updatedId && processingIds.has(updatedId)) {
-            startTransition(() => { router.refresh(); });
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let active = true;
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!active) return;
+      const userId = session?.user?.id;
+      if (!userId) return;
+
+      channel = supabase
+        .channel(`product-status-watch-${userId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'products',
+            filter: `userId=eq.${userId}`,
+          },
+          (payload) => {
+            const updatedId = (payload.new as { id?: string })?.id;
+            if (updatedId && processingIdsRef.current.has(updatedId)) {
+              const nextStatus = String((payload.new as { status?: unknown }).status ?? "").toUpperCase();
+              if (nextStatus === "COMPLETED" || nextStatus === "FAILED") {
+                triggerRefresh();
+              }
+            }
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      active = false;
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
     };
-  }, [shouldPoll, initialProducts, productStatusMap, router]);
+  }, [shouldPoll, initialProducts, productStatusMap, triggerRefresh]);
 
   useEffect(() => {
     if (!shouldPoll) return;
@@ -517,12 +551,12 @@ export function ProductList({ initialProducts, showHeader = true }: ProductListP
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'products', filter: `id=eq.${productId}` },
         () => {
-          startTransition(() => { router.refresh(); });
+          triggerRefresh(800);
         }
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [viewingProduct?.id, isDetailOpen, router, startTransition]);
+  }, [viewingProduct?.id, isDetailOpen, triggerRefresh]);
 
   const handleProductCreated = () => {
     setIsModalOpen(false);

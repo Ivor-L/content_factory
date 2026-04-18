@@ -9,6 +9,11 @@ const PRODUCT_ANALYSIS_WORKFLOW_ID = 'flow_product_dna';
 const PRODUCT_ANALYSIS_WORKFLOW_NAME = '产品分析';
 
 export async function createProduct(formData: FormData) {
+  const { userId: currentUserId } = await getServerRequestUserContext();
+  if (!currentUserId) {
+    throw new Error('Unauthorized');
+  }
+
   const name = formData.get('name') as string;
   const description = formData.get('description') as string;
   const sellingPoints = formData.get('sellingPoints') as string;
@@ -18,7 +23,6 @@ export async function createProduct(formData: FormData) {
   const status = formData.get('status') as string;
   const progress = formData.get('progress') ? parseInt(formData.get('progress') as string) : undefined;
   const id = formData.get('id') as string; // Check if updating an existing product
-  const userId = formData.get('userId') as string | null;
 
   if (!name) {
     throw new Error('Name is required');
@@ -35,6 +39,14 @@ export async function createProduct(formData: FormData) {
 
   if (id) {
     // Update existing product
+    const existing = await prisma.product.findUnique({
+      where: { id },
+      select: { id: true, userId: true },
+    });
+    if (!existing || existing.userId !== currentUserId) {
+      throw new Error('未找到对应的产品或无权限更新');
+    }
+
     await prisma.product.update({
       where: { id },
       data: {
@@ -60,7 +72,7 @@ export async function createProduct(formData: FormData) {
         analysisResult: analysisResult || null,
         status: status || 'PENDING',
         progress: progress || 0,
-        userId: userId, // Save user ID
+        userId: currentUserId,
       } as any, // Cast to any to bypass linter
     });
   }
@@ -135,9 +147,13 @@ export async function saveProductWithAnalysis(formData: FormData) {
 }
 
 export async function createDraftProduct(formData: FormData) {
+  const { userId } = await getServerRequestUserContext();
+  if (!userId) {
+    throw new Error('Unauthorized');
+  }
+
   const name = formData.get('name') as string;
   const images = formData.get('images') as string;
-  const userId = formData.get('userId') as string | null;
 
   if (!name) throw new Error('Name is required');
 
@@ -157,10 +173,21 @@ export async function createDraftProduct(formData: FormData) {
 
 export async function deleteProduct(id: string) {
     if (!id) throw new Error('ID is required');
-    await prisma.product.delete({
-        where: { id }
+
+    const { userId } = await getServerRequestUserContext();
+    if (!userId) {
+      throw new Error('Unauthorized');
+    }
+
+    const result = await prisma.product.deleteMany({
+      where: { id, userId },
     });
+    if (result.count === 0) {
+      throw new Error('未找到对应的产品或无权限删除');
+    }
+
     revalidatePath('/products');
+    revalidatePath('/resources');
 }
 
 type ProductAnalysisPayload = {

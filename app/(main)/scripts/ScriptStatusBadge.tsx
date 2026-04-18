@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -19,12 +19,16 @@ export function ScriptStatusBadge({ status: initialStatus, progress: initialProg
   const [progress, setProgress] = useState(initialProgress);
   const [error, setError] = useState(initialError);
   const router = useRouter();
+  const finalRefreshedRef = useRef(false);
   const { t } = useLanguage();
   const statusBadgeCopy = t?.scripts?.statusBadge;
 
   // Subscribe to Realtime updates for this script
   useEffect(() => {
-    if (status === 'completed' || status === 'failed') return;
+    const initial = (initialStatus || "").toLowerCase();
+    if (initial === 'completed' || initial === 'failed') {
+      return;
+    }
 
     const channel = supabase
       .channel(`script-badge-${scriptId}`)
@@ -36,7 +40,9 @@ export function ScriptStatusBadge({ status: initialStatus, progress: initialProg
           setStatus(data.status);
           if (data.progress !== undefined) setProgress(data.progress);
           if (data.error) setError(data.error);
-          if (data.status === 'completed' || data.status === 'failed') {
+          const nextStatus = (data.status || "").toLowerCase();
+          if ((nextStatus === 'completed' || nextStatus === 'failed') && !finalRefreshedRef.current) {
+            finalRefreshedRef.current = true;
             router.refresh();
           }
         }
@@ -44,7 +50,7 @@ export function ScriptStatusBadge({ status: initialStatus, progress: initialProg
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [scriptId, status, router]);
+  }, [scriptId, router, initialStatus]);
 
   if (status === 'completed') return null;
 

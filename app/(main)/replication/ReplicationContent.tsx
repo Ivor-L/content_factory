@@ -10,6 +10,7 @@ import { VideoDetailsModal } from "@/components/VideoDetailsModal";
 import { Modal } from "@/components/Modal";
 import { EmptyState } from "@/components/EmptyState";
 import { cn } from "@/lib/utils";
+import { toForcedProxyUrl } from "@/lib/mediaProxy";
 import { Clapperboard, Download, AlertTriangle, LayoutGrid, User, Image as ImageIcon, FileText, Copy, ExternalLink, Loader2, Check } from "lucide-react";
 import { StoryboardGenModal } from "@/components/StoryboardGenModal";
 import { DigitalHumanModal } from "@/components/DigitalHumanModal";
@@ -47,6 +48,30 @@ type PosterJob = {
   }>;
   variationCount?: number | null;
 };
+
+function isMobileBrowser(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  const isTouchMac = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || isTouchMac;
+}
+
+function toDownloadUrl(url: string, filename: string): string {
+  try {
+    const base = typeof window !== "undefined" ? window.location.origin : "http://localhost";
+    const parsed = new URL(url, base);
+    if (parsed.pathname === "/api/proxy/download") {
+      parsed.searchParams.set("filename", filename);
+      if (typeof window !== "undefined" && parsed.origin === window.location.origin) {
+        return `${parsed.pathname}?${parsed.searchParams.toString()}`;
+      }
+      return parsed.toString();
+    }
+  } catch {
+    // fall through
+  }
+  return toForcedProxyUrl(url, filename);
+}
 
 export default function ReplicationContent({
   history,
@@ -366,8 +391,17 @@ export default function ReplicationContent({
   };
 
   const triggerDownload = (url: string, filename: string) => {
+    const downloadUrl = toDownloadUrl(url, filename);
+    if (typeof window !== "undefined" && isMobileBrowser()) {
+      const opened = window.open(downloadUrl, "_blank", "noopener,noreferrer");
+      if (!opened) {
+        window.location.assign(downloadUrl);
+      }
+      return;
+    }
+
     const anchor = document.createElement('a');
-    anchor.href = url;
+    anchor.href = downloadUrl;
     anchor.setAttribute('download', filename);
     anchor.setAttribute('target', '_blank');
     document.body.appendChild(anchor);

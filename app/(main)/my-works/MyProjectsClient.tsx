@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- Project cards rely on remote thumbnails */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { TaskType } from "@/lib/taskSummary";
 import { supabase } from "@/lib/supabaseClient";
@@ -14,6 +14,7 @@ import { Modal } from "@/components/Modal";
 import { QuickPosterForm } from "@/app/(main)/dashboard/components/QuickActionForms";
 import { AddButton } from "@/components/AddButton";
 import { cn } from "@/lib/utils";
+import { toForcedProxyUrl, toProxyImgUrl } from "@/lib/mediaProxy";
 import {
   Loader2,
   RefreshCcw,
@@ -66,6 +67,54 @@ type TaskSummary = {
   updatedAt: string;
 };
 
+type TaskCardProps = {
+  task: TaskSummary;
+  langKey: LanguageCode;
+  locale: string;
+  statusClass: string;
+  statusLabel: string;
+  typeLabel: string;
+  deleting: boolean;
+  onTaskClick: (task: TaskSummary) => void;
+  onCardKeyDown: (event: KeyboardEvent<HTMLDivElement>, task: TaskSummary) => void;
+  onRename: (task: TaskSummary) => void;
+  onDelete: (task: TaskSummary) => void;
+};
+
+type CacheEntry<T> = {
+  value: T;
+  expireAt: number;
+};
+
+const replicationDetailCache = new Map<string, CacheEntry<ReplicationDetailPayload | null>>();
+const storyboardDetailCache = new Map<string, CacheEntry<{ storyboardImageUrl?: string | null; status?: string | null; progress?: number | null } | null>>();
+const creativeDetailCache = new Map<string, CacheEntry<CreativeTaskDetail | null>>();
+const posterImagesCache = new Map<string, CacheEntry<string[]>>();
+let styleListCache: CacheEntry<(StylePresetLite & { metadata?: unknown })[]> | null = null;
+const imagePrefetchCache = new Map<string, CacheEntry<string>>();
+
+function getCachedValue<T>(cache: Map<string, CacheEntry<T>>, key: string): T | undefined {
+  const cached = cache.get(key);
+  if (!cached) return undefined;
+  if (cached.expireAt <= Date.now()) {
+    cache.delete(key);
+    return undefined;
+  }
+  return cached.value;
+}
+
+function setCachedValue<T>(cache: Map<string, CacheEntry<T>>, key: string, value: T, ttlMs: number) {
+  cache.set(key, {
+    value,
+    expireAt: Date.now() + ttlMs,
+  });
+}
+
+function isProcessingStatus(status: string | null | undefined) {
+  const normalized = String(status ?? "").trim().toUpperCase();
+  return PROCESSING_STATUSES.has(normalized) || normalized.endsWith("_PENDING") || normalized.endsWith("_PROCESSING");
+}
+
 type ReplicationDetailPayload = {
   id: string;
   status: string;
@@ -108,6 +157,70 @@ function normalizeHttpUrl(raw: string | null): string | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
   return /^https?:\/\//i.test(trimmed) ? trimmed : null;
+}
+
+function sanitizeFileBase(raw: string, fallback: string): string {
+  const normalized = raw
+    .replace(/[\\/:*?"<>|]+/g, "_")
+    .replace(/\s+/g, "_")
+    .trim();
+  return normalized.length > 0 ? normalized : fallback;
+}
+
+function inferImageExtension(url: string): string {
+  try {
+    const pathname = new URL(url).pathname.toLowerCase();
+    if (pathname.endsWith(".png")) return "png";
+    if (pathname.endsWith(".webp")) return "webp";
+    if (pathname.endsWith(".gif")) return "gif";
+    if (pathname.endsWith(".jpeg")) return "jpeg";
+    if (pathname.endsWith(".jpg")) return "jpg";
+  } catch {
+    // fall through
+  }
+  return "jpg";
+}
+
+function isMobileBrowser(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  const isTouchMac = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || isTouchMac;
+}
+
+function triggerBrowserDownload(downloadUrl: string, filename: string) {
+  if (typeof window !== "undefined" && isMobileBrowser()) {
+    const opened = window.open(downloadUrl, "_blank", "noopener,noreferrer");
+    if (!opened) {
+      window.location.assign(downloadUrl);
+    }
+    return;
+  }
+  const anchor = document.createElement("a");
+  anchor.href = downloadUrl;
+  anchor.download = filename;
+  anchor.rel = "noopener";
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
+function toDownloadUrl(url: string, filename: string): string {
+  try {
+    const base = typeof window !== "undefined" ? window.location.origin : "http://localhost";
+    const parsed = new URL(url, base);
+    if (parsed.pathname === "/api/proxy/download") {
+      parsed.searchParams.set("filename", filename);
+      if (typeof window !== "undefined" && parsed.origin === window.location.origin) {
+        return `${parsed.pathname}?${parsed.searchParams.toString()}`;
+      }
+      return parsed.toString();
+    }
+  } catch {
+    // fall through
+  }
+  return toForcedProxyUrl(url, filename);
 }
 
 function getStringArray(value: unknown): string[] {
@@ -662,6 +775,108 @@ function CardActionMenu({ onRename, onDelete, disabled }: CardActionMenuProps) {
   );
 }
 
+const TaskCard = memo(function TaskCard({
+  task,
+  langKey,
+  locale,
+  statusClass,
+  statusLabel,
+  typeLabel,
+  deleting,
+  onTaskClick,
+  onCardKeyDown,
+  onRename,
+  onDelete,
+}: TaskCardProps) {
+  const statusKey = (task.status || "").toUpperCase();
+  const showCountdown =
+    task.taskType === "digitalHuman" && DIGITAL_HUMAN_COUNTDOWN_STATUSES.has(statusKey);
+  const thumbnailIsVideo = looksLikeVideoUrl(task.thumbnailUrl);
+  const isProcessing = PROCESSING_STATUSES.has(statusKey);
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onTaskClick(task)}
+      onKeyDown={(event) => onCardKeyDown(event, task)}
+      className="group relative flex h-full w-full cursor-pointer flex-col rounded-[28px] border border-black/5 bg-white/90 p-3 text-left shadow-[0_18px_35px_rgba(15,23,42,0.08)] transition hover:-translate-y-0.5 hover:shadow-[0_30px_60px_rgba(15,23,42,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20 dark:border-white/10 dark:bg-gray-950/60 dark:shadow-[0_20px_40px_rgba(0,0,0,0.45)]"
+    >
+      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-[20px] bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 dark:from-gray-800 dark:via-gray-900 dark:to-black">
+        {task.thumbnailUrl ? (
+          thumbnailIsVideo ? (
+            <video
+              src={task.thumbnailUrl}
+              className="h-full w-full object-cover"
+              muted
+              playsInline
+              preload="metadata"
+            />
+          ) : (
+            <img
+              src={task.thumbnailUrl}
+              alt={task.title || typeLabel}
+              className="h-full w-full object-cover"
+              loading="lazy"
+            />
+          )
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-200 via-slate-100 to-slate-300 text-slate-500 dark:from-gray-800 dark:to-gray-900">
+            <Clapperboard className="h-8 w-8" />
+          </div>
+        )}
+        <div className="pointer-events-none absolute inset-0 rounded-[20px] border border-white/20 dark:border-white/5" />
+        <div className="pointer-events-none absolute inset-0 rounded-[20px] bg-gradient-to-br from-white/40 via-transparent to-black/40 opacity-70 mix-blend-screen dark:from-white/10 dark:to-black/60" />
+        <CardActionMenu
+          onRename={() => onRename(task)}
+          onDelete={() => onDelete(task)}
+          disabled={deleting}
+        />
+        {isProcessing && (
+          <div className="pointer-events-none absolute inset-0 rounded-[20px] overflow-hidden">
+            <div className="animate-shimmer-sweep absolute inset-0 w-1/2 bg-gradient-to-r from-transparent via-white/[0.45] to-transparent dark:via-white/[0.30]" />
+            <span className="absolute left-3 top-3 inline-flex items-center rounded-full bg-black/40 px-3 py-1 text-xs font-semibold text-white shadow-sm backdrop-blur-sm">
+              生成中
+            </span>
+          </div>
+        )}
+      </div>
+      <div className="flex flex-col gap-2 px-1 pb-1 pt-4 sm:px-2">
+        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+          <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-gray-700 dark:bg-white/10 dark:text-gray-200">
+            {typeLabel}
+          </span>
+          <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5", statusClass)}>
+            {statusLabel}
+          </span>
+        </div>
+        <div className="space-y-1.5">
+          <p className="text-base font-semibold leading-snug text-gray-900 line-clamp-2 dark:text-white">
+            {task.title || typeLabel}
+          </p>
+          <p className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+            <Clock className="h-4 w-4" />
+            {formatTimestamp(task.createdAt, locale)}
+          </p>
+          {showCountdown && (
+            <div className="pt-1">
+              <DigitalHumanCountdown
+                startTime={task.createdAt || task.updatedAt}
+                variant="light"
+                runningText={(formatted) =>
+                  `${pickCopy(DIGITAL_HUMAN_COUNTDOWN_PREFIX, langKey)} ${formatted}`
+                }
+                expiredText={pickCopy(DIGITAL_HUMAN_COUNTDOWN_EXPIRED, langKey)}
+                className="dark:bg-black/40 dark:text-white dark:border-white/20"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
+
 export function MyProjectsClient({
   initialTasks = [],
   initialHasMore = false,
@@ -701,6 +916,37 @@ export function MyProjectsClient({
   const recentlyClosedTaskRef = useRef<{ taskId?: string | null; id?: string | null }>({});
   const skipInitialFetchRef = useRef(initialTasks.length > 0);
   const authHeadersRef = useRef<Record<string, string> | null>(null);
+  const pendingRealtimeUpdatesRef = useRef<Map<string, Partial<TaskSummary>>>(new Map());
+  const pendingRealtimeInsertsRef = useRef<TaskSummary[]>([]);
+  const realtimeFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleRealtimeFlush = useCallback(() => {
+    if (realtimeFlushTimerRef.current) return;
+    realtimeFlushTimerRef.current = setTimeout(() => {
+      realtimeFlushTimerRef.current = null;
+      const queuedUpdates = pendingRealtimeUpdatesRef.current;
+      const queuedInserts = pendingRealtimeInsertsRef.current;
+      if (queuedUpdates.size === 0 && queuedInserts.length === 0) return;
+      pendingRealtimeUpdatesRef.current = new Map();
+      pendingRealtimeInsertsRef.current = [];
+      setTasks((prev) => {
+        let next = prev;
+        if (queuedUpdates.size > 0) {
+          next = prev.map((task) => {
+            const patch = queuedUpdates.get(task.id);
+            return patch ? { ...task, ...patch } : task;
+          });
+        }
+        if (queuedInserts.length > 0) {
+          const existingIds = new Set(next.map((task) => task.id));
+          const mergedInserts = queuedInserts.filter((task) => !existingIds.has(task.id));
+          if (mergedInserts.length > 0) {
+            next = [...mergedInserts, ...next];
+          }
+        }
+        return next;
+      });
+    }, 120);
+  }, []);
   const resolveAuthHeaders = useCallback(async () => {
     if (authHeadersRef.current) {
       return authHeadersRef.current;
@@ -838,6 +1084,15 @@ export function MyProjectsClient({
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (realtimeFlushTimerRef.current) {
+        clearTimeout(realtimeFlushTimerRef.current);
+        realtimeFlushTimerRef.current = null;
+      }
+    };
+  }, []);
+
   // Realtime: listen for task_summaries changes so cards update without manual refresh
   useEffect(() => {
     let channel: ReturnType<typeof supabase.channel> | null = null;
@@ -858,20 +1113,24 @@ export function MyProjectsClient({
           },
           (payload) => {
             const row = payload.new as Record<string, unknown>;
-            setTasks((prev) =>
-              prev.map((task) =>
-                task.id === (row.id as string)
-                  ? {
-                      ...task,
-                      status: (row.status as string) ?? task.status,
-                      progress: row.progress != null ? (row.progress as number) : task.progress,
-                      thumbnailUrl: (row.thumbnail_url as string | null) ?? task.thumbnailUrl,
-                      title: (row.title as string | null) ?? task.title,
-                      updatedAt: (row.updated_at as string) ?? task.updatedAt,
-                    }
-                  : task,
-              ),
-            );
+            const taskId = typeof row.id === "string" ? row.id : null;
+            if (!taskId) return;
+            const patch: Partial<TaskSummary> = {};
+            if (typeof row.status === "string") patch.status = row.status;
+            if (typeof row.progress === "number" || row.progress === null) patch.progress = row.progress as number | null;
+            if (typeof row.thumbnail_url === "string" || row.thumbnail_url === null) patch.thumbnailUrl = row.thumbnail_url as string | null;
+            if (typeof row.title === "string" || row.title === null) patch.title = row.title as string | null;
+            if (typeof row.updated_at === "string") patch.updatedAt = row.updated_at;
+            if (typeof row.preview === "string" || row.preview === null) patch.preview = row.preview as string | null;
+            if (row.metadata === null) {
+              patch.metadata = null;
+            } else if (row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)) {
+              patch.metadata = row.metadata as Record<string, unknown>;
+            }
+            if (Object.keys(patch).length === 0) return;
+            const existingPatch = pendingRealtimeUpdatesRef.current.get(taskId);
+            pendingRealtimeUpdatesRef.current.set(taskId, existingPatch ? { ...existingPatch, ...patch } : patch);
+            scheduleRealtimeFlush();
           },
         )
         .on(
@@ -884,24 +1143,29 @@ export function MyProjectsClient({
           },
           (payload) => {
             const row = payload.new as Record<string, unknown>;
+            const taskId = typeof row.id === "string" ? row.id : null;
+            const taskType = typeof row.task_type === "string" ? (row.task_type as TaskType) : null;
+            const userIdValue = typeof row.user_id === "string" ? row.user_id : null;
+            const linkedTaskId = typeof row.task_id === "string" ? row.task_id : null;
+            if (!taskId || !taskType || !userIdValue || !linkedTaskId) return;
             const inserted: TaskSummary = {
-              id: row.id as string,
-              userId: row.user_id as string,
-              taskType: row.task_type as TaskType,
-              taskId: row.task_id as string,
+              id: taskId,
+              userId: userIdValue,
+              taskType,
+              taskId: linkedTaskId,
               title: (row.title as string | null) ?? null,
-              status: row.status as string,
+              status: typeof row.status === "string" ? row.status : "PENDING",
               preview: (row.preview as string | null) ?? null,
               thumbnailUrl: (row.thumbnail_url as string | null) ?? null,
               progress: row.progress != null ? (row.progress as number) : null,
               metadata: row.metadata != null ? (row.metadata as Record<string, unknown>) : null,
-              createdAt: row.created_at as string,
-              updatedAt: row.updated_at as string,
+              createdAt: typeof row.created_at === "string" ? row.created_at : new Date().toISOString(),
+              updatedAt: typeof row.updated_at === "string" ? row.updated_at : new Date().toISOString(),
             };
-            setTasks((prev) => {
-              if (prev.some((t) => t.id === inserted.id)) return prev;
-              return [inserted, ...prev];
-            });
+            if (!pendingRealtimeInsertsRef.current.some((task) => task.id === inserted.id)) {
+              pendingRealtimeInsertsRef.current.push(inserted);
+            }
+            scheduleRealtimeFlush();
           },
         )
         .subscribe();
@@ -912,7 +1176,7 @@ export function MyProjectsClient({
         void supabase.removeChannel(channel);
       }
     };
-  }, []);
+  }, [scheduleRealtimeFlush]);
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams?.toString() ?? "");
@@ -1050,21 +1314,21 @@ export function MyProjectsClient({
     void fetchTasks({ type: filterType, status: filterStatus, offset: 0, mode: "reset" });
   };
 
-  const handleTaskClick = (task: TaskSummary) => {
+  const handleTaskClick = useCallback((task: TaskSummary) => {
     if (task.taskType === "storyboard") {
       router.push(`${basePath}/storyboard/${task.taskId}`);
       return;
     }
     setActiveTask(task);
     updateTaskIdParam(task.taskId);
-  };
+  }, [basePath, router, updateTaskIdParam]);
 
-  const handleCardKeyDown = (event: KeyboardEvent<HTMLDivElement>, task: TaskSummary) => {
+  const handleCardKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>, task: TaskSummary) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       handleTaskClick(task);
     }
-  };
+  }, [handleTaskClick]);
 
   const handleOpenTask = (task: TaskSummary | null) => {
     if (!task) return;
@@ -1096,31 +1360,42 @@ export function MyProjectsClient({
     if (!task) return;
 
     const behavesLikeText2Image = task.taskType === "creative" || isText2ImagePosterTask(task);
+    const hasBatchImages = Array.isArray(images) && images.length > 0;
 
     // 图文任务：下载全部图片
-    if (behavesLikeText2Image && images && images.length > 0) {
-      const baseName = (task.title || "image").replace(/\s+/g, "_");
-      for (let i = 0; i < images.length; i++) {
-        try {
-          const res = await fetch(images[i]);
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          const anchor = document.createElement("a");
-          anchor.href = url;
-          anchor.download = `${baseName}_${i + 1}.jpg`;
-          document.body.appendChild(anchor);
-          anchor.click();
-          anchor.remove();
-          URL.revokeObjectURL(url);
-        } catch {
-          const anchor = document.createElement("a");
-          anchor.href = images[i];
-          anchor.download = `${baseName}_${i + 1}.jpg`;
-          anchor.target = "_blank";
-          document.body.appendChild(anchor);
-          anchor.click();
-          anchor.remove();
+    if (hasBatchImages && (behavesLikeText2Image || task.taskType === "poster")) {
+      const uniqueImages = Array.from(new Set(images.filter((item) => typeof item === "string" && item.trim().length > 0)));
+      const baseName = sanitizeFileBase(task.title || "image", "image");
+      const concurrency = 3;
+      const pending = [...uniqueImages];
+      const failures: string[] = [];
+      let nextIndex = 0;
+      const downloadOne = async (imageUrl: string, index: number) => {
+        const ext = inferImageExtension(imageUrl);
+        const filename = `${baseName}_${index + 1}.${ext}`;
+        const downloadUrl = toDownloadUrl(imageUrl, filename);
+        triggerBrowserDownload(downloadUrl, filename);
+      };
+
+      const workers = Array.from({ length: Math.min(concurrency, pending.length) }).map(async () => {
+        while (pending.length > 0) {
+          const url = pending.shift();
+          if (!url) continue;
+          const currentIndex = nextIndex++;
+          try {
+            await downloadOne(url, currentIndex);
+            await new Promise((resolve) => setTimeout(resolve, 120));
+          } catch {
+            failures.push(url);
+          }
         }
+      });
+
+      await Promise.all(workers);
+      if (failures.length > 0) {
+        toast.error(`已下载部分图片，${failures.length} 张失败`);
+      } else {
+        toast.success(`已开始下载 ${uniqueImages.length} 张图片`);
       }
       return;
     }
@@ -1137,25 +1412,8 @@ export function MyProjectsClient({
       toast.error("暂无可下载内容");
       return;
     }
-    try {
-      const res = await fetch(videoUrl);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `${(task.title || task.taskType).replace(/\s+/g, "_")}.mp4`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
-    } catch {
-      const anchor = document.createElement("a");
-      anchor.href = videoUrl;
-      anchor.download = `${(task.title || task.taskType).replace(/\s+/g, "_")}.mp4`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-    }
+    const safeName = sanitizeFileBase(task.title || task.taskType, task.taskType || "video");
+    triggerBrowserDownload(toDownloadUrl(videoUrl, `${safeName}.mp4`), `${safeName}.mp4`);
   }, []);
 
   const handleDeleteTask = useCallback(
@@ -1290,95 +1548,24 @@ export function MyProjectsClient({
                 },
                 langKey,
               );
-            const statusClass = STATUS_BADGE_CLASS[statusKey] || "bg-white/20 text-white border-white/30";
-            const showCountdown =
-              task.taskType === "digitalHuman" && DIGITAL_HUMAN_COUNTDOWN_STATUSES.has(statusKey);
-            const thumbnailIsVideo = looksLikeVideoUrl(task.thumbnailUrl);
-            const isProcessing = PROCESSING_STATUSES.has(statusKey);
-            return (
-              <div
-                key={task.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => handleTaskClick(task)}
-                onKeyDown={(event) => handleCardKeyDown(event, task)}
-                className="group relative flex h-full w-full cursor-pointer flex-col rounded-[28px] border border-black/5 bg-white/90 p-3 text-left shadow-[0_18px_35px_rgba(15,23,42,0.08)] transition hover:-translate-y-0.5 hover:shadow-[0_30px_60px_rgba(15,23,42,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20 dark:border-white/10 dark:bg-gray-950/60 dark:shadow-[0_20px_40px_rgba(0,0,0,0.45)]"
-              >
-                <div className="relative aspect-[3/4] w-full overflow-hidden rounded-[20px] bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 dark:from-gray-800 dark:via-gray-900 dark:to-black">
-                  {task.thumbnailUrl ? (
-                    thumbnailIsVideo ? (
-                      <video
-                        src={task.thumbnailUrl}
-                        className="h-full w-full object-cover"
-                        autoPlay
-                        loop
-                        muted
-                        playsInline
-                      />
-                    ) : (
-                      <img
-                        src={task.thumbnailUrl}
-                        alt={task.title || typeLabel}
-                        className="h-full w-full object-cover"
-                        loading="lazy"
-                      />
-                    )
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-200 via-slate-100 to-slate-300 text-slate-500 dark:from-gray-800 dark:to-gray-900">
-                      <Clapperboard className="h-8 w-8" />
-                    </div>
-                  )}
-                  <div className="pointer-events-none absolute inset-0 rounded-[20px] border border-white/20 dark:border-white/5" />
-                  <div className="pointer-events-none absolute inset-0 rounded-[20px] bg-gradient-to-br from-white/40 via-transparent to-black/40 opacity-70 mix-blend-screen dark:from-white/10 dark:to-black/60" />
-                  <CardActionMenu
-                    onRename={() => openRenameModal(task)}
-                    onDelete={() => handleDeleteTask(task)}
-                    disabled={deletingId === task.id}
-                  />
-                  {isProcessing && (
-                    <div className="pointer-events-none absolute inset-0 rounded-[20px] overflow-hidden">
-                      <div className="animate-shimmer-sweep absolute inset-0 w-1/2 bg-gradient-to-r from-transparent via-white/[0.45] to-transparent dark:via-white/[0.30]" />
-                      <span className="absolute left-3 top-3 inline-flex items-center rounded-full bg-black/40 px-3 py-1 text-xs font-semibold text-white shadow-sm backdrop-blur-sm">
-                        生成中
-                      </span>
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-col gap-2 px-1 pb-1 pt-4 sm:px-2">
-                  <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
-                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-gray-700 dark:bg-white/10 dark:text-gray-200">
-                      {typeLabel}
-                    </span>
-                    <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5", statusClass)}>
-                      {statusLabel}
-                    </span>
-                  </div>
-                  <div className="space-y-1.5">
-                    <p className="text-base font-semibold leading-snug text-gray-900 line-clamp-2 dark:text-white">
-                      {task.title || typeLabel}
-                    </p>
-                    <p className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-                      <Clock className="h-4 w-4" />
-                      {formatTimestamp(task.createdAt, locale)}
-                    </p>
-                    {showCountdown && (
-                      <div className="pt-1">
-                        <DigitalHumanCountdown
-                          startTime={task.createdAt || task.updatedAt}
-                          variant="light"
-                          runningText={(formatted) =>
-                            `${pickCopy(DIGITAL_HUMAN_COUNTDOWN_PREFIX, langKey)} ${formatted}`
-                          }
-                          expiredText={pickCopy(DIGITAL_HUMAN_COUNTDOWN_EXPIRED, langKey)}
-                          className="dark:bg-black/40 dark:text-white dark:border-white/20"
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+              const statusClass = STATUS_BADGE_CLASS[statusKey] || "bg-white/20 text-white border-white/30";
+              return (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  langKey={langKey}
+                  locale={locale}
+                  statusClass={statusClass}
+                  statusLabel={statusLabel}
+                  typeLabel={typeLabel}
+                  deleting={deletingId === task.id}
+                  onTaskClick={handleTaskClick}
+                  onCardKeyDown={handleCardKeyDown}
+                  onRename={openRenameModal}
+                  onDelete={handleDeleteTask}
+                />
+              );
+            })}
           </div>
           {(hasMore || loadingMore) && (
             <div className="flex justify-center">
@@ -1557,6 +1744,13 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
       setReplicationDetailLoading(false);
       return;
     }
+    const cachedDetail = getCachedValue(replicationDetailCache, task.taskId);
+    if (cachedDetail !== undefined) {
+      setReplicationDetail(cachedDetail);
+      setReplicationDetailError(null);
+      setReplicationDetailLoading(false);
+      return;
+    }
     let cancelled = false;
     setReplicationDetailLoading(true);
     setReplicationDetailError(null);
@@ -1582,6 +1776,12 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
               }
             : null,
         );
+        setCachedValue(replicationDetailCache, task.taskId, data
+          ? {
+              ...data,
+              result: parseRecordLike(data.result) ?? null,
+            }
+          : null, 60_000);
       })
       .catch((error: unknown) => {
         if (cancelled) return;
@@ -1639,6 +1839,16 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
       setStoryboardLoading(false);
       return;
     }
+    const shouldBypassCache = isProcessingStatus(task.status);
+    if (!shouldBypassCache) {
+      const cachedStoryboard = getCachedValue(storyboardDetailCache, task.taskId);
+      if (cachedStoryboard !== undefined) {
+        setStoryboardDetail(cachedStoryboard);
+        setStoryboardError(null);
+        setStoryboardLoading(false);
+        return;
+      }
+    }
     const requestId = ++storyboardRequestIdRef.current;
     setStoryboardLoading(true);
     setStoryboardError(null);
@@ -1658,11 +1868,13 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
         throw new Error((payload as { error?: string }).error || "加载九宫格失败");
       }
       if (storyboardRequestIdRef.current !== requestId) return;
-      setStoryboardDetail({
+      const nextDetail = {
         storyboardImageUrl: typeof payload?.storyboard_image_url === "string" ? payload.storyboard_image_url : null,
         status: payload?.status ? String(payload.status).toUpperCase() : null,
         progress: typeof payload?.progress === "number" ? payload.progress : null,
-      });
+      };
+      setStoryboardDetail(nextDetail);
+      setCachedValue(storyboardDetailCache, task.taskId, nextDetail, shouldBypassCache ? 10_000 : 60_000);
     } catch (error) {
       if (storyboardRequestIdRef.current !== requestId) return;
       setStoryboardError(error instanceof Error ? error.message : "加载九宫格失败");
@@ -1672,7 +1884,7 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
         setStoryboardLoading(false);
       }
     }
-  }, [isStoryboard, task.taskId]);
+  }, [isStoryboard, task.status, task.taskId]);
 
   useEffect(() => {
     void fetchStoryboardDetail();
@@ -1693,6 +1905,7 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
     : isGrid
       ? gridMetadataImage || task.thumbnailUrl || null
       : replicationThumbnailUrl || task.thumbnailUrl || null;
+  const showImageGallery = (behavesLikeCreative || (isPoster && !isText2ImagePoster)) && !hasVideo;
 
   // Load images for creative (text2image) tasks
   const [images, setImages] = useState<string[]>(() =>
@@ -1700,11 +1913,30 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
   );
   const [imageIndex, setImageIndex] = useState(0);
   const [imageLoading, setImageLoading] = useState(false);
+  const creativeRequestRef = useRef(0);
+  const posterRequestRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
     // For creative/text2image tasks: fetch generatedImagesJson via the task detail API
     if (behavesLikeCreative) {
+      const cachedDetail = getCachedValue(creativeDetailCache, task.taskId);
+      if (cachedDetail !== undefined) {
+        setCreativeDetail(cachedDetail);
+        const imgs: string[] = (cachedDetail?.generatedImages || [])
+          .map((img: { url?: string }) => img.url)
+          .filter((u: string | undefined): u is string => Boolean(u));
+        setImages(imgs.length ? imgs : task.thumbnailUrl ? [task.thumbnailUrl] : []);
+        setImageIndex(0);
+        setImageLoading(false);
+        setCreativeDetailLoading(false);
+        setCreativeDetailError(null);
+        return () => { cancelled = true; };
+      }
+      const requestId = ++creativeRequestRef.current;
+      const controller = new AbortController();
+      setImages(previewImageUrl ? [previewImageUrl] : task.thumbnailUrl ? [task.thumbnailUrl] : []);
+      setImageIndex(0);
       setImageLoading(true);
       setCreativeDetailLoading(true);
       setCreativeDetailError(null);
@@ -1712,6 +1944,8 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
         const token = sessionData.session?.access_token;
         return fetch(`/api/creative-tasks/${task.taskId}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
+          signal: controller.signal,
+          cache: "no-store",
         });
       }).then((res) => {
           if (!res.ok) {
@@ -1723,9 +1957,10 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
           return res.json();
         })
         .then((payload) => {
-          if (cancelled) return;
+          if (cancelled || creativeRequestRef.current !== requestId) return;
           const detail = payload?.data as CreativeTaskDetail | undefined;
           setCreativeDetail(detail ?? null);
+          setCachedValue(creativeDetailCache, task.taskId, detail ?? null, 60_000);
           const imgs: string[] = (detail?.generatedImages || [])
             .map((img: { url?: string }) => img.url)
             .filter((u: string | undefined): u is string => Boolean(u));
@@ -1742,37 +1977,59 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
           }
         })
         .catch((error: unknown) => {
-          if (cancelled) return;
+          if (cancelled || (error instanceof Error && error.name === "AbortError")) return;
           setCreativeDetail(null);
           setCreativeDetailError(error instanceof Error ? error.message : "创作任务数据获取失败");
           setImages(previewImageUrl ? [previewImageUrl] : task.thumbnailUrl ? [task.thumbnailUrl] : []);
         })
         .finally(() => {
-          if (!cancelled) {
+          if (!cancelled && creativeRequestRef.current === requestId) {
             setImageLoading(false);
             setCreativeDetailLoading(false);
           }
         });
-      return () => { cancelled = true; };
+      return () => {
+        cancelled = true;
+        controller.abort();
+      };
     }
     // For regular poster tasks: fetch from xhs-images API
     if (isPoster && !isText2ImagePoster) {
+      const cachedImages = getCachedValue(posterImagesCache, task.taskId);
+      if (cachedImages !== undefined) {
+        setImages(cachedImages.length ? cachedImages : task.thumbnailUrl ? [task.thumbnailUrl] : []);
+        setImageIndex(0);
+        setImageLoading(false);
+        return () => { cancelled = true; };
+      }
+      const requestId = ++posterRequestRef.current;
+      const controller = new AbortController();
+      setImages(previewImageUrl ? [previewImageUrl] : task.thumbnailUrl ? [task.thumbnailUrl] : []);
+      setImageIndex(0);
       setImageLoading(true);
-      fetch(`/api/xhs-images/jobs/${task.taskId}`)
-        .then((res) => res.ok ? res.json() : null)
+      fetch(`/api/xhs-images/jobs/${task.taskId}`, { signal: controller.signal })
+        .then((res) => (res && res.ok ? res.json() : null))
         .then((payload) => {
-          if (cancelled) return;
+          if (cancelled || posterRequestRef.current !== requestId) return;
           const imgs: string[] = (payload?.data?.images || [])
             .map((img: { imageUrl?: string }) => img.imageUrl)
             .filter((u: string | undefined): u is string => Boolean(u));
+          setCachedValue(posterImagesCache, task.taskId, imgs, 60_000);
           setImages(imgs.length ? imgs : task.thumbnailUrl ? [task.thumbnailUrl] : []);
           setImageIndex(0);
         })
-        .catch(() => {
-          if (!cancelled) setImages(previewImageUrl ? [previewImageUrl] : task.thumbnailUrl ? [task.thumbnailUrl] : []);
+        .catch((error) => {
+          if (cancelled || (error instanceof Error && error.name === "AbortError")) return;
+          if (posterRequestRef.current !== requestId) return;
+          setImages(previewImageUrl ? [previewImageUrl] : task.thumbnailUrl ? [task.thumbnailUrl] : []);
         })
-        .finally(() => { if (!cancelled) setImageLoading(false); });
-      return () => { cancelled = true; };
+        .finally(() => {
+          if (!cancelled && posterRequestRef.current === requestId) setImageLoading(false);
+        });
+      return () => {
+        cancelled = true;
+        controller.abort();
+      };
     }
     setImages(previewImageUrl ? [previewImageUrl] : task.thumbnailUrl ? [task.thumbnailUrl] : []);
     setImageIndex(0);
@@ -1818,7 +2075,21 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
     setGridSplitStoryboardId(gridSplitStoryboardIdFromMeta);
   }, [isGrid, gridSplitStoryboardIdFromMeta]);
 
-  const showImageGallery = (behavesLikeCreative || (isPoster && !isText2ImagePoster)) && !hasVideo;
+  useEffect(() => {
+    if (!showImageGallery || images.length <= 1) return;
+    const nextIndex = (imageIndex + 1) % images.length;
+    const nextUrl = images[nextIndex];
+    if (!nextUrl) return;
+    const cached = getCachedValue(imagePrefetchCache, nextUrl);
+    if (cached) return;
+    const proxied = toProxyImgUrl(nextUrl);
+    const img = new Image();
+    img.src = proxied;
+    const markCached = () => setCachedValue(imagePrefetchCache, nextUrl, proxied, 5 * 60_000);
+    img.onload = markCached;
+    img.onerror = markCached;
+  }, [imageIndex, images, showImageGallery]);
+
   const primaryActionLabel = showImageGallery && images.length > 1
     ? `下载全部 (${images.length})`
     : isGrid && gridSplitStoryboardId
@@ -1986,6 +2257,12 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
     setT2vSelectedStyleId(null);
     setT2vAllowText(false);
 
+    if (styleListCache && styleListCache.expireAt > Date.now()) {
+      setT2vStyles(styleListCache.value);
+      setT2vStylesLoading(false);
+      return;
+    }
+
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
@@ -1994,7 +2271,12 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
       });
       if (res.ok) {
         const payload = await res.json();
-        setT2vStyles(Array.isArray(payload?.data) ? payload.data : []);
+        const list = Array.isArray(payload?.data) ? payload.data : [];
+        setT2vStyles(list);
+        styleListCache = {
+          value: list,
+          expireAt: Date.now() + 60_000,
+        };
       }
     } catch {
       // 静默失败，允许继续
@@ -2063,31 +2345,7 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
   };
 
   const saveVideoToDisk = async (url: string, filename: string) => {
-    try {
-      const response = await fetch(url);
-      const blob = await response.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = blobUrl;
-      anchor.download = filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(blobUrl);
-    } catch (error) {
-      try {
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.target = "_blank";
-        anchor.download = filename;
-        document.body.appendChild(anchor);
-        anchor.click();
-        anchor.remove();
-      } catch (fallbackError) {
-        console.error(fallbackError || error);
-        throw fallbackError || error;
-      }
-    }
+    triggerBrowserDownload(toDownloadUrl(url, filename), filename);
   };
 
   const handlePrimaryButtonClick = async () => {
@@ -2270,7 +2528,7 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
               ) : images.length > 0 ? (
                 <>
                   <img
-                    src={images[imageIndex]}
+                    src={toProxyImgUrl(images[imageIndex])}
                     alt={`image-${imageIndex + 1}`}
                     className="max-h-full max-w-full object-contain"
                     style={{ maxHeight: "90vh" }}

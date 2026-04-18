@@ -3,6 +3,23 @@ import { getRequestUserContext, getApiKeyForUser } from '@/lib/authServer';
 import { triggerT2V } from '@/lib/n8n';
 import prisma from '@/lib/prisma';
 
+function normalizeBaseUrl(base: string): string {
+  return base.trim().replace(/\/+$/, '');
+}
+
+function resolveCallbackBaseUrl(request: NextRequest): string {
+  const fromEnv = process.env.N8N_CALLBACK_BASE_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (fromEnv) return normalizeBaseUrl(fromEnv);
+
+  const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim();
+  if (forwardedHost) {
+    const forwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim() || 'https';
+    return normalizeBaseUrl(`${forwardedProto}://${forwardedHost}`);
+  }
+
+  return normalizeBaseUrl(request.nextUrl.origin);
+}
+
 function parseMetadata(value: unknown): Record<string, unknown> | null {
   if (!value) return null;
   if (typeof value === 'string') {
@@ -102,7 +119,7 @@ export async function POST(request: NextRequest) {
   }
 
   const apiKey = (await getApiKeyForUser(userId)) ?? process.env.DEFAULT_USER_API_KEY ?? '';
-  const callbackBase = (process.env.N8N_CALLBACK_BASE_URL ?? '').replace(/\/+$/, '') || request.nextUrl.origin;
+  const callbackBase = resolveCallbackBaseUrl(request);
   const callbackUrl = `${callbackBase}/api/webhook/t2v-callback`;
 
   await triggerT2V({

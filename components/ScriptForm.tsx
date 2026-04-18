@@ -8,7 +8,17 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { toast } from "react-hot-toast";
 
 interface ScriptFormProps {
-  onSuccess?: () => void;
+  onSuccess?: (script?: {
+    id: string;
+    title: string;
+    videoUrl: string | null;
+    breakdown?: string | null;
+    createdAt?: string | Date;
+    status?: string;
+    progress?: number;
+    error?: string | null;
+    blueprint?: string | null;
+  }) => void;
   initialData?: {
     id: string;
     title: string;
@@ -180,7 +190,17 @@ export function ScriptForm({
 
       if (onSuccess) {
         setTimeout(() => {
-          onSuccess();
+          onSuccess({
+            id: script.id,
+            title: script.title,
+            videoUrl: script.videoUrl,
+            breakdown: script.breakdown ?? null,
+            createdAt: script.createdAt,
+            status: script.status,
+            progress: script.progress ?? 0,
+            error: script.error ?? null,
+            blueprint: script.blueprint ?? null,
+          });
         }, 600);
       } else {
         router.push(`/scripts/${script.id}`);

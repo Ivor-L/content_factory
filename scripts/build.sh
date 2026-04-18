@@ -16,22 +16,8 @@ set -a
 source .env
 set +a
 
-# Verify required variables
-REQUIRED_VARS=("DATABASE_URL" "DIRECT_URL" "NEXT_PUBLIC_SUPABASE_URL" "NEXT_PUBLIC_SUPABASE_ANON_KEY" "NEXT_PUBLIC_APP_URL")
-MISSING_VARS=0
-
-for VAR in "${REQUIRED_VARS[@]}"; do
-    if [ -z "${!VAR}" ]; then
-        echo "Error: Required environment variable $VAR is not set!"
-        MISSING_VARS=1
-    fi
-done
-
-if [ $MISSING_VARS -eq 1 ]; then
-    echo "Build aborted due to missing environment variables."
-    exit 1
-fi
-
+echo "Validating environment variables..."
+./scripts/validate-runtime-env.sh --mode=build
 echo "Environment variables verified."
 
 # Build the Docker image
