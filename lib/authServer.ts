@@ -23,6 +23,55 @@ const supabaseAdminClient = supabaseServiceRoleKey
   ? createClient(supabaseUrl!, supabaseServiceRoleKey, baseClientOptions)
   : null;
 
+type CacheEntry<T> = {
+  value: T;
+  expiresAt: number;
+};
+
+const TOKEN_USER_CACHE_TTL_MS = 30_000;
+const PROFILE_API_KEY_CACHE_TTL_MS = 30_000;
+const AUTH_CACHE_MAX_ENTRIES = 1000;
+const tokenUserCache = new Map<string, CacheEntry<string>>();
+const profileApiKeyCache = new Map<string, CacheEntry<string | null>>();
+
+function getCacheValue<T>(cache: Map<string, CacheEntry<T>>, key: string): { hit: boolean; value: T | null } {
+  const entry = cache.get(key);
+  if (!entry) return { hit: false, value: null };
+  if (entry.expiresAt <= Date.now()) {
+    cache.delete(key);
+    return { hit: false, value: null };
+  }
+  return { hit: true, value: entry.value };
+}
+
+function setCacheValue<T>(
+  cache: Map<string, CacheEntry<T>>,
+  key: string,
+  value: T,
+  ttlMs: number
+) {
+  cache.delete(key);
+  cache.set(key, {
+    value,
+    expiresAt: Date.now() + ttlMs,
+  });
+
+  if (cache.size <= AUTH_CACHE_MAX_ENTRIES) return;
+
+  // Prune expired entries first; then evict the oldest keys if still oversized.
+  const now = Date.now();
+  for (const [cacheKey, cacheValue] of cache) {
+    if (cacheValue.expiresAt <= now) {
+      cache.delete(cacheKey);
+    }
+  }
+  while (cache.size > AUTH_CACHE_MAX_ENTRIES) {
+    const oldestKey = cache.keys().next().value;
+    if (!oldestKey) break;
+    cache.delete(oldestKey);
+  }
+}
+
 function createAuthedClient(token: string) {
   return createClient(supabaseUrl!, supabaseAnonKey!, {
     ...baseClientOptions,
@@ -112,17 +161,34 @@ export async function getRequestUserContext(
   }
 
   let resolvedUserId: string | null = null;
-  try {
-    const { data, error } = await supabaseAnonClient.auth.getUser(token);
-    if (!error && data?.user?.id) {
-      resolvedUserId = data.user.id;
-    }
-  } catch (error) {
-    console.error('Failed to resolve Supabase user', error);
+  const cachedUser = getCacheValue(tokenUserCache, token);
+  if (cachedUser.hit) {
+    resolvedUserId = cachedUser.value;
+  }
+
+  if (!resolvedUserId && process.env.SUPABASE_JWT_SECRET) {
+    // Fast path: verify JWT locally when secret is configured.
+    resolvedUserId = decodeSupabaseUserId(token);
   }
 
   if (!resolvedUserId) {
+    try {
+      const { data, error } = await supabaseAnonClient.auth.getUser(token);
+      if (!error && data?.user?.id) {
+        resolvedUserId = data.user.id;
+      }
+    } catch (error) {
+      console.error('Failed to resolve Supabase user', error);
+    }
+  }
+
+  if (!resolvedUserId) {
+    // Compatibility fallback when remote auth lookup is unavailable.
     resolvedUserId = decodeSupabaseUserId(token);
+  }
+
+  if (resolvedUserId) {
+    setCacheValue(tokenUserCache, token, resolvedUserId, TOKEN_USER_CACHE_TTL_MS);
   }
 
   if (!resolvedUserId) {
@@ -137,20 +203,23 @@ export async function getRequestUserContext(
 
   let apiKey: string | null = null;
   if (!useSystemApiKey) {
-    const profileClient = supabaseAdminClient ?? createAuthedClient(token);
-    try {
-      const { data: profile } = await profileClient
-        .from('profiles')
-        .select('api_key')
-        .eq('id', resolvedUserId)
-        .maybeSingle();
+    const cachedApiKey = getCacheValue(profileApiKeyCache, resolvedUserId);
+    if (cachedApiKey.hit) {
+      apiKey = cachedApiKey.value;
+    } else {
+      const profileClient = supabaseAdminClient ?? createAuthedClient(token);
+      try {
+        const { data: profile } = await profileClient
+          .from('profiles')
+          .select('api_key')
+          .eq('id', resolvedUserId)
+          .maybeSingle();
 
-      // Prefer the user's stored api_key when authenticated to avoid stale local keys.
-      if (profile?.api_key) {
-        apiKey = profile.api_key;
+        apiKey = profile?.api_key ?? null;
+        setCacheValue(profileApiKeyCache, resolvedUserId, apiKey, PROFILE_API_KEY_CACHE_TTL_MS);
+      } catch (profileError) {
+        console.error('Failed to read profile api_key', profileError);
       }
-    } catch (profileError) {
-      console.error('Failed to read profile api_key', profileError);
     }
   }
 

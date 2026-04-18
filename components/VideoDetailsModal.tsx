@@ -355,6 +355,9 @@ export function VideoDetailsModal({ item, onClose }: VideoDetailsModalProps) {
                 controls
                 autoPlay
                 loop
+                playsInline
+                // iOS Safari: keep native controls inline instead of forcing fullscreen.
+                webkit-playsinline="true"
               />
             ) : previewImageUrl ? (
               <img

@@ -2166,7 +2166,8 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
 
-  const handleVideoClick = () => {
+  const handleVideoPlayToggle = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
@@ -2564,16 +2565,17 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
             </div>
           ) : hasVideo ? (
             <div
-              className="relative flex h-full w-full cursor-pointer items-center justify-center"
-              onClick={handleVideoClick}
+              className="relative flex h-full w-full items-center justify-center"
             >
               <video
                 ref={videoRef}
-                className="max-h-full max-w-full object-contain"
+                className="pointer-events-none max-h-full max-w-full object-contain"
                 style={{ maxHeight: "90vh" }}
                 src={primaryVideoUrl!}
                 muted
                 playsInline
+                // iOS Safari: keep playback inline and avoid system fullscreen takeover.
+                webkit-playsinline="true"
                 preload="auto"
                 onLoadedMetadata={() => {
                   const video = videoRef.current;
@@ -2587,11 +2589,16 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
               />
               {/* Play/pause overlay */}
               {!isPlaying && (
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm">
+                <button
+                  type="button"
+                  onClick={handleVideoPlayToggle}
+                  className="absolute inset-0 flex items-center justify-center"
+                  aria-label="Play video"
+                >
+                  <span className="flex h-16 w-16 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm">
                     <Play className="h-7 w-7 translate-x-0.5" fill="white" />
-                  </div>
-                </div>
+                  </span>
+                </button>
               )}
               {/* Mute toggle bottom-right */}
               <button
