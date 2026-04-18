@@ -196,7 +196,7 @@ export function VideoCard({ item, onSelect, selected, onClick, onDelete }: Video
               <video
                 ref={videoRef}
                 src={resultData.videoUrl}
-                className="w-full h-full object-cover relative z-10"
+                className="pointer-events-none w-full h-full object-cover relative z-10"
                 muted
                 loop
                 playsInline
