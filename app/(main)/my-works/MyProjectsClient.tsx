@@ -77,6 +77,7 @@ type TaskCardProps = {
   deleting: boolean;
   onTaskClick: (task: TaskSummary) => void;
   onCardKeyDown: (event: KeyboardEvent<HTMLDivElement>, task: TaskSummary) => void;
+  onDownload: (task: TaskSummary) => void;
   onRename: (task: TaskSummary) => void;
   onDelete: (task: TaskSummary) => void;
 };
@@ -188,8 +189,12 @@ function isMobileBrowser(): boolean {
   return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || isTouchMac;
 }
 
-function triggerBrowserDownload(downloadUrl: string, filename: string) {
-  if (typeof window !== "undefined" && isMobileBrowser()) {
+function triggerBrowserDownload(
+  downloadUrl: string,
+  filename: string,
+  options?: { forceAnchorOnMobile?: boolean },
+) {
+  if (typeof window !== "undefined" && isMobileBrowser() && !options?.forceAnchorOnMobile) {
     const opened = window.open(downloadUrl, "_blank", "noopener,noreferrer");
     if (!opened) {
       window.location.assign(downloadUrl);
@@ -693,12 +698,13 @@ function FilterSelect<T extends string>({ label, value, options, onChange }: Fil
 }
 
 type CardActionMenuProps = {
+  onDownload: () => void;
   onRename: () => void;
   onDelete: () => void;
   disabled?: boolean;
 };
 
-function CardActionMenu({ onRename, onDelete, disabled }: CardActionMenuProps) {
+function CardActionMenu({ onDownload, onRename, onDelete, disabled }: CardActionMenuProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -755,6 +761,14 @@ function CardActionMenu({ onRename, onDelete, disabled }: CardActionMenuProps) {
         <div className="absolute right-0 top-11 w-36 rounded-2xl border border-black/5 bg-white/95 p-1 shadow-2xl backdrop-blur dark:border-white/10 dark:bg-gray-900/95">
           <button
             type="button"
+            onClick={handleAction(onDownload)}
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800/80"
+          >
+            <Download className="h-4 w-4" />
+            下载
+          </button>
+          <button
+            type="button"
             onClick={handleAction(onRename)}
             className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800/80"
           >
@@ -785,6 +799,7 @@ const TaskCard = memo(function TaskCard({
   deleting,
   onTaskClick,
   onCardKeyDown,
+  onDownload,
   onRename,
   onDelete,
 }: TaskCardProps) {
@@ -807,7 +822,7 @@ const TaskCard = memo(function TaskCard({
           thumbnailIsVideo ? (
             <video
               src={task.thumbnailUrl}
-              className="h-full w-full object-cover"
+              className="pointer-events-none h-full w-full object-cover"
               muted
               playsInline
               preload="metadata"
@@ -828,6 +843,7 @@ const TaskCard = memo(function TaskCard({
         <div className="pointer-events-none absolute inset-0 rounded-[20px] border border-white/20 dark:border-white/5" />
         <div className="pointer-events-none absolute inset-0 rounded-[20px] bg-gradient-to-br from-white/40 via-transparent to-black/40 opacity-70 mix-blend-screen dark:from-white/10 dark:to-black/60" />
         <CardActionMenu
+          onDownload={() => onDownload(task)}
           onRename={() => onRename(task)}
           onDelete={() => onDelete(task)}
           disabled={deleting}
@@ -1374,7 +1390,7 @@ export function MyProjectsClient({
         const ext = inferImageExtension(imageUrl);
         const filename = `${baseName}_${index + 1}.${ext}`;
         const downloadUrl = toDownloadUrl(imageUrl, filename);
-        triggerBrowserDownload(downloadUrl, filename);
+        triggerBrowserDownload(downloadUrl, filename, { forceAnchorOnMobile: true });
       };
 
       const workers = Array.from({ length: Math.min(concurrency, pending.length) }).map(async () => {
@@ -1561,6 +1577,7 @@ export function MyProjectsClient({
                   deleting={deletingId === task.id}
                   onTaskClick={handleTaskClick}
                   onCardKeyDown={handleCardKeyDown}
+                  onDownload={handleDownloadTask}
                   onRename={openRenameModal}
                   onDelete={handleDeleteTask}
                 />
