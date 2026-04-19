@@ -2565,7 +2565,7 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
                   <button
                     type="button"
                     onClick={handleDownloadCurrentImage}
-                    className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur transition hover:bg-black/75"
+                    className="absolute right-3 top-14 sm:top-3 inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur transition hover:bg-black/75"
                     aria-label="下载当前图片"
                     title="下载当前图片"
                   >
