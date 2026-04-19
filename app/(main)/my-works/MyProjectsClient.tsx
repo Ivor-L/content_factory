@@ -496,6 +496,12 @@ const RETENTION_NOTICE_COPY: CopyMap = {
   "zh-TW": "生成的圖片與影片素材為您保留 5 天，請及時下載。",
 };
 
+const CARD_DOWNLOAD_COPY: CopyMap = {
+  en: "Download",
+  zh: "下载",
+  "zh-TW": "下載",
+};
+
 const COMPLETED_STATUSES = new Set(["COMPLETED", "READY", "SUCCESS", "DONE", "FINISHED"]);
 const PROCESSING_STATUSES = new Set(["PROCESSING", "ANALYZING", "RUNNING", "PENDING", "QUEUED", "STARTED", "GENERATING"]);
 const DIGITAL_HUMAN_COUNTDOWN_STATUSES = new Set(["GENERATING", "PROCESSING", "RUNNING", "ANALYZING", "PENDING", "QUEUED"]);
@@ -808,6 +814,15 @@ const TaskCard = memo(function TaskCard({
     task.taskType === "digitalHuman" && DIGITAL_HUMAN_COUNTDOWN_STATUSES.has(statusKey);
   const thumbnailIsVideo = looksLikeVideoUrl(task.thumbnailUrl);
   const isProcessing = PROCESSING_STATUSES.has(statusKey);
+  const isFailed = FAILED_STATUSES.has(statusKey);
+  const downloadDisabled = deleting || isProcessing || isFailed;
+
+  const handleCardDownload = (event: MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    event.preventDefault();
+    if (downloadDisabled) return;
+    onDownload(task);
+  };
 
   return (
     <div
@@ -887,6 +902,19 @@ const TaskCard = memo(function TaskCard({
               />
             </div>
           )}
+          <button
+            type="button"
+            onClick={handleCardDownload}
+            disabled={downloadDisabled}
+            className={cn(
+              "mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition",
+              "border-gray-200 bg-white/90 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900/80 dark:text-gray-200 dark:hover:bg-gray-800",
+              downloadDisabled && "cursor-not-allowed opacity-50"
+            )}
+          >
+            <Download className="h-3.5 w-3.5" />
+            {pickCopy(CARD_DOWNLOAD_COPY, langKey)}
+          </button>
         </div>
       </div>
     </div>
