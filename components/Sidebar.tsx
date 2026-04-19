@@ -391,7 +391,7 @@ export function Sidebar() {
           "flex flex-col bg-white/90 dark:bg-gray-950/70 text-gray-700 dark:text-gray-300 font-sans border-r border-[var(--tenant-primary-muted)] shadow-[0_0_45px_rgba(0,0,0,0.08)] backdrop-blur-xl transition-all duration-300 group",
           isMobileView
             ? cn(
-                "fixed top-0 left-0 h-screen w-64 z-40 translate-x-0",
+                "fixed top-0 left-0 h-[100dvh] max-h-[100dvh] w-64 z-40 translate-x-0 pb-[env(safe-area-inset-bottom)]",
                 isMobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
               )
             : cn(
@@ -476,7 +476,7 @@ export function Sidebar() {
           )}
         </div>
       
-      <nav className="flex-1 px-3 py-2 space-y-2 overflow-y-visible custom-scrollbar">
+      <nav className="min-h-0 flex-1 px-3 py-2 space-y-2 overflow-y-auto custom-scrollbar">
         <AnimatePresence>
         {navigation.map((item) => {
           if (item.children) {
