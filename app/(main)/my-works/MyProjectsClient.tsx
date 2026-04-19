@@ -77,7 +77,6 @@ type TaskCardProps = {
   deleting: boolean;
   onTaskClick: (task: TaskSummary) => void;
   onCardKeyDown: (event: KeyboardEvent<HTMLDivElement>, task: TaskSummary) => void;
-  onDownload: (task: TaskSummary) => void;
   onRename: (task: TaskSummary) => void;
   onDelete: (task: TaskSummary) => void;
 };
@@ -496,12 +495,6 @@ const RETENTION_NOTICE_COPY: CopyMap = {
   "zh-TW": "生成的圖片與影片素材為您保留 5 天，請及時下載。",
 };
 
-const CARD_DOWNLOAD_COPY: CopyMap = {
-  en: "Download",
-  zh: "下载",
-  "zh-TW": "下載",
-};
-
 const COMPLETED_STATUSES = new Set(["COMPLETED", "READY", "SUCCESS", "DONE", "FINISHED"]);
 const PROCESSING_STATUSES = new Set(["PROCESSING", "ANALYZING", "RUNNING", "PENDING", "QUEUED", "STARTED", "GENERATING"]);
 const DIGITAL_HUMAN_COUNTDOWN_STATUSES = new Set(["GENERATING", "PROCESSING", "RUNNING", "ANALYZING", "PENDING", "QUEUED"]);
@@ -704,13 +697,12 @@ function FilterSelect<T extends string>({ label, value, options, onChange }: Fil
 }
 
 type CardActionMenuProps = {
-  onDownload: () => void;
   onRename: () => void;
   onDelete: () => void;
   disabled?: boolean;
 };
 
-function CardActionMenu({ onDownload, onRename, onDelete, disabled }: CardActionMenuProps) {
+function CardActionMenu({ onRename, onDelete, disabled }: CardActionMenuProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -767,14 +759,6 @@ function CardActionMenu({ onDownload, onRename, onDelete, disabled }: CardAction
         <div className="absolute right-0 top-11 w-36 rounded-2xl border border-black/5 bg-white/95 p-1 shadow-2xl backdrop-blur dark:border-white/10 dark:bg-gray-900/95">
           <button
             type="button"
-            onClick={handleAction(onDownload)}
-            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800/80"
-          >
-            <Download className="h-4 w-4" />
-            下载
-          </button>
-          <button
-            type="button"
             onClick={handleAction(onRename)}
             className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800/80"
           >
@@ -805,7 +789,6 @@ const TaskCard = memo(function TaskCard({
   deleting,
   onTaskClick,
   onCardKeyDown,
-  onDownload,
   onRename,
   onDelete,
 }: TaskCardProps) {
@@ -814,15 +797,6 @@ const TaskCard = memo(function TaskCard({
     task.taskType === "digitalHuman" && DIGITAL_HUMAN_COUNTDOWN_STATUSES.has(statusKey);
   const thumbnailIsVideo = looksLikeVideoUrl(task.thumbnailUrl);
   const isProcessing = PROCESSING_STATUSES.has(statusKey);
-  const isFailed = FAILED_STATUSES.has(statusKey);
-  const downloadDisabled = deleting || isProcessing || isFailed;
-
-  const handleCardDownload = (event: MouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation();
-    event.preventDefault();
-    if (downloadDisabled) return;
-    onDownload(task);
-  };
 
   return (
     <div
@@ -858,7 +832,6 @@ const TaskCard = memo(function TaskCard({
         <div className="pointer-events-none absolute inset-0 rounded-[20px] border border-white/20 dark:border-white/5" />
         <div className="pointer-events-none absolute inset-0 rounded-[20px] bg-gradient-to-br from-white/40 via-transparent to-black/40 opacity-70 mix-blend-screen dark:from-white/10 dark:to-black/60" />
         <CardActionMenu
-          onDownload={() => onDownload(task)}
           onRename={() => onRename(task)}
           onDelete={() => onDelete(task)}
           disabled={deleting}
@@ -902,19 +875,6 @@ const TaskCard = memo(function TaskCard({
               />
             </div>
           )}
-          <button
-            type="button"
-            onClick={handleCardDownload}
-            disabled={downloadDisabled}
-            className={cn(
-              "mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition",
-              "border-gray-200 bg-white/90 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900/80 dark:text-gray-200 dark:hover:bg-gray-800",
-              downloadDisabled && "cursor-not-allowed opacity-50"
-            )}
-          >
-            <Download className="h-3.5 w-3.5" />
-            {pickCopy(CARD_DOWNLOAD_COPY, langKey)}
-          </button>
         </div>
       </div>
     </div>
@@ -1474,56 +1434,6 @@ export function MyProjectsClient({
     triggerBrowserDownload(toDownloadUrl(videoUrl, `${safeName}.mp4`), `${safeName}.mp4`);
   }, []);
 
-  const handleQuickDownloadTask = useCallback(async (task: TaskSummary) => {
-    if (!task) return;
-
-    const isText2ImagePoster = isText2ImagePosterTask(task);
-    const behavesLikeText2Image = task.taskType === "creative" || isText2ImagePoster;
-    const isPosterTask = task.taskType === "poster";
-
-    try {
-      if (behavesLikeText2Image) {
-        const headers = await resolveAuthHeaders();
-        const response = await fetch(`/api/creative-tasks/${task.taskId}`, {
-          headers,
-          cache: "no-store",
-        });
-        if (response.ok) {
-          const payload = await response.json().catch(() => ({}));
-          const images = Array.isArray(payload?.data?.generatedImages)
-            ? (payload.data.generatedImages as Array<{ url?: string }>)
-                .map((item) => (typeof item?.url === "string" ? item.url : ""))
-                .filter((url): url is string => Boolean(url))
-            : [];
-          if (images.length > 0) {
-            await handleDownloadTask(task, images);
-            return;
-          }
-        }
-      }
-
-      if (isPosterTask && !isText2ImagePoster) {
-        const response = await fetch(`/api/xhs-images/jobs/${task.taskId}`, { cache: "no-store" });
-        if (response.ok) {
-          const payload = await response.json().catch(() => ({}));
-          const images = Array.isArray(payload?.data?.images)
-            ? (payload.data.images as Array<{ imageUrl?: string }>)
-                .map((item) => (typeof item?.imageUrl === "string" ? item.imageUrl : ""))
-                .filter((url): url is string => Boolean(url))
-            : [];
-          if (images.length > 0) {
-            await handleDownloadTask(task, images);
-            return;
-          }
-        }
-      }
-    } catch (error) {
-      console.error("Failed to preload task assets for quick download", error);
-    }
-
-    await handleDownloadTask(task);
-  }, [handleDownloadTask, resolveAuthHeaders]);
-
   const handleDeleteTask = useCallback(
     async (task: TaskSummary | null) => {
       if (!task) return;
@@ -1669,7 +1579,6 @@ export function MyProjectsClient({
                   deleting={deletingId === task.id}
                   onTaskClick={handleTaskClick}
                   onCardKeyDown={handleCardKeyDown}
-                  onDownload={handleQuickDownloadTask}
                   onRename={openRenameModal}
                   onDelete={handleDeleteTask}
                 />
@@ -2458,6 +2367,16 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
     triggerBrowserDownload(toDownloadUrl(url, filename), filename);
   };
 
+  const handleDownloadCurrentImage = () => {
+    if (!showImageGallery || images.length === 0) return;
+    const currentUrl = images[imageIndex];
+    if (!currentUrl) return;
+    const ext = inferImageExtension(currentUrl);
+    const baseName = sanitizeFileBase(task.title || "image", "image");
+    const filename = `${baseName}_${imageIndex + 1}.${ext}`;
+    triggerBrowserDownload(toDownloadUrl(currentUrl, filename), filename, { forceAnchorOnMobile: true });
+  };
+
   const handlePrimaryButtonClick = async () => {
     if (isStoryboard) {
       onOpen();
@@ -2643,6 +2562,15 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
                     className="max-h-full max-w-full object-contain"
                     style={{ maxHeight: "90vh" }}
                   />
+                  <button
+                    type="button"
+                    onClick={handleDownloadCurrentImage}
+                    className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur transition hover:bg-black/75"
+                    aria-label="下载当前图片"
+                    title="下载当前图片"
+                  >
+                    <Download className="h-4 w-4" />
+                  </button>
                   {images.length > 1 && (
                     <>
                       <button
