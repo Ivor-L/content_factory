@@ -1382,6 +1382,20 @@ export function MyProjectsClient({
     if (hasBatchImages && (behavesLikeText2Image || task.taskType === "poster")) {
       const uniqueImages = Array.from(new Set(images.filter((item) => typeof item === "string" && item.trim().length > 0)));
       const baseName = sanitizeFileBase(task.title || "image", "image");
+
+      // Mobile Safari/WebView often blocks async-queued multi-downloads.
+      // Keep all trigger calls in the same direct user-gesture tick.
+      if (typeof window !== "undefined" && isMobileBrowser()) {
+        uniqueImages.forEach((imageUrl, index) => {
+          const ext = inferImageExtension(imageUrl);
+          const filename = `${baseName}_${index + 1}.${ext}`;
+          const downloadUrl = toDownloadUrl(imageUrl, filename);
+          triggerBrowserDownload(downloadUrl, filename, { forceAnchorOnMobile: true });
+        });
+        toast.success(`已开始下载 ${uniqueImages.length} 张图片`);
+        return;
+      }
+
       const concurrency = 3;
       const pending = [...uniqueImages];
       const failures: string[] = [];
@@ -1431,6 +1445,56 @@ export function MyProjectsClient({
     const safeName = sanitizeFileBase(task.title || task.taskType, task.taskType || "video");
     triggerBrowserDownload(toDownloadUrl(videoUrl, `${safeName}.mp4`), `${safeName}.mp4`);
   }, []);
+
+  const handleQuickDownloadTask = useCallback(async (task: TaskSummary) => {
+    if (!task) return;
+
+    const isText2ImagePoster = isText2ImagePosterTask(task);
+    const behavesLikeText2Image = task.taskType === "creative" || isText2ImagePoster;
+    const isPosterTask = task.taskType === "poster";
+
+    try {
+      if (behavesLikeText2Image) {
+        const headers = await resolveAuthHeaders();
+        const response = await fetch(`/api/creative-tasks/${task.taskId}`, {
+          headers,
+          cache: "no-store",
+        });
+        if (response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          const images = Array.isArray(payload?.data?.generatedImages)
+            ? (payload.data.generatedImages as Array<{ url?: string }>)
+                .map((item) => (typeof item?.url === "string" ? item.url : ""))
+                .filter((url): url is string => Boolean(url))
+            : [];
+          if (images.length > 0) {
+            await handleDownloadTask(task, images);
+            return;
+          }
+        }
+      }
+
+      if (isPosterTask && !isText2ImagePoster) {
+        const response = await fetch(`/api/xhs-images/jobs/${task.taskId}`, { cache: "no-store" });
+        if (response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          const images = Array.isArray(payload?.data?.images)
+            ? (payload.data.images as Array<{ imageUrl?: string }>)
+                .map((item) => (typeof item?.imageUrl === "string" ? item.imageUrl : ""))
+                .filter((url): url is string => Boolean(url))
+            : [];
+          if (images.length > 0) {
+            await handleDownloadTask(task, images);
+            return;
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Failed to preload task assets for quick download", error);
+    }
+
+    await handleDownloadTask(task);
+  }, [handleDownloadTask, resolveAuthHeaders]);
 
   const handleDeleteTask = useCallback(
     async (task: TaskSummary | null) => {
@@ -1577,7 +1641,7 @@ export function MyProjectsClient({
                   deleting={deletingId === task.id}
                   onTaskClick={handleTaskClick}
                   onCardKeyDown={handleCardKeyDown}
-                  onDownload={handleDownloadTask}
+                  onDownload={handleQuickDownloadTask}
                   onRename={openRenameModal}
                   onDelete={handleDeleteTask}
                 />
