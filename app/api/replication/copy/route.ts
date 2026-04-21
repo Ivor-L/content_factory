@@ -42,6 +42,16 @@ export async function POST(request: NextRequest) {
   const ideaText =
     typeof body?.idea_text === "string" ? body.idea_text.trim() || undefined :
     typeof body?.ideaText === "string" ? body.ideaText.trim() || undefined : undefined;
+  const rawLanguage =
+    typeof body?.language === "string"
+      ? body.language
+      : typeof body?.targetLanguage === "string"
+      ? body.targetLanguage
+      : typeof body?.target_language === "string"
+      ? body.target_language
+      : undefined;
+  const language =
+    typeof rawLanguage === "string" ? rawLanguage.trim() || undefined : undefined;
 
   const styleId =
     typeof body?.styleId === "string" ? body.styleId.trim() : typeof body?.style_id === "string" ? body.style_id.trim() : "";
@@ -108,6 +118,7 @@ export async function POST(request: NextRequest) {
         originalCopy: originalCopy ?? null,
         ideaText: ideaText ?? null,
         wordCount: requestedWordCount ?? null,
+        language: language ?? null,
       } as Prisma.InputJsonValue,
     },
   });
@@ -129,6 +140,7 @@ export async function POST(request: NextRequest) {
       originalCopy: originalCopy || undefined,
       ideaText: ideaText || undefined,
       wordCount: requestedWordCount,
+      language: language || undefined,
       styleId,
       styleSnapshot: styleSnapshot as JsonRecord,
       styleProfile: styleProfile || undefined,

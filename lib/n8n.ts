@@ -560,6 +560,7 @@ export interface CopyRemixTriggerOptions {
   originalCopy?: string | null;
   ideaText?: string | null;
   wordCount?: number;
+  language?: string | null;
 }
 
 export async function triggerCopyRemix(
@@ -595,6 +596,11 @@ export async function triggerCopyRemix(
   if (typeof options.wordCount === "number" && Number.isFinite(options.wordCount)) {
     payload.word_count = options.wordCount;
     payload.target_word_count = options.wordCount;
+  }
+  if (options.language) {
+    payload.language = options.language;
+    payload.target_language = options.language;
+    payload.targetLanguage = options.language;
   }
 
   const response = await fetch(webhookUrl, {

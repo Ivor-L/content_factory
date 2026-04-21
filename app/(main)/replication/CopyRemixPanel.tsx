@@ -275,6 +275,7 @@ export function CopyRemixPanel({
   const EXTRACT_PENDING_TTL = 10 * 60 * 1000; // 10 min
   const extractPendingKey = (id: string) => `extract_pending_${id}`;
   const scriptId = script?.id;
+  const remixLanguage = language === "zh-TW" ? "zh-TW" : language === "zh" ? "zh-CN" : "en";
   const extractLanguage = language === "zh-TW" ? "zh-TW" : "zh-CN";
 
   const [viewMode, setViewMode] = useState<"original" | "remix">("original");
@@ -793,6 +794,9 @@ export function CopyRemixPanel({
         styleId: selectedStyle.id,
         word_count: requestedWordCount,
         wordCount: requestedWordCount,
+        language: remixLanguage,
+        targetLanguage: remixLanguage,
+        target_language: remixLanguage,
       };
       if (script && script.id) {
         payload.scriptId = script.id;
