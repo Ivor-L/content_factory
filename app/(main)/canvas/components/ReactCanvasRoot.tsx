@@ -6553,161 +6553,182 @@ export function ReactCanvasRoot({
 
   if (showProjectList) {
     return (
-      <div className="min-h-screen bg-[var(--canvas-bg)] text-[var(--canvas-text)]">
-        <div className="mx-auto flex h-full w-full max-w-6xl flex-col px-6 py-10">
-          <div className="mb-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <h1 className="text-4xl font-semibold tracking-tight">无限画布</h1>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={handleReloadProjects}
-                disabled={loadingProjects}
-                className="inline-flex items-center gap-2 rounded-full border border-[var(--canvas-border-md)] px-4 py-2 text-sm text-[var(--canvas-text-80)] transition hover:border-[var(--canvas-border-heavy)] disabled:cursor-not-allowed disabled:border-[var(--canvas-border)] disabled:text-[var(--canvas-text-40)]"
-              >
-                <RotateCcw
-                  className={clsx("h-4 w-4", {
-                    "animate-spin": loadingProjects,
-                  })}
-                />
-                刷新
-              </button>
-              <button
-                type="button"
-                onClick={handleCreateProject}
-                disabled={loadingProjects}
-                className="inline-flex items-center gap-2 rounded-full bg-[#ffc94a] px-5 py-2 text-sm font-medium text-black shadow-none transition hover:bg-[#ffd86f] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Plus className="h-4 w-4" />
-                新建项目
-              </button>
-            </div>
-          </div>
-          {visibleProjectError && (
-            <div className="mb-6 rounded-3xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
-              {visibleProjectError}
-            </div>
-          )}
-          {hasProjects ? (
-            <div className="grid flex-1 gap-6 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
-              <button
-                type="button"
-                onClick={handleCreateProject}
-                disabled={loadingProjects}
-                className="flex min-h-[260px] flex-col items-center justify-center rounded-[32px] border border-dashed border-[var(--canvas-border-md)] bg-[var(--canvas-hover-sm)] text-[var(--canvas-text-70)] transition hover:border-[var(--canvas-border-heavy)] hover:text-[var(--canvas-text)] disabled:cursor-not-allowed disabled:border-[var(--canvas-border)]"
-              >
-                <Plus className="mb-3 h-8 w-8" />
-                <span className="text-base">新建项目</span>
-              </button>
-              {projects.map((project) => (
-                <div
-                  key={project.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => renamingProjectId !== project.id && selectProject(project.id)}
-                  onKeyDown={(e) => e.key === "Enter" && renamingProjectId !== project.id && selectProject(project.id)}
-                  className="group relative flex min-h-[260px] cursor-pointer flex-col overflow-hidden rounded-[32px] border border-[var(--canvas-border)] bg-[var(--canvas-surface)] text-left transition hover:border-[var(--canvas-border-heavy)]"
+      <>
+        <div className="min-h-screen bg-[var(--canvas-bg)] text-[var(--canvas-text)]">
+          <div className="mx-auto flex h-full w-full max-w-6xl flex-col px-6 py-10">
+            <div className="mb-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <h1 className="text-4xl font-semibold tracking-tight">无限画布</h1>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleReloadProjects}
+                  disabled={loadingProjects}
+                  className="inline-flex items-center gap-2 rounded-full border border-[var(--canvas-border-md)] px-4 py-2 text-sm text-[var(--canvas-text-80)] transition hover:border-[var(--canvas-border-heavy)] disabled:cursor-not-allowed disabled:border-[var(--canvas-border)] disabled:text-[var(--canvas-text-40)]"
                 >
-                  <div className="relative aspect-[4/3] w-full overflow-hidden">
-                    {project.thumbnail ? (
-                      <CanvasImage
-                        src={project.thumbnail}
-                        alt={project.name || "Canvas project"}
-                        className="h-full w-full"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-black/80 to-black text-[var(--canvas-text-40)]">
-                        <Sparkles className="h-8 w-8" />
+                  <RotateCcw
+                    className={clsx("h-4 w-4", {
+                      "animate-spin": loadingProjects,
+                    })}
+                  />
+                  刷新
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateProject}
+                  disabled={loadingProjects}
+                  className="inline-flex items-center gap-2 rounded-full bg-[#ffc94a] px-5 py-2 text-sm font-medium text-black shadow-none transition hover:bg-[#ffd86f] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Plus className="h-4 w-4" />
+                  新建项目
+                </button>
+              </div>
+            </div>
+            {visibleProjectError && (
+              <div className="mb-6 rounded-3xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+                {visibleProjectError}
+              </div>
+            )}
+            {hasProjects ? (
+              <div className="grid flex-1 gap-6 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+                <button
+                  type="button"
+                  onClick={handleCreateProject}
+                  disabled={loadingProjects}
+                  className="flex min-h-[260px] flex-col items-center justify-center rounded-[32px] border border-dashed border-[var(--canvas-border-md)] bg-[var(--canvas-hover-sm)] text-[var(--canvas-text-70)] transition hover:border-[var(--canvas-border-heavy)] hover:text-[var(--canvas-text)] disabled:cursor-not-allowed disabled:border-[var(--canvas-border)]"
+                >
+                  <Plus className="mb-3 h-8 w-8" />
+                  <span className="text-base">新建项目</span>
+                </button>
+                {projects.map((project) => (
+                  <div
+                    key={project.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => renamingProjectId !== project.id && selectProject(project.id)}
+                    onKeyDown={(e) => e.key === "Enter" && renamingProjectId !== project.id && selectProject(project.id)}
+                    className="group relative flex min-h-[260px] cursor-pointer flex-col overflow-hidden rounded-[32px] border border-[var(--canvas-border)] bg-[var(--canvas-surface)] text-left transition hover:border-[var(--canvas-border-heavy)]"
+                  >
+                    <div className="relative aspect-[4/3] w-full overflow-hidden">
+                      {project.thumbnail ? (
+                        <CanvasImage
+                          src={project.thumbnail}
+                          alt={project.name || "Canvas project"}
+                          className="h-full w-full"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-black/80 to-black text-[var(--canvas-text-40)]">
+                          <Sparkles className="h-8 w-8" />
+                        </div>
+                      )}
+                      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#05060c] via-transparent" />
+                      {/* Action buttons — visible on hover */}
+                      <div className="absolute right-3 top-3 flex gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+                        <button
+                          type="button"
+                          title="重命名"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRenamingProjectId(project.id);
+                            setRenamingProjectName(project.name || "");
+                          }}
+                          className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-[var(--canvas-text-70)] backdrop-blur transition hover:bg-[var(--canvas-hover-xl)] hover:text-[var(--canvas-text)]"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          title="删除"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteConfirmProject({ id: project.id, name: project.name || "未命名项目" });
+                          }}
+                          className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-[var(--canvas-text-70)] backdrop-blur transition hover:bg-rose-500/70 hover:text-[var(--canvas-text)]"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
-                    )}
-                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#05060c] via-transparent" />
-                    {/* Action buttons — visible on hover */}
-                    <div className="absolute right-3 top-3 flex gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
-                      <button
-                        type="button"
-                        title="重命名"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setRenamingProjectId(project.id);
-                          setRenamingProjectName(project.name || "");
-                        }}
-                        className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-[var(--canvas-text-70)] backdrop-blur transition hover:bg-[var(--canvas-hover-xl)] hover:text-[var(--canvas-text)]"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        title="删除"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteConfirmProject({ id: project.id, name: project.name || "未命名项目" });
-                        }}
-                        className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-[var(--canvas-text-70)] backdrop-blur transition hover:bg-rose-500/70 hover:text-[var(--canvas-text)]"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
                     </div>
-                  </div>
-                  <div className="flex min-w-0 flex-1 flex-col px-5 py-4">
-                    {renamingProjectId === project.id ? (
-                      <input
-                        autoFocus
-                        value={renamingProjectName}
-                        onChange={(e) => setRenamingProjectName(e.target.value)}
-                        onKeyDown={async (e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
+                    <div className="flex min-w-0 flex-1 flex-col px-5 py-4">
+                      {renamingProjectId === project.id ? (
+                        <input
+                          autoFocus
+                          value={renamingProjectName}
+                          onChange={(e) => setRenamingProjectName(e.target.value)}
+                          onKeyDown={async (e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              try {
+                                await renameProject(project.id, renamingProjectName);
+                                toast.success("重命名成功");
+                              } catch {
+                                toast.error("重命名失败");
+                              }
+                              setRenamingProjectId(null);
+                            } else if (e.key === "Escape") {
+                              setRenamingProjectId(null);
+                            }
+                          }}
+                          onBlur={async () => {
                             try {
                               await renameProject(project.id, renamingProjectName);
-                              toast.success("重命名成功");
-                            } catch {
-                              toast.error("重命名失败");
-                            }
+                            } catch { /* silent */ }
                             setRenamingProjectId(null);
-                          } else if (e.key === "Escape") {
-                            setRenamingProjectId(null);
-                          }
-                        }}
-                        onBlur={async () => {
-                          try {
-                            await renameProject(project.id, renamingProjectName);
-                          } catch { /* silent */ }
-                          setRenamingProjectId(null);
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        className="w-full rounded-lg bg-[var(--canvas-hover)] px-2 py-1 text-lg font-medium text-[var(--canvas-text)] outline-none ring-1 ring-[var(--canvas-border-strong)] focus:ring-[var(--canvas-border-heavy)]"
-                      />
-                    ) : (
-                      <p className="text-lg font-medium text-[var(--canvas-text)]">{project.name || "未命名项目"}</p>
-                    )}
-                    <p className="mt-1 text-xs text-[var(--canvas-text-50)]">
-                      更新于 {new Date(project.updatedAt).toLocaleString()}
-                    </p>
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-full rounded-lg bg-[var(--canvas-hover)] px-2 py-1 text-lg font-medium text-[var(--canvas-text)] outline-none ring-1 ring-[var(--canvas-border-strong)] focus:ring-[var(--canvas-border-heavy)]"
+                        />
+                      ) : (
+                        <p className="text-lg font-medium text-[var(--canvas-text)]">{project.name || "未命名项目"}</p>
+                      )}
+                      <p className="mt-1 text-xs text-[var(--canvas-text-50)]">
+                        更新于 {new Date(project.updatedAt).toLocaleString()}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-4 rounded-[32px] border border-[var(--canvas-border)] bg-[var(--canvas-hover-sm)] px-10 py-24 text-center">
-              <div className="rounded-full bg-[var(--canvas-hover-sm)] p-4">
-                <Sparkles className="h-8 w-8 text-[#ffc94a]" />
+                ))}
               </div>
-              <p className="text-lg font-medium text-[var(--canvas-text)]">欢迎使用无限画布</p>
-              <p className="max-w-md text-sm text-[var(--canvas-text-60)]">
-                创建你的第一个项目，体验极简节点、AI 渲染与资源联动。
-              </p>
-              <button
-                type="button"
-                onClick={handleCreateProject}
-                disabled={loadingProjects}
-                className="inline-flex items-center gap-2 rounded-full bg-[#ffc94a] px-6 py-2 text-sm font-medium text-black shadow-none transition hover:bg-[#ffd86f] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Plus className="h-4 w-4" />
-                创建第一个项目
-              </button>
-            </div>
-          )}
+            ) : (
+              <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-4 rounded-[32px] border border-[var(--canvas-border)] bg-[var(--canvas-hover-sm)] px-10 py-24 text-center">
+                <div className="rounded-full bg-[var(--canvas-hover-sm)] p-4">
+                  <Sparkles className="h-8 w-8 text-[#ffc94a]" />
+                </div>
+                <p className="text-lg font-medium text-[var(--canvas-text)]">欢迎使用无限画布</p>
+                <p className="max-w-md text-sm text-[var(--canvas-text-60)]">
+                  创建你的第一个项目，体验极简节点、AI 渲染与资源联动。
+                </p>
+                <button
+                  type="button"
+                  onClick={handleCreateProject}
+                  disabled={loadingProjects}
+                  className="inline-flex items-center gap-2 rounded-full bg-[#ffc94a] px-6 py-2 text-sm font-medium text-black shadow-none transition hover:bg-[#ffd86f] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <Plus className="h-4 w-4" />
+                  创建第一个项目
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+        <ConfirmModal
+          isOpen={!!deleteConfirmProject}
+          onClose={() => setDeleteConfirmProject(null)}
+          onConfirm={async () => {
+            if (!deleteConfirmProject) return;
+            try {
+              await deleteProject(deleteConfirmProject.id);
+              toast.success("项目已删除");
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "删除失败";
+              toast.error(message);
+              throw error;
+            }
+          }}
+          title="删除项目"
+          message={`确定删除「${deleteConfirmProject?.name ?? ""}」？此操作不可撤销。`}
+          confirmText="删除"
+          isDanger
+        />
+      </>
     );
   }
 
@@ -7361,19 +7382,6 @@ export function ReactCanvasRoot({
           } : undefined}
         />
       )}
-      <ConfirmModal
-        isOpen={!!deleteConfirmProject}
-        onClose={() => setDeleteConfirmProject(null)}
-        onConfirm={async () => {
-          if (!deleteConfirmProject) return;
-          await deleteProject(deleteConfirmProject.id);
-          toast.success("项目已删除");
-        }}
-        title="删除项目"
-        message={`确定删除「${deleteConfirmProject?.name ?? ""}」？此操作不可撤销。`}
-        confirmText="删除"
-        isDanger
-      />
     </>
   );
 }
