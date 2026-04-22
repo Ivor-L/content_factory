@@ -4944,6 +4944,8 @@ export function ReactCanvasRoot({
   const [viewport, setViewport] = useState(DEFAULT_VIEWPORT);
   const [viewportKey, setViewportKey] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
+  const [isManualSaving, setIsManualSaving] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [isHydrating, setIsHydrating] = useState(false);
   const [autoSaveError, setAutoSaveError] = useState<string | null>(null);
   const [creditsLabel, setCreditsLabel] = useState<string | null>(null);
@@ -5015,6 +5017,7 @@ export function ReactCanvasRoot({
   useEffect(() => {
     currentProjectIdRef2.current = currentProjectId;
     persistenceReadyProjectRef.current = null;
+    setLastSavedAt(null);
   }, [currentProjectId]);
   useEffect(() => {
     currentProjectUpdatedAtRef.current = currentProject?.updatedAt ?? null;
@@ -5653,6 +5656,7 @@ export function ReactCanvasRoot({
         }
         if (!cancelled) {
           setAutoSaveError(null);
+          setLastSavedAt(Date.now());
         }
       } catch (error) {
         if (!cancelled) {
@@ -6129,24 +6133,57 @@ export function ReactCanvasRoot({
   const isDetailView = !showProjectList;
   const hasProjects = projects.length > 0;
 
+  const handleManualSave = useCallback(async (options?: { silentSuccess?: boolean }) => {
+    const projectId = currentProjectIdRef2.current;
+    if (!projectId) return false;
+    if (hydratingRef.current || isHydrating) return false;
+    if (persistenceReadyProjectRef.current !== projectId) return false;
+    setIsManualSaving(true);
+    setIsSaving(true);
+    setAutoSaveError(null);
+    try {
+      const runtimeNodes = flowNodesToRuntime(nodesRef.current);
+      const thumbnail = extractThumbnailFromNodes(runtimeNodes);
+      await saveProjectCanvas(projectId, {
+        nodes: runtimeNodes,
+        edges: flowEdgesToRuntime(edgesRef.current),
+        viewport: viewportRef.current,
+        resources: resourcesRef.current,
+      }, thumbnail);
+      setAutoSaveError(null);
+      setLastSavedAt(Date.now());
+      if (!options?.silentSuccess) {
+        toast.success("画布已保存");
+      }
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "保存项目失败";
+      setAutoSaveError(message);
+      toast.error(message);
+      return false;
+    } finally {
+      setIsManualSaving(false);
+      setIsSaving(false);
+    }
+  }, [isHydrating, saveProjectCanvas]);
+
   // Back button: flush-save then clear the selected project.
   // The URL-sync effect below will then call router.replace('?view=projects').
   const handleBackToList = useCallback(async () => {
     if (currentProjectId && persistenceReadyProjectRef.current === currentProjectId) {
       try {
-        await saveProjectCanvas(currentProjectId, {
-          nodes: flowNodesToRuntime(nodesRef.current),
-          edges: flowEdgesToRuntime(edgesRef.current),
-          viewport: viewportRef.current,
-          resources: resourcesRef.current,
-        });
+        const ok = await handleManualSave({ silentSuccess: true });
+        if (!ok) {
+          flushProjectCanvasKeepalive(currentProjectId);
+          toast.error("保存未完成，已切换为后台重试保存");
+        }
       } catch {
         flushProjectCanvasKeepalive(currentProjectId);
         toast.error("保存未完成，已切换为后台重试保存");
       }
     }
     selectProject(null);
-  }, [currentProjectId, saveProjectCanvas, selectProject, flushProjectCanvasKeepalive]);
+  }, [currentProjectId, handleManualSave, selectProject, flushProjectCanvasKeepalive]);
 
   // File drag-and-drop onto canvas — creates image or video node at drop position
   const handleCanvasDrop = useCallback(
@@ -6387,7 +6424,7 @@ export function ReactCanvasRoot({
       active: true,
       projectId: currentProject.id,
       projectName: currentProject.name || "未命名项目",
-      isSaving,
+      isSaving: isSaving || isManualSaving,
       saveError: autoSaveError,
       currentNodeId: activeNode?.id ?? null,
       currentNodeLabel: activeNode ? resolveTitle(activeNode.data) : null,
@@ -6399,6 +6436,7 @@ export function ReactCanvasRoot({
     focusedNodeId,
     getNodeById,
     isDetailView,
+    isManualSaving,
     isSaving,
     updateCanvasShell,
   ]);
@@ -6784,6 +6822,36 @@ export function ReactCanvasRoot({
             </div>
             {/* Right: credits pill + avatar */}
             <div className="pointer-events-auto flex items-center gap-2">
+              {lastSavedAt ? (
+                <div className="rounded-full border border-[var(--canvas-border-md)] bg-[var(--canvas-surface-80)] px-3 py-1.5 text-xs text-[var(--canvas-text-70)] backdrop-blur">
+                  已保存 {new Date(lastSavedAt).toLocaleTimeString("zh-CN", { hour12: false })}
+                </div>
+              ) : null}
+              {autoSaveError ? (
+                <div className="rounded-full border border-rose-400/60 bg-rose-500/20 px-3 py-1.5 text-xs text-rose-200 backdrop-blur">
+                  保存失败
+                </div>
+              ) : isSaving || isManualSaving ? (
+                <div className="rounded-full border border-[var(--canvas-border-md)] bg-[var(--canvas-surface-80)] px-3 py-1.5 text-xs text-[var(--canvas-text-70)] backdrop-blur">
+                  保存中...
+                </div>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  void handleManualSave();
+                }}
+                disabled={!currentProjectId || isHydrating || isManualSaving}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--canvas-border-md)] bg-[var(--canvas-surface-80)] px-3 py-1.5 text-sm text-[var(--canvas-text-80)] backdrop-blur transition hover:border-[var(--canvas-border-heavy)] disabled:cursor-not-allowed disabled:opacity-50"
+                title="立即保存当前画布"
+              >
+                {isManualSaving ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Save className="h-3.5 w-3.5" />
+                )}
+                <span>{isManualSaving ? "保存中" : "保存"}</span>
+              </button>
               {creditsLabel != null && (
                 <div className="flex items-center gap-1.5 rounded-full bg-[var(--canvas-surface-80)] px-3 py-1.5 text-sm text-[var(--canvas-text-80)] backdrop-blur">
                   <Zap className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
