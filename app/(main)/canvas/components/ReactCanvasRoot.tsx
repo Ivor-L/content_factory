@@ -5520,7 +5520,12 @@ export function ReactCanvasRoot({
     const last = lastHydratedRef.current;
     const hasData = !!currentProject.canvasData;
     // Skip re-hydrate only if same project AND has data
-    if (last?.projectId === currentProject.id && last.hasData && hasData) return;
+    if (last?.projectId === currentProject.id && last.hasData && hasData) {
+      // Guard against stale hydrating state when previous hydration cleanup got interrupted.
+      hydratingRef.current = false;
+      setIsHydrating(false);
+      return;
+    }
     lastHydratedRef.current = { projectId: currentProject.id, hasData };
 
     // If no canvasData, fetch it first
@@ -6132,6 +6137,17 @@ export function ReactCanvasRoot({
   const showProjectList = !currentProjectId && (forceProjectList || (!currentProject && !loadingProjects));
   const isDetailView = !showProjectList;
   const hasProjects = projects.length > 0;
+
+  useEffect(() => {
+    if (!isDetailView || !currentProjectId) return;
+    if (persistenceReadyProjectRef.current !== currentProjectId) return;
+    if (!isHydrating) return;
+    const timer = window.setTimeout(() => {
+      hydratingRef.current = false;
+      setIsHydrating(false);
+    }, 2500);
+    return () => window.clearTimeout(timer);
+  }, [currentProjectId, isDetailView, isHydrating]);
 
   const handleManualSave = useCallback(async (options?: { silentSuccess?: boolean }) => {
     const projectId = currentProjectIdRef2.current;
