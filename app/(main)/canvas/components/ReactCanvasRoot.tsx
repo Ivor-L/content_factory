@@ -5089,7 +5089,6 @@ export function ReactCanvasRoot({
   const suppressNextPaneClickRef = useRef(false);
   const [visibleProjectError, setVisibleProjectError] = useState<string | null>(null);
   const patchRuntimePerfLogRef = useRef(0);
-  const autosavePerfLogRef = useRef(0);
   const toggleExpanded = useCallback((nodeId: string, nextState?: boolean) => {
     setNodes((prev) =>
       prev.map((node) =>
@@ -5620,68 +5619,6 @@ export function ReactCanvasRoot({
     }, 300);
     return () => clearTimeout(timer);
   }, [currentProjectId, nodes, edges, viewport, resources, isHydrating]);
-
-  useEffect(() => {
-    if (!currentProjectId || hydratingRef.current || isHydrating) return;
-    if (persistenceReadyProjectRef.current !== currentProjectId) return;
-    let cancelled = false;
-    const timer = setTimeout(async () => {
-      const shouldTrace = CANVAS_PERF_TRACING && typeof performance !== "undefined";
-      const snapshotStart = shouldTrace ? performance.now() : 0;
-      const runtimeNodes = flowNodesToRuntime(nodes);
-      const runtimeEdges = flowEdgesToRuntime(edges);
-
-      setIsSaving(true);
-      try {
-        const thumbnail = extractThumbnailFromNodes(runtimeNodes);
-        if (shouldTrace) {
-          const snapshotDuration = performance.now() - snapshotStart;
-          if (snapshotDuration > 10 && performance.now() - autosavePerfLogRef.current > PERF_LOG_THROTTLE_MS) {
-            console.info(
-              `[canvas][perf] autosave snapshot (${nodes.length} nodes, ${resources.length} resources) took ${snapshotDuration.toFixed(1)}ms`,
-            );
-          }
-        }
-        const saveStartedAt = shouldTrace ? performance.now() : 0;
-        await saveProjectCanvas(currentProjectId, {
-          nodes: runtimeNodes,
-          edges: runtimeEdges,
-          viewport,
-          resources,
-        }, thumbnail);
-        if (shouldTrace) {
-          const saveDuration = performance.now() - (snapshotStart || 0);
-          const requestDuration = performance.now() - saveStartedAt;
-          if (requestDuration > 50 && performance.now() - autosavePerfLogRef.current > PERF_LOG_THROTTLE_MS) {
-            console.info(
-              `[canvas][perf] autosave request took ${requestDuration.toFixed(0)}ms (total ${saveDuration.toFixed(0)}ms)`,
-            );
-            autosavePerfLogRef.current = performance.now();
-          }
-        }
-        if (!cancelled) {
-          setAutoSaveError(null);
-          setLastSavedAt(Date.now());
-        }
-      } catch (error) {
-        if (!cancelled) {
-          const message = error instanceof Error ? error.message : "保存项目失败";
-          setAutoSaveError(message);
-          if (error instanceof Error && error.name === "CanvasProjectConflictError") {
-            toast.error("检测到该项目在其他页面被更新，已自动同步最新内容", { id: "canvas-conflict" });
-          }
-        }
-      } finally {
-        if (!cancelled) {
-          setIsSaving(false);
-        }
-      }
-    }, 800);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [currentProjectId, edges, nodes, resources, viewport, saveProjectCanvas, isHydrating]);
 
   // Flush any pending unsaved state when the component unmounts (SPA navigation away from canvas).
   // The debounce cleanup cancels the timer, so we fire one final save using refs.
