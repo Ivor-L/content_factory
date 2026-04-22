@@ -454,7 +454,9 @@ function useCardMagnet(ref: RefObject<HTMLElement | null>): CardMagnetState {
 
   // Node-local pointer tracking keeps listener count low as node count grows.
   useEffect(() => {
-    const el = ref.current;
+    // Track the outer card shell when available so the visible trigger dot stays
+    // inside the same hover region as the hidden connection handle.
+    const el = ref.current?.parentElement ?? ref.current;
     if (!el) return;
     const RADIUS = 130;
     let lastMx = 0;
@@ -519,9 +521,9 @@ function useCardMagnet(ref: RefObject<HTMLElement | null>): CardMagnetState {
 }
 
 // CardHandle: two-layer system.
-// Layer 1 — invisible ReactFlow <Handle> (opacity 0) for connection interaction, always at center Y.
-// Layer 2 — visual circle div (pointerEvents none) that floats 20 px outside card, Y follows mouse.
-// ScissorsEdge ignores the Handle position entirely and computes anchor from node geometry.
+// Layer 1 — invisible ReactFlow <Handle> (opacity 0) for connection interaction.
+// Layer 2 — visual circle div (pointerEvents none) that floats 20 px outside card.
+// Both layers share the same Y so the visible dot and hit area stay aligned.
 function CardHandle({
   side,
   magnetY,
@@ -544,7 +546,7 @@ function CardHandle({
         style={{
           position: "absolute",
           [side]: -34,
-          top: "50%",
+          top: `${magnetY}%`,
           transform: "translateY(-50%)",
           width: 34,
           height: 160,
