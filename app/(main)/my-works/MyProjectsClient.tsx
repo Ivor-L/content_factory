@@ -12,7 +12,6 @@ import { DigitalHumanCountdown } from "@/components/DigitalHumanCountdown";
 import { DigitalHumanModal } from "@/components/DigitalHumanModal";
 import { Modal } from "@/components/Modal";
 import { QuickPosterForm } from "@/app/(main)/dashboard/components/QuickActionForms";
-import { AddButton } from "@/components/AddButton";
 import { cn } from "@/lib/utils";
 import { toForcedProxyUrl, toProxyImgUrl } from "@/lib/mediaProxy";
 import {
@@ -441,12 +440,6 @@ const LOADING_MORE_COPY: CopyMap = {
   "zh-TW": "載入中…",
 };
 
-const CTA_COPY: CopyMap = {
-  en: "Create project",
-  zh: "创建新项目",
-  "zh-TW": "建立新專案",
-};
-
 const STATUS_LABEL_COPY: CopyMap = {
   en: "Status",
   zh: "状态",
@@ -749,14 +742,14 @@ function CardActionMenu({ onRename, onDelete, disabled }: CardActionMenuProps) {
         onClick={toggleMenu}
         disabled={disabled}
         className={cn(
-          "rounded-full bg-black/40 p-2 text-white shadow-lg transition hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 dark:bg-white/15 dark:hover:bg-white/25",
+          "rounded-full bg-black/40 p-2 text-white transition hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 dark:bg-white/15 dark:hover:bg-white/25",
           disabled && "cursor-not-allowed opacity-70",
         )}
       >
         <MoreHorizontal className="h-4 w-4" />
       </button>
       {open && (
-        <div className="absolute right-0 top-11 w-36 rounded-2xl border border-black/5 bg-white/95 p-1 shadow-2xl backdrop-blur dark:border-white/10 dark:bg-gray-900/95">
+        <div className="absolute right-0 top-11 w-36 rounded-2xl border border-black/10 bg-white/95 p-1 backdrop-blur dark:border-white/10 dark:bg-gray-900/95">
           <button
             type="button"
             onClick={handleAction(onRename)}
@@ -804,9 +797,9 @@ const TaskCard = memo(function TaskCard({
       tabIndex={0}
       onClick={() => onTaskClick(task)}
       onKeyDown={(event) => onCardKeyDown(event, task)}
-      className="group relative flex h-full w-full cursor-pointer flex-col rounded-[28px] border border-black/5 bg-white/90 p-3 text-left shadow-[0_18px_35px_rgba(15,23,42,0.08)] transition hover:-translate-y-0.5 hover:shadow-[0_30px_60px_rgba(15,23,42,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20 dark:border-white/10 dark:bg-gray-950/60 dark:shadow-[0_20px_40px_rgba(0,0,0,0.45)]"
+      className="group relative aspect-[3/4] w-full cursor-pointer overflow-hidden rounded-[24px] border border-black/10 bg-white/90 text-left transition-colors hover:border-black/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20 dark:border-white/10 dark:bg-gray-950/60 dark:hover:border-white/20"
     >
-      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-[20px] bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 dark:from-gray-800 dark:via-gray-900 dark:to-black">
+      <div className="relative h-full w-full overflow-hidden bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 dark:from-gray-800 dark:via-gray-900 dark:to-black">
         {task.thumbnailUrl ? (
           thumbnailIsVideo ? (
             <video
@@ -829,23 +822,55 @@ const TaskCard = memo(function TaskCard({
             <Clapperboard className="h-8 w-8" />
           </div>
         )}
-        <div className="pointer-events-none absolute inset-0 rounded-[20px] border border-white/20 dark:border-white/5" />
-        <div className="pointer-events-none absolute inset-0 rounded-[20px] bg-gradient-to-br from-white/40 via-transparent to-black/40 opacity-70 mix-blend-screen dark:from-white/10 dark:to-black/60" />
+        <div className="pointer-events-none absolute inset-0 border border-white/20 dark:border-white/5" />
         <CardActionMenu
           onRename={() => onRename(task)}
           onDelete={() => onDelete(task)}
           disabled={deleting}
         />
+        <span
+          className={cn(
+            "pointer-events-none absolute left-3 top-3 z-10 inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold backdrop-blur-sm",
+            statusClass,
+          )}
+        >
+          {statusLabel}
+        </span>
         {isProcessing && (
-          <div className="pointer-events-none absolute inset-0 rounded-[20px] overflow-hidden">
+          <div className="pointer-events-none absolute inset-0 overflow-hidden">
             <div className="animate-shimmer-sweep absolute inset-0 w-1/2 bg-gradient-to-r from-transparent via-white/[0.45] to-transparent dark:via-white/[0.30]" />
-            <span className="absolute left-3 top-3 inline-flex items-center rounded-full bg-black/40 px-3 py-1 text-xs font-semibold text-white shadow-sm backdrop-blur-sm">
-              生成中
-            </span>
           </div>
         )}
       </div>
-      <div className="flex flex-col gap-2 px-1 pb-1 pt-4 sm:px-2">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0">
+        <div className="h-36 bg-gradient-to-t from-black/80 via-black/45 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 px-3 pb-3 pt-6 sm:px-3">
+          <div className="space-y-1.5">
+            <p className="text-sm font-semibold leading-snug text-white truncate">
+              {task.title || typeLabel}
+            </p>
+            <p className="flex items-center gap-1.5 text-xs text-white/85">
+              <Clock className="h-3.5 w-3.5" />
+              {formatTimestamp(task.createdAt, locale)}
+            </p>
+            {showCountdown && (
+              <div className="pt-1">
+                <DigitalHumanCountdown
+                  startTime={task.createdAt || task.updatedAt}
+                  variant="light"
+                  runningText={(formatted) =>
+                    `${pickCopy(DIGITAL_HUMAN_COUNTDOWN_PREFIX, langKey)} ${formatted}`
+                  }
+                  expiredText={pickCopy(DIGITAL_HUMAN_COUNTDOWN_EXPIRED, langKey)}
+                  className="!border-white/30 !text-white !bg-black/30"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      {/* Keep semantic text in DOM for keyboard/reader parity when overlays hide content */}
+      <div className="sr-only">
         <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
           <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-gray-700 dark:bg-white/10 dark:text-gray-200">
             {typeLabel}
@@ -1494,7 +1519,6 @@ export function MyProjectsClient({
               <RefreshCcw className={cn("h-4 w-4", loading && "animate-spin")} />
               {pickCopy(REFRESH_COPY, langKey)}
             </button>
-            <AddButton label={pickCopy(CTA_COPY, langKey)} href={createPath} />
           </div>
         </div>
         <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm text-amber-900 shadow-sm dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
@@ -1535,7 +1559,7 @@ export function MyProjectsClient({
           {Array.from({ length: 6 }).map((_, index) => (
             <div
               key={index}
-              className="w-full aspect-[3/4] animate-pulse rounded-[28px] border border-black/5 bg-white/75 p-4 shadow-[0_18px_35px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-gray-900/60"
+              className="w-full aspect-[3/4] animate-pulse rounded-[24px] border border-black/10 bg-white/75 dark:border-white/10 dark:bg-gray-900/60"
             />
           ))}
         </div>
@@ -2548,7 +2572,7 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
         {!(isCreative && !hasVideo && images.length === 0 && !imageLoading) && (
         <div className="flex w-full flex-shrink-0 items-center justify-center bg-black min-h-[240px] sm:min-h-[320px] lg:min-h-0 lg:w-[45%]">
           {showImageGallery ? (
-            <div className="relative flex h-full w-full items-center justify-center">
+            <div className="relative h-full w-full overflow-hidden">
               {imageLoading ? (
                 <div className="flex flex-col items-center gap-2 text-white/60">
                   <Loader2 className="h-8 w-8 animate-spin" />
@@ -2559,8 +2583,7 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
                   <img
                     src={toProxyImgUrl(images[imageIndex])}
                     alt={`image-${imageIndex + 1}`}
-                    className="max-h-full max-w-full object-contain"
-                    style={{ maxHeight: "90vh" }}
+                    className="h-full w-full object-cover"
                   />
                   <button
                     type="button"
@@ -2650,8 +2673,7 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
             <img
               src={previewImageUrl}
               alt="thumbnail"
-              className="max-h-full max-w-full object-contain"
-              style={{ maxHeight: "90vh" }}
+              className="h-full w-full object-cover"
             />
           ) : (
             <div className="flex flex-col items-center gap-2 text-white/40">

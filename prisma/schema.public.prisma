@@ -477,6 +477,7 @@ model profiles {
   avatar_url String?
   website    String?
   api_key       String?
+  nexapi_key    String?
   wechat_openid String?   @unique @map("wechat_openid")
   tenantId      String?   @map("tenant_id")
 

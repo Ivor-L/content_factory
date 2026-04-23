@@ -2246,7 +2246,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
               onClick={() => fetchReferences(true)}
               className="px-4 py-2 text-sm font-semibold rounded-lg bg-black text-white dark:bg-white dark:text-black"
             >
-              {t.common.refresh || "Refresh"}
+              {t.common.refresh || scriptUi.refreshList}
             </button>
             <button
               type="button"
@@ -2746,7 +2746,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
               onClick={() => fetchCreators(true)}
               className="px-4 py-2 text-sm font-semibold rounded-lg bg-black text-white dark:bg-white dark:text-black"
             >
-              {t.common.refresh || "Refresh"}
+              {t.common.refresh || scriptUi.refreshList}
             </button>
             <button
               type="button"

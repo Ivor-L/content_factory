@@ -40,7 +40,9 @@ export interface TenantConfig {
   slug: string;
   name: string;
   logo?: string;
+  darkLogo?: string;
   browserLogo?: string;
+  faviconLogo?: string;
   primaryColor?: string;
   features: TenantFeature;
   navItems: TenantNavItem[];
@@ -51,7 +53,10 @@ export const tenants: Record<string, TenantConfig> = {
   crossborder: {
     slug: 'crossborder',
     name: 'NexTide',
-    logo: '/logo/nextide_logo.svg',
+    logo: '/logo/NexTidelogo.png',
+    darkLogo: '/logo/NexTidelogo-white.png',
+    browserLogo: '/logo/black-logo.png',
+    faviconLogo: '/logo/black-logo-favicon.png',
     primaryColor: '#1890FF',
     features: {
       dashboard: true,
@@ -124,7 +129,10 @@ export const tenants: Record<string, TenantConfig> = {
   nextide: {
     slug: 'nextide',
     name: 'NexTide',
-    logo: '/logo/nextide_logo.svg',
+    logo: '/logo/NexTidelogo.png',
+    darkLogo: '/logo/NexTidelogo-white.png',
+    browserLogo: '/logo/black-logo.png',
+    faviconLogo: '/logo/black-logo-favicon.png',
     primaryColor: '#1890FF',
     features: {
       dashboard: true,

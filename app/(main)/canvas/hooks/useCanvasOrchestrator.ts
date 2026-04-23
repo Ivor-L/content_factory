@@ -514,15 +514,34 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
         String(runtimeData.model || models.defaultModels.image?.id || models.imageModels[0]?.id || "").trim();
       const ratio = String(runtimeData.ratio || runtimeData.size || "16:9").trim();
       const quality = String(runtimeData.quality || "standard").trim();
+      const modeFromRuntime = String(runtimeData.generationMode || "").trim().toLowerCase();
       const references = [
         runtimeData.image,
         runtimeData.referenceImage,
         runtimeData.referenceImageUrl,
         ...(upstream.imageUrls || [])
       ].filter((url): url is string => typeof url === "string" && url.trim().length > 0);
+      const hasPrompt = Boolean(prompt.trim());
+      // Backward compatible default:
+      // - if user explicitly selected mode, respect it
+      // - otherwise prefer text2img when prompt exists; fall back to img2img only when prompt is empty
+      const generationMode: "text2img" | "img2img" =
+        modeFromRuntime === "img2img" || modeFromRuntime === "text2img"
+          ? (modeFromRuntime as "text2img" | "img2img")
+          : (!hasPrompt && references.length > 0 ? "img2img" : "text2img");
 
       if (!prompt && !references.length) {
         toast.error("请先输入提示词或上传参考图");
+        runningNodeIds.current.delete(nodeId);
+        return;
+      }
+      if (generationMode === "text2img" && !hasPrompt) {
+        toast.error("文生图模式请先输入提示词");
+        runningNodeIds.current.delete(nodeId);
+        return;
+      }
+      if (generationMode === "img2img" && references.length === 0) {
+        toast.error("图生图模式请先上传参考图");
         runningNodeIds.current.delete(nodeId);
         return;
       }
@@ -541,16 +560,17 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
       try {
         const params = IMAGE_MODEL_PARAMS[model];
         let payload: Record<string, unknown>;
+        const shouldAttachReferences = generationMode === "img2img" && references.length > 0;
 
         if (model === "nano-banana-2" || model === "gemini-3.1-pro-preview" || model === "nano-banana-pro") {
           // Gemini-backed models: prompt + ratio + optional image references
           payload = { model, prompt, aspect_ratio: normalizeAspectRatio(ratio) };
-          if (references.length) payload.images = references;
+          if (shouldAttachReferences) payload.images = references;
         } else if (model === "grok-3-image") {
           // grok image: size as pixel dimensions string, ratio options are pixel strings
           const pixelSize = (params?.ratios?.length ? ratio : "960x960");
           payload = { model, prompt, size: pixelSize };
-          if (references.length) payload.images = references;
+          if (shouldAttachReferences) payload.images = references;
         } else if (model === "doubao-seedream-4-5-251128") {
           // Doubao SeedDream: size as ratio string, quality
           payload = {
@@ -559,7 +579,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
             size: normalizeAspectRatio(ratio),
             quality,
           };
-          if (references.length) payload.images = references;
+          if (shouldAttachReferences) payload.images = references;
         } else {
           // Generic fallback
           payload = {
@@ -570,7 +590,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
             aspect_ratio: normalizeAspectRatio(ratio),
             n: 1,
           };
-          if (references.length) payload.images = references;
+          if (shouldAttachReferences) payload.images = references;
         }
 
         const response = await postJson("/api/canvas/images/generations", payload);

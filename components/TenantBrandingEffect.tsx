@@ -40,15 +40,13 @@ function updateDocumentTitle(title?: string | null) {
 }
 
 export function TenantBrandingEffect() {
-  const { tenant, tenantSlug } = useTenant();
+  const { tenant } = useTenant();
 
   useEffect(() => {
-    const targetHref = tenantSlug === 'jubaopen' && tenant.browserLogo
-      ? tenant.browserLogo
-      : DEFAULT_FAVICON;
+    const targetHref = tenant.faviconLogo || tenant.browserLogo || DEFAULT_FAVICON;
 
     updateFavicon(targetHref);
-  }, [tenant.browserLogo, tenantSlug]);
+  }, [tenant.faviconLogo, tenant.browserLogo]);
 
   useEffect(() => {
     updateDocumentTitle(tenant.name);

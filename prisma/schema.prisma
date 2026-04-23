@@ -1023,6 +1023,7 @@ model profiles {
   avatar_url      String?
   website         String?
   api_key         String?   @unique
+  nexapi_key      String?
   wechat_openid   String?   @unique @map("wechat_openid")
   user_no         BigInt?   @unique
   role            String    @default("free")
@@ -1342,5 +1343,96 @@ model CanvasGridSplitResult {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("canvas_grid_split_results")
+  @@schema("public")
+}
+
+model KnowledgeFolder {
+  id          String          @id @default(uuid()) @db.Uuid
+  userId      String          @map("user_id") @db.Uuid
+  name        String
+  description String?
+  metadata    Json?
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+  files       KnowledgeFile[]
+  chunks      KnowledgeChunk[]
+  conversations AssistantConversation[]
+
+  @@index([userId, updatedAt(sort: Desc)], map: "knowledge_folders_user_updated_idx")
+  @@map("knowledge_folders")
+  @@schema("public")
+}
+
+model KnowledgeFile {
+  id           String           @id @default(uuid()) @db.Uuid
+  folderId     String           @map("folder_id") @db.Uuid
+  userId       String           @map("user_id") @db.Uuid
+  title        String
+  sourceType   String?          @map("source_type")
+  status       String           @default("READY")
+  originalPath String           @map("original_path")
+  metadata     Json?
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+  folder       KnowledgeFolder  @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  chunks       KnowledgeChunk[]
+
+  @@index([folderId, createdAt(sort: Desc)], map: "knowledge_files_folder_created_idx")
+  @@index([userId, createdAt(sort: Desc)], map: "knowledge_files_user_created_idx")
+  @@map("knowledge_files")
+  @@schema("public")
+}
+
+model KnowledgeChunk {
+  id            String          @id @default(uuid()) @db.Uuid
+  folderId      String          @map("folder_id") @db.Uuid
+  fileId        String          @map("file_id") @db.Uuid
+  chunkIndex    Int             @map("chunk_index")
+  content       String          @db.Text
+  contentLength Int             @default(0) @map("content_length")
+  metadata      Json?
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+  folder        KnowledgeFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  file          KnowledgeFile   @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([folderId, createdAt(sort: Desc)], map: "knowledge_chunks_folder_created_idx")
+  @@index([fileId, chunkIndex], map: "knowledge_chunks_file_chunk_idx")
+  @@map("knowledge_chunks")
+  @@schema("public")
+}
+
+model AssistantConversation {
+  id            String             @id @default(uuid()) @db.Uuid
+  userId        String             @map("user_id") @db.Uuid
+  title         String?
+  assistantMode String             @default("xhs") @map("assistant_mode")
+  folderId      String?            @map("folder_id") @db.Uuid
+  model         String?
+  skills        String[]           @default([])
+  metadata      Json?
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+  lastMessageAt DateTime           @default(now()) @map("last_message_at")
+  folder        KnowledgeFolder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  messages      AssistantMessage[]
+
+  @@index([userId, lastMessageAt(sort: Desc)], map: "assistant_conversations_user_last_message_idx")
+  @@index([folderId], map: "assistant_conversations_folder_idx")
+  @@map("assistant_conversations")
+  @@schema("public")
+}
+
+model AssistantMessage {
+  id             String                 @id @default(uuid()) @db.Uuid
+  conversationId String                 @map("conversation_id") @db.Uuid
+  role           String
+  content        String                 @db.Text
+  metadata       Json?
+  createdAt      DateTime               @default(now()) @map("created_at")
+  conversation   AssistantConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt], map: "assistant_messages_conversation_created_idx")
+  @@map("assistant_messages")
   @@schema("public")
 }

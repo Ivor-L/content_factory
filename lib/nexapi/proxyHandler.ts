@@ -8,12 +8,25 @@ import { getModelPrice, computePricing } from '@/lib/nexapi/pricing';
 import { listRouteConfigs } from '@/lib/nexapi/routes';
 
 const DEFAULT_ROUTE = listRouteConfigs()[0];
+const UPSTREAM_TIMEOUT_MS = 40_000;
 
 function extractBearer(request: NextRequest) {
   const header = request.headers.get('authorization') || request.headers.get('Authorization');
   if (!header) return null;
   const match = header.match(/^Bearer\s+(.+)$/i);
   return match?.[1]?.trim() ?? null;
+}
+
+function looksLikeNexApiKey(value: string | null | undefined) {
+  if (!value) return false;
+  const token = value.trim();
+  return token.startsWith('nxt_') && token.length >= 16;
+}
+
+function looksLikeByokUpstreamKey(value: string | null | undefined) {
+  if (!value) return false;
+  const token = value.trim();
+  return token.startsWith('sk-') && token.length >= 20;
 }
 
 function resolveRouteBase(request: NextRequest) {
@@ -26,9 +39,6 @@ function resolveRouteBase(request: NextRequest) {
       (route) => route.id === candidate || route.baseUrl === candidate
     );
     if (matched) return matched.baseUrl;
-    if (candidate.startsWith('http')) {
-      return candidate.replace(/\/$/, '');
-    }
   }
   return DEFAULT_ROUTE.baseUrl;
 }
@@ -39,23 +49,33 @@ interface ProxyOptions {
 }
 
 export async function proxyOpenAiRequest(request: NextRequest, options: ProxyOptions) {
-  const ctx = await getRequestUserContext(request, { allowDefaultApiKey: false });
-  const secretKey = ctx.apiKey ?? extractBearer(request);
+  const headerNexApiKey = request.headers.get('x-nexapi-key')?.trim() || null;
+  const bearer = extractBearer(request);
+  let secretKey = headerNexApiKey || (looksLikeNexApiKey(bearer) ? bearer : null);
+  if (!secretKey) {
+    const ctx = await getRequestUserContext(request, { allowDefaultApiKey: false });
+    secretKey =
+      ctx.nexApiKey
+      || (looksLikeNexApiKey(ctx.apiKey) ? ctx.apiKey : null);
+  }
   if (!secretKey) {
     return NextResponse.json({ error: 'Missing NexAPI key' }, { status: 401 });
   }
 
-  const keyRecord = await getActiveApiKeyRecord(secretKey);
-  if (!keyRecord) {
+  const byokMode = looksLikeByokUpstreamKey(secretKey);
+  const keyRecord = byokMode ? null : await getActiveApiKeyRecord(secretKey);
+  if (!byokMode && !keyRecord) {
     return NextResponse.json({ error: 'Invalid or inactive NexAPI key' }, { status: 401 });
   }
 
-  const wallet = await ensureWallet(keyRecord.userId);
-  if (wallet.balanceCredits <= BigInt(0)) {
-    return NextResponse.json(
-      { error: { code: 'INSUFFICIENT_CREDITS', message: '积分不足，请先充值' } },
-      { status: 402 }
-    );
+  if (keyRecord) {
+    const wallet = await ensureWallet(keyRecord.userId);
+    if (wallet.balanceCredits <= BigInt(0)) {
+      return NextResponse.json(
+        { error: { code: 'INSUFFICIENT_CREDITS', message: '积分不足，请先充值' } },
+        { status: 402 }
+      );
+    }
   }
 
   const body = await request.json().catch(() => null);
@@ -76,14 +96,14 @@ export async function proxyOpenAiRequest(request: NextRequest, options: ProxyOpt
   }
 
   const modelPrice = await getModelPrice(modelId);
-  if (!modelPrice) {
+  if (!byokMode && !modelPrice) {
     return NextResponse.json(
       { error: { code: 'MODEL_UNAVAILABLE', message: `模型 ${modelId} 未配置` } },
       { status: 400 }
     );
   }
 
-  const upstreamKey = process.env.NEXAPI_UPSTREAM_KEY?.trim();
+  const upstreamKey = byokMode ? secretKey : process.env.NEXAPI_UPSTREAM_KEY?.trim();
   if (!upstreamKey) {
     return NextResponse.json(
       { error: { code: 'UPSTREAM_KEY_MISSING', message: 'NEXAPI_UPSTREAM_KEY 未配置' } },
@@ -96,6 +116,8 @@ export async function proxyOpenAiRequest(request: NextRequest, options: ProxyOpt
   const upstreamHeaders = new Headers();
   upstreamHeaders.set('Content-Type', 'application/json');
   upstreamHeaders.set('Authorization', `Bearer ${upstreamKey}`);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
 
   const startTime = Date.now();
   let upstreamResponse: Response;
@@ -106,14 +128,18 @@ export async function proxyOpenAiRequest(request: NextRequest, options: ProxyOpt
       headers: upstreamHeaders,
       body: JSON.stringify(body),
       cache: 'no-store',
+      signal: controller.signal,
     });
     responseBody = await upstreamResponse.text();
   } catch (error) {
+    const isTimeout = error instanceof DOMException && error.name === 'AbortError';
     console.error('[nexapi/proxy] upstream request failed', error);
     return NextResponse.json(
-      { error: { code: 'UPSTREAM_ERROR', message: '上游接口不可用，请稍后再试' } },
-      { status: 502 }
+      { error: { code: isTimeout ? 'UPSTREAM_TIMEOUT' : 'UPSTREAM_ERROR', message: isTimeout ? '上游响应超时，请稍后重试' : '上游接口不可用，请稍后再试' } },
+      { status: isTimeout ? 504 : 502 }
     );
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   const headers = new Headers();
@@ -128,7 +154,7 @@ export async function proxyOpenAiRequest(request: NextRequest, options: ProxyOpt
     parsed = null;
   }
 
-  if (upstreamResponse.ok && parsed?.usage) {
+  if (upstreamResponse.ok && parsed?.usage && keyRecord && modelPrice) {
     const usage = parsed.usage;
     const promptTokens = Number(usage.prompt_tokens ?? 0);
     const completionTokens = Number(usage.completion_tokens ?? 0);

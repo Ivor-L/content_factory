@@ -2,7 +2,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { Home, Repeat, Sparkles, Settings, Languages, Clapperboard, Users, History, ChevronUp, Activity, Zap, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, LayoutGrid, User, LogOut, Film, Folder, BookOpen, Gift, Sun, Moon, Download } from 'lucide-react';
+import { Home, Repeat, Sparkles, Settings, Languages, Clapperboard, Users, History, ChevronUp, Activity, Zap, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, LayoutGrid, User, LogOut, Film, Folder, BookOpen, Gift, Sun, Moon, Download, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -41,9 +41,9 @@ const navShadowClass =
 const navShadowHoverClass =
   "hover:shadow-[0_22px_55px_rgba(15,23,42,0.22)] dark:hover:shadow-[0_22px_55px_rgba(0,0,0,0.65)]";
 const navHoverBackground =
-  "hover:bg-[#fff3c4] dark:hover:bg-gray-800/80";
+  "hover:bg-[#eceef1] dark:hover:bg-[#2b2f36]";
 const activeNavBackground =
-  'bg-gradient-to-r from-[#ffe562] via-[#ffd445] to-[#ffc933]';
+  "bg-[#e3e5e8] dark:bg-[#2f343c]";
 
 function SolidZapIcon({ size = 14, className }: { size?: number; className?: string }) {
   return (
@@ -320,7 +320,7 @@ export function Sidebar() {
   const AvatarCircle = () => (
     <div
       className={cn(
-        "w-10 h-10 rounded-full border border-[var(--tenant-primary-muted)] overflow-hidden flex items-center justify-center bg-[#ffe562] text-gray-900 font-bold text-lg shrink-0",
+        "w-10 h-10 rounded-full border border-[var(--tenant-primary-muted)] overflow-hidden flex items-center justify-center bg-gray-900 text-white font-bold text-lg shrink-0",
         navShadowClass
       )}
     >
@@ -356,6 +356,7 @@ export function Sidebar() {
       tenant.features.knowledgeVideos && { name: t.sidebar.knowledgeVideos || "Knowledge Videos", href: `${basePath}/knowledge-videos`, icon: Film },
       tenant.features.canvas && { name: t.sidebar.canvas || "无限画布", href: `${basePath}/canvas?view=projects`, icon: LayoutGrid },
       tenant.features.myVideos && { name: t.sidebar.myVideos || t.sidebar.replication, href: `${basePath}/my-works`, icon: Folder },
+      { name: "技能中心", href: `${basePath}/skills`, icon: Wrench },
       (tenant.features.products || tenant.features.characters || tenant.features.assetLibrary) && {
         name: t.sidebar.assets,
         href: `${basePath}/resources`,
@@ -364,7 +365,7 @@ export function Sidebar() {
     ] as Array<NavigationItem | false | undefined>
   ).filter(isNavigationItem);
 
-  if (!mounted) return <div className="w-64 bg-white dark:bg-gray-900 border-r border-gray-100 dark:border-gray-800" />;
+  if (!mounted) return <div className="w-56 bg-[#f3f4f6] dark:bg-[#16181d] border-r border-gray-200 dark:border-gray-800" />;
 
   return (
     <>
@@ -388,19 +389,19 @@ export function Sidebar() {
 
       <div 
         className={cn(
-          "flex flex-col bg-white/90 dark:bg-gray-950/70 text-gray-700 dark:text-gray-300 font-sans border-r border-[var(--tenant-primary-muted)] shadow-[0_0_45px_rgba(0,0,0,0.08)] backdrop-blur-xl transition-all duration-300 group",
+          "flex flex-col bg-[#f3f4f6] dark:bg-[#16181d] text-gray-700 dark:text-gray-200 font-sans border-r border-gray-200 dark:border-gray-800 shadow-none transition-all duration-300 group",
           isMobileView
             ? cn(
-                "fixed top-0 left-0 h-[100dvh] max-h-[100dvh] w-64 z-40 translate-x-0 pb-[env(safe-area-inset-bottom)]",
+                "fixed top-0 left-0 h-[100dvh] max-h-[100dvh] w-56 z-40 translate-x-0 pb-[env(safe-area-inset-bottom)]",
                 isMobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
               )
             : cn(
                 "relative z-30 h-full shrink-0 transition-[margin] duration-300",
                 isCanvasProjectDetail
-                  ? "w-64 -ml-64 hover:ml-0 group"
+                  ? "w-56 -ml-56 hover:ml-0 group"
                   : isSidebarVisuallyCollapsed
                     ? "w-20"
-                    : "w-64"
+                    : "w-56"
               )
         )}
         style={{ overflow: 'visible' }}
@@ -456,17 +457,21 @@ export function Sidebar() {
             )
           ) : isNextideTenant && isSidebarVisuallyCollapsed ? (
             <div className="flex items-center justify-center">
-              <div className="h-12 w-12 rounded-full bg-black flex items-center justify-center overflow-hidden">
+              <div className="h-8 w-8 rounded-xl flex items-center justify-center overflow-hidden">
                 {/* eslint-disable-next-line @next/next/no-img-element -- Tenant logos rely on remote URLs */}
                 <img
-                  src="/logo/黑底白色鲸鱼logo_SVG.svg"
+                  src={tenant.browserLogo || '/logo/black-logo.png'}
                   alt={tenant.name}
-                  className="h-10 w-10 object-contain"
+                  className="h-full w-full object-contain"
                 />
               </div>
             </div>
           ) : (
-            <div className={cn("transition-transform duration-300", isSidebarVisuallyCollapsed && "scale-75")}>
+            <div className={cn(
+              "transition-transform duration-300",
+              isSidebarVisuallyCollapsed && "scale-75",
+              isNextideTenant && !isSidebarVisuallyCollapsed && "origin-left scale-[0.67]"
+            )}>
               <TenantLogo
                 showName={!isSidebarVisuallyCollapsed}
                 size={isSidebarVisuallyCollapsed ? 'sm' : 'md'}
@@ -476,7 +481,13 @@ export function Sidebar() {
           )}
         </div>
       
-      <nav className="min-h-0 flex-1 px-3 py-2 space-y-2 overflow-y-auto custom-scrollbar">
+      <nav className="min-h-0 flex-1 px-3 py-2 overflow-visible">
+        <div
+          className={cn(
+            "h-full space-y-2",
+            isSidebarVisuallyCollapsed ? "overflow-visible" : "overflow-y-auto custom-scrollbar"
+          )}
+        >
         <AnimatePresence>
         {navigation.map((item) => {
           if (item.children) {
@@ -500,19 +511,15 @@ export function Sidebar() {
                         className={cn(
                              "relative flex items-center gap-4 text-base font-medium rounded-xl transition-colors duration-200 group hover:z-[60]",
                              isActive
-                             ? 'text-gray-900 dark:text-black z-10'
-                             : cn('text-gray-600 dark:text-gray-200 hover:text-gray-900 dark:hover:text-white z-0', navHoverBackground),
+                             ? 'text-gray-900 dark:text-gray-100 z-10'
+                             : cn('text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 z-0', navHoverBackground),
                              isSidebarVisuallyCollapsed ? "justify-center px-2 py-3" : "px-4 py-3"
                          )}
                         >
                         {isActive && (
                             <motion.div
                                 layoutId="sidebar-active-bg"
-                                className={cn(
-                                  "absolute inset-0 rounded-xl -z-10",
-                                  activeNavBackground,
-                                  navShadowClass
-                                )}
+                                className={cn("absolute inset-0 rounded-xl -z-10", activeNavBackground)}
                                 initial={false}
                                 transition={{ type: "spring", stiffness: 300, damping: 30 }}
                             />
@@ -520,7 +527,7 @@ export function Sidebar() {
 
                         <child.icon className={cn(
                             "w-5 h-5 transition-colors shrink-0 relative z-10", 
-                            isActive ? 'text-gray-900 dark:text-black' : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-800 dark:group-hover:text-white'
+                            isActive ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-800 dark:group-hover:text-gray-100'
                         )} />
                         
                         {!isSidebarVisuallyCollapsed && (
@@ -531,7 +538,7 @@ export function Sidebar() {
                         {isSidebarVisuallyCollapsed && hoveredItem === child.name && (
                             <div
                               className={cn(
-                                "absolute left-full top-1/2 -translate-y-1/2 ml-4 px-3 py-1.5 bg-black text-white text-sm font-medium rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-[100] transition-all duration-200 translate-x-[-4px] group-hover:translate-x-0",
+                                "absolute left-full top-1/2 -translate-y-1/2 ml-4 px-3 py-1.5 bg-black text-white text-sm font-medium rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-[200] transition-all duration-200 translate-x-[-4px] group-hover:translate-x-0",
                                 navShadowClass
                               )}
                             >
@@ -558,19 +565,15 @@ export function Sidebar() {
               className={cn(
                 "relative flex items-center gap-4 text-base font-medium rounded-xl transition-colors duration-200 group hover:z-[60]",
                 isActive
-                  ? 'text-gray-900 dark:text-black z-10'
-                  : cn('text-gray-600 dark:text-gray-200 hover:text-gray-900 dark:hover:text-white z-0', navHoverBackground),
+                  ? 'text-gray-900 dark:text-gray-100 z-10'
+                  : cn('text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100 z-0', navHoverBackground),
                 isSidebarVisuallyCollapsed ? "justify-center px-2 py-3" : "px-4 py-3"
               )}
             >
               {isActive && (
                     <motion.div
                         layoutId="sidebar-active-bg"
-                        className={cn(
-                          "absolute inset-0 rounded-xl -z-10",
-                          activeNavBackground,
-                          navShadowClass
-                        )}
+                        className={cn("absolute inset-0 rounded-xl -z-10", activeNavBackground)}
                         initial={false}
                         transition={{ type: "spring", stiffness: 300, damping: 30 }}
                     />
@@ -578,7 +581,7 @@ export function Sidebar() {
 
               <item.icon className={cn(
                 "w-5 h-5 transition-colors shrink-0 relative z-10", 
-                isActive ? 'text-gray-900 dark:text-black' : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-800 dark:group-hover:text-white'
+                isActive ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-800 dark:group-hover:text-gray-100'
               )} />
               
               {!isSidebarVisuallyCollapsed && (
@@ -589,7 +592,7 @@ export function Sidebar() {
               {isSidebarVisuallyCollapsed && hoveredItem === item.name && (
                 <div
                   className={cn(
-                    "absolute left-full top-1/2 -translate-y-1/2 ml-4 px-3 py-1.5 bg-black text-white text-sm font-medium rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-[100] transition-all duration-200 translate-x-[-4px] group-hover:translate-x-0",
+                    "absolute left-full top-1/2 -translate-y-1/2 ml-4 px-3 py-1.5 bg-black text-white text-sm font-medium rounded-lg opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-[200] transition-all duration-200 translate-x-[-4px] group-hover:translate-x-0",
                     navShadowClass
                   )}
                 >
@@ -601,6 +604,7 @@ export function Sidebar() {
           );
         })}
         </AnimatePresence>
+        </div>
       </nav>
 
       {/* User Block */}
@@ -648,10 +652,7 @@ export function Sidebar() {
                       className="flex items-center gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                     >
                       <Download size={16} />
-                      <div className="flex flex-col">
-                        <span>下载{assistantDisplayName}</span>
-                        <span className="text-[11px] text-gray-400 dark:text-gray-500">离线安装 Chrome 插件 · v{extensionVersion}</span>
-                      </div>
+                      <span>下载{assistantDisplayName}</span>
                     </a>
                   )}
                   <div className="h-px bg-gray-100 dark:bg-gray-700 my-1 mx-2" />
@@ -697,7 +698,7 @@ export function Sidebar() {
                     aria-pressed={isDarkMode}
                   >
                     {isDarkMode ? <Moon size={16} /> : <Sun size={16} />}
-                    <span className="flex-1 text-left">{t.userBlock?.theme ?? 'Theme Color'}</span>
+                    <span className="flex-1 text-left">主题</span>
                     <span className="text-xs font-semibold text-gray-400">
                       {themeLabel}
                     </span>
@@ -739,12 +740,12 @@ export function Sidebar() {
                   <AvatarCircle />
                   <div
                     className={cn(
-                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#fff3c4] text-gray-900 border border-[#ffe562]",
+                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 text-gray-900 border border-gray-300 dark:bg-gray-800 dark:text-gray-100 dark:border-gray-700",
                       navShadowClass
                     )}
                   >
-                    <SolidZapIcon size={12} className="text-[#ffd445]" />
-                    <span className="text-[10px] font-semibold tabular-nums text-gray-900">
+                    <SolidZapIcon size={12} className="text-gray-700 dark:text-gray-200" />
+                    <span className="text-[10px] font-semibold tabular-nums text-gray-900 dark:text-gray-100">
                       {creditsDisplay}
                     </span>
                   </div>
@@ -761,12 +762,12 @@ export function Sidebar() {
                     </p>
                     <div
                       className={cn(
-                        "mt-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#fff3c4] text-gray-900 border border-[#ffe562]",
+                        "mt-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 text-gray-900 border border-gray-300 dark:bg-gray-800 dark:text-gray-100 dark:border-gray-700",
                         navShadowClass
                       )}
                     >
-                      <SolidZapIcon size={14} className="text-[#ffd445]" />
-                      <span className="text-xs font-semibold tabular-nums text-gray-900">
+                      <SolidZapIcon size={14} className="text-gray-700 dark:text-gray-200" />
+                      <span className="text-xs font-semibold tabular-nums text-gray-900 dark:text-gray-100">
                         {creditsDisplay}
                       </span>
                     </div>

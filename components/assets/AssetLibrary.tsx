@@ -2024,7 +2024,7 @@ export function AssetLibrary({
                   className={cn(
                     "relative inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-sm font-semibold transition-all border overflow-hidden",
                     isActive
-                      ? "btn-openclaw text-gray-900 border-transparent shadow-none"
+                      ? "btn-openclaw border-transparent shadow-none"
                       : "bg-gray-50 dark:bg-gray-800 border-transparent text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
                   )}
                 >

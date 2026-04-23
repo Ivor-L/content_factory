@@ -87,3 +87,11 @@
 
 - [`image/`](./image/) — 文档插图
 - [`云雾API 接口对接3.17.apifox.json`](./云雾API%20接口对接3.17%20.apifox.json) — 云雾 API Apifox 配置文件
+
+---
+
+## 执行计划
+
+| 文件 | 说明 |
+|------|------|
+| [20260424-chat-conversation-lifecycle-plan.md](./20260424-chat-conversation-lifecycle-plan.md) | 聊天会话生命周期改造：支持删除历史、新增懒创建 |

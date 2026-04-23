@@ -191,8 +191,8 @@ export function CanvasAgentDrawer() {
       />
       <aside
         className={clsx(
-          "relative flex h-full w-full max-w-md flex-col bg-[#0b0d17] text-white shadow-[0_25px_80px_rgba(0,0,0,0.55)] transition-transform duration-300",
-          isOpen ? "translate-x-0" : "translate-x-full",
+          "relative flex h-full w-full max-w-md flex-col bg-[#0b0d17] text-white transition-transform duration-300",
+          isOpen ? "translate-x-0 shadow-[0_25px_80px_rgba(0,0,0,0.55)]" : "translate-x-full shadow-none",
         )}
       >
         <header className="flex items-start justify-between border-b border-white/10 px-6 py-5">
@@ -248,7 +248,7 @@ export function CanvasAgentDrawer() {
             type="button"
             onClick={handleSubmit}
             disabled={disabled}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#ffc94a] px-4 py-3 text-sm font-semibold text-black transition hover:bg-[#ffd86f] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-black px-4 py-3 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting ? (
               <>

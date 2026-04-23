@@ -33,6 +33,7 @@ const PROFILE_API_KEY_CACHE_TTL_MS = 30_000;
 const AUTH_CACHE_MAX_ENTRIES = 1000;
 const tokenUserCache = new Map<string, CacheEntry<string>>();
 const profileApiKeyCache = new Map<string, CacheEntry<string | null>>();
+const profileNexApiKeyCache = new Map<string, CacheEntry<string | null>>();
 
 function getCacheValue<T>(cache: Map<string, CacheEntry<T>>, key: string): { hit: boolean; value: T | null } {
   const entry = cache.get(key);
@@ -141,6 +142,7 @@ export interface RequestUserContext {
   userId: string | null;
   token: string | null;
   apiKey: string | null;
+  nexApiKey: string | null;
 }
 
 export async function getRequestUserContext(
@@ -149,15 +151,22 @@ export async function getRequestUserContext(
 ): Promise<RequestUserContext> {
   const { allowDefaultApiKey = true, useSystemApiKey = false } = options;
   const headerApiKey = request.headers.get('x-user-api-key')?.trim() ?? null;
+  const headerNexApiKey = request.headers.get('x-nexapi-key')?.trim() ?? null;
   const token = extractBearerToken(request);
   if (!token) {
+    if (headerNexApiKey) {
+      const userIdFromNexApiKey = await resolveUserIdFromApiKey(headerNexApiKey);
+      if (userIdFromNexApiKey) {
+        return { userId: userIdFromNexApiKey, token: null, apiKey: headerApiKey, nexApiKey: headerNexApiKey };
+      }
+    }
     if (headerApiKey) {
       const userIdFromKey = await findUserIdByApiKey(headerApiKey);
       if (userIdFromKey) {
-        return { userId: userIdFromKey, token: null, apiKey: headerApiKey };
+        return { userId: userIdFromKey, token: null, apiKey: headerApiKey, nexApiKey: null };
       }
     }
-    return { userId: null, token: null, apiKey: null };
+    return { userId: null, token: null, apiKey: null, nexApiKey: null };
   }
 
   let resolvedUserId: string | null = null;
@@ -192,16 +201,23 @@ export async function getRequestUserContext(
   }
 
   if (!resolvedUserId) {
+    if (headerNexApiKey) {
+      const userIdFromNexApiKey = await resolveUserIdFromApiKey(headerNexApiKey);
+      if (userIdFromNexApiKey) {
+        return { userId: userIdFromNexApiKey, token: null, apiKey: headerApiKey, nexApiKey: headerNexApiKey };
+      }
+    }
     if (headerApiKey) {
       const userIdFromKey = await findUserIdByApiKey(headerApiKey);
       if (userIdFromKey) {
-        return { userId: userIdFromKey, token: null, apiKey: headerApiKey };
+        return { userId: userIdFromKey, token: null, apiKey: headerApiKey, nexApiKey: null };
       }
     }
-    return { userId: null, token: null, apiKey: null };
+    return { userId: null, token: null, apiKey: null, nexApiKey: null };
   }
 
   let apiKey: string | null = null;
+  let nexApiKey: string | null = headerNexApiKey;
   if (!useSystemApiKey) {
     const cachedApiKey = getCacheValue(profileApiKeyCache, resolvedUserId);
     if (cachedApiKey.hit) {
@@ -221,13 +237,36 @@ export async function getRequestUserContext(
         console.error('Failed to read profile api_key', profileError);
       }
     }
+
+    if (!nexApiKey) {
+      const cachedNexApiKey = getCacheValue(profileNexApiKeyCache, resolvedUserId);
+      // Do not trust cached null for nexApiKey, otherwise users may see
+      // a short false-negative window right after updating key in settings.
+      if (cachedNexApiKey.hit && cachedNexApiKey.value) {
+        nexApiKey = cachedNexApiKey.value;
+      } else {
+        const profileClient = supabaseAdminClient ?? createAuthedClient(token);
+        try {
+          const { data: profile } = await profileClient
+            .from('profiles')
+            .select('nexapi_key')
+            .eq('id', resolvedUserId)
+            .maybeSingle();
+
+          nexApiKey = profile?.nexapi_key ?? null;
+          setCacheValue(profileNexApiKeyCache, resolvedUserId, nexApiKey, PROFILE_API_KEY_CACHE_TTL_MS);
+        } catch (profileError) {
+          console.error('Failed to read profile nexapi_key', profileError);
+        }
+      }
+    }
   }
 
   if (!apiKey && allowDefaultApiKey && process.env.DEFAULT_USER_API_KEY) {
     apiKey = process.env.DEFAULT_USER_API_KEY;
   }
 
-  return { userId: resolvedUserId, token, apiKey };
+  return { userId: resolvedUserId, token, apiKey, nexApiKey };
 }
 
 async function findUserIdByApiKey(apiKey: string | null): Promise<string | null> {

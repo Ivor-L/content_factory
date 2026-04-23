@@ -23,6 +23,10 @@ services:
       - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
       - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      # Emergency switch: set to 1 in .env to bypass prisma db push at startup.
+      - SKIP_PRISMA_DB_PUSH=${SKIP_PRISMA_DB_PUSH:-0}
+      # Emergency switch: set to 0 in .env to allow startup even if db push fails.
+      - PRISMA_DB_PUSH_REQUIRED=${PRISMA_DB_PUSH_REQUIRED:-1}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

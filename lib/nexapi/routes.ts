@@ -1,5 +1,5 @@
 const MAIN_URL = process.env.NEXAPI_ROUTE_MAIN?.trim() || 'https://aiapi.atomx.top';
-const BACKUP_URL = process.env.NEXAPI_ROUTE_BACKUP?.trim() || 'https://aiapi.nextide.top';
+const BACKUP_URL = process.env.NEXAPI_ROUTE_BACKUP?.trim() || MAIN_URL;
 
 const DEFAULT_ROUTES = [
   { id: 'nextide-main', label: 'NexAPI 主站', baseUrl: MAIN_URL, origin: 'global' },

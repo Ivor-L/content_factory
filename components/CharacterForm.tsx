@@ -120,6 +120,28 @@ export function CharacterForm({ onSuccess, initialData }: CharacterFormProps) {
   const uploadFile = async (file: File) => {
     setUploadingImage(true);
     try {
+      const contentType = file.type || 'application/octet-stream';
+      const presignRes = await fetch('/api/upload/presign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name, contentType, type: 'character' }),
+      });
+
+      if (presignRes.ok) {
+        const presignData = await presignRes.json().catch(() => ({} as { uploadUrl?: string; publicUrl?: string }));
+        if (presignData.uploadUrl && presignData.publicUrl) {
+          const putRes = await fetch(presignData.uploadUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': contentType },
+            body: file,
+          });
+          if (putRes.ok) {
+            setAvatar(presignData.publicUrl);
+            return;
+          }
+        }
+      }
+
       const formData = new FormData();
       formData.append('file', file);
       formData.append('type', 'character');

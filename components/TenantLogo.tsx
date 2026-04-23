@@ -11,6 +11,7 @@ import { useTenant } from '@/hooks/useTenant';
 import { cn } from '@/lib/utils';
 import { Sparkles } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import { useEffect, useState } from 'react';
 
 interface TenantLogoProps {
   className?: string;
@@ -41,8 +42,86 @@ export function TenantLogo({
 }: TenantLogoProps) {
   const { tenant, isLoading } = useTenant();
   const { resolvedTheme } = useTheme();
+  const [processedLogoSrc, setProcessedLogoSrc] = useState<string | null>(null);
   const isDarkMode = resolvedTheme === 'dark';
-  const applyMono = forceMonoOnDark && isDarkMode;
+  const activeLogo = isDarkMode && tenant.darkLogo ? tenant.darkLogo : tenant.logo;
+  const logoPath = (activeLogo || '').split('?')[0].toLowerCase();
+  const isSvgLogo = logoPath.endsWith('.svg');
+  const applyMono = forceMonoOnDark && isDarkMode && !tenant.darkLogo && isSvgLogo;
+  const blendOriginalNextideLogo =
+    !isDarkMode &&
+    logoPath.endsWith('/logo/nextidelogo.png');
+  const stripWhiteBackground =
+    !isDarkMode &&
+    logoPath.endsWith('/logo/nextidelogo.png');
+
+  useEffect(() => {
+    if (!stripWhiteBackground || !activeLogo) {
+      setProcessedLogoSrc(null);
+      return;
+    }
+
+    let cancelled = false;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.decoding = 'async';
+
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          if (!cancelled) setProcessedLogoSrc(activeLogo);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+
+        for (let i = 0; i < data.length; i += 4) {
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          const a = data[i + 3];
+
+          if (a === 0) continue;
+
+          const min = Math.min(r, g, b);
+          const max = Math.max(r, g, b);
+          const nearWhite = min >= 232;
+          const lowSaturation = max - min <= 16;
+
+          if (nearWhite && lowSaturation) {
+            if (min >= 246) {
+              data[i + 3] = 0;
+            } else {
+              const fade = Math.max(0, (246 - min) / 14);
+              data[i + 3] = Math.round(a * fade);
+            }
+          }
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+        const cleanedSrc = canvas.toDataURL('image/png');
+        if (!cancelled) setProcessedLogoSrc(cleanedSrc);
+      } catch {
+        if (!cancelled) setProcessedLogoSrc(activeLogo);
+      }
+    };
+
+    img.onerror = () => {
+      if (!cancelled) setProcessedLogoSrc(activeLogo);
+    };
+
+    img.src = activeLogo;
+
+    return () => {
+      cancelled = true;
+    };
+  }, [stripWhiteBackground, activeLogo]);
 
   if (isLoading) {
     return (
@@ -56,12 +135,13 @@ export function TenantLogo({
 
   const imageClass = cn(
     "object-contain",
-    applyMono && "transition brightness-0 invert"
+    applyMono && "transition brightness-0 invert",
+    blendOriginalNextideLogo && "mix-blend-multiply"
   );
 
-  const content = tenant.logo ? (
+  const content = activeLogo ? (
     <img 
-      src={tenant.logo} 
+      src={stripWhiteBackground ? (processedLogoSrc || activeLogo) : activeLogo}
       alt={tenant.name}
       className={imageClass}
       style={{
@@ -93,7 +173,7 @@ export function TenantLogo({
     </div>
   );
 
-  if (tenant.logo && !showName) {
+  if (activeLogo && !showName) {
     return <div className={cn("flex items-start justify-start", className)}>{content}</div>;
   }
 

@@ -5,10 +5,11 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { ProductList } from "@/app/(main)/products/ProductList";
 import { CharacterList } from "@/app/(main)/characters/CharacterList";
 import { StyleLibraryHub } from "@/components/assets/StyleLibraryHub";
+import { KnowledgeBaseLibrary } from "@/components/resources/KnowledgeBaseLibrary";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 
-const TABS = ["characters", "products", "styleLibrary"] as const;
+const TABS = ["characters", "products", "styleLibrary", "knowledgeBase"] as const;
 type TabKey = (typeof TABS)[number];
 
 type ProductListProps = React.ComponentProps<typeof ProductList>;
@@ -34,6 +35,7 @@ export function ResourceTabs({ products, characters }: ResourceTabsProps) {
     products: t.products?.title ?? "产品库",
     characters: t.characters?.title ?? "角色库",
     styleLibrary: "风格库",
+    knowledgeBase: "知识库",
   };
 
   const renderContent = useMemo(() => {
@@ -52,6 +54,8 @@ export function ResourceTabs({ products, characters }: ResourceTabsProps) {
         );
       case "styleLibrary":
         return <StyleLibraryHub showHeader={false} />;
+      case "knowledgeBase":
+        return <KnowledgeBaseLibrary showHeader={false} />;
       default:
         return null;
     }

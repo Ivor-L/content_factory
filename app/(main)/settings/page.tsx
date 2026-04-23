@@ -17,6 +17,17 @@ function maskApiKey(value: string) {
 }
 
 const PASSWORD_MIN_LENGTH = 8;
+const NEXAPI_KEY_STORAGE_KEY = 'nexapi_key';
+const NEXAPI_KEY_UPDATED_AT_STORAGE_KEY = 'nexapi_key_updated_at';
+const NEXAPI_KEY_MIN_LENGTH = 10;
+
+function isNoRowError(error: unknown) {
+  if (!error || typeof error !== 'object') return false;
+  const code = (error as { code?: string }).code;
+  if (code === 'PGRST116') return true;
+  const message = (error as { message?: string }).message ?? '';
+  return typeof message === 'string' && /no rows|0 rows|JSON object requested/i.test(message);
+}
 
 export default function SettingsPage() {
   const { t } = useLanguage();
@@ -37,6 +48,12 @@ export default function SettingsPage() {
   const [apiKeyBalanceHint, setApiKeyBalanceHint] = useState<number | null>(null);
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
   const [apiKeyUpdatedAt, setApiKeyUpdatedAt] = useState<string | null>(null);
+  const [nexApiKeyValue, setNexApiKeyValue] = useState('');
+  const [nexApiKeyInput, setNexApiKeyInput] = useState('');
+  const [nexApiKeyVisible, setNexApiKeyVisible] = useState(false);
+  const [nexApiKeyStatus, setNexApiKeyStatus] = useState<'idle' | 'saved' | 'invalid'>('idle');
+  const [nexApiKeyError, setNexApiKeyError] = useState<string | null>(null);
+  const [nexApiKeyUpdatedAt, setNexApiKeyUpdatedAt] = useState<string | null>(null);
   const [isApiEditing, setIsApiEditing] = useState(false);
   const [credits, setCredits] = useState<number | null>(null);
   const [creditsLoading, setCreditsLoading] = useState(false);
@@ -117,7 +134,14 @@ export default function SettingsPage() {
   const fetchApiKey = useCallback(async () => {
     setApiKeyLoading(true);
     setApiKeyError(null);
+    setNexApiKeyError(null);
     try {
+      const localNexApiKey =
+        typeof window !== 'undefined' ? window.localStorage.getItem(NEXAPI_KEY_STORAGE_KEY) ?? '' : '';
+      const localNexApiKeyUpdatedAt =
+        typeof window !== 'undefined' ? window.localStorage.getItem(NEXAPI_KEY_UPDATED_AT_STORAGE_KEY) : null;
+      setNexApiKeyStatus('idle');
+
       const { data: { user } } = await supabase.auth.getUser();
       setSignedIn(!!user);
       if (!user) {
@@ -126,26 +150,56 @@ export default function SettingsPage() {
         setApiKeyStatus('idle');
         setApiKeyBalanceHint(null);
         setApiKeyError(t.settings.loginRequired ?? 'Please log in first.');
+        setNexApiKeyValue(localNexApiKey);
+        setNexApiKeyInput(localNexApiKey);
+        setNexApiKeyUpdatedAt(localNexApiKeyUpdatedAt);
+        setIsApiEditing(localNexApiKey.length === 0);
         return;
       }
 
-      const { data: profile, error } = await supabase
+      let profile: { api_key?: string | null; nexapi_key?: string | null; updated_at?: string | null } | null = null;
+      const { data: profileWithNexApi, error: profileWithNexApiError } = await supabase
         .from('profiles')
-        .select('api_key, updated_at')
+        .select('api_key, nexapi_key, updated_at')
         .eq('id', user.id)
         .maybeSingle();
 
-      if (error) {
-        throw error;
+      if (profileWithNexApiError && !isNoRowError(profileWithNexApiError)) {
+        // Backward compatible fallback for databases that haven't added `nexapi_key` yet.
+        const { data: profileLegacy, error: profileLegacyError } = await supabase
+          .from('profiles')
+          .select('api_key, updated_at')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (profileLegacyError && !isNoRowError(profileLegacyError)) {
+          throw profileLegacyError;
+        }
+
+        profile = {
+          api_key: profileLegacy?.api_key ?? null,
+          nexapi_key: localNexApiKey,
+          updated_at: profileLegacy?.updated_at ?? localNexApiKeyUpdatedAt ?? null,
+        };
+      } else {
+        profile = profileWithNexApi ?? {
+          api_key: null,
+          nexapi_key: localNexApiKey,
+          updated_at: localNexApiKeyUpdatedAt ?? null,
+        };
       }
 
       const storedKey = profile?.api_key ?? '';
+      const storedNexApiKey = profile?.nexapi_key ?? localNexApiKey;
       setApiKeyValue(storedKey);
       setApiKeyInput(storedKey);
       setApiKeyStatus('idle');
       setApiKeyBalanceHint(null);
       setApiKeyUpdatedAt(profile?.updated_at ?? null);
-      setIsApiEditing(storedKey.length === 0);
+      setNexApiKeyValue(storedNexApiKey);
+      setNexApiKeyInput(storedNexApiKey);
+      setNexApiKeyUpdatedAt(profile?.updated_at ?? localNexApiKeyUpdatedAt ?? null);
+      setIsApiEditing(storedKey.length === 0 && storedNexApiKey.length === 0);
     } catch (error) {
       console.error('Error loading API key:', error);
       setApiKeyError('Failed to load API Key');
@@ -327,73 +381,168 @@ export default function SettingsPage() {
     e.preventDefault();
     if (!isApiEditing) return;
     const trimmedKey = apiKeyInput.trim();
-    if (!trimmedKey) {
-      toast.error(t.apiKeyModal.toast.enterKey ?? 'Please enter an API key first.');
-      return;
-    }
+    const originalKey = apiKeyValue.trim();
+    const trimmedNexApiKey = nexApiKeyInput.trim();
+    const originalNexApiKey = nexApiKeyValue.trim();
+    const userApiKeyChanged = trimmedKey !== originalKey;
+    const nexApiKeyChanged = trimmedNexApiKey !== originalNexApiKey;
 
     setApiKeySaving(true);
     setApiKeyStatus('idle');
     setApiKeyBalanceHint(null);
+    setNexApiKeyStatus('idle');
+    setNexApiKeyError(null);
 
     try {
-      let validateData: any = {};
-      try {
-        const validateRes = await fetch('/api/user/validate-api-key', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiKey: trimmedKey })
-        });
-        validateData = await validateRes.json();
-      } catch (error) {
-        console.error('Failed to validate API key:', error);
-        validateData = {};
+      if (!userApiKeyChanged && !nexApiKeyChanged) {
+        setIsApiEditing(false);
+        return;
       }
 
-      if (!validateData?.valid) {
-        if (validateData?.reason === 'already_bound') {
-          setApiKeyStatus('bound');
-          toast.error('该 API Key 已被其他账号绑定');
-        } else {
+      let validatedBalance: number | null = null;
+      let shouldRefreshCredits = false;
+
+      if (userApiKeyChanged) {
+        if (!trimmedKey) {
           setApiKeyStatus('invalid');
-          toast.error('API Key 无效，请检查后重试');
+          toast.error(t.apiKeyModal.toast.enterKey ?? 'Please enter an API key first.');
+          return;
         }
-        return;
+
+        let validateData: any = {};
+        try {
+          const validateRes = await fetch('/api/user/validate-api-key', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ apiKey: trimmedKey })
+          });
+          validateData = await validateRes.json();
+        } catch (error) {
+          console.error('Failed to validate API key:', error);
+          validateData = {};
+        }
+
+        if (!validateData?.valid) {
+          if (validateData?.reason === 'already_bound') {
+            setApiKeyStatus('bound');
+            toast.error('该 API Key 已被其他账号绑定');
+          } else {
+            setApiKeyStatus('invalid');
+            toast.error('API Key 无效，请检查后重试');
+          }
+          return;
+        }
+
+        setApiKeyStatus('valid');
+        validatedBalance = typeof validateData.balance === 'number' ? validateData.balance : null;
+        setApiKeyBalanceHint(validatedBalance);
+
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          toast.error(t.apiKeyModal.toast.userMissing ?? 'Please sign in before binding an API key.');
+          return;
+        }
+
+        const updatedAt = new Date().toISOString();
+        const { error } = await supabase
+          .from('profiles')
+          .upsert({
+            id: user.id,
+            api_key: trimmedKey,
+            updated_at: updatedAt
+          });
+
+        if (error) throw error;
+
+        setApiKeyValue(trimmedKey);
+        setApiKeyUpdatedAt(updatedAt);
+        shouldRefreshCredits = true;
+
+        if (validatedBalance !== null) {
+          setCredits(validatedBalance);
+          setCreditsError(null);
+          setCreditsUpdatedAt(new Date().toISOString());
+        } else {
+          await fetchCredits();
+        }
       }
 
-      setApiKeyStatus('valid');
-      const validatedBalance = typeof validateData.balance === 'number' ? validateData.balance : null;
-      setApiKeyBalanceHint(validatedBalance);
+      if (nexApiKeyChanged) {
+        if (trimmedNexApiKey && trimmedNexApiKey.length < NEXAPI_KEY_MIN_LENGTH) {
+          setNexApiKeyStatus('invalid');
+          setNexApiKeyError(t.settings.nexApiKeyInvalid ?? 'NexAPI key invalid');
+          toast.error('NexAPI Key 格式不正确');
+          return;
+        }
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast.error(t.apiKeyModal.toast.userMissing ?? 'Please sign in before binding an API key.');
-        return;
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) {
+            toast.error(t.settings.loginRequired ?? 'Please log in first.');
+            return;
+          }
+
+          const saveRes = await fetch('/api/user/nexapi-key', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ nexApiKey: trimmedNexApiKey || '' }),
+            cache: 'no-store',
+          });
+          const savePayload = await saveRes.json().catch(() => ({})) as {
+            saved?: boolean;
+            updatedAt?: string;
+            value?: string | null;
+            error?: string;
+          };
+          if (!saveRes.ok || !savePayload.saved) {
+            const errorCode = savePayload.error || '';
+            if (errorCode.includes('INVALID_FORMAT')) {
+              toast.error('NexAPI Key 格式不正确');
+            } else if (errorCode.includes('NOT_OWNED')) {
+              toast.error('该 NexAPI Key 不属于当前账号');
+            } else if (errorCode.includes('INVALID_OR_INACTIVE')) {
+              toast.error('NexAPI Key 无效、未激活或已过期');
+            } else if (saveRes.status === 401) {
+              toast.error(t.settings.loginRequired ?? '登录已失效，请重新登录后再试');
+            } else {
+              toast.error(savePayload.error || 'NexAPI Key 保存失败');
+            }
+            setNexApiKeyStatus('invalid');
+            setNexApiKeyError(savePayload.error || (t.common.error ?? 'Error'));
+            return;
+          }
+
+          const updatedAt = savePayload.updatedAt || new Date().toISOString();
+          const savedValue = typeof savePayload.value === 'string' ? savePayload.value : '';
+          if (typeof window !== 'undefined') {
+            if (savedValue) {
+              window.localStorage.setItem(NEXAPI_KEY_STORAGE_KEY, savedValue);
+            } else {
+              window.localStorage.removeItem(NEXAPI_KEY_STORAGE_KEY);
+            }
+            window.localStorage.setItem(NEXAPI_KEY_UPDATED_AT_STORAGE_KEY, updatedAt);
+          }
+          setNexApiKeyValue(savedValue);
+          setNexApiKeyUpdatedAt(updatedAt);
+          setNexApiKeyStatus('saved');
+        } catch (storageError) {
+          console.error('Failed to store NexAPI key:', storageError);
+          setNexApiKeyStatus('invalid');
+          setNexApiKeyError(t.common.error ?? 'Error');
+          toast.error('NexAPI Key 保存失败');
+          return;
+        }
       }
 
-      const { error } = await supabase
-        .from('profiles')
-        .upsert({
-          id: user.id,
-          api_key: trimmedKey,
-          updated_at: new Date().toISOString()
-        });
+      if (shouldRefreshCredits) {
+        emitCreditsRefresh();
+      }
 
-      if (error) throw error;
-
-      setApiKeyValue(trimmedKey);
-      setApiKeyUpdatedAt(new Date().toISOString());
       setIsApiEditing(false);
       toast.success(t.settings.saved ?? 'Saved successfully!');
-      emitCreditsRefresh();
-
-      if (validatedBalance !== null) {
-        setCredits(validatedBalance);
-        setCreditsError(null);
-        setCreditsUpdatedAt(new Date().toISOString());
-      } else {
-        await fetchCredits();
-      }
     } catch (error) {
       console.error('Error saving API key:', error);
       toast.error(t.apiKeyModal.toast.error ?? 'Failed to save API key.');
@@ -403,10 +552,13 @@ export default function SettingsPage() {
   };
 
   const handleApiKeyReset = () => {
-    setApiKeyInput(apiKeyValue);
-    setApiKeyStatus('idle');
-    setApiKeyBalanceHint(null);
-    setIsApiEditing(false);
+      setApiKeyInput(apiKeyValue);
+      setApiKeyStatus('idle');
+      setApiKeyBalanceHint(null);
+      setNexApiKeyInput(nexApiKeyValue);
+      setNexApiKeyStatus('idle');
+      setNexApiKeyError(null);
+      setIsApiEditing(false);
   };
 
   const handlePasswordSave = async (e: FormEvent) => {
@@ -457,10 +609,9 @@ export default function SettingsPage() {
     }
   };
 
-  const handleCopyApiKey = async () => {
-    const value = apiKeyInput.trim();
+  const handleCopyValue = async (value: string, emptyMessage: string) => {
     if (!value) {
-      toast.error(t.apiKeyModal.toast.enterKey ?? 'Please enter an API key first.');
+      toast.error(emptyMessage);
       return;
     }
     try {
@@ -475,6 +626,14 @@ export default function SettingsPage() {
     }
   };
 
+  const handleCopyApiKey = async () => {
+    await handleCopyValue(apiKeyInput.trim(), t.apiKeyModal.toast.enterKey ?? 'Please enter an API key first.');
+  };
+
+  const handleCopyNexApiKey = async () => {
+    await handleCopyValue(nexApiKeyInput.trim(), t.settings.nexApiKeyRequired ?? 'Please enter a NexAPI key first.');
+  };
+
   const handleCreditsRefresh = () => {
     void fetchCredits(true);
   };
@@ -482,6 +641,7 @@ export default function SettingsPage() {
   const creditsDisplay = creditsLoading ? '...' : credits !== null ? credits.toLocaleString() : '--';
   const creditsMeta = creditsUpdatedAt ? new Date(creditsUpdatedAt).toLocaleString() : null;
   const apiKeyMeta = apiKeyUpdatedAt ? new Date(apiKeyUpdatedAt).toLocaleString() : null;
+  const nexApiKeyMeta = nexApiKeyUpdatedAt ? new Date(nexApiKeyUpdatedAt).toLocaleString() : null;
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 font-sans">
@@ -681,73 +841,145 @@ export default function SettingsPage() {
           </div>
 
           <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-            <div className="space-y-3">
-              <label className="block text-sm font-bold text-gray-700 dark:text-gray-300">
-                {t.settings.apiKey}
-              </label>
-              <div className="relative">
-                <input
-                  type={apiKeyVisible ? 'text' : 'password'}
-                  value={apiKeyInput}
-                  onChange={(event) => {
-                    setApiKeyInput(event.target.value);
-                    setApiKeyStatus('idle');
-                    setApiKeyBalanceHint(null);
-                  }}
-                  disabled={!isApiEditing || apiKeyLoading || apiKeySaving}
-                  placeholder={t.apiKeyModal.placeholder}
-                  autoComplete="off"
-                  className={`w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-4 py-3 pr-24 text-gray-900 dark:text-white text-sm focus:outline-none ${
-                    isApiEditing ? 'focus:ring-2 focus:ring-primary focus:border-transparent' : 'opacity-60'
-                  }`}
-                />
-                <button
-                  type="button"
-                  onClick={handleCopyApiKey}
-                  disabled={!apiKeyInput.trim() || apiKeyLoading}
-                  className="absolute right-10 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-40"
-                >
-                  <Copy size={18} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setApiKeyVisible((prev) => !prev)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
-                >
-                  {apiKeyVisible ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
+            <div className="space-y-6">
+              <div className="space-y-3">
+                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300">
+                  {t.settings.apiKey}
+                </label>
+                <div className="relative">
+                  <input
+                    type={apiKeyVisible ? 'text' : 'password'}
+                    value={apiKeyInput}
+                    onChange={(event) => {
+                      setApiKeyInput(event.target.value);
+                      setApiKeyStatus('idle');
+                      setApiKeyBalanceHint(null);
+                    }}
+                    disabled={!isApiEditing || apiKeyLoading || apiKeySaving}
+                    placeholder={t.apiKeyModal.placeholder}
+                    autoComplete="off"
+                    className={`w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-4 py-3 pr-24 text-gray-900 dark:text-white text-sm focus:outline-none ${
+                      isApiEditing ? 'focus:ring-2 focus:ring-primary focus:border-transparent' : 'opacity-60'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCopyApiKey}
+                    disabled={!apiKeyInput.trim() || apiKeyLoading}
+                    className="absolute right-10 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-40"
+                  >
+                    <Copy size={18} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setApiKeyVisible((prev) => !prev)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+                  >
+                    {apiKeyVisible ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-mono text-base text-gray-900 dark:text-gray-100">
+                    {apiKeyValue ? maskApiKey(apiKeyValue) : '—'}
+                  </span>
+                  {(apiKeyLoading || apiKeySaving) && <Loader2 size={14} className="animate-spin text-gray-400" />}
+                </div>
+                {apiKeyStatus === 'valid' && (
+                  <p className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 size={16} />
+                    {apiKeyBalanceHint !== null
+                      ? `校验成功 · ${apiKeyBalanceHint.toLocaleString()}`
+                      : '校验成功'}
+                  </p>
+                )}
+                {apiKeyStatus === 'bound' && (
+                  <p className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
+                    <AlertTriangle size={16} />
+                    该 API Key 已被其他账号绑定
+                  </p>
+                )}
+                {apiKeyStatus === 'invalid' && (
+                  <p className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
+                    <AlertTriangle size={16} />
+                    API Key 无效
+                  </p>
+                )}
+                {apiKeyError && (
+                  <p className="text-sm text-red-500 dark:text-red-400">
+                    {apiKeyError}
+                  </p>
+                )}
               </div>
-              <div className="flex items-center gap-2 text-sm">
-                <span className="font-mono text-base text-gray-900 dark:text-gray-100">
-                  {apiKeyValue ? maskApiKey(apiKeyValue) : '—'}
-                </span>
-                {(apiKeyLoading || apiKeySaving) && <Loader2 size={14} className="animate-spin text-gray-400" />}
+
+              <div className="space-y-3">
+                <label className="block text-sm font-bold text-gray-700 dark:text-gray-300">
+                  {t.settings.nexApiKey ?? 'NexAPI Key'}
+                </label>
+                <div className="relative">
+                  <input
+                    type={nexApiKeyVisible ? 'text' : 'password'}
+                    value={nexApiKeyInput}
+                    onChange={(event) => {
+                      setNexApiKeyInput(event.target.value);
+                      setNexApiKeyStatus('idle');
+                      setNexApiKeyError(null);
+                    }}
+                    disabled={!isApiEditing || apiKeyLoading || apiKeySaving}
+                    placeholder={t.settings.nexApiKeyPlaceholder ?? 'Enter NexAPI key'}
+                    autoComplete="off"
+                    className={`w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-4 py-3 pr-24 text-gray-900 dark:text-white text-sm focus:outline-none ${
+                      isApiEditing ? 'focus:ring-2 focus:ring-primary focus:border-transparent' : 'opacity-60'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCopyNexApiKey}
+                    disabled={!nexApiKeyInput.trim() || apiKeyLoading}
+                    className="absolute right-10 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-40"
+                  >
+                    <Copy size={18} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNexApiKeyVisible((prev) => !prev)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+                  >
+                    {nexApiKeyVisible ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-mono text-base text-gray-900 dark:text-gray-100">
+                    {nexApiKeyValue ? maskApiKey(nexApiKeyValue) : '—'}
+                  </span>
+                  {nexApiKeyMeta && (
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      Updated {nexApiKeyMeta}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {t.settings.nexApiKeyDesc ?? '用于首页 AI 对话（Codex / Claude / MiniMax）请求鉴权。'}
+                </p>
+                {nexApiKeyStatus === 'saved' && (
+                  <p className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 size={16} />
+                    {nexApiKeyValue
+                      ? (t.settings.nexApiKeySaved ?? 'NexAPI Key 已保存')
+                      : (t.settings.nexApiKeyCleared ?? 'NexAPI Key 已清除')}
+                  </p>
+                )}
+                {nexApiKeyStatus === 'invalid' && (
+                  <p className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
+                    <AlertTriangle size={16} />
+                    {t.settings.nexApiKeyInvalid ?? 'NexAPI Key 保存失败'}
+                  </p>
+                )}
+                {nexApiKeyError && (
+                  <p className="text-sm text-red-500 dark:text-red-400">
+                    {nexApiKeyError}
+                  </p>
+                )}
               </div>
-              {apiKeyStatus === 'valid' && (
-                <p className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
-                  <CheckCircle2 size={16} />
-                  {apiKeyBalanceHint !== null
-                    ? `校验成功 · ${apiKeyBalanceHint.toLocaleString()}`
-                    : '校验成功'}
-                </p>
-              )}
-              {apiKeyStatus === 'bound' && (
-                <p className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
-                  <AlertTriangle size={16} />
-                  该 API Key 已被其他账号绑定
-                </p>
-              )}
-              {apiKeyStatus === 'invalid' && (
-                <p className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
-                  <AlertTriangle size={16} />
-                  API Key 无效
-                </p>
-              )}
-              {apiKeyError && (
-                <p className="text-sm text-red-500 dark:text-red-400">
-                  {apiKeyError}
-                </p>
-              )}
             </div>
 
             <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-4 flex flex-col items-center gap-2 text-gray-700 dark:text-gray-200">

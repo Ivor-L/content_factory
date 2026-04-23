@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getOssClient, getOssPublicUrl, hasOssUploadConfig } from "@/lib/oss";
 
 export async function POST(request: NextRequest) {
-  const { filename, contentType } = await request.json().catch(() => ({}));
+  const { filename, contentType, type } = await request.json().catch(() => ({}));
   if (!filename || !contentType) {
     return NextResponse.json({ error: "filename and contentType are required" }, { status: 400 });
   }
@@ -13,7 +13,13 @@ export async function POST(request: NextRequest) {
 
   try {
     const ext = String(filename).split(".").pop() || "bin";
-    const folder = contentType.startsWith("video/") ? "storyboard/videos" : "storyboard/images";
+    const normalizedType = typeof type === "string" ? type.trim().toLowerCase() : "";
+    const folder =
+      normalizedType === "character"
+        ? "characters"
+        : contentType.startsWith("video/")
+        ? "storyboard/videos"
+        : "storyboard/images";
     const key = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
     const client = getOssClient({ internal: false, secure: true });

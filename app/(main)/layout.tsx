@@ -27,6 +27,7 @@ function MainLayoutChrome({ children }: { children: ReactNode }) {
   const tenantLoginPath = `${basePath || ""}/login`;
   const canvasBasePath = `${basePath || ""}/canvas`;
   const isCanvasPage = Boolean(pathname?.startsWith(canvasBasePath));
+  const isDashboardPage = Boolean(pathname?.endsWith("/dashboard"));
   const tightenStoryboardSpacing = pathname?.includes("/storyboard/create");
   const isStoryboardDetail = pathname
     ? /\/storyboard\/[^/]+/.test(pathname) &&
@@ -43,6 +44,8 @@ function MainLayoutChrome({ children }: { children: ReactNode }) {
   const showSidebar = !canvasShell.active;
   const mainSpacingClass = isCanvasPage
     ? "p-0"
+    : isDashboardPage
+      ? "p-0"
     : isStoryboardDetail
       ? "p-0"
       : tightenStoryboardSpacing
@@ -124,8 +127,8 @@ function MainLayoutChrome({ children }: { children: ReactNode }) {
       <AuthSessionSync />
       <ReferralBindingWatcher />
       {showSidebar && <Sidebar />}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <main className={`flex-1 min-w-0 overflow-y-auto bg-transparent dark:text-gray-100 ${mainSpacingClass}`}>
+      <div className="flex min-w-0 flex-1 flex-col bg-white dark:bg-[#0f1012]">
+        <main className={`flex-1 min-w-0 overflow-y-auto bg-white text-gray-900 dark:bg-[#0f1012] dark:text-gray-100 ${mainSpacingClass}`}>
           {children}
         </main>
       </div>

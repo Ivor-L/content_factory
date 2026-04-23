@@ -258,12 +258,14 @@ export default function LoginPage() {
   const isNexTideTenant = tenantSlug === 'nextide' || tenant?.name?.toLowerCase() === 'nextide';
   const isJubaoPenTenant = tenantSlug === 'jubaopen' || tenant?.name?.includes('聚保盆');
   const loginLogoWrapperClass = cn(
-    "absolute top-2 left-4 md:top-6 md:left-6 lg:top-8 lg:left-8",
-    isNexTideTenant && "-translate-y-3 lg:-translate-y-4"
+    "absolute",
+    isNexTideTenant
+      ? "-top-6 left-1 md:-top-8 md:left-2 lg:-top-10 lg:left-3"
+      : "top-2 left-4 md:top-6 md:left-6 lg:top-8 lg:left-8"
   );
   const loginLogoScaleClass = cn(
     "origin-left",
-    isNexTideTenant ? "scale-100" : isJubaoPenTenant ? "scale-[0.25]" : "scale-50"
+    isNexTideTenant ? "scale-[0.28]" : isJubaoPenTenant ? "scale-[0.25]" : "scale-50"
   );
   const loginLogoSize: 'sm' | 'md' | 'lg' = isNexTideTenant ? 'md' : 'sm';
 

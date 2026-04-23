@@ -1562,6 +1562,10 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
   const referenceCount = referenceImages.length;
   const hasManualReference = Boolean(referenceImage);
   const hasUpstreamReferences = (upstream.imageUrls || []).length > 0;
+  const generationMode = typeof (data.runtime.data as Record<string, unknown>).generationMode === "string"
+    ? String((data.runtime.data as Record<string, unknown>).generationMode)
+    : "";
+  const effectiveGenerationMode: "text2img" | "img2img" = generationMode === "img2img" ? "img2img" : "text2img";
   const referenceTileLabel = hasManualReference
     ? "当前手动参考 · 点击更换"
     : hasUpstreamReferences
@@ -1802,6 +1806,12 @@ function ImageNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             </>
           )}
           <div className="flex items-center gap-0.5">
+            <CanvasSelect
+              value={effectiveGenerationMode}
+              options={[{ value: "text2img", label: "文生图" }, { value: "img2img", label: "图生图" }]}
+              onChange={(v) => patchRuntimeData(id, { generationMode: v })}
+            />
+            <span className="text-xs text-[var(--canvas-text-15)]">·</span>
             <ModelPicker
               value={model}
               options={models.imageModels}
@@ -2642,7 +2652,7 @@ function ViralReplicationModal({
               <input
                 type="range" min={1} max={10} value={quantity}
                 onChange={(e) => setQuantity(parseInt(e.target.value, 10))}
-                className="mt-2 w-full accent-[#ffc94a]"
+                className="mt-2 w-full accent-[var(--tenant-primary)]"
               />
             </div>
           </div>
@@ -2657,7 +2667,7 @@ function ViralReplicationModal({
             type="button"
             disabled={loading || !productId || loadingProducts || !localRefUrl.trim()}
             onClick={() => { void handleSubmit(); }}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#ffc94a] py-2 text-sm font-semibold text-black transition hover:bg-[#ffd666] disabled:opacity-40"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-black py-2 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:opacity-40"
           >
             {loading ? (
               <><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--tenant-primary-foreground)]/20 border-t-[var(--tenant-primary-foreground)]" />触发中...</>
@@ -4508,7 +4518,7 @@ function TimelineVideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
           <button
             type="button"
             onClick={handleOpenTimeline}
-            className="flex items-center gap-1.5 rounded-full bg-[#ffc94a]/15 px-3 py-1 text-[11px] font-medium text-[#ffc94a] transition hover:bg-[#ffc94a]/25"
+            className="flex items-center gap-1.5 rounded-full bg-black/10 px-3 py-1 text-[11px] font-medium text-[var(--canvas-text)] transition hover:bg-black/20"
           >
             <span>在时间轴中编辑</span>
           </button>
@@ -4553,7 +4563,7 @@ function TimelineVideoNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             <button
               type="button"
               onClick={handleOpenTimeline}
-              className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-1.5 text-[11px] font-medium text-[#ffc94a] backdrop-blur-sm transition hover:bg-black/90"
+              className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-1.5 text-[11px] font-medium text-white backdrop-blur-sm transition hover:bg-black/90"
             >
               <Film className="h-3 w-3" />
               <span>在时间轴中编辑</span>
@@ -4704,14 +4714,14 @@ function NodePickerPopup({
           <button
             type="button"
             onClick={() => onPick("timelinevideo")}
-            className="mb-1 flex w-full items-center gap-3 rounded-[14px] bg-[#ffc94a]/10 px-3 py-3 text-left transition hover:bg-[#ffc94a]/20 active:scale-[0.98]"
+            className="mb-1 flex w-full items-center gap-3 rounded-[14px] bg-[var(--canvas-hover)] px-3 py-3 text-left transition hover:bg-[var(--canvas-hover-md)] active:scale-[0.98]"
           >
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-[#ffc94a]/20">
-              <Film className="h-5 w-5 text-[#ffc94a]" />
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] bg-[var(--canvas-hover-md)]">
+              <Film className="h-5 w-5 text-[var(--canvas-text-80)]" />
             </div>
             <div>
-              <div className="text-base font-medium text-[#ffc94a]">时间轴视频</div>
-              <div className="text-xs text-[#ffc94a]/60">展示并跳转至时间轴编辑</div>
+              <div className="text-base font-medium text-[var(--canvas-text)]">时间轴视频</div>
+              <div className="text-xs text-[var(--canvas-text-60)]">展示并跳转至时间轴编辑</div>
             </div>
           </button>
         )}
@@ -6548,7 +6558,7 @@ export function ReactCanvasRoot({
 
   if (showProjectList && loadingProjects && !hasProjects) {
     return (
-      <div className="flex min-h-screen w-full items-center justify-center bg-[var(--canvas-bg)]">
+      <div className="flex min-h-screen w-full items-center justify-center bg-white dark:bg-[#0f1012]">
         <AiGlowSpinner size={96} />
       </div>
     );
@@ -6556,7 +6566,7 @@ export function ReactCanvasRoot({
 
   if (isDetailView && loadingProjects) {
     return (
-      <div className="flex min-h-screen w-full items-center justify-center bg-[var(--canvas-bg)]">
+      <div className="flex min-h-screen w-full items-center justify-center bg-white dark:bg-[#0f1012]">
         <AiGlowSpinner size={96} />
       </div>
     );
@@ -6565,7 +6575,7 @@ export function ReactCanvasRoot({
   if (showProjectList) {
     return (
       <>
-        <div className="min-h-screen bg-[var(--canvas-bg)] text-[var(--canvas-text)]">
+        <div className="min-h-screen bg-white text-[var(--canvas-text)] dark:bg-[#0f1012]">
           <div className="mx-auto flex h-full w-full max-w-6xl flex-col px-6 py-10">
             <div className="mb-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <h1 className="text-4xl font-semibold tracking-tight">无限画布</h1>
@@ -6587,7 +6597,7 @@ export function ReactCanvasRoot({
                   type="button"
                   onClick={handleCreateProject}
                   disabled={loadingProjects}
-                  className="inline-flex items-center gap-2 rounded-full bg-[#ffc94a] px-5 py-2 text-sm font-medium text-black shadow-none transition hover:bg-[#ffd86f] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-full bg-black px-5 py-2 text-sm font-medium text-white shadow-none transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Plus className="h-4 w-4" />
                   新建项目
@@ -6701,7 +6711,7 @@ export function ReactCanvasRoot({
             ) : (
               <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-4 rounded-[32px] border border-[var(--canvas-border)] bg-[var(--canvas-hover-sm)] px-10 py-24 text-center">
                 <div className="rounded-full bg-[var(--canvas-hover-sm)] p-4">
-                  <Sparkles className="h-8 w-8 text-[#ffc94a]" />
+                  <Sparkles className="h-8 w-8 text-[var(--canvas-text-80)]" />
                 </div>
                 <p className="text-lg font-medium text-[var(--canvas-text)]">欢迎使用无限画布</p>
                 <p className="max-w-md text-sm text-[var(--canvas-text-60)]">
@@ -6711,7 +6721,7 @@ export function ReactCanvasRoot({
                   type="button"
                   onClick={handleCreateProject}
                   disabled={loadingProjects}
-                  className="inline-flex items-center gap-2 rounded-full bg-[#ffc94a] px-6 py-2 text-sm font-medium text-black shadow-none transition hover:bg-[#ffd86f] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-full bg-black px-6 py-2 text-sm font-medium text-white shadow-none transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <Plus className="h-4 w-4" />
                   创建第一个项目
@@ -6839,7 +6849,7 @@ export function ReactCanvasRoot({
               </button>
               {creditsLabel != null && (
                 <div className="flex items-center gap-1.5 rounded-full bg-[var(--canvas-surface-80)] px-3 py-1.5 text-sm text-[var(--canvas-text-80)] backdrop-blur">
-                  <Zap className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
+                  <Zap className="h-3.5 w-3.5 fill-[var(--canvas-text-80)] text-[var(--canvas-text-80)]" />
                   <span>{creditsLabel}</span>
                 </div>
               )}

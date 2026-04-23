@@ -153,18 +153,18 @@ body {
 
 @layer components {
   .btn-openclaw {
-    @apply inline-flex items-center justify-center rounded-full font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#f5c400] disabled:opacity-60 disabled:cursor-not-allowed;
-    background: linear-gradient(135deg, #ffe562, #ffd445);
-    color: #111827;
+    @apply inline-flex items-center justify-center rounded-full font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[var(--tenant-primary-ring)] disabled:opacity-60 disabled:cursor-not-allowed;
+    background: linear-gradient(135deg, var(--theme-primary), var(--theme-primary-active));
+    color: var(--theme-primary-foreground);
   }
 
   .btn-openclaw:hover:not(:disabled) {
-    background: linear-gradient(135deg, #ffd94d, #ffc933);
+    background: linear-gradient(135deg, var(--theme-primary-hover), var(--theme-primary-active));
   }
 
   .btn-openclaw:active:not(:disabled) {
     transform: translateY(1px);
-    background: linear-gradient(135deg, #ffc933, #ffbb1e);
+    background: linear-gradient(135deg, var(--theme-primary-active), #09090b);
   }
 }
 
@@ -292,10 +292,10 @@ body {
   }
 }
 
-/* ReactFlow — selection box: override CSS variables to brand yellow */
+/* ReactFlow — selection box: aligned with monochrome theme */
 .react-flow {
-  --xy-selection-background-color: rgba(255, 201, 74, 0.06);
-  --xy-selection-border: 1.5px solid rgba(255, 201, 74, 0.5);
+  --xy-selection-background-color: rgba(20, 20, 20, 0.06);
+  --xy-selection-border: 1.5px solid rgba(20, 20, 20, 0.45);
 }
 .react-flow__selection {
   border-radius: 12px;
@@ -308,4 +308,3 @@ body {
      -moz-user-select: text !important;
           user-select: text !important;
 }
-

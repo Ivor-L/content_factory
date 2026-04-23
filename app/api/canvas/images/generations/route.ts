@@ -229,6 +229,20 @@ function buildRelayResponse(
   });
 }
 
+function summarizeRequestBody(body: Record<string, unknown>) {
+  const prompt = typeof body.prompt === "string" ? body.prompt : "";
+  const imageValue = body.image ?? body.images;
+  const imageCount = Array.isArray(imageValue) ? imageValue.length : imageValue ? 1 : 0;
+  return {
+    model: resolveModelName(body) || null,
+    promptLength: prompt.length,
+    imageCount,
+    aspectRatio: typeof body.aspect_ratio === "string" ? body.aspect_ratio : null,
+    size: typeof body.size === "string" ? body.size : null,
+    quality: typeof body.quality === "string" ? body.quality : null,
+  };
+}
+
 export async function POST(request: NextRequest) {
   const { userId, apiKey } = await getRequestUserContext(request, {
     allowDefaultApiKey: true,
@@ -271,6 +285,11 @@ export async function POST(request: NextRequest) {
     ...requestBody,
     model: modelName || requestBody.model,
   };
+  const requestId = createHash("sha256")
+    .update(`${Date.now()}-${Math.random()}-${effectiveUserId}`)
+    .digest("hex")
+    .slice(0, 12);
+
   let preparedCharge: CanvasCreditCharge | null = null;
   try {
     preparedCharge = await ensureCanvasCreditsAvailable(creditsApiKey, "image", creditsRequestBody);
@@ -281,12 +300,13 @@ export async function POST(request: NextRequest) {
     throw error;
   }
 
+  let endpoint = "";
+  let upstreamBody: Record<string, unknown> = requestBody;
+
   try {
     const geminiEndpointPath = resolveGeminiEndpointPath(modelName);
     const isGeminiRequest = Boolean(geminiEndpointPath) || Array.isArray((requestBody as any).contents);
 
-    let endpoint = "";
-    let upstreamBody: Record<string, unknown> = requestBody;
     if (isGeminiRequest) {
       const geminiHost = normalizeGeminiHost();
       const endpointPath = geminiEndpointPath || DEFAULT_GEMINI_ENDPOINT;
@@ -318,6 +338,19 @@ export async function POST(request: NextRequest) {
     }
 
     const hasBusinessFailure = isBusinessFailedPayload(parsedJson);
+    if (!upstream.ok || hasBusinessFailure) {
+      console.error("[canvas/image] upstream failure", {
+        requestId,
+        userId: effectiveUserId,
+        endpoint,
+        status: upstream.status,
+        contentType,
+        hasBusinessFailure,
+        requestSummary: summarizeRequestBody(requestBody),
+        responsePreview: bodyText.slice(0, 500),
+      });
+    }
+
     if (upstream.ok && !hasBusinessFailure) {
       try {
         await deductCanvasCredits(creditsApiKey, "image", creditsRequestBody, {
@@ -330,6 +363,15 @@ export async function POST(request: NextRequest) {
 
     return buildRelayResponse(upstream.status, contentType, bodyText, parsedJson);
   } catch (error) {
+    console.error("[canvas/image] proxy exception", {
+      requestId,
+      userId: effectiveUserId,
+      endpoint: endpoint || null,
+      requestSummary: summarizeRequestBody(requestBody),
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorStack: error instanceof Error ? error.stack : undefined,
+    });
+
     return NextResponse.json(
       {
         error: {
