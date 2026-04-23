@@ -2750,26 +2750,28 @@ export function HomeContent() {
                             </div>
                           ) : null}
 
-                          <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-800/70 dark:text-gray-200">
-                            <p className="font-semibold">引用文档</p>
-                            {referencedDocs.length > 0 ? (
-                              <div className="mt-1 flex flex-wrap gap-1.5">
-                                {referencedDocs.map((path) => (
-                                  <button
-                                    key={`${message.id}-ref-${path}`}
-                                    type="button"
-                                    onClick={() => openReferencedDoc(path)}
-                                    className="rounded-md border border-gray-200 bg-white px-2 py-0.5 font-mono text-[11px] text-gray-700 transition hover:border-gray-300 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
-                                    title={path}
-                                  >
-                                    {path}
-                                  </button>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="mt-1 text-gray-500 dark:text-gray-400">本次回复未引用文档</p>
-                            )}
-                          </div>
+                          {!isStreamingMessage ? (
+                            <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-800/70 dark:text-gray-200">
+                              <p className="font-semibold">引用文档</p>
+                              {referencedDocs.length > 0 ? (
+                                <div className="mt-1 flex flex-wrap gap-1.5">
+                                  {referencedDocs.map((path) => (
+                                    <button
+                                      key={`${message.id}-ref-${path}`}
+                                      type="button"
+                                      onClick={() => openReferencedDoc(path)}
+                                      className="rounded-md border border-gray-200 bg-white px-2 py-0.5 font-mono text-[11px] text-gray-700 transition hover:border-gray-300 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
+                                      title={path}
+                                    >
+                                      {path}
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="mt-1 text-gray-500 dark:text-gray-400">本次回复未引用文档</p>
+                              )}
+                            </div>
+                          ) : null}
                         </div>
                       </article>
                     );

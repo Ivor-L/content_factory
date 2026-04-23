@@ -1608,9 +1608,19 @@ export async function POST(request: NextRequest) {
     let streamedThinking: string[] = [];
     let streamedReasoningBuffer = "";
     let reasoningPulseAt = 0;
+    const pushManualThinking = (text: string) => {
+      if (!streamMode) return;
+      const normalized = text.trim();
+      if (!normalized) return;
+      const merged = mergeThinkingItems(streamedThinking, [normalized]);
+      if (merged.length === streamedThinking.length) return;
+      streamedThinking = merged;
+      emit("thinking", { items: merged });
+    };
 
     if (streamMode) {
       emit("status", { text: "正在调用模型…" });
+      pushManualThinking("正在分析需求并规划执行路径");
     }
 
     const firstPass = await callAndExtract({
@@ -1660,6 +1670,7 @@ export async function POST(request: NextRequest) {
 
     if (streamMode) {
       emit("status", { text: "第一轮推理完成，正在判断是否需要读取文件…" });
+      pushManualThinking("首轮推理完成，正在判断是否需要读取文件");
       emitThinkingProgress(thinking);
       if (agentActions.length > 0) {
         emit("actions", { items: agentActions });
@@ -1677,6 +1688,7 @@ export async function POST(request: NextRequest) {
       if (readResults.length > 0) {
         if (streamMode) {
           emit("status", { text: "正在读取文件并二次推理…" });
+          pushManualThinking(`已读取 ${readResults.length} 个文件，正在进行二次推理`);
           emit("actions", { items: readResults.map((item) => ({ type: "read", path: item.path, ok: true })) });
         }
 
@@ -1740,12 +1752,17 @@ export async function POST(request: NextRequest) {
     }
 
     if (streamMode) {
+      pushManualThinking("正在整合信息并组织最终回复");
       emitThinkingProgress(thinking);
       if (agentActions.length > 0) {
         emit("actions", { items: agentActions });
       }
       emit("status", { text: "正在生成回复…" });
     }
+
+    const resolvedThinking = streamMode
+      ? mergeThinkingItems(streamedThinking, thinking)
+      : thinking;
 
     if (conversationState.conversationId) {
       await prisma.$transaction([
@@ -1756,7 +1773,7 @@ export async function POST(request: NextRequest) {
             content: reply,
             metadata: {
               agentActions,
-              thinking,
+              thinking: resolvedThinking,
             },
           },
         }),
@@ -1780,7 +1797,7 @@ export async function POST(request: NextRequest) {
       emit("final", {
         reply,
         agentActions,
-        thinking,
+        thinking: resolvedThinking,
         conversationId: conversationState.conversationId,
         model: conversationState.model,
         providerId: conversationState.providerId,
@@ -1810,7 +1827,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       reply,
       agentActions,
-      thinking,
+      thinking: resolvedThinking,
       conversationId: conversationState.conversationId,
       model: conversationState.model,
       providerId: conversationState.providerId,
