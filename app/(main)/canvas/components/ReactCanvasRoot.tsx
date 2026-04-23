@@ -3777,7 +3777,8 @@ function GridNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
     if (!file) return;
     try {
       const resource = await uploadResource(file, { type: "image", name: file.name });
-      patchRuntimeData(id, { gridImageUrl: resource.url });
+      // Reference image for generation should be stored on input field `imageUrl`.
+      patchRuntimeData(id, { imageUrl: resource.url });
     } catch (error) {
       console.error("[canvas] upload grid image failed", error);
     } finally {

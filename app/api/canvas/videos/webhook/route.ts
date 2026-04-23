@@ -56,13 +56,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Write to Supabase Realtime — triggers waitForVideoTask subscription in useCanvasOrchestrator
-    await supabase.from("canvas_video_tasks").insert({
+    // Upsert by task_id so repeated runs on the same canvas node can still publish updates.
+    await supabase.from("canvas_video_tasks").upsert({
       task_id: effectiveTaskId,
       status,
       video_url: video_url || null,
       error_message: message || null,
-    });
+    }, { onConflict: "task_id" });
 
     return NextResponse.json({ ok: true });
   } catch (error) {

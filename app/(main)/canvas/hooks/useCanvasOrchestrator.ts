@@ -625,7 +625,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
           .on(
             "postgres_changes",
             {
-              event: "INSERT",
+              event: "*",
               schema: "public",
               table: "canvas_video_tasks",
               filter: `task_id=eq.${taskId}`,
