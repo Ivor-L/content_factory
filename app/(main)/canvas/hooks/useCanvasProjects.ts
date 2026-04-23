@@ -208,10 +208,10 @@ export function useCanvasProjects(
   }, [loadProjects]);
 
   const fetchProjectById = useCallback(
-    async (projectId: string, silent = true) => {
+    async (projectId: string, silent = true, options?: { force?: boolean }) => {
       if (!projectId) return null;
       const existing = projects.find((item) => item.id === projectId);
-      if (existing && existing.canvasData) {
+      if (!options?.force && existing && existing.canvasData) {
         setCurrentProjectId(projectId);
         return existing;
       }
@@ -267,13 +267,39 @@ export function useCanvasProjects(
             );
             const payload = await response.json().catch(() => ({}));
             if (response.status === 409) {
-              await fetchProjectById(projectId, true).catch(() => {});
-              const conflictError = new Error(
-                payload?.error?.message || "画布已在其他窗口更新",
+              const latest = await fetchProjectById(projectId, true, { force: true }).catch(() => null);
+              const retryExpectedUpdatedAt = latest?.updatedAt ?? null;
+              const retryBody: Record<string, unknown> = {
+                canvasData,
+                expectedUpdatedAt: retryExpectedUpdatedAt,
+              };
+              if (thumbnail !== undefined) retryBody.thumbnail = thumbnail;
+              const retryResponse = await fetchWithTimeout(
+                `/api/canvas/projects/${projectId}?response=meta`,
+                {
+                  method: "PATCH",
+                  body: JSON.stringify(retryBody),
+                  credentials: "include",
+                  headers: {
+                    "Content-Type": "application/json",
+                    ...authHeaders,
+                  },
+                },
+                DEFAULT_TIMEOUT_MS + 10000,
               );
-              conflictError.name = payload?.error?.code || "CanvasProjectConflictError";
-              setError(conflictError.message);
-              throw conflictError;
+              const retryPayload = await retryResponse.json().catch(() => ({}));
+              if (!retryResponse.ok) {
+                const conflictError = new Error(
+                  retryPayload?.error?.message || payload?.error?.message || "画布已在其他窗口更新",
+                );
+                conflictError.name = retryPayload?.error?.code || payload?.error?.code || "CanvasProjectConflictError";
+                setError(conflictError.message);
+                throw conflictError;
+              }
+              if (retryPayload.data) {
+                upsertProject(retryPayload.data as CanvasProjectRecord);
+              }
+              return;
             }
             if (!response.ok) {
               const message =
