@@ -110,7 +110,7 @@ import {
 } from "../lib/canvasDataAdapters";
 import type { CanvasProjectRecord } from "../types";
 import type { RuntimeCanvasNode } from "../lib/canvasDataAdapters";
-import { toForcedProxyUrl } from "@/lib/mediaProxy";
+import { toForcedProxyUrl, toProxyImgUrl } from "@/lib/mediaProxy";
 
 const CANVAS_PERF_TRACING = process.env.NODE_ENV !== "production";
 const PERF_LOG_THROTTLE_MS = 2000;
@@ -4091,7 +4091,7 @@ function ImageTextGroupNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
     if (!scAuthToken || scStyles.length > 0) return;
     let cancelled = false;
     setScStylesLoading(true);
-    fetch("/api/assets/styles?limit=50", {
+    fetch("/api/assets/styles?type=xhs-visual&summary=1&limit=24", {
       headers: { Authorization: `Bearer ${scAuthToken}` },
       cache: "no-store",
     })
@@ -4407,13 +4407,23 @@ function ImageTextGroupNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
                         : "border-transparent hover:border-[var(--canvas-border-md)]",
                     )}
                   >
-                    {s.previewUrl ? (
-                      <CanvasImage src={s.previewUrl} alt={s.name} className="h-14 w-14" />
-                    ) : (
-                      <div className="flex h-14 w-14 items-center justify-center bg-[var(--canvas-hover)] text-[10px] text-[var(--canvas-text-30)] text-center px-1 leading-tight">
+                    <div className="relative h-14 w-14 overflow-hidden bg-[var(--canvas-hover)]">
+                      <div className="flex h-full w-full items-center justify-center px-1 text-center text-[10px] leading-tight text-[var(--canvas-text-30)]">
                         {s.name}
                       </div>
-                    )}
+                      {s.previewUrl ? (
+                        <img
+                          src={toProxyImgUrl(s.previewUrl)}
+                          alt={s.name}
+                          className="absolute inset-0 h-full w-full object-cover"
+                          loading="lazy"
+                          onError={(e) => {
+                            // Fall back to text tile when remote preview is blocked.
+                            e.currentTarget.style.display = "none";
+                          }}
+                        />
+                      ) : null}
+                    </div>
                     <span className="w-14 truncate px-0.5 pb-0.5 text-center text-[10px] text-[var(--canvas-text-50)]">{s.name}</span>
                   </button>
                 ))}

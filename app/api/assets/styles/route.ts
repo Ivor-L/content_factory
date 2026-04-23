@@ -14,14 +14,50 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const type = searchParams.get("type") || undefined;
   const includeShared = searchParams.get("includeShared") !== "0";
+  const summary =
+    searchParams.get("summary") === "1" ||
+    searchParams.get("summary") === "true";
   const limitParam = Number(searchParams.get("limit") ?? "50");
   const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 200) : 50;
+  const where = {
+    ...(type ? { type } : {}),
+    ...(includeShared ? { OR: [{ userId }, { userId: null }] } : { userId }),
+  };
+
+  if (summary) {
+    const styles = await prisma.stylePreset.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }],
+      take: limit,
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        previewUrl: true,
+        metadata: true,
+      },
+    });
+
+    const normalized = styles.map((style) => {
+      const meta =
+        style.metadata && typeof style.metadata === "object" && !Array.isArray(style.metadata)
+          ? (style.metadata as Record<string, any>)
+          : {};
+      const status = meta.processingStatus ?? null;
+      return {
+        id: style.id,
+        name: style.name,
+        type: style.type,
+        previewUrl: style.previewUrl,
+        status,
+      };
+    });
+
+    return NextResponse.json({ data: normalized });
+  }
 
   const styles = await prisma.stylePreset.findMany({
-    where: {
-      ...(type ? { type } : {}),
-      ...(includeShared ? { OR: [{ userId }, { userId: null }] } : { userId }),
-    },
+    where,
     orderBy: [
       { createdAt: "desc" },
     ],
