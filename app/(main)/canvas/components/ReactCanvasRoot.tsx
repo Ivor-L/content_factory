@@ -1048,7 +1048,7 @@ function TextNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
             patchRuntimeData(id, { content: (e.target as HTMLTextAreaElement).value });
           }}
           placeholder="开启你的创作..."
-          className="nodrag !select-text w-full bg-transparent px-4 py-4 text-sm text-[var(--canvas-text)] outline-none placeholder:text-[var(--canvas-text-30)]"
+          className="nodrag nowheel !select-text w-full bg-transparent px-4 py-4 text-sm text-[var(--canvas-text)] outline-none placeholder:text-[var(--canvas-text-30)]"
           style={{ height: 240, minHeight: 120, maxHeight: 800, resize: "vertical", overflowY: "auto" }}
         />
         )}
@@ -1289,7 +1289,7 @@ function CompositionTextarea({
     <textarea
       ref={textareaRef}
       value={local}
-      className={className + " select-text"}
+      className={`${className ?? ""} nowheel select-text`}
       placeholder={placeholder}
       onChange={(e) => {
         setLocal(e.target.value);
@@ -6893,6 +6893,7 @@ export function ReactCanvasRoot({
             edges={edges}
             fitView
             className="bg-transparent text-[var(--canvas-text)]"
+            noWheelClassName="nowheel"
             panOnDrag={isSpaceDown ? [0] : [1, 2]}
             panOnScroll={true}
             panOnScrollMode={"free" as any}
