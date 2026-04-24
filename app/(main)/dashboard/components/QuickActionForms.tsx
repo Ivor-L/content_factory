@@ -390,7 +390,7 @@ export function QuickPosterForm({ onClose, initialIdeaText = '' }: QuickPosterFo
           value={form.title}
           onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))}
           placeholder={copy.newTask?.direct?.titlePlaceholder ?? '请输入图文标题，例如：春季上新图文方案'}
-          className="mt-2 w-full rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2.5 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-blue-400/20"
+          className="mt-2 w-full rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2.5 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:border-[var(--tenant-primary)] dark:focus:border-[var(--tenant-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--tenant-primary-ring)]/30 dark:focus:ring-[var(--tenant-primary-ring)]/30"
         />
       </div>
 
@@ -404,7 +404,7 @@ export function QuickPosterForm({ onClose, initialIdeaText = '' }: QuickPosterFo
           onChange={(event) => setForm((prev) => ({ ...prev, ideaText: event.target.value }))}
           placeholder={copy.newTask?.ideaPlaceholder ?? '写下你想推的卖点、洞察或原始脚本。'}
           rows={3}
-          className="mt-2 w-full rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2.5 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-blue-400/20 resize-none"
+          className="mt-2 w-full rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2.5 text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:border-[var(--tenant-primary)] dark:focus:border-[var(--tenant-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--tenant-primary-ring)]/30 dark:focus:ring-[var(--tenant-primary-ring)]/30 resize-none"
         />
       </div>
 
@@ -456,7 +456,7 @@ export function QuickPosterForm({ onClose, initialIdeaText = '' }: QuickPosterFo
                   className={cn(
                     'relative flex flex-col items-center gap-1.5 rounded-xl border px-2 py-2.5 text-center transition-all',
                     isActive
-                      ? 'border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-500/10 shadow-sm'
+                      ? 'border-[var(--tenant-primary)] dark:border-[var(--tenant-primary)] bg-[var(--tenant-primary-soft)] dark:bg-[var(--tenant-primary)]/10 shadow-sm'
                       : 'border-gray-200 dark:border-white/10 hover:border-gray-300 dark:hover:border-white/20 bg-white dark:bg-white/5',
                   )}
                 >
@@ -469,7 +469,7 @@ export function QuickPosterForm({ onClose, initialIdeaText = '' }: QuickPosterFo
                   )}
                   <p className="truncate text-xs font-medium text-gray-700 dark:text-gray-300 w-full">{style.name}</p>
                   {isActive && (
-                    <CheckCircle2 className="absolute top-1.5 right-1.5 h-3.5 w-3.5 text-blue-500 dark:text-blue-400" />
+                    <CheckCircle2 className="absolute top-1.5 right-1.5 h-3.5 w-3.5 text-[var(--tenant-primary)] dark:text-[var(--tenant-primary-foreground)]" />
                   )}
                 </button>
               );
@@ -507,7 +507,7 @@ export function QuickPosterForm({ onClose, initialIdeaText = '' }: QuickPosterFo
             onChange={(event) =>
               setForm((prev) => ({ ...prev, posterCount: clampPosterCount(Number(event.target.value)) }))
             }
-            className="w-20 rounded-full border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-1.5 text-sm text-gray-900 dark:text-white text-center focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none"
+            className="w-20 rounded-full border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 py-1.5 text-sm text-gray-900 dark:text-white text-center focus:border-[var(--tenant-primary)] dark:focus:border-[var(--tenant-primary)] focus:outline-none"
           />
         </div>
         <p className="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
@@ -521,7 +521,7 @@ export function QuickPosterForm({ onClose, initialIdeaText = '' }: QuickPosterFo
         <button
           type="submit"
           disabled={submitting || !authToken}
-          className="inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-amber-400 to-orange-400 dark:from-amber-500 dark:to-orange-500 px-6 py-2.5 text-sm font-semibold text-gray-900 shadow-md hover:opacity-90 transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex items-center justify-center gap-2 rounded-full bg-black px-6 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-gray-900 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting ? (
             <>

@@ -19,7 +19,7 @@ interface AddButtonProps {
 }
 
 const baseClass =
-  'btn-openclaw inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold text-[var(--theme-primary-foreground)] transition-all hover:-translate-y-0.5 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-60';
+  'inline-flex items-center justify-center gap-2 rounded-full bg-black px-5 py-2.5 text-sm font-semibold text-white transition-all hover:-translate-y-0.5 hover:bg-gray-900 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-gray-200';
 
 export function AddButton({
   label,

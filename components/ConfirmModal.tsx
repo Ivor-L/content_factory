@@ -67,7 +67,7 @@ export function ConfirmModal({
           <button
             onClick={onClose}
             disabled={isLoading}
-            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white/90 dark:bg-gray-900 border border-[var(--tenant-primary-muted)] rounded-lg hover:bg-[var(--tenant-primary-soft)] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[var(--tenant-primary)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white/90 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-300 dark:focus:ring-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {cancelText || t.common.cancel}
           </button>
@@ -77,7 +77,7 @@ export function ConfirmModal({
             className={
               isDanger
                 ? 'flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors disabled:opacity-70 disabled:cursor-not-allowed'
-                : 'btn-openclaw inline-flex items-center gap-2 px-4 py-2 text-sm font-medium'
+                : 'inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-black text-white hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 transition-colors disabled:opacity-70 disabled:cursor-not-allowed dark:bg-white dark:text-black dark:hover:bg-gray-200'
             }
           >
             {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}

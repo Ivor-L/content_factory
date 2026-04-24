@@ -57,7 +57,7 @@ export const tenants: Record<string, TenantConfig> = {
     darkLogo: '/logo/NexTidelogo-white.png',
     browserLogo: '/logo/black-logo.png',
     faviconLogo: '/logo/black-logo-favicon.png',
-    primaryColor: '#1890FF',
+    primaryColor: '#111111',
     features: {
       dashboard: true,
       canvas: true,
@@ -94,7 +94,7 @@ export const tenants: Record<string, TenantConfig> = {
     slug: 'insurance',
     name: '保险助手',
     logo: undefined, // TODO: 提供 Logo
-    primaryColor: '#52C41A',
+    primaryColor: '#111111',
     features: {
       dashboard: true,
       canvas: true,
@@ -133,7 +133,7 @@ export const tenants: Record<string, TenantConfig> = {
     darkLogo: '/logo/NexTidelogo-white.png',
     browserLogo: '/logo/black-logo.png',
     faviconLogo: '/logo/black-logo-favicon.png',
-    primaryColor: '#1890FF',
+    primaryColor: '#111111',
     features: {
       dashboard: true,
       canvas: true,
@@ -170,7 +170,7 @@ export const tenants: Record<string, TenantConfig> = {
     slug: 'enterprise',
     name: '企业版',
     logo: undefined, // TODO: 提供 Logo
-    primaryColor: '#722ED1',
+    primaryColor: '#111111',
     features: {
       dashboard: true,
       canvas: true,
@@ -208,7 +208,7 @@ export const tenants: Record<string, TenantConfig> = {
     name: '聚保盆',
     logo: '/logo/jubaopen.svg',
     browserLogo: '/logo/jubaopeng_logo.svg',
-    primaryColor: '#333333',
+    primaryColor: '#111111',
     features: {
       dashboard: true,
       canvas: true,

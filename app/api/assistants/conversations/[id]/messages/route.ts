@@ -53,6 +53,8 @@ export async function GET(request: NextRequest, { params }: Params) {
       metadata: {
         agentActions: Array.isArray(metadata.agentActions) ? metadata.agentActions : [],
         thinking: Array.isArray(metadata.thinking) ? metadata.thinking : [],
+        processing: Array.isArray(metadata.processing) ? metadata.processing : [],
+        references: Array.isArray(metadata.references) ? metadata.references : [],
       },
     };
   });

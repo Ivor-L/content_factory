@@ -232,13 +232,56 @@ export async function POST(request: NextRequest) {
     }
 
     if (action.type === "create") {
-      if (existing) {
-        results.push({ type: action.type, path: action.path, ok: false, error: "File already exists", fileId: existing.id });
-        continue;
-      }
       const content = action.content || "";
       const chunks = splitTextToChunks(content);
       const title = action.path.split("/").filter(Boolean).pop() || "untitled.md";
+
+      if (existing) {
+        if (!content.trim()) {
+          results.push({ type: action.type, path: action.path, ok: true, fileId: existing.id, mode: "exists" });
+          continue;
+        }
+
+        await prisma.$transaction(async (tx) => {
+          await tx.knowledgeChunk.deleteMany({ where: { fileId: existing.id } });
+          if (chunks.length > 0) {
+            await tx.knowledgeChunk.createMany({
+              data: chunks.map((chunk) => ({
+                folderId: folder.id,
+                fileId: existing.id,
+                chunkIndex: chunk.chunkIndex,
+                content: chunk.content,
+                contentLength: chunk.contentLength,
+              })),
+            });
+          }
+
+          const metadata =
+            existing.metadata && typeof existing.metadata === "object" && !Array.isArray(existing.metadata)
+              ? (existing.metadata as Record<string, unknown>)
+              : {};
+
+          await tx.knowledgeFile.update({
+            where: { id: existing.id },
+            data: {
+              title,
+              status: "READY",
+              originalPath: action.path,
+              metadata: {
+                ...metadata,
+                rawContent: content,
+                path: action.path,
+                relativePath: action.path,
+                updatedBy: "agent-action",
+              },
+            },
+          });
+        });
+
+        pathToFile.set(action.path, existing);
+        results.push({ type: action.type, path: action.path, ok: true, fileId: existing.id, mode: "updated" });
+        continue;
+      }
 
       const created = await prisma.$transaction(async (tx) => {
         const file = await tx.knowledgeFile.create({

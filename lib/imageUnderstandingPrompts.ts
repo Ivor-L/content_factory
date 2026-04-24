@@ -35,3 +35,18 @@ const knowledgeSharePrompt = [
 ].join("\n");
 
 export const IMAGE_UNDERSTANDING_PROMPT_KNOWLEDGE_SHARE = knowledgeSharePrompt;
+
+const exactTextPrompt = [
+  "请识别并完整转写图片中的所有文字，按图片原始阅读顺序输出。",
+  "",
+  "要求：",
+  "1. 只输出识别到的原文，不要总结、改写、扩写、解释或润色。",
+  "2. 保留原有分段、标点、数字、英文大小写和排版顺序。",
+  "3. 多图时按从第一张到最后一张的顺序连续输出，图片之间用空行分隔。",
+  "4. 如果某处无法辨认，用「[无法识别]」标记，不要自行补写。",
+  "5. 不要加前缀、标题、项目符号或结尾总结。",
+  "",
+  "请直接输出完整文字原文。",
+].join("\n");
+
+export const IMAGE_UNDERSTANDING_PROMPT_EXACT_TEXT = exactTextPrompt;

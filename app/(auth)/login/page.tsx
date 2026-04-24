@@ -319,7 +319,7 @@ export default function LoginPage() {
                                     onChange={(e) => setOtp(e.target.value)}
                                     required
                                     autoFocus
-                                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200 tracking-widest text-lg"
+                                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400/40 focus:border-transparent transition-all duration-200 tracking-widest text-lg"
                                     placeholder="123456"
                                 />
                             </div>
@@ -339,7 +339,7 @@ export default function LoginPage() {
                                 <button
                                     type="button"
                                     onClick={() => setOtpSent(false)}
-                                    className="w-full flex justify-center items-center py-3.5 px-4 border border-gray-200 rounded-full text-sm font-medium text-black bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-200 transition-all duration-200"
+                                    className="w-full flex justify-center items-center py-3.5 px-4 border border-gray-200 rounded-full text-sm font-medium text-black bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-300 transition-all duration-200"
                                 >
                                     {t.auth?.back || 'Back'}
                                 </button>
@@ -371,7 +371,7 @@ export default function LoginPage() {
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     required
-                                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
+                                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400/40 focus:border-transparent transition-all duration-200"
                                     placeholder=""
                                 />
                             </div>
@@ -387,7 +387,7 @@ export default function LoginPage() {
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                         required
-                                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
+                                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-lg text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400/40 focus:border-transparent transition-all duration-200"
                                     />
                                 </div>
                             )}
@@ -411,7 +411,7 @@ export default function LoginPage() {
                                 <button
                                     type="button"
                                     onClick={() => router.push('/')}
-                                    className="w-full flex justify-center items-center py-3.5 px-4 border border-gray-200 rounded-full text-sm font-medium text-black bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-200 transition-all duration-200"
+                                    className="w-full flex justify-center items-center py-3.5 px-4 border border-gray-200 rounded-full text-sm font-medium text-black bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-300 transition-all duration-200"
                                 >
                                     {t.auth?.back || 'Back'}
                                 </button>
@@ -440,7 +440,7 @@ export default function LoginPage() {
               <button
                   type="button"
                   aria-pressed="true"
-                  className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border border-gray-300 bg-[var(--tenant-primary,#111)] text-white shadow-sm"
+                  className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border border-gray-300 bg-black text-white shadow-sm dark:bg-white dark:text-black"
               >
                   <CheckCircle className="h-3 w-3" strokeWidth={3} />
               </button>

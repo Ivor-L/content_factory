@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, ChevronRight, Copy, FolderDown, Loader2, RotateCcw, Sparkles, Upload } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { supabase } from "@/lib/supabaseClient";
-import { IMAGE_UNDERSTANDING_PROMPT_KNOWLEDGE_SHARE } from "@/lib/imageUnderstandingPrompts";
+import { IMAGE_UNDERSTANDING_PROMPT_EXACT_TEXT } from "@/lib/imageUnderstandingPrompts";
 
 function hashString(input: string): string {
   let hash = 0;
@@ -34,6 +34,14 @@ type KnowledgeFolder = {
   id: string;
   name: string;
   description?: string | null;
+};
+
+type SavedKnowledgeLocation = {
+  folderId: string;
+  folderName: string;
+  path: string;
+  fileId: string | null;
+  savedAt: number;
 };
 
 type ImageGuidanceItem = { index: number; description: string };
@@ -187,6 +195,7 @@ export function ImageTextReplicationPanel({
   const [savingToFolder, setSavingToFolder] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccessAt, setSaveSuccessAt] = useState<number | null>(null);
+  const [lastSavedLocation, setLastSavedLocation] = useState<SavedKnowledgeLocation | null>(null);
   const normalizedSourceImages = useMemo(() => normalizeUrlList(sourceImages), [sourceImages]);
   const fallbackSource = useMemo(() => (sourceText?.trim() || sourceTitle?.trim() || ""), [sourceText, sourceTitle]);
   const hasSourceImages = normalizedSourceImages.length > 0;
@@ -460,10 +469,10 @@ export function ImageTextReplicationPanel({
     if (requiresAnalysis && (analysisStatus !== "success" || !analysisText.trim())) {
       const reason =
         analysisStatus === "running"
-          ? "正在解析参考图，请稍候"
+          ? "正在识别参考图，请稍候"
           : analysisStatus === "error"
-            ? "解析失败，请重新解析后再尝试"
-            : "请先完成图文解析";
+            ? "识别失败，请重新识别后再尝试"
+          : "请先完成图文识别";
       toast.error(reason);
       return;
     }
@@ -602,27 +611,26 @@ export function ImageTextReplicationPanel({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             imageUrl: normalizedUrl,
-            prompt: IMAGE_UNDERSTANDING_PROMPT_KNOWLEDGE_SHARE,
+            prompt: IMAGE_UNDERSTANDING_PROMPT_EXACT_TEXT,
             model: "gemini-3.1-flash-lite-preview",
           }),
         });
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) {
-          const message = payload?.error || `第 ${i + 1} 张解析失败`;
+          const message = payload?.error || `第 ${i + 1} 张识别失败`;
           throw new Error(message);
         }
         const rawText = typeof payload?.result === "string" ? payload.result.trim() : "";
-        const prefix = normalizedSourceImages.length > 1 ? `图${i + 1}` : "图文解析";
-        aggregated.push(rawText ? `${prefix}：${rawText}` : `${prefix}：未能解析出有效信息`);
+        aggregated.push(rawText || "无法识别");
       }
-      const combinedText = aggregated.join("\n\n");
+      const combinedText = aggregated.join("\n\n").trim();
       setAnalysisText(combinedText);
       setAnalysisStatus("success");
       setAnalysisProgress({ current: normalizedSourceImages.length, total: normalizedSourceImages.length });
-       persistAnalysisResult(combinedText);
-      toast.success("图文解析完成");
+      persistAnalysisResult(combinedText);
+      toast.success("图文识别完成");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "图文解析失败";
+      const message = error instanceof Error ? error.message : "图文识别失败";
       if (aggregated.length > 0) {
         setAnalysisText(aggregated.join("\n\n"));
       }
@@ -635,7 +643,7 @@ export function ImageTextReplicationPanel({
   const handleSaveAnalysisToFolder = useCallback(async () => {
     const content = analysisText.trim();
     if (!content) {
-      toast.error("请先完成图文解析");
+      toast.error("请先完成图文识别");
       return;
     }
     if (!selectedKnowledgeFolderId) {
@@ -651,7 +659,7 @@ export function ImageTextReplicationPanel({
     setSaveError(null);
     try {
       const folder = knowledgeFolders.find((item) => item.id === selectedKnowledgeFolderId);
-      const titleBase = (sourceTitle?.trim() || "图文解析").slice(0, 48);
+      const titleBase = (sourceTitle?.trim() || "图文识别").slice(0, 48);
       const path = `${titleBase}-${Date.now()}.md`;
       const bodyContent = [
         `# ${titleBase}`,
@@ -682,24 +690,19 @@ export function ImageTextReplicationPanel({
       }
       if (typeof window !== "undefined") {
         const targetKey = getKnowledgeSaveStorageKey(sourcePlatform, sourceId);
+        const savedLocation: SavedKnowledgeLocation = {
+          folderId: selectedKnowledgeFolderId,
+          folderName: folder?.name || "知识库文件夹",
+          path,
+          fileId: payload.data?.id || null,
+          savedAt: Date.now(),
+        };
         window.localStorage.setItem(
           targetKey,
-          JSON.stringify({
-            folderId: selectedKnowledgeFolderId,
-            fileId: payload.data?.id || null,
-            path,
-            savedAt: Date.now(),
-          }),
+          JSON.stringify(savedLocation),
         );
-        window.localStorage.setItem(
-          getKnowledgeSaveStorageKey(sourcePlatform, sourceId),
-          JSON.stringify({
-            folderId: selectedKnowledgeFolderId,
-            fileId: payload.data?.id || null,
-            path,
-            savedAt: Date.now(),
-          }),
-        );
+        window.dispatchEvent(new CustomEvent("knowledge-save-target", { detail: savedLocation }));
+        setLastSavedLocation(savedLocation);
       }
       setSaveSuccessAt(Date.now());
       toast.success(`已保存到${folder?.name || "知识库文件夹"}`);
@@ -747,26 +750,26 @@ export function ImageTextReplicationPanel({
   let generationBlockedReason: string | null = null;
   if (requiresAnalysis && !analysisReady) {
     if (analysisStatus === "running") {
-      generationBlockedReason = "正在解析参考图…";
+      generationBlockedReason = "正在识别参考图…";
     } else if (analysisStatus === "error") {
-      generationBlockedReason = "解析失败，请重新解析";
+      generationBlockedReason = "识别失败，请重新识别";
     } else {
-      generationBlockedReason = "请先完成图文解析";
+      generationBlockedReason = "请先完成图文识别";
     }
   }
   const step2ChipLabel = !requiresAnalysis
     ? "直接生成"
     : analysisStatus === "running"
-      ? "解析中"
+      ? "识别中"
       : analysisStatus === "error"
-        ? "解析失败"
+        ? "识别失败"
         : analysisReady
-          ? "解析完成"
-          : "等待解析";
+          ? "识别完成"
+      : "等待识别";
   const step2ChipClass =
-    step2ChipLabel === "解析完成" || step2ChipLabel === "直接生成"
+    step2ChipLabel === "识别完成" || step2ChipLabel === "直接生成"
       ? "bg-green-100 text-green-700"
-      : step2ChipLabel === "解析失败"
+      : step2ChipLabel === "识别失败"
         ? "bg-red-100 text-red-600"
         : "bg-yellow-100 text-yellow-700";
 
@@ -788,11 +791,16 @@ export function ImageTextReplicationPanel({
           analysisSavedAt={analysisSavedAt}
           saveError={saveError}
           saveSuccessAt={saveSuccessAt}
+          lastSavedLocation={lastSavedLocation}
           knowledgeFolders={knowledgeFolders}
           knowledgeFoldersLoading={knowledgeFoldersLoading}
           selectedKnowledgeFolderId={selectedKnowledgeFolderId}
           onSelectedKnowledgeFolderIdChange={setSelectedKnowledgeFolderId}
           onSaveAnalysisToFolder={handleSaveAnalysisToFolder}
+          onOpenSavedLocation={() => {
+            if (typeof window === "undefined" || !lastSavedLocation) return;
+            window.dispatchEvent(new CustomEvent("knowledge-save-target", { detail: lastSavedLocation }));
+          }}
           savingToFolder={savingToFolder}
         />
         <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/60 p-5 space-y-5">
@@ -863,11 +871,13 @@ type AnalysisStepCardProps = {
   analysisSavedAt: number | null;
   saveError: string | null;
   saveSuccessAt: number | null;
+  lastSavedLocation: SavedKnowledgeLocation | null;
   knowledgeFolders: KnowledgeFolder[];
   knowledgeFoldersLoading: boolean;
   selectedKnowledgeFolderId: string;
   onSelectedKnowledgeFolderIdChange: (value: string) => void;
   onSaveAnalysisToFolder: () => void;
+  onOpenSavedLocation: () => void;
   savingToFolder: boolean;
 };
 
@@ -885,20 +895,22 @@ function AnalysisStepCard({
   analysisSavedAt,
   saveError,
   saveSuccessAt,
+  lastSavedLocation,
   knowledgeFolders,
   knowledgeFoldersLoading,
   selectedKnowledgeFolderId,
   onSelectedKnowledgeFolderIdChange,
   onSaveAnalysisToFolder,
+  onOpenSavedLocation,
   savingToFolder,
 }: AnalysisStepCardProps) {
   const [copied, setCopied] = useState(false);
   const hasText = analysisText.trim().length > 0;
   const statusLabelMap: Record<AnalysisStatus, string> = {
-    idle: "等待解析",
-    running: "解析中",
-    success: "解析完成",
-    error: "解析失败",
+    idle: "等待识别",
+    running: "识别中",
+    success: "识别完成",
+    error: "识别失败",
   };
   const statusColorMap: Record<AnalysisStatus, string> = {
     idle: "bg-gray-100 text-gray-600",
@@ -907,7 +919,7 @@ function AnalysisStepCard({
     error: "bg-red-100 text-red-600",
   };
   const statusLabel = canAnalyze ? statusLabelMap[analysisStatus] : "无需解析";
-  const statusClass = canAnalyze ? statusColorMap[analysisStatus] : "bg-blue-100 text-blue-700";
+  const statusClass = canAnalyze ? statusColorMap[analysisStatus] : "bg-gray-100 text-gray-700";
   const canViewResult = canAnalyze && analysisStatus === "success" && hasText;
   const showTextarea = !canAnalyze || analysisStatus !== "success" || analysisResultVisible;
   const previewSnippet = hasText ? analysisText.trim().slice(0, 160) : "";
@@ -927,12 +939,12 @@ function AnalysisStepCard({
     : null;
   const primaryButtonLabel =
     analysisStatus === "running"
-      ? `解析中 (${Math.min(analysisProgress.current, analysisProgress.total)}/${analysisProgress.total || 1})`
+      ? `识别中 (${Math.min(analysisProgress.current, analysisProgress.total)}/${analysisProgress.total || 1})`
       : canViewResult
         ? analysisResultVisible
-          ? "隐藏拆解结果"
-          : "查看拆解结果"
-        : "开始解析";
+          ? "隐藏识别结果"
+          : "查看识别结果"
+        : "开始识别";
   const primaryButtonDisabled = !canAnalyze || analysisStatus === "running";
   const canSaveToFolder = hasText && !savingToFolder && knowledgeFolders.length > 0 && selectedKnowledgeFolderId.length > 0;
 
@@ -945,7 +957,7 @@ function AnalysisStepCard({
     try {
       await navigator.clipboard.writeText(analysisText.trim());
       setCopied(true);
-      toast.success("解析结果已复制");
+      toast.success("识别结果已复制");
       setTimeout(() => setCopied(false), 1800);
     } catch {
       toast.error("复制失败，请重试");
@@ -957,9 +969,9 @@ function AnalysisStepCard({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">步骤 1</p>
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">图文解析</h3>
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white">图文识别</h3>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            系统会逐张解析参考图的主体、构图与风格，为后续生成提供模板。
+            系统会逐张识别参考图中的文字，并按原始顺序完整展示。
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -978,7 +990,7 @@ function AnalysisStepCard({
       )}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold text-gray-900 dark:text-white">图文解析结果</p>
+          <p className="text-sm font-semibold text-gray-900 dark:text-white">图文识别结果</p>
           <button
             type="button"
             onClick={handleCopy}
@@ -992,13 +1004,13 @@ function AnalysisStepCard({
           <textarea
             value={analysisText}
             onChange={(e) => onAnalysisTextChange(e.target.value)}
-            placeholder="点击“开始解析”后，这里会自动填充每张参考图的视觉要点，你也可以手动补充或修改。"
+            placeholder="点击“开始识别”后，这里会自动填充每张参考图识别到的完整文字。"
             rows={5}
             className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-yellow-400 focus:border-transparent resize-none"
           />
         ) : (
           <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/40 px-3 py-3 text-sm text-gray-600 dark:text-gray-300">
-            <p>拆解完成，点击“查看拆解结果”以展开内容。</p>
+            <p>识别完成，点击“查看识别结果”以展开内容。</p>
             {previewSnippet && (
               <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 line-clamp-3 whitespace-pre-line">
                 {previewSnippet}
@@ -1037,15 +1049,6 @@ function AnalysisStepCard({
                 重新解析
               </button>
             )}
-            <button
-              type="button"
-              onClick={onSaveAnalysisToFolder}
-              disabled={!canSaveToFolder}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 disabled:opacity-40"
-            >
-              {savingToFolder ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderDown className="h-4 w-4" />}
-              保存到文件夹
-            </button>
           </div>
         ) : (
           <div className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-300">
@@ -1086,6 +1089,21 @@ function AnalysisStepCard({
           )}
         </div>
         {saveError && <p className="text-xs text-red-500">{saveError}</p>}
+        {lastSavedLocation && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/50 px-3 py-2 text-xs">
+            <span className="text-gray-500 dark:text-gray-400">保存位置</span>
+            <span className="max-w-[260px] truncate text-gray-900 dark:text-gray-100">
+              {lastSavedLocation.folderName} / {lastSavedLocation.path}
+            </span>
+            <button
+              type="button"
+              onClick={onOpenSavedLocation}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 font-medium text-gray-700 dark:text-gray-200"
+            >
+              去首页查看
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

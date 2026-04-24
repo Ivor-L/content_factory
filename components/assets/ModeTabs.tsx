@@ -115,7 +115,7 @@ export function ModeTabs<T extends string = "manual" | "bulk">({
     <div
       ref={containerRef}
       className={cn(
-        "relative inline-flex rounded-full border border-primary-border/40 bg-primary-soft/60 p-0.5 backdrop-blur dark:bg-gray-800/80",
+        "relative inline-flex rounded-full border border-gray-200 bg-gray-100 p-0.5 backdrop-blur dark:border-gray-700 dark:bg-gray-800/80",
         className
       )}
     >
@@ -123,7 +123,7 @@ export function ModeTabs<T extends string = "manual" | "bulk">({
         key={layoutId}
         data-indicator-id={layoutId}
         className={cn(
-          "pointer-events-none absolute rounded-full bg-primary text-primary-foreground shadow-theme-glow dark:bg-primary",
+          "pointer-events-none absolute rounded-full bg-black text-white shadow-lg dark:bg-white dark:text-black",
           indicatorClassName
         )}
         style={{ top: 0, left: 0 }}
@@ -157,8 +157,8 @@ export function ModeTabs<T extends string = "manual" | "bulk">({
               "relative z-10 inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-semibold transition-colors",
               buttonClassName,
               isActive
-                ? cn("text-primary-foreground", activeClassName)
-                : cn("text-gray-500 dark:text-gray-400 hover:text-primary dark:hover:text-primary", inactiveClassName)
+                ? cn("text-white dark:text-black", activeClassName)
+                : cn("text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white", inactiveClassName)
             )}
           >
             {Icon && <Icon className="h-4 w-4 shrink-0" />}

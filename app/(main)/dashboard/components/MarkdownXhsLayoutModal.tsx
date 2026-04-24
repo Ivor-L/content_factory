@@ -799,17 +799,11 @@ function findSystemHeaderEnd(lines: string[], start: number): number {
 
 function preprocessMarkdownForCard(markdown: string): string {
   const { body } = splitMarkdownDocument(markdown ?? "");
-  const normalized = body.replace(/\r\n/g, "\n").trimStart();
+  const normalized = body.replace(/\r\n/g, "\n");
   if (!normalized) return "";
 
   const lines = normalized.split("\n");
   let index = 0;
-
-  // Drop a top-level title heading to keep only body text in card.
-  if ((lines[index] || "").trim().match(/^#\s+\S/)) {
-    index += 1;
-    while (index < lines.length && !lines[index].trim()) index += 1;
-  }
 
   // Strip leading note-property block like "title: ...", "platform: ...", "tags: ...".
   while (index < lines.length) {
@@ -858,7 +852,7 @@ function preprocessMarkdownForCard(markdown: string): string {
     }
   }
 
-  return contentLines.join("\n").trimStart();
+  return contentLines.join("\n");
 }
 
 function sanitizeFileName(input: string): string {

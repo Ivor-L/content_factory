@@ -32,7 +32,7 @@ const SIZE_CLASSES: Record<'sm' | 'md' | 'lg', string> = {
   lg: "text-lg",
 };
 
-const FALLBACK_PRIMARY_COLOR = '#007AFF';
+const FALLBACK_PRIMARY_COLOR = '#111111';
 
 export function TenantLogo({ 
   className, 

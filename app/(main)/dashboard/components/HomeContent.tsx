@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- Dashboard cards render remote task thumbnails with mixed dimensions */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
@@ -106,14 +106,32 @@ type ChatMessageRow = {
       text: string;
       atMs?: number;
     }> | string[];
+    references?: Array<{
+      path: string;
+      sourcePath?: string;
+    }>;
   } | null;
 };
 
-type ProcessStage = 'context' | 'read' | 'reason' | 'compose' | 'done' | 'other';
+type ProcessStage = 'context' | 'read' | 'reason' | 'compose' | 'done' | 'waiting' | 'other';
 
 type ProcessItem = {
   text: string;
   atMs?: number;
+};
+
+type MessageContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'thinking'; thinking: string }
+  | { type: 'tool_use'; id: string; name: string; input: unknown }
+  | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean; media?: MediaBlock[] };
+
+type MediaBlock = {
+  type: 'image' | 'audio' | 'video';
+  data?: string;
+  mimeType: string;
+  localPath?: string;
+  mediaId?: string;
 };
 
 type SkillOption = {
@@ -196,11 +214,19 @@ const NEXAPI_KEY_STORAGE_KEY = 'nexapi_key';
 const FILE_TREE_SELECTION_STORAGE_KEY_PREFIX = 'dashboard:file-tree-selection';
 const MODEL_SELECTION_STORAGE_KEY_PREFIX = 'dashboard:model-selection';
 const KNOWLEDGE_SAVE_TARGET_PREFIX = 'xhs-parse-save-target:';
-const CHAT_REQUEST_TIMEOUT_MS = 240_000;
 const MIN_FILE_TREE_WIDTH = 260;
 const DEFAULT_FILE_TREE_WIDTH = MIN_FILE_TREE_WIDTH;
 const MIN_DOC_PREVIEW_WIDTH = 420;
 const DEFAULT_DOC_PREVIEW_WIDTH = 560;
+const CORE_DOC_BASENAMES = new Set([
+  'agents.md',
+  'soul.md',
+  'memory.md',
+  'user.md',
+  'identity.md',
+  'claude.md',
+  'index.md',
+]);
 
 function getFileTreeSelectionStorageKey(tenantSlug?: string | null) {
   const normalizedTenantSlug = tenantSlug?.trim().toLocaleLowerCase();
@@ -323,6 +349,11 @@ function hasHiddenPathSegment(path: string) {
     .some((segment) => segment.startsWith('.'));
 }
 
+function isCoreDocPath(path: string) {
+  const baseName = path.split('/').filter(Boolean).pop()?.toLowerCase() || '';
+  return CORE_DOC_BASENAMES.has(baseName);
+}
+
 function sortTreeNodes(nodes: FileTreeNode[]): FileTreeNode[] {
   for (const node of nodes) {
     if (node.children.length > 0) {
@@ -371,6 +402,24 @@ function extractReferencedDocs(actions: AgentAction[]): string[] {
     refs.push(normalizedPath);
   }
   return refs;
+}
+
+function parseReferenceDocs(input: unknown): Array<{ path: string; sourcePath: string }> {
+  if (!Array.isArray(input)) return [];
+  const rows: Array<{ path: string; sourcePath: string }> = [];
+  const seen = new Set<string>();
+  for (const item of input) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const path = typeof row.path === 'string' ? normalizeDocPath(row.path) : '';
+    const sourcePath = typeof row.sourcePath === 'string' ? normalizeDocPath(row.sourcePath) : path;
+    if (!path) continue;
+    const key = path.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push({ path, sourcePath });
+  }
+  return rows;
 }
 
 function buildReferencePathCandidates(path: string): string[] {
@@ -436,6 +485,430 @@ function parseProcessingItems(input: unknown): ProcessItem[] {
   return rows;
 }
 
+function extractStructuredTextPreview(content: string) {
+  const trimmed = content.trim();
+  if (!trimmed) return '';
+
+  const tryExtractPartialField = (input: string, field: 'reply' | 'content' | 'text') => {
+    const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const partialMatch = input.match(new RegExp(`"${escaped}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)$`));
+    const completeMatch = input.match(new RegExp(`"${escaped}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`));
+    const raw = partialMatch?.[1] ?? completeMatch?.[1] ?? '';
+    if (!raw) return '';
+    try {
+      return JSON.parse(`"${raw}"`);
+    } catch {
+      return raw.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+    }
+  };
+
+  const candidates: string[] = [];
+  const codeBlockMatch = trimmed.match(/```json\s*([\s\S]*?)\s*```/i);
+  if (codeBlockMatch?.[1]) {
+    candidates.push(codeBlockMatch[1].trim());
+  }
+  candidates.push(trimmed);
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      if (typeof parsed === 'string') {
+        return parsed.trim();
+      }
+      if (Array.isArray(parsed)) {
+        const parts = parsed
+          .map((item) => {
+            if (!item || typeof item !== 'object') return '';
+            const row = item as Record<string, unknown>;
+            return (
+              (typeof row.reply === 'string' && row.reply.trim()) ||
+              (typeof row.text === 'string' && row.text.trim()) ||
+              (typeof row.content === 'string' && row.content.trim()) ||
+              ''
+            );
+          })
+          .filter(Boolean);
+        if (parts.length > 0) return parts.join('\n\n');
+      }
+      if (parsed && typeof parsed === 'object') {
+        const record = parsed as Record<string, unknown>;
+        const reply = typeof record.reply === 'string' ? record.reply.trim() : '';
+        if (reply) return reply;
+        const text = typeof record.text === 'string' ? record.text.trim() : '';
+        if (text) return text;
+        const contentText = typeof record.content === 'string' ? record.content.trim() : '';
+        if (contentText) return contentText;
+        if (Array.isArray(record.blocks)) {
+          const blockText = record.blocks
+            .map((item) => {
+              if (!item || typeof item !== 'object') return '';
+              const row = item as Record<string, unknown>;
+              return (
+                (typeof row.reply === 'string' && row.reply.trim()) ||
+                (typeof row.text === 'string' && row.text.trim()) ||
+                (typeof row.content === 'string' && row.content.trim()) ||
+                ''
+              );
+            })
+            .filter(Boolean);
+          if (blockText.length > 0) return blockText.join('\n\n');
+        }
+      }
+    } catch {
+      const partialReply = tryExtractPartialField(candidate, 'reply');
+      if (partialReply) return partialReply;
+      const partialContent = tryExtractPartialField(candidate, 'content');
+      if (partialContent) return partialContent;
+      const partialText = tryExtractPartialField(candidate, 'text');
+      if (partialText) return partialText;
+      // Ignore and fall through to plain-text handling.
+    }
+  }
+
+  if (/^[\[{]/.test(trimmed)) return '';
+  return trimmed;
+}
+
+function parseStructuredMessageContent(content: string): MessageContentBlock[] {
+  const trimmed = content.trim();
+  if (!trimmed) return [];
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (Array.isArray(parsed)) {
+      const blocks: MessageContentBlock[] = [];
+      for (const item of parsed) {
+        if (!item || typeof item !== 'object') continue;
+        const row = item as Record<string, unknown>;
+        const type = typeof row.type === 'string' ? row.type.trim() : '';
+        if (type === 'text' && typeof row.text === 'string') {
+          const text = row.text.trim();
+          if (text) blocks.push({ type: 'text', text });
+        } else if (type === 'thinking' && typeof row.thinking === 'string') {
+          const thinking = row.thinking.trim();
+          if (thinking) blocks.push({ type: 'thinking', thinking });
+        } else if ((type === 'tool_use' || type === 'tool') && typeof row.id === 'string' && typeof row.name === 'string') {
+          blocks.push({
+            type: 'tool_use',
+            id: row.id,
+            name: row.name,
+            input: row.input,
+          });
+        } else if ((type === 'tool_result' || type === 'toolResult') && typeof row.tool_use_id === 'string' && typeof row.content === 'string') {
+          blocks.push({
+            type: 'tool_result',
+            tool_use_id: row.tool_use_id,
+            content: row.content,
+            is_error: row.is_error === true,
+            media: Array.isArray(row.media) ? (row.media as MediaBlock[]) : undefined,
+          });
+        } else if (type === 'assistant' && typeof row.content === 'string') {
+          const nested = parseStructuredMessageContent(row.content);
+          if (nested.length > 0) {
+            blocks.push(...nested);
+          }
+        }
+      }
+      if (blocks.length > 0) return blocks;
+    }
+  } catch {
+    // plain text fallback
+  }
+
+  const previewText = extractStructuredTextPreview(trimmed);
+  if (previewText) {
+    return [{ type: 'text', text: previewText }];
+  }
+
+  if (/^[\[{]/.test(trimmed)) return [];
+
+  return [{ type: 'text', text: trimmed }];
+}
+
+function blockInputPreview(input: unknown) {
+  if (typeof input === 'string') return input;
+  if (!input || typeof input !== 'object') return '';
+  const record = input as Record<string, unknown>;
+  const path = typeof record.path === 'string' ? record.path : '';
+  const content = typeof record.content === 'string' ? record.content : '';
+  const reason = typeof record.reason === 'string' ? record.reason : '';
+  return [path, reason, content].filter(Boolean).join(' · ');
+}
+
+function blockInputPath(input: unknown) {
+  if (!input || typeof input !== 'object') return '';
+  const record = input as Record<string, unknown>;
+  return typeof record.path === 'string' ? record.path : '';
+}
+
+function buildAssistantBlocksFromState(params: {
+  content: string;
+  thinking: string[];
+  actions: AgentAction[];
+  actionResults?: AgentActionResult[];
+}): MessageContentBlock[] {
+  const blocks: MessageContentBlock[] = [];
+  const thinking = params.thinking.map((item) => item.trim()).filter(Boolean);
+  if (thinking.length > 0) {
+    blocks.push({ type: 'thinking', thinking: thinking.join('\n') });
+  }
+
+  const resultMap = new Map<string, AgentActionResult>(
+    (params.actionResults || []).map((item) => [String(`${item.type}:${item.path}`), item] as [string, AgentActionResult]),
+  );
+
+  params.actions.forEach((action, index) => {
+    const toolId = `tool-${index}-${action.type}-${action.path.replace(/[^a-zA-Z0-9._-]+/g, '-')}`;
+    blocks.push({
+      type: 'tool_use',
+      id: toolId,
+      name: action.type,
+      input: {
+        path: action.path,
+        content: action.content,
+        reason: action.reason,
+      },
+    });
+    const resultKey = String(`${action.type}:${action.path}`);
+    const result = resultMap.get(resultKey);
+    if (result) {
+      blocks.push({
+        type: 'tool_result',
+        tool_use_id: toolId,
+        content: result.ok ? (result.error ? result.error : '执行完成') : (result.error || '执行失败'),
+        is_error: !result.ok,
+      });
+    }
+  });
+
+  const reply = params.content.trim();
+  if (reply) {
+    blocks.push({ type: 'text', text: reply });
+  }
+
+  if (blocks.length === 0) {
+    blocks.push({ type: 'text', text: reply });
+  }
+
+  return blocks;
+}
+
+function renderAssistantBlocks(blocks: MessageContentBlock[], opts: {
+  messageId: string;
+  openReferencedDoc: (path: string) => void;
+  actionResults?: AgentActionResult[];
+  processItems?: ProcessItem[];
+  processNowTick?: number;
+  streamStartedAtMs?: number | null;
+  isStreaming?: boolean;
+  processExpanded?: boolean;
+  onToggleProcess?: () => void;
+}) {
+  const nodes: ReactNode[] = [];
+  const textParts: string[] = [];
+  const actionResultMap = new Map<string, AgentActionResult>(
+    (opts.actionResults || []).map((item) => [String(`${item.type}:${item.path}`), item]),
+  );
+  const elapsedMs = typeof opts.streamStartedAtMs === 'number'
+    ? Math.max(0, (opts.processNowTick || Date.now()) - opts.streamStartedAtMs)
+    : null;
+  const thinkingLines: string[] = [];
+  type WorkflowToolItem = {
+    name: string;
+    path: string;
+    detail: string;
+    ok: boolean;
+    error?: string;
+  };
+  const workflowTools: WorkflowToolItem[] = [];
+  let workflowHasContent = false;
+
+  const flushText = (keyPrefix: string) => {
+    if (textParts.length === 0) return;
+    nodes.push(
+      <div key={`${keyPrefix}-text`} className="whitespace-pre-wrap text-[15px] leading-7 text-gray-800 dark:text-gray-200">
+        {textParts.join('\n')}
+      </div>,
+    );
+    textParts.length = 0;
+  };
+
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index];
+
+    if (block.type === 'text') {
+      textParts.push(block.text);
+      continue;
+    }
+
+    flushText(`${opts.messageId}-${index}`);
+
+    if (block.type === 'thinking') {
+      const fallbackItems = block.thinking
+        .split('\n')
+        .map((text) => text.trim())
+        .filter(Boolean)
+        .map((text) => ({ text }));
+      for (const item of fallbackItems) {
+        if (item.text) thinkingLines.push(item.text);
+      }
+      if (thinkingLines.length > 0) {
+        workflowHasContent = true;
+      }
+      continue;
+    }
+
+    if (block.type === 'tool_use') {
+      let cursor = index;
+      while (cursor < blocks.length) {
+        const current = blocks[cursor];
+        if (current.type !== 'tool_use') break;
+
+        const currentPath = blockInputPath(current.input);
+        const resultBlock = blocks[cursor + 1]?.type === 'tool_result'
+          ? (blocks[cursor + 1] as Extract<MessageContentBlock, { type: 'tool_result' }>)
+          : null;
+        const actionResult = actionResultMap.get(String(`${current.name}:${currentPath}`)) || null;
+        workflowTools.push({
+          name: current.name,
+          path: currentPath,
+          detail: blockInputPreview(current.input) || currentPath || '...',
+          ok: Boolean((actionResult && actionResult.ok) || (resultBlock && !resultBlock.is_error)),
+          error: actionResult?.error || (resultBlock?.is_error ? resultBlock.content : undefined),
+        });
+        workflowHasContent = true;
+
+        cursor += 1;
+        if (resultBlock) {
+          cursor += 1;
+        }
+      }
+      index = cursor - 1;
+      continue;
+    }
+
+    if (block.type === 'tool_result') {
+      continue;
+    }
+  }
+
+  if (workflowHasContent) {
+    const expanded = opts.processExpanded === true;
+    const successCount = workflowTools.filter((item) => item.ok).length;
+    const errorCount = workflowTools.filter((item) => !item.ok).length;
+    const totalCount = workflowTools.length;
+    const summaryCount = totalCount > 0 ? `${successCount}个已完成` : '';
+    const summaryIcon = <Sparkles className="h-3.5 w-3.5 shrink-0" />;
+
+    nodes.push(
+      <details key={`${opts.messageId}-workflow`} className="group mb-1" open={expanded}>
+        <summary
+          onClick={(event) => {
+            event.preventDefault();
+            opts.onToggleProcess?.();
+          }}
+          className="flex cursor-pointer list-none items-center gap-1.5 text-left text-[12px] leading-5 text-gray-500 transition hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300 [&::-webkit-details-marker]:hidden"
+        >
+          {summaryIcon}
+          <span className="shrink-0">思路</span>
+          {summaryCount ? <span className="shrink-0 text-gray-400 dark:text-gray-600">{summaryCount}</span> : null}
+          {errorCount > 0 ? <X className="h-3.5 w-3.5 shrink-0 text-red-400" /> : null}
+          {errorCount === 0 && totalCount > 0 ? <Check className="h-3.5 w-3.5 shrink-0 text-emerald-500" /> : null}
+          <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-gray-300 transition-transform ${expanded ? 'rotate-90' : ''} dark:text-gray-600`} />
+        </summary>
+        {expanded ? (
+          <div className="mt-1 border-l border-gray-100 pl-2.5 dark:border-gray-800/70">
+            <div className="space-y-1">
+              {workflowTools.length > 0 ? (
+                workflowTools.map((item, itemIndex) => {
+                  const icon = item.name === 'read' ? <Search className="h-3.5 w-3.5 shrink-0" /> : item.name === 'create' || item.name === 'update' ? <Pencil className="h-3.5 w-3.5 shrink-0" /> : <FileText className="h-3.5 w-3.5 shrink-0" />;
+                  return (
+                    <div key={`${opts.messageId}-workflow-tool-${itemIndex}`} className="flex items-center gap-1.5 text-[12px] leading-5 text-gray-500 dark:text-gray-500">
+                      {icon}
+                      <span className="min-w-0 flex-1 truncate">
+                        {item.path || item.detail}
+                      </span>
+                      {item.ok ? <Check className="h-3.5 w-3.5 shrink-0 text-emerald-500" /> : null}
+                      {!item.ok ? <X className="h-3.5 w-3.5 shrink-0 text-red-400" /> : null}
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="whitespace-pre-wrap text-[12px] leading-6 text-gray-500 dark:text-gray-400">
+                  {thinkingLines.length > 0 ? thinkingLines.join('\n') : '暂无内容'}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </details>,
+    );
+  } else if (opts.isStreaming) {
+    nodes.push(
+      <div key={`${opts.messageId}-streaming-placeholder`} className="inline-flex items-center gap-1.5 text-[11px] leading-5 text-gray-400 dark:text-gray-500" aria-label="生成中">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        {typeof elapsedMs === 'number' ? `${(elapsedMs / 1000).toFixed(1)}s` : ''}
+      </div>,
+    );
+  }
+
+  flushText(opts.messageId);
+
+  return nodes;
+}
+
+function parseLegacyAssistantBlocks(message: ChatMessageRow): MessageContentBlock[] {
+  const actions = parseAgentActions(message.metadata?.agentActions);
+  const thinking = parseThinkingItems(message.metadata?.thinking);
+  const processing = parseProcessingItems(message.metadata?.processing);
+  const blocks: MessageContentBlock[] = [];
+
+  if (processing.length > 0) {
+    blocks.push({
+      type: 'thinking',
+      thinking: processing.map((item) => item.text).join('\n'),
+    });
+  } else if (thinking.length > 0) {
+    blocks.push({
+      type: 'thinking',
+      thinking: thinking.join('\n'),
+    });
+  }
+
+  actions.forEach((action, index) => {
+    const toolId = `legacy-tool-${message.id}-${index}`;
+    blocks.push({
+      type: 'tool_use',
+      id: toolId,
+      name: action.type,
+      input: {
+        path: action.path,
+        content: action.content,
+        reason: action.reason,
+      },
+    });
+  });
+
+  const reply = message.content.trim();
+  if (reply) {
+    blocks.push({ type: 'text', text: reply });
+  }
+  return blocks;
+}
+
+function getMessageBlocks(message: ChatMessageRow): MessageContentBlock[] {
+  const structured = parseStructuredMessageContent(message.content);
+  if (structured.length > 0) {
+    return structured;
+  }
+  if (message.role === 'assistant') {
+    const legacy = parseLegacyAssistantBlocks(message);
+    if (legacy.length > 0) return legacy;
+  }
+  return structured;
+}
+
 function resolveProcessStage(text: string): ProcessStage {
   const token = text.toLocaleLowerCase();
   if (token.includes('上下文') || token.includes('准备') || token.includes('请求') || token.includes('发送')) return 'context';
@@ -443,6 +916,7 @@ function resolveProcessStage(text: string): ProcessStage {
   if (token.includes('思考') || token.includes('分析') || token.includes('推理')) return 'reason';
   if (token.includes('回复') || token.includes('生成')) return 'compose';
   if (token.includes('完成') || token.includes('最终')) return 'done';
+  if (token.includes('等待上游响应') || token.includes('等待响应') || token.includes('等待')) return 'waiting';
   return 'other';
 }
 
@@ -452,6 +926,7 @@ function getProcessStageLabel(stage: ProcessStage) {
   if (stage === 'reason') return '推理分析';
   if (stage === 'compose') return '组织回复';
   if (stage === 'done') return '完成';
+  if (stage === 'waiting') return '等待响应';
   return '其他';
 }
 
@@ -490,20 +965,15 @@ function groupProcessItems(items: ProcessItem[], nowMs?: number) {
   return groups;
 }
 
-function withPendingHint(items: ProcessItem[], nowMs?: number) {
-  if (!items.length || typeof nowMs !== 'number') return items;
-  const last = items[items.length - 1];
-  if (!last || typeof last.atMs !== 'number') return items;
-  const idleMs = nowMs - last.atMs;
-  if (idleMs < 5000) return items;
-  if (last.text.includes('等待上游响应')) return items;
-  return [
-    ...items,
-    {
-      text: '等待上游响应…',
-      atMs: nowMs,
-    },
-  ];
+function buildStreamingProcessTimeline(items: ProcessItem[], nowMs: number) {
+  const groups = groupProcessItems(items, nowMs);
+  const latest = groups[groups.length - 1] || null;
+  return {
+    groups,
+    latestStage: latest?.stage || null,
+    latestLabel: latest ? getProcessStageLabel(latest.stage) : '',
+    latestText: latest?.items[latest.items.length - 1]?.text || '',
+  };
 }
 
 function getProviderLabel(provider?: string | null) {
@@ -571,7 +1041,6 @@ export function HomeContent() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessageRow[]>([]);
   const [loadingConversationMessages, setLoadingConversationMessages] = useState(false);
-  const [streamingStatus, setStreamingStatus] = useState<string>('');
   const [streamingThinking, setStreamingThinking] = useState<string[]>([]);
   const [streamingActions, setStreamingActions] = useState<AgentAction[]>([]);
   const [streamingReply, setStreamingReply] = useState<string>('');
@@ -1064,7 +1533,7 @@ export function HomeContent() {
     for (const doc of knowledgeDocs) {
       const virtualPath = getDocVirtualPath(doc);
       if (!virtualPath) continue;
-      if (hasHiddenPathSegment(virtualPath)) continue;
+      if (hasHiddenPathSegment(virtualPath) && !isCoreDocPath(virtualPath)) continue;
       if (!isMarkdownPath(virtualPath)) continue;
 
       const parts = virtualPath.split('/').filter(Boolean);
@@ -1240,6 +1709,8 @@ export function HomeContent() {
         : 'min-h-[60px]';
   const composerMaxWidth = showDocPreview ? 760 : showFileTree ? 820 : 940;
   const conversationContentMaxWidth = Math.max(680, composerMaxWidth - 40);
+  const conversationEdgeGutter = 16;
+  const conversationSidePanelInset = showFileTree ? fileTreeWidth + (showDocPreview ? docPreviewWidth : 0) + 20 : 0;
   const hideFolderSelectorInComposer = composerMaxWidth <= 760;
   const hideModelSelectorInComposer = composerMaxWidth <= 700;
   const modelSelectorMaxWidthClass = composerMaxWidth <= 820 ? 'max-w-[170px]' : 'max-w-[230px]';
@@ -1266,15 +1737,19 @@ export function HomeContent() {
       const root = mainContentRef.current;
       if (!root) return;
       const rect = root.getBoundingClientRect();
-      const left = Math.max(0, Math.round(rect.left));
-      const right = Math.max(0, Math.round(window.innerWidth - rect.right));
+      const left = Math.max(conversationEdgeGutter, Math.round(rect.left));
+      const right = Math.max(
+        0,
+        Math.round(window.innerWidth - rect.right),
+        conversationSidePanelInset,
+      );
       setFixedComposerInset((prev) => (prev.left === left && prev.right === right ? prev : { left, right }));
     };
 
     updateInset();
     window.addEventListener('resize', updateInset);
     return () => window.removeEventListener('resize', updateInset);
-  }, [docPreviewWidth, fileTreeWidth, isConversationMode, showDocPreview, showFileTree]);
+  }, [conversationSidePanelInset, isConversationMode]);
 
   useEffect(() => {
     if (!isConversationMode || typeof window === 'undefined') return;
@@ -1367,6 +1842,8 @@ export function HomeContent() {
           metadata?: {
             agentActions?: unknown;
             thinking?: unknown;
+            processing?: unknown;
+            references?: unknown;
           } | null;
         }>;
       };
@@ -1377,7 +1854,7 @@ export function HomeContent() {
       setChatMessages(
         payload.data
           .filter((row) => row.role === 'user' || row.role === 'assistant')
-          .map((row) => ({
+      .map((row) => ({
             id: row.id,
             role: row.role as 'user' | 'assistant',
             content: row.content,
@@ -1385,10 +1862,12 @@ export function HomeContent() {
             metadata: {
               agentActions: parseAgentActions(row.metadata?.agentActions),
               thinking: parseThinkingItems(row.metadata?.thinking),
+              processing: parseProcessingItems(row.metadata?.processing),
+              references: parseReferenceDocs(row.metadata?.references),
             },
           })),
-      );
-    } catch (error) {
+    );
+  } catch (error) {
       console.error('Failed to load conversation messages', error);
       setChatMessages([]);
     } finally {
@@ -1613,7 +2092,7 @@ export function HomeContent() {
               href={token.href}
               target="_blank"
               rel="noreferrer"
-              className="text-blue-600 underline decoration-blue-300 underline-offset-2 hover:text-blue-700 dark:text-blue-300 dark:decoration-blue-500 dark:hover:text-blue-200"
+              className="text-emerald-600 underline decoration-emerald-300 underline-offset-2 hover:text-emerald-700 dark:text-emerald-400 dark:decoration-emerald-500 dark:hover:text-emerald-300"
             >
               {token.value}
             </a>
@@ -2042,19 +2521,15 @@ export function HomeContent() {
       },
     ]);
     setAssistantLoading(true);
-    setStreamingStatus('正在分析需求…');
     setStreamingThinking([]);
     setStreamingActions([]);
     setStreamingReply('');
     const streamStartedAt = Date.now();
     setStreamStartedAtMs(streamStartedAt);
-    setStreamingProcess([{ text: '已发送请求，开始分析需求', atMs: 0 }]);
+    setStreamingProcess([]);
     setAssistantInput('');
 
     try {
-      const timeoutWarnId = setTimeout(() => {
-        setStreamingStatus('上游响应较慢，继续等待中…');
-      }, CHAT_REQUEST_TIMEOUT_MS);
       const localNexApiKey =
         typeof window !== 'undefined' ? window.localStorage.getItem(NEXAPI_KEY_STORAGE_KEY)?.trim() : '';
       const res = await fetch('/api/assistants/chat', {
@@ -2071,13 +2546,19 @@ export function HomeContent() {
           providerId: normalizeAssistantProviderId(inferAssistantProviderFromModel(selectedModel)),
           model: selectedModel,
           skills: enabledSkills,
+          attachments: attachments
+            .filter((item) => !item.uploading && item.uploadedUrl)
+            .map((item) => ({
+              name: item.name,
+              type: item.type,
+              url: item.uploadedUrl,
+            })),
           fastMode: true,
           message: content,
           stream: true,
         }),
       });
       if (!res.ok || !res.body) {
-        clearTimeout(timeoutWarnId);
         const payload = await res.json().catch(() => ({})) as {
           error?: { message?: string } | string;
         };
@@ -2095,7 +2576,7 @@ export function HomeContent() {
       let finalReply = '';
       let finalActions: AgentAction[] = [];
       let finalThinking: string[] = [];
-      let finalProcessing: ProcessItem[] = [{ text: '已发送请求，开始分析需求', atMs: 0 }];
+      let finalProcessing: ProcessItem[] = [];
       const seenThinking = new Set<string>();
       const seenActionKeys = new Set<string>();
       const pushProcess = (entry: string) => {
@@ -2132,13 +2613,6 @@ export function HomeContent() {
             const cid = typeof payload.conversationId === 'string' ? payload.conversationId : '';
             if (cid) {
               nextConversationId = cid;
-              pushProcess('会话已建立');
-            }
-          } else if (eventName === 'status') {
-            const text = typeof payload.text === 'string' ? payload.text : '';
-            if (text) {
-              setStreamingStatus(text);
-              pushProcess(text);
             }
           } else if (eventName === 'thinking') {
             const items = parseThinkingItems(payload.items);
@@ -2152,7 +2626,7 @@ export function HomeContent() {
             for (const item of merged.slice(0, 8)) {
               if (seenThinking.has(item)) continue;
               seenThinking.add(item);
-              pushProcess(`思考：${item}`);
+              pushProcess(item);
             }
           } else if (eventName === 'actions') {
             const actions = parseAgentActions(payload.items);
@@ -2163,7 +2637,7 @@ export function HomeContent() {
               merged.push(action);
               if (!seenActionKeys.has(key)) {
                 seenActionKeys.add(key);
-                pushProcess(`动作：${action.type.toUpperCase()} ${action.path}`);
+                pushProcess(`${action.type.toUpperCase()} ${action.path}`);
               }
             }
             finalActions = merged;
@@ -2171,9 +2645,6 @@ export function HomeContent() {
           } else if (eventName === 'reply_delta') {
             const delta = typeof payload.delta === 'string' ? payload.delta : '';
             if (delta) {
-              if (!finalReply) {
-                pushProcess('模型开始输出回复');
-              }
               finalReply += delta;
               setStreamingReply((prev) => prev + delta);
             }
@@ -2203,23 +2674,19 @@ export function HomeContent() {
               finalThinking = merged;
               setStreamingThinking(merged);
             }
-            pushProcess('已生成最终回复');
             const cid = typeof payload.conversationId === 'string' ? payload.conversationId : '';
             if (cid) nextConversationId = cid;
           } else if (eventName === 'error') {
             const message = typeof payload.message === 'string' ? payload.message : '助手生成失败';
-            pushProcess(`错误：${message}`);
             throw new Error(message);
           }
         }
       }
-      clearTimeout(timeoutWarnId);
 
       if (!nextConversationId) {
         throw new Error('会话创建失败，请稍后重试');
       }
       setConversationId(nextConversationId);
-      setStreamingStatus('');
       setStreamingReply('');
       setStreamingActions([]);
       setStreamingThinking([]);
@@ -2241,6 +2708,7 @@ export function HomeContent() {
           },
         ]);
       }
+      setAttachments([]);
       await fetchConversationHistory();
     } catch (error) {
       const message = error instanceof Error ? error.message : '请求失败，请稍后重试';
@@ -2252,7 +2720,6 @@ export function HomeContent() {
           content: `请求失败：${message}`,
         },
       ]);
-      setStreamingStatus('');
       setStreamingReply('');
       setStreamingActions([]);
       setStreamingThinking([]);
@@ -2268,6 +2735,7 @@ export function HomeContent() {
     conversationId,
     enabledSkills,
     fetchConversationHistory,
+    attachments,
     selectedDocPath,
     selectedFolderId,
     selectedModel,
@@ -2358,35 +2826,59 @@ export function HomeContent() {
 
   const streamingPreviewMessage = useMemo<ChatMessageRow | null>(() => {
     if (!assistantLoading) return null;
-    if (!streamingReply.trim() && streamingActions.length === 0 && streamingThinking.length === 0 && streamingProcess.length === 0) return null;
+    const previewText = extractStructuredTextPreview(streamingReply);
     return {
       id: 'streaming-assistant',
       role: 'assistant',
-      content: streamingReply || '',
+      content: previewText,
       metadata: {
         agentActions: streamingActions,
         thinking: streamingThinking,
         processing: streamingProcess,
+        references: [],
       },
     };
   }, [assistantLoading, streamingActions, streamingProcess, streamingReply, streamingThinking]);
+
+  const streamingPreviewBlocks = useMemo<MessageContentBlock[]>(
+    () => {
+      if (!streamingPreviewMessage) return [];
+      return getMessageBlocks(streamingPreviewMessage);
+    },
+    [streamingPreviewMessage],
+  );
 
   const displayedMessages = useMemo(
     () => (streamingPreviewMessage ? [...chatMessages, streamingPreviewMessage] : chatMessages),
     [chatMessages, streamingPreviewMessage],
   );
 
-  useEffect(() => {
+  const scrollConversationToBottom = useCallback((behavior: ScrollBehavior) => {
+    messageBottomRef.current?.scrollIntoView({
+      block: 'end',
+      behavior,
+    });
+  }, []);
+
+  const latestDisplayedMessageId = displayedMessages.at(-1)?.id ?? '';
+
+  useLayoutEffect(() => {
     if (!isConversationMode) return;
     if (!messageBottomRef.current) return;
+    scrollConversationToBottom(assistantLoading || loadingConversationMessages ? 'auto' : 'smooth');
     const rafId = window.requestAnimationFrame(() => {
-      messageBottomRef.current?.scrollIntoView({
-        block: 'end',
-        behavior: assistantLoading ? 'auto' : 'smooth',
-      });
+      scrollConversationToBottom(assistantLoading || loadingConversationMessages ? 'auto' : 'smooth');
     });
     return () => window.cancelAnimationFrame(rafId);
-  }, [assistantLoading, isConversationMode, displayedMessages.length, streamingReply, streamingProcess]);
+  }, [
+    assistantLoading,
+    isConversationMode,
+    latestDisplayedMessageId,
+    loadingConversationMessages,
+    scrollConversationToBottom,
+    streamingProcess,
+    streamingReply,
+  ]);
 
   const openHistoryConversation = useCallback((id: string) => {
     if (!id) return;
@@ -2405,7 +2897,6 @@ export function HomeContent() {
     setStreamingReply('');
     setStreamingActions([]);
     setStreamingThinking([]);
-    setStreamingStatus('');
     setStreamingProcess([]);
     setStreamStartedAtMs(null);
     setAssistantInput('');
@@ -2435,7 +2926,6 @@ export function HomeContent() {
         setStreamingReply('');
         setStreamingActions([]);
         setStreamingThinking([]);
-        setStreamingStatus('');
         setStreamingProcess([]);
         setStreamStartedAtMs(null);
       }
@@ -2464,7 +2954,7 @@ export function HomeContent() {
           >
           {isConversationMode ? (
             <>
-              <div className="-mx-4 sticky top-0 z-30 mb-3 bg-white dark:bg-[#0f1012]">
+              <div className="-mx-4 sticky top-0 z-50 mb-3 bg-white dark:bg-[#0f1012]">
               <div className="flex h-[53px] w-full items-center justify-between gap-3 px-4">
                 <div className="min-w-0 flex items-center gap-2">
                   <div className="relative flex items-center gap-2">
@@ -2716,169 +3206,104 @@ export function HomeContent() {
                 <>
                   <div className="space-y-5">
                     {displayedMessages.map((message) => {
-                    const actions = parseAgentActions(message.metadata?.agentActions);
-                    const thinking = parseThinkingItems(message.metadata?.thinking);
-                    const referencedDocs = extractReferencedDocs(actions);
-                    const processing = parseProcessingItems(message.metadata?.processing);
-                    const isStreamingMessage = message.id === 'streaming-assistant';
-                    const processingNowMs = isStreamingMessage && streamStartedAtMs
-                      ? Math.max(0, processNowTick - streamStartedAtMs)
-                      : undefined;
-                    const processingWithHint = withPendingHint(processing, processingNowMs);
-                    const processGroups = groupProcessItems(processingWithHint, processingNowMs);
-                    const processExpanded = isStreamingMessage || Boolean(expandedProcessByMessageId[message.id]);
-                    const visibleProcessGroups = processExpanded ? processGroups : processGroups.slice(-2);
-                    const results = actionResultsByMessageId[message.id] || [];
-                    if (message.role === 'user') {
-                      return (
-                        <article key={message.id} className="flex justify-end">
-                          <div className="inline-block max-w-[78%] rounded-2xl bg-gray-100 px-4 py-3 dark:bg-gray-800">
-                            <div className="whitespace-pre-wrap text-[15px] font-medium leading-7 text-gray-900 dark:text-gray-100">
-                              {message.content}
+                      const isStreamingMessage = message.id === 'streaming-assistant';
+                      const blocks = message.id === 'streaming-assistant'
+                        ? streamingPreviewBlocks
+                        : getMessageBlocks(message);
+                      const actions = parseAgentActions(message.metadata?.agentActions);
+                      const referencedDocs = (message.metadata?.references?.length ?? 0) > 0
+                        ? message.metadata!.references!.map((item) => item.path)
+                        : extractReferencedDocs(actions);
+                      const results = actionResultsByMessageId[message.id] || [];
+                      const processExpanded = Boolean(expandedProcessByMessageId[message.id]) || isStreamingMessage;
+
+                      if (message.role === 'user') {
+                        return (
+                          <article key={message.id} className="flex justify-end">
+                            <div className="inline-block max-w-[78%] rounded-2xl bg-gray-100 px-4 py-3 dark:bg-gray-800">
+                              <div className="whitespace-pre-wrap text-[15px] font-medium leading-7 text-gray-900 dark:text-gray-100">
+                                {message.content}
+                              </div>
                             </div>
+                          </article>
+                        );
+                      }
+
+                      return (
+                        <article key={message.id} className="flex items-start gap-3">
+                          <Image
+                            src={AGENT_AVATAR_SRC}
+                            alt="Agent"
+                            width={28}
+                            height={28}
+                            className="mt-1 h-7 w-7 rounded-md object-cover"
+                          />
+                          <div className="min-w-0 max-w-[84%]">
+                            {renderAssistantBlocks(blocks, {
+                              messageId: message.id,
+                              openReferencedDoc,
+                              actionResults: results,
+                              processItems: message.id === 'streaming-assistant' ? streamingProcess : parseProcessingItems(message.metadata?.processing),
+                              processNowTick,
+                              streamStartedAtMs: message.id === 'streaming-assistant' ? streamStartedAtMs : null,
+                              isStreaming: isStreamingMessage,
+                              processExpanded,
+                              onToggleProcess: isStreamingMessage
+                                ? undefined
+                                : () => {
+                                    setExpandedProcessByMessageId((prev) => ({
+                                      ...prev,
+                                      [message.id]: !prev[message.id],
+                                    }));
+                                  },
+                            })}
+                            {actions.length > 0 && executingMessageId === message.id ? (
+                              <div className="mt-3 inline-flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                执行中
+                              </div>
+                            ) : null}
+                            {!isStreamingMessage && referencedDocs.length > 0 ? (
+                              <details className="mt-2 group">
+                                <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] leading-5 text-gray-300 transition hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400 [&::-webkit-details-marker]:hidden">
+                                  <ChevronRight className="h-3 w-3 shrink-0 transition-transform group-open:rotate-90" />
+                                  <span className="font-medium">
+                                    引用文档
+                                  </span>
+                                  <span className="text-gray-200 dark:text-gray-700">
+                                    {referencedDocs.length} 个
+                                  </span>
+                                </summary>
+                                <div className="mt-1 pl-4">
+                                  <div className="space-y-0.5">
+                                    {referencedDocs.map((path) => (
+                                      <button
+                                        key={`${message.id}-ref-${path}`}
+                                        type="button"
+                                        onClick={() => openReferencedDoc(path)}
+                                        className="flex w-full items-center gap-1.5 rounded px-0 py-0.5 text-left text-[11px] leading-5 text-gray-300 transition hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400"
+                                        title={path}
+                                      >
+                                        <FileText className="h-3 w-3 shrink-0" />
+                                        <span className="truncate">
+                                          {path}
+                                        </span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              </details>
+                            ) : null}
                           </div>
                         </article>
                       );
-                    }
-
-                    return (
-                      <article key={message.id} className="flex items-start gap-3">
-                        <Image
-                          src={AGENT_AVATAR_SRC}
-                          alt="Agent"
-                          width={28}
-                          height={28}
-                          className="mt-1 h-7 w-7 rounded-md object-cover"
-                        />
-                        <div className="min-w-0 max-w-[84%]">
-                          {processingWithHint.length > 0 ? (
-                            <div className="mb-3 text-xs text-gray-700 dark:text-gray-200">
-                              <div className="mb-2 flex items-center gap-2">
-                                <p className="font-semibold">处理过程</p>
-                                {processGroups.length > 1 ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setExpandedProcessByMessageId((prev) => ({
-                                        ...prev,
-                                        [message.id]: !prev[message.id],
-                                      }));
-                                    }}
-                                    className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-1.5 py-0.5 text-[11px] text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
-                                  >
-                                    {processExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                                    {processExpanded ? '收起' : `展开 ${processGroups.length} 项`}
-                                  </button>
-                                ) : null}
-                              </div>
-                              <ol className="relative pl-4">
-                                <span className="pointer-events-none absolute bottom-1 left-[5px] top-1 w-px bg-gray-300 dark:bg-gray-600" />
-                                {visibleProcessGroups.map((group, groupIdx) => {
-                                  const actualGroupIdx = processExpanded ? groupIdx : processGroups.length - 1 + groupIdx;
-                                  const isCurrent = isStreamingMessage && actualGroupIdx === processGroups.length - 1;
-                                  return (
-                                    <li key={`${message.id}-processing-group-${actualGroupIdx}`} className="relative mb-2 last:mb-0">
-                                      <span
-                                        className={`absolute -left-[15px] top-[4px] inline-block h-2.5 w-2.5 rounded-full ${
-                                          isCurrent
-                                            ? 'bg-gray-900 ring-2 ring-gray-200 dark:bg-gray-100 dark:ring-gray-700'
-                                            : 'bg-gray-200 dark:bg-gray-700'
-                                        }`}
-                                      />
-                                      <div className="min-w-0">
-                                        <div className="flex items-center justify-between gap-2">
-                                          <p className={`text-[12px] font-semibold ${isCurrent ? 'text-gray-900 dark:text-gray-100' : 'text-gray-300 dark:text-gray-500'}`}>
-                                            {actualGroupIdx + 1}. {getProcessStageLabel(group.stage)}
-                                          </p>
-                                          <span className={`text-[11px] ${isCurrent ? 'text-gray-700 dark:text-gray-300' : 'text-gray-300 dark:text-gray-500'}`}>
-                                            {formatProcessDuration(group.elapsedMs)}
-                                          </span>
-                                        </div>
-                                        <p className={`mt-0.5 text-[12px] ${isCurrent ? 'text-gray-600 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500'}`}>
-                                          {group.items.map((item) => item.text).join(' · ')}
-                                        </p>
-                                      </div>
-                                    </li>
-                                  );
-                                })}
-                              </ol>
-                            </div>
-                          ) : null}
-                          {thinking.length > 0 ? (
-                            <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700 dark:border-blue-500/40 dark:bg-blue-500/10 dark:text-blue-200">
-                              <p className="mb-1 font-semibold">分析过程</p>
-                              <ul className="space-y-1">
-                                {thinking.map((item, idx) => (
-                                  <li key={`${message.id}-thinking-${idx}`}>• {item}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          ) : null}
-                          {message.content ? (
-                            <div className="whitespace-pre-wrap text-[15px] leading-7 text-gray-800 dark:text-gray-200">
-                              {message.content}
-                            </div>
-                          ) : null}
-                          {actions.length > 0 ? (
-                            <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-800/70 dark:text-gray-200">
-                              <div className="mb-1 flex items-center justify-between">
-                                <p className="font-semibold">动作计划</p>
-                                {executingMessageId === message.id ? (
-                                  <span className="inline-flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400">
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                    自动执行中
-                                  </span>
-                                ) : null}
-                              </div>
-                              <div className="space-y-1">
-                                {actions.map((action, idx) => (
-                                  <p key={`${message.id}-action-${idx}`}>
-                                    {action.type.toUpperCase()} · {action.path}
-                                    {action.reason ? ` · ${action.reason}` : ''}
-                                  </p>
-                                ))}
-                              </div>
-                              {results.length > 0 ? (
-                                <div className="mt-2 space-y-1 border-t border-gray-200 pt-2 dark:border-gray-700">
-                                  {results.map((result, idx) => (
-                                    <p key={`${message.id}-result-${idx}`} className={result.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>
-                                      {result.ok ? 'OK' : 'ERR'} · {result.type.toUpperCase()} · {result.path}
-                                      {result.error ? ` · ${result.error}` : ''}
-                                    </p>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          ) : null}
-
-                          {!isStreamingMessage ? (
-                            <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-800/70 dark:text-gray-200">
-                              <p className="font-semibold">引用文档</p>
-                              {referencedDocs.length > 0 ? (
-                                <div className="mt-1 flex flex-wrap gap-1.5">
-                                  {referencedDocs.map((path) => (
-                                    <button
-                                      key={`${message.id}-ref-${path}`}
-                                      type="button"
-                                      onClick={() => openReferencedDoc(path)}
-                                      className="rounded-md border border-gray-200 bg-white px-2 py-0.5 font-mono text-[11px] text-gray-700 transition hover:border-gray-300 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800"
-                                      title={path}
-                                    >
-                                      {path}
-                                    </button>
-                                  ))}
-                                </div>
-                              ) : (
-                                <p className="mt-1 text-gray-500 dark:text-gray-400">本次回复未引用文档</p>
-                              )}
-                            </div>
-                          ) : null}
-                        </div>
-                      </article>
-                    );
                     })}
                   </div>
-                  <div ref={messageBottomRef} className="h-1 w-full" />
+                  <div
+                    ref={messageBottomRef}
+                    className="h-1 w-full"
+                    style={{ scrollMarginBottom: `${composerHeight + 32}px` }}
+                  />
                 </>
               )}
             </div>
@@ -2896,10 +3321,10 @@ export function HomeContent() {
             <div
               className={isConversationMode
                 ? `relative mx-auto w-full rounded-[30px] border bg-white px-4 py-3 shadow-sm transition-colors dark:bg-gray-900 ${
-                  isDragOver ? 'border-blue-400 bg-blue-50/50 dark:bg-blue-900/10' : 'border-gray-200 dark:border-gray-800'
+                  isDragOver ? 'border-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/10' : 'border-gray-200 dark:border-gray-800'
                 }`
                 : `relative rounded-[30px] border bg-white px-4 py-3 shadow-sm transition-colors dark:bg-gray-900 ${
-                  isDragOver ? 'border-blue-400 bg-blue-50/50 dark:bg-blue-900/10' : 'border-gray-200 dark:border-gray-800'
+                  isDragOver ? 'border-emerald-400 bg-emerald-50/50 dark:bg-emerald-900/10' : 'border-gray-200 dark:border-gray-800'
                 }`}
               style={isConversationMode ? { maxWidth: `${composerMaxWidth}px` } : undefined}
               onDragOver={handleDragOver}
@@ -2959,7 +3384,7 @@ export function HomeContent() {
               )}
 
               {isDragOver ? (
-                <div className="flex min-h-[120px] items-center justify-center gap-3 rounded-xl border border-dashed border-blue-300 text-blue-500">
+                <div className="flex min-h-[120px] items-center justify-center gap-3 rounded-xl border border-dashed border-emerald-300 text-emerald-500">
                   <Paperclip className="h-5 w-5" />
                   <span className="text-sm font-medium">松开鼠标导入图片或视频</span>
                 </div>
@@ -2973,7 +3398,7 @@ export function HomeContent() {
                 />
               )}
 
-              <div className="mt-3 flex items-center gap-2 overflow-hidden whitespace-nowrap">
+              <div className="relative z-50 mt-3 flex items-center gap-2 overflow-visible whitespace-nowrap">
                 <div className="flex shrink-0 items-center gap-1">
                   <div className="group relative">
                     <button
@@ -3170,7 +3595,7 @@ export function HomeContent() {
                     type="button"
                     onClick={() => void submitAssistantChat()}
                     disabled={assistantLoading || !assistantInput.trim()}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--tenant-primary,#16a34a)] text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-gray-900 text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-white"
                     aria-label="发送"
                   >
                     {assistantLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <SendHorizontal className="h-5 w-5" />}

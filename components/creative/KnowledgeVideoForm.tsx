@@ -86,8 +86,8 @@ export function KnowledgeVideoForm({ onSubmit }: KnowledgeVideoFormProps) {
                 className={cn(
                   "relative rounded-2xl border px-4 py-4 text-left transition",
                   active
-                    ? "border-primary bg-primary text-primary-foreground shadow-theme-glow"
-                    : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-primary/50"
+                    ? "border-black bg-black text-white shadow-lg dark:border-white dark:bg-white dark:text-black"
+                    : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-black/40 dark:hover:border-white/40"
                 )}
               >
                 <div className="flex items-center gap-3">
@@ -112,7 +112,7 @@ export function KnowledgeVideoForm({ onSubmit }: KnowledgeVideoFormProps) {
           onChange={(event) => setScriptContent(event.target.value)}
           rows={5}
           placeholder="粘贴口播文案，系统会自动切句和高亮关键词"
-          className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/70"
+          className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400/40"
         />
       </div>
 
@@ -130,7 +130,7 @@ export function KnowledgeVideoForm({ onSubmit }: KnowledgeVideoFormProps) {
               onChange={(event) => setTimelineJson(event.target.value)}
               rows={4}
               placeholder='例如: [{"order":1,"title":"概念","visual":"流程箭头","duration":4}]'
-              className="w-full rounded-xl border border-dashed border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/70"
+              className="w-full rounded-xl border border-dashed border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400/40"
             />
           </motion.div>
         )}
@@ -149,8 +149,8 @@ export function KnowledgeVideoForm({ onSubmit }: KnowledgeVideoFormProps) {
                 className={cn(
                   "rounded-2xl border px-4 py-4 text-left transition",
                   active
-                    ? "border-primary bg-gradient-to-br from-primary to-primary-active text-primary-foreground shadow-theme-glow"
-                    : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-primary/50"
+                    ? "border-black bg-black text-white shadow-lg dark:border-white dark:bg-white dark:text-black"
+                    : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 hover:border-black/40 dark:hover:border-white/40"
                 )}
               >
                 <p className="text-sm font-semibold">{theme.label}</p>
@@ -164,7 +164,7 @@ export function KnowledgeVideoForm({ onSubmit }: KnowledgeVideoFormProps) {
       <button
         type="submit"
         disabled={!canSubmit || submitting}
-        className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-black px-6 py-3 text-sm font-semibold text-white shadow-lg transition disabled:opacity-60 dark:bg-white dark:text-black"
+      className="w-full inline-flex items-center justify-center gap-2 rounded-full bg-black px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-gray-900 disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-gray-200"
       >
         {submitting ? (
           <>

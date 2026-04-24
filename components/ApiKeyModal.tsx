@@ -164,7 +164,7 @@ export function ApiKeyModal() {
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder={t.apiKeyModal.placeholder}
-                  className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all pr-12"
+                  className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400/40 focus:border-transparent transition-all pr-12"
                   required
                 />
                 <button
@@ -195,11 +195,11 @@ export function ApiKeyModal() {
               )}
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn-openclaw w-full justify-center py-3 px-4 font-bold"
-            >
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full justify-center rounded-full bg-black py-3 px-4 font-bold text-white transition hover:bg-gray-900 disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-gray-200 inline-flex items-center"
+              >
               {validating ? (
                 <>
                   <Loader2 size={18} className="animate-spin mr-2" />

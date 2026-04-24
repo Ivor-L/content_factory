@@ -102,17 +102,69 @@ export async function POST(request: NextRequest, { params }: Params) {
       userId,
       originalPath: path,
     },
-    select: { id: true },
+    select: {
+      id: true,
+      title: true,
+      metadata: true,
+    },
   });
-  if (existing) {
-    return NextResponse.json({ error: "File already exists" }, { status: 409 });
-  }
-
   const chunks = splitTextToChunks(content, {
     chunkSize: 1100,
     overlap: 160,
     maxChunks: 240,
   });
+
+  if (existing) {
+    if (!content.trim()) {
+      return NextResponse.json({ data: existing }, { status: 200 });
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.knowledgeChunk.deleteMany({ where: { fileId: existing.id } });
+      if (chunks.length > 0) {
+        await tx.knowledgeChunk.createMany({
+          data: chunks.map((chunk) => ({
+            folderId: folder.id,
+            fileId: existing.id,
+            chunkIndex: chunk.chunkIndex,
+            content: chunk.content,
+            contentLength: chunk.contentLength,
+          })),
+        });
+      }
+
+      const metadata =
+        existing.metadata && typeof existing.metadata === "object" && !Array.isArray(existing.metadata)
+          ? (existing.metadata as Record<string, unknown>)
+          : {};
+
+      return tx.knowledgeFile.update({
+        where: { id: existing.id },
+        data: {
+          title,
+          status: "READY",
+          originalPath: path,
+          metadata: {
+            ...metadata,
+            relativePath: path,
+            path,
+            originalFilename: title,
+            rawContent: content,
+            updatedBy: "manual",
+          },
+        },
+        include: {
+          _count: {
+            select: {
+              chunks: true,
+            },
+          },
+        },
+      });
+    });
+
+    return NextResponse.json({ data: updated }, { status: 200 });
+  }
 
   const created = await prisma.$transaction(async (tx) => {
     const file = await tx.knowledgeFile.create({

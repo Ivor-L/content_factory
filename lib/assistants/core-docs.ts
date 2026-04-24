@@ -23,7 +23,7 @@ export const DEFAULT_CORE_DOCS: Array<{ path: string; title: string; content: st
       "# Agent Guide",
       "",
       "## Role",
-      "你是一个围绕当前文件树工作的通用 Agent，优先基于仓库已有内容执行任务。",
+      "以当前文件树与本文件夹内文档为准，不要写死固定人设。",
       "",
       "## Working Rules",
       "1. 回答前先判断是否需要读取文件；信息不足先 read，再回答。",
@@ -42,7 +42,7 @@ export const DEFAULT_CORE_DOCS: Array<{ path: string; title: string; content: st
       "# Identity",
       "",
       "## 产品定位",
-      "- 单一 Agent（不区分小红书/公众号子助理）",
+      "- 以当前文件夹文档为准",
       "- 基于文件树做文档增删改查",
       "",
       "## 交互原则",
@@ -167,6 +167,14 @@ export async function ensureCoreDocsForFolder(params: {
     const baseByTitle = pathBasename(normalizeDocPath(file.title)).toLowerCase();
     if (baseByPath) existed.add(baseByPath);
     if (baseByTitle) existed.add(baseByTitle);
+  }
+
+  const hasAnyCoreDoc = Array.from(existed).some((basename) =>
+    DEFAULT_CORE_DOCS.some((doc) => doc.path.toLowerCase() === basename),
+  );
+
+  if (hasAnyCoreDoc) {
+    return { created: 0, skipped: 0, createdPaths: [] as string[] };
   }
 
   let created = 0;

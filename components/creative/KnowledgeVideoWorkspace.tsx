@@ -184,7 +184,7 @@ export function KnowledgeVideoWorkspace() {
                     href={task.videoUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-xs font-semibold text-indigo-600 hover:underline"
+                    className="text-xs font-semibold text-black underline hover:text-gray-700 dark:text-white dark:hover:text-gray-300"
                   >
                     查看
                   </a>

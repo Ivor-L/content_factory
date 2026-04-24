@@ -25,6 +25,21 @@ type ChatMessage = {
   content: string;
 };
 
+type ChatAttachment = {
+  name?: string;
+  type?: string;
+  url?: string;
+};
+
+type ChatMessagePart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string; detail?: string } };
+
+type UpstreamChatMessage = {
+  role: "user" | "assistant" | "system";
+  content: string | ChatMessagePart[];
+};
+
 type ChatRequestPayload = {
   assistantMode?: AssistantMode;
   messages?: ChatMessage[];
@@ -32,6 +47,7 @@ type ChatRequestPayload = {
   currentPath?: string;
   model?: string;
   skills?: string[];
+  attachments?: ChatAttachment[];
   conversationId?: string;
   message?: string;
   providerId?: string;
@@ -47,6 +63,20 @@ type AgentAction = {
   content?: string;
   reason?: string;
 };
+
+type MediaBlock = {
+  type: "image" | "audio" | "video";
+  data?: string;
+  mimeType: string;
+  localPath?: string;
+  mediaId?: string;
+};
+
+type MessageContentBlock =
+  | { type: "text"; text: string }
+  | { type: "thinking"; thinking: string }
+  | { type: "tool_use"; id: string; name: string; input: unknown }
+  | { type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean; media?: MediaBlock[] };
 
 type ParsedReadAction = {
   type: "read";
@@ -92,17 +122,6 @@ const PROVIDER_LABEL_BY_ID = ASSISTANT_PROVIDER_OPTIONS.reduce<Record<string, st
   return acc;
 }, {});
 
-const UNIFIED_AGENT_PROMPT = [
-  "你是一个文件树驱动的通用内容 Agent。",
-  "你的职责是围绕当前仓库（文件树）执行文档增删改查与知识整理，不区分小红书/公众号等子助理。",
-  "优先使用用户当前选中文档路径附近的核心文档（SOUL/IDENTITY/AGENTS/MEMORY/USER/CLAUDE）作为行为约束。",
-].join("\n");
-
-const ASSISTANT_MODE_PROMPTS: Record<AssistantMode, string> = {
-  xhs: UNIFIED_AGENT_PROMPT,
-  wechat: UNIFIED_AGENT_PROMPT,
-};
-
 const CORE_DOC_NAME_ALIASES: Array<{ canonical: string; names: string[] }> = [
   { canonical: "SOUL.md", names: ["SOUL.md", "SOULS.md"] },
   { canonical: "IDENTITY.md", names: ["IDENTITY.md"] },
@@ -111,6 +130,9 @@ const CORE_DOC_NAME_ALIASES: Array<{ canonical: string; names: string[] }> = [
   { canonical: "USER.md", names: ["USER.md", "USERS.md"] },
   { canonical: "CLAUDE.md", names: ["CLAUDE.md"] },
   { canonical: "README.md", names: ["README.md"] },
+  { canonical: "README.ai.md", names: ["README.ai.md"] },
+  { canonical: "PATH.ai.md", names: ["PATH.ai.md"] },
+  { canonical: "HEARTBEAT.md", names: ["HEARTBEAT.md"] },
   { canonical: "INDEX.md", names: ["INDEX.md", "index.md"] },
 ];
 
@@ -127,6 +149,16 @@ type ConversationState = {
 type UpstreamCallResult = {
   reply: string;
   route: string | null;
+};
+
+type ReferenceDoc = {
+  path: string;
+  sourcePath: string;
+};
+
+type ChatReference = {
+  path: string;
+  sourcePath: string;
 };
 
 type UpstreamStreamHandlers = {
@@ -193,6 +225,23 @@ function normalizeIncomingMessages(payload: ChatRequestPayload) {
     return [last];
   }
   return normalized;
+}
+
+function normalizeAttachments(input: unknown): ChatAttachment[] {
+  if (!Array.isArray(input)) return [];
+  const rows: ChatAttachment[] = [];
+  for (const item of input) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    const url = typeof record.url === "string" ? record.url.trim() : "";
+    if (!url) continue;
+    rows.push({
+      name: typeof record.name === "string" ? record.name.trim() : "",
+      type: typeof record.type === "string" ? record.type.trim() : "",
+      url,
+    });
+  }
+  return rows.slice(0, 8);
 }
 
 function limitText(input: string, max = 400): string {
@@ -559,7 +608,9 @@ async function buildCoreAgentDocsContext(userId: string, folderId?: string, curr
           const hit = byDir.get(dir);
           if (hit) return hit;
         }
-        return null;
+        const rootHit = byDir.get("");
+        if (rootHit) return rootHit;
+        return byDir.values().next().value || null;
       }
 
       const rootHit = byDir.get("");
@@ -752,31 +803,115 @@ async function buildSkillContext(skills: string[] | undefined, userId?: string |
   ].join("\n\n");
 }
 
-function buildProviderContext(providerId: AssistantProviderId, model: string) {
-  const providerLabel = PROVIDER_LABEL_BY_ID[providerId] || providerId;
-  return `当前推理供应商：${providerLabel}（${providerId}），模型：${model}。如无必要，不要建议切换模型。`;
+function buildAttachmentContext(attachments: ChatAttachment[]) {
+  if (!attachments.length) return "";
+  return [
+    "以下是用户附加的文件/媒体上下文，请结合它们回答：",
+    ...attachments.map((item, index) => {
+      const name = item.name || `attachment-${index + 1}`;
+      const type = item.type || "unknown";
+      const url = item.url || "";
+      return `- ${name} (${type}) ${url}`;
+    }),
+  ].join("\n");
+}
+
+async function buildFolderContext(userId?: string | null, folderId?: string | null) {
+  if (!userId || !folderId) return "";
+
+  const folder = await prisma.knowledgeFolder.findFirst({
+    where: { id: folderId, userId },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+    },
+  });
+
+  if (!folder) return "";
+
+  const details = [
+    `当前工作文件夹：${folder.name}`,
+    folder.description ? `文件夹说明：${folder.description}` : "",
+  ].filter(Boolean);
+
+  return details.join("\n");
+}
+
+function buildAttachmentParts(attachments: ChatAttachment[]) {
+  const parts: ChatMessagePart[] = [];
+  for (const item of attachments) {
+    const url = item.url?.trim();
+    if (!url) continue;
+    const type = item.type?.trim().toLowerCase() || "";
+    if (type.startsWith("image/")) {
+      parts.push({
+        type: "image_url",
+        image_url: { url },
+      });
+      continue;
+    }
+    const label = item.name?.trim() || "attachment";
+    parts.push({
+      type: "text",
+      text: `附件：${label}${type ? ` (${type})` : ""} ${url}`,
+    });
+  }
+  return parts;
+}
+
+function buildUpstreamMessages(messages: ChatMessage[], attachments: ChatAttachment[]): UpstreamChatMessage[] {
+  if (!attachments.length) return messages;
+  const attachmentParts = buildAttachmentParts(attachments);
+  if (!attachmentParts.length) return messages;
+
+  const next: UpstreamChatMessage[] = [...messages];
+  for (let idx = next.length - 1; idx >= 0; idx -= 1) {
+    if (next[idx]?.role !== "user") continue;
+    const userMessage = next[idx];
+    const textPart: ChatMessagePart = {
+      type: "text",
+      text: typeof userMessage.content === "string" ? userMessage.content : "",
+    };
+    next[idx] = {
+      ...userMessage,
+      content: [textPart, ...attachmentParts],
+    };
+    break;
+  }
+  return next;
+}
+
+function getAttachmentAwareUserContent(content: string, attachments: ChatAttachment[]) {
+  const parts = buildAttachmentParts(attachments);
+  if (!parts.length) return content;
+  const attachmentNotes = attachments
+    .map((item, index) => {
+      const name = item.name || `attachment-${index + 1}`;
+      const type = item.type || "unknown";
+      const url = item.url || "";
+      return `附件：${name} (${type}) ${url}`;
+    })
+    .join("\n");
+  return `${content}\n\n${attachmentNotes}`;
 }
 
 function buildReplyProtocolPrompt() {
   return [
-    "回复要求：简洁、可执行、按步骤输出。",
-    "先判断是否需要读取文件；若信息不足，优先返回 read 动作，而不是猜测。",
-    "当需要文件操作时，请优先输出 JSON（用 ```json 代码块包裹），格式如下：",
-    "{",
-    '  "reply": "给用户看的说明",',
-    '  "thinking": ["可选，内部思考摘要"],',
-    '  "agent_actions": [',
-    '    { "type": "read|create|update|delete", "path": "相对路径.md", "content": "create/update 时需要", "reason": "可选原因" }',
-    "  ]",
-    "}",
-    "若无需文件操作，可返回普通文本，或 JSON 且 agent_actions 为空数组。",
-    "自动链路只会执行 read，create/update/delete 仍需前端确认执行。",
+    "回复必须以当前注入的核心文档为准。",
+    "不要自造固定人设、自我介绍、身份说明或口头禅。",
+    "信息不足时先读文件，再回答；不要猜。",
+    "如果文档没有明确写身份、职责或边界，就直接说明未定义，不要擅自补全。",
+    "不要提及核心文档、上下文、模型名、供应商名等元信息。",
+    "当前文件夹已经由系统确定，若用户没有要求切换文件夹，不要再追问文件夹位置。",
+    "涉及写入时，默认在当前文件夹内执行，不要要求用户再提供路径。",
+    "输出保持自然简洁，不要输出 JSON 源数据。",
   ].join("\n");
 }
 
 function buildSystemPrompt(parts: {
-  assistantMode: AssistantMode;
-  providerContext: string;
+  folderContext?: string;
+  attachmentContext?: string;
   coreDocsContext?: string;
   selectedFileContext?: string;
   workspaceIndexContext?: string;
@@ -784,10 +919,10 @@ function buildSystemPrompt(parts: {
   readResultsContext?: string;
 }) {
   return [
-    ASSISTANT_MODE_PROMPTS[parts.assistantMode],
-    buildReplyProtocolPrompt(),
-    parts.providerContext,
+    parts.folderContext || "",
     parts.coreDocsContext || "",
+    buildReplyProtocolPrompt(),
+    parts.attachmentContext || "",
     parts.selectedFileContext || "",
     parts.workspaceIndexContext || "",
     parts.skillContext || "",
@@ -822,6 +957,135 @@ function buildReadResultContext(readResults: Array<{ path: string; content: stri
     "你刚刚请求的 read 已执行，以下是文件内容，请基于这些内容完成最终回答：",
     ...blocks,
   ].join("\n\n");
+}
+
+function buildReferenceDocs(params: {
+  coreDocsContext: string;
+  selectedFileContext: string;
+  workspaceIndexContext: string;
+  readResults: Array<{ path: string; content: string; reason?: string }>;
+}): ChatReference[] {
+  const refs: ChatReference[] = [];
+  const seen = new Set<string>();
+
+  const push = (path: string, sourcePath?: string) => {
+    const normalized = normalizeDocPath(path);
+    if (!normalized) return;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    refs.push({
+      path: normalized,
+      sourcePath: normalizeDocPath(sourcePath || path),
+    });
+  };
+
+  const coreMatches = params.coreDocsContext.match(/^###\s+([^\n]+)\n来源：([^\n]+)/gm) || [];
+  for (const match of coreMatches) {
+    const parts = match.match(/^###\s+([^\n]+)\n来源：([^\n]+)/m);
+    if (parts?.[1] && parts[2]) {
+      push(parts[1], parts[2]);
+    }
+  }
+
+  const selectedMatches = params.selectedFileContext.match(/^当前选中文件：([^\n]+)/m);
+  if (selectedMatches?.[1]) {
+    push(selectedMatches[1]);
+  }
+
+  const indexMatches = params.workspaceIndexContext.match(/^-\s+([^\s|]+)\s*\|/gm) || [];
+  for (const line of indexMatches) {
+    const parts = line.match(/^-\s+([^\s|]+)\s*\|/m);
+    if (parts?.[1]) push(parts[1]);
+  }
+
+  for (const item of params.readResults) {
+    push(item.path);
+  }
+
+  return refs.slice(0, 12);
+}
+
+function normalizeBlockText(text: string) {
+  return text.replace(/\r\n/g, "\n").trim();
+}
+
+function buildAssistantContentBlocks(params: {
+  reply: string;
+  thinking: string[];
+  agentActions: AgentAction[];
+  readResults?: Array<{ path: string; content: string; reason?: string }>;
+}): MessageContentBlock[] {
+  const blocks: MessageContentBlock[] = [];
+  const reply = normalizeBlockText(params.reply);
+  const thinking = params.thinking
+    .map((item) => normalizeBlockText(item))
+    .filter(Boolean);
+  const readResults = params.readResults || [];
+  const readResultByPath = new Map(
+    readResults.map((item) => [normalizeFilePath(item.path).toLowerCase(), item] as const),
+  );
+
+  if (thinking.length > 0) {
+    blocks.push({ type: "thinking", thinking: thinking.join("\n") });
+  }
+
+  params.agentActions.forEach((action, index) => {
+    const toolId = `tool-${index}-${action.type}-${normalizeFilePath(action.path).replace(/[^a-zA-Z0-9._-]+/g, "-")}`;
+    blocks.push({
+      type: "tool_use",
+      id: toolId,
+      name: action.type,
+      input: {
+        path: action.path,
+        content: action.content,
+        reason: action.reason,
+      },
+    });
+
+    if (action.type !== "read") return;
+    const matched = readResultByPath.get(normalizeFilePath(action.path).toLowerCase());
+    if (!matched) return;
+    blocks.push({
+      type: "tool_result",
+      tool_use_id: toolId,
+      content: matched.content,
+    });
+  });
+
+  if (reply) {
+    blocks.push({ type: "text", text: reply });
+  }
+
+  if (blocks.length === 0) {
+    blocks.push({ type: "text", text: reply });
+  }
+
+  return blocks;
+}
+
+function extractAssistantReplyText(content: string) {
+  const trimmed = content.trim();
+  if (!trimmed) return "";
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (Array.isArray(parsed)) {
+      const parts: string[] = [];
+      for (const item of parsed) {
+        if (!item || typeof item !== "object") continue;
+        const block = item as Record<string, unknown>;
+        if (block.type === "text" && typeof block.text === "string") {
+          parts.push(block.text);
+        }
+      }
+      if (parts.length > 0) return parts.join("\n\n").trim();
+    }
+  } catch {
+    // plain text fallback
+  }
+
+  return trimmed;
 }
 
 async function readFileByPath(params: {
@@ -953,6 +1217,7 @@ async function resolveConversationHistory(
   userId: string,
   payload: ChatRequestPayload,
   incomingMessages: ChatMessage[],
+  attachments: ChatAttachment[],
 ): Promise<ConversationState> {
   const incomingModel = typeof payload.model === "string" && payload.model.trim()
     ? payload.model.trim()
@@ -1040,7 +1305,7 @@ async function resolveConversationHistory(
       data: incomingMessages.map((message) => ({
         conversationId: conversationId as string,
         role: message.role,
-        content: message.content,
+        content: getAttachmentAwareUserContent(message.content, attachments),
       })),
     });
   }
@@ -1060,7 +1325,7 @@ async function resolveConversationHistory(
     folderId,
     messages: messageRows.map((row) => ({
       role: row.role as ChatMessage["role"],
-      content: row.content,
+      content: row.role === "assistant" ? extractAssistantReplyText(row.content) : row.content,
     })),
   };
 }
@@ -1093,7 +1358,7 @@ function resolveSlashSkill(rawContent: string, enabledSkills: string[]) {
 async function invokeByProvider(params: {
   providerId: AssistantProviderId;
   model: string;
-  messages: ChatMessage[];
+  messages: UpstreamChatMessage[];
   systemPrompt: string;
   userId: string;
   apiKey: string;
@@ -1173,7 +1438,7 @@ function truncateMessagesForFastMode(messages: ChatMessage[]) {
 async function callAndExtract(params: {
   providerId: AssistantProviderId;
   model: string;
-  messages: ChatMessage[];
+  messages: UpstreamChatMessage[];
   systemPrompt: string;
   userId: string;
   apiKey: string;
@@ -1413,6 +1678,7 @@ export async function POST(request: NextRequest) {
   if (!incomingMessages.length) {
     return NextResponse.json({ error: "message or messages is required" }, { status: 400 });
   }
+  const attachments = normalizeAttachments(body.attachments);
 
   const inferredHomeRequest =
     typeof body.currentPath === "string" && body.currentPath.trim().length > 0;
@@ -1425,7 +1691,7 @@ export async function POST(request: NextRequest) {
 
   const conversationState =
     userId
-      ? await resolveConversationHistory(userId, body, incomingMessages)
+      ? await resolveConversationHistory(userId, body, incomingMessages, attachments)
       : {
           conversationId: null,
           assistantMode: (body.assistantMode === "wechat" ? "wechat" : "xhs") as AssistantMode,
@@ -1535,7 +1801,8 @@ export async function POST(request: NextRequest) {
   }
 
   const contextStartedAt = Date.now();
-  const [coreDocsContext, workspaceIndexContext, selectedFileContext, skillContext] = await Promise.all([
+  const [folderContext, coreDocsContext, workspaceIndexContext, selectedFileContext, skillContext] = await Promise.all([
+    buildFolderContext(userId, conversationState.folderId),
     userId
       ? buildCoreAgentDocsContext(userId, conversationState.folderId ?? undefined, currentPath)
       : Promise.resolve(""),
@@ -1558,14 +1825,17 @@ export async function POST(request: NextRequest) {
   ]);
   const contextMs = Date.now() - contextStartedAt;
 
-  const providerContext = buildProviderContext(conversationState.providerId, conversationState.model);
-  const upstreamMessages = fastMode
-    ? truncateMessagesForFastMode(conversationState.messages)
-    : conversationState.messages;
+  const attachmentContext = buildAttachmentContext(attachments);
+  const upstreamMessages = buildUpstreamMessages(
+    fastMode
+      ? truncateMessagesForFastMode(conversationState.messages)
+      : conversationState.messages,
+    attachments,
+  );
 
   const systemPrompt = buildSystemPrompt({
-    assistantMode: conversationState.assistantMode,
-    providerContext,
+    folderContext,
+    attachmentContext,
     coreDocsContext,
     selectedFileContext,
     workspaceIndexContext,
@@ -1600,28 +1870,14 @@ export async function POST(request: NextRequest) {
 
   if (streamMode) {
     emit("conversation", { conversationId: conversationState.conversationId });
-    emit("status", { text: "正在准备上下文…" });
   }
 
   try {
     const appBaseUrl = resolveInternalAppBaseUrl(request);
     let streamedThinking: string[] = [];
     let streamedReasoningBuffer = "";
-    let reasoningPulseAt = 0;
-    const pushManualThinking = (text: string) => {
-      if (!streamMode) return;
-      const normalized = text.trim();
-      if (!normalized) return;
-      const merged = mergeThinkingItems(streamedThinking, [normalized]);
-      if (merged.length === streamedThinking.length) return;
-      streamedThinking = merged;
-      emit("thinking", { items: merged });
-    };
-
-    if (streamMode) {
-      emit("status", { text: "正在调用模型…" });
-      pushManualThinking("正在分析需求并规划执行路径");
-    }
+    let streamedReply = "";
+    let readResultsForFinal: Array<{ path: string; content: string; reason?: string }> = [];
 
     const firstPass = await callAndExtract({
       providerId: conversationState.providerId,
@@ -1634,6 +1890,11 @@ export async function POST(request: NextRequest) {
       stream: streamMode,
       handlers: streamMode
         ? {
+            onContentDelta: (delta) => {
+              if (!delta) return;
+              streamedReply += delta;
+              emit("reply_delta", { delta });
+            },
             onReasoningDelta: (delta) => {
               if (!delta) return;
               streamedReasoningBuffer += delta;
@@ -1643,11 +1904,6 @@ export async function POST(request: NextRequest) {
               );
               if (streamedThinking.length > 0) {
                 emit("thinking", { items: streamedThinking });
-              }
-              const now = Date.now();
-              if (now - reasoningPulseAt >= 2000) {
-                reasoningPulseAt = now;
-                emit("status", { text: "正在持续推理中…" });
               }
             },
           }
@@ -1669,8 +1925,6 @@ export async function POST(request: NextRequest) {
     };
 
     if (streamMode) {
-      emit("status", { text: "第一轮推理完成，正在判断是否需要读取文件…" });
-      pushManualThinking("首轮推理完成，正在判断是否需要读取文件");
       emitThinkingProgress(thinking);
       if (agentActions.length > 0) {
         emit("actions", { items: agentActions });
@@ -1686,15 +1940,13 @@ export async function POST(request: NextRequest) {
       });
 
       if (readResults.length > 0) {
+        readResultsForFinal = readResults;
         if (streamMode) {
-          emit("status", { text: "正在读取文件并二次推理…" });
-          pushManualThinking(`已读取 ${readResults.length} 个文件，正在进行二次推理`);
           emit("actions", { items: readResults.map((item) => ({ type: "read", path: item.path, ok: true })) });
         }
 
         const secondPassSystemPrompt = buildSystemPrompt({
-          assistantMode: conversationState.assistantMode,
-          providerContext,
+          folderContext,
           coreDocsContext,
           selectedFileContext,
           workspaceIndexContext,
@@ -1713,6 +1965,11 @@ export async function POST(request: NextRequest) {
           stream: streamMode,
           handlers: streamMode
             ? {
+                onContentDelta: (delta) => {
+                  if (!delta) return;
+                  streamedReply += delta;
+                  emit("reply_delta", { delta });
+                },
                 onReasoningDelta: (delta) => {
                   if (!delta) return;
                   streamedReasoningBuffer += delta;
@@ -1722,11 +1979,6 @@ export async function POST(request: NextRequest) {
                   );
                   if (streamedThinking.length > 0) {
                     emit("thinking", { items: streamedThinking });
-                  }
-                  const now = Date.now();
-                  if (now - reasoningPulseAt >= 2000) {
-                    reasoningPulseAt = now;
-                    emit("status", { text: "正在持续推理中…" });
                   }
                 },
               }
@@ -1752,17 +2004,27 @@ export async function POST(request: NextRequest) {
     }
 
     if (streamMode) {
-      pushManualThinking("正在整合信息并组织最终回复");
       emitThinkingProgress(thinking);
       if (agentActions.length > 0) {
         emit("actions", { items: agentActions });
       }
-      emit("status", { text: "正在生成回复…" });
     }
 
     const resolvedThinking = streamMode
       ? mergeThinkingItems(streamedThinking, thinking)
       : thinking;
+    const contentBlocks = buildAssistantContentBlocks({
+      reply,
+      thinking: resolvedThinking,
+      agentActions,
+      readResults: readResultsForFinal,
+    });
+    const references = buildReferenceDocs({
+      coreDocsContext,
+      selectedFileContext,
+      workspaceIndexContext,
+      readResults: readResultsForFinal,
+    });
 
     if (conversationState.conversationId) {
       await prisma.$transaction([
@@ -1770,10 +2032,12 @@ export async function POST(request: NextRequest) {
           data: {
             conversationId: conversationState.conversationId,
             role: "assistant",
-            content: reply,
+            content: JSON.stringify(contentBlocks),
             metadata: {
               agentActions,
               thinking: resolvedThinking,
+              processing: resolvedThinking,
+              references,
             },
           },
         }),
@@ -1796,8 +2060,12 @@ export async function POST(request: NextRequest) {
     if (streamMode) {
       emit("final", {
         reply,
+        streamedReply,
         agentActions,
         thinking: resolvedThinking,
+        processing: resolvedThinking,
+        blocks: contentBlocks,
+        references,
         conversationId: conversationState.conversationId,
         model: conversationState.model,
         providerId: conversationState.providerId,
@@ -1828,6 +2096,10 @@ export async function POST(request: NextRequest) {
       reply,
       agentActions,
       thinking: resolvedThinking,
+      processing: resolvedThinking,
+      blocks: contentBlocks,
+      references,
+      streamedReply,
       conversationId: conversationState.conversationId,
       model: conversationState.model,
       providerId: conversationState.providerId,

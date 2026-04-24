@@ -48,6 +48,10 @@ type ChatRow = {
       text: string;
       atMs?: number;
     }> | string[];
+    references?: Array<{
+      path: string;
+      sourcePath?: string;
+    }>;
   } | null;
   createdAt?: string;
 };
@@ -94,6 +98,15 @@ const CHAT_REQUEST_TIMEOUT_MS = 240_000;
 const MESSAGE_FETCH_TIMEOUT_MS = 15_000;
 const FILE_TREE_WIDTH = 320;
 const DOC_PREVIEW_WIDTH = 460;
+const CORE_DOC_BASENAMES = new Set([
+  'agents.md',
+  'soul.md',
+  'memory.md',
+  'user.md',
+  'identity.md',
+  'claude.md',
+  'index.md',
+]);
 
 function toNonEmptyString(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -130,6 +143,11 @@ function hasHiddenPathSegment(path: string) {
     .split('/')
     .filter(Boolean)
     .some((segment) => segment.startsWith('.'));
+}
+
+function isCoreDocPath(path: string) {
+  const baseName = path.split('/').filter(Boolean).pop()?.toLowerCase() || '';
+  return CORE_DOC_BASENAMES.has(baseName);
 }
 
 function sortTreeNodes(nodes: FileTreeNode[]): FileTreeNode[] {
@@ -176,6 +194,24 @@ function extractReferencedDocs(actions: AgentAction[]): string[] {
     refs.push(normalizedPath);
   }
   return refs;
+}
+
+function parseReferenceDocs(input: unknown): Array<{ path: string; sourcePath: string }> {
+  if (!Array.isArray(input)) return [];
+  const rows: Array<{ path: string; sourcePath: string }> = [];
+  const seen = new Set<string>();
+  for (const item of input) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const path = typeof row.path === 'string' ? normalizeDocPath(row.path) : '';
+    const sourcePath = typeof row.sourcePath === 'string' ? normalizeDocPath(row.sourcePath) : path;
+    if (!path) continue;
+    const key = path.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push({ path, sourcePath });
+  }
+  return rows;
 }
 
 function buildReferencePathCandidates(path: string): string[] {
@@ -233,6 +269,34 @@ function parseProcessingItems(input: unknown): ProcessItem[] {
     rows.push({ text, atMs });
   }
   return rows;
+}
+
+function stripMarkdownLikeFormatting(input: string) {
+  const text = input.replace(/\r\n/g, '\n').trim();
+  if (!text) return '';
+
+  const lines = text.split('\n');
+  const cleaned = lines
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return '';
+      if (/^---+$/.test(trimmed)) return '';
+      if (/^#{1,6}\s+/.test(trimmed)) return trimmed.replace(/^#{1,6}\s+/, '');
+      if (/^>\s?/.test(trimmed)) return trimmed.replace(/^>\s?/, '');
+      if (/^[-*+]\s+/.test(trimmed)) return trimmed.replace(/^[-*+]\s+/, '• ');
+      if (/^\d+\.\s+/.test(trimmed)) return trimmed.replace(/^\d+\.\s+/, '');
+      return trimmed;
+    })
+    .filter(Boolean);
+
+  return cleaned.join('\n');
+}
+
+function normalizeAssistantText(input: string) {
+  const stripped = stripMarkdownLikeFormatting(input);
+  if (!stripped) return '';
+  if (/^[\[{]/.test(stripped.trim())) return stripped.trim();
+  return stripped;
 }
 
 function resolveProcessStage(text: string): ProcessStage {
@@ -496,7 +560,7 @@ export function ChatPageContent() {
             id: string;
             role: string;
             content: string;
-            metadata?: { agentActions?: AgentAction[]; thinking?: string[]; processing?: string[] } | null;
+            metadata?: { agentActions?: AgentAction[]; thinking?: string[]; processing?: string[]; references?: unknown } | null;
             createdAt?: string;
           }>;
         };
@@ -516,6 +580,7 @@ export function ChatPageContent() {
                 agentActions: parseAgentActions(row.metadata?.agentActions),
                 thinking: parseThinkingItems(row.metadata?.thinking),
                 processing: parseProcessingItems(row.metadata?.processing),
+                references: parseReferenceDocs((row.metadata as { references?: unknown } | undefined)?.references),
               },
               createdAt: row.createdAt,
             })),
@@ -1069,7 +1134,7 @@ export function ChatPageContent() {
     for (const doc of docs) {
       const virtualPath = getDocVirtualPath(doc);
       if (!virtualPath) continue;
-      if (hasHiddenPathSegment(virtualPath)) continue;
+      if (hasHiddenPathSegment(virtualPath) && !isCoreDocPath(virtualPath)) continue;
       if (!isMarkdownPath(virtualPath)) continue;
 
       const parts = virtualPath.split('/').filter(Boolean);
@@ -1317,7 +1382,11 @@ export function ChatPageContent() {
                 {displayedMessages.map((message) => {
                 const actions = parseAgentActions(message.metadata?.agentActions);
                 const thinking = parseThinkingItems(message.metadata?.thinking);
-                    const referencedDocs = message.role === 'assistant' ? extractReferencedDocs(actions) : [];
+                    const referencedDocs = message.role === 'assistant'
+                      ? ((message.metadata?.references?.length ?? 0) > 0
+                        ? message.metadata!.references!.map((item) => item.path)
+                        : extractReferencedDocs(actions))
+                      : [];
                     const processing = parseProcessingItems(message.metadata?.processing);
                     const isStreamingMessage = message.id === 'streaming-assistant';
                     const processingNowMs = isStreamingMessage && streamStartedAtMs
@@ -1385,7 +1454,7 @@ export function ChatPageContent() {
                       </div>
                     ) : null}
                     {thinking.length > 0 ? (
-                      <div className="mb-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                      <div className="mb-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-800/70 dark:text-gray-300">
                         <p className="mb-1 font-semibold">分析过程</p>
                         <ul className="space-y-1">
                           {thinking.map((item, idx) => (
@@ -1394,7 +1463,7 @@ export function ChatPageContent() {
                         </ul>
                       </div>
                     ) : null}
-                    <div className="whitespace-pre-wrap text-[15px] leading-8 text-gray-800">{message.content}</div>
+                    <div className="whitespace-pre-wrap text-[15px] leading-8 text-gray-800">{normalizeAssistantText(message.content)}</div>
 
                     {message.role === 'assistant' && actions.length > 0 ? (
                       <div className="mt-2 text-xs text-gray-600">
