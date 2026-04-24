@@ -217,22 +217,21 @@ services:
 
 1. 本地代码改好后，push 到 Git
 2. 服务器上进入项目目录：`cd /root/content-factory-web`
-3. 先同步模板中新增加的环境变量到线上 `.env`（只补缺失项，不覆盖已有值）：
-   ```bash
-   ./scripts/sync-env-from-template.sh .env.production.example .env
-   ```
-4. 发布前校验运行时环境变量（缺失会直接报错）：
-   ```bash
-   ./scripts/validate-runtime-env.sh --mode=runtime
-   ```
-5. 使用安全发布脚本（已内置“补齐缺失变量 + env 校验 + `git pull --ff-only` + `docker compose up -d --build`）：
+3. 使用标准发布脚本（默认入口）：
    ```bash
    ./scripts/deploy-safe.sh
    ```
-6. 查看日志确认启动成功：
+   - 该脚本内置：补齐缺失环境变量键（不覆盖已有值）→ 运行时环境校验 → `git pull --ff-only` → `docker compose up -d --build`
+4. 查看日志确认启动成功：
    ```bash
    docker compose logs -f web
    ```
+
+> 如需排障或逐步验证，可手工执行：
+> 1) `./scripts/sync-env-from-template.sh .env.production.example .env`
+> 2) `./scripts/validate-runtime-env.sh --mode=runtime`
+> 3) `git pull --ff-only`
+> 4) `docker compose up -d --build`
 
 > ⚠️ **常见陷阱**：`docker compose up -d`（不带 `--build`）只会重启已有镜像，不会重新编译代码。每次改动代码后必须加 `--build`。
 >

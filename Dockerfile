@@ -72,6 +72,7 @@ RUN apk add --no-cache openssl
 RUN npm install -g prisma --registry=https://registry.npmmirror.com
 
 COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/skills ./skills
 
 # Set the correct permission for prerender cache
 RUN mkdir .next
@@ -87,6 +88,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 # Provide a JS Prisma config so CLI can resolve DATABASE_URL at runtime
 RUN printf 'module.exports = { schema: "prisma/schema.prisma", datasource: { url: process.env.DATABASE_URL } };' > prisma.config.js
 RUN rm -f prisma.config.ts
+RUN mkdir -p /app/data/skills && chown -R nextjs:nodejs /app/data
 
 # Copy entrypoint script
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./

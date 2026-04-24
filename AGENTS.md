@@ -108,6 +108,8 @@ Content Factory Web — Codex 的 Web 客户端项目，基于 Next.js + Prisma 
 3. 执行：`npm run lint` → `npm run typecheck` → `npm run build`
 4. 提交代码
 5. 按部署目标执行 `DEPLOY.md` 与 `docs/03-deployment/` 指南
+6. 服务器标准更新方式：在项目目录执行 `./scripts/deploy-safe.sh`
+   - 该脚本内置：补齐缺失环境变量键（不覆盖已有值）→ 运行时环境校验 → `git pull --ff-only` → `docker compose up -d --build`
 
 ### 发版纪律（强制）
 - 禁止自动发版

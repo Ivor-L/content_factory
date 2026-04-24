@@ -230,6 +230,17 @@ function normalizeDocPath(input: string) {
     .trim();
 }
 
+function normalizeKnowledgeReferencePath(input: string) {
+  const normalized = normalizeDocPath(input);
+  if (!normalized) return '';
+  const marker = 'knowledge/';
+  const index = normalized.toLowerCase().indexOf(marker);
+  if (index < 0) return normalized;
+  const segments = normalized.slice(index + marker.length).split('/').filter(Boolean);
+  if (segments.length <= 2) return normalized;
+  return segments.slice(2).join('/');
+}
+
 type InlineToken =
   | { type: 'text'; value: string }
   | { type: 'strong'; value: string }
@@ -343,7 +354,7 @@ function extractReferencedDocs(actions: AgentAction[]): string[] {
 }
 
 function buildReferencePathCandidates(path: string): string[] {
-  const normalized = normalizeDocPath(path);
+  const normalized = normalizeKnowledgeReferencePath(path);
   if (!normalized) return [];
 
   const lowerSet = new Set<string>();
@@ -358,6 +369,7 @@ function buildReferencePathCandidates(path: string): string[] {
   };
 
   push(normalized);
+  push(normalizeDocPath(path).split('/').pop() || '');
 
   const hasExt = /\.(md|markdown|txt)$/i.test(normalized);
   if (!hasExt) {
@@ -369,6 +381,11 @@ function buildReferencePathCandidates(path: string): string[] {
   }
 
   return rows;
+}
+
+function getReferenceDisplayPath(path: string) {
+  const normalized = normalizeKnowledgeReferencePath(path);
+  return normalized || normalizeDocPath(path);
 }
 
 function parseThinkingItems(input: unknown): string[] {
@@ -1222,7 +1239,7 @@ export function HomeContent() {
 
       if (!targetDoc) {
         if (referencePath.trim()) {
-          toast.error(`未在当前文件夹找到引用文档：${referencePath}`);
+          toast.error(`未在当前文件夹找到引用文档：${getReferenceDisplayPath(referencePath)}`);
         }
         return;
       }
@@ -1335,6 +1352,17 @@ export function HomeContent() {
       setExecutingMessageId(null);
     }
   }, [authToken, selectedFolderId]);
+
+  useEffect(() => {
+    if (!selectedFolderId || streamingActions.length > 0) return;
+    const latestAssistantMessage = [...chatMessages].reverse().find((message) => message.role === 'assistant');
+    if (!latestAssistantMessage) return;
+    const actions = latestAssistantMessage.metadata?.agentActions || [];
+    if (actions.length === 0) return;
+    if (actionResultsByMessageId[latestAssistantMessage.id]?.length) return;
+    if (executingMessageId) return;
+    void executeActions(latestAssistantMessage.id, actions);
+  }, [actionResultsByMessageId, chatMessages, executeActions, executingMessageId, selectedFolderId, streamingActions.length]);
 
   const toggleSkill = useCallback((skill: string) => {
     setEnabledSkills((prev) => (prev[0] === skill ? [] : [skill]));
@@ -2717,16 +2745,11 @@ export function HomeContent() {
                             <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-800/70 dark:text-gray-200">
                               <div className="mb-1 flex items-center justify-between">
                                 <p className="font-semibold">动作计划</p>
-                                {!isStreamingMessage ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => void executeActions(message.id, actions)}
-                                    disabled={!selectedFolderId || executingMessageId === message.id}
-                                    className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-2 py-1 text-[11px] text-gray-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-100 dark:hover:bg-gray-700"
-                                  >
-                                    {executingMessageId === message.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                                    执行
-                                  </button>
+                                {executingMessageId === message.id ? (
+                                  <span className="inline-flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    自动执行中
+                                  </span>
                                 ) : null}
                               </div>
                               <div className="space-y-1">

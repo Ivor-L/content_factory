@@ -29,9 +29,14 @@ services:
       - PRISMA_DB_PUSH_REQUIRED=${PRISMA_DB_PUSH_REQUIRED:-1}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      - skills_data:/app/data/skills
     networks:
       - app_network
 
 networks:
   app_network:
     driver: bridge
+
+volumes:
+  skills_data:
