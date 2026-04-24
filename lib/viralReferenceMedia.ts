@@ -97,12 +97,24 @@ export function extractViralReferenceMedia(data: JsonObject): ViralReferenceMedi
 
   const coverUrl = coverFromPaths ?? pickFirstNonVideoUrl(directMedia);
   const videoUrl = videoFromPaths ?? videoFromStream ?? pickFirstVideoUrl(directMedia);
-  const mediaUrls = uniqueUrls([...(directMedia ?? []), ...(coverUrl ? [coverUrl] : []), ...(videoUrl ? [videoUrl] : [])]);
+  const mediaUrls = uniqueUrls(
+    (directMedia ?? []).filter((url) => url !== coverUrl && url !== videoUrl),
+  );
 
   return {
     coverUrl: coverUrl ?? null,
     videoUrl: videoUrl ?? null,
-    mediaUrls: mediaUrls.length > 0 ? mediaUrls : null,
+    mediaUrls: [
+      ...(coverUrl ? [coverUrl] : []),
+      ...(videoUrl ? [videoUrl] : []),
+      ...mediaUrls,
+    ].length > 0
+      ? uniqueUrls([
+          ...(coverUrl ? [coverUrl] : []),
+          ...(videoUrl ? [videoUrl] : []),
+          ...mediaUrls,
+        ])
+      : null,
   };
 }
 
@@ -118,25 +130,17 @@ export function hydrateViralReferenceMedia<
   const extracted = rawObject ? extractViralReferenceMedia(rawObject) : null;
   const existingMedia = normalizeMediaUrls(item.mediaUrls);
 
+  const normalizedMedia = existingMedia ?? extracted?.mediaUrls ?? null;
   const rawCoverUrl =
     sanitizeUrl(item.coverUrl) ??
     extracted?.coverUrl ??
-    pickFirstNonVideoUrl(existingMedia) ??
+    pickFirstNonVideoUrl(normalizedMedia) ??
     null;
   const videoUrl =
     sanitizeUrl(item.videoUrl) ??
     extracted?.videoUrl ??
-    pickFirstVideoUrl(existingMedia) ??
+    pickFirstVideoUrl(normalizedMedia) ??
     null;
-
-  const mergedMedia = uniqueUrls([
-    ...(existingMedia ?? []),
-    ...(extracted?.mediaUrls ?? []),
-    ...(rawCoverUrl ? [rawCoverUrl] : []),
-    ...(videoUrl ? [videoUrl] : []),
-  ]);
-
-  const normalizedMedia = mergedMedia.length > 0 ? mergedMedia : null;
   const coverUrl = chooseBestMediaUrl(rawCoverUrl, normalizedMedia);
 
   return {

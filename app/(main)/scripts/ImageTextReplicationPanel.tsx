@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- Replication panel shows third-party/source images and generated outputs */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Check, ChevronRight, Copy, Loader2, RotateCcw, Sparkles, Upload } from "lucide-react";
+import { AlertTriangle, Check, ChevronRight, Copy, FolderDown, Loader2, RotateCcw, Sparkles, Upload } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { supabase } from "@/lib/supabaseClient";
 import { IMAGE_UNDERSTANDING_PROMPT_KNOWLEDGE_SHARE } from "@/lib/imageUnderstandingPrompts";
@@ -28,6 +28,12 @@ type StylePreset = {
   spec?: unknown;
   metadata?: unknown;
   status?: string | null;
+};
+
+type KnowledgeFolder = {
+  id: string;
+  name: string;
+  description?: string | null;
 };
 
 type ImageGuidanceItem = { index: number; description: string };
@@ -68,6 +74,26 @@ type AnalysisStatus = "idle" | "running" | "success" | "error";
 
 const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
+
+const normalizeUrlList = (urls: string[]): string[] => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const url of urls) {
+    const trimmed = url.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
+};
+
+const KNOWLEDGE_SAVE_TARGET_PREFIX = "xhs-parse-save-target:";
+
+const getKnowledgeSaveStorageKey = (sourcePlatform?: string | null, sourceId?: string | null) => {
+  const platform = (sourcePlatform || "unknown").toLowerCase();
+  const id = (sourceId || "unknown").trim() || "unknown";
+  return `${KNOWLEDGE_SAVE_TARGET_PREFIX}${platform}:${id}`;
+};
 
 const serializeJsonValue = (value: unknown): string | null => {
   if (value == null) return null;
@@ -155,20 +181,27 @@ export function ImageTextReplicationPanel({
   const [topicHint, setTopicHint] = useState("");
   const [generating, setGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [knowledgeFolders, setKnowledgeFolders] = useState<KnowledgeFolder[]>([]);
+  const [knowledgeFoldersLoading, setKnowledgeFoldersLoading] = useState(false);
+  const [selectedKnowledgeFolderId, setSelectedKnowledgeFolderId] = useState<string>("");
+  const [savingToFolder, setSavingToFolder] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccessAt, setSaveSuccessAt] = useState<number | null>(null);
+  const normalizedSourceImages = useMemo(() => normalizeUrlList(sourceImages), [sourceImages]);
   const fallbackSource = useMemo(() => (sourceText?.trim() || sourceTitle?.trim() || ""), [sourceText, sourceTitle]);
-  const hasSourceImages = sourceImages.length > 0;
+  const hasSourceImages = normalizedSourceImages.length > 0;
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>(hasSourceImages ? "idle" : "success");
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [analysisProgress, setAnalysisProgress] = useState<{ current: number; total: number }>({
     current: 0,
-    total: sourceImages.length,
+    total: normalizedSourceImages.length,
   });
   const [analysisText, setAnalysisText] = useState(hasSourceImages ? "" : fallbackSource);
   const [analysisSavedAt, setAnalysisSavedAt] = useState<number | null>(null);
   const [analysisExpanded, setAnalysisExpanded] = useState(!hasSourceImages);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const sourceImagesKey = useMemo(() => sourceImages.join("|"), [sourceImages]);
+  const sourceImagesKey = useMemo(() => normalizedSourceImages.join("|"), [normalizedSourceImages]);
   const analysisStorageKey = useMemo(() => {
     const normalizedPlatform = (sourcePlatform || "unknown").toLowerCase();
     const trimmedId = sourceId?.trim();
@@ -198,6 +231,50 @@ export function ImageTextReplicationPanel({
     },
     [analysisStorageKey],
   );
+
+  const fetchKnowledgeFolders = useCallback(async () => {
+    if (!authToken) return;
+    setKnowledgeFoldersLoading(true);
+    try {
+      const res = await fetch("/api/knowledge/folders?limit=100", {
+        headers: { Authorization: `Bearer ${authToken}` },
+        cache: "no-store",
+      });
+      const payload = await res.json().catch(() => ({})) as { data?: KnowledgeFolder[]; error?: string };
+      if (!res.ok) {
+        setKnowledgeFolders([]);
+        setSaveError(payload.error || "加载知识库文件夹失败");
+        return;
+      }
+      const rows = Array.isArray(payload.data) ? payload.data : [];
+      setKnowledgeFolders(rows);
+      setSelectedKnowledgeFolderId((prev) => {
+        if (prev && rows.some((folder) => folder.id === prev)) return prev;
+        if (typeof window !== "undefined") {
+          try {
+            const saved = window.localStorage.getItem(getKnowledgeSaveStorageKey(sourcePlatform, sourceId));
+            if (saved) {
+              const parsed = JSON.parse(saved) as { folderId?: string | null };
+              const lastFolderId = typeof parsed.folderId === "string" ? parsed.folderId.trim() : "";
+              if (lastFolderId && rows.some((folder) => folder.id === lastFolderId)) {
+                return lastFolderId;
+              }
+            }
+          } catch {
+            // ignore and fall back to first folder
+          }
+        }
+        return rows[0]?.id || "";
+      });
+      setSaveError(null);
+    } catch (error) {
+      console.error("[replication-panel] Failed to load knowledge folders", error);
+      setKnowledgeFolders([]);
+      setSaveError(error instanceof Error ? error.message : "加载知识库文件夹失败");
+    } finally {
+      setKnowledgeFoldersLoading(false);
+    }
+  }, [authToken, sourceId, sourcePlatform]);
 
   const fetchPresets = useCallback(async () => {
     if (!authToken) return;
@@ -242,6 +319,12 @@ export function ImageTextReplicationPanel({
     };
   }, []);
 
+  useEffect(() => {
+    if (authToken) {
+      void fetchKnowledgeFolders();
+    }
+  }, [authToken, fetchKnowledgeFolders]);
+
   // ── Load style presets once auth is ready ──────────────────────────
   useEffect(() => {
     if (presets.length === 0 && authToken) {
@@ -254,7 +337,7 @@ export function ImageTextReplicationPanel({
   }, []);
 
   useEffect(() => {
-    const hasImages = sourceImages.length > 0;
+    const hasImages = normalizedSourceImages.length > 0;
     let nextText = hasImages ? "" : fallbackSource;
     let nextStatus: AnalysisStatus = hasImages ? "idle" : "success";
     let savedAt: number | null = null;
@@ -278,13 +361,13 @@ export function ImageTextReplicationPanel({
     setAnalysisStatus(nextStatus);
     setAnalysisError(null);
     setAnalysisProgress({
-      current: nextStatus === "success" ? sourceImages.length : 0,
-      total: sourceImages.length,
+      current: nextStatus === "success" ? normalizedSourceImages.length : 0,
+      total: normalizedSourceImages.length,
     });
     setAnalysisText(nextText);
     setAnalysisSavedAt(savedAt);
     setAnalysisExpanded(hasImages ? nextStatus !== "success" : true);
-  }, [analysisStorageKey, fallbackSource, sourceImages.length, sourceImagesKey]);
+  }, [analysisStorageKey, fallbackSource, normalizedSourceImages.length, sourceImagesKey]);
 
   const requiresAnalysis = hasSourceImages;
 
@@ -495,25 +578,25 @@ export function ImageTextReplicationPanel({
   }, []);
 
   const handleAnalyzeImages = useCallback(async () => {
-    if (sourceImages.length === 0) {
+    if (normalizedSourceImages.length === 0) {
       toast.error("当前参考没有可解析的图片");
       return;
     }
     setAnalysisStatus("running");
     setAnalysisError(null);
-    setAnalysisProgress({ current: 0, total: sourceImages.length });
+    setAnalysisProgress({ current: 0, total: normalizedSourceImages.length });
     setAnalysisSavedAt(null);
     setAnalysisExpanded(false);
     const aggregated: string[] = [];
     try {
-      for (let i = 0; i < sourceImages.length; i += 1) {
-        const imageUrl = sourceImages[i];
+      for (let i = 0; i < normalizedSourceImages.length; i += 1) {
+        const imageUrl = normalizedSourceImages[i];
         if (!imageUrl) continue;
         const normalizedUrl = toAbsoluteUrl(imageUrl);
         if (!normalizedUrl) {
           throw new Error(`第 ${i + 1} 张图片链接无效`);
         }
-        setAnalysisProgress({ current: i + 1, total: sourceImages.length });
+        setAnalysisProgress({ current: i + 1, total: normalizedSourceImages.length });
         const res = await fetch("/api/canvas/image-understanding", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -529,13 +612,13 @@ export function ImageTextReplicationPanel({
           throw new Error(message);
         }
         const rawText = typeof payload?.result === "string" ? payload.result.trim() : "";
-        const prefix = sourceImages.length > 1 ? `图${i + 1}` : "图文解析";
+        const prefix = normalizedSourceImages.length > 1 ? `图${i + 1}` : "图文解析";
         aggregated.push(rawText ? `${prefix}：${rawText}` : `${prefix}：未能解析出有效信息`);
       }
       const combinedText = aggregated.join("\n\n");
       setAnalysisText(combinedText);
       setAnalysisStatus("success");
-      setAnalysisProgress({ current: sourceImages.length, total: sourceImages.length });
+      setAnalysisProgress({ current: normalizedSourceImages.length, total: normalizedSourceImages.length });
        persistAnalysisResult(combinedText);
       toast.success("图文解析完成");
     } catch (error) {
@@ -547,7 +630,87 @@ export function ImageTextReplicationPanel({
       setAnalysisStatus("error");
       toast.error(message);
     }
-  }, [persistAnalysisResult, sourceImages, toAbsoluteUrl]);
+  }, [persistAnalysisResult, normalizedSourceImages, toAbsoluteUrl]);
+
+  const handleSaveAnalysisToFolder = useCallback(async () => {
+    const content = analysisText.trim();
+    if (!content) {
+      toast.error("请先完成图文解析");
+      return;
+    }
+    if (!selectedKnowledgeFolderId) {
+      toast.error("请先选择保存文件夹");
+      return;
+    }
+    if (!authToken) {
+      toast.error("请先登录后再保存");
+      return;
+    }
+
+    setSavingToFolder(true);
+    setSaveError(null);
+    try {
+      const folder = knowledgeFolders.find((item) => item.id === selectedKnowledgeFolderId);
+      const titleBase = (sourceTitle?.trim() || "图文解析").slice(0, 48);
+      const path = `${titleBase}-${Date.now()}.md`;
+      const bodyContent = [
+        `# ${titleBase}`,
+        "",
+        sourceUrl?.trim() ? `来源: ${sourceUrl.trim()}` : "",
+        sourcePlatform?.trim() ? `平台: ${sourcePlatform.trim()}` : "",
+        "",
+        content,
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      const res = await fetch(`/api/knowledge/folders/${selectedKnowledgeFolderId}/files`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          title: titleBase,
+          path,
+          content: bodyContent,
+        }),
+      });
+      const payload = await res.json().catch(() => ({})) as { error?: string; data?: { id?: string } };
+      if (!res.ok) {
+        throw new Error(payload.error || "保存失败");
+      }
+      if (typeof window !== "undefined") {
+        const targetKey = getKnowledgeSaveStorageKey(sourcePlatform, sourceId);
+        window.localStorage.setItem(
+          targetKey,
+          JSON.stringify({
+            folderId: selectedKnowledgeFolderId,
+            fileId: payload.data?.id || null,
+            path,
+            savedAt: Date.now(),
+          }),
+        );
+        window.localStorage.setItem(
+          getKnowledgeSaveStorageKey(sourcePlatform, sourceId),
+          JSON.stringify({
+            folderId: selectedKnowledgeFolderId,
+            fileId: payload.data?.id || null,
+            path,
+            savedAt: Date.now(),
+          }),
+        );
+      }
+      setSaveSuccessAt(Date.now());
+      toast.success(`已保存到${folder?.name || "知识库文件夹"}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "保存失败";
+      setSaveError(message);
+      toast.error(message);
+    } finally {
+      setSavingToFolder(false);
+    }
+  }, [analysisText, authToken, knowledgeFolders, selectedKnowledgeFolderId, sourceId, sourcePlatform, sourceTitle, sourceUrl]);
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -570,7 +733,7 @@ export function ImageTextReplicationPanel({
         generatedCopy={task.generatedCopy ?? ""}
         generatedImages={task.generatedImages ?? []}
         imageGuidance={task.imageGuidance ?? []}
-        sourceImages={sourceImages}
+        sourceImages={normalizedSourceImages}
         copied={copied}
         onCopy={handleCopy}
         onRestart={handleRestartFromResult}
@@ -612,7 +775,7 @@ export function ImageTextReplicationPanel({
     <>
       <div className="flex flex-col gap-5 p-5">
         <AnalysisStepCard
-          sourceImagesCount={sourceImages.length}
+          sourceImagesCount={normalizedSourceImages.length}
           canAnalyze={requiresAnalysis}
           analysisStatus={analysisStatus}
           analysisProgress={analysisProgress}
@@ -623,6 +786,14 @@ export function ImageTextReplicationPanel({
           analysisResultVisible={analysisExpanded}
           onToggleAnalysisResult={() => setAnalysisExpanded((prev) => !prev)}
           analysisSavedAt={analysisSavedAt}
+          saveError={saveError}
+          saveSuccessAt={saveSuccessAt}
+          knowledgeFolders={knowledgeFolders}
+          knowledgeFoldersLoading={knowledgeFoldersLoading}
+          selectedKnowledgeFolderId={selectedKnowledgeFolderId}
+          onSelectedKnowledgeFolderIdChange={setSelectedKnowledgeFolderId}
+          onSaveAnalysisToFolder={handleSaveAnalysisToFolder}
+          savingToFolder={savingToFolder}
         />
         <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900/60 p-5 space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -690,6 +861,14 @@ type AnalysisStepCardProps = {
   analysisResultVisible: boolean;
   onToggleAnalysisResult: () => void;
   analysisSavedAt: number | null;
+  saveError: string | null;
+  saveSuccessAt: number | null;
+  knowledgeFolders: KnowledgeFolder[];
+  knowledgeFoldersLoading: boolean;
+  selectedKnowledgeFolderId: string;
+  onSelectedKnowledgeFolderIdChange: (value: string) => void;
+  onSaveAnalysisToFolder: () => void;
+  savingToFolder: boolean;
 };
 
 function AnalysisStepCard({
@@ -704,6 +883,14 @@ function AnalysisStepCard({
   analysisResultVisible,
   onToggleAnalysisResult,
   analysisSavedAt,
+  saveError,
+  saveSuccessAt,
+  knowledgeFolders,
+  knowledgeFoldersLoading,
+  selectedKnowledgeFolderId,
+  onSelectedKnowledgeFolderIdChange,
+  onSaveAnalysisToFolder,
+  savingToFolder,
 }: AnalysisStepCardProps) {
   const [copied, setCopied] = useState(false);
   const hasText = analysisText.trim().length > 0;
@@ -732,6 +919,12 @@ function AnalysisStepCard({
         minute: "2-digit",
       }).format(new Date(analysisSavedAt))
     : null;
+  const saveSuccessLabel = saveSuccessAt
+    ? new Intl.DateTimeFormat("zh-CN", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(saveSuccessAt))
+    : null;
   const primaryButtonLabel =
     analysisStatus === "running"
       ? `解析中 (${Math.min(analysisProgress.current, analysisProgress.total)}/${analysisProgress.total || 1})`
@@ -741,6 +934,7 @@ function AnalysisStepCard({
           : "查看拆解结果"
         : "开始解析";
   const primaryButtonDisabled = !canAnalyze || analysisStatus === "running";
+  const canSaveToFolder = hasText && !savingToFolder && knowledgeFolders.length > 0 && selectedKnowledgeFolderId.length > 0;
 
   useEffect(() => {
     if (!hasText) setCopied(false);
@@ -843,6 +1037,15 @@ function AnalysisStepCard({
                 重新解析
               </button>
             )}
+            <button
+              type="button"
+              onClick={onSaveAnalysisToFolder}
+              disabled={!canSaveToFolder}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-2.5 text-sm font-semibold text-gray-700 dark:text-gray-200 disabled:opacity-40"
+            >
+              {savingToFolder ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderDown className="h-4 w-4" />}
+              保存到文件夹
+            </button>
           </div>
         ) : (
           <div className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-300">
@@ -850,11 +1053,39 @@ function AnalysisStepCard({
             <span>当前参考未包含图片，将直接使用已有文案，请自行补充解析内容。</span>
           </div>
         )}
-        {savedAtLabel && (
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            已自动保存 {savedAtLabel}
-          </p>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={selectedKnowledgeFolderId}
+            onChange={(e) => onSelectedKnowledgeFolderIdChange(e.target.value)}
+            disabled={knowledgeFoldersLoading || knowledgeFolders.length === 0}
+            className="min-w-[180px] rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-xs text-gray-700 dark:text-gray-200 disabled:opacity-50"
+          >
+            <option value="">{knowledgeFoldersLoading ? "加载文件夹中..." : "选择保存文件夹"}</option>
+            {knowledgeFolders.map((folder) => (
+              <option key={folder.id} value={folder.id}>
+                {folder.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={onSaveAnalysisToFolder}
+            disabled={!canSaveToFolder}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-200 disabled:opacity-40"
+          >
+            {savingToFolder ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderDown className="h-3.5 w-3.5" />}
+            保存到文件夹
+          </button>
+          {saveSuccessLabel && (
+            <span className="text-xs text-green-600 dark:text-green-400">已保存 {saveSuccessLabel}</span>
+          )}
+          {savedAtLabel && (
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              已自动保存 {savedAtLabel}
+            </span>
+          )}
+        </div>
+        {saveError && <p className="text-xs text-red-500">{saveError}</p>}
       </div>
     </div>
   );

@@ -316,7 +316,16 @@ function isVideoReference(
 
 function normalizeMediaList(media?: (string | null)[] | null): string[] {
   if (!Array.isArray(media)) return [];
-  return media.filter((url): url is string => typeof url === "string" && url.trim().length > 0);
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const url of media) {
+    if (typeof url !== "string") continue;
+    const normalized = url.trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(normalized);
+  }
+  return result;
 }
 
 function getReferenceCoverImage(ref: Pick<ViralReferenceItemData, "coverUrl" | "mediaUrls" | "videoUrl">): string | null {

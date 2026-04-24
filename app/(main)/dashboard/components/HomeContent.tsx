@@ -177,6 +177,12 @@ type PersistedFileTreeSelection = {
   selectedDocId?: string | null;
   openTreePaths?: Record<string, boolean>;
 };
+type PersistedKnowledgeSaveTarget = {
+  folderId?: string | null;
+  fileId?: string | null;
+  path?: string | null;
+  savedAt?: number | null;
+};
 
 const PLACEHOLDER_HINTS = [
   '帮我拆解这个爆款视频的分镜结构…',
@@ -189,6 +195,7 @@ const PLACEHOLDER_HINTS = [
 const NEXAPI_KEY_STORAGE_KEY = 'nexapi_key';
 const FILE_TREE_SELECTION_STORAGE_KEY_PREFIX = 'dashboard:file-tree-selection';
 const MODEL_SELECTION_STORAGE_KEY_PREFIX = 'dashboard:model-selection';
+const KNOWLEDGE_SAVE_TARGET_PREFIX = 'xhs-parse-save-target:';
 const CHAT_REQUEST_TIMEOUT_MS = 240_000;
 const MIN_FILE_TREE_WIDTH = 260;
 const DEFAULT_FILE_TREE_WIDTH = MIN_FILE_TREE_WIDTH;
@@ -203,6 +210,19 @@ function getFileTreeSelectionStorageKey(tenantSlug?: string | null) {
 function getModelSelectionStorageKey(tenantSlug?: string | null) {
   const normalizedTenantSlug = tenantSlug?.trim().toLocaleLowerCase();
   return `${MODEL_SELECTION_STORAGE_KEY_PREFIX}:${normalizedTenantSlug || 'default'}`;
+}
+
+function normalizeKnowledgeSaveTargetKey(raw: string) {
+  return raw.startsWith(KNOWLEDGE_SAVE_TARGET_PREFIX) ? raw : `${KNOWLEDGE_SAVE_TARGET_PREFIX}${raw}`;
+}
+
+function collectParentPaths(path: string) {
+  const parts = path.split('/').filter(Boolean);
+  const parents: string[] = [];
+  for (let i = 1; i < parts.length; i += 1) {
+    parents.push(parts.slice(0, i).join('/'));
+  }
+  return parents;
 }
 
 async function uploadFile(file: File): Promise<string> {
@@ -605,6 +625,7 @@ export function HomeContent() {
   const [savingDocContent, setSavingDocContent] = useState(false);
   const [loadingDocContent, setLoadingDocContent] = useState(false);
   const [docSearch, setDocSearch] = useState('');
+  const [pendingKnowledgeSaveTarget, setPendingKnowledgeSaveTarget] = useState<PersistedKnowledgeSaveTarget | null>(null);
 
   const [selectedModel, setSelectedModel] = useState('gpt-5.3-codex');
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([
@@ -710,6 +731,36 @@ export function HomeContent() {
       setFileTreeSelectionReady(true);
     }
   }, [tenantSlug]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      let latestKey: string | null = null;
+      let latestTarget: PersistedKnowledgeSaveTarget | null = null;
+      for (const key of Object.keys(window.localStorage)) {
+        const normalizedKey = normalizeKnowledgeSaveTargetKey(key);
+        if (!normalizedKey.startsWith(KNOWLEDGE_SAVE_TARGET_PREFIX)) continue;
+        const raw = window.localStorage.getItem(normalizedKey);
+        if (!raw) continue;
+        try {
+          const parsed = JSON.parse(raw) as PersistedKnowledgeSaveTarget;
+          const savedAt = typeof parsed.savedAt === 'number' ? parsed.savedAt : 0;
+          const latestSavedAt = typeof latestTarget?.savedAt === 'number' ? latestTarget.savedAt : 0;
+          if (savedAt >= latestSavedAt) {
+            latestKey = normalizedKey;
+            latestTarget = parsed;
+          }
+        } catch {
+          continue;
+        }
+      }
+      if (!latestKey || !latestTarget) return;
+      setPendingKnowledgeSaveTarget(latestTarget);
+      window.localStorage.removeItem(latestKey);
+    } catch (error) {
+      console.warn('Failed to restore knowledge save target', error);
+    }
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1107,6 +1158,33 @@ export function HomeContent() {
     if (!knowledgeDocs.some((doc) => doc.id === selectedDocId)) return;
     void loadDocContent(selectedDocId);
   }, [knowledgeDocs, selectedDocId, loadDocContent]);
+
+  useEffect(() => {
+    if (!pendingKnowledgeSaveTarget) return;
+    const folderId = toNonEmptyString(pendingKnowledgeSaveTarget.folderId);
+    const fileId = toNonEmptyString(pendingKnowledgeSaveTarget.fileId);
+    if (!folderId || !knowledgeFolders.some((folder) => folder.id === folderId)) return;
+    if (selectedFolderId !== folderId) {
+      setSelectedFolderId(folderId);
+    }
+    if (fileId) {
+      setSelectedDocId(fileId);
+      setShowDocPreview(true);
+      const match = knowledgeDocs.find((doc) => doc.id === fileId);
+      if (match) {
+        const virtualPath = getDocVirtualPath(match);
+        const parentPaths = collectParentPaths(virtualPath);
+        setOpenTreePaths((prev) => {
+          const next = { ...prev };
+          for (const parentPath of parentPaths) {
+            next[parentPath] = true;
+          }
+          return next;
+        });
+      }
+    }
+    setPendingKnowledgeSaveTarget(null);
+  }, [knowledgeDocs, knowledgeFolders, pendingKnowledgeSaveTarget, selectedFolderId]);
 
   const selectedFolder = useMemo(
     () => knowledgeFolders.find((folder) => folder.id === selectedFolderId) ?? null,

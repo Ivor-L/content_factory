@@ -95,3 +95,4 @@
 | 文件 | 说明 |
 |------|------|
 | [20260424-chat-conversation-lifecycle-plan.md](./20260424-chat-conversation-lifecycle-plan.md) | 聊天会话生命周期改造：支持删除历史、新增懒创建 |
+| [20260424-xhs-parse-save-to-folder-plan.md](./20260424-xhs-parse-save-to-folder-plan.md) | 图文解析结果保存到知识库文件夹 |
