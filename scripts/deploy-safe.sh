@@ -34,9 +34,20 @@ upsert_env_var() {
 echo "[deploy-safe] Syncing missing env keys from template..."
 ./scripts/sync-env-from-template.sh .env.production.example .env
 
-if [ -n "${REDNOTE_API_KEY:-}" ]; then
-  echo "[deploy-safe] Injecting REDNOTE_API_KEY from shell env into .env"
-  upsert_env_var "REDNOTE_API_KEY" "$REDNOTE_API_KEY" ".env"
+resolved_rednote_key="${REDNOTE_API_KEY:-}"
+if [ -z "$resolved_rednote_key" ] && [ -n "${REDNOTE_QR_API_KEY:-}" ]; then
+  resolved_rednote_key="$REDNOTE_QR_API_KEY"
+fi
+if [ -z "$resolved_rednote_key" ] && [ -n "${XHS_QR_PUBLISH_API_KEY:-}" ]; then
+  resolved_rednote_key="$XHS_QR_PUBLISH_API_KEY"
+fi
+if [ -z "$resolved_rednote_key" ] && [ -n "${XHS_PUBLISH_API_KEY:-}" ]; then
+  resolved_rednote_key="$XHS_PUBLISH_API_KEY"
+fi
+
+if [ -n "$resolved_rednote_key" ]; then
+  echo "[deploy-safe] Injecting XHS publish API key into .env as REDNOTE_API_KEY"
+  upsert_env_var "REDNOTE_API_KEY" "$resolved_rednote_key" ".env"
 fi
 
 echo "[deploy-safe] Validating env..."

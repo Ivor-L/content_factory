@@ -26,7 +26,13 @@ type UpstreamResponse = {
 
 const REDNOTE_BASE_URL = "https://www.myaibot.vip";
 const REDNOTE_PUBLISH_ENDPOINT = "/api/rednote/publish";
-const REDNOTE_API_KEY = (process.env.REDNOTE_API_KEY || "").trim();
+const REDNOTE_API_KEY = (
+  process.env.REDNOTE_API_KEY
+  || process.env.REDNOTE_QR_API_KEY
+  || process.env.XHS_QR_PUBLISH_API_KEY
+  || process.env.XHS_PUBLISH_API_KEY
+  || ""
+).trim();
 
 function sanitizeText(value: unknown, maxLength: number) {
   if (typeof value !== "string") return "";
@@ -53,7 +59,13 @@ export async function POST(request: NextRequest) {
   }
 
   if (!REDNOTE_API_KEY) {
-    return NextResponse.json({ error: "REDNOTE_API_KEY 未配置" }, { status: 500 });
+    return NextResponse.json(
+      {
+        error:
+          "小红书发布 API Key 未配置（请设置 REDNOTE_API_KEY / REDNOTE_QR_API_KEY / XHS_QR_PUBLISH_API_KEY）",
+      },
+      { status: 500 },
+    );
   }
 
   const body = (await request.json().catch(() => null)) as PublishRequestBody | null;
