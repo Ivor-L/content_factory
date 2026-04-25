@@ -17,6 +17,7 @@ import {
   type AssistantProviderId,
 } from "@/lib/assistants/provider-routing";
 import { ensureCoreDocsForFolder } from "@/lib/assistants/core-docs";
+import { formatContentFactoryFixedBody, parseContentFactoryPackage, sanitizeImageCopyPlainText } from "@/lib/contentFactoryFormat";
 
 type AssistantMode = "xhs" | "wechat";
 
@@ -278,6 +279,16 @@ function pathBasename(path: string) {
   return parts[parts.length - 1] || "";
 }
 
+function stripStorageTimestampPrefix(input: string) {
+  const normalized = normalizeDocPath(input);
+  if (!normalized) return "";
+  const parts = normalized.split("/").filter(Boolean);
+  if (!parts.length) return normalized;
+  const base = parts[parts.length - 1] || "";
+  parts[parts.length - 1] = base.replace(/^\d{10,}-/, "");
+  return parts.join("/");
+}
+
 function pathDirname(path: string) {
   const parts = path.split("/").filter(Boolean);
   if (parts.length <= 1) return "";
@@ -501,6 +512,11 @@ function extractThinkingItemsFromReasoningBuffer(buffer: string) {
   return unique.slice(-12);
 }
 
+function trimThinkingItems(items: string[], maxItems = 8) {
+  if (items.length <= maxItems) return items;
+  return items.slice(items.length - maxItems);
+}
+
 function parseReadActions(actions: AgentAction[]): ParsedReadAction[] {
   const normalized: ParsedReadAction[] = [];
   const seen = new Set<string>();
@@ -530,13 +546,29 @@ function getFilePathFromItem(file: KnowledgeFileItem) {
       ? (file.metadata as Record<string, unknown>)
       : {};
 
-  const path = normalizeDocPath(
+  const explicitPath = normalizeDocPath(
     toNonEmptyString(metadata.relativePath) ||
       toNonEmptyString(metadata.webkitRelativePath) ||
-      toNonEmptyString(metadata.path) ||
-      toNonEmptyString(file.originalPath) ||
-      toNonEmptyString(file.title),
+      toNonEmptyString(metadata.path),
   );
+  if (explicitPath) return explicitPath;
+
+  const originalFilename = normalizeDocPath(toNonEmptyString(metadata.originalFilename));
+  if (originalFilename) {
+    return stripStorageTimestampPrefix(originalFilename);
+  }
+
+  const originalPath = normalizeDocPath(toNonEmptyString(file.originalPath));
+  if (originalPath) {
+    if (originalPath.toLowerCase().startsWith("knowledge/")) {
+      const base = pathBasename(originalPath);
+      const normalizedBase = stripStorageTimestampPrefix(base);
+      if (normalizedBase) return normalizedBase;
+    }
+    return originalPath;
+  }
+
+  const path = normalizeDocPath(toNonEmptyString(file.title));
 
   return path || normalizeDocPath(file.title);
 }
@@ -905,8 +937,490 @@ function buildReplyProtocolPrompt() {
     "不要提及核心文档、上下文、模型名、供应商名等元信息。",
     "当前文件夹已经由系统确定，若用户没有要求切换文件夹，不要再追问文件夹位置。",
     "涉及写入时，默认在当前文件夹内执行，不要要求用户再提供路径。",
+    "你不能执行本地终端命令。严禁把 mkdir/cat/bash/powershell 等命令当作交付结果返回给用户。",
+    "当用户要求保存/写入/创建/更新/删除文档时，必须通过 agent_actions 表达文件操作，而不是让用户手工执行命令。",
+    "涉及写入操作时，优先返回 JSON 结构：{\"reply\":\"...\",\"agent_actions\":[{\"type\":\"create|update|delete\",\"path\":\"相对路径.md\",\"content\":\"...\",\"reason\":\"...\"}]}",
+    "path 必须是当前文件夹下的相对路径，不要使用绝对路径，不要包含 knowledge/<folder>/<file>/ 前缀。",
     "输出保持自然简洁，不要输出 JSON 源数据。",
   ].join("\n");
+}
+
+function buildWriteIntentPrompt() {
+  return [
+    "检测到当前请求包含“文案落盘/写入文件”意图。",
+    "本次回答必须包含可执行的 agent_actions（create/update/delete），不得返回任何终端命令示例。",
+    "默认优先保存到内容工厂原文目录：01-素材库/raw/（仅导入原始文章/素材时）。",
+    "若用户要求“给选题”，必须同时写入 02-选题池 对应子目录。",
+    "若用户要求“写正文/写初稿/出稿”，必须同时写入 03-内容工厂 对应子目录的初稿目录。",
+    "目录映射：公众号长文->02-选题池/公众号长文 + 03-内容工厂/公众号长文/初稿；口播文案->02-选题池/口播文案 + 03-内容工厂/口播文案/初稿；小红书图文->02-选题池/小红书图文 + 03-内容工厂/小红书图文/初稿。",
+    "若用户要求导入原始文章、导入链接正文、入库原文，path 必须放在 01-素材库/raw/ 下。",
+    "文案正文必须直接可用，不要把“写作说明/操作说明/解释性注释”混入正文。",
+    "所有写入到内容工厂（选题池/内容工厂目录）的内容，必须使用固定六段正文格式：封面标题、副标题、标题、图文正文、正文、标签。",
+    "“正文”必须是可直接发布的连续段落，禁止为空、禁止仅输出“|”。",
+    "“正文”中禁止出现字段标题或结构标题（如：封面/互动/填写公式/可套用模板/3个扣分点）。",
+    "禁止输出任何引导互动或诱导动作的话术（如：评论区留言、私信领取、关注我、扣1领取）。",
+    "允许在文档 frontmatter 放元信息（时间、关联文档、平台、标签等），但 frontmatter 之外必须是固定六段正文，不得输出额外说明。",
+    "frontmatter 需包含 machine 字段：cover_title, sub_title, title, image_copy, body, tags。",
+    "小红书图文初稿需兼容字段：xhs_title, xhs_body, xhs_tags（与 title/body/tags 对齐）。",
+    "若文件内容已在上下文中，直接写入；若内容缺失，再用一句话最小化追问。",
+  ].join("\n");
+}
+
+function detectWriteIntent(input: string) {
+  const text = input.trim().toLowerCase();
+  if (!text) return false;
+  return /(保存|存到|存入|写入|落盘|新建|创建文档|更新文档|写成文件|保存到文件夹|导入|入库|原始文章|原文|save|write|persist|create file|update file|save to folder|import|ingest)/i.test(text);
+}
+
+type ContentFactoryTrack = "wechat" | "voiceover" | "xhs" | "generic";
+type ContentFactoryIntent = "none" | "raw" | "topic" | "draft";
+
+type ContentFactoryRouting = {
+  track: ContentFactoryTrack;
+  intent: ContentFactoryIntent;
+  topicDir: string;
+  draftDir: string;
+  trackLabel: string;
+};
+
+function inferContentFactoryTrack(input: string): ContentFactoryTrack {
+  const text = input.trim().toLowerCase();
+  if (!text) return "generic";
+  if (/(小红书|xhs|图文笔记|图文|种草)/i.test(text)) return "xhs";
+  if (/(口播|配音|口播稿|短视频文案|视频口播)/i.test(text)) return "voiceover";
+  if (/(公众号|长文|文章|推文|微信)/i.test(text)) return "wechat";
+  return "generic";
+}
+
+function inferContentFactoryIntent(input: string): ContentFactoryIntent {
+  const text = input.trim().toLowerCase();
+  if (!text) return "none";
+  if (/(导入|入库|原始文章|原文|素材|link|url|采集)/i.test(text)) return "raw";
+  if (/(选题|题库|题目|topic)/i.test(text)) return "topic";
+  if (/(写正文|写初稿|出稿|写文案|写稿|写一篇|生成正文|生成文案|成稿)/i.test(text)) return "draft";
+  return "none";
+}
+
+function resolveContentFactoryRouting(input: string): ContentFactoryRouting {
+  const track = inferContentFactoryTrack(input);
+  const intent = inferContentFactoryIntent(input);
+
+  if (track === "wechat") {
+    return {
+      track,
+      intent,
+      topicDir: "02-选题池/公众号长文",
+      draftDir: "03-内容工厂/公众号长文/初稿",
+      trackLabel: "公众号长文",
+    };
+  }
+  if (track === "voiceover") {
+    return {
+      track,
+      intent,
+      topicDir: "02-选题池/口播文案",
+      draftDir: "03-内容工厂/口播文案/初稿",
+      trackLabel: "口播文案",
+    };
+  }
+  if (track === "xhs") {
+    return {
+      track,
+      intent,
+      topicDir: "02-选题池/小红书图文",
+      draftDir: "03-内容工厂/小红书图文/初稿",
+      trackLabel: "小红书图文",
+    };
+  }
+
+  return {
+    track,
+    intent,
+    topicDir: "02-选题池/待筛选",
+    draftDir: "03-内容工厂/公众号长文/初稿",
+    trackLabel: "通用",
+  };
+}
+
+function sanitizePathSegment(input: string) {
+  const raw = input.trim();
+  if (!raw) return "";
+  return raw
+    .replace(/[\\/:*?"<>|#%]+/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function guessDocTitleFromContent(input: string) {
+  const lines = input.replace(/\r\n/g, "\n").split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const normalized = trimmed
+      .replace(/^#{1,6}\s+/, "")
+      .replace(/^[-*+]\s+/, "")
+      .replace(/^\d+\.\s+/, "")
+      .replace(/^标题[:：]\s*/i, "")
+      .trim();
+    if (!normalized) continue;
+    return normalized.slice(0, 40);
+  }
+  return "";
+}
+
+function buildDatedFileName(seedText: string, fallbackPrefix: string) {
+  const dateToken = new Date().toISOString().slice(0, 10);
+  const seed = sanitizePathSegment(seedText) || `${fallbackPrefix}-${Date.now().toString().slice(-6)}`;
+  return `${dateToken}-${seed}.md`;
+}
+
+function ensurePathUnderDir(inputPath: string, targetDir: string, fallbackNameSeed: string, fallbackPrefix: string) {
+  const normalizedPath = normalizeFilePath(inputPath || "");
+  const normalizedDir = normalizeDocPath(targetDir);
+  if (!normalizedDir) return normalizedPath;
+  if (normalizedPath.toLowerCase().startsWith(`${normalizedDir.toLowerCase()}/`)) {
+    return normalizedPath;
+  }
+  const baseName = pathBasename(normalizedPath) || buildDatedFileName(fallbackNameSeed, fallbackPrefix);
+  return normalizeFilePath(`${normalizedDir}/${baseName}`);
+}
+
+function escapeYamlQuoted(input: string) {
+  return input
+    .replace(/\\/g, "\\\\")
+    .replace(/\r\n/g, "\n")
+    .replace(/\n/g, "\\n")
+    .replace(/"/g, '\\"');
+}
+
+function extractWikiLinkTargets(input: string) {
+  const text = input || "";
+  const matches = text.matchAll(/\[\[([^[\]]+?)\]\]/g);
+  const rows: string[] = [];
+  for (const match of matches) {
+    const token = normalizeDocPath((match[1] || "").trim());
+    if (!token) continue;
+    rows.push(token);
+  }
+  return rows;
+}
+
+type RelatedDocCandidate = {
+  path: string;
+  baseScore: number;
+};
+
+function stripMarkdownExt(input: string) {
+  return input.replace(/\.(md|markdown|txt)$/i, "");
+}
+
+function extractTopicTokens(input: string) {
+  const text = input.toLowerCase();
+  const tokens = new Set<string>();
+  const stopWords = new Set([
+    "the", "and", "for", "with", "from", "this", "that", "into", "your", "you",
+    "title", "draft", "topic", "wechat", "xhs", "raw", "wiki", "content",
+    "文章", "文案", "正文", "标题", "封面", "副标题", "图文", "标签", "选题", "内容", "初稿", "素材",
+  ]);
+
+  const latinMatches = text.match(/[a-z0-9][a-z0-9_-]{2,}/g) || [];
+  for (const match of latinMatches) {
+    const normalized = match.replace(/[_-]+/g, "");
+    if (normalized.length < 3) continue;
+    if (stopWords.has(normalized)) continue;
+    tokens.add(normalized);
+  }
+
+  const cjkMatches = text.match(/[\u4E00-\u9FFF]{2,8}/g) || [];
+  for (const match of cjkMatches) {
+    if (stopWords.has(match)) continue;
+    tokens.add(match);
+  }
+
+  return tokens;
+}
+
+function collectRelatedDocCandidates(params: {
+  actions: AgentAction[];
+  readResults?: Array<{ path: string; content: string; reason?: string }>;
+  replyText?: string;
+}) {
+  const rows = new Map<string, RelatedDocCandidate>();
+
+  const push = (rawPath: string, score: number) => {
+    const sanitized = sanitizeReferencePath(rawPath || "");
+    if (!sanitized) return;
+    const key = sanitized.toLowerCase();
+    const existing = rows.get(key);
+    if (existing) {
+      existing.baseScore += score;
+      return;
+    }
+    rows.set(key, {
+      path: sanitized,
+      baseScore: score,
+    });
+  };
+
+  for (const action of params.actions) {
+    if (action.type !== "read") continue;
+    push(action.path, 90);
+  }
+
+  for (const item of params.readResults || []) {
+    push(item.path, 120);
+  }
+
+  for (const linked of extractWikiLinkTargets(params.replyText || "")) {
+    push(linked, 70);
+  }
+
+  return Array.from(rows.values());
+}
+
+function rankRelatedDocPaths(params: {
+  candidates: RelatedDocCandidate[];
+  targetPath: string;
+  promptText: string;
+  replyText: string;
+  limit?: number;
+}) {
+  const normalizedTargetPath = normalizeDocPath(params.targetPath || "");
+  const targetPathNoExt = stripMarkdownExt(normalizedTargetPath.toLowerCase());
+  const targetDir = pathDirname(targetPathNoExt);
+  const targetSegments = targetPathNoExt.split("/").filter(Boolean);
+  const targetTop1 = targetSegments[0] || "";
+  const targetTop2 = targetSegments.slice(0, 2).join("/");
+  const targetTokens = extractTopicTokens(
+    [
+      stripMarkdownExt(pathBasename(normalizedTargetPath)),
+      pathDirname(normalizedTargetPath),
+      params.promptText,
+      params.replyText.slice(0, 500),
+    ].join(" "),
+  );
+
+  const scored = params.candidates.map((candidate) => {
+    const candidatePath = normalizeDocPath(candidate.path);
+    const candidateLowerNoExt = stripMarkdownExt(candidatePath.toLowerCase());
+    const candidateDir = pathDirname(candidateLowerNoExt);
+    const candidateSegments = candidateLowerNoExt.split("/").filter(Boolean);
+    const candidateTop1 = candidateSegments[0] || "";
+    const candidateTop2 = candidateSegments.slice(0, 2).join("/");
+    const candidateTokens = extractTopicTokens(stripMarkdownExt(candidatePath));
+
+    let score = candidate.baseScore;
+    if (candidateLowerNoExt === targetPathNoExt) score -= 1000;
+    if (targetDir && candidateDir === targetDir) score += 160;
+    if (targetTop2 && candidateTop2 === targetTop2) score += 80;
+    if (targetTop1 && candidateTop1 === targetTop1) score += 40;
+
+    if (targetSegments.length > 0 && candidateSegments.length > 0) {
+      let segmentOverlap = 0;
+      const targetSet = new Set(targetSegments);
+      for (const segment of candidateSegments) {
+        if (targetSet.has(segment)) segmentOverlap += 1;
+      }
+      score += Math.min(50, segmentOverlap * 12);
+    }
+
+    if (targetTokens.size > 0 && candidateTokens.size > 0) {
+      let topicOverlap = 0;
+      for (const token of candidateTokens) {
+        if (targetTokens.has(token)) topicOverlap += 1;
+      }
+      score += Math.min(72, topicOverlap * 14);
+    }
+
+    if (!normalizedTargetPath.toLowerCase().startsWith("01-素材库/raw/") && candidateLowerNoExt.startsWith("01-素材库/raw/")) {
+      score -= 30;
+    }
+
+    return { path: candidatePath, score };
+  });
+
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if (a.path.length !== b.path.length) return a.path.length - b.path.length;
+    return a.path.localeCompare(b.path, "zh-Hans-CN", { numeric: true });
+  });
+
+  const rows: string[] = [];
+  const seen = new Set<string>();
+  for (const item of scored) {
+    if (item.score <= 0) continue;
+    const key = item.path.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push(item.path);
+    if (rows.length >= (params.limit || 16)) break;
+  }
+  return rows;
+}
+
+function hasFrontmatter(content: string) {
+  return /^---\r?\n[\s\S]*?\r?\n---\r?\n?/m.test(content.trim());
+}
+
+function buildContentFactoryFrontmatter(params: {
+  routing: ContentFactoryRouting;
+  intent: ContentFactoryIntent;
+  prompt: string;
+  content: string;
+  filePath: string;
+  relatedDocs?: string[];
+}) {
+  const nowIso = new Date().toISOString();
+  const fileTitle = pathBasename(params.filePath).replace(/\.(md|markdown|txt)$/i, "");
+  const promptHint = params.prompt.replace(/\s+/g, " ").trim().slice(0, 120);
+  const parsed = parseContentFactoryPackage(params.content);
+  const normalizedTitle = (parsed.title || fileTitle).trim();
+  const normalizedCoverTitle = (parsed.coverTitle || normalizedTitle).trim();
+  const normalizedSubTitle = (parsed.subTitle || "").trim();
+  const normalizedBody = (parsed.body || params.content).trim();
+  const normalizedImageCopy = sanitizeImageCopyPlainText(parsed.imageCopy || normalizedBody);
+  const normalizedTags = parsed.tags.slice(0, 12);
+  const tagsText = normalizedTags.map((item) => `"${escapeYamlQuoted(item)}"`).join(", ");
+  const relatedDocs = (params.relatedDocs || []).slice(0, 16);
+  const relatedDocsText = relatedDocs
+    .map((docPath) => `"[[${escapeYamlQuoted(docPath)}]]"`)
+    .join(", ");
+
+  const normalizedPackage = {
+    coverTitle: normalizedCoverTitle,
+    subTitle: normalizedSubTitle,
+    title: normalizedTitle,
+    imageCopy: normalizedImageCopy,
+    body: normalizedBody,
+    tags: normalizedTags,
+  };
+
+  let contentType = "内容初稿";
+  if (params.intent === "raw") {
+    contentType = "原始素材";
+  } else if (params.intent === "topic") {
+    contentType = "选题条目";
+  } else if (params.routing.track === "xhs") {
+    contentType = "小红书图文初稿";
+  } else if (params.routing.track === "voiceover") {
+    contentType = "口播文案初稿";
+  } else if (params.routing.track === "wechat") {
+    contentType = "公众号长文初稿";
+  }
+
+  if (params.intent === "raw") {
+    return [
+      "---",
+      `title: "${escapeYamlQuoted(normalizedTitle || fileTitle)}"`,
+      'content_type: "原始素材"',
+      `track: "${params.routing.trackLabel}"`,
+      `created_at: "${nowIso}"`,
+      `related_docs: [${relatedDocsText}]`,
+      `source_prompt: "${escapeYamlQuoted(promptHint)}"`,
+      "---",
+      "",
+      params.content.trim(),
+    ].join("\n");
+  }
+
+  const bodyText = formatContentFactoryFixedBody(normalizedPackage);
+
+  return [
+    "---",
+    `title: "${escapeYamlQuoted(normalizedTitle || fileTitle)}"`,
+    `content_type: "${contentType}"`,
+    `track: "${params.routing.trackLabel}"`,
+    `created_at: "${nowIso}"`,
+    `related_docs: [${relatedDocsText}]`,
+    `source_prompt: "${escapeYamlQuoted(promptHint)}"`,
+    `cover_title: "${escapeYamlQuoted(normalizedCoverTitle)}"`,
+    `sub_title: "${escapeYamlQuoted(normalizedSubTitle)}"`,
+    `image_copy: "${escapeYamlQuoted(normalizedImageCopy)}"`,
+    `body: "${escapeYamlQuoted(normalizedBody)}"`,
+    `tags: [${tagsText}]`,
+    `xhs_title: "${escapeYamlQuoted(normalizedTitle)}"`,
+    `xhs_body: "${escapeYamlQuoted(normalizedBody)}"`,
+    `xhs_tags: [${tagsText}]`,
+    "---",
+    "",
+    bodyText,
+  ].join("\n");
+}
+
+function normalizeContentFactoryAgentActions(params: {
+  actions: AgentAction[];
+  latestUserInput: string;
+  fallbackReply: string;
+  readResults?: Array<{ path: string; content: string; reason?: string }>;
+}) {
+  const { actions, latestUserInput, fallbackReply, readResults } = params;
+  const routing = resolveContentFactoryRouting(latestUserInput);
+  const writeIntent = routing.intent;
+  if (writeIntent === "none") return actions;
+  const relatedDocCandidates = collectRelatedDocCandidates({
+    actions,
+    readResults,
+    replyText: fallbackReply,
+  });
+
+  const nextActions = [...actions];
+  const writeActions = nextActions.filter((action) => action.type === "create" || action.type === "update");
+  const hasWriteAction = writeActions.length > 0;
+
+  if (!hasWriteAction && (writeIntent === "topic" || writeIntent === "draft")) {
+    const seed = guessDocTitleFromContent(fallbackReply) || guessDocTitleFromContent(latestUserInput);
+    const targetDir = writeIntent === "topic" ? routing.topicDir : routing.draftDir;
+    const generatedPath = normalizeFilePath(`${targetDir}/${buildDatedFileName(seed, writeIntent === "topic" ? "topic" : "draft")}`);
+    nextActions.push({
+      type: "create",
+      path: generatedPath,
+      content: fallbackReply.trim(),
+      reason: "Auto-persist for content-factory workflow",
+    });
+  }
+
+  return nextActions.map((action) => {
+    if (action.type !== "create" && action.type !== "update") return action;
+
+    let nextPath = normalizeFilePath(action.path);
+    const seed = guessDocTitleFromContent(action.content || fallbackReply || latestUserInput) || "untitled";
+
+    if (writeIntent === "raw") {
+      nextPath = ensurePathUnderDir(nextPath, "01-素材库/raw", seed, "raw");
+    } else if (writeIntent === "topic") {
+      nextPath = ensurePathUnderDir(nextPath, routing.topicDir, seed, "topic");
+    } else if (writeIntent === "draft") {
+      nextPath = ensurePathUnderDir(nextPath, routing.draftDir, seed, "draft");
+    }
+
+    const rawContent = (action.content || fallbackReply || "").trim();
+    const shouldKeepRawFrontmatter = writeIntent === "raw" && hasFrontmatter(rawContent);
+    const relatedDocs = rankRelatedDocPaths({
+      candidates: relatedDocCandidates,
+      targetPath: nextPath,
+      promptText: latestUserInput,
+      replyText: fallbackReply,
+      limit: 16,
+    }).filter((docPath) => docPath.toLowerCase() !== nextPath.toLowerCase());
+    const content = shouldKeepRawFrontmatter
+      ? rawContent
+      : buildContentFactoryFrontmatter({
+          routing,
+          intent: writeIntent,
+          prompt: latestUserInput,
+          content: rawContent,
+          filePath: nextPath,
+          relatedDocs,
+        });
+
+    return {
+      ...action,
+      path: nextPath,
+      content,
+      reason: action.reason || "Content-factory normalized save",
+    };
+  });
 }
 
 function buildSystemPrompt(parts: {
@@ -917,6 +1431,7 @@ function buildSystemPrompt(parts: {
   workspaceIndexContext?: string;
   skillContext?: string;
   readResultsContext?: string;
+  writeIntentContext?: string;
 }) {
   return [
     parts.folderContext || "",
@@ -927,6 +1442,7 @@ function buildSystemPrompt(parts: {
     parts.workspaceIndexContext || "",
     parts.skillContext || "",
     parts.readResultsContext || "",
+    parts.writeIntentContext || "",
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -980,6 +1496,18 @@ function buildReferenceDocs(params: {
     });
   };
 
+  const toRelativeKnowledgePath = (path: string) => {
+    const normalized = normalizeDocPath(path);
+    if (!normalized) return "";
+    const marker = "knowledge/";
+    const markerIndex = normalized.toLowerCase().indexOf(marker);
+    if (markerIndex < 0) return normalized;
+    const tail = normalized.slice(markerIndex + marker.length);
+    const segments = tail.split("/").filter(Boolean);
+    if (segments.length <= 2) return normalized;
+    return segments.slice(2).join("/");
+  };
+
   const coreMatches = params.coreDocsContext.match(/^###\s+([^\n]+)\n来源：([^\n]+)/gm) || [];
   for (const match of coreMatches) {
     const parts = match.match(/^###\s+([^\n]+)\n来源：([^\n]+)/m);
@@ -1003,11 +1531,31 @@ function buildReferenceDocs(params: {
     push(item.path);
   }
 
+  // Ensure relative variant is present so frontend can match even when index paths include knowledge/<folder>/<file>/prefix.
+  const rows = [...refs];
+  for (const row of rows) {
+    const relative = toRelativeKnowledgePath(row.path);
+    if (!relative || relative.toLowerCase() === row.path.toLowerCase()) continue;
+    push(relative, row.sourcePath || row.path);
+  }
+
   return refs.slice(0, 12);
 }
 
 function normalizeBlockText(text: string) {
   return text.replace(/\r\n/g, "\n").trim();
+}
+
+function sanitizeReferencePath(path: string) {
+  const normalized = normalizeDocPath(path);
+  if (!normalized) return "";
+  const marker = "knowledge/";
+  const markerIndex = normalized.toLowerCase().indexOf(marker);
+  if (markerIndex < 0) return stripStorageTimestampPrefix(normalized);
+  const tail = normalized.slice(markerIndex + marker.length);
+  const segments = tail.split("/").filter(Boolean);
+  if (segments.length <= 2) return stripStorageTimestampPrefix(normalized);
+  return stripStorageTimestampPrefix(segments.slice(2).join("/"));
 }
 
 function buildAssistantContentBlocks(params: {
@@ -1133,7 +1681,7 @@ async function readFileByPath(params: {
     : content;
 
   return {
-    path: normalizeFilePath(path),
+    path: sanitizeReferencePath(path),
     content: compact,
   };
 }
@@ -1655,6 +2203,13 @@ function parseUpstreamError(error: unknown) {
 }
 
 export async function POST(request: NextRequest) {
+  const streamResponseHeaders = {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  };
+
   const requestStartedAt = Date.now();
   const { userId, apiKey, nexApiKey } = await getRequestUserContext(request, {
     allowDefaultApiKey: true,
@@ -1682,7 +2237,8 @@ export async function POST(request: NextRequest) {
 
   const inferredHomeRequest =
     typeof body.currentPath === "string" && body.currentPath.trim().length > 0;
-  const fastMode = body.fastMode === true || inferredHomeRequest;
+  const hasExplicitFastMode = typeof body.fastMode === "boolean";
+  const fastMode = hasExplicitFastMode ? body.fastMode === true : inferredHomeRequest;
   const streamMode = body.stream === true;
   const currentPath =
     typeof body.currentPath === "string" && body.currentPath.trim()
@@ -1736,11 +2292,7 @@ export async function POST(request: NextRequest) {
         ),
         {
           status: 400,
-          headers: {
-            "Content-Type": "text/event-stream; charset=utf-8",
-            "Cache-Control": "no-cache, no-transform",
-            Connection: "keep-alive",
-          },
+          headers: streamResponseHeaders,
         },
       );
     }
@@ -1826,6 +2378,13 @@ export async function POST(request: NextRequest) {
   const contextMs = Date.now() - contextStartedAt;
 
   const attachmentContext = buildAttachmentContext(attachments);
+  const latestUserMessage = [...conversationState.messages]
+    .reverse()
+    .find((message) => message.role === "user");
+  const writeIntentContext =
+    latestUserMessage && detectWriteIntent(latestUserMessage.content)
+      ? buildWriteIntentPrompt()
+      : "";
   const upstreamMessages = buildUpstreamMessages(
     fastMode
       ? truncateMessagesForFastMode(conversationState.messages)
@@ -1840,6 +2399,7 @@ export async function POST(request: NextRequest) {
     selectedFileContext,
     workspaceIndexContext,
     skillContext,
+    writeIntentContext,
   });
 
   let streamController: ReadableStreamDefaultController<string> | null = null;
@@ -1903,7 +2463,7 @@ export async function POST(request: NextRequest) {
                 extractThinkingItemsFromReasoningBuffer(streamedReasoningBuffer),
               );
               if (streamedThinking.length > 0) {
-                emit("thinking", { items: streamedThinking });
+                emit("thinking", { items: trimThinkingItems(streamedThinking) });
               }
             },
           }
@@ -1915,13 +2475,20 @@ export async function POST(request: NextRequest) {
     let agentActions = parseAgentActions(rawReply);
     let thinking = parseStructuredThinking(rawReply);
     let reply = parseStructuredReplyText(rawReply);
+    const latestUserInput = latestUserMessage?.content || "";
+    agentActions = normalizeContentFactoryAgentActions({
+      actions: agentActions,
+      latestUserInput,
+      fallbackReply: reply,
+      readResults: readResultsForFinal,
+    });
 
     const emitThinkingProgress = (items: string[]) => {
       if (!streamMode || items.length === 0) return;
       const merged = mergeThinkingItems(streamedThinking, items);
       if (merged.length === streamedThinking.length) return;
       streamedThinking = merged;
-      emit("thinking", { items: merged });
+      emit("thinking", { items: trimThinkingItems(merged) });
     };
 
     if (streamMode) {
@@ -1942,6 +2509,8 @@ export async function POST(request: NextRequest) {
       if (readResults.length > 0) {
         readResultsForFinal = readResults;
         if (streamMode) {
+          streamedReply = "";
+          emit("reply_reset", {});
           emit("actions", { items: readResults.map((item) => ({ type: "read", path: item.path, ok: true })) });
         }
 
@@ -1952,6 +2521,7 @@ export async function POST(request: NextRequest) {
           workspaceIndexContext,
           skillContext,
           readResultsContext: buildReadResultContext(readResults),
+          writeIntentContext,
         });
 
         const secondPass = await callAndExtract({
@@ -1978,7 +2548,7 @@ export async function POST(request: NextRequest) {
                     extractThinkingItemsFromReasoningBuffer(streamedReasoningBuffer),
                   );
                   if (streamedThinking.length > 0) {
-                    emit("thinking", { items: streamedThinking });
+                    emit("thinking", { items: trimThinkingItems(streamedThinking) });
                   }
                 },
               }
@@ -1990,6 +2560,12 @@ export async function POST(request: NextRequest) {
         agentActions = parseAgentActions(rawReply);
         thinking = parseStructuredThinking(rawReply);
         reply = parseStructuredReplyText(rawReply);
+        agentActions = normalizeContentFactoryAgentActions({
+          actions: agentActions,
+          latestUserInput,
+          fallbackReply: reply,
+          readResults,
+        });
         if (streamMode) {
           emitThinkingProgress(thinking);
           if (agentActions.length > 0) {
@@ -2082,13 +2658,7 @@ export async function POST(request: NextRequest) {
             },
           }),
         ),
-        {
-          headers: {
-            "Content-Type": "text/event-stream; charset=utf-8",
-            "Cache-Control": "no-cache, no-transform",
-            Connection: "keep-alive",
-          },
-        },
+        { headers: streamResponseHeaders },
       );
     }
 
@@ -2119,13 +2689,7 @@ export async function POST(request: NextRequest) {
             },
           }),
         ),
-        {
-          headers: {
-            "Content-Type": "text/event-stream; charset=utf-8",
-            "Cache-Control": "no-cache, no-transform",
-            Connection: "keep-alive",
-          },
-        },
+        { headers: streamResponseHeaders },
       );
     }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowLeft,
@@ -9,15 +9,22 @@ import {
   ChevronRight,
   FileText,
   Folder,
+  FolderPlus,
   History,
   Loader2,
   Plus,
+  FilePlus,
+  Pencil,
   Search,
   SendHorizontal,
   Trash2,
+  ScanText,
+  WandSparkles,
   X,
 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 import { useTenant } from '@/hooks/useTenant';
+import { ConfirmModal } from '@/components/ConfirmModal';
 import { supabase } from '@/lib/supabaseClient';
 
 type AgentActionType = 'read' | 'create' | 'update' | 'delete';
@@ -84,6 +91,35 @@ type KnowledgeDoc = {
   metadata?: Record<string, unknown> | null;
 };
 
+type WikiOrganizeResult = {
+  processed: number;
+  succeeded: number;
+  failed: number;
+  items?: Array<{
+    rawFileId: string;
+    rawPath: string;
+    ok: boolean;
+    error?: string;
+    wikiPath?: string;
+    wikiFileId?: string;
+  }>;
+};
+
+type NormalizeStructureResult = {
+  moved: number;
+  deleted: number;
+  created: number;
+  wrapperPrefixRemoved?: string | null;
+};
+
+type ConfirmDialogState = {
+  title: string;
+  message: string;
+  confirmText?: string;
+  isDanger?: boolean;
+  onConfirm: () => Promise<void> | void;
+};
+
 type FileTreeNode = {
   id: string;
   name: string;
@@ -93,11 +129,40 @@ type FileTreeNode = {
   children: FileTreeNode[];
 };
 
+type TreeContextMenuNodeType = 'root' | 'folder' | 'file';
+
+type TreeContextMenuState = {
+  x: number;
+  y: number;
+  anchorX: number;
+  anchorY: number;
+  nodeType: TreeContextMenuNodeType;
+  path: string;
+  folderPath: string;
+  fileId?: string;
+};
+
+type TreeDragPayload = {
+  nodeType: 'folder' | 'file';
+  path: string;
+  fileId?: string;
+};
+
+type PersistedFileTreeSelection = {
+  folderId?: string | null;
+  selectedDocId?: string | null;
+  openTreePaths?: Record<string, boolean>;
+  orderByParent?: Record<string, string[]>;
+};
+
 const NEXAPI_KEY_STORAGE_KEY = 'nexapi_key';
 const CHAT_REQUEST_TIMEOUT_MS = 240_000;
 const MESSAGE_FETCH_TIMEOUT_MS = 15_000;
 const FILE_TREE_WIDTH = 320;
 const DOC_PREVIEW_WIDTH = 460;
+const FILE_TREE_SELECTION_STORAGE_KEY_PREFIX = 'chat:file-tree-selection';
+const FOLDER_MARKER_FILE_NAME = '__folder__.md';
+const TREE_DRAG_MIME = 'application/x-content-factory-tree-node';
 const CORE_DOC_BASENAMES = new Set([
   'agents.md',
   'soul.md',
@@ -107,6 +172,11 @@ const CORE_DOC_BASENAMES = new Set([
   'claude.md',
   'index.md',
 ]);
+
+function getFileTreeSelectionStorageKey(tenantSlug?: string | null) {
+  const normalizedTenantSlug = tenantSlug?.trim().toLocaleLowerCase();
+  return `${FILE_TREE_SELECTION_STORAGE_KEY_PREFIX}:${normalizedTenantSlug || 'default'}`;
+}
 
 function toNonEmptyString(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -120,6 +190,25 @@ function normalizeDocPath(input: string) {
     .replace(/^\.?\//, '')
     .replace(/\/+/g, '/')
     .trim();
+}
+
+function getParentPath(path: string) {
+  const parts = normalizeDocPath(path).split('/').filter(Boolean);
+  parts.pop();
+  return parts.join('/');
+}
+
+function joinPath(parentPath: string, name: string) {
+  const parent = normalizeDocPath(parentPath);
+  const child = normalizeDocPath(name);
+  if (!parent) return child;
+  if (!child) return parent;
+  return `${parent}/${child}`;
+}
+
+function getPathBaseName(path: string) {
+  const parts = normalizeDocPath(path).split('/').filter(Boolean);
+  return parts[parts.length - 1] || '';
 }
 
 function getDocVirtualPath(doc: KnowledgeDoc): string {
@@ -150,16 +239,62 @@ function isCoreDocPath(path: string) {
   return CORE_DOC_BASENAMES.has(baseName);
 }
 
-function sortTreeNodes(nodes: FileTreeNode[]): FileTreeNode[] {
-  for (const node of nodes) {
-    if (node.children.length > 0) {
-      node.children = sortTreeNodes(node.children);
+function sortTreeNodes(
+  nodes: FileTreeNode[],
+  orderByParent: Record<string, string[]> = {},
+  parentPath = '',
+): FileTreeNode[] {
+  const orderedIds = orderByParent[parentPath] || [];
+  const orderIndexMap = new Map<string, number>();
+  orderedIds.forEach((id, index) => {
+    orderIndexMap.set(id, index);
+  });
+
+  const withSortedChildren = nodes.map((node) => {
+    if (node.children.length === 0) return node;
+    return {
+      ...node,
+      children: sortTreeNodes(node.children, orderByParent, node.path),
+    };
+  });
+
+  return withSortedChildren.sort((a, b) => {
+    const indexA = orderIndexMap.get(a.id);
+    const indexB = orderIndexMap.get(b.id);
+    if (typeof indexA === 'number' || typeof indexB === 'number') {
+      if (typeof indexA !== 'number') return 1;
+      if (typeof indexB !== 'number') return -1;
+      if (indexA !== indexB) return indexA - indexB;
     }
-  }
-  return nodes.sort((a, b) => {
     if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
     return a.name.localeCompare(b.name, 'zh-Hans-CN', { numeric: true });
   });
+}
+
+function dedupeIds(rows: string[]) {
+  const seen = new Set<string>();
+  const next: string[] = [];
+  for (const id of rows) {
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    next.push(id);
+  }
+  return next;
+}
+
+function parseTreeDragPayload(raw: string): TreeDragPayload | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<TreeDragPayload>;
+    const nodeType = parsed.nodeType === 'folder' || parsed.nodeType === 'file' ? parsed.nodeType : null;
+    const path = typeof parsed.path === 'string' ? normalizeDocPath(parsed.path) : '';
+    if (!nodeType || !path) return null;
+    const fileId = typeof parsed.fileId === 'string' ? parsed.fileId : undefined;
+    if (nodeType === 'file' && !fileId) return null;
+    return { nodeType, path, fileId };
+  } catch {
+    return null;
+  }
 }
 
 function parseAgentActions(input: unknown): AgentAction[] {
@@ -372,7 +507,7 @@ function withPendingHint(items: ProcessItem[], nowMs?: number) {
 export function ChatPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { basePath } = useTenant();
+  const { basePath, tenantSlug } = useTenant();
 
   const conversationId = useMemo(() => searchParams?.get('cid') || '', [searchParams]);
 
@@ -393,15 +528,28 @@ export function ChatPageContent() {
   const [folderId, setFolderId] = useState<string>('');
   const [folders, setFolders] = useState<KnowledgeFolder[]>([]);
   const [docs, setDocs] = useState<KnowledgeDoc[]>([]);
+  const [organizingWiki, setOrganizingWiki] = useState(false);
+  const [normalizingStructure, setNormalizingStructure] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const [docSearch, setDocSearch] = useState('');
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [selectedDocContent, setSelectedDocContent] = useState('');
   const [loadingDocContent, setLoadingDocContent] = useState(false);
   const [openTreePaths, setOpenTreePaths] = useState<Record<string, boolean>>({});
+  const [treeOrderByParent, setTreeOrderByParent] = useState<Record<string, string[]>>({});
+  const [fileTreeSelectionReady, setFileTreeSelectionReady] = useState(false);
 
   const [showFileTree, setShowFileTree] = useState(false);
   const [showDocPreview, setShowDocPreview] = useState(false);
   const [showPanelFolderPopover, setShowPanelFolderPopover] = useState(false);
+  const [treeContextMenu, setTreeContextMenu] = useState<TreeContextMenuState | null>(null);
+  const [treeContextMenuStyle, setTreeContextMenuStyle] = useState<{ left: number; top: number } | null>(null);
+  const [draggingTreeNodePath, setDraggingTreeNodePath] = useState<string | null>(null);
+  const [draggingTreeNodeId, setDraggingTreeNodeId] = useState<string | null>(null);
+  const [draggingTreeNodeName, setDraggingTreeNodeName] = useState<string | null>(null);
+  const [dragOverFolderPath, setDragOverFolderPath] = useState<string | null>(null);
+  const [treeDropIndicator, setTreeDropIndicator] = useState<{ parentPath: string; index: number } | null>(null);
+  const [movingTreeNode, setMovingTreeNode] = useState(false);
 
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [loadingConversations, setLoadingConversations] = useState(false);
@@ -415,6 +563,7 @@ export function ChatPageContent() {
   const historyPopoverRef = useRef<HTMLDivElement | null>(null);
   const panelFolderButtonRef = useRef<HTMLButtonElement | null>(null);
   const panelFolderPopoverRef = useRef<HTMLDivElement | null>(null);
+  const treeContextMenuRef = useRef<HTMLDivElement | null>(null);
   const messageScrollRef = useRef<HTMLDivElement | null>(null);
   const messageBottomRef = useRef<HTMLDivElement | null>(null);
   const treeNodeRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -523,6 +672,59 @@ export function ChatPageContent() {
     });
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const storageKey = getFileTreeSelectionStorageKey(tenantSlug);
+    const saved = window.localStorage.getItem(storageKey);
+    if (!saved) {
+      setFileTreeSelectionReady(true);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(saved) as PersistedFileTreeSelection;
+      const nextFolderId = toNonEmptyString(parsed.folderId);
+      const nextDocId = toNonEmptyString(parsed.selectedDocId);
+      const nextOpenTreePaths: Record<string, boolean> = {};
+      if (parsed.openTreePaths && typeof parsed.openTreePaths === 'object') {
+        for (const [path, opened] of Object.entries(parsed.openTreePaths)) {
+          if (typeof path === 'string' && typeof opened === 'boolean') {
+            nextOpenTreePaths[path] = opened;
+          }
+        }
+      }
+      if (parsed.orderByParent && typeof parsed.orderByParent === 'object') {
+        const nextOrder: Record<string, string[]> = {};
+        for (const [parentPath, rawIds] of Object.entries(parsed.orderByParent)) {
+          if (typeof parentPath !== 'string' || !Array.isArray(rawIds)) continue;
+          const ids = rawIds.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+          nextOrder[parentPath] = dedupeIds(ids);
+        }
+        setTreeOrderByParent(nextOrder);
+      } else {
+        setTreeOrderByParent({});
+      }
+      if (nextFolderId) setFolderId(nextFolderId);
+      if (nextDocId) setSelectedDocId(nextDocId);
+      setOpenTreePaths(nextOpenTreePaths);
+    } catch {
+      setTreeOrderByParent({});
+    } finally {
+      setFileTreeSelectionReady(true);
+    }
+  }, [tenantSlug]);
+
+  useEffect(() => {
+    if (!fileTreeSelectionReady || typeof window === 'undefined') return;
+    const storageKey = getFileTreeSelectionStorageKey(tenantSlug);
+    const payload: PersistedFileTreeSelection = {
+      folderId: folderId || null,
+      selectedDocId: selectedDocId || null,
+      openTreePaths,
+      orderByParent: treeOrderByParent,
+    };
+    window.localStorage.setItem(storageKey, JSON.stringify(payload));
+  }, [fileTreeSelectionReady, folderId, openTreePaths, selectedDocId, tenantSlug, treeOrderByParent]);
 
   useEffect(() => {
     if (!authToken) return;
@@ -670,6 +872,45 @@ export function ChatPageContent() {
   }, [showHistoryPopover, showPanelFolderPopover]);
 
   useEffect(() => {
+    if (!treeContextMenu) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (treeContextMenuRef.current?.contains(target)) return;
+      setTreeContextMenu(null);
+    };
+    const handleEsc = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setTreeContextMenu(null);
+    };
+    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleEsc);
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleEsc);
+    };
+  }, [treeContextMenu]);
+
+  useLayoutEffect(() => {
+    if (!treeContextMenu) {
+      setTreeContextMenuStyle(null);
+      return;
+    }
+    const menu = treeContextMenuRef.current;
+    if (!menu || typeof window === 'undefined') return;
+    const margin = 8;
+    const rect = menu.getBoundingClientRect();
+    const left = Math.min(
+      Math.max(margin, treeContextMenu.anchorX),
+      Math.max(margin, window.innerWidth - rect.width - margin),
+    );
+    const top = Math.min(
+      Math.max(margin, treeContextMenu.anchorY),
+      Math.max(margin, window.innerHeight - rect.height - margin),
+    );
+    setTreeContextMenuStyle((prev) => (prev?.left === left && prev?.top === top ? prev : { left, top }));
+  }, [treeContextMenu]);
+
+  useEffect(() => {
     if (!sending || !streamStartedAtMs || typeof window === 'undefined') return;
     const timerId = window.setInterval(() => {
       setProcessNowTick(Date.now());
@@ -697,37 +938,42 @@ export function ChatPageContent() {
   const deleteConversation = useCallback(
     async (id: string) => {
       if (!authToken || !id || deletingConversationId) return;
-      const confirmed = window.confirm('确认删除这个历史对话？该操作不可撤销。');
-      if (!confirmed) return;
+      setConfirmDialog({
+        title: '删除历史对话',
+        message: '确认删除这个历史对话？该操作不可撤销。',
+        confirmText: '删除',
+        isDanger: true,
+        onConfirm: async () => {
+          setDeletingConversationId(id);
+          try {
+            const res = await fetch(`/api/assistants/conversations/${id}`, {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${authToken}` },
+            });
+            const payload = (await res.json().catch(() => ({}))) as { error?: string };
+            if (!res.ok) {
+              throw new Error(payload.error || '删除对话失败');
+            }
 
-      setDeletingConversationId(id);
-      try {
-        const res = await fetch(`/api/assistants/conversations/${id}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${authToken}` },
-        });
-        const payload = (await res.json().catch(() => ({}))) as { error?: string };
-        if (!res.ok) {
-          throw new Error(payload.error || '删除对话失败');
-        }
-
-        if (id === conversationId) {
-          setMessages([]);
-          setActionResultsByMessageId({});
-          setInput('');
-          setStreamingStatus('');
-          setStreamingThinking([]);
-          setStreamingActions([]);
-          setStreamingReply('');
-          setStreamingProcess([]);
-          router.push(getTenantPath('/chat'));
-        }
-        await loadConversations();
-      } catch (error) {
-        window.alert(error instanceof Error ? error.message : '删除对话失败');
-      } finally {
-        setDeletingConversationId(null);
-      }
+            if (id === conversationId) {
+              setMessages([]);
+              setActionResultsByMessageId({});
+              setInput('');
+              setStreamingStatus('');
+              setStreamingThinking([]);
+              setStreamingActions([]);
+              setStreamingReply('');
+              setStreamingProcess([]);
+              router.push(getTenantPath('/chat'));
+            }
+            await loadConversations();
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : '删除对话失败');
+          } finally {
+            setDeletingConversationId(null);
+          }
+        },
+      });
     },
     [authToken, conversationId, deletingConversationId, getTenantPath, loadConversations, router],
   );
@@ -757,6 +1003,22 @@ export function ChatPageContent() {
           ...prev,
           [messageId]: results,
         }));
+
+        const touchedFileIds = results
+          .filter((item) => item.ok && (item.type === 'create' || item.type === 'update') && typeof item.fileId === 'string')
+          .map((item) => item.fileId as string);
+        const latestCreatedFileId = [...results]
+          .reverse()
+          .find((item) => item.ok && item.type === 'create' && typeof item.fileId === 'string')?.fileId;
+
+        await loadDocs(folderId);
+
+        if (selectedDocId && touchedFileIds.includes(selectedDocId)) {
+          await loadDocContent(selectedDocId);
+        } else if (!selectedDocId && latestCreatedFileId) {
+          setSelectedDocId(latestCreatedFileId);
+          setShowDocPreview(true);
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : '执行失败';
         setActionResultsByMessageId((prev) => ({
@@ -767,8 +1029,19 @@ export function ChatPageContent() {
         setExecutingMessageId(null);
       }
     },
-    [authToken, folderId],
+    [authToken, folderId, loadDocContent, loadDocs, selectedDocId],
   );
+
+  useEffect(() => {
+    if (!folderId || streamingActions.length > 0) return;
+    const latestAssistantMessage = [...messages].reverse().find((message) => message.role === 'assistant');
+    if (!latestAssistantMessage) return;
+    const actions = latestAssistantMessage.metadata?.agentActions || [];
+    if (actions.length === 0) return;
+    if (actionResultsByMessageId[latestAssistantMessage.id]?.length) return;
+    if (executingMessageId) return;
+    void executeActions(latestAssistantMessage.id, actions);
+  }, [actionResultsByMessageId, executeActions, executingMessageId, folderId, messages, streamingActions.length]);
 
   const selectedDocPath = useMemo(() => {
     if (!selectedDocId) return undefined;
@@ -802,7 +1075,7 @@ export function ChatPageContent() {
 
       if (!targetDoc) {
         if (referencePath.trim()) {
-          window.alert(`未在当前文件夹找到引用文档：${referencePath}`);
+          toast.error(`未在当前文件夹找到引用文档：${referencePath}`);
         }
         return;
       }
@@ -847,6 +1120,34 @@ export function ChatPageContent() {
     setStreamStartedAtMs(streamStartedAt);
     setStreamingProcess([{ text: '已发送请求，开始分析需求', atMs: 0 }]);
 
+    let streamRafId: number | null = null;
+    let pendingReplyDelta = '';
+    const flushPendingReply = () => {
+      if (!pendingReplyDelta) return;
+      const chunk = pendingReplyDelta;
+      pendingReplyDelta = '';
+      setStreamingReply((prev) => prev + chunk);
+    };
+    const scheduleReplyFlush = () => {
+      if (!pendingReplyDelta || streamRafId !== null) return;
+      if (typeof window === 'undefined') {
+        flushPendingReply();
+        return;
+      }
+      streamRafId = window.requestAnimationFrame(() => {
+        streamRafId = null;
+        flushPendingReply();
+      });
+    };
+    const resetReplyStream = () => {
+      pendingReplyDelta = '';
+      if (streamRafId !== null && typeof window !== 'undefined') {
+        window.cancelAnimationFrame(streamRafId);
+      }
+      streamRafId = null;
+      setStreamingReply('');
+    };
+
     try {
       const timeoutWarnId = setTimeout(() => {
         setStreamingStatus('上游响应较慢，继续等待中…');
@@ -864,7 +1165,7 @@ export function ChatPageContent() {
           conversationId: conversationId || undefined,
           folderId: folderId || undefined,
           currentPath: selectedDocPath,
-          fastMode: true,
+          fastMode: false,
           message: content,
           stream: true,
         }),
@@ -901,11 +1202,13 @@ export function ChatPageContent() {
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
 
-        let boundary = buffer.indexOf('\n\n');
-        while (boundary >= 0) {
+        let boundaryMatch = buffer.match(/\r?\n\r?\n/);
+        while (boundaryMatch && typeof boundaryMatch.index === 'number') {
+          const boundary = boundaryMatch.index;
+          const boundaryLength = boundaryMatch[0].length;
           const block = buffer.slice(0, boundary).trim();
-          buffer = buffer.slice(boundary + 2);
-          boundary = buffer.indexOf('\n\n');
+          buffer = buffer.slice(boundary + boundaryLength);
+          boundaryMatch = buffer.match(/\r?\n\r?\n/);
           if (!block) continue;
 
           const eventLine = block.split('\n').find((line) => line.startsWith('event:'));
@@ -917,13 +1220,21 @@ export function ChatPageContent() {
           const dataRaw = dataLines.join('\n');
           if (!dataRaw) continue;
 
-          const payload = JSON.parse(dataRaw) as Record<string, unknown>;
+          let payload: Record<string, unknown>;
+          try {
+            payload = JSON.parse(dataRaw) as Record<string, unknown>;
+          } catch {
+            continue;
+          }
           if (eventName === 'conversation') {
             const cid = typeof payload.conversationId === 'string' ? payload.conversationId : '';
             if (cid) {
               nextConversationId = cid;
               pushProcess('会话已建立');
             }
+          } else if (eventName === 'reply_reset') {
+            finalReply = '';
+            resetReplyStream();
           } else if (eventName === 'status') {
             const text = typeof payload.text === 'string' ? payload.text : '';
             if (text) {
@@ -965,9 +1276,11 @@ export function ChatPageContent() {
                 pushProcess('模型开始输出回复');
               }
               finalReply += delta;
-              setStreamingReply((prev) => prev + delta);
+              pendingReplyDelta += delta;
+              scheduleReplyFlush();
             }
           } else if (eventName === 'final') {
+            flushPendingReply();
             const reply = typeof payload.reply === 'string' ? payload.reply : '';
             if (reply) {
               finalReply = reply;
@@ -1003,6 +1316,7 @@ export function ChatPageContent() {
           }
         }
       }
+      flushPendingReply();
       clearTimeout(timeoutWarnId);
 
       if (nextConversationId && nextConversationId !== conversationId) {
@@ -1046,6 +1360,9 @@ export function ChatPageContent() {
       setStreamingProcess([]);
       setStreamStartedAtMs(null);
     } finally {
+      if (streamRafId !== null && typeof window !== 'undefined') {
+        window.cancelAnimationFrame(streamRafId);
+      }
       setSending(false);
     }
   }, [authToken, conversationId, folderId, getTenantPath, input, loadConversations, router, selectedDocPath, sending]);
@@ -1100,7 +1417,7 @@ export function ChatPageContent() {
     const node = treeNodeRefs.current[selectedDocId];
     if (!node) return;
     node.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [openTreePaths, selectedDocId, showFileTree]);
+  }, [selectedDocId, showFileTree]);
 
   const treeNodes = useMemo<FileTreeNode[]>(() => {
     const roots: FileTreeNode[] = [];
@@ -1156,8 +1473,8 @@ export function ChatPageContent() {
       }
     }
 
-    return sortTreeNodes(roots);
-  }, [docs]);
+    return sortTreeNodes(roots, treeOrderByParent);
+  }, [docs, treeOrderByParent]);
 
   const filteredTreeNodes = useMemo(() => {
     const keyword = docSearch.trim().toLowerCase();
@@ -1176,6 +1493,24 @@ export function ChatPageContent() {
     return treeNodes.map((node) => filterNode(node)).filter((node): node is FileTreeNode => Boolean(node));
   }, [docSearch, treeNodes]);
 
+  const pendingRawDocCount = useMemo(() => {
+    let count = 0;
+    for (const doc of docs) {
+      const path = normalizeDocPath(getDocVirtualPath(doc)).toLowerCase();
+      if (!path.startsWith('01-素材库/raw/')) continue;
+      const metadata = doc.metadata || {};
+      const contentFactory =
+        metadata.contentFactory && typeof metadata.contentFactory === 'object' && !Array.isArray(metadata.contentFactory)
+          ? (metadata.contentFactory as Record<string, unknown>)
+          : {};
+      const wikiStatus = typeof contentFactory.wikiStatus === 'string'
+        ? contentFactory.wikiStatus.trim().toLowerCase()
+        : '';
+      if (wikiStatus !== 'done') count += 1;
+    }
+    return count;
+  }, [docs]);
+
   const toggleFolder = useCallback((path: string) => {
     setOpenTreePaths((prev) => ({ ...prev, [path]: !prev[path] }));
   }, []);
@@ -1185,61 +1520,609 @@ export function ChatPageContent() {
     setShowDocPreview(true);
   }, []);
 
-  const renderTree = useCallback(
-    (nodes: FileTreeNode[], depth = 0): React.ReactNode => {
-      if (nodes.length === 0) {
-        return null;
-      }
+  const createDocAtPath = useCallback(async (path: string, options?: { selectCreated?: boolean }) => {
+    if (!authToken || !folderId) return null;
+    const normalized = normalizeDocPath(path);
+    if (!normalized) return null;
+    const selectCreated = options?.selectCreated ?? true;
+    const res = await fetch(`/api/knowledge/folders/${folderId}/files`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ path: normalized, content: '' }),
+    });
+    const payload = await res.json().catch(() => ({})) as { data?: { id?: string }; error?: string };
+    if (!res.ok) {
+      toast.error(payload.error || '创建失败');
+      return null;
+    }
+    await loadDocs(folderId);
+    const nextId = payload.data?.id || null;
+    if (nextId && selectCreated) selectDoc(nextId);
+    return nextId;
+  }, [authToken, folderId, loadDocs, selectDoc]);
 
+  const createDocInFolder = useCallback(async (folderPath: string) => {
+    const basePath = normalizeDocPath(folderPath);
+    let name = 'new-file.md';
+    let index = 1;
+    const occupied = new Set(docs.map((doc) => normalizeDocPath(getDocVirtualPath(doc)).toLowerCase()));
+    let candidate = basePath ? `${basePath}/${name}` : name;
+    while (occupied.has(candidate.toLowerCase())) {
+      index += 1;
+      name = `new-file-${index}.md`;
+      candidate = basePath ? `${basePath}/${name}` : name;
+    }
+    await createDocAtPath(candidate);
+  }, [createDocAtPath, docs]);
+
+  const createFolderAtPath = useCallback(async (folderPath: string) => {
+    const normalizedFolder = normalizeDocPath(folderPath);
+    if (!normalizedFolder) return;
+    await createDocAtPath(`${normalizedFolder}/${FOLDER_MARKER_FILE_NAME}`, { selectCreated: false });
+    setOpenTreePaths((prev) => ({ ...prev, [normalizedFolder]: true }));
+  }, [createDocAtPath]);
+
+  const createFolderInFolder = useCallback(async (parentPath: string) => {
+    const basePath = normalizeDocPath(parentPath);
+    let name = 'new-folder';
+    let index = 1;
+    const occupied = new Set<string>();
+    for (const doc of docs) {
+      const docPath = normalizeDocPath(getDocVirtualPath(doc));
+      const parts = docPath.split('/').filter(Boolean);
+      parts.pop();
+      for (let i = 1; i <= parts.length; i += 1) {
+        occupied.add(parts.slice(0, i).join('/').toLowerCase());
+      }
+    }
+    let candidate = basePath ? `${basePath}/${name}` : name;
+    while (occupied.has(candidate.toLowerCase())) {
+      index += 1;
+      name = `new-folder-${index}`;
+      candidate = basePath ? `${basePath}/${name}` : name;
+    }
+    await createFolderAtPath(candidate);
+  }, [createFolderAtPath, docs]);
+
+  const deleteFileById = useCallback(async (fileId: string) => {
+    if (!authToken || !fileId) return false;
+    setConfirmDialog({
+      title: '删除文件',
+      message: '确认删除当前文件？该操作不可撤销。',
+      confirmText: '删除',
+      isDanger: true,
+      onConfirm: async () => {
+        const res = await fetch(`/api/knowledge/files/${fileId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+        const payload = await res.json().catch(() => ({})) as { error?: string };
+        if (!res.ok) {
+          toast.error(payload.error || '删除失败');
+          return;
+        }
+        await loadDocs(folderId);
+        if (selectedDocId === fileId) {
+          setSelectedDocId(null);
+          setSelectedDocContent('');
+        }
+        toast.success('文件已删除');
+      },
+    });
+    return false;
+  }, [authToken, folderId, loadDocs, selectedDocId]);
+
+  const deleteFolderByPath = useCallback(async (folderPath: string) => {
+    if (!authToken) return;
+    const normalized = normalizeDocPath(folderPath);
+    if (!normalized) return;
+    const targets = docs.filter((doc) => normalizeDocPath(getDocVirtualPath(doc)).startsWith(`${normalized}/`));
+    if (targets.length === 0) return;
+    setConfirmDialog({
+      title: '删除文件夹',
+      message: `确认删除文件夹“${normalized}”及其全部内容？该操作不可撤销。`,
+      confirmText: '删除',
+      isDanger: true,
+      onConfirm: async () => {
+        for (const doc of targets) {
+          const res = await fetch(`/api/knowledge/files/${doc.id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${authToken}` },
+          });
+          const payload = await res.json().catch(() => ({})) as { error?: string };
+          if (!res.ok) {
+            toast.error(payload.error || '删除失败');
+            return;
+          }
+        }
+        const deletedIds = new Set(targets.map((doc) => doc.id));
+        await loadDocs(folderId);
+        if (selectedDocId && deletedIds.has(selectedDocId)) {
+          setSelectedDocId(null);
+          setSelectedDocContent('');
+        }
+        toast.success('文件夹已删除');
+      },
+    });
+  }, [authToken, docs, folderId, loadDocs, selectedDocId]);
+
+  const moveFile = useCallback(async (fileId: string, nextPath: string) => {
+    if (!authToken || !fileId || !folderId || movingTreeNode) return false;
+    const normalizedPath = normalizeDocPath(nextPath);
+    if (!normalizedPath) return false;
+    const hasConflict = docs.some((doc) => doc.id !== fileId && normalizeDocPath(getDocVirtualPath(doc)).toLowerCase() === normalizedPath.toLowerCase());
+    if (hasConflict) {
+      toast.error('目标位置已有同名文件');
+      return false;
+    }
+    setMovingTreeNode(true);
+    try {
+      const res = await fetch(`/api/knowledge/files/${fileId}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ path: normalizedPath }),
+      });
+      const payload = await res.json().catch(() => ({})) as { error?: string };
+      if (!res.ok) throw new Error(payload.error || '移动失败');
+      await loadDocs(folderId);
+      const parentPaths = normalizedPath.split('/').filter(Boolean).slice(0, -1).map((_v, i, arr) => arr.slice(0, i + 1).join('/'));
+      setOpenTreePaths((prev) => {
+        const next = { ...prev };
+        parentPaths.forEach((p) => { next[p] = true; });
+        return next;
+      });
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '移动失败');
+      return false;
+    } finally {
+      setMovingTreeNode(false);
+    }
+  }, [authToken, docs, folderId, loadDocs, movingTreeNode]);
+
+  const moveFolder = useCallback(async (sourceFolderPath: string, targetFolderPath: string) => {
+    if (!authToken || !folderId || movingTreeNode) return;
+    const source = normalizeDocPath(sourceFolderPath);
+    const target = normalizeDocPath(targetFolderPath);
+    if (!source || target === source || target.startsWith(`${source}/`)) return;
+    const sourcePrefix = `${source}/`;
+    const toMove = docs.filter((doc) => normalizeDocPath(getDocVirtualPath(doc)).startsWith(sourcePrefix));
+    if (toMove.length === 0) return;
+    setMovingTreeNode(true);
+    try {
+      for (const doc of toMove) {
+        const currentPath = normalizeDocPath(getDocVirtualPath(doc));
+        const suffix = currentPath.slice(sourcePrefix.length);
+        const nextPath = joinPath(target, suffix);
+        const hasConflict = docs.some((item) => item.id !== doc.id && normalizeDocPath(getDocVirtualPath(item)).toLowerCase() === nextPath.toLowerCase());
+        if (hasConflict) throw new Error(`目标位置已有同名文件：${nextPath}`);
+      }
+      for (const doc of toMove) {
+        const currentPath = normalizeDocPath(getDocVirtualPath(doc));
+        const suffix = currentPath.slice(sourcePrefix.length);
+        const nextPath = joinPath(target, suffix);
+        const res = await fetch(`/api/knowledge/files/${doc.id}`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ path: nextPath }),
+        });
+        const payload = await res.json().catch(() => ({})) as { error?: string };
+        if (!res.ok) throw new Error(payload.error || '移动失败');
+      }
+      await loadDocs(folderId);
+      setOpenTreePaths((prev) => ({ ...prev, [target]: true }));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '移动失败');
+    } finally {
+      setMovingTreeNode(false);
+    }
+  }, [authToken, docs, folderId, loadDocs, movingTreeNode]);
+
+  const renameFileById = useCallback(async (fileId: string, currentPath: string) => {
+    const currentName = getPathBaseName(currentPath);
+    const raw = window.prompt('请输入新的文件名（可含 .md）', currentName);
+    if (!raw) return;
+    const nextNameRaw = raw.trim();
+    if (!nextNameRaw || nextNameRaw === currentName) return;
+    const nextName = /\.(md|markdown|txt)$/i.test(nextNameRaw) ? nextNameRaw : `${nextNameRaw}.md`;
+    const parentPath = getParentPath(currentPath);
+    await moveFile(fileId, joinPath(parentPath, nextName));
+  }, [moveFile]);
+
+  const renameFolderByPath = useCallback(async (folderPath: string) => {
+    const source = normalizeDocPath(folderPath);
+    if (!source) return;
+    const currentName = getPathBaseName(source);
+    const raw = window.prompt('请输入新的文件夹名称', currentName);
+    if (!raw) return;
+    const nextName = raw.trim();
+    if (!nextName || nextName === currentName) return;
+    await moveFolder(source, joinPath(getParentPath(source), nextName));
+  }, [moveFolder]);
+
+  const reorderNodesInSameParent = useCallback((parentPath: string, draggedId: string, targetIndex: number) => {
+    if (!draggedId) return;
+    setTreeOrderByParent((prev) => {
+      const current = prev[parentPath] || [];
+      const withoutDragged = current.filter((id) => id !== draggedId);
+      const clampedIndex = Math.max(0, Math.min(targetIndex, withoutDragged.length));
+      const next = [
+        ...withoutDragged.slice(0, clampedIndex),
+        draggedId,
+        ...withoutDragged.slice(clampedIndex),
+      ];
+      return { ...prev, [parentPath]: dedupeIds(next) };
+    });
+  }, []);
+
+  const openTreeContextMenu = useCallback((event: ReactMouseEvent, input: Omit<TreeContextMenuState, 'x' | 'y' | 'anchorX' | 'anchorY'>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setTreeContextMenu({
+      ...input,
+      x: event.clientX,
+      y: event.clientY,
+      anchorX: event.clientX,
+      anchorY: event.clientY,
+    });
+  }, []);
+
+  const renderTreeContextMenu = useCallback(() => {
+    if (!treeContextMenu) return null;
+    const canRenameFile = treeContextMenu.nodeType === 'file' && Boolean(treeContextMenu.fileId);
+    const canRenameFolder = treeContextMenu.nodeType === 'folder';
+    const canDeleteFile = treeContextMenu.nodeType === 'file' && Boolean(treeContextMenu.fileId);
+    const canDeleteFolder = treeContextMenu.nodeType === 'folder';
+    return (
+      <div
+        ref={treeContextMenuRef}
+        className="fixed z-[90] min-w-[180px] overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl"
+        style={{ left: `${treeContextMenuStyle?.left ?? treeContextMenu.x}px`, top: `${treeContextMenuStyle?.top ?? treeContextMenu.y}px` }}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            const p = treeContextMenu.folderPath;
+            setTreeContextMenu(null);
+            void createFolderInFolder(p);
+          }}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-100"
+        >
+          <FolderPlus className="h-4 w-4" />
+          新建文件夹
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const p = treeContextMenu.folderPath;
+            setTreeContextMenu(null);
+            void createDocInFolder(p);
+          }}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-100"
+        >
+          <FilePlus className="h-4 w-4" />
+          新建文档
+        </button>
+        {(canRenameFile || canRenameFolder) && (
+          <button
+            type="button"
+            onClick={() => {
+              const fileId = treeContextMenu.fileId;
+              const currentPath = treeContextMenu.path;
+              setTreeContextMenu(null);
+              if (canRenameFile && fileId) {
+                void renameFileById(fileId, currentPath);
+                return;
+              }
+              if (canRenameFolder) {
+                void renameFolderByPath(currentPath);
+              }
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-100"
+          >
+            <Pencil className="h-4 w-4" />
+            重命名
+          </button>
+        )}
+        {(canDeleteFile || canDeleteFolder) && (
+          <button
+            type="button"
+            onClick={() => {
+              const fileId = treeContextMenu.fileId;
+              const currentPath = treeContextMenu.path;
+              setTreeContextMenu(null);
+              if (canDeleteFile && fileId) {
+                void deleteFileById(fileId);
+                return;
+              }
+              if (canDeleteFolder) {
+                void deleteFolderByPath(currentPath);
+              }
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 transition hover:bg-red-50"
+          >
+            <Trash2 className="h-4 w-4" />
+            删除
+          </button>
+        )}
+      </div>
+    );
+  }, [createDocInFolder, createFolderInFolder, deleteFileById, deleteFolderByPath, renameFileById, renameFolderByPath, treeContextMenu, treeContextMenuStyle]);
+
+  const renderTree = useCallback(
+    (nodes: FileTreeNode[], depth = 0, parentPath = ''): React.ReactNode => {
+      if (nodes.length === 0) return null;
       return (
         <div className="space-y-0.5">
           {nodes.map((node) => {
+            const nodeIndex = nodes.findIndex((item) => item.id === node.id);
+            const isInsertLineAbove = treeDropIndicator?.parentPath === parentPath && treeDropIndicator.index === nodeIndex;
+            const isInsertLineBelow = treeDropIndicator?.parentPath === parentPath && treeDropIndicator.index === nodeIndex + 1;
+
             if (node.type === 'folder') {
               const opened = openTreePaths[node.path] ?? true;
+              const isDropTarget = dragOverFolderPath === node.path;
               return (
                 <div key={node.id}>
+                  {isInsertLineAbove ? <div className="my-0.5 h-0.5 rounded-full bg-emerald-500" style={{ marginLeft: `${8 + depth * 14}px` }} /> : null}
                   <button
                     type="button"
+                    draggable
+                    onDragStart={(event) => {
+                      const payload: TreeDragPayload = { nodeType: 'folder', path: node.path };
+                      event.dataTransfer.effectAllowed = 'move';
+                      event.dataTransfer.setData(TREE_DRAG_MIME, JSON.stringify(payload));
+                      setDraggingTreeNodePath(node.path);
+                      setDraggingTreeNodeId(node.id);
+                      setDraggingTreeNodeName(node.name);
+                    }}
+                    onDragEnd={() => {
+                      setDraggingTreeNodePath(null);
+                      setDraggingTreeNodeId(null);
+                      setDraggingTreeNodeName(null);
+                      setDragOverFolderPath(null);
+                      setTreeDropIndicator(null);
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      const payload = parseTreeDragPayload(event.dataTransfer.getData(TREE_DRAG_MIME));
+                      if (!payload) return;
+                      if (payload.path === node.path) return;
+                      if (payload.nodeType === 'folder' && node.path.startsWith(`${payload.path}/`)) return;
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      const y = event.clientY - rect.top;
+                      const edge = Math.min(10, rect.height * 0.3);
+                      if (y <= edge || y >= rect.height - edge) {
+                        setDragOverFolderPath(null);
+                        setTreeDropIndicator({ parentPath, index: y <= edge ? nodeIndex : nodeIndex + 1 });
+                        return;
+                      }
+                      setTreeDropIndicator(null);
+                      setDragOverFolderPath(node.path);
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setDragOverFolderPath(null);
+                      const dropIndicator = treeDropIndicator;
+                      setTreeDropIndicator(null);
+                      const payload = parseTreeDragPayload(event.dataTransfer.getData(TREE_DRAG_MIME));
+                      if (!payload) return;
+                      if (dropIndicator && draggingTreeNodeId && getParentPath(payload.path) === dropIndicator.parentPath) {
+                        reorderNodesInSameParent(dropIndicator.parentPath, draggingTreeNodeId, dropIndicator.index);
+                        return;
+                      }
+                      if (payload.nodeType === 'file' && payload.fileId) {
+                        const fileName = payload.path.split('/').filter(Boolean).pop() || 'new-file.md';
+                        void moveFile(payload.fileId, joinPath(node.path, fileName));
+                        return;
+                      }
+                      if (payload.nodeType === 'folder') {
+                        void moveFolder(payload.path, node.path);
+                      }
+                    }}
+                    onContextMenu={(event) => {
+                      openTreeContextMenu(event, {
+                        nodeType: 'folder',
+                        path: node.path,
+                        folderPath: node.path,
+                      });
+                    }}
                     onClick={() => toggleFolder(node.path)}
-                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-gray-700 transition hover:bg-gray-100"
+                    className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-gray-700 transition hover:bg-gray-100 ${
+                      isDropTarget ? 'bg-emerald-100 ring-2 ring-emerald-400' : ''
+                    } ${draggingTreeNodePath === node.path ? 'opacity-50' : ''}`}
                     style={{ paddingLeft: `${8 + depth * 14}px` }}
                   >
                     <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition ${opened ? '' : '-rotate-90'}`} />
                     <Folder className="h-3.5 w-3.5 shrink-0 text-gray-500" />
                     <span className="truncate">{node.name}</span>
+                    {isDropTarget && draggingTreeNodeName ? <span className="ml-auto text-[11px] font-medium text-emerald-700">移动到此文件夹</span> : null}
                   </button>
-                  {opened ? renderTree(node.children, depth + 1) : null}
+                  {opened ? renderTree(node.children, depth + 1, node.path) : null}
+                  {isInsertLineBelow ? <div className="my-0.5 h-0.5 rounded-full bg-emerald-500" style={{ marginLeft: `${8 + depth * 14}px` }} /> : null}
                 </div>
               );
             }
 
             const selected = selectedDocId === node.fileId;
             return (
-              <button
-                key={node.id}
-                type="button"
-                onClick={() => node.fileId && selectDoc(node.fileId)}
-                ref={(element) => {
-                  if (!node.fileId) return;
-                  treeNodeRefs.current[node.fileId] = element;
-                }}
-                data-doc-node-id={node.fileId}
-                className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition ${
-                  selected ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-50'
-                }`}
-                style={{ paddingLeft: `${24 + depth * 14}px` }}
-                title={node.path}
-              >
-                <FileText className="h-3.5 w-3.5 shrink-0 text-gray-500" />
-                <span className="truncate">{node.name}</span>
-              </button>
+              <div key={node.id}>
+                {isInsertLineAbove ? <div className="my-0.5 h-0.5 rounded-full bg-emerald-500" style={{ marginLeft: `${24 + depth * 14}px` }} /> : null}
+                <button
+                  type="button"
+                  draggable
+                  onDragStart={(event) => {
+                    if (!node.fileId) return;
+                    const payload: TreeDragPayload = { nodeType: 'file', path: node.path, fileId: node.fileId };
+                    event.dataTransfer.effectAllowed = 'move';
+                    event.dataTransfer.setData(TREE_DRAG_MIME, JSON.stringify(payload));
+                    setDraggingTreeNodePath(node.path);
+                    setDraggingTreeNodeId(node.id);
+                    setDraggingTreeNodeName(node.name);
+                  }}
+                  onDragEnd={() => {
+                    setDraggingTreeNodePath(null);
+                    setDraggingTreeNodeId(null);
+                    setDraggingTreeNodeName(null);
+                    setDragOverFolderPath(null);
+                    setTreeDropIndicator(null);
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const payload = parseTreeDragPayload(event.dataTransfer.getData(TREE_DRAG_MIME));
+                    if (!payload) return;
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    const y = event.clientY - rect.top;
+                    setTreeDropIndicator({ parentPath, index: y <= rect.height / 2 ? nodeIndex : nodeIndex + 1 });
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const dropIndicator = treeDropIndicator;
+                    setTreeDropIndicator(null);
+                    const payload = parseTreeDragPayload(event.dataTransfer.getData(TREE_DRAG_MIME));
+                    if (!dropIndicator || !draggingTreeNodeId || !payload) return;
+                    if (getParentPath(payload.path) !== dropIndicator.parentPath) return;
+                    reorderNodesInSameParent(dropIndicator.parentPath, draggingTreeNodeId, dropIndicator.index);
+                  }}
+                  onContextMenu={(event) => {
+                    if (!node.fileId) return;
+                    openTreeContextMenu(event, {
+                      nodeType: 'file',
+                      path: node.path,
+                      folderPath: getParentPath(node.path),
+                      fileId: node.fileId,
+                    });
+                  }}
+                  onClick={() => node.fileId && selectDoc(node.fileId)}
+                  ref={(element) => {
+                    if (!node.fileId) return;
+                    treeNodeRefs.current[node.fileId] = element;
+                  }}
+                  data-doc-node-id={node.fileId}
+                  className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition ${
+                    selected ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-50'
+                  } ${draggingTreeNodePath === node.path ? 'opacity-50' : ''}`}
+                  style={{ paddingLeft: `${24 + depth * 14}px` }}
+                  title={node.path}
+                >
+                  <FileText className="h-3.5 w-3.5 shrink-0 text-gray-500" />
+                  <span className="truncate">{node.name}</span>
+                </button>
+                {isInsertLineBelow ? <div className="my-0.5 h-0.5 rounded-full bg-emerald-500" style={{ marginLeft: `${24 + depth * 14}px` }} /> : null}
+              </div>
             );
           })}
         </div>
       );
     },
-    [openTreePaths, selectDoc, selectedDocId, toggleFolder],
+    [
+      dragOverFolderPath,
+      draggingTreeNodeId,
+      draggingTreeNodeName,
+      draggingTreeNodePath,
+      moveFile,
+      moveFolder,
+      openTreeContextMenu,
+      openTreePaths,
+      reorderNodesInSameParent,
+      selectDoc,
+      selectedDocId,
+      toggleFolder,
+      treeDropIndicator,
+    ],
   );
+
+  const organizeWiki = useCallback(async () => {
+    if (!authToken || !folderId || organizingWiki) return;
+    setOrganizingWiki(true);
+    try {
+      const res = await fetch(`/api/knowledge/folders/${folderId}/wiki-organize`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ limit: 8 }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as {
+        data?: WikiOrganizeResult;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(payload.error || '梳理失败');
+      const result = payload.data;
+      const processed = result?.processed ?? 0;
+      const succeeded = result?.succeeded ?? 0;
+      const failed = result?.failed ?? 0;
+      if (processed === 0) {
+        toast.success('没有待梳理的原始文章');
+      } else if (failed > 0) {
+        const failedItems = (result?.items || []).filter((item) => !item.ok).slice(0, 3);
+        const firstError = failedItems[0];
+        const detail = firstError
+          ? `；示例：${firstError.rawPath}${firstError.error ? `（${firstError.error}）` : ''}`
+          : '';
+        toast.error(`梳理完成：成功 ${succeeded}，失败 ${failed}${detail}`);
+      } else {
+        toast.success(`已梳理 ${succeeded} 篇原始文章`);
+      }
+      await loadDocs(folderId);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '梳理失败');
+    } finally {
+      setOrganizingWiki(false);
+    }
+  }, [authToken, folderId, loadDocs, organizingWiki]);
+
+  const normalizeStructure = useCallback(async () => {
+    if (!authToken || !folderId || normalizingStructure) return;
+    setConfirmDialog({
+      title: '整理默认内容工厂结构',
+      message: '将当前仓库整理为默认内容工厂结构，并清理非必要文件，是否继续？',
+      confirmText: '开始整理',
+      isDanger: false,
+      onConfirm: async () => {
+        setNormalizingStructure(true);
+        try {
+          const res = await fetch(`/api/knowledge/folders/${folderId}/normalize-structure`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          const payload = (await res.json().catch(() => ({}))) as {
+            data?: NormalizeStructureResult;
+            error?: string;
+          };
+          if (!res.ok) throw new Error(payload.error || '结构整理失败');
+          const data = payload.data;
+          const moved = data?.moved ?? 0;
+          const deleted = data?.deleted ?? 0;
+          const created = data?.created ?? 0;
+          const extra = data?.wrapperPrefixRemoved ? `，已去除外层目录 ${data.wrapperPrefixRemoved}` : '';
+          toast.success(`结构整理完成：迁移 ${moved}、删除 ${deleted}、创建 ${created}${extra}`);
+          await loadDocs(folderId);
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : '结构整理失败');
+        } finally {
+          setNormalizingStructure(false);
+        }
+      },
+    });
+  }, [authToken, folderId, loadDocs, normalizingStructure]);
 
   const mainPaddingClass = showFileTree
     ? showDocPreview
@@ -1620,17 +2503,66 @@ export function ChatPageContent() {
                 )}
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setShowFileTree(false);
-                  setShowPanelFolderPopover(false);
-                }}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 transition hover:bg-gray-100"
-                aria-label="关闭文件树"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => void createFolderInFolder('')}
+                  disabled={!folderId}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label="新建文件夹"
+                  title="新建文件夹"
+                >
+                  <FolderPlus className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void createDocInFolder('')}
+                  disabled={!folderId}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label="新建文档"
+                  title="新建文档"
+                >
+                  <FilePlus className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void normalizeStructure()}
+                  disabled={!folderId || normalizingStructure}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label="整理为默认内容工厂结构"
+                  title="整理为默认内容工厂结构"
+                >
+                  {normalizingStructure ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ScanText className="h-4 w-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void organizeWiki()}
+                  disabled={!folderId || organizingWiki}
+                  className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label="梳理待处理原文为 llm-wiki"
+                  title="梳理待处理原文为 llm-wiki"
+                >
+                  {organizingWiki ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WandSparkles className="h-4 w-4" />}
+                  {pendingRawDocCount > 0 ? (
+                    <span className="absolute -right-1 -top-1 inline-flex min-w-[16px] items-center justify-center rounded-full bg-emerald-600 px-1 text-[10px] font-semibold leading-4 text-white">
+                      {pendingRawDocCount > 99 ? '99+' : pendingRawDocCount}
+                    </span>
+                  ) : null}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowFileTree(false);
+                    setShowPanelFolderPopover(false);
+                    setTreeContextMenu(null);
+                  }}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 transition hover:bg-gray-100"
+                  aria-label="关闭文件树"
+                  title="关闭文件树"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
             <div className="border-b border-gray-200 px-3 py-2">
@@ -1645,7 +2577,49 @@ export function ChatPageContent() {
               </div>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            <div
+              className="min-h-0 flex-1 overflow-y-auto p-3"
+              onContextMenu={(event) => {
+                openTreeContextMenu(event, {
+                  nodeType: 'root',
+                  path: '',
+                  folderPath: '',
+                });
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                const payload = parseTreeDragPayload(event.dataTransfer.getData(TREE_DRAG_MIME));
+                if (!payload) return;
+                if (payload.path.includes('/')) {
+                  event.dataTransfer.dropEffect = 'move';
+                  setDragOverFolderPath('');
+                  setTreeDropIndicator(null);
+                }
+              }}
+              onDragLeave={() => {
+                setDragOverFolderPath((prev) => (prev === '' ? null : prev));
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                setDragOverFolderPath(null);
+                setTreeDropIndicator(null);
+                const payload = parseTreeDragPayload(event.dataTransfer.getData(TREE_DRAG_MIME));
+                if (!payload) return;
+                if (payload.nodeType === 'file' && payload.fileId) {
+                  const fileName = payload.path.split('/').filter(Boolean).pop() || 'new-file.md';
+                  void moveFile(payload.fileId, fileName);
+                  return;
+                }
+                if (payload.nodeType === 'folder') {
+                  void moveFolder(payload.path, '');
+                }
+              }}
+            >
+              {dragOverFolderPath === '' ? (
+                <div className="mb-2 rounded-lg border-2 border-dashed border-emerald-400 bg-emerald-100 px-2 py-1 text-[11px] font-medium text-emerald-800">
+                  松开后将移动到根目录
+                </div>
+              ) : null}
               {!folderId ? (
                 <p className="rounded-xl bg-gray-50 px-3 py-6 text-center text-xs text-gray-500">先选择一个文件夹</p>
               ) : filteredTreeNodes.length === 0 ? (
@@ -1653,6 +2627,7 @@ export function ChatPageContent() {
               ) : (
                 renderTree(filteredTreeNodes)
               )}
+              {renderTreeContextMenu()}
             </div>
           </div>
         </aside>
@@ -1713,6 +2688,19 @@ export function ChatPageContent() {
           </div>
         </>
       )}
+      <ConfirmModal
+        isOpen={Boolean(confirmDialog)}
+        onClose={() => setConfirmDialog(null)}
+        onConfirm={async () => {
+          if (!confirmDialog) return;
+          await confirmDialog.onConfirm();
+        }}
+        title={confirmDialog?.title}
+        message={confirmDialog?.message}
+        confirmText={confirmDialog?.confirmText}
+        cancelText="取消"
+        isDanger={confirmDialog?.isDanger ?? true}
+      />
     </div>
   );
 }

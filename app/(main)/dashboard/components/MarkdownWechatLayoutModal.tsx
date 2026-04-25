@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useTranslation } from "@/hooks/useTranslation";
 import { splitMarkdownDocument } from "@/lib/markdown-frontmatter";
+import { parseContentFactoryPackage } from "@/lib/contentFactoryFormat";
 
 interface MarkdownWechatPreviewDialogProps {
   open: boolean;
@@ -436,13 +437,15 @@ export function MarkdownWechatPreviewDialog({
   }, [themeStyle]);
 
   const parsed = useMemo(() => splitMarkdownDocument(draft), [draft]);
+  const contentFactoryDraft = useMemo(() => parseContentFactoryPackage(draft), [draft]);
   const title = useMemo(() => {
-    const titleEntry = parsed.frontmatter.find((entry) => entry.key === "title");
+    if (contentFactoryDraft.title.trim()) return contentFactoryDraft.title.trim();
+    const titleEntry = parsed.frontmatter.find((entry) => entry.key.toLowerCase() === "title");
     if (typeof titleEntry?.value === "string" && titleEntry.value.trim()) return titleEntry.value.trim();
     return getDefaultTitle(filePath);
-  }, [filePath, parsed.frontmatter]);
+  }, [contentFactoryDraft.title, filePath, parsed.frontmatter]);
 
-  const body = parsed.body.trimStart();
+  const body = (contentFactoryDraft.body || parsed.body).trimStart();
   const contentHtml = useMemo(() => getWechatMd().render(body), [body]);
   const exportHtml = useMemo(
     () => buildExportHtml(title, contentHtml, fontScale, showTitle, themeStyle),

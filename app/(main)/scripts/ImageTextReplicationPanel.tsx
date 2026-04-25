@@ -660,12 +660,24 @@ export function ImageTextReplicationPanel({
     try {
       const folder = knowledgeFolders.find((item) => item.id === selectedKnowledgeFolderId);
       const titleBase = (sourceTitle?.trim() || "图文识别").slice(0, 48);
-      const path = `${titleBase}-${Date.now()}.md`;
+      const savedAt = new Date();
+      const pad = (num: number) => String(num).padStart(2, "0");
+      const fileTimeLabel = `${savedAt.getFullYear()}-${pad(savedAt.getMonth() + 1)}-${pad(savedAt.getDate())}-${pad(savedAt.getHours())}-${pad(savedAt.getMinutes())}-${pad(savedAt.getSeconds())}`;
+      const path = `01-素材库/raw/${titleBase}-${fileTimeLabel}.md`;
+      const savedAtLabel = new Intl.DateTimeFormat("zh-CN", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(savedAt);
       const bodyContent = [
         `# ${titleBase}`,
         "",
-        sourceUrl?.trim() ? `来源: ${sourceUrl.trim()}` : "",
-        sourcePlatform?.trim() ? `平台: ${sourcePlatform.trim()}` : "",
+        "> [!meta] 入库信息（生成时自动忽略）",
+        sourceUrl?.trim() ? `> 来源: ${sourceUrl.trim()}` : "",
+        sourcePlatform?.trim() ? `> 平台: ${sourcePlatform.trim()}` : "",
+        `> 保存时间: ${savedAtLabel}`,
         "",
         content,
       ]
@@ -682,6 +694,15 @@ export function ImageTextReplicationPanel({
           title: titleBase,
           path,
           content: bodyContent,
+          sourceType: "replication-parse",
+          contentFactory: {
+            kind: "raw",
+            wikiStatus: "pending",
+            importedFrom: "image-text-replication",
+            sourcePlatform: sourcePlatform?.trim() || null,
+            sourceId: sourceId?.trim() || null,
+            sourceUrl: sourceUrl?.trim() || null,
+          },
         }),
       });
       const payload = await res.json().catch(() => ({})) as { error?: string; data?: { id?: string } };
@@ -1019,86 +1040,90 @@ function AnalysisStepCard({
           </div>
         )}
       </div>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        {canAnalyze ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                if (analysisStatus === "running") return;
-                if (canViewResult) {
-                  onToggleAnalysisResult();
-                } else {
-                  onAnalyze();
-                }
-              }}
-              disabled={primaryButtonDisabled}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 text-white dark:bg-white dark:text-gray-900 px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
-            >
-              {analysisStatus === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              {primaryButtonLabel}
-            </button>
-            {canViewResult && (
+      <div className="space-y-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          {canAnalyze ? (
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={onAnalyze}
-                disabled={false}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm font-semibold text-gray-700 dark:text-gray-200 px-4 py-2.5 disabled:opacity-60"
+                onClick={() => {
+                  if (analysisStatus === "running") return;
+                  if (canViewResult) {
+                    onToggleAnalysisResult();
+                  } else {
+                    onAnalyze();
+                  }
+                }}
+                disabled={primaryButtonDisabled}
+                className="inline-flex shrink-0 whitespace-nowrap items-center justify-center gap-2 rounded-xl bg-gray-900 text-white dark:bg-white dark:text-gray-900 px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
               >
-                <RotateCcw className="h-4 w-4" />
-                重新解析
+                {analysisStatus === "running" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                {primaryButtonLabel}
               </button>
+              {canViewResult && (
+                <button
+                  type="button"
+                  onClick={onAnalyze}
+                  disabled={false}
+                  className="inline-flex shrink-0 whitespace-nowrap items-center justify-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm font-semibold text-gray-700 dark:text-gray-200 px-4 py-2.5 disabled:opacity-60"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  重新解析
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-300">
+              <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0" />
+              <span>当前参考未包含图片，将直接使用已有文案，请自行补充解析内容。</span>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <select
+              value={selectedKnowledgeFolderId}
+              onChange={(e) => onSelectedKnowledgeFolderIdChange(e.target.value)}
+              disabled={knowledgeFoldersLoading || knowledgeFolders.length === 0}
+              className="min-w-[180px] rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-xs text-gray-700 dark:text-gray-200 disabled:opacity-50"
+            >
+              <option value="">{knowledgeFoldersLoading ? "加载知识库中..." : "选择知识库"}</option>
+              {knowledgeFolders.map((folder) => (
+                <option key={folder.id} value={folder.id}>
+                  {folder.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={onSaveAnalysisToFolder}
+              disabled={!canSaveToFolder}
+              className="inline-flex shrink-0 whitespace-nowrap items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-200 disabled:opacity-40"
+            >
+              {savingToFolder ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderDown className="h-3.5 w-3.5" />}
+              保存到知识库
+            </button>
+            {saveSuccessLabel && (
+              <span className="whitespace-nowrap text-xs text-green-600 dark:text-green-400">已保存 {saveSuccessLabel}</span>
+            )}
+            {savedAtLabel && (
+              <span className="whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
+                已自动保存 {savedAtLabel}
+              </span>
             )}
           </div>
-        ) : (
-          <div className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-300">
-            <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0" />
-            <span>当前参考未包含图片，将直接使用已有文案，请自行补充解析内容。</span>
-          </div>
-        )}
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            value={selectedKnowledgeFolderId}
-            onChange={(e) => onSelectedKnowledgeFolderIdChange(e.target.value)}
-            disabled={knowledgeFoldersLoading || knowledgeFolders.length === 0}
-            className="min-w-[180px] rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-xs text-gray-700 dark:text-gray-200 disabled:opacity-50"
-          >
-            <option value="">{knowledgeFoldersLoading ? "加载文件夹中..." : "选择保存文件夹"}</option>
-            {knowledgeFolders.map((folder) => (
-              <option key={folder.id} value={folder.id}>
-                {folder.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={onSaveAnalysisToFolder}
-            disabled={!canSaveToFolder}
-            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-200 disabled:opacity-40"
-          >
-            {savingToFolder ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderDown className="h-3.5 w-3.5" />}
-            保存到文件夹
-          </button>
-          {saveSuccessLabel && (
-            <span className="text-xs text-green-600 dark:text-green-400">已保存 {saveSuccessLabel}</span>
-          )}
-          {savedAtLabel && (
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              已自动保存 {savedAtLabel}
-            </span>
-          )}
         </div>
         {saveError && <p className="text-xs text-red-500">{saveError}</p>}
         {lastSavedLocation && (
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/50 px-3 py-2 text-xs">
-            <span className="text-gray-500 dark:text-gray-400">保存位置</span>
-            <span className="max-w-[260px] truncate text-gray-900 dark:text-gray-100">
-              {lastSavedLocation.folderName} / {lastSavedLocation.path}
-            </span>
+          <div className="flex flex-col gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/50 px-3 py-2 text-xs sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-gray-500 dark:text-gray-400">保存位置</p>
+              <p className="truncate text-gray-900 dark:text-gray-100">
+                {lastSavedLocation.folderName} / {lastSavedLocation.path}
+              </p>
+            </div>
             <button
               type="button"
               onClick={onOpenSavedLocation}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 font-medium text-gray-700 dark:text-gray-200"
+              className="inline-flex shrink-0 whitespace-nowrap items-center gap-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-1.5 font-medium text-gray-700 dark:text-gray-200"
             >
               去首页查看
             </button>

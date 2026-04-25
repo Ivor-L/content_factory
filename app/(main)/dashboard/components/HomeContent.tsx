@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- Dashboard cards render remote task thumbnails with mixed dimensions */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
@@ -19,7 +19,9 @@ import {
   Play,
   X,
   Folder,
+  FolderPlus,
   FileText,
+  FilePlus,
   Loader2,
   Search,
   Plus,
@@ -30,17 +32,22 @@ import {
   MessageSquare,
   Settings,
   History,
+  WandSparkles,
+  ScanText,
 } from 'lucide-react';
 import Image from 'next/image';
 import { toast } from 'react-hot-toast';
 import { useTenant } from '@/hooks/useTenant';
 import { Modal } from '@/components/Modal';
+import { ConfirmModal } from '@/components/ConfirmModal';
 import { DigitalHumanModal } from '@/components/DigitalHumanModal';
 import { QuickPosterForm, QuickGridForm } from './QuickActionForms';
 import { CreativeQuickStartModal } from './CreativeQuickStart';
 import { MarkdownWechatLayoutModal } from './MarkdownWechatLayoutModal';
 import { MarkdownXhsLayoutModal } from './MarkdownXhsLayoutModal';
 import { supabase } from '@/lib/supabaseClient';
+import { splitMarkdownDocument } from '@/lib/markdown-frontmatter';
+import { formatContentFactoryFixedBody, parseContentFactoryPackage } from '@/lib/contentFactoryFormat';
 import {
   inferAssistantProviderFromModel,
   normalizeAssistantProviderId,
@@ -174,6 +181,38 @@ type KnowledgeDoc = {
   };
 };
 
+type WikiOrganizeResult = {
+  processed: number;
+  succeeded: number;
+  failed: number;
+  pendingBefore?: number;
+  pendingAfter?: number;
+  items?: Array<{
+    rawFileId: string;
+    rawPath: string;
+    ok: boolean;
+    error?: string;
+    wikiPath?: string;
+    wikiFileId?: string;
+  }>;
+};
+
+type NormalizeStructureResult = {
+  moved: number;
+  deleted: number;
+  created: number;
+  wrapperPrefixRemoved?: string | null;
+  pendingRaw?: number;
+};
+
+type ConfirmDialogState = {
+  title: string;
+  message: string;
+  confirmText?: string;
+  isDanger?: boolean;
+  onConfirm: () => Promise<void> | void;
+};
+
 type FileTreeNode = {
   id: string;
   name: string;
@@ -181,6 +220,25 @@ type FileTreeNode = {
   path: string;
   fileId?: string;
   children: FileTreeNode[];
+};
+
+type TreeContextMenuNodeType = 'root' | 'folder' | 'file';
+
+type TreeContextMenuState = {
+  x: number;
+  y: number;
+  anchorX: number;
+  anchorY: number;
+  nodeType: TreeContextMenuNodeType;
+  path: string;
+  folderPath: string;
+  fileId?: string;
+};
+
+type TreeDragPayload = {
+  nodeType: 'folder' | 'file';
+  path: string;
+  fileId?: string;
 };
 
 type ModelOption = {
@@ -194,6 +252,7 @@ type PersistedFileTreeSelection = {
   folderId?: string | null;
   selectedDocId?: string | null;
   openTreePaths?: Record<string, boolean>;
+  orderByParent?: Record<string, string[]>;
 };
 type PersistedKnowledgeSaveTarget = {
   folderId?: string | null;
@@ -218,6 +277,7 @@ const MIN_FILE_TREE_WIDTH = 260;
 const DEFAULT_FILE_TREE_WIDTH = MIN_FILE_TREE_WIDTH;
 const MIN_DOC_PREVIEW_WIDTH = 420;
 const DEFAULT_DOC_PREVIEW_WIDTH = 560;
+const CONVERSATION_SIDEBAR_GAP = 12;
 const CORE_DOC_BASENAMES = new Set([
   'agents.md',
   'soul.md',
@@ -227,6 +287,23 @@ const CORE_DOC_BASENAMES = new Set([
   'claude.md',
   'index.md',
 ]);
+const FOLDER_MARKER_FILE_NAME = '__folder__.md';
+const TREE_DRAG_MIME = 'application/x-content-factory-tree-node';
+const DOC_REUSE_MAX_CHARS = 6000;
+const META_CALLOUT_MARKER_RE = /^\[!meta\]\s*/i;
+const META_INFO_LINE_RE =
+  /^(来源|平台|保存时间|采集时间|来源链接|source|platform|saved\s*at)\s*[:：]/i;
+
+function dedupeIds(rows: string[]) {
+  const seen = new Set<string>();
+  const next: string[] = [];
+  for (const id of rows) {
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    next.push(id);
+  }
+  return next;
+}
 
 function getFileTreeSelectionStorageKey(tenantSlug?: string | null) {
   const normalizedTenantSlug = tenantSlug?.trim().toLocaleLowerCase();
@@ -274,6 +351,183 @@ function normalizeDocPath(input: string) {
     .replace(/^\.?\//, '')
     .replace(/\/+/g, '/')
     .trim();
+}
+
+function getParentPath(path: string) {
+  const parts = normalizeDocPath(path).split('/').filter(Boolean);
+  parts.pop();
+  return parts.join('/');
+}
+
+function joinPath(parentPath: string, name: string) {
+  const parent = normalizeDocPath(parentPath);
+  const child = normalizeDocPath(name);
+  if (!parent) return child;
+  if (!child) return parent;
+  return `${parent}/${child}`;
+}
+
+function getPathBaseNameFromDocPath(path: string) {
+  const parts = normalizeDocPath(path).split('/').filter(Boolean);
+  return parts[parts.length - 1] || '';
+}
+
+function extractReusableDocText(markdown: string) {
+  const raw = (markdown || '').trim();
+  if (!raw) return '';
+  const parsed = parseContentFactoryPackage(raw);
+  const preferred = (parsed.body || parsed.imageCopy).trim();
+  if (preferred) return preferred.slice(0, DOC_REUSE_MAX_CHARS);
+  const { body } = splitMarkdownDocument(raw);
+  const normalized = stripKnowledgeMetaForGeneration((body || raw).replace(/\r\n/g, '\n')).trim();
+  if (!normalized) return '';
+  return normalized.slice(0, DOC_REUSE_MAX_CHARS);
+}
+
+function stripLeadingLooseMetaYaml(input: string) {
+  const raw = (input || "").replace(/\r\n/g, "\n");
+  if (!raw.trim()) return "";
+  if (/^---\n[\s\S]*?\n---\n?/m.test(raw)) return raw;
+
+  const lines = raw.split("\n");
+  let idx = 0;
+  let seenMeta = false;
+  while (idx < lines.length) {
+    const line = lines[idx];
+    const trimmed = line.trim();
+    if (!trimmed) {
+      idx += 1;
+      continue;
+    }
+    if (/^[A-Za-z_][A-Za-z0-9_-]*\s*:\s*(.*)$/.test(trimmed)) {
+      seenMeta = true;
+      idx += 1;
+      continue;
+    }
+    if (/^\s+-\s+/.test(line) && seenMeta) {
+      idx += 1;
+      continue;
+    }
+    if (/^\s{2,}[A-Za-z_][A-Za-z0-9_-]*\s*:\s*(.*)$/.test(line) && seenMeta) {
+      idx += 1;
+      continue;
+    }
+    break;
+  }
+  if (!seenMeta) return raw;
+  return lines.slice(idx).join("\n").trimStart();
+}
+
+function normalizeDocForPreview(input: string) {
+  const raw = (input || "").replace(/\r\n/g, "\n");
+  if (!raw.trim()) return "";
+  const parsed = parseContentFactoryPackage(raw);
+  const hasAnyContentFactoryField = Boolean(
+    parsed.coverTitle || parsed.subTitle || parsed.title || parsed.imageCopy || parsed.body || parsed.tags.length > 0,
+  );
+  if (!hasAnyContentFactoryField) return stripLeadingLooseMetaYaml(raw);
+  return formatContentFactoryFixedBody(parsed);
+}
+
+function isKnowledgeMetaInfoLine(line: string) {
+  return META_INFO_LINE_RE.test(line.trim());
+}
+
+function isKnowledgeMetaInfoParagraph(lines: string[]) {
+  const meaningfulLines = lines.map((line) => line.trim()).filter(Boolean);
+  return meaningfulLines.length > 0 && meaningfulLines.every((line) => isKnowledgeMetaInfoLine(line));
+}
+
+function stripKnowledgeMetaForGeneration(input: string) {
+  if (!input) return '';
+  const lines = input.replace(/\r\n/g, '\n').split('\n');
+  const kept: string[] = [];
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const trimmedLine = line.trim();
+    if (!trimmedLine.startsWith('>')) {
+      kept.push(line);
+      continue;
+    }
+
+    const quoteBlockStart = i;
+    const quoteBlock: string[] = [];
+    while (i < lines.length && lines[i].trim().startsWith('>')) {
+      quoteBlock.push(lines[i]);
+      i += 1;
+    }
+    i -= 1;
+
+    const quoteContentLines = quoteBlock
+      .map((quoteLine) => quoteLine.trim().replace(/^>\s?/, '').trim())
+      .filter(Boolean);
+    const firstLine = quoteContentLines[0] || '';
+    if (META_CALLOUT_MARKER_RE.test(firstLine)) {
+      continue;
+    }
+
+    for (let j = quoteBlockStart; j <= i; j += 1) {
+      kept.push(lines[j]);
+    }
+  }
+
+  const output: string[] = [];
+  let index = 0;
+
+  while (index < kept.length) {
+    const trimmed = kept[index].trim();
+    if (!trimmed) {
+      output.push(kept[index]);
+      index += 1;
+      continue;
+    }
+    if (/^#{1,6}\s+/.test(trimmed)) {
+      output.push(kept[index]);
+      index += 1;
+      continue;
+    }
+    break;
+  }
+
+  let removedPreambleMeta = false;
+  while (index < kept.length) {
+    const trimmed = kept[index].trim();
+    if (!trimmed) {
+      if (removedPreambleMeta) {
+        index += 1;
+        continue;
+      }
+      output.push(kept[index]);
+      index += 1;
+      continue;
+    }
+    if (isKnowledgeMetaInfoLine(trimmed)) {
+      removedPreambleMeta = true;
+      index += 1;
+      continue;
+    }
+    break;
+  }
+
+  output.push(...kept.slice(index));
+  const merged = output.join('\n');
+  return merged.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function parseTreeDragPayload(raw: string): TreeDragPayload | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<TreeDragPayload>;
+    const nodeType = parsed.nodeType === 'folder' || parsed.nodeType === 'file' ? parsed.nodeType : null;
+    const path = typeof parsed.path === 'string' ? normalizeDocPath(parsed.path) : '';
+    if (!nodeType || !path) return null;
+    const fileId = typeof parsed.fileId === 'string' ? parsed.fileId : undefined;
+    if (nodeType === 'file' && !fileId) return null;
+    return { nodeType, path, fileId };
+  } catch {
+    return null;
+  }
 }
 
 function normalizeKnowledgeReferencePath(input: string) {
@@ -326,6 +580,283 @@ function parseInlineMarkdown(input: string): InlineToken[] {
   return tokens;
 }
 
+type MarkdownRenderContext = 'doc' | 'chat';
+
+type RenderMarkdownOptions = {
+  context?: MarkdownRenderContext;
+  showEmptyState?: boolean;
+};
+
+function renderMarkdownContent(content: string, options?: RenderMarkdownOptions): ReactNode[] {
+  const context: MarkdownRenderContext = options?.context || 'doc';
+  const showEmptyState = options?.showEmptyState === true;
+  const normalized = content.replace(/\r\n/g, '\n');
+  const lines = normalized.split('\n');
+  const nodes: ReactNode[] = [];
+  let i = 0;
+  let key = 0;
+
+  const renderInlineMarkdown = (text: string, keyPrefix: string): ReactNode[] => {
+    const tokens = parseInlineMarkdown(text);
+    return tokens.map((token, idx) => {
+      const nodeKey = `${keyPrefix}-${idx}`;
+      if (token.type === 'strong') return <strong key={nodeKey}>{token.value}</strong>;
+      if (token.type === 'em') return <em key={nodeKey}>{token.value}</em>;
+      if (token.type === 'code') {
+        return (
+          <code
+            key={nodeKey}
+            className="rounded bg-gray-100 px-1 py-0.5 text-[0.92em] text-gray-800 dark:bg-gray-800 dark:text-gray-100"
+          >
+            {token.value}
+          </code>
+        );
+      }
+      if (token.type === 'link') {
+        return (
+          <a
+            key={nodeKey}
+            href={token.href}
+            target="_blank"
+            rel="noreferrer"
+            className="text-emerald-600 underline decoration-emerald-300 underline-offset-2 hover:text-emerald-700 dark:text-emerald-400 dark:decoration-emerald-500 dark:hover:text-emerald-300"
+          >
+            {token.value}
+          </a>
+        );
+      }
+      return <span key={nodeKey}>{token.value}</span>;
+    });
+  };
+
+  const paragraphClass = context === 'doc'
+    ? 'mb-4 whitespace-pre-wrap text-[15px] leading-7 text-gray-800 dark:text-gray-100'
+    : 'mb-3 whitespace-pre-wrap text-[15px] leading-7 text-gray-800 dark:text-gray-200';
+
+  const headingClasses: Record<number, string> = context === 'doc'
+    ? {
+        1: 'mb-6 mt-2 text-4xl font-bold leading-tight text-gray-900 dark:text-white',
+        2: 'mb-4 mt-8 text-3xl font-semibold leading-tight text-gray-900 dark:text-white',
+        3: 'mb-3 mt-6 text-2xl font-semibold leading-snug text-gray-900 dark:text-white',
+        4: 'mb-3 mt-5 text-xl font-semibold leading-snug text-gray-900 dark:text-white',
+        5: 'mb-3 mt-5 text-xl font-semibold leading-snug text-gray-900 dark:text-white',
+        6: 'mb-3 mt-5 text-xl font-semibold leading-snug text-gray-900 dark:text-white',
+      }
+    : {
+        1: 'mb-3 mt-1 text-2xl font-semibold leading-tight text-gray-900 dark:text-white',
+        2: 'mb-3 mt-4 text-xl font-semibold leading-tight text-gray-900 dark:text-white',
+        3: 'mb-2 mt-3 text-lg font-semibold leading-snug text-gray-900 dark:text-white',
+        4: 'mb-2 mt-3 text-base font-semibold leading-snug text-gray-900 dark:text-white',
+        5: 'mb-2 mt-3 text-base font-semibold leading-snug text-gray-900 dark:text-white',
+        6: 'mb-2 mt-3 text-base font-semibold leading-snug text-gray-900 dark:text-white',
+      };
+
+  const secondaryHeadingClass = context === 'doc'
+    ? 'mb-3 mt-6 text-2xl font-semibold leading-snug text-gray-900 dark:text-white'
+    : 'mb-2 mt-4 text-lg font-semibold leading-snug text-gray-900 dark:text-white';
+
+  const secondaryParagraphClass = context === 'doc'
+    ? 'mb-4 mt-5 text-[18px] leading-8 text-gray-900 dark:text-gray-100'
+    : 'mb-3 mt-3 text-[16px] leading-7 text-gray-900 dark:text-gray-100';
+
+  const pushParagraph = (text: string) => {
+    if (!text.trim()) return;
+    const paragraphLines = text.split('\n');
+    if (isKnowledgeMetaInfoParagraph(paragraphLines)) {
+      nodes.push(
+        <div
+          key={`meta-p-${key++}`}
+          className="mb-4 rounded-lg border border-gray-200/70 bg-gray-50/60 px-3 py-2 text-xs leading-5 text-gray-400 dark:border-gray-700/70 dark:bg-gray-800/40 dark:text-gray-500"
+        >
+          {paragraphLines
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .map((line, idx) => (
+              <p key={`meta-p-line-${idx}`} className="break-all">
+                {renderInlineMarkdown(line, `meta-p-${key}-l-${idx}`)}
+              </p>
+            ))}
+        </div>,
+      );
+      return;
+    }
+    nodes.push(
+      <p key={`p-${key++}`} className={paragraphClass}>
+        {paragraphLines.map((line, idx) => (
+          <span key={`pl-${idx}`}>
+            {renderInlineMarkdown(line, `p-${key}-l-${idx}`)}
+            {idx < paragraphLines.length - 1 ? '\n' : null}
+          </span>
+        ))}
+      </p>,
+    );
+  };
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      i += 1;
+      continue;
+    }
+
+    const headingMatch = /^#{1,6}\s+(.+)$/.exec(trimmed);
+    if (headingMatch) {
+      const level = Math.min(6, Math.max(1, trimmed.match(/^#+/)?.[0].length ?? 1));
+      const text = headingMatch[1];
+      nodes.push(
+        <div key={`h-${key++}`} className={headingClasses[level] || headingClasses[6]}>
+          {renderInlineMarkdown(text, `h-${key}`)}
+        </div>,
+      );
+      i += 1;
+      continue;
+    }
+
+    const secondaryHeadingMatch = /^\*\*([^*\n]+)\*\*(?:\s*([：:])\s*(.+))?$/.exec(trimmed);
+    if (secondaryHeadingMatch && (secondaryHeadingMatch[2] || !secondaryHeadingMatch[3])) {
+      const label = secondaryHeadingMatch[1].trim();
+      const separator = secondaryHeadingMatch[2] ?? '';
+      const tail = secondaryHeadingMatch[3]?.trim();
+      if (tail) {
+        nodes.push(
+          <p key={`sh-${key++}`} className={secondaryParagraphClass}>
+            <strong>{label + separator}</strong>
+            {' '}
+            {renderInlineMarkdown(tail, `sh-${key}-tail`)}
+          </p>,
+        );
+      } else {
+        nodes.push(
+          <div key={`sh-${key++}`} className={secondaryHeadingClass}>
+            {label}
+          </div>,
+        );
+      }
+      i += 1;
+      continue;
+    }
+
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+      nodes.push(<hr key={`hr-${key++}`} className="my-5 border-gray-200 dark:border-gray-700" />);
+      i += 1;
+      continue;
+    }
+
+    if (trimmed.startsWith('>')) {
+      const quoteLines: string[] = [];
+      while (i < lines.length) {
+        const quoteLine = lines[i].trim();
+        if (!quoteLine.startsWith('>')) break;
+        quoteLines.push(quoteLine.replace(/^>\s?/, ''));
+        i += 1;
+      }
+      const firstQuoteLine = quoteLines[0]?.trim() || '';
+      if (META_CALLOUT_MARKER_RE.test(firstQuoteLine)) {
+        const calloutTitle = firstQuoteLine.replace(META_CALLOUT_MARKER_RE, '').trim() || '入库信息';
+        const metaLines = quoteLines.map((line) => line.trim()).slice(1).filter(Boolean);
+        if (metaLines.length > 0) {
+          nodes.push(
+            <div
+              key={`meta-q-${key++}`}
+              className="mb-4 rounded-lg border border-gray-200/70 bg-gray-50/60 px-3 py-2 text-xs leading-5 text-gray-400 dark:border-gray-700/70 dark:bg-gray-800/40 dark:text-gray-500"
+            >
+              <p className="mb-1 text-[11px] font-medium text-gray-400 dark:text-gray-500">{calloutTitle}</p>
+              {metaLines.map((metaLine, idx) => (
+                <p key={`meta-q-line-${idx}`} className="break-all">
+                  {renderInlineMarkdown(metaLine, `meta-q-${key}-l-${idx}`)}
+                </p>
+              ))}
+            </div>,
+          );
+        }
+        continue;
+      }
+      nodes.push(
+        <blockquote
+          key={`q-${key++}`}
+          className="mb-4 rounded-r-xl border-l-4 border-gray-300 bg-gray-50 px-4 py-3 text-[15px] leading-7 text-gray-700 dark:border-gray-600 dark:bg-gray-800/70 dark:text-gray-200"
+        >
+          {quoteLines.map((quoteLine, idx) => (
+            <span key={`q-line-${idx}`}>
+              {renderInlineMarkdown(quoteLine, `q-${key}-l-${idx}`)}
+              {idx < quoteLines.length - 1 ? '\n' : null}
+            </span>
+          ))}
+        </blockquote>,
+      );
+      continue;
+    }
+
+    if (/^(\*|-)\s+/.test(trimmed)) {
+      const items: string[] = [];
+      while (i < lines.length) {
+        const itemLine = lines[i].trim();
+        const itemMatch = /^(\*|-)\s+(.+)$/.exec(itemLine);
+        if (!itemMatch) break;
+        items.push(itemMatch[2]);
+        i += 1;
+      }
+      nodes.push(
+        <ul key={`ul-${key++}`} className="mb-4 list-disc space-y-1 pl-6 text-[15px] leading-7 text-gray-800 dark:text-gray-100">
+          {items.map((item, idx) => (
+            <li key={`uli-${idx}`}>{renderInlineMarkdown(item, `ul-${key}-i-${idx}`)}</li>
+          ))}
+        </ul>,
+      );
+      continue;
+    }
+
+    if (/^\d+\.\s+/.test(trimmed)) {
+      const items: string[] = [];
+      while (i < lines.length) {
+        const itemLine = lines[i].trim();
+        const itemMatch = /^\d+\.\s+(.+)$/.exec(itemLine);
+        if (!itemMatch) break;
+        items.push(itemMatch[1]);
+        i += 1;
+      }
+      nodes.push(
+        <ol key={`ol-${key++}`} className="mb-4 list-decimal space-y-1 pl-6 text-[15px] leading-7 text-gray-800 dark:text-gray-100">
+          {items.map((item, idx) => (
+            <li key={`oli-${idx}`}>{renderInlineMarkdown(item, `ol-${key}-i-${idx}`)}</li>
+          ))}
+        </ol>,
+      );
+      continue;
+    }
+
+    const paragraphLines: string[] = [];
+    while (i < lines.length) {
+      const next = lines[i];
+      const nextTrimmed = next.trim();
+      if (!nextTrimmed) break;
+      if (
+        /^#{1,6}\s+/.test(nextTrimmed) ||
+        /^(-{3,}|\*{3,}|_{3,})$/.test(nextTrimmed) ||
+        nextTrimmed.startsWith('>') ||
+        /^(\*|-)\s+/.test(nextTrimmed) ||
+        /^\d+\.\s+/.test(nextTrimmed)
+      ) {
+        break;
+      }
+      paragraphLines.push(next);
+      i += 1;
+    }
+    pushParagraph(paragraphLines.join('\n'));
+  }
+
+  if (nodes.length === 0 && showEmptyState) {
+    return [
+      <p key="empty" className="rounded-xl bg-gray-50 px-3 py-8 text-center text-xs text-gray-500 dark:bg-gray-800/70 dark:text-gray-400">
+        文档暂无正文内容
+      </p>,
+    ];
+  }
+  return nodes;
+}
+
 function getDocVirtualPath(doc: KnowledgeDoc): string {
   const metadata = doc.metadata || {};
   const path =
@@ -354,13 +885,33 @@ function isCoreDocPath(path: string) {
   return CORE_DOC_BASENAMES.has(baseName);
 }
 
-function sortTreeNodes(nodes: FileTreeNode[]): FileTreeNode[] {
-  for (const node of nodes) {
-    if (node.children.length > 0) {
-      node.children = sortTreeNodes(node.children);
+function sortTreeNodes(
+  nodes: FileTreeNode[],
+  orderByParent: Record<string, string[]> = {},
+  parentPath = '',
+): FileTreeNode[] {
+  const orderedIds = orderByParent[parentPath] || [];
+  const orderIndexMap = new Map<string, number>();
+  orderedIds.forEach((id, index) => {
+    orderIndexMap.set(id, index);
+  });
+
+  const withSortedChildren = nodes.map((node) => {
+    if (node.children.length === 0) return node;
+    return {
+      ...node,
+      children: sortTreeNodes(node.children, orderByParent, node.path),
+    };
+  });
+
+  return withSortedChildren.sort((a, b) => {
+    const indexA = orderIndexMap.get(a.id);
+    const indexB = orderIndexMap.get(b.id);
+    if (typeof indexA === 'number' || typeof indexB === 'number') {
+      if (typeof indexA !== 'number') return 1;
+      if (typeof indexB !== 'number') return -1;
+      if (indexA !== indexB) return indexA - indexB;
     }
-  }
-  return nodes.sort((a, b) => {
     if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
     return a.name.localeCompare(b.name, 'zh-Hans-CN', { numeric: true });
   });
@@ -455,6 +1006,78 @@ function buildReferencePathCandidates(path: string): string[] {
 function getReferenceDisplayPath(path: string) {
   const normalized = normalizeKnowledgeReferencePath(path);
   return normalized || normalizeDocPath(path);
+}
+
+function stripStorageTimestampPrefixFromDocPath(input: string) {
+  const normalized = normalizeDocPath(input);
+  if (!normalized) return '';
+  const parts = normalized.split('/').filter(Boolean);
+  if (!parts.length) return normalized;
+  const base = parts[parts.length - 1] || '';
+  parts[parts.length - 1] = base.replace(/^\d{10,}-/, '');
+  return parts.join('/');
+}
+
+function buildDocLookupMaps(docs: KnowledgeDoc[]) {
+  const byVirtualPath = new Map<string, KnowledgeDoc>();
+  const byBaseName = new Map<string, KnowledgeDoc[]>();
+
+  for (const doc of docs) {
+    const virtualPath = normalizeDocPath(getDocVirtualPath(doc));
+    if (!virtualPath) continue;
+
+    for (const candidate of buildReferencePathCandidates(virtualPath)) {
+      const key = candidate.toLowerCase();
+      if (!byVirtualPath.has(key)) {
+        byVirtualPath.set(key, doc);
+      }
+
+      const stripped = stripStorageTimestampPrefixFromDocPath(candidate);
+      const strippedKey = stripped.toLowerCase();
+      if (strippedKey && !byVirtualPath.has(strippedKey)) {
+        byVirtualPath.set(strippedKey, doc);
+      }
+    }
+
+    const baseName = getPathBaseNameFromDocPath(virtualPath).toLowerCase();
+    if (baseName) {
+      const rows = byBaseName.get(baseName);
+      if (rows) rows.push(doc);
+      else byBaseName.set(baseName, [doc]);
+    }
+  }
+
+  return { byVirtualPath, byBaseName };
+}
+
+function findDocByReferencePath(params: {
+  referencePath: string;
+  referenceSourcePath?: string;
+  byVirtualPath: Map<string, KnowledgeDoc>;
+  byBaseName: Map<string, KnowledgeDoc[]>;
+}) {
+  const { referencePath, referenceSourcePath, byVirtualPath, byBaseName } = params;
+  const candidates = [
+    ...buildReferencePathCandidates(referencePath),
+    ...buildReferencePathCandidates(referenceSourcePath || ""),
+  ];
+
+  for (const candidate of candidates) {
+    const matched = byVirtualPath.get(candidate.toLowerCase());
+    if (matched) return matched;
+
+    const stripped = stripStorageTimestampPrefixFromDocPath(candidate);
+    const strippedMatched = stripped ? byVirtualPath.get(stripped.toLowerCase()) : null;
+    if (strippedMatched) return strippedMatched;
+  }
+
+  const referenceBaseName =
+    getPathBaseNameFromDocPath(referencePath).toLowerCase() ||
+    getPathBaseNameFromDocPath(referenceSourcePath || "").toLowerCase();
+  if (!referenceBaseName) return null;
+  const sameNameDocs = byBaseName.get(referenceBaseName) || [];
+  if (sameNameDocs.length === 1) return sameNameDocs[0];
+  return null;
 }
 
 function parseThinkingItems(input: unknown): string[] {
@@ -726,9 +1349,10 @@ function renderAssistantBlocks(blocks: MessageContentBlock[], opts: {
 
   const flushText = (keyPrefix: string) => {
     if (textParts.length === 0) return;
+    const markdownText = textParts.join('\n');
     nodes.push(
-      <div key={`${keyPrefix}-text`} className="whitespace-pre-wrap text-[15px] leading-7 text-gray-800 dark:text-gray-200">
-        {textParts.join('\n')}
+      <div key={`${keyPrefix}-text`} className="text-[15px] leading-7">
+        {renderMarkdownContent(markdownText, { context: 'chat', showEmptyState: false })}
       </div>,
     );
     textParts.length = 0;
@@ -1018,6 +1642,9 @@ export function HomeContent() {
   const [showDocPreview, setShowDocPreview] = useState(false);
   const [showWechatLayoutModal, setShowWechatLayoutModal] = useState(false);
   const [showXhsLayoutModal, setShowXhsLayoutModal] = useState(false);
+  const [showContentOutputPopover, setShowContentOutputPopover] = useState(false);
+  const [posterIdeaSeed, setPosterIdeaSeed] = useState('');
+  const [digitalHumanScriptSeed, setDigitalHumanScriptSeed] = useState('');
   const [fileTreeWidth, setFileTreeWidth] = useState(DEFAULT_FILE_TREE_WIDTH);
   const [docPreviewWidth, setDocPreviewWidth] = useState(DEFAULT_DOC_PREVIEW_WIDTH);
   const [isResizingFileTree, setIsResizingFileTree] = useState(false);
@@ -1026,6 +1653,8 @@ export function HomeContent() {
   const [modelSelectionReady, setModelSelectionReady] = useState(false);
   const fileTreeResizeStartRef = useRef<{ x: number; width: number } | null>(null);
   const docPreviewResizeStartRef = useRef<{ x: number; width: number } | null>(null);
+  const contentOutputPopoverRef = useRef<HTMLDivElement | null>(null);
+  const contentOutputButtonRef = useRef<HTMLButtonElement | null>(null);
   const hasRestoredFileTreeSelectionRef = useRef(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1033,6 +1662,7 @@ export function HomeContent() {
   const composerContainerRef = useRef<HTMLDivElement | null>(null);
   const messageScrollRef = useRef<HTMLDivElement | null>(null);
   const messageBottomRef = useRef<HTMLDivElement | null>(null);
+  const scrollRafRef = useRef<number | null>(null);
   const treeNodeRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -1082,11 +1712,24 @@ export function HomeContent() {
   const fileTreeFolderSearchInputRef = useRef<HTMLInputElement | null>(null);
   const [creatingDoc, setCreatingDoc] = useState(false);
   const [deletingDoc, setDeletingDoc] = useState(false);
+  const [draggingTreeNodePath, setDraggingTreeNodePath] = useState<string | null>(null);
+  const [draggingTreeNodeId, setDraggingTreeNodeId] = useState<string | null>(null);
+  const [draggingTreeNodeName, setDraggingTreeNodeName] = useState<string | null>(null);
+  const [dragOverFolderPath, setDragOverFolderPath] = useState<string | null>(null);
+  const [treeDropIndicator, setTreeDropIndicator] = useState<{ parentPath: string; index: number } | null>(null);
+  const [treeContextMenu, setTreeContextMenu] = useState<TreeContextMenuState | null>(null);
+  const [treeContextMenuStyle, setTreeContextMenuStyle] = useState<{ left: number; top: number } | null>(null);
+  const [movingTreeNode, setMovingTreeNode] = useState(false);
+  const treeContextMenuRef = useRef<HTMLDivElement | null>(null);
 
   const [selectedFolderId, setSelectedFolderId] = useState<string>('');
   const [knowledgeFolders, setKnowledgeFolders] = useState<KnowledgeFolder[]>([]);
   const [knowledgeDocs, setKnowledgeDocs] = useState<KnowledgeDoc[]>([]);
+  const [organizingWiki, setOrganizingWiki] = useState(false);
+  const [normalizingStructure, setNormalizingStructure] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const [openTreePaths, setOpenTreePaths] = useState<Record<string, boolean>>({});
+  const [treeOrderByParent, setTreeOrderByParent] = useState<Record<string, string[]>>({});
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [selectedDocContent, setSelectedDocContent] = useState<string>('');
   const [docDraftContent, setDocDraftContent] = useState('');
@@ -1183,6 +1826,18 @@ export function HomeContent() {
         }
       }
 
+      if (parsed.orderByParent && typeof parsed.orderByParent === 'object') {
+        const nextOrder: Record<string, string[]> = {};
+        for (const [parentPath, rawIds] of Object.entries(parsed.orderByParent)) {
+          if (typeof parentPath !== 'string' || !Array.isArray(rawIds)) continue;
+          const ids = rawIds.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+          nextOrder[parentPath] = dedupeIds(ids);
+        }
+        setTreeOrderByParent(nextOrder);
+      } else {
+        setTreeOrderByParent({});
+      }
+
       if (nextFolderId) {
         setSelectedFolderId(nextFolderId);
         hasRestoredFileTreeSelectionRef.current = true;
@@ -1249,9 +1904,10 @@ export function HomeContent() {
       folderId: selectedFolderId || null,
       selectedDocId: selectedDocId || null,
       openTreePaths,
+      orderByParent: treeOrderByParent,
     };
     window.localStorage.setItem(storageKey, JSON.stringify(payload));
-  }, [fileTreeSelectionReady, openTreePaths, selectedDocId, selectedFolderId, tenantSlug]);
+  }, [fileTreeSelectionReady, openTreePaths, selectedDocId, selectedFolderId, tenantSlug, treeOrderByParent]);
 
   useEffect(() => {
     if (!modelSelectionReady || typeof window === 'undefined') return;
@@ -1539,6 +2195,10 @@ export function HomeContent() {
       const parts = virtualPath.split('/').filter(Boolean);
       const fileName = parts.pop() || doc.title || `${doc.id}.md`;
       const parentPath = parts.join('/');
+      if (fileName.toLowerCase() === FOLDER_MARKER_FILE_NAME.toLowerCase()) {
+        if (parentPath) ensureFolder(parentPath);
+        continue;
+      }
       const fileNode: FileTreeNode = {
         id: `file:${doc.id}`,
         name: fileName,
@@ -1555,8 +2215,8 @@ export function HomeContent() {
       }
     }
 
-    return sortTreeNodes(roots);
-  }, [knowledgeDocs]);
+    return sortTreeNodes(roots, treeOrderByParent);
+  }, [knowledgeDocs, treeOrderByParent]);
 
   const selectedDocPath = useMemo(() => {
     if (!selectedDocId) return null;
@@ -1565,20 +2225,10 @@ export function HomeContent() {
     return getDocVirtualPath(match);
   }, [knowledgeDocs, selectedDocId]);
 
-  const docByVirtualPath = useMemo(() => {
-    const map = new Map<string, KnowledgeDoc>();
-    for (const doc of knowledgeDocs) {
-      const virtualPath = normalizeDocPath(getDocVirtualPath(doc));
-      if (!virtualPath) continue;
-      for (const candidate of buildReferencePathCandidates(virtualPath)) {
-        const key = candidate.toLowerCase();
-        if (!map.has(key)) {
-          map.set(key, doc);
-        }
-      }
-    }
-    return map;
-  }, [knowledgeDocs]);
+  const { byVirtualPath: docByVirtualPath, byBaseName: docsByBaseName } = useMemo(
+    () => buildDocLookupMaps(knowledgeDocs),
+    [knowledgeDocs],
+  );
 
   const filteredTreeNodes = useMemo(() => {
     const keyword = docSearch.trim().toLowerCase();
@@ -1598,6 +2248,24 @@ export function HomeContent() {
       .map((node) => filterNode(node))
       .filter((node): node is FileTreeNode => Boolean(node));
   }, [docSearch, treeNodes]);
+
+  const pendingRawDocCount = useMemo(() => {
+    let count = 0;
+    for (const doc of knowledgeDocs) {
+      const path = normalizeDocPath(getDocVirtualPath(doc)).toLowerCase();
+      if (!path.startsWith('01-素材库/raw/')) continue;
+      const metadata = doc.metadata || {};
+      const contentFactory =
+        metadata.contentFactory && typeof metadata.contentFactory === 'object' && !Array.isArray(metadata.contentFactory)
+          ? (metadata.contentFactory as Record<string, unknown>)
+          : {};
+      const wikiStatus = typeof contentFactory.wikiStatus === 'string'
+        ? contentFactory.wikiStatus.trim().toLowerCase()
+        : '';
+      if (wikiStatus !== 'done') count += 1;
+    }
+    return count;
+  }, [knowledgeDocs]);
 
   const loadDocContent = useCallback(async (fileId: string) => {
     if (!authToken) return;
@@ -1737,7 +2405,8 @@ export function HomeContent() {
       const root = mainContentRef.current;
       if (!root) return;
       const rect = root.getBoundingClientRect();
-      const left = Math.max(conversationEdgeGutter, Math.round(rect.left));
+      const leftOffset = window.innerWidth >= 768 ? CONVERSATION_SIDEBAR_GAP : 0;
+      const left = Math.max(conversationEdgeGutter, Math.round(rect.left) + leftOffset);
       const right = Math.max(
         0,
         Math.round(window.innerWidth - rect.right),
@@ -1780,15 +2449,61 @@ export function HomeContent() {
     const node = treeNodeRefs.current[selectedDocId];
     if (!node) return;
     node.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [openTreePaths, selectedDocId, showFileTree]);
+  }, [selectedDocId, showFileTree]);
+
+  useEffect(() => {
+    if (!treeContextMenu) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (treeContextMenuRef.current?.contains(target)) return;
+      setTreeContextMenu(null);
+    };
+
+    const handleEsc = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setTreeContextMenu(null);
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleEsc);
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleEsc);
+    };
+  }, [treeContextMenu]);
+
+  useLayoutEffect(() => {
+    if (!treeContextMenu) {
+      setTreeContextMenuStyle(null);
+      return;
+    }
+    const menu = treeContextMenuRef.current;
+    if (!menu || typeof window === 'undefined') return;
+
+    const margin = 8;
+    const rect = menu.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const left = Math.min(
+      Math.max(margin, treeContextMenu.anchorX),
+      Math.max(margin, viewportWidth - rect.width - margin),
+    );
+    const top = Math.min(
+      Math.max(margin, treeContextMenu.anchorY),
+      Math.max(margin, viewportHeight - rect.height - margin),
+    );
+    setTreeContextMenuStyle((prev) => (prev?.left === left && prev?.top === top ? prev : { left, top }));
+  }, [treeContextMenu]);
 
   const openReferencedDoc = useCallback(
-    (referencePath: string) => {
-      const candidates = buildReferencePathCandidates(referencePath);
-      const targetDoc =
-        candidates
-          .map((candidate) => docByVirtualPath.get(candidate.toLowerCase()))
-          .find(Boolean) || null;
+    (referencePath: string, referenceSourcePath?: string) => {
+      const targetDoc = findDocByReferencePath({
+        referencePath,
+        referenceSourcePath,
+        byVirtualPath: docByVirtualPath,
+        byBaseName: docsByBaseName,
+      });
 
       if (!targetDoc) {
         if (referencePath.trim()) {
@@ -1819,7 +2534,7 @@ export function HomeContent() {
       setSelectedDocId(targetDoc.id);
       setShowFileTreeFolderPopover(false);
     },
-    [docByVirtualPath],
+    [docByVirtualPath, docsByBaseName],
   );
 
   const loadConversationMessages = useCallback(async (id: string) => {
@@ -1899,6 +2614,22 @@ export function HomeContent() {
         ...prev,
         [messageId]: results,
       }));
+
+      const touchedFileIds = results
+        .filter((item) => item.ok && (item.type === 'create' || item.type === 'update') && typeof item.fileId === 'string')
+        .map((item) => item.fileId as string);
+      const latestCreatedFileId = [...results]
+        .reverse()
+        .find((item) => item.ok && item.type === 'create' && typeof item.fileId === 'string')?.fileId;
+
+      await fetchKnowledgeDocs(selectedFolderId);
+
+      if (selectedDocId && touchedFileIds.includes(selectedDocId)) {
+        await loadDocContent(selectedDocId);
+      } else if (!selectedDocId && latestCreatedFileId) {
+        setSelectedDocId(latestCreatedFileId);
+        setShowDocPreview(true);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : '执行失败';
       setActionResultsByMessageId((prev) => ({
@@ -1908,7 +2639,7 @@ export function HomeContent() {
     } finally {
       setExecutingMessageId(null);
     }
-  }, [authToken, selectedFolderId]);
+  }, [authToken, fetchKnowledgeDocs, loadDocContent, selectedDocId, selectedFolderId]);
 
   useEffect(() => {
     if (!selectedFolderId || streamingActions.length > 0) return;
@@ -1953,17 +2684,41 @@ export function HomeContent() {
     handleFolderChange(nextFolderId);
     setShowFileTreeFolderPopover(false);
     setFileTreeFolderSearch('');
+    setSelectedDocId(null);
+    setSelectedDocContent('');
+    setDocDraftContent('');
   }, [handleFolderChange]);
 
   const hasDocDraftChanges = selectedDocId
     ? docDraftContent.replace(/\r\n/g, '\n') !== selectedDocContent.replace(/\r\n/g, '\n')
     : false;
   const currentDocMarkdown = docViewMode === 'edit' ? docDraftContent : selectedDocContent;
+  const previewDocMarkdown = useMemo(() => normalizeDocForPreview(selectedDocContent), [selectedDocContent]);
+  const contentFactoryDraft = useMemo(
+    () => parseContentFactoryPackage(currentDocMarkdown),
+    [currentDocMarkdown],
+  );
+  const xhsLayoutReadyMarkdown = useMemo(
+    () => {
+      return (contentFactoryDraft.imageCopy || "").trim();
+    },
+    [contentFactoryDraft.imageCopy],
+  );
+  const wechatLayoutReadyMarkdown = useMemo(
+    () => {
+      const wechatBody = (contentFactoryDraft.body || "").trim();
+      if (wechatBody) return wechatBody;
+      return stripKnowledgeMetaForGeneration(currentDocMarkdown);
+    },
+    [contentFactoryDraft.body, currentDocMarkdown],
+  );
+  const reusableDocText = useMemo(() => extractReusableDocText(currentDocMarkdown), [currentDocMarkdown]);
 
   useEffect(() => {
     if (selectedDocId) return;
     setShowWechatLayoutModal(false);
     setShowXhsLayoutModal(false);
+    setShowContentOutputPopover(false);
   }, [selectedDocId]);
 
   const saveDocContent = useCallback(async () => {
@@ -1991,12 +2746,90 @@ export function HomeContent() {
     }
   }, [authToken, docDraftContent, savingDocContent, selectedDocId]);
 
-  const createDocInCurrentFolder = useCallback(async () => {
+  const organizeWiki = useCallback(async () => {
+    if (!authToken || !selectedFolderId || organizingWiki) return;
+    setOrganizingWiki(true);
+    try {
+      const res = await fetch(`/api/knowledge/folders/${selectedFolderId}/wiki-organize`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ limit: 8 }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as {
+        data?: WikiOrganizeResult;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(payload.error || '梳理失败');
+      const data = payload.data;
+      const processed = data?.processed ?? 0;
+      const succeeded = data?.succeeded ?? 0;
+      const failed = data?.failed ?? 0;
+      const failedItems = (data?.items || []).filter((item) => !item.ok).slice(0, 3);
+      if (processed === 0) {
+        toast.success('没有待梳理的原始文章');
+      } else if (failed > 0) {
+        const firstError = failedItems[0];
+        const detail = firstError
+          ? `；示例：${firstError.rawPath}${firstError.error ? `（${firstError.error}）` : ''}`
+          : '';
+        toast.error(`梳理完成：成功 ${succeeded}，失败 ${failed}${detail}`);
+      } else {
+        toast.success(`已梳理 ${succeeded} 篇原始文章`);
+      }
+      await fetchKnowledgeDocs(selectedFolderId);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '梳理失败');
+    } finally {
+      setOrganizingWiki(false);
+    }
+  }, [authToken, fetchKnowledgeDocs, organizingWiki, selectedFolderId]);
+
+  const normalizeStructure = useCallback(async () => {
+    if (!authToken || !selectedFolderId || normalizingStructure) return;
+    setConfirmDialog({
+      title: '整理默认内容工厂结构',
+      message: '将当前仓库整理为默认内容工厂结构，并清理非必要文件，是否继续？',
+      confirmText: '开始整理',
+      isDanger: false,
+      onConfirm: async () => {
+        setNormalizingStructure(true);
+        try {
+          const res = await fetch(`/api/knowledge/folders/${selectedFolderId}/normalize-structure`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          const payload = (await res.json().catch(() => ({}))) as {
+            data?: NormalizeStructureResult;
+            error?: string;
+          };
+          if (!res.ok) throw new Error(payload.error || '结构整理失败');
+          const data = payload.data;
+          const moved = data?.moved ?? 0;
+          const deleted = data?.deleted ?? 0;
+          const created = data?.created ?? 0;
+          const extra = data?.wrapperPrefixRemoved ? `，已去除外层目录 ${data.wrapperPrefixRemoved}` : '';
+          toast.success(`结构整理完成：迁移 ${moved}、删除 ${deleted}、创建 ${created}${extra}`);
+          await fetchKnowledgeDocs(selectedFolderId);
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : '结构整理失败');
+        } finally {
+          setNormalizingStructure(false);
+        }
+      },
+    });
+  }, [authToken, fetchKnowledgeDocs, normalizingStructure, selectedFolderId]);
+
+  const createDocAtPath = useCallback(async (path: string, options?: { selectCreated?: boolean }) => {
     if (!authToken || !selectedFolderId || creatingDoc) return;
-    const raw = window.prompt('请输入新文档路径（例如：notes/weekly-summary.md）');
-    if (!raw) return;
-    const path = raw.trim();
-    if (!path) return;
+    const normalized = normalizeDocPath(path);
+    if (!normalized) return;
+    const selectCreated = options?.selectCreated ?? true;
 
     setCreatingDoc(true);
     try {
@@ -2007,7 +2840,7 @@ export function HomeContent() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          path,
+          path: normalized,
           content: '',
         }),
       });
@@ -2019,26 +2852,76 @@ export function HomeContent() {
 
       await fetchKnowledgeDocs(selectedFolderId);
       const nextId = payload.data?.id;
-      if (nextId) {
+      if (nextId && selectCreated) {
         setSelectedDocId(nextId);
         setShowDocPreview(true);
       }
-      toast.success('文档已创建');
+      return nextId || null;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '创建文档失败');
+      return null;
     } finally {
       setCreatingDoc(false);
     }
   }, [authToken, creatingDoc, fetchKnowledgeDocs, selectedFolderId]);
 
-  const deleteSelectedDoc = useCallback(async () => {
-    if (!authToken || !selectedDocId || deletingDoc) return;
-    const confirmed = window.confirm('确认删除当前文档？该操作不可撤销。');
-    if (!confirmed) return;
+  const createDocInFolder = useCallback(async (folderPath: string) => {
+    const basePath = normalizeDocPath(folderPath);
+    let name = 'new-file.md';
+    let index = 1;
+    const occupied = new Set(knowledgeDocs.map((doc) => normalizeDocPath(getDocVirtualPath(doc)).toLowerCase()));
+    let candidate = basePath ? `${basePath}/${name}` : name;
+    while (occupied.has(candidate.toLowerCase())) {
+      index += 1;
+      name = `new-file-${index}.md`;
+      candidate = basePath ? `${basePath}/${name}` : name;
+    }
+    const createdId = await createDocAtPath(candidate);
+    if (createdId) toast.success('文档已创建');
+  }, [createDocAtPath, knowledgeDocs]);
 
+  const createDocInCurrentFolder = useCallback(async () => {
+    await createDocInFolder('');
+  }, [createDocInFolder]);
+
+  const createFolderAtPath = useCallback(async (folderPath: string) => {
+    const normalizedFolder = normalizeDocPath(folderPath);
+    if (!normalizedFolder) return;
+    const markerPath = `${normalizedFolder}/${FOLDER_MARKER_FILE_NAME}`;
+    const createdId = await createDocAtPath(markerPath, { selectCreated: false });
+    if (createdId) {
+      setOpenTreePaths((prev) => ({ ...prev, [normalizedFolder]: true }));
+      toast.success('文件夹已创建');
+    }
+  }, [createDocAtPath]);
+
+  const createFolderInFolder = useCallback(async (parentPath: string) => {
+    const basePath = normalizeDocPath(parentPath);
+    let name = 'new-folder';
+    let index = 1;
+    const occupied = new Set<string>();
+    for (const doc of knowledgeDocs) {
+      const docPath = normalizeDocPath(getDocVirtualPath(doc));
+      const parts = docPath.split('/').filter(Boolean);
+      parts.pop();
+      for (let i = 1; i <= parts.length; i += 1) {
+        occupied.add(parts.slice(0, i).join('/').toLowerCase());
+      }
+    }
+    let candidateFolder = basePath ? `${basePath}/${name}` : name;
+    while (occupied.has(candidateFolder.toLowerCase())) {
+      index += 1;
+      name = `new-folder-${index}`;
+      candidateFolder = basePath ? `${basePath}/${name}` : name;
+    }
+    await createFolderAtPath(candidateFolder);
+  }, [createFolderAtPath, knowledgeDocs]);
+
+  const deleteDocById = useCallback(async (fileId: string, successMessage: string) => {
+    if (!authToken || !fileId || deletingDoc) return false;
     setDeletingDoc(true);
     try {
-      const res = await fetch(`/api/knowledge/files/${selectedDocId}`, {
+      const res = await fetch(`/api/knowledge/files/${fileId}`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${authToken}`,
@@ -2047,226 +2930,215 @@ export function HomeContent() {
       const payload = await res.json().catch(() => ({})) as { error?: string };
       if (!res.ok) throw new Error(payload.error || '删除文档失败');
 
-      const deletedId = selectedDocId;
       await fetchKnowledgeDocs(selectedFolderId);
-      setSelectedDocId((prev) => (prev === deletedId ? null : prev));
-      if (selectedDocId === deletedId) {
-        setSelectedDocContent('');
-        setDocDraftContent('');
-      }
-      toast.success('文档已删除');
+      setSelectedDocId((prev) => (prev === fileId ? null : prev));
+      setSelectedDocContent((prev) => (selectedDocId === fileId ? '' : prev));
+      setDocDraftContent((prev) => (selectedDocId === fileId ? '' : prev));
+      toast.success(successMessage);
+      return true;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '删除文档失败');
+      return false;
     } finally {
       setDeletingDoc(false);
     }
   }, [authToken, deletingDoc, fetchKnowledgeDocs, selectedDocId, selectedFolderId]);
 
-  const renderMarkdownPreview = useCallback((content: string): ReactNode[] => {
-    const normalized = content.replace(/\r\n/g, '\n');
-    const lines = normalized.split('\n');
-    const nodes: ReactNode[] = [];
-    let i = 0;
-    let key = 0;
+  const deleteFileById = useCallback(async (fileId: string) => {
+    setConfirmDialog({
+      title: '删除文件',
+      message: '确认删除当前文件？该操作不可撤销。',
+      confirmText: '删除',
+      isDanger: true,
+      onConfirm: async () => {
+        await deleteDocById(fileId, '文件已删除');
+      },
+    });
+  }, [deleteDocById]);
 
-    const renderInlineMarkdown = (text: string, keyPrefix: string): ReactNode[] => {
-      const tokens = parseInlineMarkdown(text);
-      return tokens.map((token, idx) => {
-        const nodeKey = `${keyPrefix}-${idx}`;
-        if (token.type === 'strong') return <strong key={nodeKey}>{token.value}</strong>;
-        if (token.type === 'em') return <em key={nodeKey}>{token.value}</em>;
-        if (token.type === 'code') {
-          return (
-            <code
-              key={nodeKey}
-              className="rounded bg-gray-100 px-1 py-0.5 text-[0.92em] text-gray-800 dark:bg-gray-800 dark:text-gray-100"
-            >
-              {token.value}
-            </code>
-          );
+  const deleteFolderByPath = useCallback(async (folderPath: string) => {
+    const normalized = normalizeDocPath(folderPath);
+    if (!normalized) return;
+    const targetPrefix = `${normalized}/`;
+    const targets = knowledgeDocs.filter((doc) => normalizeDocPath(getDocVirtualPath(doc)).startsWith(targetPrefix));
+    if (targets.length === 0) return;
+    setConfirmDialog({
+      title: '删除文件夹',
+      message: `确认删除文件夹“${normalized}”及其全部内容？该操作不可撤销。`,
+      confirmText: '删除',
+      isDanger: true,
+      onConfirm: async () => {
+        setDeletingDoc(false);
+        setDeletingDoc(true);
+        for (const doc of targets) {
+          try {
+            const res = await fetch(`/api/knowledge/files/${doc.id}`, {
+              method: 'DELETE',
+              headers: {
+                Authorization: `Bearer ${authToken}`,
+              },
+            });
+            const payload = await res.json().catch(() => ({})) as { error?: string };
+            if (!res.ok) throw new Error(payload.error || '删除文档失败');
+          } catch (error) {
+            setDeletingDoc(false);
+            toast.error(error instanceof Error ? error.message : '删除文档失败');
+            return;
+          }
         }
-        if (token.type === 'link') {
-          return (
-            <a
-              key={nodeKey}
-              href={token.href}
-              target="_blank"
-              rel="noreferrer"
-              className="text-emerald-600 underline decoration-emerald-300 underline-offset-2 hover:text-emerald-700 dark:text-emerald-400 dark:decoration-emerald-500 dark:hover:text-emerald-300"
-            >
-              {token.value}
-            </a>
-          );
+        const deletedIds = new Set(targets.map((doc) => doc.id));
+        await fetchKnowledgeDocs(selectedFolderId);
+        if (selectedDocId && deletedIds.has(selectedDocId)) {
+          setSelectedDocId(null);
+          setSelectedDocContent('');
+          setDocDraftContent('');
         }
-        return <span key={nodeKey}>{token.value}</span>;
+        setDeletingDoc(false);
+        toast.success('文件夹已删除');
+      },
+    });
+  }, [authToken, fetchKnowledgeDocs, knowledgeDocs, selectedDocId, selectedFolderId]);
+
+  const moveFile = useCallback(async (fileId: string, nextPath: string) => {
+    if (!authToken || !fileId || !selectedFolderId || movingTreeNode) return false;
+    const normalizedPath = normalizeDocPath(nextPath);
+    if (!normalizedPath) return false;
+    const hasConflict = knowledgeDocs.some((doc) => doc.id !== fileId && normalizeDocPath(getDocVirtualPath(doc)).toLowerCase() === normalizedPath.toLowerCase());
+    if (hasConflict) {
+      toast.error('目标位置已有同名文件');
+      return false;
+    }
+    setMovingTreeNode(true);
+    try {
+      const res = await fetch(`/api/knowledge/files/${fileId}`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ path: normalizedPath }),
       });
-    };
-
-    const pushParagraph = (text: string) => {
-      if (!text.trim()) return;
-      const paragraphLines = text.split('\n');
-      nodes.push(
-        <p key={`p-${key++}`} className="mb-4 whitespace-pre-wrap text-[15px] leading-7 text-gray-800 dark:text-gray-100">
-          {paragraphLines.map((line, idx) => (
-            <span key={`pl-${idx}`}>
-              {renderInlineMarkdown(line, `p-${key}-l-${idx}`)}
-              {idx < paragraphLines.length - 1 ? '\n' : null}
-            </span>
-          ))}
-        </p>,
-      );
-    };
-
-    while (i < lines.length) {
-      const line = lines[i];
-      const trimmed = line.trim();
-
-      if (!trimmed) {
-        i += 1;
-        continue;
-      }
-
-      const headingMatch = /^#{1,6}\s+(.+)$/.exec(trimmed);
-      if (headingMatch) {
-        const level = Math.min(6, Math.max(1, trimmed.match(/^#+/)?.[0].length ?? 1));
-        const text = headingMatch[1];
-        const headingClass =
-          level === 1
-            ? 'mb-6 mt-2 text-4xl font-bold leading-tight text-gray-900 dark:text-white'
-            : level === 2
-              ? 'mb-4 mt-8 text-3xl font-semibold leading-tight text-gray-900 dark:text-white'
-              : level === 3
-                ? 'mb-3 mt-6 text-2xl font-semibold leading-snug text-gray-900 dark:text-white'
-                : 'mb-3 mt-5 text-xl font-semibold leading-snug text-gray-900 dark:text-white';
-        nodes.push(
-          <div key={`h-${key++}`} className={headingClass}>
-            {renderInlineMarkdown(text, `h-${key}`)}
-          </div>,
-        );
-        i += 1;
-        continue;
-      }
-
-      const secondaryHeadingMatch = /^\*\*([^*\n]+)\*\*(?:\s*([：:])\s*(.+))?$/.exec(trimmed);
-      if (secondaryHeadingMatch && (secondaryHeadingMatch[2] || !secondaryHeadingMatch[3])) {
-        const label = secondaryHeadingMatch[1].trim();
-        const separator = secondaryHeadingMatch[2] ?? '';
-        const tail = secondaryHeadingMatch[3]?.trim();
-        if (tail) {
-          nodes.push(
-            <p key={`sh-${key++}`} className="mb-4 mt-5 text-[18px] leading-8 text-gray-900 dark:text-gray-100">
-              <strong>{label + separator}</strong>
-              {' '}
-              {renderInlineMarkdown(tail, `sh-${key}-tail`)}
-            </p>,
-          );
-        } else {
-          nodes.push(
-            <div key={`sh-${key++}`} className="mb-3 mt-6 text-2xl font-semibold leading-snug text-gray-900 dark:text-white">
-              {label}
-            </div>,
-          );
-        }
-        i += 1;
-        continue;
-      }
-
-      if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
-        nodes.push(<hr key={`hr-${key++}`} className="my-6 border-gray-200 dark:border-gray-700" />);
-        i += 1;
-        continue;
-      }
-
-      if (trimmed.startsWith('>')) {
-        const quoteLines: string[] = [];
-        while (i < lines.length) {
-          const quoteLine = lines[i].trim();
-          if (!quoteLine.startsWith('>')) break;
-          quoteLines.push(quoteLine.replace(/^>\s?/, ''));
-          i += 1;
-        }
-        nodes.push(
-          <blockquote
-            key={`q-${key++}`}
-            className="mb-5 rounded-r-xl border-l-4 border-gray-300 bg-gray-50 px-4 py-3 text-[15px] leading-7 text-gray-700 dark:border-gray-600 dark:bg-gray-800/70 dark:text-gray-200"
-          >
-            {quoteLines.map((quoteLine, idx) => (
-              <span key={`q-line-${idx}`}>
-                {renderInlineMarkdown(quoteLine, `q-${key}-l-${idx}`)}
-                {idx < quoteLines.length - 1 ? '\n' : null}
-              </span>
-            ))}
-          </blockquote>,
-        );
-        continue;
-      }
-
-      if (/^(\*|-)\s+/.test(trimmed)) {
-        const items: string[] = [];
-        while (i < lines.length) {
-          const itemLine = lines[i].trim();
-          const itemMatch = /^(\*|-)\s+(.+)$/.exec(itemLine);
-          if (!itemMatch) break;
-          items.push(itemMatch[2]);
-          i += 1;
-        }
-        nodes.push(
-          <ul key={`ul-${key++}`} className="mb-5 list-disc space-y-1 pl-6 text-[15px] leading-7 text-gray-800 dark:text-gray-100">
-            {items.map((item, idx) => (
-              <li key={`uli-${idx}`}>{renderInlineMarkdown(item, `ul-${key}-i-${idx}`)}</li>
-            ))}
-          </ul>,
-        );
-        continue;
-      }
-
-      if (/^\d+\.\s+/.test(trimmed)) {
-        const items: string[] = [];
-        while (i < lines.length) {
-          const itemLine = lines[i].trim();
-          const itemMatch = /^\d+\.\s+(.+)$/.exec(itemLine);
-          if (!itemMatch) break;
-          items.push(itemMatch[1]);
-          i += 1;
-        }
-        nodes.push(
-          <ol key={`ol-${key++}`} className="mb-5 list-decimal space-y-1 pl-6 text-[15px] leading-7 text-gray-800 dark:text-gray-100">
-            {items.map((item, idx) => (
-              <li key={`oli-${idx}`}>{renderInlineMarkdown(item, `ol-${key}-i-${idx}`)}</li>
-            ))}
-          </ol>,
-        );
-        continue;
-      }
-
-      const paragraphLines: string[] = [];
-      while (i < lines.length) {
-        const next = lines[i];
-        const nextTrimmed = next.trim();
-        if (!nextTrimmed) break;
-        if (
-          /^#{1,6}\s+/.test(nextTrimmed) ||
-          /^(-{3,}|\*{3,}|_{3,})$/.test(nextTrimmed) ||
-          nextTrimmed.startsWith('>') ||
-          /^(\*|-)\s+/.test(nextTrimmed) ||
-          /^\d+\.\s+/.test(nextTrimmed)
-        ) {
-          break;
-        }
-        paragraphLines.push(next);
-        i += 1;
-      }
-      pushParagraph(paragraphLines.join('\n'));
+      const payload = await res.json().catch(() => ({})) as { error?: string };
+      if (!res.ok) throw new Error(payload.error || '移动文件失败');
+      await fetchKnowledgeDocs(selectedFolderId);
+      const parentPaths = collectParentPaths(normalizedPath);
+      setOpenTreePaths((prev) => {
+        const next = { ...prev };
+        for (const parentPath of parentPaths) next[parentPath] = true;
+        return next;
+      });
+      toast.success('已移动');
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '移动文件失败');
+      return false;
+    } finally {
+      setMovingTreeNode(false);
     }
+  }, [authToken, fetchKnowledgeDocs, knowledgeDocs, movingTreeNode, selectedFolderId]);
 
-    if (nodes.length === 0) {
-      return [
-        <p key="empty" className="rounded-xl bg-gray-50 px-3 py-8 text-center text-xs text-gray-500 dark:bg-gray-800/70 dark:text-gray-400">
-          文档暂无正文内容
-        </p>,
+  const moveFolder = useCallback(async (sourceFolderPath: string, targetFolderPath: string) => {
+    if (!authToken || !selectedFolderId || movingTreeNode) return;
+    const source = normalizeDocPath(sourceFolderPath);
+    const target = normalizeDocPath(targetFolderPath);
+    if (!source || target === source || target.startsWith(`${source}/`)) return;
+    const sourcePrefix = `${source}/`;
+    const toMove = knowledgeDocs.filter((doc) => normalizeDocPath(getDocVirtualPath(doc)).startsWith(sourcePrefix));
+    if (toMove.length === 0) return;
+    setMovingTreeNode(true);
+    try {
+      for (const doc of toMove) {
+        const currentPath = normalizeDocPath(getDocVirtualPath(doc));
+        const suffix = currentPath.slice(sourcePrefix.length);
+        const nextPath = joinPath(target, suffix);
+        const hasConflict = knowledgeDocs.some((item) => item.id !== doc.id && normalizeDocPath(getDocVirtualPath(item)).toLowerCase() === nextPath.toLowerCase());
+        if (hasConflict) {
+          throw new Error(`目标位置已有同名文件：${nextPath}`);
+        }
+      }
+      for (const doc of toMove) {
+        const currentPath = normalizeDocPath(getDocVirtualPath(doc));
+        const suffix = currentPath.slice(sourcePrefix.length);
+        const nextPath = joinPath(target, suffix);
+        const res = await fetch(`/api/knowledge/files/${doc.id}`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ path: nextPath }),
+        });
+        const payload = await res.json().catch(() => ({})) as { error?: string };
+        if (!res.ok) throw new Error(payload.error || '移动文件夹失败');
+      }
+      await fetchKnowledgeDocs(selectedFolderId);
+      setOpenTreePaths((prev) => ({ ...prev, [target]: true }));
+      toast.success('文件夹已移动');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '移动文件夹失败');
+    } finally {
+      setMovingTreeNode(false);
+    }
+  }, [authToken, fetchKnowledgeDocs, knowledgeDocs, movingTreeNode, selectedFolderId]);
+
+  const reorderNodesInSameParent = useCallback((parentPath: string, draggedId: string, targetIndex: number) => {
+    if (!draggedId) return;
+    setTreeOrderByParent((prev) => {
+      const current = prev[parentPath] || [];
+      const withoutDragged = current.filter((id) => id !== draggedId);
+      const clampedIndex = Math.max(0, Math.min(targetIndex, withoutDragged.length));
+      const next = [
+        ...withoutDragged.slice(0, clampedIndex),
+        draggedId,
+        ...withoutDragged.slice(clampedIndex),
       ];
-    }
-    return nodes;
+      return {
+        ...prev,
+        [parentPath]: dedupeIds(next),
+      };
+    });
+  }, []);
+
+  const openTreeContextMenu = useCallback((event: ReactMouseEvent, input: Omit<TreeContextMenuState, 'x' | 'y' | 'anchorX' | 'anchorY'>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setTreeContextMenu({
+      ...input,
+      x: event.clientX,
+      y: event.clientY,
+      anchorX: event.clientX,
+      anchorY: event.clientY,
+    });
+  }, []);
+
+  const renameFileById = useCallback(async (fileId: string, currentPath: string) => {
+    const currentName = getPathBaseNameFromDocPath(currentPath);
+    const raw = window.prompt('请输入新的文件名（可含 .md）', currentName);
+    if (!raw) return;
+    const nextNameRaw = raw.trim();
+    if (!nextNameRaw || nextNameRaw === currentName) return;
+    const nextName = /\.(md|markdown|txt)$/i.test(nextNameRaw) ? nextNameRaw : `${nextNameRaw}.md`;
+    const parentPath = getParentPath(currentPath);
+    const nextPath = joinPath(parentPath, nextName);
+    await moveFile(fileId, nextPath);
+  }, [moveFile]);
+
+  const renameFolderByPath = useCallback(async (folderPath: string) => {
+    const source = normalizeDocPath(folderPath);
+    if (!source) return;
+    const currentName = getPathBaseNameFromDocPath(source);
+    const raw = window.prompt('请输入新的文件夹名称', currentName);
+    if (!raw) return;
+    const nextName = raw.trim();
+    if (!nextName || nextName === currentName) return;
+    const parentPath = getParentPath(source);
+    const targetPath = joinPath(parentPath, nextName);
+    if (targetPath === source) return;
+    await moveFolder(source, targetPath);
+  }, [moveFolder]);
+
+  const renderMarkdownPreview = useCallback((content: string): ReactNode[] => {
+    return renderMarkdownContent(content, { context: 'doc', showEmptyState: true });
   }, []);
 
   useEffect(() => {
@@ -2327,6 +3199,29 @@ export function HomeContent() {
       window.removeEventListener('keydown', handleEsc);
     };
   }, [showSkillsPopover]);
+
+  useEffect(() => {
+    if (!showContentOutputPopover) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (contentOutputPopoverRef.current?.contains(target)) return;
+      if (contentOutputButtonRef.current?.contains(target)) return;
+      setShowContentOutputPopover(false);
+    };
+
+    const handleEsc = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setShowContentOutputPopover(false);
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleEsc);
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleEsc);
+    };
+  }, [showContentOutputPopover]);
 
   useEffect(() => {
     if (!showSkillsPopover) return;
@@ -2529,6 +3424,34 @@ export function HomeContent() {
     setStreamingProcess([]);
     setAssistantInput('');
 
+    let streamRafId: number | null = null;
+    let pendingReplyDelta = '';
+    const flushPendingReply = () => {
+      if (!pendingReplyDelta) return;
+      const chunk = pendingReplyDelta;
+      pendingReplyDelta = '';
+      setStreamingReply((prev) => prev + chunk);
+    };
+    const scheduleReplyFlush = () => {
+      if (!pendingReplyDelta || streamRafId !== null) return;
+      if (typeof window === 'undefined') {
+        flushPendingReply();
+        return;
+      }
+      streamRafId = window.requestAnimationFrame(() => {
+        streamRafId = null;
+        flushPendingReply();
+      });
+    };
+    const resetReplyStream = () => {
+      pendingReplyDelta = '';
+      if (streamRafId !== null && typeof window !== 'undefined') {
+        window.cancelAnimationFrame(streamRafId);
+      }
+      streamRafId = null;
+      setStreamingReply('');
+    };
+
     try {
       const localNexApiKey =
         typeof window !== 'undefined' ? window.localStorage.getItem(NEXAPI_KEY_STORAGE_KEY)?.trim() : '';
@@ -2553,7 +3476,7 @@ export function HomeContent() {
               type: item.type,
               url: item.uploadedUrl,
             })),
-          fastMode: true,
+          fastMode: false,
           message: content,
           stream: true,
         }),
@@ -2592,11 +3515,13 @@ export function HomeContent() {
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
 
-        let boundary = buffer.indexOf('\n\n');
-        while (boundary >= 0) {
+        let boundaryMatch = buffer.match(/\r?\n\r?\n/);
+        while (boundaryMatch && typeof boundaryMatch.index === 'number') {
+          const boundary = boundaryMatch.index;
+          const boundaryLength = boundaryMatch[0].length;
           const block = buffer.slice(0, boundary).trim();
-          buffer = buffer.slice(boundary + 2);
-          boundary = buffer.indexOf('\n\n');
+          buffer = buffer.slice(boundary + boundaryLength);
+          boundaryMatch = buffer.match(/\r?\n\r?\n/);
           if (!block) continue;
 
           const eventLine = block.split('\n').find((line) => line.startsWith('event:'));
@@ -2608,12 +3533,20 @@ export function HomeContent() {
           const dataRaw = dataLines.join('\n');
           if (!dataRaw) continue;
 
-          const payload = JSON.parse(dataRaw) as Record<string, unknown>;
+          let payload: Record<string, unknown>;
+          try {
+            payload = JSON.parse(dataRaw) as Record<string, unknown>;
+          } catch {
+            continue;
+          }
           if (eventName === 'conversation') {
             const cid = typeof payload.conversationId === 'string' ? payload.conversationId : '';
             if (cid) {
               nextConversationId = cid;
             }
+          } else if (eventName === 'reply_reset') {
+            finalReply = '';
+            resetReplyStream();
           } else if (eventName === 'thinking') {
             const items = parseThinkingItems(payload.items);
             const merged = [...finalThinking];
@@ -2646,9 +3579,11 @@ export function HomeContent() {
             const delta = typeof payload.delta === 'string' ? payload.delta : '';
             if (delta) {
               finalReply += delta;
-              setStreamingReply((prev) => prev + delta);
+              pendingReplyDelta += delta;
+              scheduleReplyFlush();
             }
           } else if (eventName === 'final') {
+            flushPendingReply();
             const reply = typeof payload.reply === 'string' ? payload.reply : '';
             if (reply) {
               finalReply = reply;
@@ -2682,6 +3617,7 @@ export function HomeContent() {
           }
         }
       }
+      flushPendingReply();
 
       if (!nextConversationId) {
         throw new Error('会话创建失败，请稍后重试');
@@ -2726,6 +3662,9 @@ export function HomeContent() {
       setStreamingProcess([]);
       setStreamStartedAtMs(null);
     } finally {
+      if (streamRafId !== null && typeof window !== 'undefined') {
+        window.cancelAnimationFrame(streamRafId);
+      }
       setAssistantLoading(false);
     }
   }, [
@@ -2752,61 +3691,299 @@ export function HomeContent() {
     [submitAssistantChat],
   );
 
-  const renderTreeNodes = useCallback((nodes: FileTreeNode[], depth = 0): ReactNode[] => {
+  const renderTreeNodes = useCallback((nodes: FileTreeNode[], depth = 0, parentPath = ''): ReactNode[] => {
     return nodes.map((node) => {
+      const nodeIndex = nodes.findIndex((item) => item.id === node.id);
+      const isInsertLineAbove = treeDropIndicator?.parentPath === parentPath && treeDropIndicator.index === nodeIndex;
+      const isInsertLineBelow = treeDropIndicator?.parentPath === parentPath && treeDropIndicator.index === nodeIndex + 1;
       const opened = openTreePaths[node.path] ?? depth <= 1;
       if (node.type === 'folder') {
+        const isDropTarget = dragOverFolderPath === node.path;
         return (
           <div key={node.id}>
+            {isInsertLineAbove ? (
+              <div
+                className="my-0.5 h-0.5 rounded-full bg-emerald-500"
+                style={{ marginLeft: `${depth * 18 + 8}px` }}
+              />
+            ) : null}
             <button
               type="button"
+              draggable
+              onDragStart={(event) => {
+                const payload: TreeDragPayload = { nodeType: 'folder', path: node.path };
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData(TREE_DRAG_MIME, JSON.stringify(payload));
+                setDraggingTreeNodePath(node.path);
+                setDraggingTreeNodeId(node.id);
+                setDraggingTreeNodeName(node.name);
+              }}
+              onDragEnd={() => {
+                setDraggingTreeNodePath(null);
+                setDraggingTreeNodeId(null);
+                setDraggingTreeNodeName(null);
+                setDragOverFolderPath(null);
+                setTreeDropIndicator(null);
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const payload = parseTreeDragPayload(event.dataTransfer.getData(TREE_DRAG_MIME));
+                if (!payload) return;
+                if (payload.path === node.path) return;
+                if (payload.nodeType === 'folder' && node.path.startsWith(`${payload.path}/`)) return;
+                event.dataTransfer.dropEffect = 'move';
+                const rect = event.currentTarget.getBoundingClientRect();
+                const y = event.clientY - rect.top;
+                const edge = Math.min(10, rect.height * 0.3);
+                if (y <= edge || y >= rect.height - edge) {
+                  setDragOverFolderPath(null);
+                  setTreeDropIndicator({
+                    parentPath,
+                    index: y <= edge ? nodeIndex : nodeIndex + 1,
+                  });
+                  return;
+                }
+                setTreeDropIndicator(null);
+                setDragOverFolderPath(node.path);
+              }}
+              onDragLeave={() => {
+                setDragOverFolderPath((prev) => (prev === node.path ? null : prev));
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setDragOverFolderPath(null);
+                const dropIndicator = treeDropIndicator;
+                setTreeDropIndicator(null);
+                const payload = parseTreeDragPayload(event.dataTransfer.getData(TREE_DRAG_MIME));
+                if (!payload) return;
+                if (dropIndicator && draggingTreeNodeId && getParentPath(payload.path) === dropIndicator.parentPath) {
+                  reorderNodesInSameParent(dropIndicator.parentPath, draggingTreeNodeId, dropIndicator.index);
+                  return;
+                }
+                if (payload.nodeType === 'file' && payload.fileId) {
+                  const fileName = payload.path.split('/').filter(Boolean).pop() || 'new-file.md';
+                  const nextPath = joinPath(node.path, fileName);
+                  void moveFile(payload.fileId, nextPath);
+                  return;
+                }
+                if (payload.nodeType === 'folder') {
+                  void moveFolder(payload.path, node.path);
+                }
+              }}
+              onContextMenu={(event) => {
+                openTreeContextMenu(event, {
+                  nodeType: 'folder',
+                  path: node.path,
+                  folderPath: node.path,
+                });
+              }}
               onClick={() => {
                 setOpenTreePaths((prev) => ({ ...prev, [node.path]: !opened }));
               }}
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-gray-800 transition hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800/70"
+              className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-gray-800 transition hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800/70 ${
+                isDropTarget ? 'bg-emerald-100 ring-2 ring-emerald-400 dark:bg-emerald-500/20 dark:ring-emerald-400' : ''
+              } ${draggingTreeNodePath === node.path ? 'opacity-50' : ''}`}
               style={{ paddingLeft: `${depth * 18 + 8}px` }}
             >
               <ChevronRight className={`h-4 w-4 shrink-0 text-gray-500 transition ${opened ? 'rotate-90' : ''}`} />
               <Folder className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-300" />
               <span className="truncate">{node.name}</span>
+              {isDropTarget && draggingTreeNodeName ? (
+                <span className="ml-auto truncate text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                  移动到此文件夹
+                </span>
+              ) : null}
             </button>
             {opened && node.children.length > 0 && (
               <div className="relative before:absolute before:left-[12px] before:top-0 before:h-full before:w-px before:bg-gray-200 dark:before:bg-gray-700">
-                {renderTreeNodes(node.children, depth + 1)}
+                {renderTreeNodes(node.children, depth + 1, node.path)}
               </div>
             )}
+            {isInsertLineBelow ? (
+              <div
+                className="my-0.5 h-0.5 rounded-full bg-emerald-500"
+                style={{ marginLeft: `${depth * 18 + 8}px` }}
+              />
+            ) : null}
           </div>
         );
       }
 
       const selected = selectedDocId === node.fileId;
       return (
-        <button
-          key={node.id}
-          type="button"
-          onClick={() => {
-            if (!node.fileId) return;
-            setSelectedDocId(node.fileId);
-            setShowDocPreview(true);
-          }}
-          ref={(element) => {
-            if (!node.fileId) return;
-            treeNodeRefs.current[node.fileId] = element;
-          }}
-          data-doc-node-id={node.fileId}
-          className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition ${
-            selected
-              ? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
-              : 'text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800/50'
-          }`}
-          style={{ paddingLeft: `${depth * 18 + 34}px` }}
-        >
-          <FileText className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" />
-          <span className="truncate">{node.name}</span>
-        </button>
+        <div key={node.id}>
+          {isInsertLineAbove ? (
+            <div
+              className="my-0.5 h-0.5 rounded-full bg-emerald-500"
+              style={{ marginLeft: `${depth * 18 + 34}px` }}
+            />
+          ) : null}
+          <button
+            type="button"
+            draggable
+            onDragStart={(event) => {
+              if (!node.fileId) return;
+              const payload: TreeDragPayload = { nodeType: 'file', path: node.path, fileId: node.fileId };
+              event.dataTransfer.effectAllowed = 'move';
+              event.dataTransfer.setData(TREE_DRAG_MIME, JSON.stringify(payload));
+              setDraggingTreeNodePath(node.path);
+              setDraggingTreeNodeId(node.id);
+              setDraggingTreeNodeName(node.name);
+            }}
+            onDragEnd={() => {
+              setDraggingTreeNodePath(null);
+              setDraggingTreeNodeId(null);
+              setDraggingTreeNodeName(null);
+              setDragOverFolderPath(null);
+              setTreeDropIndicator(null);
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const payload = parseTreeDragPayload(event.dataTransfer.getData(TREE_DRAG_MIME));
+              if (!payload) return;
+              const rect = event.currentTarget.getBoundingClientRect();
+              const y = event.clientY - rect.top;
+              setTreeDropIndicator({
+                parentPath,
+                index: y <= rect.height / 2 ? nodeIndex : nodeIndex + 1,
+              });
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const dropIndicator = treeDropIndicator;
+              setTreeDropIndicator(null);
+              const payload = parseTreeDragPayload(event.dataTransfer.getData(TREE_DRAG_MIME));
+              if (!dropIndicator || !draggingTreeNodeId || !payload) return;
+              if (getParentPath(payload.path) !== dropIndicator.parentPath) return;
+              reorderNodesInSameParent(dropIndicator.parentPath, draggingTreeNodeId, dropIndicator.index);
+            }}
+            onContextMenu={(event) => {
+              if (!node.fileId) return;
+              openTreeContextMenu(event, {
+                nodeType: 'file',
+                path: node.path,
+                folderPath: getParentPath(node.path),
+                fileId: node.fileId,
+              });
+            }}
+            onClick={() => {
+              if (!node.fileId) return;
+              setSelectedDocId(node.fileId);
+              setShowDocPreview(true);
+            }}
+            ref={(element) => {
+              if (!node.fileId) return;
+              treeNodeRefs.current[node.fileId] = element;
+            }}
+            data-doc-node-id={node.fileId}
+            className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition ${
+              selected
+                ? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
+                : 'text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800/50'
+            } ${draggingTreeNodePath === node.path ? 'opacity-50' : ''}`}
+            style={{ paddingLeft: `${depth * 18 + 34}px` }}
+          >
+            <FileText className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400" />
+            <span className="truncate">{node.name}</span>
+          </button>
+          {isInsertLineBelow ? (
+            <div
+              className="my-0.5 h-0.5 rounded-full bg-emerald-500"
+              style={{ marginLeft: `${depth * 18 + 34}px` }}
+            />
+          ) : null}
+        </div>
       );
     });
-  }, [openTreePaths, selectedDocId]);
+  }, [dragOverFolderPath, draggingTreeNodeId, draggingTreeNodeName, draggingTreeNodePath, moveFile, moveFolder, openTreePaths, openTreeContextMenu, reorderNodesInSameParent, selectedDocId, treeDropIndicator]);
+
+  const renderTreeContextMenu = useCallback(() => {
+    if (!treeContextMenu) return null;
+    const canDeleteFile = treeContextMenu.nodeType === 'file' && Boolean(treeContextMenu.fileId);
+    const canDeleteFolder = treeContextMenu.nodeType === 'folder';
+    const canRenameFile = treeContextMenu.nodeType === 'file' && Boolean(treeContextMenu.fileId);
+    const canRenameFolder = treeContextMenu.nodeType === 'folder';
+    const folderPath = treeContextMenu.folderPath;
+    return (
+      <div
+        ref={treeContextMenuRef}
+        className="fixed z-[90] min-w-[180px] overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl dark:border-gray-700 dark:bg-gray-900"
+        style={{
+          left: `${treeContextMenuStyle?.left ?? treeContextMenu.x}px`,
+          top: `${treeContextMenuStyle?.top ?? treeContextMenu.y}px`,
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            setTreeContextMenu(null);
+            void createFolderInFolder(folderPath);
+          }}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+        >
+          <FolderPlus className="h-4 w-4" />
+          新建文件夹
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setTreeContextMenu(null);
+            void createDocInFolder(folderPath);
+          }}
+          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+        >
+          <FilePlus className="h-4 w-4" />
+          新建文档
+        </button>
+        {(canRenameFile || canRenameFolder) && (
+          <button
+            type="button"
+            onClick={() => {
+              const fileId = treeContextMenu.fileId;
+              const currentPath = treeContextMenu.path;
+              setTreeContextMenu(null);
+              if (canRenameFile && fileId) {
+                void renameFileById(fileId, currentPath);
+                return;
+              }
+              if (canRenameFolder) {
+                void renameFolderByPath(currentPath);
+              }
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+          >
+            <Pencil className="h-4 w-4" />
+            重命名
+          </button>
+        )}
+        {(canDeleteFile || canDeleteFolder) && (
+          <button
+            type="button"
+            onClick={() => {
+              const fileId = treeContextMenu.fileId;
+              const folderToDelete = treeContextMenu.path;
+              setTreeContextMenu(null);
+              if (canDeleteFile && fileId) {
+                void deleteFileById(fileId);
+                return;
+              }
+              if (canDeleteFolder) {
+                void deleteFolderByPath(folderToDelete);
+              }
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+          >
+            <Trash2 className="h-4 w-4" />
+            删除
+          </button>
+        )}
+      </div>
+    );
+  }, [createDocInFolder, createFolderInFolder, deleteFileById, deleteFolderByPath, renameFileById, renameFolderByPath, treeContextMenu, treeContextMenuStyle]);
 
   const openQuickAction = useCallback((action: 'creative' | 'grid' | 'poster' | 'digitalHuman') => {
     if (action === 'creative') {
@@ -2818,9 +3995,11 @@ export function HomeContent() {
       return;
     }
     if (action === 'poster') {
+      setPosterIdeaSeed('');
       setShowPosterModal(true);
       return;
     }
+    setDigitalHumanScriptSeed('');
     setShowDigitalHumanModal(true);
   }, []);
 
@@ -2862,14 +4041,22 @@ export function HomeContent() {
 
   const latestDisplayedMessageId = displayedMessages.at(-1)?.id ?? '';
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!isConversationMode) return;
     if (!messageBottomRef.current) return;
-    scrollConversationToBottom(assistantLoading || loadingConversationMessages ? 'auto' : 'smooth');
-    const rafId = window.requestAnimationFrame(() => {
+    if (scrollRafRef.current !== null && typeof window !== 'undefined') {
+      window.cancelAnimationFrame(scrollRafRef.current);
+    }
+    scrollRafRef.current = window.requestAnimationFrame(() => {
+      scrollRafRef.current = null;
       scrollConversationToBottom(assistantLoading || loadingConversationMessages ? 'auto' : 'smooth');
     });
-    return () => window.cancelAnimationFrame(rafId);
+    return () => {
+      if (scrollRafRef.current !== null && typeof window !== 'undefined') {
+        window.cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
+    };
   }, [
     assistantLoading,
     isConversationMode,
@@ -2905,36 +4092,41 @@ export function HomeContent() {
 
   const deleteHistoryConversation = useCallback(async (id: string) => {
     if (!authToken || !id || deletingConversationId) return;
-    const confirmed = window.confirm('确认删除这个历史对话？该操作不可撤销。');
-    if (!confirmed) return;
+    setConfirmDialog({
+      title: '删除历史对话',
+      message: '确认删除这个历史对话？该操作不可撤销。',
+      confirmText: '删除',
+      isDanger: true,
+      onConfirm: async () => {
+        setDeletingConversationId(id);
+        try {
+          const res = await fetch(`/api/assistants/conversations/${id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${authToken}` },
+          });
+          const payload = await res.json().catch(() => ({})) as { error?: string };
+          if (!res.ok) {
+            throw new Error(payload.error || '删除对话失败');
+          }
 
-    setDeletingConversationId(id);
-    try {
-      const res = await fetch(`/api/assistants/conversations/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${authToken}` },
-      });
-      const payload = await res.json().catch(() => ({})) as { error?: string };
-      if (!res.ok) {
-        throw new Error(payload.error || '删除对话失败');
-      }
-
-      if (conversationId === id) {
-        setConversationId(null);
-        setChatMessages([]);
-        setActionResultsByMessageId({});
-        setStreamingReply('');
-        setStreamingActions([]);
-        setStreamingThinking([]);
-        setStreamingProcess([]);
-        setStreamStartedAtMs(null);
-      }
-      await fetchConversationHistory();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '删除对话失败');
-    } finally {
-      setDeletingConversationId(null);
-    }
+          if (conversationId === id) {
+            setConversationId(null);
+            setChatMessages([]);
+            setActionResultsByMessageId({});
+            setStreamingReply('');
+            setStreamingActions([]);
+            setStreamingThinking([]);
+            setStreamingProcess([]);
+            setStreamStartedAtMs(null);
+          }
+          await fetchConversationHistory();
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : '删除对话失败');
+        } finally {
+          setDeletingConversationId(null);
+        }
+      },
+    });
   }, [authToken, conversationId, deletingConversationId, fetchConversationHistory]);
 
   return (
@@ -3211,9 +4403,9 @@ export function HomeContent() {
                         ? streamingPreviewBlocks
                         : getMessageBlocks(message);
                       const actions = parseAgentActions(message.metadata?.agentActions);
-                      const referencedDocs = (message.metadata?.references?.length ?? 0) > 0
-                        ? message.metadata!.references!.map((item) => item.path)
-                        : extractReferencedDocs(actions);
+                      const referencedDocsDetailed = (message.metadata?.references?.length ?? 0) > 0
+                        ? message.metadata!.references!
+                        : extractReferencedDocs(actions).map((path) => ({ path, sourcePath: path }));
                       const results = actionResultsByMessageId[message.id] || [];
                       const processExpanded = Boolean(expandedProcessByMessageId[message.id]) || isStreamingMessage;
 
@@ -3263,7 +4455,7 @@ export function HomeContent() {
                                 执行中
                               </div>
                             ) : null}
-                            {!isStreamingMessage && referencedDocs.length > 0 ? (
+                            {!isStreamingMessage && referencedDocsDetailed.length > 0 ? (
                               <details className="mt-2 group">
                                 <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] leading-5 text-gray-300 transition hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400 [&::-webkit-details-marker]:hidden">
                                   <ChevronRight className="h-3 w-3 shrink-0 transition-transform group-open:rotate-90" />
@@ -3271,22 +4463,22 @@ export function HomeContent() {
                                     引用文档
                                   </span>
                                   <span className="text-gray-200 dark:text-gray-700">
-                                    {referencedDocs.length} 个
+                                    {referencedDocsDetailed.length} 个
                                   </span>
                                 </summary>
                                 <div className="mt-1 pl-4">
                                   <div className="space-y-0.5">
-                                    {referencedDocs.map((path) => (
+                                    {referencedDocsDetailed.map((ref) => (
                                       <button
-                                        key={`${message.id}-ref-${path}`}
+                                        key={`${message.id}-ref-${ref.path}-${ref.sourcePath || ''}`}
                                         type="button"
-                                        onClick={() => openReferencedDoc(path)}
+                                        onClick={() => openReferencedDoc(ref.path, ref.sourcePath)}
                                         className="flex w-full items-center gap-1.5 rounded px-0 py-0.5 text-left text-[11px] leading-5 text-gray-300 transition hover:text-gray-500 dark:text-gray-600 dark:hover:text-gray-400"
-                                        title={path}
+                                        title={ref.sourcePath || ref.path}
                                       >
                                         <FileText className="h-3 w-3 shrink-0" />
                                         <span className="truncate">
-                                          {path}
+                                          {ref.path}
                                         </span>
                                       </button>
                                     ))}
@@ -3810,24 +5002,78 @@ export function HomeContent() {
                             </button>
                           </div>
                           <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setShowXhsLayoutModal(true)}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-                              title="小红书排版"
-                            >
-                              <ImageIcon className="h-3.5 w-3.5" />
-                              小红书排版
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setShowWechatLayoutModal(true)}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-                              title="公众号排版"
-                            >
-                              <MessageSquare className="h-3.5 w-3.5" />
-                              公众号排版
-                            </button>
+                            <div className="relative">
+                              <button
+                                ref={contentOutputButtonRef}
+                                type="button"
+                                onClick={() => setShowContentOutputPopover((prev) => !prev)}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                                title="内容输出"
+                                aria-label="内容输出"
+                                aria-expanded={showContentOutputPopover}
+                                aria-haspopup="menu"
+                              >
+                                <ImageIcon className="h-3.5 w-3.5" />
+                              </button>
+                              {showContentOutputPopover && (
+                                <div
+                                  ref={contentOutputPopoverRef}
+                                  role="menu"
+                                  className="absolute right-0 top-[calc(100%+8px)] z-30 w-48 rounded-xl border border-gray-200 bg-white p-1 shadow-xl dark:border-gray-700 dark:bg-gray-900"
+                                >
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() => {
+                                      setShowContentOutputPopover(false);
+                                      setShowXhsLayoutModal(true);
+                                    }}
+                                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-gray-700 transition hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+                                  >
+                                    <ImageIcon className="h-3.5 w-3.5" />
+                                    小红书排版
+                                  </button>
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() => {
+                                      setShowContentOutputPopover(false);
+                                      setShowWechatLayoutModal(true);
+                                    }}
+                                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-gray-700 transition hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+                                  >
+                                    <MessageSquare className="h-3.5 w-3.5" />
+                                    公众号排版
+                                  </button>
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() => {
+                                      setShowContentOutputPopover(false);
+                                      setPosterIdeaSeed(reusableDocText);
+                                      setShowPosterModal(true);
+                                    }}
+                                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-gray-700 transition hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+                                  >
+                                    <Sparkles className="h-3.5 w-3.5" />
+                                    信息图文
+                                  </button>
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() => {
+                                      setShowContentOutputPopover(false);
+                                      setDigitalHumanScriptSeed(reusableDocText);
+                                      setShowDigitalHumanModal(true);
+                                    }}
+                                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-gray-700 transition hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+                                  >
+                                    <User className="h-3.5 w-3.5" />
+                                    数字人
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                             {docViewMode === 'edit' && (
                               <button
                                 type="button"
@@ -3849,7 +5095,7 @@ export function HomeContent() {
                           />
                         ) : (
                           <article className="rounded-xl bg-white px-3 py-3 dark:bg-gray-900">
-                            {renderMarkdownPreview(selectedDocContent)}
+                            {renderMarkdownPreview(previewDocMarkdown)}
                           </article>
                         )}
                       </div>
@@ -3887,11 +5133,15 @@ export function HomeContent() {
                     <button
                       ref={fileTreeFolderButtonRef}
                       type="button"
-                      onClick={() => {
-                        setShowFileTreeFolderPopover((prev) => !prev);
-                        setShowFolderPopover(false);
-                        setShowModelPopover(false);
-                      }}
+                    onClick={() => {
+                      setShowFileTreeFolderPopover((prev) => !prev);
+                      setShowFolderPopover(false);
+                      setShowModelPopover(false);
+                      setTreeContextMenu(null);
+                      setSelectedDocId(null);
+                      setSelectedDocContent('');
+                      setDocDraftContent('');
+                    }}
                       className="inline-flex h-8 max-w-[240px] items-center gap-2 rounded-lg px-2 text-sm font-semibold text-gray-800 transition hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800"
                     >
                       <Folder className="h-4 w-4 shrink-0 text-gray-500 dark:text-gray-300" />
@@ -3950,27 +5200,69 @@ export function HomeContent() {
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1">
+                  <div className="group relative">
+                    <button
+                      type="button"
+                      onClick={() => void normalizeStructure()}
+                      disabled={!selectedFolderId || normalizingStructure}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-300 dark:hover:bg-gray-800"
+                      aria-label="整理为默认内容工厂结构"
+                    >
+                      {normalizingStructure ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ScanText className="h-4 w-4" />}
+                    </button>
+                    <div className="pointer-events-none absolute left-1/2 top-full z-50 -translate-x-1/2 mt-1 whitespace-nowrap rounded-md bg-black px-2 py-1 text-[11px] font-medium text-white opacity-0 group-hover:opacity-100">
+                      整理为默认内容工厂结构
+                    </div>
+                  </div>
+                  <div className="group relative">
+                    <button
+                      type="button"
+                      onClick={() => void organizeWiki()}
+                      disabled={!selectedFolderId || organizingWiki}
+                      className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-300 dark:hover:bg-gray-800"
+                      aria-label="梳理待处理原文为 llm-wiki"
+                    >
+                      {organizingWiki ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WandSparkles className="h-4 w-4" />}
+                      {pendingRawDocCount > 0 ? (
+                        <span className="absolute -right-1 -top-1 inline-flex min-w-[16px] items-center justify-center rounded-full bg-emerald-600 px-1 text-[10px] font-semibold leading-4 text-white">
+                          {pendingRawDocCount > 99 ? '99+' : pendingRawDocCount}
+                        </span>
+                      ) : null}
+                    </button>
+                    <div className="pointer-events-none absolute left-1/2 top-full z-50 -translate-x-1/2 mt-1 whitespace-nowrap rounded-md bg-black px-2 py-1 text-[11px] font-medium text-white opacity-0 group-hover:opacity-100">
+                      梳理待处理原文为 llm-wiki
+                    </div>
+                  </div>
+                  <div className="group relative">
+                    <button
+                      type="button"
+                      onClick={() => void createFolderInFolder('')}
+                      disabled={!selectedFolderId || creatingDoc}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-300 dark:hover:bg-gray-800"
+                      aria-label="新建文件夹"
+                    >
+                      {creatingDoc ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderPlus className="h-4 w-4" />}
+                    </button>
+                    <div className="pointer-events-none absolute left-1/2 top-full z-50 -translate-x-1/2 mt-1 whitespace-nowrap rounded-md bg-black px-2 py-1 text-[11px] font-medium text-white opacity-0 group-hover:opacity-100">
+                      新建文件夹
+                    </div>
+                  </div>
+                  <div className="group relative">
                     <button
                       type="button"
                       onClick={() => void createDocInCurrentFolder()}
                       disabled={!selectedFolderId || creatingDoc}
                       className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-600 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-gray-300 dark:hover:bg-gray-800"
-                      title="新建文档"
                       aria-label="新建文档"
                     >
-                      {creatingDoc ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-4 w-4" />}
+                      {creatingDoc ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FilePlus className="h-4 w-4" />}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => void deleteSelectedDoc()}
-                      disabled={!selectedDocId || deletingDoc}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-500/10"
-                      title="删除当前文档"
-                      aria-label="删除当前文档"
-                    >
-                      {deletingDoc ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                    </button>
+                    <div className="pointer-events-none absolute left-1/2 top-full z-50 -translate-x-1/2 mt-1 whitespace-nowrap rounded-md bg-black px-2 py-1 text-[11px] font-medium text-white opacity-0 group-hover:opacity-100">
+                      新建文档
+                    </div>
+                  </div>
+                  <div className="group relative">
                     <button
                       type="button"
                       onClick={() => setShowFileTree(false)}
@@ -3979,7 +5271,11 @@ export function HomeContent() {
                     >
                       <X className="h-4 w-4" />
                     </button>
+                    <div className="pointer-events-none absolute left-1/2 top-full z-50 -translate-x-1/2 mt-1 whitespace-nowrap rounded-md bg-black px-2 py-1 text-[11px] font-medium text-white opacity-0 group-hover:opacity-100">
+                      关闭文件夹视图
+                    </div>
                   </div>
+                </div>
                 </div>
 
                 <div className="border-b border-gray-200/80 px-3 py-2 dark:border-gray-800">
@@ -3993,7 +5289,49 @@ export function HomeContent() {
                     />
                   </div>
                 </div>
-                <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                <div
+                  className="min-h-0 flex-1 overflow-y-auto p-3"
+                  onContextMenu={(event) => {
+                    openTreeContextMenu(event, {
+                      nodeType: 'root',
+                      path: '',
+                      folderPath: '',
+                    });
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    const payload = parseTreeDragPayload(event.dataTransfer.getData(TREE_DRAG_MIME));
+                    if (!payload) return;
+                    if (payload.path.includes('/')) {
+                      event.dataTransfer.dropEffect = 'move';
+                      setDragOverFolderPath('');
+                      setTreeDropIndicator(null);
+                    }
+                  }}
+                  onDragLeave={() => {
+                    setDragOverFolderPath((prev) => (prev === '' ? null : prev));
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    setDragOverFolderPath(null);
+                    setTreeDropIndicator(null);
+                    const payload = parseTreeDragPayload(event.dataTransfer.getData(TREE_DRAG_MIME));
+                    if (!payload) return;
+                    if (payload.nodeType === 'file' && payload.fileId) {
+                      const fileName = payload.path.split('/').filter(Boolean).pop() || 'new-file.md';
+                      void moveFile(payload.fileId, fileName);
+                      return;
+                    }
+                    if (payload.nodeType === 'folder') {
+                      void moveFolder(payload.path, '');
+                    }
+                  }}
+                >
+                  {dragOverFolderPath === '' && (
+                    <div className="mb-2 rounded-lg border-2 border-dashed border-emerald-400 bg-emerald-100 px-2 py-1 text-[11px] font-medium text-emerald-800 dark:border-emerald-400 dark:bg-emerald-500/20 dark:text-emerald-200">
+                      松开后将移动到根目录
+                    </div>
+                  )}
                   {loadingKnowledge && (
                     <div className="mb-2 inline-flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -4010,6 +5348,7 @@ export function HomeContent() {
                     </div>
                   )}
                 </div>
+                {renderTreeContextMenu()}
               </div>
             </aside>
           </>
@@ -4029,18 +5368,30 @@ export function HomeContent() {
         {showPosterModal && (
           <Modal
             isOpen={showPosterModal}
-            onClose={() => setShowPosterModal(false)}
+            onClose={() => {
+              setShowPosterModal(false);
+              setPosterIdeaSeed('');
+            }}
             title={<span className="text-base font-semibold">创建小红书图文</span>}
             maxWidth="max-w-4xl"
           >
-            <QuickPosterForm onClose={() => setShowPosterModal(false)} />
+            <QuickPosterForm
+              initialIdeaText={posterIdeaSeed}
+              onClose={() => {
+                setShowPosterModal(false);
+                setPosterIdeaSeed('');
+              }}
+            />
           </Modal>
         )}
 
         {showDigitalHumanModal && (
           <Modal
             isOpen={showDigitalHumanModal}
-            onClose={() => setShowDigitalHumanModal(false)}
+            onClose={() => {
+              setShowDigitalHumanModal(false);
+              setDigitalHumanScriptSeed('');
+            }}
             title={
               <span className="flex items-center gap-2 text-base font-semibold text-gray-900 dark:text-white">
                 <User className="h-5 w-5" />
@@ -4052,7 +5403,11 @@ export function HomeContent() {
             <DigitalHumanModal
               hideInternalTitle
               showAssistant={false}
-              onClose={() => setShowDigitalHumanModal(false)}
+              defaultScript={digitalHumanScriptSeed}
+              onClose={() => {
+                setShowDigitalHumanModal(false);
+                setDigitalHumanScriptSeed('');
+              }}
             />
           </Modal>
         )}
@@ -4060,17 +5415,37 @@ export function HomeContent() {
         <MarkdownWechatLayoutModal
           isOpen={showWechatLayoutModal}
           onClose={() => setShowWechatLayoutModal(false)}
-          markdown={currentDocMarkdown}
+          markdown={wechatLayoutReadyMarkdown}
           filePath={selectedDocPath}
         />
         <MarkdownXhsLayoutModal
           isOpen={showXhsLayoutModal}
           onClose={() => setShowXhsLayoutModal(false)}
-          markdown={currentDocMarkdown}
+          markdown={xhsLayoutReadyMarkdown}
           filePath={selectedDocPath}
+          xhsMeta={{
+            coverTitle: contentFactoryDraft.coverTitle,
+            subTitle: contentFactoryDraft.subTitle,
+            title: contentFactoryDraft.title,
+            body: contentFactoryDraft.body,
+            tags: contentFactoryDraft.tags,
+          }}
         />
 
         <CreativeQuickStartModal isOpen={showCreativeModal} onClose={() => setShowCreativeModal(false)} />
+        <ConfirmModal
+          isOpen={Boolean(confirmDialog)}
+          onClose={() => setConfirmDialog(null)}
+          onConfirm={async () => {
+            if (!confirmDialog) return;
+            await confirmDialog.onConfirm();
+          }}
+          title={confirmDialog?.title}
+          message={confirmDialog?.message}
+          confirmText={confirmDialog?.confirmText}
+          cancelText="取消"
+          isDanger={confirmDialog?.isDanger ?? true}
+        />
       </div>
     </div>
   );

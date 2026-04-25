@@ -97,3 +97,5 @@
 | [20260424-chat-conversation-lifecycle-plan.md](./20260424-chat-conversation-lifecycle-plan.md) | 聊天会话生命周期改造：支持删除历史、新增懒创建 |
 | [20260424-xhs-parse-save-to-folder-plan.md](./20260424-xhs-parse-save-to-folder-plan.md) | 图文解析结果保存到知识库文件夹 |
 | [20260424-home-agent-chat-unification-plan.md](./20260424-home-agent-chat-unification-plan.md) | 首页与 agent 对话统一到 NexTide 交互 |
+| [20260425-content-factory-wiki-organizer-plan.md](./20260425-content-factory-wiki-organizer-plan.md) | 内容工厂 raw 导入与一键 LLM-Wiki 梳理 |
+| [20260425-content-factory-fixed-output-format-plan.md](./20260425-content-factory-fixed-output-format-plan.md) | 内容工厂固定六段输出格式与下游排版消费对齐 |

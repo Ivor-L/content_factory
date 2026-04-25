@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getRequestUserContext } from "@/lib/authServer";
 import { splitTextToChunks } from "@/lib/knowledge";
+import type { Prisma } from "@prisma/client";
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest, { params }: Params) {
     : 200;
 
   const files = await prisma.knowledgeFile.findMany({
-    where: { folderId: folder.id },
+    where: { folderId: folder.id, userId },
     include: {
       _count: {
         select: {
@@ -95,6 +96,19 @@ export async function POST(request: NextRequest, { params }: Params) {
     ? body.title.trim()
     : getTitleFromPath(path);
   const content = typeof body.content === "string" ? body.content.replace(/\r\n/g, "\n") : "";
+  const sourceType = typeof body.sourceType === "string" && body.sourceType.trim()
+    ? body.sourceType.trim()
+    : "manual";
+  const contentFactoryInput =
+    body.contentFactory && typeof body.contentFactory === "object" && !Array.isArray(body.contentFactory)
+      ? (body.contentFactory as Record<string, unknown>)
+      : {};
+  const nowIso = new Date().toISOString();
+  const isRawPath = path.toLowerCase().startsWith("01-素材库/raw/");
+  const contentFactoryMetadata: Record<string, unknown> = {
+    ...(isRawPath ? { kind: "raw", wikiStatus: "pending", importedAt: nowIso } : {}),
+    ...contentFactoryInput,
+  };
 
   const existing = await prisma.knowledgeFile.findFirst({
     where: {
@@ -137,6 +151,22 @@ export async function POST(request: NextRequest, { params }: Params) {
         existing.metadata && typeof existing.metadata === "object" && !Array.isArray(existing.metadata)
           ? (existing.metadata as Record<string, unknown>)
           : {};
+      const nextMetadata: Record<string, unknown> = {
+        ...metadata,
+        relativePath: path,
+        path,
+        originalFilename: title,
+        rawContent: content,
+        updatedBy: sourceType,
+      };
+      if (Object.keys(contentFactoryMetadata).length > 0) {
+        nextMetadata.contentFactory = {
+          ...(metadata.contentFactory && typeof metadata.contentFactory === "object" && !Array.isArray(metadata.contentFactory)
+            ? (metadata.contentFactory as Record<string, unknown>)
+            : {}),
+          ...contentFactoryMetadata,
+        };
+      }
 
       return tx.knowledgeFile.update({
         where: { id: existing.id },
@@ -144,14 +174,7 @@ export async function POST(request: NextRequest, { params }: Params) {
           title,
           status: "READY",
           originalPath: path,
-          metadata: {
-            ...metadata,
-            relativePath: path,
-            path,
-            originalFilename: title,
-            rawContent: content,
-            updatedBy: "manual",
-          },
+          metadata: nextMetadata as Prisma.InputJsonValue,
         },
         include: {
           _count: {
@@ -167,21 +190,26 @@ export async function POST(request: NextRequest, { params }: Params) {
   }
 
   const created = await prisma.$transaction(async (tx) => {
+    const createdMetadata: Record<string, unknown> = {
+      relativePath: path,
+      path,
+      originalFilename: title,
+      rawContent: content,
+      createdBy: sourceType,
+    };
+    if (Object.keys(contentFactoryMetadata).length > 0) {
+      createdMetadata.contentFactory = contentFactoryMetadata;
+    }
+
     const file = await tx.knowledgeFile.create({
       data: {
         folderId: folder.id,
         userId,
         title,
-        sourceType: "manual",
+        sourceType,
         status: "READY",
         originalPath: path,
-        metadata: {
-          relativePath: path,
-          path,
-          originalFilename: title,
-          rawContent: content,
-          createdBy: "manual",
-        },
+        metadata: createdMetadata as Prisma.InputJsonValue,
       },
       include: {
         _count: {

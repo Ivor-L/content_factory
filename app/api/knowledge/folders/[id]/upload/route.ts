@@ -9,6 +9,7 @@ import {
   decodeTextContent,
   isTextLikeKnowledgeFile,
   knowledgeAssetPath,
+  sanitizeKnowledgeFilename,
   splitTextToChunks,
 } from "@/lib/knowledge";
 
@@ -70,6 +71,8 @@ export async function POST(request: NextRequest, { params }: Params) {
         size: buffer.length,
         contentType: file.type || null,
         originalFilename: filename,
+        relativePath: sanitizeKnowledgeFilename(filename),
+        path: sanitizeKnowledgeFilename(filename),
         publicUrl: uploadResult.publicUrl,
       },
     },

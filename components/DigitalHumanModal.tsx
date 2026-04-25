@@ -292,9 +292,6 @@ export function DigitalHumanModal({
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUrl, setAudioUrl] = useState('');
 
-  const [emoAudioFile, setEmoAudioFile] = useState<File | null>(null);
-  const [emoAudioUrl, setEmoAudioUrl] = useState('');
-  const [emoAudioDragActive, setEmoAudioDragActive] = useState(false);
   const [splitChunks, setSplitChunks] = useState<string[]>([]);
   const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
   const [splitMeta, setSplitMeta] = useState<{
@@ -315,11 +312,7 @@ export function DigitalHumanModal({
   const nestedModalZIndex = 'z-[11000]';
   const hasCharacterVoice = Boolean(selectedCharacter?.voiceId);
   const shouldShowVoiceUpload = mode === 'LIP_SYNC' || !hasCharacterVoice;
-  const shouldShowEmoUpload = mode === 'VOICE_CLONE';
-  const shouldRenderAudioUploads = shouldShowVoiceUpload || shouldShowEmoUpload;
-  const shouldSplitAudioUploads = shouldShowVoiceUpload && shouldShowEmoUpload;
   const voicePlaceholder = audioPlaceholderCopy;
-  const emoPlaceholder = t.storyboard.emoRefPlaceholder;
   const scriptStats = useMemo(() => analyzeScriptDuration(script), [script]);
   const scriptMessage = useMemo(
     () => formatScriptDurationMessage(scriptStats, { locale: language }),
@@ -401,7 +394,7 @@ export function DigitalHumanModal({
     });
   };
 
-  const uploadFile = async (file: File, type: 'audio' | 'emo_audio') => {
+  const uploadFile = async (file: File) => {
     setUploading(true);
     try {
       const formData = new FormData();
@@ -409,30 +402,25 @@ export function DigitalHumanModal({
       const res = await fetch('/api/upload', { method: 'POST', body: formData });
       if (!res.ok) throw new Error('Upload failed');
       const data = await res.json();
-      
-      if (type === 'audio') {
-        setAudioUrl(data.url);
-        setAudioFile(file);
-        
-        const duration = await getDuration(file);
-        setAudioDuration(duration);
-        if (duration > audioLimitSeconds) {
-          toast.error(audioLimitReminder);
-        }
-      } else if (type === 'emo_audio') {
-        setEmoAudioUrl(data.url);
-        setEmoAudioFile(file);
+
+      setAudioUrl(data.url);
+      setAudioFile(file);
+
+      const duration = await getDuration(file);
+      setAudioDuration(duration);
+      if (duration > audioLimitSeconds) {
+        toast.error(audioLimitReminder);
       }
     } catch (error) {
-      toast.error(`Failed to upload ${type}`);
+      toast.error('Failed to upload audio');
     } finally {
       setUploading(false);
     }
   };
 
-  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'audio' | 'emo_audio') => {
+  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) uploadFile(file, type);
+    if (file) uploadFile(file);
   };
 
   const handleAudioDrag = (e: React.DragEvent) => {
@@ -446,30 +434,18 @@ export function DigitalHumanModal({
     }
   };
 
-  const handleEmoAudioDrag = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setEmoAudioDragActive(true);
-    } else if (e.type === "dragleave") {
-      if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-      setEmoAudioDragActive(false);
-    }
-  };
 
-  const handleDrop = async (e: React.DragEvent, type: 'audio' | 'emo_audio') => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (type === 'audio') setAudioDragActive(false);
-    if (type === 'emo_audio') setEmoAudioDragActive(false);
+    setAudioDragActive(false);
     
     const file = e.dataTransfer.files?.[0];
     if (file) {
       if (!file.type.startsWith('audio/')) {
         return toast.error('Please upload an audio file');
       }
-      uploadFile(file, type);
+      uploadFile(file);
     }
   };
 
@@ -477,11 +453,6 @@ export function DigitalHumanModal({
     setAudioUrl('');
     setAudioFile(null);
     setAudioDuration(0);
-  };
-
-  const handleEmoAudioRemove = () => {
-    setEmoAudioUrl('');
-    setEmoAudioFile(null);
   };
 
   const submitDigitalHumanJobs = async (scriptChunks?: string[]) => {
@@ -534,9 +505,6 @@ export function DigitalHumanModal({
         if (sourceTaskId) formData.append('sourceTaskId', sourceTaskId);
         if (mode === 'VOICE_CLONE') {
           formData.append('script', chunk ?? '');
-          if (emoAudioUrl) {
-            formData.append('emoAudioUrl', emoAudioUrl);
-          }
         }
         await createDigitalHumanVideo(formData);
       }
@@ -629,7 +597,7 @@ export function DigitalHumanModal({
     ? isCompactLayout
       ? 'flex flex-col gap-6'
       : 'grid grid-cols-[minmax(0,1fr)_360px] items-start gap-6'
-    : 'flex flex-col gap-6';
+    : 'flex flex-col gap-4';
 
   return (
     <>
@@ -667,330 +635,240 @@ export function DigitalHumanModal({
         )}
 
         {/* Scrollable Content */}
-        <div
-          className={cn(
-            'flex-1 p-6 space-y-6',
-            isCompactLayout && 'overflow-y-auto'
-          )}
-        >
-            {/* Character Library */}
-            <div>
-              <div className="flex flex-col gap-3 mb-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className={cn('flex-1 p-6', isCompactLayout && 'overflow-y-auto')}>
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-[320px_minmax(0,1fr)]">
+            <section className="space-y-4">
+              <div className="flex items-start justify-between gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                     {characterLabel}
                   </label>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                     {t.characters.libraryHint}
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 justify-end">
-                  {selectedCharacter && (
-                    <button
-                      type="button"
-                      onClick={() => setSelectedCharacterId(null)}
-                      className="text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
-                    >
-                      {t.characters.clearSelection}
-                    </button>
-                  )}
-                </div>
+                {selectedCharacter && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCharacterId(null)}
+                    className="text-xs font-medium text-gray-500 transition hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200"
+                  >
+                    {t.characters.clearSelection}
+                  </button>
+                )}
               </div>
 
               {charactersLoading ? (
                 <p className="text-sm text-gray-500 dark:text-gray-400">{t.common.loading}</p>
               ) : characters.length === 0 ? (
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                <div className="flex flex-col gap-2 text-sm text-gray-500 dark:text-gray-400">
                   <span>{characterEmptyCopy}</span>
                   <button
                     type="button"
                     onClick={() => setIsCharacterModalOpen(true)}
-                    className="text-primary hover:text-primary-hover font-medium"
+                    className="w-fit text-primary hover:text-primary-hover font-medium"
                   >
                     {characterCreateLabel}
                   </button>
                 </div>
               ) : (
-                <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+                <div className="space-y-2">
                   <button
                     type="button"
                     onClick={() => setIsCharacterModalOpen(true)}
-                    className="min-w-[180px] flex-shrink-0 border-2 border-dashed rounded-xl p-3 flex flex-col items-center justify-center text-center text-sm font-medium text-gray-600 dark:text-gray-300 hover:border-black/60 dark:hover:border-white/60 transition-colors"
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 px-3 py-3 text-sm font-medium text-gray-600 transition-colors hover:border-black/60 dark:border-gray-700 dark:text-gray-300 dark:hover:border-white/60"
                   >
-                    <PlusCircle className="w-6 h-6 mb-2" />
+                    <PlusCircle className="h-5 w-5" />
                     {characterCreateLabel}
                   </button>
-                  {characters.map((character) => {
-                    const isSelected = character.id === selectedCharacterId;
-                    return (
-                      <button
-                        type="button"
-                        key={character.id}
-                        onClick={() =>
-                          setSelectedCharacterId((prev) =>
-                            prev === character.id ? null : character.id
-                          )
-                        }
-                        className={cn(
-                          "min-w-[180px] flex-shrink-0 border-2 rounded-xl p-3 text-left transition-colors focus:outline-none",
-                          isSelected
-                            ? "border-black dark:border-white bg-black/5 dark:bg-white/10"
-                            : "border-gray-200 dark:border-gray-700 hover:border-black/40 dark:hover:border-white/50"
-                        )}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-lg bg-gray-100 dark:bg-gray-800 overflow-hidden border border-gray-200 dark:border-gray-700">
-                            {character.avatar ? (
-                              <img
-                                src={character.avatar}
-                                alt={character.name}
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-400">
-                                N/A
-                              </div>
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
-                              {character.name}
-                            </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                              {character.voiceId ? defaultVoiceLabel : audioPlaceholderCopy}
-                            </p>
-                            {mode === 'VOICE_CLONE' && !character.voiceId && characterMissingVoiceCopy && (
-                              <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">
-                                {characterMissingVoiceCopy}
+                  <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                    {characters.map((character) => {
+                      const isSelected = character.id === selectedCharacterId;
+                      return (
+                        <button
+                          type="button"
+                          key={character.id}
+                          onClick={() =>
+                            setSelectedCharacterId((prev) =>
+                              prev === character.id ? null : character.id
+                            )
+                          }
+                          className={cn(
+                            'w-full rounded-xl border p-3 text-left transition-colors focus:outline-none',
+                            isSelected
+                              ? 'border-black bg-black/5 dark:border-white dark:bg-white/10'
+                              : 'border-gray-200 hover:border-black/40 dark:border-gray-700 dark:hover:border-white/50'
+                          )}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="h-12 w-12 overflow-hidden rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800">
+                              {character.avatar ? (
+                                <img
+                                  src={character.avatar}
+                                  alt={character.name}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-400">
+                                  N/A
+                                </div>
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-gray-900 dark:text-white">
+                                {character.name}
                               </p>
-                            )}
+                              <p className="text-xs text-gray-500 dark:text-gray-400">
+                                {character.voiceId ? defaultVoiceLabel : audioPlaceholderCopy}
+                              </p>
+                              {mode === 'VOICE_CLONE' && !character.voiceId && characterMissingVoiceCopy && (
+                                <p className="mt-0.5 text-[11px] text-amber-600 dark:text-amber-400">
+                                  {characterMissingVoiceCopy}
+                                </p>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </button>
-                    );
-                  })}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
-            </div>
-            {/* Audio Upload + Emotional Reference */}
-            {shouldRenderAudioUploads && (
-              <div
-                className={cn(
-                  'grid gap-6 items-start',
-                  shouldSplitAudioUploads ? 'md:grid-cols-2' : 'grid-cols-1'
-                )}
-              >
-                {shouldShowVoiceUpload && (
-                  <div className="flex flex-col gap-2">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                      {audioLabelCopy}
-                    </label>
-                    <div>
-                      <label
-                        onDragEnter={handleAudioDrag}
-                        onDragLeave={handleAudioDrag}
-                        onDragOver={handleAudioDrag}
-                        onDrop={(e) => handleDrop(e, 'audio')}
-                        className={cn(
-                          'relative flex w-full items-center gap-4 h-20 border-2 rounded-lg cursor-pointer transition-colors overflow-hidden px-4',
-                          audioDragActive
-                            ? 'border-black dark:border-white bg-gray-50 dark:bg-gray-800 border-dashed'
-                            : audioUrl
-                              ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 border-solid'
-                              : 'border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-750 border-dashed',
-                          !audioUrl && 'justify-center'
-                        )}
-                      >
-                        {audioUrl ? (
-                          <div className="flex items-center gap-4 w-full">
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <Mic className="w-5 h-5 text-gray-400 shrink-0" />
-                              <span className="text-sm text-gray-900 dark:text-white truncate">
-                                {audioFile ? audioFile.name : voicePlaceholder}
-                              </span>
-                            </div>
-                            {hasUploadedVoice ? (
-                              <audio
-                                controls
-                                src={audioUrl}
-                                className="h-9 w-40 shrink-0"
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                            ) : (
-                              <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
-                                {presetVoiceStatusCopy}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="flex flex-col items-center justify-center gap-1 text-center pointer-events-none text-gray-500 dark:text-gray-400">
-                            <Mic className="w-5 h-5 text-gray-400" />
-                            <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                              {uploadHint}
-                            </span>
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              {audioPlaceholderCopy}
-                            </span>
-                          </div>
-                        )}
-                        {audioDragActive && (
-                          <div className="absolute inset-0 bg-black/5 flex items-center justify-center pointer-events-none">
-                            <p className="text-black dark:text-white text-sm font-medium bg-white/80 dark:bg-black/80 px-2 py-1 rounded">
-                              {t.storyboard.dropToReplace}
-                            </p>
-                          </div>
-                        )}
-                        <input
-                          ref={audioInputRef}
-                          type="file"
-                          className="hidden"
-                          onChange={(e) => handleUpload(e, 'audio')}
-                          accept="audio/*"
-                        />
-                      </label>
-                      {audioUrl && (
-                        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-600 dark:text-gray-300">
-                          {audioDuration > 0 && (
-                            <span>
-                              {audioDurationLabel}: {Math.round(audioDuration)}s
-                            </span>
-                          )}
-                          <div className="flex gap-3">
-                            <button
-                              type="button"
-                              onClick={() => audioInputRef.current?.click()}
-                              className="font-semibold underline"
-                            >
-                              {replaceAudioLabel}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleAudioRemove}
-                              className="font-semibold underline text-red-600 dark:text-red-400"
-                            >
-                              {removeAudioLabel}
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
+            </section>
 
-                {shouldShowEmoUpload && (
-                  <div className="flex flex-col gap-2">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                      {t.storyboard.emoRef}
-                    </label>
-                    <div>
-                      <label
-                        onDragEnter={handleEmoAudioDrag}
-                        onDragLeave={handleEmoAudioDrag}
-                        onDragOver={handleEmoAudioDrag}
-                        onDrop={(e) => handleDrop(e, 'emo_audio')}
-                        className={cn(
-                          'relative flex w-full items-center gap-4 h-20 border-2 rounded-lg cursor-pointer transition-colors overflow-hidden px-4',
-                          emoAudioDragActive
-                            ? 'border-black dark:border-white bg-gray-50 dark:bg-gray-800 border-dashed'
-                            : emoAudioUrl
-                              ? 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 border-solid'
-                              : 'border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-750 border-dashed',
-                          !emoAudioUrl && 'justify-center'
-                        )}
-                      >
-                        {emoAudioUrl ? (
-                          <div className="flex items-center gap-4 w-full">
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <Mic className="w-5 h-5 text-gray-400 shrink-0" />
-                              <span className="text-sm text-gray-900 dark:text-white truncate">
-                                {emoAudioFile ? emoAudioFile.name : emoPlaceholder}
-                              </span>
-                            </div>
-                            <audio
-                              controls
-                              src={emoAudioUrl}
-                              className="h-9 w-40 shrink-0"
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          </div>
-                        ) : (
-                          <div className="flex flex-col items-center justify-center gap-1 text-center pointer-events-none text-gray-500 dark:text-gray-400">
-                            <Mic className="w-5 h-5 text-gray-400" />
-                            <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                              {uploadHint}
-                            </span>
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              {emoPlaceholder}
-                            </span>
-                          </div>
-                        )}
-                        {emoAudioDragActive && (
-                          <div className="absolute inset-0 bg-black/5 flex items-center justify-center pointer-events-none">
-                            <p className="text-black dark:text-white text-sm font-medium bg-white/80 dark:bg-black/80 px-2 py-1 rounded">
-                              {t.storyboard.dropToReplace}
-                            </p>
-                          </div>
-                        )}
-                        <input
-                          type="file"
-                          className="hidden"
-                          onChange={(e) => handleUpload(e, 'emo_audio')}
-                          accept="audio/*"
-                        />
-                      </label>
-                      {emoAudioUrl && (
-                        <div className="mt-2 flex flex-wrap items-center justify-end gap-3 text-xs text-gray-600 dark:text-gray-300">
-                          <button
-                            type="button"
-                            onClick={handleEmoAudioRemove}
-                            className="font-semibold underline text-red-600 dark:text-red-400"
-                          >
-                            {removeAudioLabel}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-                {audioTooLong && (
-                  <p className="text-xs text-rose-600 dark:text-rose-400">{audioLimitReminder}</p>
-                )}
-              </div>
-            )}
-
-            {/* Script (Voice Clone Only) */}
-            {mode === 'VOICE_CLONE' && (
-            <div>
-                <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                {scriptLabel}
-                </label>
-                <textarea
-                value={script}
-                onChange={(e) => setScript(e.target.value)}
-                placeholder={scriptPlaceholder}
-                className="w-full h-32 p-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-primary outline-none resize-none"
-                />
-                {scriptHasContent && (
-                  <p
+            <section className="space-y-5">
+              {shouldShowVoiceUpload && (
+                <div className="flex flex-col gap-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {audioLabelCopy}
+                  </label>
+                  <label
+                    onDragEnter={handleAudioDrag}
+                    onDragLeave={handleAudioDrag}
+                    onDragOver={handleAudioDrag}
+                    onDrop={handleDrop}
                     className={cn(
-                      "mt-2 text-xs",
-                      scriptTooLong
-                        ? "text-rose-600 dark:text-rose-400"
-                        : "text-gray-500 dark:text-gray-400"
+                      'relative flex h-20 w-full cursor-pointer items-center gap-4 overflow-hidden rounded-lg border-2 px-4 transition-colors',
+                      audioDragActive
+                        ? 'border-black border-dashed bg-gray-50 dark:border-white dark:bg-gray-800'
+                        : audioUrl
+                          ? 'border-gray-200 border-solid bg-gray-50 dark:border-gray-700 dark:bg-gray-800'
+                          : 'border-gray-300 border-dashed bg-gray-50 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-gray-750',
+                      !audioUrl && 'justify-center'
                     )}
                   >
-                    {scriptMessage}
-                  </p>
-                )}
-                {scriptTooLong && (
-                  <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                    {isZhLocale
-                      ? '系统会沿用当前角色与音色，拆成多段依次生成。'
-                      : 'We will reuse the selected character and voice, auto-splitting into multiple jobs.'}
-                  </p>
-                )}
-            </div>
-            )}
+                    {audioUrl ? (
+                      <div className="flex w-full items-center gap-4">
+                        <div className="flex min-w-0 flex-1 items-center gap-2">
+                          <Mic className="h-5 w-5 shrink-0 text-gray-400" />
+                          <span className="truncate text-sm text-gray-900 dark:text-white">
+                            {audioFile ? audioFile.name : voicePlaceholder}
+                          </span>
+                        </div>
+                        {hasUploadedVoice ? (
+                          <audio
+                            controls
+                            src={audioUrl}
+                            className="h-9 w-40 shrink-0"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        ) : (
+                          <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+                            {presetVoiceStatusCopy}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="pointer-events-none flex flex-col items-center justify-center gap-1 text-center text-gray-500 dark:text-gray-400">
+                        <Mic className="h-5 w-5 text-gray-400" />
+                        <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                          {uploadHint}
+                        </span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          {audioPlaceholderCopy}
+                        </span>
+                      </div>
+                    )}
+                    {audioDragActive && (
+                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/5">
+                        <p className="rounded bg-white/80 px-2 py-1 text-sm font-medium text-black dark:bg-black/80 dark:text-white">
+                          {t.storyboard.dropToReplace}
+                        </p>
+                      </div>
+                    )}
+                    <input
+                      ref={audioInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={handleUpload}
+                      accept="audio/*"
+                    />
+                  </label>
+                  {audioUrl && (
+                    <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-600 dark:text-gray-300">
+                      {audioDuration > 0 && (
+                        <span>
+                          {audioDurationLabel}: {Math.round(audioDuration)}s
+                        </span>
+                      )}
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => audioInputRef.current?.click()}
+                          className="font-semibold underline"
+                        >
+                          {replaceAudioLabel}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleAudioRemove}
+                          className="font-semibold underline text-red-600 dark:text-red-400"
+                        >
+                          {removeAudioLabel}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {audioTooLong && (
+                    <p className="text-xs text-rose-600 dark:text-rose-400">{audioLimitReminder}</p>
+                  )}
+                </div>
+              )}
+
+              {mode === 'VOICE_CLONE' && (
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {scriptLabel}
+                  </label>
+                  <textarea
+                    value={script}
+                    onChange={(e) => setScript(e.target.value)}
+                    placeholder={scriptPlaceholder}
+                    className="h-[320px] w-full rounded-lg border border-gray-300 bg-white p-3 outline-none resize-none focus:ring-2 focus:ring-primary dark:border-gray-700 dark:bg-gray-800"
+                  />
+                  {scriptHasContent && (
+                    <p
+                      className={cn(
+                        'mt-2 text-xs',
+                        scriptTooLong
+                          ? 'text-rose-600 dark:text-rose-400'
+                          : 'text-gray-500 dark:text-gray-400'
+                      )}
+                    >
+                      {scriptMessage}
+                    </p>
+                  )}
+                  {scriptTooLong && (
+                    <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                      {isZhLocale
+                        ? '系统会沿用当前角色与音色，拆成多段依次生成。'
+                        : 'We will reuse the selected character and voice, auto-splitting into multiple jobs.'}
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
+          </div>
         </div>
 
         {/* Footer */}

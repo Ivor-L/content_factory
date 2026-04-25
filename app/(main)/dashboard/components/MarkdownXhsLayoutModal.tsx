@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import MarkdownIt from "markdown-it";
 import type Token from "markdown-it/lib/token.mjs";
+import { WandSparkles, X } from "lucide-react";
 import { DownloadSimple, SpinnerGap } from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -176,6 +177,7 @@ type CardConfig = {
   hasCover: boolean;
   coverStyleId: CoverStyleId;
   coverTitle: string;
+  coverSubtitle: string;
   coverImage: string;
   coverTextColor: string;
   coverHighlightColor: string;
@@ -185,6 +187,7 @@ type CardConfig = {
   coverTitleAlignX: CoverTitleAlignX;
   coverTitleAlignY: CoverTitleAlignY;
   coverFontSize: number;
+  coverSubtitleFontSize: number;
   coverLineHeight: number;
   hasSocialIcons: boolean;
   selectedSocialIcons: SocialIconId[];
@@ -565,6 +568,7 @@ const DEFAULT_CONFIG: Omit<CardConfig, "bgMode" | "bgColor" | "gradientStart" | 
   hasCover: false,
   coverStyleId: "image-focus",
   coverTitle: "",
+  coverSubtitle: "",
   coverImage: "",
   coverTextColor: "#f6efe3",
   coverHighlightColor: "#ffb347",
@@ -574,6 +578,7 @@ const DEFAULT_CONFIG: Omit<CardConfig, "bgMode" | "bgColor" | "gradientStart" | 
   coverTitleAlignX: "center",
   coverTitleAlignY: "center",
   coverFontSize: 195,
+  coverSubtitleFontSize: 96,
   coverLineHeight: 1.4,
   hasSocialIcons: false,
   selectedSocialIcons: [],
@@ -585,6 +590,12 @@ interface MarkdownTextCardDialogProps {
   onOpenChange: (open: boolean) => void;
   markdown: string;
   filePath: string;
+  rightPanel?: ReactNode;
+  xhsPublishMeta?: {
+    title?: string;
+    body?: string;
+    tags?: string[];
+  };
 }
 
 let _markdownParser: MarkdownIt | null = null;
@@ -738,13 +749,40 @@ function deriveCoverTitleFromMarkdown(markdown: string, fallbackTitle: string): 
   return buildAutoCoverTitle(seed, cleanedBody);
 }
 
-function resolveCoverTitle(manualCoverTitle: string, inferredCoverTitle: string, fallbackTitle: string): string {
-  const manual = manualCoverTitle.trim();
-  if (manual) return manual;
-  const inferred = inferredCoverTitle.trim();
-  if (inferred) return inferred;
-  const fallback = fallbackTitle.trim();
-  return fallback || "Untitled";
+function splitCoverTitleAndSubtitle(raw: string): { title: string; subtitle: string } {
+  const lines = raw
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return { title: "", subtitle: "" };
+  return {
+    title: lines[0] || "",
+    subtitle: lines.slice(1).join("\n"),
+  };
+}
+
+function resolveCoverText(
+  manualCoverTitle: string,
+  manualCoverSubtitle: string,
+  inferredCoverTitle: string,
+  fallbackTitle: string
+): { title: string; subtitle: string } {
+  const manualTitle = manualCoverTitle.trim();
+  const manualSubtitle = manualCoverSubtitle.trim();
+  if (manualTitle) {
+    const manualParts = splitCoverTitleAndSubtitle(manualTitle);
+    return {
+      title: manualParts.title || fallbackTitle.trim() || "Untitled",
+      subtitle: manualSubtitle || manualParts.subtitle,
+    };
+  }
+  const inferredParts = splitCoverTitleAndSubtitle(inferredCoverTitle);
+  const fallback = fallbackTitle.trim() || "Untitled";
+  return {
+    title: inferredParts.title || fallback,
+    subtitle: manualSubtitle || inferredParts.subtitle,
+  };
 }
 
 function extractMetaKey(line: string): string | null {
@@ -864,6 +902,89 @@ function sanitizeFileName(input: string): string {
     .slice(0, 80) || "text-card";
 }
 
+function normalizeTagText(raw: string): string {
+  return raw
+    .replace(/^#+/, "")
+    .replace(/[，、]/g, ",")
+    .replace(/\s+/g, "")
+    .replace(/[^\w\u4E00-\u9FFF-]/g, "")
+    .trim()
+    .slice(0, 16);
+}
+
+function dedupeTags(tags: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const tag of tags) {
+    const normalized = normalizeTagText(tag);
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(normalized);
+  }
+  return result;
+}
+
+function truncateXhsTitle(raw: string): string {
+  return Array.from(raw.trim()).slice(0, 20).join("");
+}
+
+function parseTagsInput(raw: string): string[] {
+  return raw
+    .replace(/\r\n/g, "\n")
+    .split(/[\n\s,，、]+/)
+    .map((item) => item.trim().replace(/^#+/, ""))
+    .filter(Boolean);
+}
+
+function formatTagsInput(tags: string[]): string {
+  return tags
+    .map((tag) => normalizeTagText(tag))
+    .filter(Boolean)
+    .map((tag) => `#${tag}`)
+    .join(" ");
+}
+
+function buildLocalMetaFallback(markdown: string, filePath: string): {
+  title: string;
+  body: string;
+  tags: string[];
+} {
+  const fallbackTitle = getDefaultTitle(filePath || "untitled.md");
+  const inferredTitle = deriveCoverTitleFromMarkdown(markdown, fallbackTitle).replace(/\n+/g, " ").trim();
+  const plainBody = preprocessMarkdownForCard(markdown)
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`[^`]*`/g, " ")
+    .replace(/!\[[^\]]*]\([^)]+\)/g, " ")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^[-*+]\s+/gm, "")
+    .replace(/^\d+\.\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const hashTags = Array.from(
+    new Set(
+      Array.from((markdown || "").matchAll(/#([A-Za-z0-9_\u4E00-\u9FFF-]{2,20})/g)).map((m) => m[1] || "")
+    )
+  );
+  const extraSeed = (inferredTitle || fallbackTitle)
+    .replace(/[：:，,。！？!?]/g, " ")
+    .split(/\s+/)
+    .map((item) => normalizeTagText(item))
+    .filter(Boolean);
+  const next = {
+    title: truncateXhsTitle(inferredTitle || fallbackTitle),
+    body: plainBody.length > 520 ? `${plainBody.slice(0, 520).trim()}...` : plainBody,
+    tags: dedupeTags([...hashTags, ...extraSeed, "小红书图文", "内容排版"]).slice(0, 8),
+  };
+  return {
+    title: truncateXhsTitle(next.title || getDefaultTitle(filePath || "untitled.md")),
+    body: (next.body || "").slice(0, 1000),
+    tags: dedupeTags(Array.isArray(next.tags) ? next.tags : []).slice(0, 8),
+  };
+}
+
 function findTemplate(id: CardTemplateId): TemplateSpec {
   return TEMPLATE_INDEX.get(id) || TEMPLATE_SPECS[0];
 }
@@ -972,6 +1093,7 @@ function normalizePersistedCardSettings(raw: string | null): PersistedTextCardSe
       hasCover: Boolean(cfg.hasCover),
       coverStyleId: cfg.coverStyleId && COVER_STYLE_INDEX.has(cfg.coverStyleId) ? cfg.coverStyleId : base.coverStyleId,
       coverTitle: typeof cfg.coverTitle === "string" ? cfg.coverTitle : base.coverTitle,
+      coverSubtitle: typeof cfg.coverSubtitle === "string" ? cfg.coverSubtitle : base.coverSubtitle,
       coverImage: typeof cfg.coverImage === "string" ? cfg.coverImage : base.coverImage,
       coverTextColor: safeString(cfg.coverTextColor, base.coverTextColor),
       coverHighlightColor: safeString(cfg.coverHighlightColor, base.coverHighlightColor),
@@ -985,6 +1107,7 @@ function normalizePersistedCardSettings(raw: string | null): PersistedTextCardSe
         ? cfg.coverTitleAlignY
         : base.coverTitleAlignY,
       coverFontSize: safeNumber(cfg.coverFontSize, base.coverFontSize, 28, 220),
+      coverSubtitleFontSize: safeNumber(cfg.coverSubtitleFontSize, base.coverSubtitleFontSize, 22, 180),
       coverLineHeight: safeNumber(cfg.coverLineHeight, base.coverLineHeight, 1.1, 2),
       hasSocialIcons: Boolean(cfg.hasSocialIcons),
       selectedSocialIcons: Array.isArray(cfg.selectedSocialIcons)
@@ -1183,6 +1306,7 @@ function drawPosterCover(
   ctx: CanvasRenderingContext2D,
   style: CoverStyleSpec,
   title: string,
+  subtitle: string,
   config: CardConfig,
   stickerImages: Partial<Record<CoverStyleId, { primary: HTMLImageElement | null; secondary: HTMLImageElement | null }>>
 ) {
@@ -1231,14 +1355,30 @@ function drawPosterCover(
   }
 
   const coverTitle = title.trim() || "Untitled";
+  const coverSubtitle = subtitle.trim();
   const titleFont = `900 ${config.coverFontSize}px ${config.coverFontFamily || config.fontFamily}`;
+  const subtitleFont = `700 ${config.coverSubtitleFontSize}px ${config.coverFontFamily || config.fontFamily}`;
   const titleLines = wrapCoverTitleLines(ctx, coverTitle, titleFont, CARD_WIDTH - 220);
-  const lineHeightPx = config.coverFontSize * config.coverLineHeight;
+  const subtitleLines = coverSubtitle
+    ? wrapCoverTitleLines(ctx, coverSubtitle, subtitleFont, CARD_WIDTH - 240).slice(0, 3)
+    : [];
+  const titleLineHeightPx = config.coverFontSize * config.coverLineHeight;
+  const subtitleLineHeightPx = config.coverSubtitleFontSize * Math.max(1.15, config.coverLineHeight - 0.16);
+  const subtitleGap = subtitleLines.length > 0 ? Math.max(18, config.coverSubtitleFontSize * 0.36) : 0;
   const horizontalPadding = 128;
-  const maxLineWidth = Math.max(80, ...titleLines.map((line) => ctx.measureText(line).width));
+  ctx.font = titleFont;
+  const titleMaxWidth = Math.max(80, ...titleLines.map((line) => ctx.measureText(line).width));
+  ctx.font = subtitleFont;
+  const subtitleMaxWidth = subtitleLines.length > 0
+    ? Math.max(60, ...subtitleLines.map((line) => ctx.measureText(line).width))
+    : 0;
+  const maxLineWidth = Math.max(titleMaxWidth, subtitleMaxWidth);
   const availableTop = style.id === "lime-question" ? 220 : 190;
   const availableBottom = CARD_HEIGHT - 280;
-  const textBlockHeight = titleLines.length * lineHeightPx;
+  const textBlockHeight =
+    titleLines.length * titleLineHeightPx
+    + subtitleGap
+    + subtitleLines.length * subtitleLineHeightPx;
   const yRange = Math.max(0, availableBottom - availableTop - textBlockHeight);
   const startY =
     config.coverTitleAlignY === "top"
@@ -1269,7 +1409,7 @@ function drawPosterCover(
   if (titleLines.length > 0) {
     const highlightLineIdx = titleLines.length === 1 ? 0 : style.id === "grid-paper" ? 0 : 1;
     const idx = Math.max(0, Math.min(titleLines.length - 1, highlightLineIdx));
-    const targetY = y + idx * lineHeightPx;
+    const targetY = y + idx * titleLineHeightPx;
     const widthPadding = style.highlightStyle === "circle" ? 92 : 54;
     const minWidth = style.highlightStyle === "circle" ? 280 : 260;
     const w = Math.min(CARD_WIDTH - 260, Math.max(minWidth, ctx.measureText(titleLines[idx]).width + widthPadding));
@@ -1279,12 +1419,23 @@ function drawPosterCover(
         : alignX === "right"
           ? rightX - w
           : highlightBaseX;
-    drawTitleHighlight(ctx, style.highlightStyle, highlightX, targetY, w, config.coverFontSize, lineHeightPx, highlightColor);
+    drawTitleHighlight(ctx, style.highlightStyle, highlightX, targetY, w, config.coverFontSize, titleLineHeightPx, highlightColor);
   }
 
   for (const line of titleLines) {
     ctx.fillText(line, anchorX, y);
-    y += lineHeightPx;
+    y += titleLineHeightPx;
+  }
+
+  if (subtitleLines.length > 0) {
+    y += subtitleGap;
+    ctx.font = subtitleFont;
+    ctx.globalAlpha = 0.95;
+    for (const line of subtitleLines) {
+      ctx.fillText(line, anchorX, y);
+      y += subtitleLineHeightPx;
+    }
+    ctx.globalAlpha = 1;
   }
 
   if (config.coverShowStickers) {
@@ -1307,12 +1458,19 @@ function drawPosterCover(
 function drawImageFocusCover(
   ctx: CanvasRenderingContext2D,
   title: string,
+  subtitle: string,
   config: CardConfig,
   coverImage: HTMLImageElement | null
 ) {
   const imageAreaY = 120;
   const imageAreaH = Math.round(CARD_HEIGHT * 0.56);
   const radius = Math.max(0, Math.min(64, config.coverCardRadius));
+  const leftX = 120;
+  const rightX = CARD_WIDTH - 120;
+  const centerX = CARD_WIDTH / 2;
+  const alignX = config.coverTitleAlignX;
+  const anchorX = alignX === "left" ? leftX : alignX === "right" ? rightX : centerX;
+
   if (coverImage && coverImage.complete && coverImage.naturalWidth > 0 && coverImage.naturalHeight > 0) {
     const scale = Math.max(CARD_WIDTH / coverImage.naturalWidth, imageAreaH / coverImage.naturalHeight);
     const drawW = coverImage.naturalWidth * scale;
@@ -1333,14 +1491,98 @@ function drawImageFocusCover(
     ctx.fillStyle = grad;
     drawRoundedRect(ctx, 28, imageAreaY, CARD_WIDTH - 56, imageAreaH, radius, undefined);
     ctx.fillRect(28, imageAreaY, CARD_WIDTH - 56, imageAreaH);
+
+    const fallbackTitleLines = wrapCoverTitleLines(
+      ctx,
+      title.trim() || "Untitled",
+      `900 ${Math.max(58, config.coverFontSize * 0.86)}px ${config.coverFontFamily || config.fontFamily}`,
+      CARD_WIDTH - 210
+    ).slice(0, 3);
+    const fallbackSubtitleLines = subtitle.trim()
+      ? wrapCoverTitleLines(
+          ctx,
+          subtitle.trim(),
+          `700 ${Math.max(36, config.coverSubtitleFontSize * 0.86)}px ${config.coverFontFamily || config.fontFamily}`,
+          CARD_WIDTH - 230
+        ).slice(0, 2)
+      : [];
+    const titleFontSize = Math.max(58, config.coverFontSize * 0.86);
+    const subtitleFontSize = Math.max(36, config.coverSubtitleFontSize * 0.86);
+    const titleLineHeight = titleFontSize * Math.max(1.08, config.coverLineHeight - 0.22);
+    const subtitleLineHeight = subtitleFontSize * Math.max(1.12, config.coverLineHeight - 0.26);
+    const subtitleGap = fallbackSubtitleLines.length > 0 ? Math.max(14, subtitleFontSize * 0.32) : 0;
+    const blockHeight =
+      fallbackTitleLines.length * titleLineHeight
+      + subtitleGap
+      + fallbackSubtitleLines.length * subtitleLineHeight;
+    const textTop = imageAreaY + (imageAreaH - blockHeight) / 2;
+
+    ctx.fillStyle = config.coverTextColor;
+    ctx.textAlign = alignX;
+    ctx.textBaseline = "top";
+    ctx.shadowColor = "rgba(0,0,0,0.35)";
+    ctx.shadowBlur = 20;
+    ctx.shadowOffsetY = 8;
+
+    let y = textTop;
+    ctx.font = `900 ${titleFontSize}px ${config.coverFontFamily || config.fontFamily}`;
+    const coverStyle = findCoverStyle(config.coverStyleId);
+    const highlightWidth = Math.max(
+      280,
+      Math.min(840, ctx.measureText(fallbackTitleLines[0] || "").width + 104)
+    );
+    const highlightX =
+      alignX === "left"
+        ? leftX - 12
+        : alignX === "right"
+          ? rightX - highlightWidth
+          : centerX - highlightWidth / 2;
+    drawTitleHighlight(
+      ctx,
+      coverStyle.highlightStyle,
+      highlightX,
+      y,
+      highlightWidth,
+      titleFontSize,
+      titleLineHeight,
+      config.coverHighlightColor
+    );
+
+    for (const line of fallbackTitleLines) {
+      ctx.fillText(line, anchorX, y);
+      y += titleLineHeight;
+    }
+    if (fallbackSubtitleLines.length > 0) {
+      y += subtitleGap;
+      ctx.font = `700 ${subtitleFontSize}px ${config.coverFontFamily || config.fontFamily}`;
+      ctx.globalAlpha = 0.95;
+      for (const line of fallbackSubtitleLines) {
+        ctx.fillText(line, anchorX, y);
+        y += subtitleLineHeight;
+      }
+      ctx.globalAlpha = 1;
+    }
+    ctx.shadowColor = "transparent";
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
   }
 
   const coverTitle = title.trim() || "Untitled";
+  const coverSubtitle = subtitle.trim();
+  const titleFontSize = config.coverFontSize;
+  const subtitleFontSize = config.coverSubtitleFontSize;
   const titleLines = coverTitle.replace(/\\n/g, "\n").split("\n").filter(Boolean);
-  const fontSize = config.coverFontSize;
-  const lineHeightPx = fontSize * config.coverLineHeight;
+  const subtitleLines = coverSubtitle
+    ? coverSubtitle.replace(/\\n/g, "\n").split("\n").filter(Boolean).slice(0, 3)
+    : [];
+  const titleLineHeightPx = titleFontSize * config.coverLineHeight;
+  const subtitleLineHeightPx = subtitleFontSize * Math.max(1.15, config.coverLineHeight - 0.16);
+  const subtitleGap = subtitleLines.length > 0 ? Math.max(18, subtitleFontSize * 0.36) : 0;
   const safeLines = titleLines.length > 0 ? titleLines : ["Untitled"];
-  const totalHeight = safeLines.length * lineHeightPx;
+  const totalHeight =
+    safeLines.length * titleLineHeightPx
+    + subtitleGap
+    + subtitleLines.length * subtitleLineHeightPx;
   const availableTop = imageAreaY + imageAreaH + 78;
   const availableBottom = CARD_HEIGHT - 92;
   const yRange = Math.max(0, availableBottom - availableTop - totalHeight);
@@ -1350,16 +1592,10 @@ function drawImageFocusCover(
       : config.coverTitleAlignY === "bottom"
         ? availableTop + yRange
         : availableTop + yRange / 2;
-  const leftX = 120;
-  const rightX = CARD_WIDTH - 120;
-  const centerX = CARD_WIDTH / 2;
-  const alignX = config.coverTitleAlignX;
-  const anchorX = alignX === "left" ? leftX : alignX === "right" ? rightX : centerX;
-
   ctx.fillStyle = config.coverTextColor;
   ctx.textAlign = alignX;
   ctx.textBaseline = "top";
-  ctx.font = `800 ${fontSize}px ${config.coverFontFamily || config.fontFamily}`;
+  ctx.font = `800 ${titleFontSize}px ${config.coverFontFamily || config.fontFamily}`;
   let y = startY;
   const coverStyle = findCoverStyle(config.coverStyleId);
 
@@ -1373,12 +1609,23 @@ function drawImageFocusCover(
         : alignX === "right"
           ? rightX - strokeW
           : centerX - strokeW / 2;
-    drawTitleHighlight(ctx, coverStyle.highlightStyle, strokeX, y, strokeW, fontSize, lineHeightPx, config.coverHighlightColor);
+    drawTitleHighlight(ctx, coverStyle.highlightStyle, strokeX, y, strokeW, titleFontSize, titleLineHeightPx, config.coverHighlightColor);
   }
 
   for (const line of safeLines) {
     ctx.fillText(line, anchorX, y);
-    y += lineHeightPx;
+    y += titleLineHeightPx;
+  }
+
+  if (subtitleLines.length > 0) {
+    y += subtitleGap;
+    ctx.font = `700 ${subtitleFontSize}px ${config.coverFontFamily || config.fontFamily}`;
+    ctx.globalAlpha = 0.95;
+    for (const line of subtitleLines) {
+      ctx.fillText(line, anchorX, y);
+      y += subtitleLineHeightPx;
+    }
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -2149,6 +2396,7 @@ function drawSocialIcons(ctx: CanvasRenderingContext2D, config: CardConfig, soci
 function drawCoverPage(
   ctx: CanvasRenderingContext2D,
   title: string,
+  subtitle: string,
   templateId: CardTemplateId,
   config: CardConfig,
   coverImage: HTMLImageElement | null,
@@ -2157,15 +2405,16 @@ function drawCoverPage(
   void templateId;
   const coverStyle = findCoverStyle(config.coverStyleId);
   if (coverStyle.layout === "image") {
-    drawImageFocusCover(ctx, title, config, coverImage);
+    drawImageFocusCover(ctx, title, subtitle, config, coverImage);
     return;
   }
-  drawPosterCover(ctx, coverStyle, title, config, stickerImages);
+  drawPosterCover(ctx, coverStyle, title, subtitle, config, stickerImages);
 }
 
 function renderPageCanvas(
   page: CardPage,
   title: string,
+  subtitle: string,
   templateId: CardTemplateId,
   config: CardConfig,
   pageIndex: number,
@@ -2185,7 +2434,7 @@ function renderPageCanvas(
   drawWatermark(ctx, config);
 
   if (page.type === "cover") {
-    drawCoverPage(ctx, title, templateId, config, coverImage, stickerImages);
+    drawCoverPage(ctx, title, subtitle, templateId, config, coverImage, stickerImages);
     drawSocialIcons(ctx, config, socialIconImages);
     return canvas;
   }
@@ -2303,6 +2552,8 @@ export function MarkdownTextCardDialog({
   onOpenChange,
   markdown,
   filePath,
+  rightPanel,
+  xhsPublishMeta,
 }: MarkdownTextCardDialogProps) {
   const { t, locale } = useTranslation();
   const isZh = locale === "zh";
@@ -2319,14 +2570,24 @@ export function MarkdownTextCardDialog({
   const [coverImageName, setCoverImageName] = useState("");
   const [coverTitleEdited, setCoverTitleEdited] = useState(false);
   const [persistedHydrated, setPersistedHydrated] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishError, setPublishError] = useState("");
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false);
+  const [publishResult, setPublishResult] = useState<{
+    id: string;
+    url: string;
+    qrcode: string;
+  } | null>(null);
+  const [lastPublishedKey, setLastPublishedKey] = useState("");
+  const publishRequestLockRef = useRef(false);
   const isBrowser = typeof window !== "undefined";
 
   const currentTemplate = useMemo(() => findTemplate(templateId), [templateId]);
   const title = useMemo(() => getDefaultTitle(filePath), [filePath]);
   const inferredCoverTitle = useMemo(() => deriveCoverTitleFromMarkdown(markdown, title), [markdown, title]);
-  const resolvedCoverTitle = useMemo(
-    () => resolveCoverTitle(config.coverTitle, inferredCoverTitle, title),
-    [config.coverTitle, inferredCoverTitle, title]
+  const resolvedCoverText = useMemo(
+    () => resolveCoverText(config.coverTitle, config.coverSubtitle, inferredCoverTitle, title),
+    [config.coverTitle, config.coverSubtitle, inferredCoverTitle, title]
   );
   const cardMarkdown = useMemo(() => preprocessMarkdownForCard(markdown), [markdown]);
   const pages = useMemo(() => paginateMarkdown(cardMarkdown, templateId, config), [cardMarkdown, templateId, config]);
@@ -2464,7 +2725,8 @@ export function MarkdownTextCardDialog({
     const idx = Math.max(0, Math.min(pageIndex, pages.length - 1));
     const canvas = renderPageCanvas(
       pages[idx],
-      resolvedCoverTitle,
+      resolvedCoverText.title,
+      resolvedCoverText.subtitle,
       templateId,
       config,
       idx,
@@ -2474,7 +2736,39 @@ export function MarkdownTextCardDialog({
       coverStickerImages
     );
     return canvas.toDataURL("image/png");
-  }, [isBrowser, pageIndex, pages, resolvedCoverTitle, templateId, config, coverImageEl, socialIconImages, coverStickerImages]);
+  }, [isBrowser, pageIndex, pages, resolvedCoverText, templateId, config, coverImageEl, socialIconImages, coverStickerImages]);
+
+  const publishTitle = useMemo(() => {
+    const fallback = sanitizeCoverTitleCandidate(resolvedCoverText.title || title);
+    const raw = sanitizeCoverTitleCandidate(xhsPublishMeta?.title || fallback || title);
+    return truncateXhsTitle(raw) || "小红书图文";
+  }, [resolvedCoverText.title, title, xhsPublishMeta?.title]);
+
+  const publishTags = useMemo(
+    () => dedupeTags(Array.isArray(xhsPublishMeta?.tags) ? xhsPublishMeta.tags : []).slice(0, 8),
+    [xhsPublishMeta?.tags]
+  );
+
+  const publishContent = useMemo(() => {
+    const bodyText = typeof xhsPublishMeta?.body === "string" ? xhsPublishMeta.body.replace(/\r\n/g, "\n").trim() : "";
+    const hashLine = publishTags.map((tag) => `#${normalizeTagText(tag)}`).filter(Boolean).join(" ");
+    const fallback = bodyText || sanitizeCoverTitleCandidate(resolvedCoverText.subtitle || resolvedCoverText.title) || publishTitle;
+    return [fallback, hashLine].filter(Boolean).join("\n\n").slice(0, 1000);
+  }, [publishTags, publishTitle, resolvedCoverText.subtitle, resolvedCoverText.title, xhsPublishMeta?.body]);
+
+  const publishCacheKey = useMemo(
+    () =>
+      JSON.stringify({
+        title: publishTitle,
+        content: publishContent,
+        tags: publishTags,
+        templateId,
+        config,
+        markdown: cardMarkdown,
+        pageCount: pages.length,
+      }),
+    [publishTitle, publishContent, publishTags, templateId, config, cardMarkdown, pages.length]
+  );
 
   const coverStyleThumbs = useMemo(() => {
     if (!isBrowser) return [];
@@ -2485,7 +2779,8 @@ export function MarkdownTextCardDialog({
       const nextConfig = applyCoverStyleDefaults(config, style);
       const canvas = renderPageCanvas(
         targetPage,
-        resolvedCoverTitle,
+        resolvedCoverText.title,
+        resolvedCoverText.subtitle,
         templateId,
         nextConfig,
         0,
@@ -2496,7 +2791,7 @@ export function MarkdownTextCardDialog({
       );
       return { id: style.id, dataUrl: canvas.toDataURL("image/png"), label: isZh ? style.nameZh : style.nameEn };
     });
-  }, [isBrowser, config, config.hasCover, pages, resolvedCoverTitle, templateId, coverImageEl, socialIconImages, coverStickerImages, isZh]);
+  }, [isBrowser, config, pages, resolvedCoverText, templateId, coverImageEl, socialIconImages, coverStickerImages, isZh]);
 
   const canExport = pages.length > 0 && !exporting;
   const safePageIndex = Math.max(0, Math.min(pageIndex, Math.max(0, pages.length - 1)));
@@ -2541,7 +2836,8 @@ export function MarkdownTextCardDialog({
       const idx = Math.max(0, Math.min(pageIndex, pages.length - 1));
       const canvas = renderPageCanvas(
         pages[idx],
-        resolvedCoverTitle,
+        resolvedCoverText.title,
+        resolvedCoverText.subtitle,
         templateId,
         config,
         idx,
@@ -2566,7 +2862,8 @@ export function MarkdownTextCardDialog({
       for (let i = 0; i < pages.length; i += 1) {
         const canvas = renderPageCanvas(
           pages[i],
-          resolvedCoverTitle,
+          resolvedCoverText.title,
+          resolvedCoverText.subtitle,
           templateId,
           config,
           i,
@@ -2584,15 +2881,133 @@ export function MarkdownTextCardDialog({
     }
   };
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="!w-[min(1800px,99vw)] !max-w-[min(1800px,99vw)] sm:!max-w-[min(1800px,99vw)] h-[96vh] max-h-[96vh] overflow-hidden flex flex-col gap-3 px-3 sm:px-4">
-        <DialogHeader>
-          <DialogTitle>{t("docPreview.textCardTitle")}</DialogTitle>
-          <DialogDescription>{t("docPreview.textCardDesc")}</DialogDescription>
-        </DialogHeader>
+  const handlePublishToXhs = async () => {
+    if (publishRequestLockRef.current || isPublishing || pages.length === 0) return;
+    if (publishResult && lastPublishedKey && lastPublishedKey === publishCacheKey) {
+      setPublishError("");
+      setPublishDialogOpen(true);
+      return;
+    }
+    publishRequestLockRef.current = true;
+    setPublishError("");
+    setIsPublishing(true);
+    try {
+      const baseName = sanitizeFileName(title);
+      const pagesToPublish = pages.slice(0, 18);
+      const imageUrls: string[] = [];
 
-        <div className="grid gap-3 xl:gap-4 md:grid-cols-[460px_minmax(0,1fr)] flex-1 min-h-0">
+      for (let i = 0; i < pagesToPublish.length; i += 1) {
+        const canvas = renderPageCanvas(
+          pagesToPublish[i],
+          resolvedCoverText.title,
+          resolvedCoverText.subtitle,
+          templateId,
+          config,
+          i,
+          pages.length,
+          coverImageEl,
+          socialIconImages,
+          coverStickerImages
+        );
+        const blob = await canvasToBlob(canvas, "png");
+        const file = new File([blob], `${baseName}-${String(i + 1).padStart(2, "0")}.png`, { type: "image/png" });
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("type", "storyboard");
+
+        const uploadResponse = await fetch("/api/upload/image", {
+          method: "POST",
+          body: formData,
+        });
+        const uploadPayload = await uploadResponse.json().catch(() => null);
+        const uploadedUrl = typeof uploadPayload?.url === "string" ? uploadPayload.url.trim() : "";
+        if (!uploadResponse.ok || !uploadedUrl) {
+          throw new Error(
+            typeof uploadPayload?.error === "string" && uploadPayload.error.trim()
+              ? uploadPayload.error.trim()
+              : "图片上传失败，请稍后重试"
+          );
+        }
+        imageUrls.push(uploadedUrl);
+      }
+
+      if (imageUrls.length === 0) {
+        throw new Error("未生成可发布图片，请先检查排版预览");
+      }
+
+      const publishResponse = await fetch("/api/xhs-layout/publish", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "normal",
+          title: publishTitle,
+          content: publishContent,
+          images: imageUrls,
+        }),
+      });
+      const publishPayload = await publishResponse.json().catch(() => null);
+      const data = publishPayload?.data;
+      const qrcode = typeof data?.qrcode === "string" ? data.qrcode : "";
+      const url = typeof data?.url === "string" ? data.url : "";
+      const id = typeof data?.id === "string" ? data.id : "";
+
+      if (!publishResponse.ok || !qrcode || !url || !id) {
+        throw new Error(
+          typeof publishPayload?.error === "string" && publishPayload.error.trim()
+            ? publishPayload.error.trim()
+            : "发布二维码生成失败，请稍后重试"
+        );
+      }
+
+      setPublishResult({ id, url, qrcode });
+      setLastPublishedKey(publishCacheKey);
+      setPublishDialogOpen(true);
+    } catch (error) {
+      setPublishError(error instanceof Error ? error.message : "发布失败，请稍后重试");
+    } finally {
+      setIsPublishing(false);
+      publishRequestLockRef.current = false;
+    }
+  };
+
+  useEffect(() => {
+    if (!open) {
+      setIsPublishing(false);
+      setPublishError("");
+      setPublishDialogOpen(false);
+      setPublishResult(null);
+      setLastPublishedKey("");
+      publishRequestLockRef.current = false;
+    }
+  }, [open]);
+
+  return (
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="relative !w-[min(1800px,99vw)] !max-w-[min(1800px,99vw)] sm:!max-w-[min(1800px,99vw)] h-[96vh] max-h-[96vh] overflow-hidden flex flex-col gap-3 px-3 sm:px-4">
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            aria-label={isZh ? "关闭弹窗" : "Close dialog"}
+            className="absolute right-7 top-5 inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:text-foreground"
+          >
+            <X size={16} />
+          </button>
+          <DialogHeader>
+            <DialogTitle>{t("docPreview.textCardTitle")}</DialogTitle>
+            <DialogDescription>{t("docPreview.textCardDesc")}</DialogDescription>
+          </DialogHeader>
+
+        <div
+          className={[
+            "grid gap-3 xl:gap-4 flex-1 min-h-0",
+            rightPanel
+              ? "md:grid-cols-[420px_minmax(0,0.86fr)_420px]"
+              : "md:grid-cols-[440px_minmax(0,0.9fr)]",
+          ].join(" ")}
+        >
           <div className="rounded-lg border border-border/60 bg-muted/20 p-4 space-y-4 overflow-y-auto min-w-0">
             <div className="rounded-md border border-border/50 bg-background/80 p-3 text-xs">
               <p className="font-medium text-foreground">{isZh ? currentTemplate.nameZh : currentTemplate.nameEn}</p>
@@ -2940,6 +3355,16 @@ export function MarkdownTextCardDialog({
                     }}
                   />
 
+                  <textarea
+                    className="w-full rounded border border-border bg-background px-2 py-1.5 text-xs"
+                    rows={2}
+                    placeholder={isZh ? "封面副标题（可选）" : "Cover subtitle (optional)"}
+                    value={config.coverSubtitle}
+                    onChange={(e) => {
+                      setConfig((prev) => ({ ...prev, coverSubtitle: e.target.value }));
+                    }}
+                  />
+
                   <div className="flex items-center gap-2">
                     <label className="inline-flex items-center justify-center rounded border border-border px-3 py-1.5 text-xs cursor-pointer hover:bg-muted">
                       {isZh ? "上传封面图" : "Upload Cover"}
@@ -2990,13 +3415,25 @@ export function MarkdownTextCardDialog({
                   </label>
 
                   <label className="text-xs block">
-                    <div className="flex items-center justify-between"><span>{isZh ? "封面字号" : "Cover Font Size"}</span><span>{config.coverFontSize}px</span></div>
+                    <div className="flex items-center justify-between"><span>{isZh ? "主标题字号" : "Title Font Size"}</span><span>{config.coverFontSize}px</span></div>
                     <input
                       type="range"
                       min={28}
                       max={220}
                       value={config.coverFontSize}
                       onChange={(e) => setConfig((prev) => ({ ...prev, coverFontSize: Number(e.target.value) }))}
+                      className="w-full"
+                    />
+                  </label>
+
+                  <label className="text-xs block">
+                    <div className="flex items-center justify-between"><span>{isZh ? "副标题字号" : "Subtitle Font Size"}</span><span>{config.coverSubtitleFontSize}px</span></div>
+                    <input
+                      type="range"
+                      min={22}
+                      max={180}
+                      value={config.coverSubtitleFontSize}
+                      onChange={(e) => setConfig((prev) => ({ ...prev, coverSubtitleFontSize: Number(e.target.value) }))}
                       className="w-full"
                     />
                   </label>
@@ -3156,14 +3593,14 @@ export function MarkdownTextCardDialog({
           </div>
 
           <div className="min-h-0 min-w-0 flex flex-col">
-            <div className="relative flex-1 min-h-0 overflow-hidden rounded-lg border border-border/60 bg-muted/10 p-3 flex items-center justify-center">
+            <div className="relative flex-1 min-h-0 overflow-hidden rounded-lg border border-border/60 bg-muted/10 p-3 sm:p-4 flex items-center justify-center">
               {previewDataUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={previewDataUrl}
                   alt="text-card-preview"
                   className="h-auto w-auto rounded-md border border-border/40 shadow-sm object-contain"
-                  style={{ maxWidth: `${previewScale}%`, maxHeight: `${previewScale}%` }}
+                  style={{ maxWidth: `${Math.min(previewScale, 85)}%`, maxHeight: `${Math.min(previewScale, 88)}%` }}
                 />
               ) : (
                 <div className="text-sm text-muted-foreground py-12">{t("docPreview.textCardEmpty")}</div>
@@ -3200,48 +3637,89 @@ export function MarkdownTextCardDialog({
 
             {config.hasCover && coverStyleThumbs.length > 0 ? (
               <div className="mt-2 rounded-lg border border-border/60 bg-background/90 p-2">
-                <p className="mb-1 text-[11px] text-muted-foreground">
-                  {isZh ? "选择一个喜欢的封面风格" : "Choose a cover style"}
-                </p>
-                <div className="flex gap-2 overflow-x-auto pb-1">
+                <div className="flex gap-1.5 overflow-x-auto pb-0.5">
                   {coverStyleThumbs.map((thumb) => (
                     <button
                       key={thumb.id}
                       type="button"
-                      className={`shrink-0 w-[88px] rounded-md border p-1 text-left ${config.coverStyleId === thumb.id ? "border-primary ring-2 ring-primary/30" : "border-border/60 hover:border-border"}`}
+                      className={`shrink-0 w-[74px] rounded-md border p-1 text-left ${config.coverStyleId === thumb.id ? "border-primary ring-2 ring-primary/30" : "border-border/60 hover:border-border"}`}
                       onClick={() => handleCoverStyleChange(thumb.id)}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={thumb.dataUrl} alt={thumb.label} className="h-20 w-full rounded object-cover border border-border/50" />
-                      <p className="mt-1 text-[10px] truncate">{thumb.label}</p>
+                      <img src={thumb.dataUrl} alt={thumb.label} className="h-16 w-full rounded object-cover border border-border/50" />
+                      <p className="mt-0.5 text-[9px] truncate">{thumb.label}</p>
                     </button>
                   ))}
                 </div>
               </div>
             ) : null}
           </div>
+          {rightPanel ? (
+            <aside className="min-h-0 overflow-y-auto rounded-lg border border-border/60 bg-background p-4">
+              {rightPanel}
+            </aside>
+          ) : null}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={handleExportCurrent} disabled={!canExport}>
-            {exporting ? (
-              <SpinnerGap size={14} className="mr-2 animate-spin" />
+          {publishError ? <p className="text-xs text-destructive">{publishError}</p> : null}
+
+          <DialogFooter>
+            {xhsPublishMeta ? (
+              <Button
+                onClick={handlePublishToXhs}
+                disabled={!canExport || isPublishing}
+                className="bg-[#ec4a5d] text-white hover:bg-[#e13b4f] dark:bg-[#ec4a5d] dark:text-white dark:hover:bg-[#e13b4f]"
+              >
+                {isPublishing ? <SpinnerGap size={14} className="mr-2 animate-spin" /> : null}
+                发布
+              </Button>
+            ) : null}
+            <Button variant="outline" onClick={handleExportCurrent} disabled={!canExport}>
+              {exporting ? (
+                <SpinnerGap size={14} className="mr-2 animate-spin" />
+              ) : (
+                <DownloadSimple size={14} className="mr-2" />
+              )}
+              {t("docPreview.textCardExportCurrent")}
+            </Button>
+            <Button onClick={handleExportAll} disabled={!canExport}>
+              {exporting ? (
+                <SpinnerGap size={14} className="mr-2 animate-spin" />
+              ) : (
+                <DownloadSimple size={14} className="mr-2" />
+              )}
+              {t("docPreview.textCardExportAll")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={publishDialogOpen} onOpenChange={setPublishDialogOpen}>
+        <DialogContent className="!w-[min(560px,92vw)] !max-w-[min(560px,92vw)] rounded-[28px] p-5 sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="text-center text-lg">发布二维码</DialogTitle>
+            <DialogDescription className="text-center">扫码一键发布</DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-3 flex flex-col items-center gap-3">
+            {publishResult?.qrcode ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={publishResult.qrcode}
+                alt="xhs-publish-qrcode"
+                className="h-[280px] w-[280px] rounded-2xl border border-[#ececec] bg-white p-3"
+              />
             ) : (
-              <DownloadSimple size={14} className="mr-2" />
+              <div className="rounded-lg border border-border/70 px-4 py-8 text-sm text-muted-foreground">暂无二维码</div>
             )}
-            {t("docPreview.textCardExportCurrent")}
-          </Button>
-          <Button onClick={handleExportAll} disabled={!canExport}>
-            {exporting ? (
-              <SpinnerGap size={14} className="mr-2 animate-spin" />
-            ) : (
-              <DownloadSimple size={14} className="mr-2" />
-            )}
-            {t("docPreview.textCardExportAll")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </div>
+
+          <DialogFooter className="mt-5 justify-center">
+            <Button variant="outline" onClick={() => setPublishDialogOpen(false)}>关闭</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -3250,6 +3728,13 @@ type MarkdownXhsLayoutModalProps = {
   onClose: () => void;
   markdown: string;
   filePath?: string | null;
+  xhsMeta?: {
+    coverTitle?: string;
+    subTitle?: string;
+    title?: string;
+    body?: string;
+    tags?: string[];
+  };
 };
 
 export function MarkdownXhsLayoutModal({
@@ -3257,7 +3742,126 @@ export function MarkdownXhsLayoutModal({
   onClose,
   markdown,
   filePath,
+  xhsMeta,
 }: MarkdownXhsLayoutModalProps) {
+  const [generatedMeta, setGeneratedMeta] = useState<{
+    coverTitle: string;
+    subTitle: string;
+    title: string;
+    body: string;
+    tags: string[];
+  } | null>(null);
+  const [isGeneratingMeta, setIsGeneratingMeta] = useState(false);
+  const [generateMetaError, setGenerateMetaError] = useState("");
+  const [editableTitle, setEditableTitle] = useState("");
+  const [editableBody, setEditableBody] = useState("");
+  const [editableTagsText, setEditableTagsText] = useState("");
+
+  const defaultTitle = getDefaultTitle(filePath || "untitled.md");
+  const currentTags = useMemo(() => dedupeTags(parseTagsInput(editableTagsText)).slice(0, 8), [editableTagsText]);
+  const titleLength = useMemo(() => Array.from(editableTitle).length, [editableTitle]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setGeneratedMeta(null);
+      setIsGeneratingMeta(false);
+      setGenerateMetaError("");
+      setEditableTitle("");
+      setEditableBody("");
+      setEditableTagsText("");
+      return;
+    }
+    const initTitle = (xhsMeta?.title || "").trim() || defaultTitle;
+    const initBody = (xhsMeta?.body || "").trim();
+    const initTags = dedupeTags(Array.isArray(xhsMeta?.tags) ? xhsMeta.tags : []);
+    setEditableTitle(truncateXhsTitle(initTitle));
+    setEditableBody(initBody.slice(0, 1000));
+    setEditableTagsText(formatTagsInput(initTags));
+  }, [isOpen]);
+
+  const handleAutoGenerateMeta = async () => {
+    if (isGeneratingMeta) return;
+    setGenerateMetaError("");
+    setIsGeneratingMeta(true);
+
+    try {
+      const response = await fetch("/api/xhs-layout/meta", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          markdown,
+          filePath: filePath || "untitled.md",
+        }),
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        const fallback = buildLocalMetaFallback(markdown, filePath || "untitled.md");
+        setGeneratedMeta({
+          coverTitle: "",
+          subTitle: "",
+          title: fallback.title,
+          body: fallback.body,
+          tags: fallback.tags,
+        });
+        setEditableTitle(fallback.title || defaultTitle);
+        setEditableBody(fallback.body);
+        setEditableTagsText(formatTagsInput(fallback.tags));
+        setGenerateMetaError("");
+        return;
+      }
+
+      const data = payload?.data;
+      const nextTags = dedupeTags(Array.isArray(data?.tags) ? data.tags : []);
+      const nextMeta = {
+        coverTitle: "",
+        subTitle: "",
+        title: typeof data?.title === "string" ? data.title.trim() : "",
+        body: typeof data?.body === "string" ? data.body.trim() : "",
+        tags: nextTags,
+      };
+
+      if (!nextMeta.title && !nextMeta.body && nextMeta.tags.length === 0) {
+        const fallback = buildLocalMetaFallback(markdown, filePath || "untitled.md");
+        setGeneratedMeta({
+          coverTitle: "",
+          subTitle: "",
+          title: fallback.title,
+          body: fallback.body,
+          tags: fallback.tags,
+        });
+        setEditableTitle(fallback.title || defaultTitle);
+        setEditableBody(fallback.body);
+        setEditableTagsText(formatTagsInput(fallback.tags));
+        setGenerateMetaError("");
+        return;
+      }
+
+      setGeneratedMeta(nextMeta);
+      setEditableTitle(truncateXhsTitle(nextMeta.title || defaultTitle));
+      setEditableBody(nextMeta.body.slice(0, 1000));
+      setEditableTagsText(formatTagsInput(nextTags));
+      setGenerateMetaError("");
+    } catch (error) {
+      const fallback = buildLocalMetaFallback(markdown, filePath || "untitled.md");
+      setGeneratedMeta({
+        coverTitle: "",
+        subTitle: "",
+        title: fallback.title,
+        body: fallback.body,
+        tags: fallback.tags,
+      });
+      setEditableTitle(fallback.title || defaultTitle);
+      setEditableBody(fallback.body);
+      setEditableTagsText(formatTagsInput(fallback.tags));
+      setGenerateMetaError("");
+    } finally {
+      setIsGeneratingMeta(false);
+    }
+  };
+
   return (
     <MarkdownTextCardDialog
       open={isOpen}
@@ -3266,6 +3870,78 @@ export function MarkdownXhsLayoutModal({
       }}
       markdown={markdown}
       filePath={filePath || "untitled.md"}
+      xhsPublishMeta={{
+        title: truncateXhsTitle(editableTitle) || defaultTitle,
+        body: editableBody.trim(),
+        tags: currentTags,
+      }}
+      rightPanel={(
+        <>
+          <div className="space-y-3 text-sm">
+            <div className="flex items-center justify-end">
+              <button
+                type="button"
+                onClick={handleAutoGenerateMeta}
+                disabled={isGeneratingMeta}
+                className="inline-flex items-center gap-1 rounded-md border border-border/70 px-2 py-1 text-[11px] text-muted-foreground transition hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isGeneratingMeta ? <SpinnerGap size={12} className="animate-spin" /> : <WandSparkles size={12} />}
+                {isGeneratingMeta ? "生成中..." : "AI生成标题正文"}
+              </button>
+            </div>
+
+            {generateMetaError ? <p className="text-xs text-destructive">{generateMetaError}</p> : null}
+
+            <section className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">标题</p>
+              <textarea
+                value={editableTitle}
+                rows={2}
+                maxLength={40}
+                onChange={(event) => setEditableTitle(truncateXhsTitle(event.target.value))}
+                placeholder="请输入标题（最多20字）"
+                className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-2xl font-bold leading-tight text-foreground outline-none focus:border-primary"
+              />
+              <p className="text-[11px] text-muted-foreground">{titleLength}/20</p>
+            </section>
+
+            <section className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">正文</p>
+              <textarea
+                value={editableBody}
+                rows={8}
+                onChange={(event) => setEditableBody(event.target.value.slice(0, 1000))}
+                placeholder="请输入正文（最多1000字）"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm leading-6 text-foreground outline-none focus:border-primary"
+              />
+              <p className="text-[11px] text-muted-foreground">{editableBody.length}/1000</p>
+            </section>
+
+            <section className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">标签</p>
+              <textarea
+                value={editableTagsText}
+                rows={2}
+                onChange={(event) => setEditableTagsText(event.target.value)}
+                placeholder="#标签1 #标签2（支持空格、换行、逗号分隔）"
+                className="w-full resize-y rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
+              />
+              {currentTags.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {currentTags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center rounded-full border border-border/70 px-2 py-0.5 text-xs text-foreground"
+                    >
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          </div>
+        </>
+      )}
     />
   );
 }
