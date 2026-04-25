@@ -293,6 +293,8 @@ const DOC_REUSE_MAX_CHARS = 6000;
 const META_CALLOUT_MARKER_RE = /^\[!meta\]\s*/i;
 const META_INFO_LINE_RE =
   /^(来源|平台|保存时间|采集时间|来源链接|source|platform|saved\s*at)\s*[:：]/i;
+const META_SOFT_LINE_RE =
+  /^(图文页脚本(?:\s*[（(][^）)]*[)）])?|第\s*[0-9一二三四五六七八九十百]+\s*页(?:\s*[（(][^）)]*[)）])?|大字|角标|封面文案|页脚|配图|图片提示|画面|镜头|旁白)\s*[:：]?/i;
 
 function dedupeIds(rows: string[]) {
   const seen = new Set<string>();
@@ -431,6 +433,11 @@ function normalizeDocForPreview(input: string) {
 
 function isKnowledgeMetaInfoLine(line: string) {
   return META_INFO_LINE_RE.test(line.trim());
+}
+
+function isSoftMetaOnlyParagraph(lines: string[]) {
+  const meaningfulLines = lines.map((line) => line.trim()).filter(Boolean);
+  return meaningfulLines.length > 0 && meaningfulLines.every((line) => META_SOFT_LINE_RE.test(line));
 }
 
 function isKnowledgeMetaInfoParagraph(lines: string[]) {
@@ -674,6 +681,24 @@ function renderMarkdownContent(content: string, options?: RenderMarkdownOptions)
             .map((line, idx) => (
               <p key={`meta-p-line-${idx}`} className="break-all">
                 {renderInlineMarkdown(line, `meta-p-${key}-l-${idx}`)}
+              </p>
+            ))}
+        </div>,
+      );
+      return;
+    }
+    if (isSoftMetaOnlyParagraph(paragraphLines)) {
+      nodes.push(
+        <div
+          key={`meta-soft-p-${key++}`}
+          className="mb-4 rounded-lg border border-gray-200/60 bg-gray-50/40 px-3 py-2 text-xs leading-5 text-gray-400 dark:border-gray-700/60 dark:bg-gray-800/30 dark:text-gray-500"
+        >
+          {paragraphLines
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .map((line, idx) => (
+              <p key={`meta-soft-p-line-${idx}`} className="break-all">
+                {renderInlineMarkdown(line, `meta-soft-p-${key}-l-${idx}`)}
               </p>
             ))}
         </div>,

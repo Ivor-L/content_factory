@@ -121,6 +121,7 @@ require_any "Storyboard video generation webhook" "N8N_VIDEO_GEN_WEBHOOK" "N8N_V
 # Social scraper dependencies (TikTok/Facebook/Instagram)
 require_any "Apify token for social scraper" "SOCIAL_SCRAPER_APIFY_TOKEN" "APIFY_API_TOKEN" "APIFY_TOKEN"
 require_any "Social scraper webhook URL" "N8N_SOCIAL_SCRAPER_WEBHOOK" "SOCIAL_SCRAPER_WEBHOOK_URL"
+require_var "REDNOTE_API_KEY" "Rednote publish API key"
 
 # High-impact feature keys (warn only)
 warn_if_missing "CLOUD_API_KEY" "Cloud LLM API key"

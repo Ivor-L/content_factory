@@ -179,12 +179,13 @@ export function sanitizeImageCopyPlainText(input: string) {
 function isLikelyBodyHeadingLine(line: string, nextLine?: string) {
   const trimmed = line.trim();
   if (!trimmed) return false;
+  // Keep user-authored Markdown headings (e.g. #/##/###) in body text.
+  if (/^#{1,6}\s+/.test(trimmed)) return false;
   if (PAGE_SCRIPT_TITLE_RE.test(trimmed)) return true;
   if (PAGE_MARKER_RE.test(trimmed)) return true;
   if (CARD_META_LINE_RE.test(trimmed)) return true;
   if (SECTION_KEY_SET.has(trimmed)) return true;
   if (BODY_HEADING_HINTS.has(trimmed)) return true;
-  if (/^#{1,6}\s+/.test(trimmed)) return true;
   if (/^图\s*[0-9一二三四五六七八九十百]+/.test(trimmed)) return true;
   if (/^[①②③④⑤⑥⑦⑧⑨⑩]/.test(trimmed)) return true;
   if (/^\d+\s*[）\).]/.test(trimmed)) return false;

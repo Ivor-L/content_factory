@@ -370,6 +370,11 @@ const CARD_SYSTEM_META_KEYS = new Set([
 ]);
 
 const CARD_SYSTEM_FOOTER_HEADING = /^(关联素材|相关素材|素材关联|references?|sources?)$/i;
+const META_CALLOUT_START_RE = /^(?:[>|]\s*)?\[!meta\]\s*/i;
+const META_CALLOUT_TITLE_RE = /^(?:[>|]\s*)?入库信息(?:\s*[（(].*[)）])?\s*$/i;
+const META_CALLOUT_INFO_RE =
+  /^(?:[>|]\s*)?(来源|平台|保存时间|采集时间|来源链接|source|platform|saved\s*at|url|link)\s*[:：]/i;
+const META_CALLOUT_TRAIL_RE = /^(?:[>|]\s*)?<\s*备注录/i;
 
 const TEMPLATE_SPECS: TemplateSpec[] = [
   {
@@ -547,6 +552,7 @@ const COVER_STYLE_INDEX = new Map(COVER_STYLE_SPECS.map((it) => [it.id, it]));
 const SOCIAL_ICON_ID_SET = new Set<SocialIconId>(SOCIAL_ICON_OPTIONS.map((it) => it.id));
 
 const TEXT_CARD_STORAGE_KEY = "codepilot:markdown-text-card:settings:v1";
+const XHS_EDITOR_DRAFT_PREFIX = "codepilot:xhs-layout:editor-draft:v1:";
 
 const DEFAULT_CONFIG: Omit<CardConfig, "bgMode" | "bgColor" | "gradientStart" | "gradientEnd" | "gradientAngle" | "textColor" | "accentColor"> = {
   fontSize: 40,
@@ -871,6 +877,46 @@ function preprocessMarkdownForCard(markdown: string): string {
   }
 
   let contentLines = lines.slice(index);
+
+  // Remove meta callout blocks like:
+  // > [!meta] 入库信息...
+  // | [!meta] 入库信息...
+  // and their following source/platform/saved-at lines.
+  const strippedMetaLines: string[] = [];
+  for (let cursor = 0; cursor < contentLines.length; cursor += 1) {
+    const line = contentLines[cursor] || "";
+    const trimmed = line.trim();
+    const bare = trimmed.replace(/^[>|]\s*/, "").trim();
+    const looksLikeMetaStart = META_CALLOUT_START_RE.test(trimmed) || META_CALLOUT_TITLE_RE.test(trimmed);
+    if (!looksLikeMetaStart) {
+      strippedMetaLines.push(line);
+      continue;
+    }
+
+    cursor += 1;
+    while (cursor < contentLines.length) {
+      const probeLine = contentLines[cursor] || "";
+      const probeTrimmed = probeLine.trim();
+      const probeBare = probeTrimmed.replace(/^[>|]\s*/, "").trim();
+      if (!probeBare) {
+        cursor += 1;
+        continue;
+      }
+      if (
+        META_CALLOUT_INFO_RE.test(probeTrimmed) ||
+        META_CALLOUT_TRAIL_RE.test(probeTrimmed) ||
+        /^https?:\/\//i.test(probeBare) ||
+        /^[>|]/.test(probeTrimmed) ||
+        /^[-._~:/?#[\]@!$&'()*+,;=%A-Za-z0-9]+$/.test(probeBare)
+      ) {
+        cursor += 1;
+        continue;
+      }
+      cursor -= 1;
+      break;
+    }
+  }
+  contentLines = strippedMetaLines;
   const footerStart = contentLines.findIndex((line) => {
     const heading = line.trim().match(/^#{1,6}\s+(.+)$/);
     if (!heading) return false;
@@ -944,6 +990,50 @@ function formatTagsInput(tags: string[]): string {
     .filter(Boolean)
     .map((tag) => `#${tag}`)
     .join(" ");
+}
+
+function getXhsEditorDraftKey(filePath: string): string {
+  return `${XHS_EDITOR_DRAFT_PREFIX}${filePath || "untitled.md"}`;
+}
+
+function readXhsEditorDraft(filePath: string): { title: string; body: string; tagsText: string } | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(getXhsEditorDraftKey(filePath));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as {
+      version?: number;
+      title?: unknown;
+      body?: unknown;
+      tagsText?: unknown;
+    };
+    if (!parsed || parsed.version !== 1) return null;
+    return {
+      title: typeof parsed.title === "string" ? truncateXhsTitle(parsed.title) : "",
+      body: typeof parsed.body === "string" ? parsed.body.slice(0, 1000) : "",
+      tagsText: typeof parsed.tagsText === "string" ? parsed.tagsText : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeXhsEditorDraft(filePath: string, payload: { title: string; body: string; tagsText: string }) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      getXhsEditorDraftKey(filePath),
+      JSON.stringify({
+        version: 1,
+        title: truncateXhsTitle(payload.title || ""),
+        body: (payload.body || "").slice(0, 1000),
+        tagsText: payload.tagsText || "",
+        updatedAt: Date.now(),
+      })
+    );
+  } catch {
+    // ignore localStorage failures
+  }
 }
 
 function buildLocalMetaFallback(markdown: string, filePath: string): {
@@ -3771,13 +3861,32 @@ export function MarkdownXhsLayoutModal({
       setEditableTagsText("");
       return;
     }
+    const draft = readXhsEditorDraft(filePath || "untitled.md");
+    if (draft) {
+      setEditableTitle(truncateXhsTitle(draft.title || defaultTitle));
+      setEditableBody((draft.body || "").slice(0, 1000));
+      setEditableTagsText(draft.tagsText || "");
+      return;
+    }
     const initTitle = (xhsMeta?.title || "").trim() || defaultTitle;
     const initBody = (xhsMeta?.body || "").trim();
     const initTags = dedupeTags(Array.isArray(xhsMeta?.tags) ? xhsMeta.tags : []);
     setEditableTitle(truncateXhsTitle(initTitle));
     setEditableBody(initBody.slice(0, 1000));
     setEditableTagsText(formatTagsInput(initTags));
-  }, [isOpen]);
+  }, [isOpen, filePath, defaultTitle, xhsMeta?.title, xhsMeta?.body, xhsMeta?.tags]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = window.setTimeout(() => {
+      writeXhsEditorDraft(filePath || "untitled.md", {
+        title: editableTitle,
+        body: editableBody,
+        tagsText: editableTagsText,
+      });
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [isOpen, filePath, editableTitle, editableBody, editableTagsText]);
 
   const handleAutoGenerateMeta = async () => {
     if (isGeneratingMeta) return;
