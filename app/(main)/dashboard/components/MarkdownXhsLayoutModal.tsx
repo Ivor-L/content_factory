@@ -939,6 +939,11 @@ function preprocessMarkdownForCard(markdown: string): string {
   return contentLines.join("\n");
 }
 
+function sanitizeXhsPublishBody(raw: string): string {
+  const cleaned = preprocessMarkdownForCard(raw || "");
+  return cleaned.replace(/\n{3,}/g, "\n\n").trim().slice(0, 1000);
+}
+
 function sanitizeFileName(input: string): string {
   return input
     .trim()
@@ -1010,7 +1015,7 @@ function readXhsEditorDraft(filePath: string): { title: string; body: string; ta
     if (!parsed || parsed.version !== 1) return null;
     return {
       title: typeof parsed.title === "string" ? truncateXhsTitle(parsed.title) : "",
-      body: typeof parsed.body === "string" ? parsed.body.slice(0, 1000) : "",
+      body: typeof parsed.body === "string" ? sanitizeXhsPublishBody(parsed.body) : "",
       tagsText: typeof parsed.tagsText === "string" ? parsed.tagsText : "",
     };
   } catch {
@@ -1026,7 +1031,7 @@ function writeXhsEditorDraft(filePath: string, payload: { title: string; body: s
       JSON.stringify({
         version: 1,
         title: truncateXhsTitle(payload.title || ""),
-        body: (payload.body || "").slice(0, 1000),
+        body: sanitizeXhsPublishBody(payload.body || ""),
         tagsText: payload.tagsText || "",
         updatedAt: Date.now(),
       })
@@ -2840,7 +2845,7 @@ export function MarkdownTextCardDialog({
   );
 
   const publishContent = useMemo(() => {
-    const bodyText = typeof xhsPublishMeta?.body === "string" ? xhsPublishMeta.body.replace(/\r\n/g, "\n").trim() : "";
+    const bodyText = typeof xhsPublishMeta?.body === "string" ? sanitizeXhsPublishBody(xhsPublishMeta.body) : "";
     const hashLine = publishTags.map((tag) => `#${normalizeTagText(tag)}`).filter(Boolean).join(" ");
     const fallback = bodyText || sanitizeCoverTitleCandidate(resolvedCoverText.subtitle || resolvedCoverText.title) || publishTitle;
     return [fallback, hashLine].filter(Boolean).join("\n\n").slice(0, 1000);
@@ -3864,15 +3869,15 @@ export function MarkdownXhsLayoutModal({
     const draft = readXhsEditorDraft(filePath || "untitled.md");
     if (draft) {
       setEditableTitle(truncateXhsTitle(draft.title || defaultTitle));
-      setEditableBody((draft.body || "").slice(0, 1000));
+      setEditableBody(sanitizeXhsPublishBody(draft.body || ""));
       setEditableTagsText(draft.tagsText || "");
       return;
     }
     const initTitle = (xhsMeta?.title || "").trim() || defaultTitle;
-    const initBody = (xhsMeta?.body || "").trim();
+    const initBody = sanitizeXhsPublishBody((xhsMeta?.body || "").trim());
     const initTags = dedupeTags(Array.isArray(xhsMeta?.tags) ? xhsMeta.tags : []);
     setEditableTitle(truncateXhsTitle(initTitle));
-    setEditableBody(initBody.slice(0, 1000));
+    setEditableBody(initBody);
     setEditableTagsText(formatTagsInput(initTags));
   }, [isOpen, filePath, defaultTitle, xhsMeta?.title, xhsMeta?.body, xhsMeta?.tags]);
 
@@ -3928,7 +3933,7 @@ export function MarkdownXhsLayoutModal({
         coverTitle: "",
         subTitle: "",
         title: typeof data?.title === "string" ? data.title.trim() : "",
-        body: typeof data?.body === "string" ? data.body.trim() : "",
+        body: typeof data?.body === "string" ? sanitizeXhsPublishBody(data.body) : "",
         tags: nextTags,
       };
 
@@ -3938,11 +3943,11 @@ export function MarkdownXhsLayoutModal({
           coverTitle: "",
           subTitle: "",
           title: fallback.title,
-          body: fallback.body,
+          body: sanitizeXhsPublishBody(fallback.body),
           tags: fallback.tags,
         });
         setEditableTitle(fallback.title || defaultTitle);
-        setEditableBody(fallback.body);
+        setEditableBody(sanitizeXhsPublishBody(fallback.body));
         setEditableTagsText(formatTagsInput(fallback.tags));
         setGenerateMetaError("");
         return;
@@ -3950,7 +3955,7 @@ export function MarkdownXhsLayoutModal({
 
       setGeneratedMeta(nextMeta);
       setEditableTitle(truncateXhsTitle(nextMeta.title || defaultTitle));
-      setEditableBody(nextMeta.body.slice(0, 1000));
+      setEditableBody(sanitizeXhsPublishBody(nextMeta.body));
       setEditableTagsText(formatTagsInput(nextTags));
       setGenerateMetaError("");
     } catch (error) {
@@ -3959,11 +3964,11 @@ export function MarkdownXhsLayoutModal({
         coverTitle: "",
         subTitle: "",
         title: fallback.title,
-        body: fallback.body,
+        body: sanitizeXhsPublishBody(fallback.body),
         tags: fallback.tags,
       });
       setEditableTitle(fallback.title || defaultTitle);
-      setEditableBody(fallback.body);
+      setEditableBody(sanitizeXhsPublishBody(fallback.body));
       setEditableTagsText(formatTagsInput(fallback.tags));
       setGenerateMetaError("");
     } finally {
@@ -3981,7 +3986,7 @@ export function MarkdownXhsLayoutModal({
       filePath={filePath || "untitled.md"}
       xhsPublishMeta={{
         title: truncateXhsTitle(editableTitle) || defaultTitle,
-        body: editableBody.trim(),
+        body: sanitizeXhsPublishBody(editableBody),
         tags: currentTags,
       }}
       rightPanel={(

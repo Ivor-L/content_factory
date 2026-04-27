@@ -117,6 +117,10 @@ const MAX_AUTO_READ_ACTIONS = 4;
 const MAX_AUTO_READ_PATH_LEN = 240;
 const MAX_AUTO_READ_FILE_CHARS = 2400;
 const MAX_READ_RESULT_CONTEXT_CHARS = 6800;
+const MAX_CONTENT_FACTORY_AUTO_SCAN = 2600;
+const MAX_CONTENT_FACTORY_AUTO_DOCS = 6;
+const MAX_CONTENT_FACTORY_AUTO_DOC_CHARS = 1400;
+const MAX_CONTENT_FACTORY_AUTO_CONTEXT_CHARS = 7600;
 
 const PROVIDER_LABEL_BY_ID = ASSISTANT_PROVIDER_OPTIONS.reduce<Record<string, string>>((acc, item) => {
   acc[item.id] = item.label;
@@ -165,6 +169,15 @@ type ChatReference = {
 type UpstreamStreamHandlers = {
   onContentDelta?: (delta: string) => void;
   onReasoningDelta?: (delta: string) => void;
+};
+
+type ContentFactoryAutoDoc = {
+  id: string;
+  path: string;
+  title: string;
+  score: number;
+  category: "hooks" | "topics" | "audience" | "llm-wiki";
+  updatedAt: Date;
 };
 
 function resolveInternalAppBaseUrl(request: NextRequest) {
@@ -763,6 +776,190 @@ async function buildWorkspaceIndexContext(params: {
   ].join("\n");
 }
 
+function classifyContentFactoryDocCategory(pathLower: string): ContentFactoryAutoDoc["category"] | null {
+  if (pathLower.startsWith("01-素材库/wiki/hooks/")) return "hooks";
+  if (pathLower.startsWith("01-素材库/wiki/topics/")) return "topics";
+  if (pathLower.startsWith("01-素材库/wiki/audience/")) return "audience";
+  if (pathLower.startsWith("01-素材库/wiki/llm-wiki/")) return "llm-wiki";
+  return null;
+}
+
+function scoreContentFactoryDoc(params: {
+  path: string;
+  category: ContentFactoryAutoDoc["category"];
+  prompt: string;
+  track: ContentFactoryTrack;
+  updatedAt: Date;
+}) {
+  const { path, category, prompt, track, updatedAt } = params;
+  let score = 0;
+  const pathLower = path.toLowerCase();
+  const promptLower = prompt.toLowerCase();
+  const promptTokens = extractTopicTokens(prompt);
+  const pathTokens = extractTopicTokens(path);
+
+  if (category === "hooks") score += 70;
+  if (category === "topics") score += 60;
+  if (category === "audience") score += 52;
+  if (category === "llm-wiki") score += 46;
+
+  if (track === "xhs") {
+    if (/(小红书|xhs|图文)/i.test(pathLower)) score += 48;
+  } else if (track === "wechat") {
+    if (/(公众号|长文|微信)/i.test(pathLower)) score += 48;
+  } else if (track === "voiceover") {
+    if (/(口播|视频|脚本)/i.test(pathLower)) score += 48;
+  }
+
+  if (promptTokens.size > 0 && pathTokens.size > 0) {
+    let overlap = 0;
+    for (const token of pathTokens) {
+      if (promptTokens.has(token)) overlap += 1;
+    }
+    score += Math.min(120, overlap * 24);
+  }
+
+  if (promptLower.includes("金句") && category === "hooks") score += 16;
+  if (promptLower.includes("模板") && (category === "hooks" || category === "topics")) score += 14;
+  if (promptLower.includes("受众") && category === "audience") score += 14;
+
+  const ageDays = Math.max(0, (Date.now() - updatedAt.getTime()) / (1000 * 60 * 60 * 24));
+  score += Math.max(0, 18 - Math.floor(ageDays));
+
+  return score;
+}
+
+async function buildContentFactoryAutoContext(params: {
+  userId: string;
+  folderId?: string;
+  latestUserInput: string;
+}) {
+  const { userId, folderId, latestUserInput } = params;
+  if (!folderId || !latestUserInput.trim()) {
+    return { context: "", paths: [] as string[] };
+  }
+  if (!isContentFactoryWriteIntent(latestUserInput)) {
+    return { context: "", paths: [] as string[] };
+  }
+
+  const routing = resolveContentFactoryRouting(latestUserInput);
+  const files = await prisma.knowledgeFile.findMany({
+    where: { folderId, userId },
+    select: {
+      id: true,
+      title: true,
+      originalPath: true,
+      updatedAt: true,
+      createdAt: true,
+      metadata: true,
+      chunks: {
+        select: { chunkIndex: true, content: true },
+        orderBy: { chunkIndex: "asc" },
+        take: 10,
+      },
+    },
+    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    take: MAX_CONTENT_FACTORY_AUTO_SCAN,
+  });
+
+  const candidates: ContentFactoryAutoDoc[] = [];
+  for (const file of files) {
+    const path = normalizeFilePath(getFilePathFromItem(file as unknown as KnowledgeFileItem));
+    const category = classifyContentFactoryDocCategory(path.toLowerCase());
+    if (!category) continue;
+    const score = scoreContentFactoryDoc({
+      path,
+      category,
+      prompt: latestUserInput,
+      track: routing.track,
+      updatedAt: file.updatedAt,
+    });
+    if (score <= 0) continue;
+    candidates.push({
+      id: file.id,
+      path,
+      title: file.title || pathBasename(path),
+      score,
+      category,
+      updatedAt: file.updatedAt,
+    });
+  }
+
+  if (!candidates.length) {
+    return { context: "", paths: [] as string[] };
+  }
+
+  candidates.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if (b.updatedAt.getTime() !== a.updatedAt.getTime()) return b.updatedAt.getTime() - a.updatedAt.getTime();
+    return a.path.localeCompare(b.path, "zh-Hans-CN", { numeric: true });
+  });
+
+  const top = candidates.slice(0, MAX_CONTENT_FACTORY_AUTO_DOCS);
+  const selectedIds = top.map((item) => item.id);
+  const selectedFiles = await prisma.knowledgeFile.findMany({
+    where: { id: { in: selectedIds } },
+    select: {
+      id: true,
+      metadata: true,
+      chunks: {
+        select: { chunkIndex: true, content: true },
+        orderBy: { chunkIndex: "asc" },
+        take: 12,
+      },
+    },
+  });
+  const selectedById = new Map(
+    selectedFiles.map((file) => {
+      const metadata =
+        file.metadata && typeof file.metadata === "object" && !Array.isArray(file.metadata)
+          ? (file.metadata as Record<string, unknown>)
+          : {};
+      const raw = toNonEmptyString(metadata.rawContent);
+      const content = (raw || file.chunks.map((chunk) => chunk.content).filter(Boolean).join("\n\n").trim())
+        .slice(0, MAX_CONTENT_FACTORY_AUTO_DOC_CHARS);
+      return [file.id, content] as const;
+    }),
+  );
+
+  const blocks: string[] = [];
+  let used = 0;
+  const usedPaths: string[] = [];
+  for (const item of top) {
+    const content = selectedById.get(item.id)?.trim();
+    if (!content) continue;
+    const categoryLabel =
+      item.category === "hooks"
+        ? "金句/钩子"
+        : item.category === "topics"
+          ? "选题方法"
+          : item.category === "audience"
+            ? "受众洞察"
+            : "原文拆解";
+    const block = [
+      `### 自动素材：${item.path}`,
+      `类型：${categoryLabel}`,
+      content,
+    ].join("\n");
+    if (used + block.length > MAX_CONTENT_FACTORY_AUTO_CONTEXT_CHARS) break;
+    used += block.length;
+    blocks.push(block);
+    usedPaths.push(item.path);
+  }
+
+  if (!blocks.length) {
+    return { context: "", paths: [] as string[] };
+  }
+
+  return {
+    context: [
+      "内容工厂自动检索结果（已按当前请求自动匹配，可直接复用，不需要用户手动挑选）：",
+      ...blocks,
+    ].join("\n\n"),
+    paths: usedPaths,
+  };
+}
+
 async function buildSelectedFileContext(params: {
   userId: string;
   folderId?: string;
@@ -962,6 +1159,7 @@ function buildWriteIntentPrompt() {
     "允许在文档 frontmatter 放元信息（时间、关联文档、平台、标签等），但 frontmatter 之外必须是固定六段正文，不得输出额外说明。",
     "frontmatter 需包含 machine 字段：cover_title, sub_title, title, image_copy, body, tags。",
     "小红书图文初稿需兼容字段：xhs_title, xhs_body, xhs_tags（与 title/body/tags 对齐）。",
+    "写作时必须优先复用已注入的自动检索素材（llm-wiki/hooks/topics/audience）中的金句、结构、模板，不要让用户手动挑选。",
     "若文件内容已在上下文中，直接写入；若内容缺失，再用一句话最小化追问。",
   ].join("\n");
 }
@@ -1040,6 +1238,10 @@ function resolveContentFactoryRouting(input: string): ContentFactoryRouting {
     draftDir: "03-内容工厂/公众号长文/初稿",
     trackLabel: "通用",
   };
+}
+
+function isContentFactoryWriteIntent(input: string) {
+  return inferContentFactoryIntent(input) === "topic" || inferContentFactoryIntent(input) === "draft";
 }
 
 function sanitizePathSegment(input: string) {
@@ -1145,6 +1347,7 @@ function collectRelatedDocCandidates(params: {
   actions: AgentAction[];
   readResults?: Array<{ path: string; content: string; reason?: string }>;
   replyText?: string;
+  autoDocs?: string[];
 }) {
   const rows = new Map<string, RelatedDocCandidate>();
 
@@ -1174,6 +1377,10 @@ function collectRelatedDocCandidates(params: {
 
   for (const linked of extractWikiLinkTargets(params.replyText || "")) {
     push(linked, 70);
+  }
+
+  for (const autoDoc of params.autoDocs || []) {
+    push(autoDoc, 110);
   }
 
   return Array.from(rows.values());
@@ -1353,8 +1560,9 @@ function normalizeContentFactoryAgentActions(params: {
   latestUserInput: string;
   fallbackReply: string;
   readResults?: Array<{ path: string; content: string; reason?: string }>;
+  autoDocs?: string[];
 }) {
-  const { actions, latestUserInput, fallbackReply, readResults } = params;
+  const { actions, latestUserInput, fallbackReply, readResults, autoDocs } = params;
   const routing = resolveContentFactoryRouting(latestUserInput);
   const writeIntent = routing.intent;
   if (writeIntent === "none") return actions;
@@ -1362,6 +1570,7 @@ function normalizeContentFactoryAgentActions(params: {
     actions,
     readResults,
     replyText: fallbackReply,
+    autoDocs,
   });
 
   const nextActions = [...actions];
@@ -1432,6 +1641,7 @@ function buildSystemPrompt(parts: {
   skillContext?: string;
   readResultsContext?: string;
   writeIntentContext?: string;
+  contentFactoryAutoContext?: string;
 }) {
   return [
     parts.folderContext || "",
@@ -1441,6 +1651,7 @@ function buildSystemPrompt(parts: {
     parts.selectedFileContext || "",
     parts.workspaceIndexContext || "",
     parts.skillContext || "",
+    parts.contentFactoryAutoContext || "",
     parts.readResultsContext || "",
     parts.writeIntentContext || "",
   ]
@@ -2381,6 +2592,13 @@ export async function POST(request: NextRequest) {
   const latestUserMessage = [...conversationState.messages]
     .reverse()
     .find((message) => message.role === "user");
+  const contentFactoryAuto = userId && conversationState.folderId && latestUserMessage
+    ? await buildContentFactoryAutoContext({
+        userId,
+        folderId: conversationState.folderId,
+        latestUserInput: latestUserMessage.content,
+      })
+    : { context: "", paths: [] as string[] };
   const writeIntentContext =
     latestUserMessage && detectWriteIntent(latestUserMessage.content)
       ? buildWriteIntentPrompt()
@@ -2399,6 +2617,7 @@ export async function POST(request: NextRequest) {
     selectedFileContext,
     workspaceIndexContext,
     skillContext,
+    contentFactoryAutoContext: contentFactoryAuto.context,
     writeIntentContext,
   });
 
@@ -2481,6 +2700,7 @@ export async function POST(request: NextRequest) {
       latestUserInput,
       fallbackReply: reply,
       readResults: readResultsForFinal,
+      autoDocs: contentFactoryAuto.paths,
     });
 
     const emitThinkingProgress = (items: string[]) => {
@@ -2520,6 +2740,7 @@ export async function POST(request: NextRequest) {
           selectedFileContext,
           workspaceIndexContext,
           skillContext,
+          contentFactoryAutoContext: contentFactoryAuto.context,
           readResultsContext: buildReadResultContext(readResults),
           writeIntentContext,
         });
@@ -2565,6 +2786,7 @@ export async function POST(request: NextRequest) {
           latestUserInput,
           fallbackReply: reply,
           readResults,
+          autoDocs: contentFactoryAuto.paths,
         });
         if (streamMode) {
           emitThinkingProgress(thinking);
