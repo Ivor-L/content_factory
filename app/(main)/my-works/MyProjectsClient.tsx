@@ -88,6 +88,7 @@ type CacheEntry<T> = {
 const replicationDetailCache = new Map<string, CacheEntry<ReplicationDetailPayload | null>>();
 const storyboardDetailCache = new Map<string, CacheEntry<{ storyboardImageUrl?: string | null; status?: string | null; progress?: number | null } | null>>();
 const creativeDetailCache = new Map<string, CacheEntry<CreativeTaskDetail | null>>();
+const digitalHumanDetailCache = new Map<string, CacheEntry<DigitalHumanDetailPayload | null>>();
 const posterImagesCache = new Map<string, CacheEntry<string[]>>();
 let styleListCache: CacheEntry<(StylePresetLite & { metadata?: unknown })[]> | null = null;
 const imagePrefetchCache = new Map<string, CacheEntry<string>>();
@@ -120,6 +121,12 @@ type ReplicationDetailPayload = {
   type: string;
   updatedAt: string;
   result: Record<string, unknown> | null;
+};
+
+type DigitalHumanDetailPayload = {
+  id: string;
+  scriptContent: string | null;
+  sourceTaskId: string | null;
 };
 
 function toRecord(value: unknown): Record<string, unknown> | null {
@@ -1778,6 +1785,7 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
   const [creativeDetail, setCreativeDetail] = useState<CreativeTaskDetail | null>(null);
   const [creativeDetailLoading, setCreativeDetailLoading] = useState(false);
   const [creativeDetailError, setCreativeDetailError] = useState<string | null>(null);
+  const [digitalHumanDetail, setDigitalHumanDetail] = useState<DigitalHumanDetailPayload | null>(null);
 
   useEffect(() => {
     if (!shouldFetchReplicationDetail) {
@@ -1839,6 +1847,52 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
       cancelled = true;
     };
   }, [shouldFetchReplicationDetail, task.taskId]);
+
+  useEffect(() => {
+    if (!isDigitalHuman) {
+      setDigitalHumanDetail(null);
+      return;
+    }
+
+    const existingScript = (getMetadataString(task.metadata, "scriptContent") || "").trim();
+    if (existingScript) {
+      setDigitalHumanDetail(null);
+      return;
+    }
+
+    const cached = getCachedValue(digitalHumanDetailCache, task.taskId);
+    if (cached !== undefined) {
+      setDigitalHumanDetail(cached);
+      return;
+    }
+
+    let cancelled = false;
+    supabase.auth
+      .getSession()
+      .then(({ data: sessionData }) => sessionData.session?.access_token)
+      .then(async (token) => {
+        const response = await fetch(`/api/digital-human/videos/${task.taskId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          cache: "no-store",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error((payload as { error?: string }).error || "加载数字人任务详情失败");
+        }
+        if (cancelled) return;
+        const data = (payload as { data?: DigitalHumanDetailPayload }).data ?? null;
+        setDigitalHumanDetail(data);
+        setCachedValue(digitalHumanDetailCache, task.taskId, data, 60_000);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDigitalHumanDetail(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isDigitalHuman, task.metadata, task.taskId]);
 
   const fetchedResultRecord = shouldFetchReplicationDetail
     ? toRecord(replicationDetail?.result)
@@ -2238,6 +2292,14 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
   const scriptText =
     typeof draftStage?.rawText === "string" ? draftStage.rawText.trim() : "";
   const scriptReady = scriptText.length > 0;
+  const digitalHumanScriptText = isDigitalHuman
+    ? (
+      getMetadataString(task.metadata, "scriptContent")
+      || digitalHumanDetail?.scriptContent
+      || task.preview
+      || ""
+    ).trim()
+    : "";
 
   // 解析 n8n 回传的结构化输出（标题 / 正文 / 标签）
   const draftAiOutput = draftStage?.aiOutput as Record<string, unknown> | null | undefined;
@@ -2972,9 +3034,9 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
               {isCreative && (
                 <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">{formatTimestamp(task.createdAt, LANGUAGE_LOCALES[langKey])}</p>
               )}
-              {(creativeDetail?.ideaText ?? task.preview) && (
+              {((isDigitalHuman ? digitalHumanScriptText : "") || creativeDetail?.ideaText || task.preview) && (
                 <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400 leading-relaxed whitespace-pre-wrap">
-                  {creativeDetail?.ideaText ?? task.preview}
+                  {(isDigitalHuman ? digitalHumanScriptText : "") || creativeDetail?.ideaText || task.preview}
                 </p>
               )}
             </div>
@@ -3004,6 +3066,17 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
                 </div>
               )}
             </div>
+
+            {isDigitalHuman && (
+              <div className="rounded-3xl border border-gray-100 bg-gray-50/80 p-4 space-y-2 dark:border-gray-800 dark:bg-gray-900/40">
+                <p className="text-xs text-gray-500 dark:text-gray-400">数字人口播文案</p>
+                <div className="rounded-2xl bg-white/80 px-4 py-3 dark:bg-gray-900/80">
+                  <p className="text-sm text-gray-800 dark:text-gray-100 whitespace-pre-wrap leading-relaxed">
+                    {digitalHumanScriptText || "暂无可展示的文案"}
+                  </p>
+                </div>
+              </div>
+            )}
 
             {isReplication && (
               <div className="rounded-3xl border border-gray-100 bg-gray-50/80 p-4 space-y-4 dark:border-gray-800 dark:bg-gray-900/40">

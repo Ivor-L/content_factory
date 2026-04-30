@@ -54,7 +54,7 @@ type InlineChunk = {
   flags: TextFlags;
 };
 
-type BlockKind = "heading1" | "heading2" | "heading3" | "paragraph" | "list" | "quote" | "code" | "hr";
+type BlockKind = "heading1" | "heading2" | "heading3" | "heading4" | "paragraph" | "list" | "quote" | "code" | "hr";
 
 type ParsedBlock = {
   kind: BlockKind;
@@ -2024,6 +2024,19 @@ function getTypography(kind: Exclude<BlockKind, "hr">, accentColor: string, text
     };
   }
 
+  if (kind === "heading4") {
+    const size = Math.max(24, Math.round(config.fontSize * Math.min(config.h3Scale, 1.06)));
+    return {
+      fontSize: size,
+      lineHeight: Math.max(1.28, config.lineHeight - 0.12),
+      fontWeight: "650",
+      fontFamily: config.fontFamily,
+      color: accentColor,
+      marginTop: Math.round(size * 0.18),
+      marginBottom: Math.round(size * 0.22),
+    };
+  }
+
   if (kind === "quote") {
     return {
       fontSize: Math.max(26, Math.round(config.fontSize * 0.95)),
@@ -2159,7 +2172,7 @@ function parseMarkdownBlocks(markdown: string): ParsedBlock[] {
   let listItemPrefix = "";
   let listItemNeedPrefix = false;
   let pendingKind: "paragraph" | "heading" | null = null;
-  let pendingHeadingLevel: 1 | 2 | 3 = 1;
+  let pendingHeadingLevel: 1 | 2 | 3 | 4 = 1;
 
   for (const token of tokens) {
     switch (token.type) {
@@ -2201,8 +2214,8 @@ function parseMarkdownBlocks(markdown: string): ParsedBlock[] {
         break;
       case "heading_open":
         pendingKind = "heading";
-        pendingHeadingLevel = Number(token.tag.replace("h", "")) as 1 | 2 | 3;
-        if (![1, 2, 3].includes(pendingHeadingLevel)) pendingHeadingLevel = 3;
+        pendingHeadingLevel = Number(token.tag.replace("h", "")) as 1 | 2 | 3 | 4;
+        if (![1, 2, 3, 4].includes(pendingHeadingLevel)) pendingHeadingLevel = 4;
         break;
       case "paragraph_open":
         pendingKind = "paragraph";
@@ -2224,7 +2237,14 @@ function parseMarkdownBlocks(markdown: string): ParsedBlock[] {
 
         let kind: Exclude<BlockKind, "hr"> = "paragraph";
         if (pendingKind === "heading") {
-          kind = pendingHeadingLevel === 1 ? "heading1" : pendingHeadingLevel === 2 ? "heading2" : "heading3";
+          kind =
+            pendingHeadingLevel === 1
+              ? "heading1"
+              : pendingHeadingLevel === 2
+                ? "heading2"
+                : pendingHeadingLevel === 3
+                  ? "heading3"
+                  : "heading4";
         } else if (listItemDepth > 0) {
           kind = "list";
         } else if (quoteDepth > 0) {
@@ -2377,6 +2397,11 @@ function paginateMarkdown(markdown: string, templateId: CardTemplateId, config: 
     if (block.kind === "hr") {
       flushPage();
       continue;
+    }
+
+    // Secondary heading starts a fresh card page to keep section boundaries clear.
+    if (block.kind === "heading2" && currentPage.length > 0) {
+      flushPage();
     }
 
     for (let i = 0; i < block.lines.length; i += 1) {
@@ -3912,18 +3937,10 @@ export function MarkdownXhsLayoutModal({
 
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
-        const fallback = buildLocalMetaFallback(markdown, filePath || "untitled.md");
-        setGeneratedMeta({
-          coverTitle: "",
-          subTitle: "",
-          title: fallback.title,
-          body: fallback.body,
-          tags: fallback.tags,
-        });
-        setEditableTitle(fallback.title || defaultTitle);
-        setEditableBody(fallback.body);
-        setEditableTagsText(formatTagsInput(fallback.tags));
-        setGenerateMetaError("");
+        const message = typeof payload?.error === "string" && payload.error.trim()
+          ? payload.error.trim()
+          : `AI 生成失败（${response.status}）`;
+        setGenerateMetaError(message);
         return;
       }
 
@@ -3938,18 +3955,7 @@ export function MarkdownXhsLayoutModal({
       };
 
       if (!nextMeta.title && !nextMeta.body && nextMeta.tags.length === 0) {
-        const fallback = buildLocalMetaFallback(markdown, filePath || "untitled.md");
-        setGeneratedMeta({
-          coverTitle: "",
-          subTitle: "",
-          title: fallback.title,
-          body: sanitizeXhsPublishBody(fallback.body),
-          tags: fallback.tags,
-        });
-        setEditableTitle(fallback.title || defaultTitle);
-        setEditableBody(sanitizeXhsPublishBody(fallback.body));
-        setEditableTagsText(formatTagsInput(fallback.tags));
-        setGenerateMetaError("");
+        setGenerateMetaError("AI 未生成有效内容，请重试或补充更清晰的正文。");
         return;
       }
 
@@ -3959,18 +3965,10 @@ export function MarkdownXhsLayoutModal({
       setEditableTagsText(formatTagsInput(nextTags));
       setGenerateMetaError("");
     } catch (error) {
-      const fallback = buildLocalMetaFallback(markdown, filePath || "untitled.md");
-      setGeneratedMeta({
-        coverTitle: "",
-        subTitle: "",
-        title: fallback.title,
-        body: sanitizeXhsPublishBody(fallback.body),
-        tags: fallback.tags,
-      });
-      setEditableTitle(fallback.title || defaultTitle);
-      setEditableBody(sanitizeXhsPublishBody(fallback.body));
-      setEditableTagsText(formatTagsInput(fallback.tags));
-      setGenerateMetaError("");
+      const message = error instanceof Error && error.message
+        ? error.message
+        : "AI 生成失败，请稍后重试";
+      setGenerateMetaError(message);
     } finally {
       setIsGeneratingMeta(false);
     }

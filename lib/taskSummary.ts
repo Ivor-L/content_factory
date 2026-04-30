@@ -296,6 +296,9 @@ function extractSummaryData(taskType: TaskType, taskData: any): any {
       if (typeof taskData.imageUrl === 'string' && taskData.imageUrl.trim()) {
         metadata.imageUrl = taskData.imageUrl;
       }
+      if (typeof taskData.scriptContent === 'string' && taskData.scriptContent.trim()) {
+        metadata.scriptContent = taskData.scriptContent.trim();
+      }
       return {
         ...base,
         title: '数字人视频',

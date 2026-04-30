@@ -1,17 +1,17 @@
 import { View, Text, Picker, ScrollView } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 import { useState } from 'react';
-import { api, type DigitalHumanCharacter, type DigitalHumanMode } from '../../utils/api';
-import './index.scss';
+import { api } from '../../utils/api';
+import './index.sass';
 
-const MODES: { key: DigitalHumanMode; label: string; desc: string }[] = [
+const MODES = [
   { key: 'VOICE_CLONE', label: '文字驱动', desc: '输入脚本文字，AI 自动克隆音色并合成语音' },
   { key: 'LIP_SYNC', label: '音频驱动', desc: '上传已有音频，直接用于口型同步' },
 ];
 
 export default function GeneratePage() {
-  const [mode, setMode] = useState<DigitalHumanMode>('VOICE_CLONE');
-  const [characters, setCharacters] = useState<DigitalHumanCharacter[]>([]);
+  const [mode, setMode] = useState('VOICE_CLONE');
+  const [characters, setCharacters] = useState<any[]>([]);
   const [selectedCharIdx, setSelectedCharIdx] = useState(0);
   const [script, setScript] = useState('');
   const [audioUrl, setAudioUrl] = useState('');
@@ -123,7 +123,7 @@ export default function GeneratePage() {
           <textarea
             className='script-input'
             value={script}
-            onInput={(e: any) => setScript(e.detail.value)}
+            onInput={(e) => setScript(e.detail.value)}
             placeholder='在此输入你想让数字人说的文字...'
             maxlength={500}
           />

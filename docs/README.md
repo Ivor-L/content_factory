@@ -42,6 +42,7 @@
 | [viral-reference-sync.md](./04-features/viral-reference-sync.md) | 爆款内容引用同步（Chrome 插件 + API） |
 | [hot-clone-recipe-prompt-config.md](./04-features/hot-clone-recipe-prompt-config.md) | 热克隆视频复制 Prompt 配置与运行时覆盖 |
 | [one-click-replication-test.md](./04-features/one-click-replication-test.md) | 一键复制功能测试报告 |
+| [wechat-miniapp-development-guide.md](./04-features/wechat-miniapp-development-guide.md) | 小蚁AI 微信小程序开发说明（信息架构、能力映射、分阶段落地） |
 
 ---
 

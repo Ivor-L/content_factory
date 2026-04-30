@@ -1,11 +1,11 @@
 import { View, Text, Image, ScrollView } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 import { useState } from 'react';
-import { api, type DigitalHumanCharacter } from '../../utils/api';
-import './index.scss';
+import { api } from '../../utils/api';
+import './index.sass';
 
 export default function WarehousePage() {
-  const [humans, setHumans] = useState<DigitalHumanCharacter[]>([]);
+  const [humans, setHumans] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -34,7 +34,7 @@ export default function WarehousePage() {
 
   useLoad(() => { void fetchHumans(); });
 
-  const handleDelete = (id: string) => {
+  const handleDelete = (id) => {
     Taro.showModal({
       title: '确认删除',
       content: '确定删除此数字人吗？',
@@ -151,7 +151,7 @@ export default function WarehousePage() {
             <input
               className='field-input'
               value={newName}
-              onInput={(e: any) => setNewName(e.detail.value)}
+              onInput={(e) => setNewName(e.detail.value)}
               placeholder='给数字人起个名字'
             />
 

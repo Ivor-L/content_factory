@@ -2,7 +2,8 @@ import { View, Text, Button, Input } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 import { useState } from 'react';
 import { api, NotBoundError } from '../../utils/api';
-import './index.scss';
+import './index.sass';
+import './index.sass';
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);

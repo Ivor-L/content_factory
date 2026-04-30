@@ -1,8 +1,8 @@
 import { View, Text, Video, ScrollView } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 import { useState } from 'react';
-import { api, type DigitalHumanVideoRecord } from '../../utils/api';
-import './index.scss';
+import { api } from '../../utils/api';
+import './index.sass';
 
 const STATUS_LABELS: Record<string, string> = {
   GENERATING: '生成中',
@@ -19,7 +19,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function RecordsPage() {
-  const [records, setRecords] = useState<DigitalHumanVideoRecord[]>([]);
+  const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,7 +38,7 @@ export default function RecordsPage() {
 
   useLoad(() => { void fetchRecords(); });
 
-  const formatDate = (dateStr: string) => {
+  const formatDate = (dateStr) => {
     const d = new Date(dateStr);
     return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
