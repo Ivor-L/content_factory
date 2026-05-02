@@ -9,6 +9,25 @@ const WECHAT_ACCESS_TOKEN_URL = 'https://api.weixin.qq.com/cgi-bin/token';
 const WECHAT_GET_PHONE_URL = 'https://api.weixin.qq.com/wxa/business/getuserphonenumber';
 const INTERNAL_SECRET = process.env.CREDITS_INTERNAL_SECRET ?? '';
 
+class WechatConfigError extends Error {}
+class WechatUpstreamError extends Error {}
+
+function getWechatAppConfig() {
+  const appId = (
+    process.env.WECHAT_APP_ID ||
+    process.env.WECHAT_APPID ||
+    process.env.WX_APP_ID ||
+    ''
+  ).trim();
+  const appSecret = (
+    process.env.WECHAT_APP_SECRET ||
+    process.env.WECHAT_SECRET ||
+    process.env.WX_APP_SECRET ||
+    ''
+  ).trim();
+  return { appId, appSecret };
+}
+
 function normalizePhone(raw: string): string | null {
   const phone = raw.trim().replace(/\s+/g, '');
   if (!phone) return null;
@@ -119,29 +138,38 @@ async function buildMiniappLoginResponse(userId: string, phone: string) {
 }
 
 async function resolveWechatAccessToken() {
-  const appId = process.env.WECHAT_APP_ID;
-  const appSecret = process.env.WECHAT_APP_SECRET;
+  const { appId, appSecret } = getWechatAppConfig();
   if (!appId || !appSecret) {
-    throw new Error('WeChat app not configured');
+    throw new WechatConfigError('WeChat app not configured');
   }
 
   const url = `${WECHAT_ACCESS_TOKEN_URL}?grant_type=client_credential&appid=${encodeURIComponent(appId)}&secret=${encodeURIComponent(appSecret)}`;
-  const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+  let res: Response;
+  try {
+    res = await fetch(url, { method: 'GET', cache: 'no-store' });
+  } catch {
+    throw new WechatUpstreamError('Failed to reach WeChat API');
+  }
   const payload = await res.json() as { access_token?: string; errcode?: number; errmsg?: string };
   if (!res.ok || payload?.errcode || !payload?.access_token) {
-    throw new Error(payload?.errmsg || 'Failed to get WeChat access token');
+    throw new WechatUpstreamError(payload?.errmsg || 'Failed to get WeChat access token');
   }
   return payload.access_token;
 }
 
 async function resolvePhoneByWechatCode(code: string) {
   const accessToken = await resolveWechatAccessToken();
-  const res = await fetch(`${WECHAT_GET_PHONE_URL}?access_token=${encodeURIComponent(accessToken)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code }),
-    cache: 'no-store',
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${WECHAT_GET_PHONE_URL}?access_token=${encodeURIComponent(accessToken)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+      cache: 'no-store',
+    });
+  } catch {
+    throw new WechatUpstreamError('Failed to reach WeChat API');
+  }
   const payload = await res.json() as {
     errcode?: number;
     errmsg?: string;
@@ -153,7 +181,7 @@ async function resolvePhoneByWechatCode(code: string) {
   };
 
   if (!res.ok || payload?.errcode || !payload?.phone_info) {
-    throw new Error(payload?.errmsg || 'Failed to resolve phone number');
+    throw new WechatUpstreamError(payload?.errmsg || 'Failed to resolve phone number');
   }
 
   const phoneNumber = String(payload.phone_info.phoneNumber || '').trim();
@@ -182,6 +210,12 @@ export async function POST(request: NextRequest) {
   try {
     phone = resolvePhoneByWechatCode ? await resolvePhoneByWechatCode(code) : '';
   } catch (error) {
+    if (error instanceof WechatConfigError) {
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
+    if (error instanceof WechatUpstreamError) {
+      return NextResponse.json({ error: error.message }, { status: 502 });
+    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Failed to read phone from WeChat' },
       { status: 400 },
@@ -313,4 +347,3 @@ export async function POST(request: NextRequest) {
 
   return buildMiniappLoginResponse(newUserId, normalizedPhone);
 }
-

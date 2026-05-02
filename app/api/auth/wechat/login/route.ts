@@ -10,9 +10,24 @@ interface Code2SessionResponse {
   errmsg?: string;
 }
 
+function getWechatAppConfig() {
+  const appId = (
+    process.env.WECHAT_APP_ID ||
+    process.env.WECHAT_APPID ||
+    process.env.WX_APP_ID ||
+    ''
+  ).trim();
+  const appSecret = (
+    process.env.WECHAT_APP_SECRET ||
+    process.env.WECHAT_SECRET ||
+    process.env.WX_APP_SECRET ||
+    ''
+  ).trim();
+  return { appId, appSecret };
+}
+
 export async function POST(request: NextRequest) {
-  const appId = process.env.WECHAT_APP_ID;
-  const appSecret = process.env.WECHAT_APP_SECRET;
+  const { appId, appSecret } = getWechatAppConfig();
 
   if (!appId || !appSecret) {
     return NextResponse.json({ error: 'WeChat app not configured' }, { status: 503 });
