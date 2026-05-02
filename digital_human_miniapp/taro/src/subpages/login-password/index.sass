@@ -63,10 +63,13 @@
   position: relative
   z-index: 6
   width: 100%
-  margin-top: 36rpx
+  margin-top: 0
 
 .login-sub-brand
-  position: relative
+  position: absolute
+  top: calc(env(safe-area-inset-top) + 168rpx)
+  left: 0
+  right: 0
   z-index: 6
   width: 100%
   display: flex

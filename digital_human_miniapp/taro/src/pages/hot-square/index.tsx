@@ -21,7 +21,7 @@ const SEARCH_HISTORY_KEY = 'HOT_SEARCH_HISTORY';
 const SEARCH_HISTORY_MAX = 10;
 
 export default function HotSquarePage() {
-  const [activeCategory, setActiveCategory] = useState('全行业');
+  const [activeCategory, setActiveCategory] = useState('我的');
   const [dynamicCategories, setDynamicCategories] = useState<string[]>(DEFAULT_REMOTE_CATEGORIES);
   const [activeFilter, setActiveFilter] = useState<'all' | 'video' | 'image'>('all');
   const [activeSort, setActiveSort] = useState<'recent' | 'likes' | 'collects'>('recent');

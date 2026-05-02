@@ -35,12 +35,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid email' }, { status: 400 });
   }
 
-  const { error } = await supabaseServerClient.auth.signInWithOtp({
+  // Prefer existing-account login first.
+  // If Supabase rejects with "Signups not allowed for otp" for a non-existing account,
+  // retry with shouldCreateUser=true so miniapp email OTP can also complete first-time login.
+  let { error } = await supabaseServerClient.auth.signInWithOtp({
     email,
     options: {
       shouldCreateUser: false,
     },
   });
+
+  const shouldRetryCreateUser =
+    (error?.code === 'otp_disabled' || /signups not allowed for otp/i.test(error?.message || ''));
+
+  if (error && shouldRetryCreateUser) {
+    const retry = await supabaseServerClient.auth.signInWithOtp({
+      email,
+      options: {
+        shouldCreateUser: true,
+      },
+    });
+    error = retry.error;
+  }
 
   if (error) {
     return NextResponse.json(
@@ -51,4 +67,3 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ ok: true, ttlSeconds: 600 });
 }
-

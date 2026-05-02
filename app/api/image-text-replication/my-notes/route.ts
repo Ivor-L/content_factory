@@ -28,10 +28,11 @@ export async function GET(request: NextRequest) {
 
   const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get('limit') || 30), 1), 60);
 
+  // "我的" should include all user-created image-text replication notes:
+  // miniapp collect, one-click create, and web-side note tasks.
   const rows = await prisma.imageTextReplicationTask.findMany({
     where: {
       userId,
-      sourcePlatform: 'miniapp-my',
     },
     orderBy: {
       updatedAt: 'desc',
@@ -46,6 +47,9 @@ export async function GET(request: NextRequest) {
       status: row.status,
       sourceText: row.sourceText || '',
       sourceImages: row.sourceImages,
+      sourcePlatform: row.sourcePlatform || '',
+      sourceId: row.sourceId || '',
+      sourceUrl: row.sourceUrl || '',
       analysisResult: row.analysisResult,
       generatedCopy: row.generatedCopy,
       imageGuidance: row.imageGuidance,
@@ -69,7 +73,7 @@ export async function POST(request: NextRequest) {
   const sourceId = normalizeText(body.sourceId) || randomUUID();
   const sourceUrl = normalizeText(body.sourceUrl);
 
-  const existing = await prisma.imageTextReplicationTask.findFirst({
+  let existing = await prisma.imageTextReplicationTask.findFirst({
     where: {
       userId,
       sourcePlatform: 'miniapp-my',
@@ -79,6 +83,17 @@ export async function POST(request: NextRequest) {
       updatedAt: 'desc',
     },
   });
+  if (!existing) {
+    existing = await prisma.imageTextReplicationTask.findFirst({
+      where: {
+        userId,
+        sourceId,
+      },
+      orderBy: {
+        updatedAt: 'desc',
+      },
+    });
+  }
 
   let taskId = existing?.id || '';
   if (existing) {

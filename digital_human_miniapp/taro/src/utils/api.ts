@@ -24,6 +24,7 @@ function getApiBaseUrl(): string {
 }
 
 const API_BASE_URL = getApiBaseUrl();
+const ACCESS_TOKEN_STORAGE_KEY = 'MINIAPP_ACCESS_TOKEN';
 const SUPABASE_URL = (typeof __SUPABASE_URL__ !== 'undefined' ? String(__SUPABASE_URL__ || '') : '').trim();
 const SUPABASE_ANON_KEY = (typeof __SUPABASE_ANON_KEY__ !== 'undefined' ? String(__SUPABASE_ANON_KEY__ || '') : '').trim();
 const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
@@ -102,6 +103,28 @@ function getApiKey(): string | null {
   }
 }
 
+function getAccessToken(): string | null {
+  try {
+    const token = String(Taro.getStorageSync(ACCESS_TOKEN_STORAGE_KEY) || '').trim();
+    return token || null;
+  } catch {
+    return null;
+  }
+}
+
+function setAccessToken(accessToken: string | null) {
+  try {
+    const token = String(accessToken || '').trim();
+    if (token) {
+      Taro.setStorageSync(ACCESS_TOKEN_STORAGE_KEY, token);
+    } else {
+      Taro.removeStorageSync(ACCESS_TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // ignore storage failures
+  }
+}
+
 function resolveUrl(path: string): string {
   return API_BASE_URL ? `${API_BASE_URL}${path}` : path;
 }
@@ -114,11 +137,15 @@ async function request<T = unknown>(
   } = {},
 ): Promise<T> {
   const apiKey = getApiKey();
+  const accessToken = getAccessToken();
   const header: Record<string, string> = {
     'Content-Type': 'application/json',
   };
   if (apiKey) {
     header['X-User-Api-Key'] = apiKey;
+  }
+  if (accessToken) {
+    header.Authorization = `Bearer ${accessToken}`;
   }
 
   const res = await Taro.request({
@@ -246,10 +273,12 @@ export const api = {
   },
 
   async createMiniappSession(accessToken: string) {
-    return request<{ ok: boolean }>('/api/auth/session', {
+    const result = await request<{ ok: boolean }>('/api/auth/session', {
       method: 'POST',
       data: { accessToken },
     });
+    setAccessToken(accessToken);
+    return result;
   },
 
   async getProfile(): Promise<ProfilePayload & { apiKey: string | null }> {
@@ -279,6 +308,7 @@ export const api = {
   async signOutSupabaseClient() {
     if (!supabase) return;
     await supabase.auth.signOut().catch(() => {});
+    setAccessToken(null);
   },
 
   // ── 数字人形象 ────────────────────────────────────────

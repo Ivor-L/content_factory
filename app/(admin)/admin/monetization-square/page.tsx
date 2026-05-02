@@ -40,6 +40,15 @@ function createId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36).slice(-4)}`;
 }
 
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-');
+}
+
 function paramsToQuery(params?: Record<string, string | number | boolean | null>): string {
   if (!params) return '';
   const query = new URLSearchParams();
@@ -112,16 +121,16 @@ function prepareVisualConfig(config: MonetizationSquareConfigPayload): Monetizat
       items: category.items.map((item) => ({
         ...item,
         action: item.action?.route ? item.action : createDefaultAction(),
-        demos: Array.isArray(item.demos) && item.demos.length > 0 ? item.demos : [
-          {
+        demos: Array.isArray(item.demos) && item.demos.length > 0
+          ? item.demos
+          : [{
             id: item.id,
             title: item.title,
             subtitle: item.subtitle,
             coverImageUrl: item.coverImageUrl,
             demoVideoUrl: item.demoVideoUrl,
             tags: item.tags,
-          },
-        ],
+          }],
       })),
     })),
   };
@@ -275,35 +284,11 @@ export default function AdminMonetizationSquarePage() {
     }));
   };
 
-  const removeCategory = (categoryId: string) => {
-    setVisualConfig((prev) => {
-      const nextCategories = prev.categories.filter((item) => item.id !== categoryId);
-      return {
-        ...prev,
-        categories: nextCategories,
-      };
-    });
-    setSelectedCategoryId((prev) => (prev === categoryId ? '' : prev));
-    setSelectedItemId('');
-  };
-
-  const updateItem = (
-    categoryId: string,
-    itemId: string,
-    updater: (item: MonetizationItemConfig) => MonetizationItemConfig,
-  ) => {
+  const updateItem = (categoryId: string, itemId: string, updater: (item: MonetizationItemConfig) => MonetizationItemConfig) => {
     updateCategory(categoryId, (category) => ({
       ...category,
       items: category.items.map((item) => (item.id === itemId ? updater(item) : item)),
     }));
-  };
-
-  const removeItem = (categoryId: string, itemId: string) => {
-    updateCategory(categoryId, (category) => ({
-      ...category,
-      items: category.items.filter((item) => item.id !== itemId),
-    }));
-    setSelectedItemId((prev) => (prev === itemId ? '' : prev));
   };
 
   const updateDemo = (
@@ -316,6 +301,60 @@ export default function AdminMonetizationSquarePage() {
       ...item,
       demos: (item.demos || []).map((demo) => (demo.id === demoId ? updater(demo) : demo)),
     }));
+  };
+
+  const removeCategory = (categoryId: string) => {
+    setVisualConfig((prev) => ({
+      ...prev,
+      categories: prev.categories.filter((item) => item.id !== categoryId),
+    }));
+    if (selectedCategoryId === categoryId) {
+      setSelectedCategoryId('');
+      setSelectedItemId('');
+    }
+  };
+
+  const removeItem = (categoryId: string, itemId: string) => {
+    updateCategory(categoryId, (category) => ({
+      ...category,
+      items: category.items.filter((item) => item.id !== itemId),
+    }));
+    if (selectedItemId === itemId) {
+      setSelectedItemId('');
+    }
+  };
+
+  const generateCategoryIdFromName = (categoryId: string) => {
+    const category = visualConfig.categories.find((item) => item.id === categoryId);
+    if (!category) return;
+    const base = slugify(category.name) || 'category';
+    const existing = new Set(visualConfig.categories.map((item) => item.id));
+    existing.delete(category.id);
+    let candidate = base;
+    let i = 2;
+    while (existing.has(candidate)) {
+      candidate = `${base}-${i}`;
+      i += 1;
+    }
+    updateCategory(categoryId, (current) => ({ ...current, id: candidate }));
+    if (selectedCategoryId === categoryId) setSelectedCategoryId(candidate);
+  };
+
+  const generateItemIdFromName = (categoryId: string, itemId: string) => {
+    const category = visualConfig.categories.find((entry) => entry.id === categoryId);
+    const item = category?.items.find((entry) => entry.id === itemId);
+    if (!category || !item) return;
+    const base = slugify(item.title) || 'item';
+    const existing = new Set(category.items.map((entry) => entry.id));
+    existing.delete(item.id);
+    let candidate = base;
+    let i = 2;
+    while (existing.has(candidate)) {
+      candidate = `${base}-${i}`;
+      i += 1;
+    }
+    updateItem(categoryId, itemId, (current) => ({ ...current, id: candidate }));
+    if (selectedItemId === itemId) setSelectedItemId(candidate);
   };
 
   const handleRestoreDefault = () => {
@@ -401,10 +440,10 @@ export default function AdminMonetizationSquarePage() {
   };
 
   return (
-    <div className="mx-auto max-w-[1400px] space-y-4">
+    <div className="mx-auto max-w-[1600px] space-y-4">
       <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800">
         <h1 className="text-xl font-bold text-gray-900 dark:text-white">变现广场配置</h1>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">左侧管理分类，右侧配置当前分类内容，支持素材上传和跳转设置。</p>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">三列可视化：左侧分类，中间子类型，右侧详情配置。</p>
       </div>
 
       <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-700 dark:bg-gray-800 space-y-4">
@@ -475,32 +514,58 @@ export default function AdminMonetizationSquarePage() {
         </div>
 
         {editorMode === 'visual' ? (
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_1fr]">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[320px_360px_1fr]">
             <aside className="rounded-xl border border-gray-200 p-3 dark:border-gray-700">
               <div className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">分类列表</div>
               <div className="space-y-2">
                 {visualConfig.categories.map((category) => {
                   const active = selectedCategory?.id === category.id;
                   return (
-                    <div
-                      key={category.id}
-                      className={`flex items-center gap-2 rounded-lg border px-2 py-2 ${active ? 'border-black bg-black/5 dark:border-white dark:bg-white/10' : 'border-gray-200 dark:border-gray-700'}`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setSelectedCategoryId(category.id)}
-                        className="min-w-0 flex-1 text-left"
-                      >
-                        <div className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{category.name || '未命名分类'}</div>
-                        <div className="truncate text-xs text-gray-500 dark:text-gray-400">{category.id}</div>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => removeCategory(category.id)}
-                        className="rounded border border-red-300 px-1.5 py-0.5 text-[11px] text-red-600 hover:bg-red-50 dark:border-red-500/40 dark:text-red-300 dark:hover:bg-red-500/10"
-                      >
-                        删
-                      </button>
+                    <div key={category.id} className={`rounded-lg border px-2 py-2 ${active ? 'border-black bg-black/5 dark:border-white dark:bg-white/10' : 'border-gray-200 dark:border-gray-700'}`}>
+                      <div className="mb-2 flex items-center justify-between gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCategoryId(category.id)}
+                          className="rounded border border-gray-300 px-1.5 py-0.5 text-[11px] text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+                        >
+                          选中
+                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => generateCategoryIdFromName(category.id)}
+                            className="rounded border border-gray-300 px-1.5 py-0.5 text-[11px] text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+                          >
+                            自动ID
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeCategory(category.id)}
+                            className="rounded border border-red-300 px-1.5 py-0.5 text-[11px] text-red-600 hover:bg-red-50 dark:border-red-500/40 dark:text-red-300 dark:hover:bg-red-500/10"
+                          >
+                            删
+                          </button>
+                        </div>
+                      </div>
+                      <input
+                        value={category.name}
+                        onChange={(e) => updateCategory(category.id, (current) => ({ ...current, name: e.target.value }))}
+                        onFocus={() => setSelectedCategoryId(category.id)}
+                        className="mb-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                        placeholder="分类名称"
+                      />
+                      <input
+                        value={category.id}
+                        onChange={(e) => {
+                          const oldId = category.id;
+                          const nextId = e.target.value;
+                          updateCategory(oldId, (current) => ({ ...current, id: nextId }));
+                          if (selectedCategoryId === oldId) setSelectedCategoryId(nextId);
+                        }}
+                        onFocus={() => setSelectedCategoryId(category.id)}
+                        className="w-full rounded border border-gray-300 px-2 py-1.5 text-xs text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300"
+                        placeholder="分类 ID"
+                      />
                     </div>
                   );
                 })}
@@ -511,6 +576,7 @@ export default function AdminMonetizationSquarePage() {
                   const next = createEmptyCategory();
                   setVisualConfig((prev) => ({ ...prev, categories: [...prev.categories, next] }));
                   setSelectedCategoryId(next.id);
+                  setSelectedItemId(next.items[0]?.id || '');
                 }}
                 className="mt-3 w-full rounded-lg border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
               >
@@ -518,289 +584,271 @@ export default function AdminMonetizationSquarePage() {
               </button>
             </aside>
 
-            <section className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+            <section className="rounded-xl border border-gray-200 p-3 dark:border-gray-700">
               {!selectedCategory ? (
                 <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400">
-                  还没有分类，请先在左侧添加一个分类。
+                  请先在左侧选择分类。
                 </div>
               ) : (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <label className="space-y-1.5">
-                      <span className="text-xs font-medium text-gray-700 dark:text-gray-300">分类名称</span>
-                      <input
-                        value={selectedCategory.name}
-                        onChange={(e) => updateCategory(selectedCategory.id, (current) => ({ ...current, name: e.target.value }))}
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                      />
-                    </label>
-                    <label className="space-y-1.5">
-                      <span className="text-xs font-medium text-gray-700 dark:text-gray-300">分类 ID</span>
-                      <input
-                        value={selectedCategory.id}
-                        onChange={(e) => {
-                          const oldId = selectedCategory.id;
-                          const nextId = e.target.value;
-                          updateCategory(oldId, (current) => ({ ...current, id: nextId }));
-                          setSelectedCategoryId(nextId);
-                        }}
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                      />
-                    </label>
-                  </div>
-
-                  <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-                    <div className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">二级子类型菜单</div>
-                    <div className="space-y-2">
-                      {selectedCategory.items.map((item) => {
-                        const active = selectedItem?.id === item.id;
-                        return (
-                          <div
-                            key={item.id}
-                            className={`flex items-center gap-2 rounded-md border px-2 py-2 ${active ? 'border-black bg-black/5 dark:border-white dark:bg-white/10' : 'border-gray-200 dark:border-gray-700'}`}
-                          >
+                <>
+                  <div className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">二级子类型菜单</div>
+                  <div className="space-y-2">
+                    {selectedCategory.items.map((item) => {
+                      const active = selectedItem?.id === item.id;
+                      return (
+                        <div key={item.id} className={`rounded-md border px-2 py-2 ${active ? 'border-black bg-black/5 dark:border-white dark:bg-white/10' : 'border-gray-200 dark:border-gray-700'}`}>
+                          <div className="mb-2 flex items-center justify-between gap-1">
                             <button
                               type="button"
                               onClick={() => setSelectedItemId(item.id)}
-                              className="min-w-0 flex-1 text-left"
+                              className="rounded border border-gray-300 px-1.5 py-0.5 text-[11px] text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
                             >
-                              <div className="truncate text-sm font-medium text-gray-900 dark:text-gray-100">{item.title || '未命名子类型'}</div>
-                              <div className="truncate text-xs text-gray-500 dark:text-gray-400">{item.id}</div>
+                              选中
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => removeItem(selectedCategory.id, item.id)}
-                              className="rounded border border-red-300 px-1.5 py-0.5 text-[11px] text-red-600 hover:bg-red-50 dark:border-red-500/40 dark:text-red-300 dark:hover:bg-red-500/10"
-                            >
-                              删
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const next = createEmptyItem();
-                        updateCategory(selectedCategory.id, (current) => ({
-                          ...current,
-                          items: [...current.items, next],
-                        }));
-                        setSelectedItemId(next.id);
-                      }}
-                      className="mt-3 w-full rounded-lg border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
-                    >
-                      + 添加子类型
-                    </button>
-                  </div>
-
-                  {!selectedItem ? (
-                    <div className="rounded-lg border border-dashed border-gray-300 p-5 text-center text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400">
-                      当前分类暂无子类型，请先添加一个子类型。
-                    </div>
-                  ) : (() => {
-                    const item = selectedItem;
-                    const routeInOptions = ROUTE_OPTIONS.some((route) => route.value === item.action.route);
-                    return (
-                      <div key={item.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-                        <div className="mb-3 text-sm font-semibold text-gray-900 dark:text-gray-100">子类型详情编辑：{item.title || '未命名'}</div>
-
-                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                          <label className="space-y-1">
-                            <span className="text-xs text-gray-600 dark:text-gray-300">子类型标题</span>
-                            <input
-                              value={item.title}
-                              onChange={(e) => updateItem(selectedCategory.id, item.id, (current) => ({ ...current, title: e.target.value }))}
-                              className="w-full rounded-md border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                            />
-                          </label>
-                          <label className="space-y-1">
-                            <span className="text-xs text-gray-600 dark:text-gray-300">子类型 ID</span>
-                            <input
-                              value={item.id}
-                              onChange={(e) => {
-                                const oldId = item.id;
-                                const nextId = e.target.value;
-                                updateItem(selectedCategory.id, oldId, (current) => ({ ...current, id: nextId }));
-                                setSelectedItemId(nextId);
-                              }}
-                              className="w-full rounded-md border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                            />
-                          </label>
-                        </div>
-
-                        <div className="mt-3 rounded-md bg-gray-50 p-3 dark:bg-gray-900/50">
-                          <div className="mb-2 text-xs font-medium text-gray-700 dark:text-gray-300">跳转设置</div>
-                          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                            <label className="space-y-1">
-                              <span className="text-xs text-gray-600 dark:text-gray-300">跳转页面</span>
-                              <select
-                                value={routeInOptions ? item.action.route : '__custom__'}
-                                onChange={(e) => {
-                                  const value = e.target.value;
-                                  if (value === '__custom__') return;
-                                  updateItem(selectedCategory.id, item.id, (current) => ({
-                                    ...current,
-                                    action: { ...current.action, type: 'route', route: value },
-                                  }));
-                                }}
-                                className="w-full rounded-md border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => generateItemIdFromName(selectedCategory.id, item.id)}
+                                className="rounded border border-gray-300 px-1.5 py-0.5 text-[11px] text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
                               >
-                                {ROUTE_OPTIONS.map((option) => (
-                                  <option key={option.value} value={option.value}>{option.label}</option>
-                                ))}
-                                <option value="__custom__">自定义页面</option>
-                              </select>
-                            </label>
-                            <label className="space-y-1">
-                              <span className="text-xs text-gray-600 dark:text-gray-300">参数（key=value&key2=value2）</span>
-                              <input
-                                value={paramsToQuery(item.action.params)}
-                                onChange={(e) => updateItem(selectedCategory.id, item.id, (current) => ({
-                                  ...current,
-                                  action: { ...current.action, params: queryToParams(e.target.value) },
-                                }))}
-                                className="w-full rounded-md border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                                placeholder="mode=ai-tool-leads"
-                              />
-                            </label>
+                                自动ID
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeItem(selectedCategory.id, item.id)}
+                                className="rounded border border-red-300 px-1.5 py-0.5 text-[11px] text-red-600 hover:bg-red-50 dark:border-red-500/40 dark:text-red-300 dark:hover:bg-red-500/10"
+                              >
+                                删
+                              </button>
+                            </div>
                           </div>
-
-                          {!routeInOptions && (
-                            <label className="mt-2 block space-y-1">
-                              <span className="text-xs text-gray-600 dark:text-gray-300">自定义页面路径</span>
-                              <input
-                                value={item.action.route}
-                                onChange={(e) => updateItem(selectedCategory.id, item.id, (current) => ({
-                                  ...current,
-                                  action: { ...current.action, type: 'route', route: e.target.value },
-                                }))}
-                                className="w-full rounded-md border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                                placeholder="/pages/xxx/index"
-                              />
-                            </label>
-                          )}
+                          <input
+                            value={item.title}
+                            onChange={(e) => updateItem(selectedCategory.id, item.id, (current) => ({ ...current, title: e.target.value }))}
+                            onFocus={() => setSelectedItemId(item.id)}
+                            className="mb-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                            placeholder="子类型标题"
+                          />
+                          <input
+                            value={item.id}
+                            onChange={(e) => {
+                              const oldId = item.id;
+                              const nextId = e.target.value;
+                              updateItem(selectedCategory.id, oldId, (current) => ({ ...current, id: nextId }));
+                              if (selectedItemId === oldId) setSelectedItemId(nextId);
+                            }}
+                            onFocus={() => setSelectedItemId(item.id)}
+                            className="w-full rounded border border-gray-300 px-2 py-1.5 text-xs text-gray-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300"
+                            placeholder="子类型 ID"
+                          />
                         </div>
-
-                        <div className="mt-3 rounded-md bg-gray-50 p-3 dark:bg-gray-900/50">
-                          <div className="mb-2 flex items-center justify-between">
-                            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">演示内容（横滑卡片）</span>
-                            <button
-                              type="button"
-                              onClick={() => updateItem(selectedCategory.id, item.id, (current) => ({
-                                ...current,
-                                demos: [...(current.demos || []), createEmptyDemo()],
-                              }))}
-                              className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-white dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
-                            >
-                              + 添加演示
-                            </button>
-                          </div>
-
-                          <div className="space-y-3">
-                            {(item.demos || []).map((demo) => {
-                              const imageUploadKey = `${selectedCategory.id}-${item.id}-${demo.id}-image`;
-                              const videoUploadKey = `${selectedCategory.id}-${item.id}-${demo.id}-video`;
-                              return (
-                                <div key={demo.id} className="rounded border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-                                  <div className="mb-2 flex items-center justify-between">
-                                    <div className="text-xs font-medium text-gray-700 dark:text-gray-300">演示卡片</div>
-                                    <button
-                                      type="button"
-                                      onClick={() => updateItem(selectedCategory.id, item.id, (current) => ({
-                                        ...current,
-                                        demos: (current.demos || []).filter((entry) => entry.id !== demo.id),
-                                      }))}
-                                      className="rounded border border-red-300 px-2 py-0.5 text-xs text-red-600 hover:bg-red-50 dark:border-red-500/40 dark:text-red-300 dark:hover:bg-red-500/10"
-                                    >
-                                      删除
-                                    </button>
-                                  </div>
-
-                                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                                    <label className="space-y-1">
-                                      <span className="text-xs text-gray-600 dark:text-gray-300">标题</span>
-                                      <input
-                                        value={demo.title}
-                                        onChange={(e) => updateDemo(selectedCategory.id, item.id, demo.id, (current) => ({ ...current, title: e.target.value }))}
-                                        className="w-full rounded border border-gray-300 px-2 py-1.5 text-xs dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                                      />
-                                    </label>
-                                    <label className="space-y-1">
-                                      <span className="text-xs text-gray-600 dark:text-gray-300">描述（可选）</span>
-                                      <input
-                                        value={demo.subtitle || ''}
-                                        onChange={(e) => updateDemo(selectedCategory.id, item.id, demo.id, (current) => ({ ...current, subtitle: e.target.value }))}
-                                        className="w-full rounded border border-gray-300 px-2 py-1.5 text-xs dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                                      />
-                                    </label>
-                                  </div>
-
-                                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                                    <div className="space-y-1">
-                                      <span className="text-xs text-gray-600 dark:text-gray-300">封面图</span>
-                                      <input
-                                        value={demo.coverImageUrl || ''}
-                                        onChange={(e) => updateDemo(selectedCategory.id, item.id, demo.id, (current) => ({ ...current, coverImageUrl: e.target.value }))}
-                                        className="w-full rounded border border-gray-300 px-2 py-1.5 text-xs dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                                        placeholder="可粘贴图片URL或直接上传"
-                                      />
-                                      <div className="flex items-center gap-2">
-                                        <input
-                                          type="file"
-                                          accept="image/*"
-                                          onChange={(e) => {
-                                            const file = e.currentTarget.files?.[0];
-                                            if (!file) return;
-                                            void handleUploadDemoMedia(selectedCategory.id, item.id, demo.id, file, 'image');
-                                            e.currentTarget.value = '';
-                                          }}
-                                          className="text-xs"
-                                        />
-                                        {uploadingKey === imageUploadKey && <span className="text-xs text-gray-500">上传中...</span>}
-                                      </div>
-                                      {!!demo.coverImageUrl && (
-                                        <img src={demo.coverImageUrl} alt={demo.title} className="mt-1 h-24 w-full rounded object-cover" />
-                                      )}
-                                    </div>
-
-                                    <div className="space-y-1">
-                                      <span className="text-xs text-gray-600 dark:text-gray-300">演示视频</span>
-                                      <input
-                                        value={demo.demoVideoUrl || ''}
-                                        onChange={(e) => updateDemo(selectedCategory.id, item.id, demo.id, (current) => ({ ...current, demoVideoUrl: e.target.value }))}
-                                        className="w-full rounded border border-gray-300 px-2 py-1.5 text-xs dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                                        placeholder="可粘贴视频URL或直接上传"
-                                      />
-                                      <div className="flex items-center gap-2">
-                                        <input
-                                          type="file"
-                                          accept="video/*"
-                                          onChange={(e) => {
-                                            const file = e.currentTarget.files?.[0];
-                                            if (!file) return;
-                                            void handleUploadDemoMedia(selectedCategory.id, item.id, demo.id, file, 'video');
-                                            e.currentTarget.value = '';
-                                          }}
-                                          className="text-xs"
-                                        />
-                                        {uploadingKey === videoUploadKey && <span className="text-xs text-gray-500">上传中...</span>}
-                                      </div>
-                                      {!!demo.demoVideoUrl && (
-                                        <video src={demo.demoVideoUrl} controls className="mt-1 h-24 w-full rounded object-cover" />
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = createEmptyItem();
+                      updateCategory(selectedCategory.id, (current) => ({
+                        ...current,
+                        items: [...current.items, next],
+                      }));
+                      setSelectedItemId(next.id);
+                    }}
+                    className="mt-3 w-full rounded-lg border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+                  >
+                    + 添加子类型
+                  </button>
+                </>
               )}
+            </section>
+
+            <section className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+              {!selectedCategory ? (
+                <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400">
+                  请先选择分类。
+                </div>
+              ) : !selectedItem ? (
+                <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400">
+                  请先选择子类型。
+                </div>
+              ) : (() => {
+                const item = selectedItem;
+                const routeInOptions = ROUTE_OPTIONS.some((route) => route.value === item.action.route);
+                return (
+                  <div className="space-y-3">
+                    <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">子类型详情编辑：{item.title || '未命名'}</div>
+
+                    <div className="rounded-md bg-gray-50 p-3 dark:bg-gray-900/50">
+                      <div className="mb-2 text-xs font-medium text-gray-700 dark:text-gray-300">跳转设置</div>
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <label className="space-y-1">
+                          <span className="text-xs text-gray-600 dark:text-gray-300">跳转页面</span>
+                          <select
+                            value={routeInOptions ? item.action.route : '__custom__'}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              if (value === '__custom__') return;
+                              updateItem(selectedCategory.id, item.id, (current) => ({
+                                ...current,
+                                action: { ...current.action, type: 'route', route: value },
+                              }));
+                            }}
+                            className="w-full rounded-md border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                          >
+                            {ROUTE_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                            <option value="__custom__">自定义页面</option>
+                          </select>
+                        </label>
+                        <label className="space-y-1">
+                          <span className="text-xs text-gray-600 dark:text-gray-300">参数（key=value&key2=value2）</span>
+                          <input
+                            value={paramsToQuery(item.action.params)}
+                            onChange={(e) => updateItem(selectedCategory.id, item.id, (current) => ({
+                              ...current,
+                              action: { ...current.action, params: queryToParams(e.target.value) },
+                            }))}
+                            className="w-full rounded-md border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                            placeholder="mode=ai-tool-leads"
+                          />
+                        </label>
+                      </div>
+
+                      {!routeInOptions && (
+                        <label className="mt-2 block space-y-1">
+                          <span className="text-xs text-gray-600 dark:text-gray-300">自定义页面路径</span>
+                          <input
+                            value={item.action.route}
+                            onChange={(e) => updateItem(selectedCategory.id, item.id, (current) => ({
+                              ...current,
+                              action: { ...current.action, type: 'route', route: e.target.value },
+                            }))}
+                            className="w-full rounded-md border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                            placeholder="/pages/xxx/index"
+                          />
+                        </label>
+                      )}
+                    </div>
+
+                    <div className="rounded-md bg-gray-50 p-3 dark:bg-gray-900/50">
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-xs font-medium text-gray-700 dark:text-gray-300">演示内容（横滑卡片）</span>
+                        <button
+                          type="button"
+                          onClick={() => updateItem(selectedCategory.id, item.id, (current) => ({
+                            ...current,
+                            demos: [...(current.demos || []), createEmptyDemo()],
+                          }))}
+                          className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-white dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+                        >
+                          + 添加演示
+                        </button>
+                      </div>
+
+                      <div className="space-y-3">
+                        {(item.demos || []).map((demo) => {
+                          const imageUploadKey = `${selectedCategory.id}-${item.id}-${demo.id}-image`;
+                          const videoUploadKey = `${selectedCategory.id}-${item.id}-${demo.id}-video`;
+                          return (
+                            <div key={demo.id} className="rounded border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
+                              <div className="mb-2 flex items-center justify-between">
+                                <div className="text-xs font-medium text-gray-700 dark:text-gray-300">演示卡片</div>
+                                <button
+                                  type="button"
+                                  onClick={() => updateItem(selectedCategory.id, item.id, (current) => ({
+                                    ...current,
+                                    demos: (current.demos || []).filter((entry) => entry.id !== demo.id),
+                                  }))}
+                                  className="rounded border border-red-300 px-2 py-0.5 text-xs text-red-600 hover:bg-red-50 dark:border-red-500/40 dark:text-red-300 dark:hover:bg-red-500/10"
+                                >
+                                  删除
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                <label className="space-y-1">
+                                  <span className="text-xs text-gray-600 dark:text-gray-300">标题</span>
+                                  <input
+                                    value={demo.title}
+                                    onChange={(e) => updateDemo(selectedCategory.id, item.id, demo.id, (current) => ({ ...current, title: e.target.value }))}
+                                    className="w-full rounded border border-gray-300 px-2 py-1.5 text-xs dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                                  />
+                                </label>
+                                <label className="space-y-1">
+                                  <span className="text-xs text-gray-600 dark:text-gray-300">描述（可选）</span>
+                                  <input
+                                    value={demo.subtitle || ''}
+                                    onChange={(e) => updateDemo(selectedCategory.id, item.id, demo.id, (current) => ({ ...current, subtitle: e.target.value }))}
+                                    className="w-full rounded border border-gray-300 px-2 py-1.5 text-xs dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                                  />
+                                </label>
+                              </div>
+
+                              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                                <div className="space-y-1">
+                                  <span className="text-xs text-gray-600 dark:text-gray-300">封面图</span>
+                                  <input
+                                    value={demo.coverImageUrl || ''}
+                                    onChange={(e) => updateDemo(selectedCategory.id, item.id, demo.id, (current) => ({ ...current, coverImageUrl: e.target.value }))}
+                                    className="w-full rounded border border-gray-300 px-2 py-1.5 text-xs dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                                    placeholder="可粘贴图片URL或直接上传"
+                                  />
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={(e) => {
+                                        const file = e.currentTarget.files?.[0];
+                                        if (!file) return;
+                                        void handleUploadDemoMedia(selectedCategory.id, item.id, demo.id, file, 'image');
+                                        e.currentTarget.value = '';
+                                      }}
+                                      className="text-xs"
+                                    />
+                                    {uploadingKey === imageUploadKey && <span className="text-xs text-gray-500">上传中...</span>}
+                                  </div>
+                                  {!!demo.coverImageUrl && (
+                                    <img src={demo.coverImageUrl} alt={demo.title} className="mt-1 h-24 w-full rounded object-cover" />
+                                  )}
+                                </div>
+
+                                <div className="space-y-1">
+                                  <span className="text-xs text-gray-600 dark:text-gray-300">演示视频</span>
+                                  <input
+                                    value={demo.demoVideoUrl || ''}
+                                    onChange={(e) => updateDemo(selectedCategory.id, item.id, demo.id, (current) => ({ ...current, demoVideoUrl: e.target.value }))}
+                                    className="w-full rounded border border-gray-300 px-2 py-1.5 text-xs dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                                    placeholder="可粘贴视频URL或直接上传"
+                                  />
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="file"
+                                      accept="video/*"
+                                      onChange={(e) => {
+                                        const file = e.currentTarget.files?.[0];
+                                        if (!file) return;
+                                        void handleUploadDemoMedia(selectedCategory.id, item.id, demo.id, file, 'video');
+                                        e.currentTarget.value = '';
+                                      }}
+                                      className="text-xs"
+                                    />
+                                    {uploadingKey === videoUploadKey && <span className="text-xs text-gray-500">上传中...</span>}
+                                  </div>
+                                  {!!demo.demoVideoUrl && (
+                                    <video src={demo.demoVideoUrl} controls className="mt-1 h-24 w-full rounded object-cover" />
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </section>
           </div>
         ) : (

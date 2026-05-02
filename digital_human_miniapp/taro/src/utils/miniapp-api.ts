@@ -557,14 +557,19 @@ export const miniappApi = {
     if (params?.source === 'mine') {
       const query = new URLSearchParams();
       query.set('limit', String(params?.limit ?? 40));
+
+      // Source A: My-note tasks (miniapp + web image-text replication storage).
       const payload = await request<{ data?: Array<Record<string, unknown>> }>(`/api/image-text-replication/my-notes?${query.toString()}`);
-      const list = Array.isArray(payload?.data) ? payload.data : [];
-      return list.map((item) => {
+      const myNotes = Array.isArray(payload?.data) ? payload.data : [];
+      const fromMyNotes = myNotes.map((item) => {
         const sourceImages = Array.isArray(item.sourceImages)
           ? item.sourceImages.map((img) => String(img || '').trim()).filter(Boolean)
           : [];
         const title = String(item.title || item.sourceTitle || '未命名笔记');
         const sourceText = String(item.sourceText || '');
+        const sourceUrl = String(item.sourceUrl || '').trim();
+        const sourceId = String(item.sourceId || item.id || '').trim();
+        const sourcePlatform = String(item.sourcePlatform || 'miniapp-my').trim();
         return {
           id: String(item.id || ''),
           title,
@@ -573,11 +578,67 @@ export const miniappApi = {
           coverUrl: sourceImages[0] || null,
           mediaUrls: sourceImages,
           sourceType: 'image',
-          sourceUrl: '',
+          sourceUrl,
           scriptText: sourceText,
+          creatorName: sourcePlatform || null,
           source: 'mine',
         } as HotItem;
       }).filter((item) => item.id);
+
+      // Source B: Web-side viral references imported by this user (especially Xiaohongshu).
+      const refsQuery = new URLSearchParams();
+      refsQuery.set('limit', String(params?.limit ?? 40));
+      refsQuery.set('platform', 'xiaohongshu');
+      if (params?.q?.trim()) refsQuery.set('q', params.q.trim());
+      if (params?.sort) refsQuery.set('sort', params.sort);
+      if (params?.contentType) refsQuery.set('contentType', params.contentType);
+
+      let fromReferences: HotItem[] = [];
+      try {
+        const refsPayload = await request<{ data?: any[] }>(`/api/viral-references?${refsQuery.toString()}`);
+        const refsList = Array.isArray(refsPayload?.data) ? refsPayload.data : [];
+        fromReferences = refsList.map((item) => {
+          const mediaUrls = normalizeHotMediaUrls(item);
+          const coverUrl = sanitizeUrl(item.coverUrl) ?? mediaUrls?.[0] ?? null;
+          const rawPayload = parseObject(item.rawPayload);
+          const scriptText = typeof rawPayload?.scriptText === 'string'
+            ? rawPayload.scriptText
+            : ((item.scriptText as string | null) ?? (item.description as string | null) ?? null);
+          return {
+            id: `ref-${String(item.id || '')}`,
+            title: String(item.title ?? '未命名笔记'),
+            description: (item.description as string | null) ?? null,
+            category: '我的',
+            coverUrl,
+            mediaUrls,
+            videoUrl: (item.videoUrl as string | null) ?? null,
+            sourceType: (item.sourceType as string | null) ?? null,
+            likes: typeof item.stats?.likes === 'number'
+              ? item.stats.likes
+              : (typeof item.stats?.likes === 'string' ? Number(item.stats.likes) || 0 : null),
+            collects: typeof item.stats?.collects === 'number'
+              ? item.stats.collects
+              : (typeof item.stats?.collects === 'string' ? Number(item.stats.collects) || 0 : null),
+            creatorName: (item.creator?.name as string | null) ?? null,
+            sourceUrl: (item.sourceUrl as string | null) ?? null,
+            scriptText,
+            source: 'all',
+          } as HotItem;
+        }).filter((item) => item.id);
+      } catch {
+        fromReferences = [];
+      }
+
+      // Merge two sources by sourceUrl/title signature to reduce duplicates.
+      const seen = new Set<string>();
+      const merged = [...fromMyNotes, ...fromReferences].filter((item) => {
+        const key = `${(item.sourceUrl || '').trim()}|${(item.title || '').trim()}`.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      return merged;
     }
 
     const query = new URLSearchParams();

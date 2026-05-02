@@ -128,7 +128,7 @@ export default function LoginPage() {
     try {
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { shouldCreateUser: false },
+        options: { shouldCreateUser: true },
         // Removed emailRedirectTo to request an OTP code instead of a magic link
       });
 
@@ -258,13 +258,10 @@ export default function LoginPage() {
   const isNexTideTenant = tenantSlug === 'nextide' || tenant?.name?.toLowerCase() === 'nextide';
   const isJubaoPenTenant = tenantSlug === 'jubaopen' || tenant?.name?.includes('聚保盆');
   const loginLogoWrapperClass = cn(
-    "absolute",
-    isNexTideTenant
-      ? "-top-6 left-1 md:-top-8 md:left-2 lg:-top-10 lg:left-3"
-      : "top-2 left-4 md:top-6 md:left-6 lg:top-8 lg:left-8"
+    "mb-8 flex justify-center lg:justify-start"
   );
   const loginLogoScaleClass = cn(
-    "origin-left",
+    "origin-center lg:origin-left",
     isNexTideTenant ? "scale-[0.28]" : isJubaoPenTenant ? "scale-[0.25]" : "scale-50"
   );
   const loginLogoSize: 'sm' | 'md' | 'lg' = isNexTideTenant ? 'md' : 'sm';
@@ -275,23 +272,23 @@ export default function LoginPage() {
     <div className="flex min-h-screen w-full bg-white dark:bg-black font-sans selection:bg-[var(--tenant-primary)] selection:text-[var(--tenant-primary-foreground)]">
       {/* Left Panel - Content */}
       <div className="w-full lg:w-3/5 flex flex-col justify-center p-8 md:p-12 lg:p-24 relative z-10 text-black dark:text-white">
-        {/* Logo */}
-        <div className={loginLogoWrapperClass}>
-            <Link
-              href={tenantHomePath}
-              className="flex items-center gap-3"
-            >
-                <TenantLogo
-                  showName={false}
-                  size={loginLogoSize}
-                  className={loginLogoScaleClass}
-                  forceMonoOnDark
-                />
-            </Link>
-        </div>
-
         {/* Main Content */}
         <div className="w-full max-w-[400px] mx-auto">
+            {/* Logo */}
+            <div className={loginLogoWrapperClass}>
+                <Link
+                  href={tenantHomePath}
+                  className="flex items-center gap-3"
+                >
+                    <TenantLogo
+                      showName={false}
+                      size={loginLogoSize}
+                      className={loginLogoScaleClass}
+                      forceMonoOnDark
+                    />
+                </Link>
+            </div>
+
             <AnimatePresence mode="wait">
                 {otpSent ? (
                     <motion.div 

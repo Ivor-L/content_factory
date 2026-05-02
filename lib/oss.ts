@@ -4,6 +4,11 @@ function trimUrl(value: string | undefined | null): string {
   return String(value ?? "").trim().replace(/\/+$/, "");
 }
 
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(String(value ?? "").trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function normalizeRegion(region: string): string {
   return trimUrl(region)
     .replace(/^https?:\/\//i, "")
@@ -31,12 +36,20 @@ export function hasOssUploadConfig(): boolean {
   return Boolean(region && bucket && accessKeyId && accessKeySecret);
 }
 
-export function getOssClient(options?: { internal?: boolean; secure?: boolean }) {
+export function getOssClient(options?: {
+  internal?: boolean;
+  secure?: boolean;
+  timeoutMs?: number;
+}) {
   const { region, bucket, accessKeyId, accessKeySecret, internal } = getOssUploadConfig();
 
   if (!region || !bucket || !accessKeyId || !accessKeySecret) {
     throw new Error("Missing Aliyun OSS environment variables");
   }
+
+  const timeoutMs =
+    options?.timeoutMs ??
+    parsePositiveInt(process.env.ALIYUN_OSS_TIMEOUT_MS, 180_000);
 
   return new OSS({
     region,
@@ -45,6 +58,7 @@ export function getOssClient(options?: { internal?: boolean; secure?: boolean })
     accessKeySecret,
     internal: options?.internal ?? internal,
     secure: options?.secure ?? false,
+    timeout: timeoutMs,
   });
 }
 
