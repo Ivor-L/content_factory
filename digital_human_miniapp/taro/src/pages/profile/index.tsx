@@ -46,11 +46,11 @@ export default function ProfilePage() {
 
   const handlePromo = (title: string) => {
     if (title === '算力消耗') {
-      Taro.navigateTo({ url: '/pages/points-records/index' });
+      Taro.navigateTo({ url: '/subpages/points-records/index' });
       return;
     }
     if (title === '分享赚钱') {
-      Taro.navigateTo({ url: '/pages/referrals/index' });
+      Taro.navigateTo({ url: '/subpages/referrals/index' });
       return;
     }
     Taro.showToast({ title: `${title} 开发中`, icon: 'none' });
@@ -76,15 +76,15 @@ export default function ProfilePage() {
     };
 
     if (title === '角色库') {
-      void openLibraryPage('/pages/warehouse/index');
+      void openLibraryPage('/subpages/warehouse/index');
       return;
     }
     if (title === '产品库') {
-      void openLibraryPage('/pages/product-library/index');
+      void openLibraryPage('/subpages/product-library/index');
       return;
     }
     if (title === '风格库') {
-      void openLibraryPage('/pages/style-library/index');
+      void openLibraryPage('/subpages/style-library/index');
       return;
     }
     if (title === '知识库') {
@@ -218,7 +218,7 @@ export default function ProfilePage() {
         } catch {
           // ignore
         }
-        Taro.reLaunch({ url: '/pages/login/index' });
+        Taro.reLaunch({ url: '/subpages/login/index' });
       },
     });
   };
@@ -294,7 +294,7 @@ export default function ProfilePage() {
       </View>
 
       <View className='profile-menu-card'>
-        <View className='profile-menu-row' onClick={() => Taro.navigateTo({ url: '/pages/favorites/index' })}>
+        <View className='profile-menu-row' onClick={() => Taro.navigateTo({ url: '/subpages/favorites/index' })}>
           <View className='profile-menu-main'>
             <Image className='profile-menu-icon' src={menuFavoriteIcon} mode='aspectFit' />
             <Text className='profile-menu-left'>我的收藏</Text>

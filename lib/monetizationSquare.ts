@@ -13,6 +13,15 @@ export interface MonetizationItemConfig {
   coverImageUrl?: string;
   demoVideoUrl?: string;
   tags?: string[];
+  demos?: {
+    id: string;
+    title: string;
+    subtitle?: string;
+    coverImageUrl?: string;
+    demoVideoUrl?: string;
+    tags?: string[];
+    action?: MonetizationActionConfig;
+  }[];
   action: MonetizationActionConfig;
 }
 
@@ -215,6 +224,48 @@ export function normalizeMonetizationConfig(raw: unknown): MonetizationSquareCon
             coverImageUrl: i.coverImageUrl ? String(i.coverImageUrl) : undefined,
             demoVideoUrl: i.demoVideoUrl ? String(i.demoVideoUrl) : undefined,
             tags: Array.isArray(i.tags) ? i.tags.map((tag) => String(tag)) : undefined,
+            demos: Array.isArray((i as { demos?: unknown[] }).demos)
+              ? (i as { demos: unknown[] }).demos
+                .map((demo) => {
+                  if (!demo || typeof demo !== 'object') return null;
+                  const d = demo as Record<string, unknown>;
+                  const demoId = String(d.id || '').trim();
+                  const demoTitle = String(d.title || '').trim();
+                  if (!demoId || !demoTitle) return null;
+                  const demoAction = d.action && typeof d.action === 'object' ? d.action as Partial<MonetizationActionConfig> : null;
+                  const normalizedAction = demoAction
+                    && String(demoAction.type || '').trim() === 'route'
+                    && String(demoAction.route || '').trim()
+                    ? {
+                      type: 'route' as const,
+                      route: String(demoAction.route || '').trim(),
+                      params: demoAction.params && typeof demoAction.params === 'object'
+                        ? demoAction.params as Record<string, string | number | boolean | null>
+                        : undefined,
+                      featureKey: demoAction.featureKey ? String(demoAction.featureKey) : undefined,
+                      promptTemplate: demoAction.promptTemplate ? String(demoAction.promptTemplate) : undefined,
+                    }
+                    : undefined;
+                  return {
+                    id: demoId,
+                    title: demoTitle,
+                    subtitle: d.subtitle ? String(d.subtitle) : undefined,
+                    coverImageUrl: d.coverImageUrl ? String(d.coverImageUrl) : undefined,
+                    demoVideoUrl: d.demoVideoUrl ? String(d.demoVideoUrl) : undefined,
+                    tags: Array.isArray(d.tags) ? d.tags.map((tag) => String(tag)) : undefined,
+                    action: normalizedAction,
+                  };
+                })
+                .filter(Boolean) as {
+                id: string;
+                title: string;
+                subtitle?: string;
+                coverImageUrl?: string;
+                demoVideoUrl?: string;
+                tags?: string[];
+                action?: MonetizationActionConfig;
+              }[]
+              : undefined,
             action: {
               type: 'route',
               route: actionRoute,

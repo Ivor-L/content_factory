@@ -1,0 +1,11 @@
+{
+  "viewport": "mobile",
+  "title": "NexTide",
+  "url": "http://127.0.0.1:3001/login",
+  "hasVisualMode": false,
+  "hasAddCategory": false,
+  "consoleErrorCount": 0,
+  "pageErrorCount": 0,
+  "consoleErrors": [],
+  "pageErrors": []
+}

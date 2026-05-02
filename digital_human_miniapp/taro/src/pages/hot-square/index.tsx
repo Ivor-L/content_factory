@@ -1,10 +1,11 @@
 import { View, Text, Input, ScrollView, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { useMemo, useState } from 'react';
-import { miniappApi } from '../../utils/miniapp-api';
+import { miniappApi, type HotSquareCategoryConfig } from '../../utils/miniapp-api';
 import './index.sass';
 
-const CATEGORIES = ['全行业', '保险', '法律', '金融', '教育', '心理', 'AI', '餐饮', '美业'];
+const DEFAULT_REMOTE_CATEGORIES = ['保险', '法律', '金融', '教育', '心理', 'AI', '餐饮', '美业'];
+const BASE_CATEGORIES = ['我的', '全行业'];
 const HOT_COVER_FALLBACK_URL = 'https://oss.atomx.top/miniapp/hot-square/fallback-cover-1777628403821.jpg';
 const TYPE_FILTER_OPTIONS: Array<{ id: 'all' | 'video' | 'image'; label: string }> = [
   { id: 'all', label: '全部' },
@@ -21,6 +22,7 @@ const SEARCH_HISTORY_MAX = 10;
 
 export default function HotSquarePage() {
   const [activeCategory, setActiveCategory] = useState('全行业');
+  const [dynamicCategories, setDynamicCategories] = useState<string[]>(DEFAULT_REMOTE_CATEGORIES);
   const [activeFilter, setActiveFilter] = useState<'all' | 'video' | 'image'>('all');
   const [activeSort, setActiveSort] = useState<'recent' | 'likes' | 'collects'>('recent');
   const [keyword, setKeyword] = useState('');
@@ -29,6 +31,9 @@ export default function HotSquarePage() {
   const [list, setList] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [failedCoverIds, setFailedCoverIds] = useState<string[]>([]);
+  const [collectVisible, setCollectVisible] = useState(false);
+  const [collecting, setCollecting] = useState(false);
+  const [collectUrl, setCollectUrl] = useState('');
 
   const isBlockedCover = (url?: string | null) => {
     if (!url) return false;
@@ -75,6 +80,7 @@ export default function HotSquarePage() {
         limit: 40,
         sort,
         contentType: filter === 'video' ? 'video' : (filter === 'image' ? 'image' : undefined),
+        source: category === '我的' ? 'mine' : 'all',
       });
       setList(data);
     } catch (error) {
@@ -88,15 +94,35 @@ export default function HotSquarePage() {
   };
 
   useDidShow(() => {
-    setSearchHistory(readSearchHistory());
-    const defaultFilter = Taro.getStorageSync('HOT_SQUARE_DEFAULT_FILTER');
-    if (defaultFilter === 'video' || defaultFilter === 'image' || defaultFilter === 'all') {
-      Taro.removeStorageSync('HOT_SQUARE_DEFAULT_FILTER');
-      setActiveFilter(defaultFilter);
-      void loadList(activeCategory, keyword, defaultFilter, activeSort);
-      return;
-    }
-    void loadList();
+    const boot = async () => {
+      setSearchHistory(readSearchHistory());
+      try {
+        const config = await miniappApi.getHotSquareConfig();
+        const list = Array.isArray(config.categories)
+          ? config.categories
+            .filter((item: HotSquareCategoryConfig) => item?.enabled !== false)
+            .map((item: HotSquareCategoryConfig) => String(item.name || '').trim())
+            .filter(Boolean)
+          : [];
+        if (list.length > 0) {
+          setDynamicCategories(list);
+        } else {
+          setDynamicCategories(DEFAULT_REMOTE_CATEGORIES);
+        }
+      } catch {
+        setDynamicCategories(DEFAULT_REMOTE_CATEGORIES);
+      }
+
+      const defaultFilter = Taro.getStorageSync('HOT_SQUARE_DEFAULT_FILTER');
+      if (defaultFilter === 'video' || defaultFilter === 'image' || defaultFilter === 'all') {
+        Taro.removeStorageSync('HOT_SQUARE_DEFAULT_FILTER');
+        setActiveFilter(defaultFilter);
+        await loadList(activeCategory, keyword, defaultFilter, activeSort);
+        return;
+      }
+      await loadList();
+    };
+    void boot();
   });
 
   const summaryText = useMemo(() => {
@@ -122,7 +148,6 @@ export default function HotSquarePage() {
 
   const handleFilterChange = async () => {
     try {
-      const currentIndex = TYPE_FILTER_OPTIONS.findIndex((item) => item.id === activeFilter);
       const result = await Taro.showActionSheet({
         itemList: TYPE_FILTER_OPTIONS.map((item) => item.label),
       });
@@ -156,13 +181,101 @@ export default function HotSquarePage() {
   };
 
   const handleOpenDetail = (item: any) => {
+    const pages = Taro.getCurrentPages();
+    const useRedirect = pages.length >= 9;
+
+    if (item?.source === 'mine') {
+      const myTaskId = String(item?.id || '').trim();
+      if (myTaskId) {
+        const url = `/subpages/hot-detail/index?myTaskId=${encodeURIComponent(myTaskId)}&mode=my`;
+        const nav = useRedirect ? Taro.redirectTo : Taro.navigateTo;
+        nav({
+          url,
+          fail: (error) => {
+            console.error('[hot-square] open my detail failed', error);
+            Taro.showToast({ title: '打开失败，请重试', icon: 'none' });
+          },
+        });
+      }
+      return;
+    }
+
     const payload = {
       ...item,
       title: typeof item?.title === 'string' ? item.title : '未命名内容',
     };
     Taro.setStorageSync('HOT_DETAIL_ITEM', payload);
-    Taro.navigateTo({ url: `/pages/hot-detail/index?id=${encodeURIComponent(String(item?.id ?? ''))}` });
+    const url = `/subpages/hot-detail/index?id=${encodeURIComponent(String(item?.id ?? ''))}`;
+    const nav = useRedirect ? Taro.redirectTo : Taro.navigateTo;
+    nav({
+      url,
+      fail: (error) => {
+        console.error('[hot-square] open detail failed', error);
+        Taro.showToast({ title: '打开失败，请重试', icon: 'none' });
+      },
+    });
   };
+
+  const handleOpenCollect = async () => {
+    setCollectVisible(true);
+    if (collectUrl.trim()) return;
+
+    try {
+      const clip = await Taro.getClipboardData();
+      const text = String(clip?.data || '').trim();
+      if (text) {
+        setCollectUrl(text);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const handlePasteClipboard = async () => {
+    try {
+      const clip = await Taro.getClipboardData();
+      const text = String(clip?.data || '').trim();
+      if (!text) {
+        Taro.showToast({ title: '剪贴板为空', icon: 'none' });
+        return;
+      }
+      setCollectUrl(text);
+    } catch {
+      Taro.showToast({ title: '读取剪贴板失败', icon: 'none' });
+    }
+  };
+
+  const handleCloseCollect = () => {
+    if (collecting) return;
+    setCollectVisible(false);
+  };
+
+  const handleSubmitCollect = async () => {
+    const url = collectUrl.trim();
+    if (!url) {
+      Taro.showToast({ title: '请先粘贴链接', icon: 'none' });
+      return;
+    }
+
+    setCollecting(true);
+    try {
+      const result = await miniappApi.collectHotXhsNote(url);
+      Taro.showToast({ title: result.message || '采集成功', icon: 'success' });
+      setCollectVisible(false);
+      setCollectUrl('');
+      setActiveCategory('我的');
+      await loadList('我的', '', activeFilter, 'recent');
+    } catch (error) {
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '采集失败',
+        icon: 'none',
+      });
+    } finally {
+      setCollecting(false);
+    }
+  };
+
+  const categories = useMemo(() => [...BASE_CATEGORIES, ...dynamicCategories], [dynamicCategories]);
 
   return (
     <View className='hot-square-page'>
@@ -216,7 +329,7 @@ export default function HotSquarePage() {
                 {TYPE_FILTER_OPTIONS.find((item) => item.id === activeFilter)?.label || '全部'}
               </Text>
             </View>
-            {CATEGORIES.map((item) => (
+            {categories.map((item) => (
               <View
                 key={item}
                 className={`hot-category-chip ${activeCategory === item ? 'hot-category-chip--active' : ''}`}
@@ -291,6 +404,39 @@ export default function HotSquarePage() {
           )}
         </View>
       </ScrollView>
+
+      <View className='hot-collect-fab' onClick={handleOpenCollect}>
+        <Text className='hot-collect-fab-text'>+</Text>
+      </View>
+
+      {collectVisible && (
+        <View className='hot-collect-layer'>
+          <View className='hot-collect-mask' onClick={handleCloseCollect} />
+          <View className='hot-collect-panel'>
+            <Text className='hot-collect-title'>粘贴小红书链接</Text>
+            <Input
+              className='hot-collect-input'
+              value={collectUrl}
+              placeholder='https://www.xiaohongshu.com/explore/...'
+              maxlength={1000}
+              onInput={(e) => setCollectUrl(e.detail.value)}
+            />
+            <View className='hot-collect-actions'>
+              <View className='hot-collect-action hot-collect-action--ghost' onClick={handlePasteClipboard}>
+                <Text className='hot-collect-action-text hot-collect-action-text--ghost'>粘贴</Text>
+              </View>
+              <View className='hot-collect-action hot-collect-action--cancel' onClick={handleCloseCollect}>
+                <Text className='hot-collect-action-text hot-collect-action-text--cancel'>取消</Text>
+              </View>
+              <View className='hot-collect-action hot-collect-action--submit' onClick={handleSubmitCollect}>
+                <Text className='hot-collect-action-text'>
+                  {collecting ? '采集中...' : '开始采集'}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 }

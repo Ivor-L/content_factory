@@ -127,6 +127,7 @@ require_any "Rednote publish API key" "REDNOTE_API_KEY" "REDNOTE_QR_API_KEY" "XH
 warn_if_missing "CLOUD_API_KEY" "Cloud LLM API key"
 warn_if_missing "CANVAS_UPSTREAM_DEFAULT_API_KEY" "Canvas default upstream key"
 warn_if_missing "NEXAPI_UPSTREAM_KEY" "NexAPI upstream key"
+warn_if_missing "XHS_DOWNLOADER_BASE_URL" "XHS downloader base URL"
 
 if [ "$MISSING" -gt 0 ]; then
   echo "[env-check] FAILED: $MISSING required config item(s) missing." >&2

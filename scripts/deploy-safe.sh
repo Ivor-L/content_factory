@@ -50,6 +50,13 @@ if [ -n "$resolved_rednote_key" ]; then
   upsert_env_var "REDNOTE_API_KEY" "$resolved_rednote_key" ".env"
 fi
 
+resolved_xhs_downloader_base_url="${XHS_DOWNLOADER_BASE_URL:-}"
+if [ -z "$resolved_xhs_downloader_base_url" ]; then
+  resolved_xhs_downloader_base_url="http://xhs-downloader:5556"
+  echo "[deploy-safe] XHS_DOWNLOADER_BASE_URL missing, using default: $resolved_xhs_downloader_base_url"
+  upsert_env_var "XHS_DOWNLOADER_BASE_URL" "$resolved_xhs_downloader_base_url" ".env"
+fi
+
 echo "[deploy-safe] Validating env..."
 ./scripts/validate-runtime-env.sh --mode=runtime
 

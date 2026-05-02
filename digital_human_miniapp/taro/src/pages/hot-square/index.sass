@@ -303,3 +303,100 @@
 .hot-empty-text
   font-size: 24rpx
   color: #7e93b8
+
+.hot-collect-fab
+  position: fixed
+  right: 28rpx
+  bottom: calc(env(safe-area-inset-bottom) + 132rpx)
+  width: 92rpx
+  height: 92rpx
+  border-radius: 999rpx
+  background: #ecee9f
+  display: flex
+  align-items: center
+  justify-content: center
+  box-shadow: 0 16rpx 28rpx rgba(0, 0, 0, 0.32)
+  z-index: 90
+
+.hot-collect-fab-text
+  color: #0f0f0f
+  font-size: 56rpx
+  line-height: 1
+  font-weight: 700
+  margin-top: -2rpx
+
+.hot-collect-layer
+  position: fixed
+  inset: 0
+  z-index: 120
+  display: flex
+  align-items: center
+  justify-content: center
+  padding: 0 24rpx
+  box-sizing: border-box
+
+.hot-collect-mask
+  position: absolute
+  inset: 0
+  background: rgba(0, 0, 0, 0.56)
+
+.hot-collect-panel
+  position: relative
+  z-index: 1
+  width: 100%
+  max-width: 702rpx
+  background: #171717
+  border-radius: 24rpx
+  border: 1rpx solid rgba(145, 175, 229, 0.2)
+  padding: 24rpx
+  box-sizing: border-box
+
+.hot-collect-title
+  font-size: 30rpx
+  font-weight: 700
+  color: #e8f2ff
+
+.hot-collect-input
+  margin-top: 18rpx
+  height: 80rpx
+  border-radius: 16rpx
+  background: #202020
+  border: 1rpx solid rgba(145, 175, 229, 0.2)
+  color: #eaf3ff
+  padding: 0 20rpx
+  font-size: 24rpx
+
+.hot-collect-actions
+  margin-top: 20rpx
+  display: flex
+  gap: 12rpx
+
+.hot-collect-action
+  flex: 1
+  height: 72rpx
+  border-radius: 16rpx
+  display: flex
+  align-items: center
+  justify-content: center
+
+.hot-collect-action--ghost
+  background: #202020
+  border: 1rpx solid rgba(145, 175, 229, 0.28)
+
+.hot-collect-action--cancel
+  background: #202020
+  border: 1rpx solid rgba(145, 175, 229, 0.28)
+
+.hot-collect-action--submit
+  background: #ecee9f
+
+.hot-collect-action-text
+  color: #0f0f0f
+  font-size: 24rpx
+  font-weight: 700
+
+.hot-collect-action-text--ghost
+  color: #d8e5ff
+
+.hot-collect-action-text--cancel
+  color: #a7b9d8

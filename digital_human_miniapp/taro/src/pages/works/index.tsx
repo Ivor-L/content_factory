@@ -101,11 +101,11 @@ export default function WorksPage() {
     if (item?.source === 'task' && taskType === 'storyboard') {
       const isDemo = Boolean((item?.metadata as Record<string, unknown> | null)?.isDemoStoryboard);
       Taro.navigateTo({
-        url: `/pages/storyboard-board/index?id=${encodeURIComponent(String(item?.id ?? ''))}&title=${encodeURIComponent(payload.title)}${isDemo ? '&demo=1' : ''}`,
+        url: `/subpages/storyboard-board/index?id=${encodeURIComponent(String(item?.id ?? ''))}&title=${encodeURIComponent(payload.title)}${isDemo ? '&demo=1' : ''}`,
       });
       return;
     }
-    Taro.navigateTo({ url: `/pages/work-detail/index?id=${encodeURIComponent(String(item?.id ?? ''))}` });
+    Taro.navigateTo({ url: `/subpages/work-detail/index?id=${encodeURIComponent(String(item?.id ?? ''))}` });
   };
 
   return (

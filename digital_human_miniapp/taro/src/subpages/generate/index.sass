@@ -1,0 +1,553 @@
+.generate-page
+  padding: calc(env(safe-area-inset-top) + 190rpx) 24rpx calc(180rpx + env(safe-area-inset-bottom))
+  min-height: 100vh
+  background: #050505
+  box-sizing: border-box
+  overflow-x: hidden
+
+.generate-header
+  position: fixed
+  top: 0
+  left: 0
+  right: 0
+  z-index: 60
+  padding: calc(env(safe-area-inset-top) + 12rpx) 24rpx 8rpx
+  box-sizing: border-box
+  background: #050505
+  margin-bottom: 10rpx
+
+.generate-topbar
+  margin-bottom: 22rpx
+  display: flex
+  align-items: center
+  justify-content: center
+  position: relative
+  box-sizing: border-box
+
+.generate-back
+  position: absolute
+  left: 0
+  top: 50%
+  transform: translateY(-50%)
+  width: 56rpx
+  height: 56rpx
+  border-radius: 0
+  border: 0
+  background: transparent
+  display: flex
+  align-items: center
+  justify-content: center
+
+.generate-back-text
+  color: #e8f2ff
+  font-size: 52rpx
+  line-height: 1
+
+.generate-page-title
+  color: #ecf6ff
+  font-size: 46rpx
+  font-weight: 700
+  line-height: 1.2
+  text-align: center
+
+.section
+  background: transparent
+  border: 0
+  border-radius: 0
+  padding: 8rpx 0
+  margin-bottom: 20rpx
+  box-sizing: border-box
+  width: 100%
+  max-width: 100%
+  overflow: visible
+
+.section-title-row
+  display: flex
+  align-items: center
+  gap: 12rpx
+  margin-bottom: 18rpx
+
+.section-title-icon
+  width: 22rpx
+  height: 22rpx
+  position: relative
+  border: 2rpx solid #ecee9f
+  border-radius: 6rpx
+  box-sizing: border-box
+  flex: 0 0 22rpx
+
+.section-title-icon--video::before
+  content: ''
+  position: absolute
+  right: 3rpx
+  top: 4rpx
+  width: 0
+  height: 0
+  border-top: 5rpx solid transparent
+  border-bottom: 5rpx solid transparent
+  border-left: 7rpx solid #ecee9f
+
+.section-title-icon--script::before
+  content: ''
+  position: absolute
+  left: 4rpx
+  top: 5rpx
+  width: 12rpx
+  height: 2rpx
+  background: #ecee9f
+  box-shadow: 0 5rpx 0 #ecee9f, 0 10rpx 0 #ecee9f
+
+.section-title-icon--product
+  border-radius: 50%
+
+.section-title-icon--product::before
+  content: ''
+  position: absolute
+  left: 5rpx
+  top: 5rpx
+  width: 8rpx
+  height: 8rpx
+  border: 2rpx solid #ecee9f
+  border-radius: 50%
+
+.section-title-icon--role
+  border-radius: 50%
+
+.section-title-icon--role::before
+  content: ''
+  position: absolute
+  left: 6rpx
+  top: 3rpx
+  width: 6rpx
+  height: 6rpx
+  border: 2rpx solid #ecee9f
+  border-radius: 50%
+
+.section-title-icon--role::after
+  content: ''
+  position: absolute
+  left: 4rpx
+  bottom: 2rpx
+  width: 10rpx
+  height: 5rpx
+  border: 2rpx solid #ecee9f
+  border-top: 0
+  border-radius: 0 0 8rpx 8rpx
+
+.section-title-icon--upload-video::before
+  content: ''
+  position: absolute
+  left: 4rpx
+  top: 5rpx
+  width: 10rpx
+  height: 8rpx
+  border: 2rpx solid #ecee9f
+  border-radius: 3rpx
+
+.section-title-icon--upload-video::after
+  content: ''
+  position: absolute
+  right: 2rpx
+  top: 7rpx
+  width: 0
+  height: 0
+  border-top: 3rpx solid transparent
+  border-bottom: 3rpx solid transparent
+  border-left: 4rpx solid #ecee9f
+
+.section-title-icon--text::before
+  content: ''
+  position: absolute
+  left: 4rpx
+  top: 5rpx
+  width: 12rpx
+  height: 2rpx
+  background: #ecee9f
+  box-shadow: 0 4rpx 0 #ecee9f, 0 8rpx 0 #ecee9f
+
+.section-title-icon--audio
+  border-radius: 50%
+
+.section-title-icon--audio::before
+  content: ''
+  position: absolute
+  left: 6rpx
+  top: 6rpx
+  width: 4rpx
+  height: 8rpx
+  border: 2rpx solid #ecee9f
+  border-top: 0
+  border-radius: 0 0 4rpx 4rpx
+
+.section-title-icon--audio::after
+  content: ''
+  position: absolute
+  left: 5rpx
+  top: 3rpx
+  width: 6rpx
+  height: 2rpx
+  background: #ecee9f
+
+.section-title
+  display: block
+  font-size: 24rpx
+  font-weight: 700
+  color: #dce7fb
+  margin-bottom: 0
+
+.source-tabs
+  display: flex
+  align-items: center
+  gap: 28rpx
+  padding: 6rpx 0 2rpx
+  margin-bottom: 18rpx
+
+.source-tabs--top
+  flex: 1
+  min-width: 0
+  margin-bottom: 0
+  padding: 4rpx 0 0
+
+.source-tab
+  position: relative
+  flex: 1
+  display: flex
+  align-items: center
+  justify-content: center
+  padding: 4rpx 0 12rpx
+
+.source-tab--active
+  .source-tab-label
+    color: #ecee9f
+
+.source-tab--active::after
+  content: ''
+  position: absolute
+  left: 50%
+  bottom: 0
+  transform: translateX(-50%)
+  width: 30rpx
+  height: 8rpx
+  border-radius: 999rpx
+  background: #ecee9f
+
+.source-tab-label
+  font-size: 24rpx
+  font-weight: 700
+  color: #b8c6de
+
+.source-type-tabs
+  display: flex
+  align-items: center
+  gap: 74rpx
+  padding: 8rpx 0 8rpx
+
+.source-type-tabs--top
+  flex: 1
+  min-width: 0
+
+.top-switch-tabs
+  display: flex
+  align-items: center
+  justify-content: center
+  gap: 74rpx
+  padding: 2rpx 0 8rpx
+
+.top-switch-tab
+  position: relative
+  display: inline-flex
+  flex-direction: column
+  align-items: center
+  justify-content: center
+  padding: 2rpx 0 12rpx
+
+.top-switch-label
+  font-size: 30rpx
+  line-height: 1.2
+  font-weight: 700
+  color: #b8c6de
+
+.top-switch-tab--active
+  .top-switch-label
+    color: #ecee9f
+
+.top-switch-underline
+  position: absolute
+  left: 50%
+  bottom: 0
+  transform: translateX(-50%)
+  width: 30rpx
+  height: 8rpx
+  border-radius: 999rpx
+  background: #ecee9f
+
+.source-type-tab
+  position: relative
+  display: inline-flex
+  flex-direction: column
+  align-items: center
+  justify-content: center
+  padding: 2rpx 0 12rpx
+
+.source-type-tab-label
+  font-size: 30rpx
+  line-height: 1.2
+  font-weight: 700
+  color: #b8c6de
+
+.source-type-tab--active
+  .source-type-tab-label
+    color: #ecee9f
+
+.source-type-tab-underline
+  position: absolute
+  left: 50%
+  bottom: 0
+  transform: translateX(-50%)
+  width: 30rpx
+  height: 8rpx
+  border-radius: 999rpx
+  background: #ecee9f
+
+.character-scroll
+  width: 100%
+  max-width: 100%
+  white-space: nowrap
+  box-sizing: border-box
+
+.character-list
+  display: inline-flex
+  gap: 24rpx
+  padding-right: 16rpx
+  box-sizing: border-box
+
+.character-item
+  width: 188rpx
+  min-width: 188rpx
+  border-radius: 22rpx
+  border: 1rpx solid rgba(145, 175, 229, 0.2)
+  background: #202020
+  padding: 16rpx
+  box-sizing: border-box
+  display: flex
+  flex-direction: column
+  align-items: center
+
+.character-item--add
+  justify-content: center
+  gap: 14rpx
+  border-style: dashed
+  border-color: rgba(236, 238, 159, 0.6)
+  min-height: 218rpx
+
+.character-add-plus
+  width: 58rpx
+  height: 58rpx
+  border-radius: 999rpx
+  border: 2rpx solid #ecee9f
+  color: #ecee9f
+  font-size: 38rpx
+  line-height: 54rpx
+  text-align: center
+
+.character-add-name
+  font-size: 26rpx
+  color: #ecee9f
+  font-weight: 600
+
+.character-item--active
+  border-color: #ecee9f
+  box-shadow: inset 0 0 0 1rpx rgba(236, 238, 159, 0.28)
+
+.character-avatar
+  width: 100%
+  height: 152rpx
+  border-radius: 16rpx
+  margin-bottom: 12rpx
+  background: #111
+
+.character-avatar--option
+  display: flex
+  align-items: center
+  justify-content: center
+  border: 1rpx dashed rgba(145, 175, 229, 0.36)
+  background: #1a1e24
+
+.character-option-icon
+  width: 56rpx
+  height: 56rpx
+  border: 2rpx solid #8fa3c9
+  border-radius: 50%
+  position: relative
+  box-sizing: border-box
+
+.character-option-icon::after
+  content: ''
+  position: absolute
+  left: 50%
+  top: 50%
+  width: 46rpx
+  height: 2rpx
+  background: #8fa3c9
+  transform: translate(-50%, -50%) rotate(-45deg)
+
+.character-name
+  width: 100%
+  text-align: center
+  font-size: 25rpx
+  color: #dbe8ff
+  white-space: nowrap
+  overflow: hidden
+  text-overflow: ellipsis
+
+.mode-tabs
+  display: flex
+  align-items: center
+  gap: 20rpx
+  margin-bottom: 16rpx
+
+.mode-tab
+  flex: 1
+  height: 68rpx
+  border-radius: 999rpx
+  border: 1rpx solid rgba(145, 175, 229, 0.35)
+  background: #202020
+  display: flex
+  align-items: center
+  justify-content: center
+
+.mode-tab--active
+  border-color: #ecee9f
+  background: rgba(236, 238, 159, 0.16)
+
+  .mode-tab-label
+    color: #ecee9f
+
+.mode-tab-label
+  font-size: 24rpx
+  font-weight: 700
+  color: #b8c6de
+
+.mode-desc
+  font-size: 20rpx
+  color: #8fa3c9
+  line-height: 1.5
+  margin-top: 4rpx
+
+.script-input
+  width: 100%
+  height: 300rpx
+  background: #202020
+  color: #dbe8ff
+  border-radius: 22rpx
+  padding: 24rpx 26rpx
+  font-size: 28rpx
+  line-height: 1.6
+  box-sizing: border-box
+  max-width: 100%
+  border: 1rpx solid rgba(145, 175, 229, 0.26)
+
+.script-input-box
+  border-radius: 22rpx
+  background: #202020
+  border: 1rpx solid rgba(145, 175, 229, 0.26)
+  overflow: hidden
+
+.script-input--flat
+  border: none
+  border-radius: 0
+  background: transparent
+  margin: 0
+
+.info-input-actions
+  display: flex
+  justify-content: space-between
+  align-items: center
+  padding: 0 16rpx 14rpx
+
+.input-action-btn
+  height: 56rpx
+  border-radius: 999rpx
+  border: 1rpx solid rgba(236, 238, 159, 0.38)
+  background: rgba(236, 238, 159, 0.14)
+  padding: 0 24rpx
+  display: flex
+  align-items: center
+  justify-content: center
+
+.input-action-btn--ghost
+  border-color: rgba(145, 175, 229, 0.34)
+  background: rgba(145, 175, 229, 0.1)
+
+.input-action-btn-text
+  color: #ecee9f
+  font-size: 22rpx
+  font-weight: 600
+
+.input-action-btn-text--ghost
+  color: #d5e3fd
+
+.char-count
+  display: block
+  text-align: right
+  font-size: 22rpx
+  color: #6f84ad
+  margin-top: 12rpx
+
+.upload-row
+  background: #202020
+  border-radius: 22rpx
+  min-height: 116rpx
+  display: flex
+  align-items: center
+  justify-content: center
+  padding: 0 28rpx
+  border: 1rpx solid rgba(145, 175, 229, 0.26)
+
+.upload-row-content
+  display: inline-flex
+  align-items: center
+  justify-content: center
+  gap: 12rpx
+
+.upload-row-plus
+  color: #ecee9f
+  font-size: 36rpx
+  line-height: 1
+  font-weight: 700
+
+.upload-row-text
+  font-size: 26rpx
+  color: #8fa3c9
+  text-align: center
+
+.upload-row--large
+  min-height: 138rpx
+
+.fixed-submit-area
+  position: fixed
+  left: 24rpx
+  right: 24rpx
+  bottom: calc(24rpx + env(safe-area-inset-bottom))
+  z-index: 40
+
+.btn-primary
+  background: #ecee9f
+  height: 88rpx
+  border-radius: 20rpx
+  display: flex
+  align-items: center
+  justify-content: center
+
+.btn-disabled
+  opacity: 0.5
+
+.btn-text
+  font-size: 28rpx
+  font-weight: 800
+  color: #121212
+
+.empty-hint
+  font-size: 22rpx
+  color: #7f93b8
+  margin-top: 10rpx

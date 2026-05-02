@@ -50,6 +50,40 @@ export interface HotItem {
   creatorName?: string | null;
   sourceUrl?: string | null;
   scriptText?: string | null;
+  source?: 'all' | 'mine';
+}
+
+export interface MyNoteImageTextItem {
+  index: number;
+  text: string;
+  success: boolean;
+  error?: string | null;
+}
+
+export interface MyNoteTaskDetail {
+  id: string;
+  status: string;
+  source: {
+    title: string;
+    text: string;
+    images: string[];
+    platform?: string;
+    sourceId?: string;
+    sourceUrl?: string;
+  };
+  analysisResult: {
+    sourceTitle: string;
+    sourceText: string;
+    sourceImages: string[];
+    extractedImageTexts: MyNoteImageTextItem[];
+    rewriteResult: {
+      title: string;
+      body: string;
+      imageTexts: string[];
+    } | null;
+  };
+  generatedCopy?: string | null;
+  errorMessage?: string | null;
 }
 
 export interface WorkItem {
@@ -178,6 +212,15 @@ export interface MonetizationItemConfig {
   coverImageUrl?: string;
   demoVideoUrl?: string;
   tags?: string[];
+  demos?: {
+    id: string;
+    title: string;
+    subtitle?: string;
+    coverImageUrl?: string;
+    demoVideoUrl?: string;
+    tags?: string[];
+    action?: MonetizationActionConfig;
+  }[];
   action: MonetizationActionConfig;
 }
 
@@ -193,10 +236,29 @@ export interface MonetizationSquareConfigPayload {
   categories: MonetizationCategoryConfig[];
 }
 
+export interface HotSquareCategoryConfig {
+  id: string;
+  name: string;
+  enabled?: boolean;
+}
+
+export interface HotSquareConfigPayload {
+  title: string;
+  subtitle?: string;
+  categories: HotSquareCategoryConfig[];
+}
+
 export interface XhsPublishResult {
   id: string;
   url: string;
   qrcode: string;
+}
+
+export interface MiniappCollectXhsResult {
+  taskId: string;
+  status: string;
+  title: string;
+  message?: string;
 }
 
 const HOT_VIDEO_URL_RE = /\.(mp4|mov|m3u8)(\?|$)|\/video\/|\/master\/|xgvideo/i;
@@ -490,7 +552,34 @@ export const miniappApi = {
     limit?: number;
     contentType?: 'video' | 'image';
     sort?: 'recent' | 'likes' | 'collects' | 'comments';
+    source?: 'all' | 'mine';
   }): Promise<HotItem[]> {
+    if (params?.source === 'mine') {
+      const query = new URLSearchParams();
+      query.set('limit', String(params?.limit ?? 40));
+      const payload = await request<{ data?: Array<Record<string, unknown>> }>(`/api/image-text-replication/my-notes?${query.toString()}`);
+      const list = Array.isArray(payload?.data) ? payload.data : [];
+      return list.map((item) => {
+        const sourceImages = Array.isArray(item.sourceImages)
+          ? item.sourceImages.map((img) => String(img || '').trim()).filter(Boolean)
+          : [];
+        const title = String(item.title || item.sourceTitle || '未命名笔记');
+        const sourceText = String(item.sourceText || '');
+        return {
+          id: String(item.id || ''),
+          title,
+          description: sourceText || null,
+          category: '我的',
+          coverUrl: sourceImages[0] || null,
+          mediaUrls: sourceImages,
+          sourceType: 'image',
+          sourceUrl: '',
+          scriptText: sourceText,
+          source: 'mine',
+        } as HotItem;
+      }).filter((item) => item.id);
+    }
+
     const query = new URLSearchParams();
     query.set('limit', String(params?.limit ?? 20));
     if (params?.sort) {
@@ -502,6 +591,7 @@ export const miniappApi = {
     if (params?.category && params.category !== '全行业') {
       query.set('category', params.category);
     }
+    query.set('scope', 'shared');
     if (params?.q?.trim()) {
       query.set('q', params.q.trim());
     }
@@ -532,21 +622,116 @@ export const miniappApi = {
         creatorName: (item.creator?.name as string | null) ?? null,
         sourceUrl: (item.sourceUrl as string | null) ?? null,
         scriptText: (item.scriptText as string | null) ?? null,
+        source: 'all',
       };
     });
   },
 
   async startOneClickCreate(item: HotItem): Promise<{ taskId: string; status: string }> {
-    return request<{ taskId: string; status: string }>('/api/image-text-replication/start', {
+    return request<{ taskId: string; status: string }>('/api/image-text-replication/my-notes', {
       method: 'POST',
       data: {
         sourceTitle: item.title,
         sourceText: item.scriptText ?? item.description ?? '',
-        sourceImages: item.coverUrl ? [item.coverUrl] : [],
+        sourceImages: item.mediaUrls && item.mediaUrls.length > 0
+          ? item.mediaUrls
+          : (item.coverUrl ? [item.coverUrl] : []),
         sourcePlatform: 'miniapp',
         sourceId: item.id,
         sourceUrl: item.sourceUrl ?? '',
       },
+    });
+  },
+
+  async collectHotXhsNote(url: string): Promise<MiniappCollectXhsResult> {
+    const payload = await request<{ taskId?: string; status?: string; title?: string; message?: string }>('/api/miniapp/hot-square/collect-xhs', {
+      method: 'POST',
+      data: { url },
+    });
+
+    return {
+      taskId: String(payload?.taskId || ''),
+      status: String(payload?.status || 'BREAKDOWN_PENDING'),
+      title: String(payload?.title || '未命名笔记'),
+      message: typeof payload?.message === 'string' ? payload.message : undefined,
+    };
+  },
+
+  async getImageTextMyNoteTask(taskId: string): Promise<MyNoteTaskDetail> {
+    const payload = await request<{ task?: Record<string, unknown> }>(`/api/image-text-replication/${encodeURIComponent(taskId)}`);
+    const task = payload?.task || {};
+    const sourceRaw = task.source && typeof task.source === 'object' ? task.source as Record<string, unknown> : {};
+    const analysisRaw = task.analysisResult && typeof task.analysisResult === 'object'
+      ? task.analysisResult as Record<string, unknown>
+      : {};
+    const extractedRaw = Array.isArray(analysisRaw.extractedImageTexts)
+      ? analysisRaw.extractedImageTexts
+      : [];
+
+    const extractedImageTexts = extractedRaw
+      .map((item, index) => {
+        if (!item || typeof item !== 'object') return null;
+        const obj = item as Record<string, unknown>;
+        const indexValue = Number(obj.index);
+        return {
+          index: Number.isFinite(indexValue) && indexValue > 0 ? Math.floor(indexValue) : index + 1,
+          text: String(obj.text || ''),
+          success: Boolean(obj.success),
+          error: typeof obj.error === 'string' ? obj.error : null,
+        };
+      })
+      .filter((item): item is MyNoteImageTextItem => Boolean(item));
+
+    const rewriteRaw = analysisRaw.rewriteResult && typeof analysisRaw.rewriteResult === 'object'
+      ? analysisRaw.rewriteResult as Record<string, unknown>
+      : null;
+
+    return {
+      id: String(task.id || taskId),
+      status: String(task.status || 'PENDING'),
+      source: {
+        title: String(sourceRaw.title || analysisRaw.sourceTitle || ''),
+        text: String(sourceRaw.text || analysisRaw.sourceText || ''),
+        images: Array.isArray(sourceRaw.images)
+          ? sourceRaw.images.map((img) => String(img || '').trim()).filter(Boolean)
+          : [],
+        platform: typeof sourceRaw.platform === 'string' ? sourceRaw.platform : '',
+        sourceId: typeof sourceRaw.sourceId === 'string' ? sourceRaw.sourceId : '',
+        sourceUrl: typeof sourceRaw.sourceUrl === 'string' ? sourceRaw.sourceUrl : '',
+      },
+      analysisResult: {
+        sourceTitle: String(analysisRaw.sourceTitle || ''),
+        sourceText: String(analysisRaw.sourceText || ''),
+        sourceImages: Array.isArray(analysisRaw.sourceImages)
+          ? analysisRaw.sourceImages.map((img) => String(img || '').trim()).filter(Boolean)
+          : [],
+        extractedImageTexts,
+        rewriteResult: rewriteRaw
+          ? {
+              title: String(rewriteRaw.title || ''),
+              body: String(rewriteRaw.body || ''),
+              imageTexts: Array.isArray(rewriteRaw.imageTexts)
+                ? rewriteRaw.imageTexts.map((text) => String(text || '').trim()).filter(Boolean)
+                : [],
+            }
+          : null,
+      },
+      generatedCopy: typeof task.generatedCopy === 'string' ? task.generatedCopy : null,
+      errorMessage: typeof task.errorMessage === 'string' ? task.errorMessage : null,
+    };
+  },
+
+  async triggerImageTextMyNoteBreakdown(taskId: string): Promise<{ taskId: string; status: string }> {
+    return request<{ taskId: string; status: string }>(`/api/image-text-replication/${encodeURIComponent(taskId)}/breakdown`, {
+      method: 'POST',
+      data: {},
+    });
+  },
+
+  async triggerImageTextMyNoteRewrite(taskId: string): Promise<{ taskId: string; status: string; workTaskId: string }> {
+    return request<{ taskId: string; status: string; workTaskId: string }>(`/api/image-text-replication/${encodeURIComponent(taskId)}/rewrite`, {
+      method: 'POST',
+      data: {},
     });
   },
 
@@ -1016,6 +1201,19 @@ export const miniappApi = {
     const config = payload?.data?.config;
     if (!config || !Array.isArray(config.categories)) {
       throw new Error('变现广场配置为空');
+    }
+    return config;
+  },
+
+  async getHotSquareConfig(key = 'miniapp-hot-square'): Promise<HotSquareConfigPayload> {
+    const query = new URLSearchParams();
+    query.set('key', key);
+    const payload = await request<{ data?: { config?: HotSquareConfigPayload } }>(
+      `/api/miniapp/hot-square/config?${query.toString()}`,
+    );
+    const config = payload?.data?.config;
+    if (!config || !Array.isArray(config.categories)) {
+      throw new Error('爆款分类配置为空');
     }
     return config;
   },

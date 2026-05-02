@@ -1,0 +1,11 @@
+{
+  "viewport": "desktop",
+  "title": "NexTide",
+  "url": "http://127.0.0.1:3001/admin/monetization-square",
+  "hasVisualMode": true,
+  "hasAddCategory": true,
+  "consoleErrorCount": 0,
+  "pageErrorCount": 0,
+  "consoleErrors": [],
+  "pageErrors": []
+}

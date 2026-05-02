@@ -106,3 +106,6 @@
 | [20260501-storyboard-orchestrator-plan.md](./20260501-storyboard-orchestrator-plan.md) | 分镜编排层（Storyboard Orchestrator）统一化方案与实施计划 |
 | [20260502-monetization-square-config-center-plan.md](./20260502-monetization-square-config-center-plan.md) | 变现广场配置中心方案：后台可配置类目/类型/素材/动作与提示词 |
 | [20260502-image-text-replication-parallel-and-xhs-html-plan.md](./20260502-image-text-replication-parallel-and-xhs-html-plan.md) | 图文复刻并行识别+顺序稳定、标准化MD入库、小红书卡片HTML渲染与二创基底强化 |
+| [20260502-miniapp-image-text-replication-workflow-plan.md](./20260502-miniapp-image-text-replication-workflow-plan.md) | 小程序图文同款链路升级：我的分类沉淀、后台解析、一键仿写与卡片流程衔接 |
+| [20260502-miniapp-hot-square-data-center-plan.md](./20260502-miniapp-hot-square-data-center-plan.md) | 小程序爆款数据中心：我的分类个人数据 + 后台分类配置与小红书搜索采集 |
+| [20260502-miniapp-hot-square-xhs-collect-plan.md](./20260502-miniapp-hot-square-xhs-collect-plan.md) | 小程序爆款广场新增右下角采集入口：粘贴小红书链接并沉淀到“我的”分类 |

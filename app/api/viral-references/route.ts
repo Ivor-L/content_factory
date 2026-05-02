@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { getRequestUserContext } from "@/lib/authServer";
 import { hydrateViralReferenceMedia } from "@/lib/viralReferenceMedia";
+import { HOT_SQUARE_SHARED_OWNER } from "@/lib/hotSquareDataCenter";
 
 const DEFAULT_PAGE_SIZE = 24;
 const MAX_PAGE_SIZE = 100;
@@ -27,10 +28,16 @@ export async function GET(request: Request) {
   const includeCounts = searchParams.get("includeCounts") === "true";
   const publishedAfter = parseDate(searchParams.get("publishedAfter"));
   const contentType = safeTrim(searchParams.get("contentType")); // 'video' | 'image' | null
+  const scope = safeTrim(searchParams.get("scope")) ?? "owner"; // owner | shared
+  const includeShared = searchParams.get("includeShared") === "true";
 
   const currentOwner = userId ?? apiKey!;
+  const ownerFilter = includeShared
+    ? { in: [currentOwner, HOT_SQUARE_SHARED_OWNER] }
+    : currentOwner;
+
   const where: Prisma.ViralReferenceItemWhereInput = {
-    ingestedBy: currentOwner,
+    ingestedBy: scope === "shared" ? HOT_SQUARE_SHARED_OWNER : ownerFilter,
   };
   if (platformList.length > 0) {
     where.platform = { in: platformList };

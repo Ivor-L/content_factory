@@ -88,7 +88,7 @@ export default function HomePage() {
 
       <View
         className='home-remix-card'
-        onClick={() => Taro.navigateTo({ url: '/pages/remix-generate/index' })}
+        onClick={() => Taro.navigateTo({ url: '/subpages/remix-generate/index' })}
       >
         {!remixVideoFailed && (
           <Video
@@ -126,7 +126,7 @@ export default function HomePage() {
       </View>
 
       <View className='home-feature-grid'>
-        <View className='home-feature-card home-feature-card--video' onClick={() => Taro.navigateTo({ url: '/pages/generate/index?feature=digital-human' })}>
+        <View className='home-feature-card home-feature-card--video' onClick={() => Taro.navigateTo({ url: '/subpages/generate/index?feature=digital-human' })}>
           <View className='home-feature-head'>
             <Text className='home-feature-title'>AI数字人</Text>
           </View>
@@ -135,12 +135,12 @@ export default function HomePage() {
         </View>
 
         <View className='home-feature-right'>
-          <View className='home-feature-card home-feature-card--image' onClick={() => Taro.navigateTo({ url: '/pages/image-generate/index' })}>
+          <View className='home-feature-card home-feature-card--image' onClick={() => Taro.navigateTo({ url: '/subpages/image-generate/index' })}>
             <Text className='home-feature-title'>图片生成</Text>
             <Text className='home-feature-desc'>文生图 / 图生图</Text>
             <Image className='home-card-icon home-card-icon--small' src={imageIcon} mode='aspectFit' />
           </View>
-          <View className='home-feature-card home-feature-card--edit' onClick={() => Taro.navigateTo({ url: '/pages/generate/index?feature=video-generate&category=skeleton-3d' })}>
+          <View className='home-feature-card home-feature-card--edit' onClick={() => Taro.navigateTo({ url: '/subpages/generate/index?feature=video-generate&category=skeleton-3d' })}>
             <Text className='home-feature-title'>视频生成</Text>
             <Text className='home-feature-desc'>文生视频、图生视频</Text>
             <Image className='home-card-icon home-card-icon--small' src={videoIcon} mode='aspectFit' />
@@ -148,7 +148,7 @@ export default function HomePage() {
         </View>
       </View>
 
-      <View className='home-action-row' onClick={() => Taro.navigateTo({ url: '/pages/monetization-square/index' })}>
+      <View className='home-action-row' onClick={() => Taro.navigateTo({ url: '/subpages/monetization-square/index' })}>
         <View>
           <Text className='home-action-title'>变现广场</Text>
           <Text className='home-action-desc'>精选高变现内容模板，一键做同款</Text>

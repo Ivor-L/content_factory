@@ -75,6 +75,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             { href: '/admin',           label: '用户管理' },
             { href: '/admin/credits',   label: '积分配置' },
             { href: '/admin/monetization-square',   label: '变现广场' },
+            { href: '/admin/hot-square-data-center', label: '爆款数据中心' },
             { href: '/admin/tenants',   label: '租户管理' },
           ].map(({ href, label }) => {
             const isActive = href === '/admin' ? pathname === '/admin' : pathname?.startsWith(href);
