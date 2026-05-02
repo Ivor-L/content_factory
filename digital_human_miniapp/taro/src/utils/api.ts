@@ -91,6 +91,7 @@ export interface ProfilePayload {
   username: string | null;
   avatarUrl: string | null;
   memberLevel?: string | null;
+  apiKey?: string | null;
 }
 
 function getApiKey(): string | null {
@@ -253,9 +254,10 @@ export const api = {
 
   async getProfile(): Promise<ProfilePayload & { apiKey: string | null }> {
     const profile = await request<ProfilePayload>('/api/user/profile');
+    const serverApiKey = typeof profile?.apiKey === 'string' ? profile.apiKey.trim() : '';
     return {
       ...profile,
-      apiKey: getApiKey(),
+      apiKey: serverApiKey || getApiKey(),
     };
   },
 
