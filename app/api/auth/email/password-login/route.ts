@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { FinalizeLoginError, finalizeLogin } from '@/lib/auth/finalizeLogin';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -41,11 +42,37 @@ export async function POST(request: NextRequest) {
     password,
   });
 
-  if (error || !data.session?.access_token) {
+  if (error || !data.session?.access_token || !data.user?.id) {
     return NextResponse.json(
       { error: error?.message || '邮箱或密码错误' },
       { status: error?.status || 400 },
     );
+  }
+
+  try {
+    await finalizeLogin({
+      userId: data.user.id,
+      identities: [
+        {
+          provider: 'email',
+          providerUid: email,
+          verifiedAt: new Date(),
+        },
+      ],
+    });
+  } catch (finalizeError) {
+    if (finalizeError instanceof FinalizeLoginError) {
+      return NextResponse.json(
+        {
+          error: finalizeError.message,
+          code: finalizeError.code,
+        },
+        { status: finalizeError.status },
+      );
+    }
+
+    console.error('[auth/email/password-login] finalize failed', finalizeError);
+    return NextResponse.json({ error: 'Login bootstrap failed' }, { status: 500 });
   }
 
   return NextResponse.json({
@@ -53,4 +80,3 @@ export async function POST(request: NextRequest) {
     accessToken: data.session.access_token,
   });
 }
-

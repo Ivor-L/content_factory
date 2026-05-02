@@ -109,3 +109,4 @@
 | [20260502-miniapp-image-text-replication-workflow-plan.md](./20260502-miniapp-image-text-replication-workflow-plan.md) | 小程序图文同款链路升级：我的分类沉淀、后台解析、一键仿写与卡片流程衔接 |
 | [20260502-miniapp-hot-square-data-center-plan.md](./20260502-miniapp-hot-square-data-center-plan.md) | 小程序爆款数据中心：我的分类个人数据 + 后台分类配置与小红书搜索采集 |
 | [20260502-miniapp-hot-square-xhs-collect-plan.md](./20260502-miniapp-hot-square-xhs-collect-plan.md) | 小程序爆款广场新增右下角采集入口：粘贴小红书链接并沉淀到“我的”分类 |
+| [20260503-auth-unified-login-provision-plan.md](./20260503-auth-unified-login-provision-plan.md) | 统一 Web/小程序登录完成器：三端登录后自动建号、绑定身份并强制真实积分开户 |

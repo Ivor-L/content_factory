@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import prisma from '@/lib/prisma';
 import { getRequestUserContext } from '@/lib/authServer';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { POINTS_API_BASES } from '@/lib/points-server';
+import { FinalizeLoginError, finalizeLogin } from '@/lib/auth/finalizeLogin';
 
 function normalizePhone(raw: string): string | null {
   const phone = raw.trim().replace(/\s+/g, '');
@@ -15,10 +15,7 @@ function normalizePhone(raw: string): string | null {
 
 function hashOtp(phone: string, purpose: string, code: string): string {
   const secret = process.env.PHONE_OTP_SECRET || 'local-dev-secret';
-  return crypto
-    .createHmac('sha256', secret)
-    .update(`${phone}:${purpose}:${code}`)
-    .digest('hex');
+  return crypto.createHmac('sha256', secret).update(`${phone}:${purpose}:${code}`).digest('hex');
 }
 
 function lowerEmail(email: string | null | undefined): string | null {
@@ -35,98 +32,36 @@ function buildSyntheticEmail(phone: string): string {
   return `phone_${digits}_${Date.now()}@miniapp.local`;
 }
 
-const INTERNAL_SECRET = process.env.CREDITS_INTERNAL_SECRET ?? '';
-
-async function provisionApiKeyForUser(userId: string, email: string): Promise<string | null> {
-  if (!INTERNAL_SECRET) {
-    return null;
-  }
-
-  for (const base of POINTS_API_BASES) {
-    try {
-      const res = await fetch(`${base}/internal/provision`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-internal-secret': INTERNAL_SECRET,
-        },
-        body: JSON.stringify({ email }),
-        cache: 'no-store',
-      });
-
-      if (!res.ok) continue;
-
-      const data = await res.json() as { data?: { apiKey?: string } };
-      const apiKey = data?.data?.apiKey?.trim();
-      if (!apiKey) continue;
-
-      await prisma.profiles.update({
-        where: { id: userId },
-        data: {
-          api_key: apiKey,
-          updated_at: new Date(),
-        },
-      });
-
-      return apiKey;
-    } catch {
-      continue;
-    }
-  }
-
-  return null;
-}
-
-async function ensureApiKeyForUser(userId: string): Promise<string | null> {
-  const profile = await prisma.profiles.findUnique({
-    where: { id: userId },
-    select: { api_key: true },
-  });
-
-  if (profile?.api_key?.trim()) {
-    return profile.api_key.trim();
-  }
-
-  const { data: userRes } = await supabaseAdmin.auth.admin.getUserById(userId);
-  const email = userRes?.user?.email?.trim().toLowerCase();
-  if (!email) return null;
-
-  return provisionApiKeyForUser(userId, email);
-}
-
-async function buildMiniappLoginResponse(userId: string, phone: string) {
-  let profile = await prisma.profiles.findUnique({
-    where: { id: userId },
-    select: {
-      id: true,
-      api_key: true,
-      username: true,
-      full_name: true,
-      avatar_url: true,
-    },
-  });
-
-  if (!profile) {
-    return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
-  }
-
-  const resolvedApiKey = profile?.api_key?.trim() || await ensureApiKeyForUser(userId);
-  if (!resolvedApiKey) {
-    return NextResponse.json(
-      { error: 'Account has no API key and provisioning failed. Please contact support.' },
-      { status: 403 },
-    );
-  }
-
-  return NextResponse.json({
+function toMiniappPayload(result: {
+  userId: string;
+  apiKey: string;
+  username: string | null;
+  avatarUrl: string | null;
+}, phone: string) {
+  return {
     ok: true,
     isNewUser: false,
     phone,
-    userId: profile.id,
-    apiKey: resolvedApiKey,
-    username: profile.username ?? profile.full_name ?? null,
-    avatarUrl: profile.avatar_url ?? null,
-  });
+    userId: result.userId,
+    apiKey: result.apiKey,
+    username: result.username,
+    avatarUrl: result.avatarUrl,
+  };
+}
+
+function handleFinalizeLoginError(error: unknown) {
+  if (error instanceof FinalizeLoginError) {
+    return NextResponse.json(
+      {
+        error: error.message,
+        code: error.code,
+      },
+      { status: error.status },
+    );
+  }
+
+  console.error('[auth/phone/verify] finalize failed', error);
+  return NextResponse.json({ error: 'Login failed' }, { status: 500 });
 }
 
 export async function POST(request: NextRequest) {
@@ -213,119 +148,95 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, userId: ctx.userId, phone });
   }
 
-  const phoneIdentity = await prisma.userAuthIdentity.findFirst({
-    where: { provider: 'phone', providerUid: phone },
-    select: { userId: true },
-  });
-
-  if (phoneIdentity?.userId) {
-    return buildMiniappLoginResponse(phoneIdentity.userId, phone);
-  }
-
-  const email = lowerEmail(body.email);
-  if (email) {
-    const linked = await prisma.userAuthIdentity.findFirst({
-      where: { provider: 'email', providerUid: email },
+  try {
+    const phoneIdentity = await prisma.userAuthIdentity.findFirst({
+      where: { provider: 'phone', providerUid: phone },
       select: { userId: true },
     });
 
-    if (linked?.userId) {
-      await prisma.userAuthIdentity.create({
-        data: {
+    if (phoneIdentity?.userId) {
+      const finalized = await finalizeLogin({
+        userId: phoneIdentity.userId,
+        identities: [
+          {
+            provider: 'phone',
+            providerUid: phone,
+            verifiedAt: new Date(),
+          },
+        ],
+      });
+      return NextResponse.json(toMiniappPayload(finalized, phone));
+    }
+
+    const email = lowerEmail(body.email);
+    if (email) {
+      const linked = await prisma.userAuthIdentity.findFirst({
+        where: { provider: 'email', providerUid: email },
+        select: { userId: true },
+      });
+
+      if (linked?.userId) {
+        const finalized = await finalizeLogin({
           userId: linked.userId,
+          identities: [
+            {
+              provider: 'email',
+              providerUid: email,
+              verifiedAt: new Date(),
+            },
+            {
+              provider: 'phone',
+              providerUid: phone,
+              verifiedAt: new Date(),
+            },
+          ],
+        });
+
+        return NextResponse.json(toMiniappPayload(finalized, phone));
+      }
+    }
+
+    const autoRegisterEmail = buildSyntheticEmail(phone);
+    const autoPassword = crypto.randomBytes(24).toString('hex');
+
+    const created = await supabaseAdmin.auth.admin.createUser({
+      email: autoRegisterEmail,
+      password: autoPassword,
+      email_confirm: true,
+      user_metadata: {
+        full_name: `手机用户${phoneDigits(phone).slice(-4)}`,
+      },
+    });
+
+    if (created.error || !created.data?.user?.id) {
+      console.error('[auth/phone/verify] auto register failed', created.error);
+      return NextResponse.json({ error: 'Auto registration failed' }, { status: 502 });
+    }
+
+    const finalized = await finalizeLogin({
+      userId: created.data.user.id,
+      identities: [
+        {
           provider: 'phone',
           providerUid: phone,
           verifiedAt: new Date(),
         },
-      });
-
-      return buildMiniappLoginResponse(linked.userId, phone);
-    }
-  }
-
-  const autoRegisterEmail = buildSyntheticEmail(phone);
-  const autoPassword = crypto.randomBytes(24).toString('hex');
-
-  const created = await supabaseAdmin.auth.admin.createUser({
-    email: autoRegisterEmail,
-    password: autoPassword,
-    email_confirm: true,
-    user_metadata: {
-      full_name: `手机用户${phoneDigits(phone).slice(-4)}`,
-    },
-  });
-
-  if (created.error || !created.data?.user?.id) {
-    console.error('[auth/phone/verify] auto register failed', created.error);
-    return NextResponse.json({ error: 'Auto registration failed' }, { status: 502 });
-  }
-
-  const newUserId = created.data.user.id;
-  const now = new Date();
-
-  await prisma.profiles.upsert({
-    where: { id: newUserId },
-    update: {
-      full_name: `手机用户${phoneDigits(phone).slice(-4)}`,
-      updated_at: now,
-    },
-    create: {
-      id: newUserId,
-      full_name: `手机用户${phoneDigits(phone).slice(-4)}`,
-      updated_at: now,
-      role: 'free',
-      plan: 'free',
-    },
-  });
-
-  await prisma.userAuthIdentity.upsert({
-    where: {
-      provider_providerUid: {
-        provider: 'phone',
-        providerUid: phone,
+        {
+          provider: 'email',
+          providerUid: autoRegisterEmail,
+          verifiedAt: new Date(),
+          meta: {
+            source: 'phone-auto-register',
+          },
+        },
+      ],
+      profileUpdates: {
+        full_name: `手机用户${phoneDigits(phone).slice(-4)}`,
       },
-    },
-    update: {
-      userId: newUserId,
-      verifiedAt: now,
-    },
-    create: {
-      userId: newUserId,
-      provider: 'phone',
-      providerUid: phone,
-      verifiedAt: now,
-    },
-  });
+    });
 
-  await prisma.userAuthIdentity.upsert({
-    where: {
-      provider_providerUid: {
-        provider: 'email',
-        providerUid: autoRegisterEmail,
-      },
-    },
-    update: {
-      userId: newUserId,
-      verifiedAt: now,
-    },
-    create: {
-      userId: newUserId,
-      provider: 'email',
-      providerUid: autoRegisterEmail,
-      verifiedAt: now,
-      meta: {
-        source: 'phone-auto-register',
-      },
-    },
-  });
-
-  const provisionedApiKey = await provisionApiKeyForUser(newUserId, autoRegisterEmail);
-  if (!provisionedApiKey) {
-    return NextResponse.json(
-      { error: 'Auto registration succeeded but API key provisioning failed' },
-      { status: 502 },
-    );
+    return NextResponse.json(toMiniappPayload(finalized, phone));
+  } catch (error) {
+    return handleFinalizeLoginError(error);
   }
-
-  return buildMiniappLoginResponse(newUserId, phone);
 }
