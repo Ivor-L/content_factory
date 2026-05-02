@@ -1,5 +1,8 @@
 import { defineConfig } from '@tarojs/cli';
 
+const API_BASE_URL = process.env.TARO_APP_API_BASE_URL || 'https://atomx.top';
+const DEV_API_KEY = process.env.TARO_APP_API_KEY || '';
+
 export default defineConfig({
   projectName: 'digital-human-miniapp',
   date: '2026-04-03',
@@ -13,7 +16,11 @@ export default defineConfig({
   sourceRoot: 'src',
   outputRoot: 'dist',
   plugins: [],
-  defineConstants: {},
+  defineConstants: {
+    __API_BASE_URL__: JSON.stringify(API_BASE_URL),
+    __MINIAPP_BYPASS_LOGIN__: JSON.stringify(true),
+    __MINIAPP_DEV_API_KEY__: JSON.stringify(DEV_API_KEY),
+  },
   copy: { patterns: [], options: {} },
   framework: 'react',
   compiler: 'webpack5',

@@ -1152,6 +1152,22 @@ model CreditUsageLog {
   @@schema("public")
 }
 
+model MonetizationSquareConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?
+  config      Json
+  published   Boolean  @default(true)
+  version     Int      @default(1)
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([published])
+  @@map("monetization_square_configs")
+  @@schema("public")
+}
+
 model TaskSummary {
   id           String   @id @default(cuid())
   userId       String   @map("user_id") @db.Uuid
@@ -1267,6 +1283,39 @@ model UsageLog {
   @@index([userId, createdAt], map: "usage_logs_user_created_idx")
   @@index([modelId], map: "usage_logs_model_idx")
   @@map("usage_logs")
+  @@schema("public")
+}
+
+model UserAuthIdentity {
+  id          String    @id @default(cuid())
+  userId      String    @map("user_id") @db.Uuid
+  provider    String
+  providerUid String    @map("provider_uid")
+  verifiedAt  DateTime? @map("verified_at")
+  meta        Json?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@unique([provider, providerUid], map: "user_auth_identities_provider_uid_key")
+  @@index([userId, provider], map: "user_auth_identities_user_provider_idx")
+  @@map("user_auth_identities")
+  @@schema("public")
+}
+
+model PhoneOtpChallenge {
+  id        String    @id @default(cuid())
+  phone     String
+  purpose   String
+  codeHash  String    @map("code_hash")
+  expiresAt DateTime  @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  attempts  Int       @default(0)
+  ip        String?
+  userAgent String?   @map("user_agent")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([phone, purpose, createdAt], map: "phone_otp_challenges_phone_purpose_idx")
+  @@map("phone_otp_challenges")
   @@schema("public")
 }
 

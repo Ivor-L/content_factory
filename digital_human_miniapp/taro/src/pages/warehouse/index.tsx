@@ -114,8 +114,22 @@ export default function WarehousePage() {
     }
   };
 
+  const handleBack = () => {
+    const pages = Taro.getCurrentPages();
+    if (pages.length > 1) {
+      Taro.navigateBack({ delta: 1 });
+      return;
+    }
+    Taro.switchTab({ url: '/pages/home/index' });
+  };
+
   return (
     <View className='warehouse-page'>
+      <View className='warehouse-topbar'>
+        <View className='warehouse-back' onClick={handleBack}>
+          <Text className='warehouse-back-text'>‹</Text>
+        </View>
+      </View>
       <ScrollView scrollY className='warehouse-scroll'>
         {loading && <Text className='loading-text'>加载中...</Text>}
         {error && <Text className='error-text'>{error}</Text>}

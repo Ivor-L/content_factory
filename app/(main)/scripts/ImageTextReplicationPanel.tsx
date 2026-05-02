@@ -79,6 +79,13 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 type AnalysisStatus = "idle" | "running" | "success" | "error";
+type StructuredSection = {
+  heading: string;
+  subheading: string;
+  keyPoint: string;
+  summary: string;
+  htmlHint: string;
+};
 
 const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
@@ -93,6 +100,160 @@ const normalizeUrlList = (urls: string[]): string[] => {
     result.push(trimmed);
   }
   return result;
+};
+
+const MAX_RECOGNIZE_CONCURRENCY = 3;
+
+const sanitizeLineForTag = (raw: string): string => {
+  return raw
+    .replace(/<[^>]*>/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+const inferTagsFromSource = (title: string, body: string): string[] => {
+  const candidates = new Set<string>();
+  const seedWords = `${title}\n${body}`
+    .replace(/\r\n/g, "\n")
+    .split(/\n+/)
+    .map((line) => sanitizeLineForTag(line))
+    .filter(Boolean);
+  const stopWords = new Set([
+    "我们", "你们", "他们", "自己", "这个", "那个", "就是", "以及", "如果", "因为", "所以",
+    "然后", "但是", "已经", "一个", "一些", "可以", "需要", "进行", "通过", "内容", "文案",
+    "视频", "图片", "原文", "标题", "正文", "方法", "步骤", "总结", "分析", "分享", "经验",
+  ]);
+
+  for (const line of seedWords) {
+    for (const token of line.split(/\s+/)) {
+      const word = token.trim().replace(/^#+/, "");
+      if (!word || word.length < 2 || word.length > 12) continue;
+      if (stopWords.has(word)) continue;
+      candidates.add(word);
+      if (candidates.size >= 8) break;
+    }
+    if (candidates.size >= 8) break;
+  }
+
+  if (candidates.size === 0) {
+    candidates.add("图文复刻");
+    candidates.add("内容拆解");
+    candidates.add("小红书");
+  }
+
+  return Array.from(candidates).slice(0, 8);
+};
+
+const splitRecognizedSections = (input: string): StructuredSection[] => {
+  const lines = input
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    return [
+      {
+        heading: "内容结构",
+        subheading: "核心摘要",
+        keyPoint: "暂无可识别内容",
+        summary: "未识别到有效文本，请补充原始素材后重试。",
+        htmlHint: "<blockquote><p><strong>提示：</strong>建议重新上传更清晰的参考图。</p></blockquote>",
+      },
+    ];
+  }
+
+  const sections: StructuredSection[] = [];
+  const chunkSize = Math.max(4, Math.ceil(lines.length / 3));
+  for (let i = 0; i < lines.length; i += chunkSize) {
+    const chunk = lines.slice(i, i + chunkSize);
+    const idx = sections.length + 1;
+    const headingLine = chunk[0] || `图文片段 ${idx}`;
+    const subheadingLine = chunk[1] || "要点拆解";
+    const rest = chunk.slice(2).join(" ");
+    sections.push({
+      heading: `结构模块 ${idx}`,
+      subheading: headingLine.slice(0, 36),
+      keyPoint: subheadingLine.slice(0, 80),
+      summary: (rest || chunk.join(" ")).slice(0, 240),
+      htmlHint: `<p><strong>模块 ${idx} 可视化建议：</strong><em>${headingLine.slice(0, 42)}</em></p>`,
+    });
+  }
+
+  return sections.slice(0, 6);
+};
+
+const buildStructuredMarkdown = ({
+  sourceTitle,
+  sourceBody,
+  tags,
+  rawRecognizedText,
+}: {
+  sourceTitle: string;
+  sourceBody: string;
+  tags: string[];
+  rawRecognizedText: string;
+}): string => {
+  const resolvedTitle = sourceTitle.trim() || "爆款图文复刻";
+  const resolvedBody = sourceBody.trim() || "暂无原正文";
+  const sections = splitRecognizedSections(rawRecognizedText);
+  const tagLine = tags.map((tag) => `#${tag.replace(/^#+/, "")}`).join(" ");
+  const tableRows = sections
+    .map((section, index) => `| ${index + 1} | ${section.subheading} | ${section.keyPoint} |`)
+    .join("\n");
+  const parts: string[] = [];
+  parts.push(`# ${resolvedTitle}`);
+  parts.push("");
+  parts.push("> [!meta] 原帖信息");
+  parts.push(`> 原标题: ${resolvedTitle}`);
+  parts.push(`> 标签: ${tagLine || "#图文复刻 #内容拆解"}`);
+  parts.push("");
+  parts.push("## 原正文");
+  parts.push(resolvedBody);
+  parts.push("");
+  parts.push("## 标准化拆解");
+  parts.push("### 结构总览表");
+  parts.push("| 序号 | 二级标题 | 三级标题重点 |");
+  parts.push("| --- | --- | --- |");
+  parts.push(tableRows || "| 1 | 核心结构 | 待补充 |");
+  parts.push("");
+  for (const section of sections) {
+    parts.push(`## ${section.heading}`);
+    parts.push(`### ${section.subheading}`);
+    parts.push(`#### 重点标注`);
+    parts.push(`- **核心观点**：${section.keyPoint}`);
+    parts.push(`- **内容摘要**：${section.summary}`);
+    parts.push("");
+    parts.push("#### HTML 结构块");
+    parts.push(section.htmlHint);
+    parts.push("");
+  }
+  parts.push("## 原始识别全文");
+  parts.push("```text");
+  parts.push(rawRecognizedText.trim() || "暂无识别内容");
+  parts.push("```");
+  return parts.join("\n").trim();
+};
+
+const escapeYamlInline = (input: string): string => {
+  return `"${input.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+};
+
+const toYamlBlock = (input: string): string => {
+  const normalized = input.replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n");
+  if (lines.length === 0) return "|-\n  ";
+  return ["|-", ...lines.map((line) => `  ${line}`)].join("\n");
+};
+
+const slugifyForFile = (input: string): string => {
+  const normalized = input
+    .replace(/[\\/:*?"<>|]/g, " ")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return normalized.slice(0, 48) || "图文识别";
 };
 
 const KNOWLEDGE_SAVE_TARGET_PREFIX = "xhs-parse-save-target:";
@@ -596,44 +757,87 @@ export function ImageTextReplicationPanel({
     setAnalysisProgress({ current: 0, total: normalizedSourceImages.length });
     setAnalysisSavedAt(null);
     setAnalysisExpanded(false);
-    const aggregated: string[] = [];
     try {
-      for (let i = 0; i < normalizedSourceImages.length; i += 1) {
-        const imageUrl = normalizedSourceImages[i];
-        if (!imageUrl) continue;
-        const normalizedUrl = toAbsoluteUrl(imageUrl);
-        if (!normalizedUrl) {
-          throw new Error(`第 ${i + 1} 张图片链接无效`);
+      const total = normalizedSourceImages.length;
+      const orderedResults = new Array<string>(total).fill("");
+      let completed = 0;
+      let firstErrorMessage: string | null = null;
+      let cursor = 0;
+
+      const worker = async () => {
+        while (true) {
+          const currentIndex = cursor;
+          cursor += 1;
+          if (currentIndex >= total) return;
+
+          const imageUrl = normalizedSourceImages[currentIndex];
+          if (!imageUrl) {
+            orderedResults[currentIndex] = `第 ${currentIndex + 1} 张：无法识别`;
+            completed += 1;
+            setAnalysisProgress({ current: completed, total });
+            continue;
+          }
+
+          const normalizedUrl = toAbsoluteUrl(imageUrl);
+          if (!normalizedUrl) {
+            orderedResults[currentIndex] = `第 ${currentIndex + 1} 张：链接无效`;
+            if (!firstErrorMessage) firstErrorMessage = `第 ${currentIndex + 1} 张图片链接无效`;
+            completed += 1;
+            setAnalysisProgress({ current: completed, total });
+            continue;
+          }
+
+          try {
+            const res = await fetch("/api/canvas/image-understanding", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                imageUrl: normalizedUrl,
+                prompt: IMAGE_UNDERSTANDING_PROMPT_EXACT_TEXT,
+                model: "gemini-3.1-flash-lite-preview",
+              }),
+            });
+            const payload = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              const message = payload?.error || `第 ${currentIndex + 1} 张识别失败`;
+              if (!firstErrorMessage) firstErrorMessage = message;
+              orderedResults[currentIndex] = `第 ${currentIndex + 1} 张：识别失败`;
+            } else {
+              const rawText = typeof payload?.result === "string" ? payload.result.trim() : "";
+              orderedResults[currentIndex] = rawText || `第 ${currentIndex + 1} 张：无法识别`;
+            }
+          } catch (error) {
+            if (!firstErrorMessage) {
+              firstErrorMessage = error instanceof Error ? error.message : `第 ${currentIndex + 1} 张识别失败`;
+            }
+            orderedResults[currentIndex] = `第 ${currentIndex + 1} 张：识别失败`;
+          } finally {
+            completed += 1;
+            setAnalysisProgress({ current: completed, total });
+          }
         }
-        setAnalysisProgress({ current: i + 1, total: normalizedSourceImages.length });
-        const res = await fetch("/api/canvas/image-understanding", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            imageUrl: normalizedUrl,
-            prompt: IMAGE_UNDERSTANDING_PROMPT_EXACT_TEXT,
-            model: "gemini-3.1-flash-lite-preview",
-          }),
-        });
-        const payload = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          const message = payload?.error || `第 ${i + 1} 张识别失败`;
-          throw new Error(message);
-        }
-        const rawText = typeof payload?.result === "string" ? payload.result.trim() : "";
-        aggregated.push(rawText || "无法识别");
-      }
-      const combinedText = aggregated.join("\n\n").trim();
+      };
+
+      await Promise.all(
+        Array.from({ length: Math.min(MAX_RECOGNIZE_CONCURRENCY, total) }, () => worker()),
+      );
+
+      const combinedText = orderedResults
+        .map((text, index) => `### 图${index + 1}\n${(text || "无法识别").trim()}`)
+        .join("\n\n")
+        .trim();
       setAnalysisText(combinedText);
-      setAnalysisStatus("success");
-      setAnalysisProgress({ current: normalizedSourceImages.length, total: normalizedSourceImages.length });
+      setAnalysisStatus(firstErrorMessage ? "error" : "success");
+      setAnalysisError(firstErrorMessage);
+      setAnalysisProgress({ current: total, total });
       persistAnalysisResult(combinedText);
-      toast.success("图文识别完成");
+      if (firstErrorMessage) {
+        toast.error(`部分图片识别失败：${firstErrorMessage}`);
+      } else {
+        toast.success("图文识别完成");
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : "图文识别失败";
-      if (aggregated.length > 0) {
-        setAnalysisText(aggregated.join("\n\n"));
-      }
       setAnalysisError(message);
       setAnalysisStatus("error");
       toast.error(message);
@@ -659,7 +863,16 @@ export function ImageTextReplicationPanel({
     setSaveError(null);
     try {
       const folder = knowledgeFolders.find((item) => item.id === selectedKnowledgeFolderId);
-      const titleBase = (sourceTitle?.trim() || "图文识别").slice(0, 48);
+      const resolvedSourceTitle = (sourceTitle?.trim() || "图文识别").slice(0, 80);
+      const resolvedSourceBody = sourceText?.trim() || "暂无原正文";
+      const inferredTags = inferTagsFromSource(resolvedSourceTitle, `${resolvedSourceBody}\n${content}`);
+      const standardizedMarkdown = buildStructuredMarkdown({
+        sourceTitle: resolvedSourceTitle,
+        sourceBody: resolvedSourceBody,
+        tags: inferredTags,
+        rawRecognizedText: content,
+      });
+      const titleBase = slugifyForFile(resolvedSourceTitle);
       const savedAt = new Date();
       const pad = (num: number) => String(num).padStart(2, "0");
       const fileTimeLabel = `${savedAt.getFullYear()}-${pad(savedAt.getMonth() + 1)}-${pad(savedAt.getDate())}-${pad(savedAt.getHours())}-${pad(savedAt.getMinutes())}-${pad(savedAt.getSeconds())}`;
@@ -672,14 +885,16 @@ export function ImageTextReplicationPanel({
         minute: "2-digit",
       }).format(savedAt);
       const bodyContent = [
-        `# ${titleBase}`,
+        "---",
+        `source_title: ${escapeYamlInline(resolvedSourceTitle)}`,
+        "source_text: " + toYamlBlock(resolvedSourceBody),
+        `source_tags: [${inferredTags.map((tag) => escapeYamlInline(tag)).join(", ")}]`,
+        `source_platform: ${escapeYamlInline(sourcePlatform?.trim() || "")}`,
+        `source_url: ${escapeYamlInline(sourceUrl?.trim() || "")}`,
+        `saved_at: ${escapeYamlInline(savedAtLabel)}`,
+        "---",
         "",
-        "> [!meta] 入库信息（生成时自动忽略）",
-        sourceUrl?.trim() ? `> 来源: ${sourceUrl.trim()}` : "",
-        sourcePlatform?.trim() ? `> 平台: ${sourcePlatform.trim()}` : "",
-        `> 保存时间: ${savedAtLabel}`,
-        "",
-        content,
+        standardizedMarkdown,
       ]
         .filter(Boolean)
         .join("\n");
@@ -702,6 +917,9 @@ export function ImageTextReplicationPanel({
             sourcePlatform: sourcePlatform?.trim() || null,
             sourceId: sourceId?.trim() || null,
             sourceUrl: sourceUrl?.trim() || null,
+            sourceTitle: resolvedSourceTitle,
+            sourceText: resolvedSourceBody,
+            sourceTags: inferredTags,
           },
         }),
       });
@@ -734,7 +952,7 @@ export function ImageTextReplicationPanel({
     } finally {
       setSavingToFolder(false);
     }
-  }, [analysisText, authToken, knowledgeFolders, selectedKnowledgeFolderId, sourceId, sourcePlatform, sourceTitle, sourceUrl]);
+  }, [analysisText, authToken, knowledgeFolders, selectedKnowledgeFolderId, sourceId, sourcePlatform, sourceText, sourceTitle, sourceUrl]);
 
   // ── Render ───────────────────────────────────────────────────────────────
 

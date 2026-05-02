@@ -1,108 +1,320 @@
-import { View, Text, Input } from '@tarojs/components';
+import { View, Text, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
+import { api } from '../../utils/api';
+import avatarIcon from '../../assets/icons/human-silhouette.jpg';
+import roleLibIcon from '../../assets/icons/profile-lib-role.png';
+import productLibIcon from '../../assets/icons/profile-lib-product.png';
+import styleLibIcon from '../../assets/icons/profile-lib-style.png';
+import knowledgeLibIcon from '../../assets/icons/profile-lib-knowledge.png';
+import promoShareIcon from '../../assets/icons/promo-share.png';
+import promoPointsIcon from '../../assets/icons/promo-points.png';
+import menuFavoriteIcon from '../../assets/icons/profile-menu/favorite.svg';
+import menuAboutIcon from '../../assets/icons/profile-menu/about.svg';
+import menuKeyIcon from '../../assets/icons/profile-menu/key.svg';
 import './index.sass';
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<any>(null);
-  const [editingKey, setEditingKey] = useState(false);
-  const [keyInput, setKeyInput] = useState('');
+  const [updatingAvatar, setUpdatingAvatar] = useState(false);
+  const [overview, setOverview] = useState({
+    templates: 0,
+    products: 0,
+    styles: 0,
+    characters: 0,
+  });
 
   useDidShow(() => {
     void (async () => {
-      const data = await miniappApi.getProfile();
-      setProfile(data);
+      try {
+        const [profileData, assetData] = await Promise.all([
+          miniappApi.getProfile(),
+          miniappApi.getAssetOverview(),
+        ]);
+        setProfile(profileData);
+        setOverview(assetData);
+      } catch {
+        // Keep page usable even if request fails.
+      }
     })();
   });
 
-  const handleSaveKey = () => {
-    if (!keyInput.trim()) {
-      Taro.showToast({ title: '请输入 API Key', icon: 'none' });
-      return;
-    }
-    Taro.setStorageSync('API_KEY', keyInput.trim());
-    setProfile((prev) => (prev ? { ...prev, apiKey: keyInput.trim() } : prev));
-    setEditingKey(false);
-    Taro.showToast({ title: '已保存', icon: 'success' });
+  const handleUnlock = () => {
+    Taro.showToast({ title: '会员功能开发中', icon: 'none' });
   };
 
-  const handleLogout = () => {
+  const handlePromo = (title: string) => {
+    if (title === '算力消耗') {
+      Taro.navigateTo({ url: '/pages/points-records/index' });
+      return;
+    }
+    if (title === '分享赚钱') {
+      Taro.navigateTo({ url: '/pages/referrals/index' });
+      return;
+    }
+    Taro.showToast({ title: `${title} 开发中`, icon: 'none' });
+  };
+
+  const handleOpenLibrary = (title: string) => {
+    const openLibraryPage = async (url: string) => {
+      const pages = Taro.getCurrentPages();
+      const shouldRedirect = pages.length >= 9;
+      try {
+        if (shouldRedirect) {
+          await Taro.redirectTo({ url });
+          return;
+        }
+        await Taro.navigateTo({ url });
+      } catch {
+        try {
+          await Taro.redirectTo({ url });
+        } catch {
+          Taro.showToast({ title: '页面打开失败，请稍后重试', icon: 'none' });
+        }
+      }
+    };
+
+    if (title === '角色库') {
+      void openLibraryPage('/pages/warehouse/index');
+      return;
+    }
+    if (title === '产品库') {
+      void openLibraryPage('/pages/product-library/index');
+      return;
+    }
+    if (title === '风格库') {
+      void openLibraryPage('/pages/style-library/index');
+      return;
+    }
+    if (title === '知识库') {
+      Taro.showToast({ title: '知识库开发中', icon: 'none' });
+      return;
+    }
+    Taro.showToast({ title: `${title} 功能开发中`, icon: 'none' });
+  };
+
+  const getMemberLevelText = (rawLevel: string | null | undefined) => {
+    const lv = String(rawLevel || '').trim().toLowerCase();
+    if (!lv) return '普通会员';
+    if (lv.includes('diamond') || lv.includes('钻石')) return '钻石会员';
+    if (lv.includes('gold') || lv.includes('黄金')) return '黄金会员';
+    if (lv.includes('silver') || lv.includes('白银')) return '白银会员';
+    if (lv.includes('vip') || lv.includes('pro')) return '高级会员';
+    if (lv.includes('free') || lv.includes('普通')) return '普通会员';
+    return String(rawLevel);
+  };
+
+  const handleChangeAvatar = async () => {
+    if (updatingAvatar) return;
+    try {
+      const res = await Taro.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
+      const filePath = res?.tempFilePaths?.[0];
+      if (!filePath) return;
+
+      setUpdatingAvatar(true);
+      const avatarUrl = await api.uploadMedia(filePath, `avatar-${Date.now()}.jpg`, 'image/jpeg');
+
+      const apiKey = profile?.apiKey || Taro.getStorageSync('API_KEY') || '';
+      if (!apiKey) {
+        throw new Error('未绑定 API Key');
+      }
+
+      const saveRes = await Taro.request({
+        url: `${__API_BASE_URL__}/api/user/profile`,
+        method: 'PUT',
+        data: { avatarUrl },
+        header: {
+          'Content-Type': 'application/json',
+          'X-User-Api-Key': apiKey,
+        },
+      });
+
+      if (saveRes.statusCode < 200 || saveRes.statusCode >= 300) {
+        throw new Error('保存头像失败');
+      }
+
+      setProfile((prev) => ({ ...(prev || {}), avatarUrl }));
+
+      const userInfoStr = Taro.getStorageSync('USER_INFO');
+      const userInfo = userInfoStr ? JSON.parse(userInfoStr as string) : {};
+      userInfo.avatarUrl = avatarUrl;
+      Taro.setStorageSync('USER_INFO', JSON.stringify(userInfo));
+
+      Taro.showToast({ title: '头像已同步到后台', icon: 'success' });
+    } catch {
+      Taro.showToast({ title: '头像更新失败', icon: 'none' });
+    } finally {
+      setUpdatingAvatar(false);
+    }
+  };
+
+  const handleBindApiKey = async () => {
+    const modal = await Taro.showModal({
+      title: '绑定 API Key',
+      editable: true,
+      placeholderText: '请输入你的 API Key',
+      content: '',
+      confirmText: '绑定',
+      cancelText: '取消',
+    });
+
+    if (!modal.confirm) return;
+    const apiKey = (modal.content || '').trim();
+    if (!apiKey) {
+      Taro.showToast({ title: 'API Key 不能为空', icon: 'none' });
+      return;
+    }
+
+    try {
+      const currentApiKey = profile?.apiKey || Taro.getStorageSync('API_KEY') || '';
+      if (!currentApiKey) {
+        Taro.setStorageSync('API_KEY', apiKey);
+        setProfile((prev) => ({ ...(prev || {}), apiKey }));
+        Taro.showToast({ title: '已绑定 API Key', icon: 'success' });
+        return;
+      }
+
+      const res = await Taro.request({
+        url: `${__API_BASE_URL__}/api/user/validate-api-key`,
+        method: 'POST',
+        data: { apiKey },
+        header: {
+          'Content-Type': 'application/json',
+          'X-User-Api-Key': currentApiKey,
+        },
+      });
+
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        throw new Error('校验失败');
+      }
+
+      const payload = res.data as { valid?: boolean; reason?: string };
+      if (!payload?.valid) {
+        const reason = payload?.reason === 'already_bound' ? '该 Key 已被其他账号绑定' : '无效的 API Key';
+        Taro.showToast({ title: reason, icon: 'none' });
+        return;
+      }
+
+      Taro.setStorageSync('API_KEY', apiKey);
+      setProfile((prev) => ({ ...(prev || {}), apiKey }));
+      Taro.showToast({ title: '已绑定 API Key', icon: 'success' });
+    } catch {
+      Taro.showToast({ title: '绑定失败，请重试', icon: 'none' });
+    }
+  };
+
+  const handleSwitchLogin = () => {
     Taro.showModal({
-      title: '退出登录',
-      content: '确定退出当前账号吗？',
-      success: ({ confirm }) => {
-        if (!confirm) return;
-        Taro.removeStorageSync('API_KEY');
-        Taro.removeStorageSync('USER_INFO');
+      title: '切换登录',
+      content: '确定退出当前账号并重新登录吗？',
+      confirmText: '确定',
+      cancelText: '取消',
+      success: (res) => {
+        if (!res.confirm) return;
+        try {
+          Taro.removeStorageSync('API_KEY');
+          Taro.removeStorageSync('USER_INFO');
+        } catch {
+          // ignore
+        }
         Taro.reLaunch({ url: '/pages/login/index' });
       },
     });
   };
 
-  const maskedKey = profile?.apiKey
-    ? `${profile.apiKey.slice(0, 8)}${'*'.repeat(12)}`
-    : '未设置';
-
   return (
     <View className='profile-page'>
-      <View className='profile-hero'>
-        <View className='profile-avatar-wrap'>
-          <Text className='profile-avatar-text'>AI</Text>
+      <View className='profile-user-head'>
+        <Image className='profile-user-avatar' src={profile?.avatarUrl || avatarIcon} mode='aspectFill' onClick={handleChangeAvatar} />
+        <View className='profile-user-meta'>
+          <Text className='profile-user-name'>{profile?.username || '本地调试用户'}</Text>
+          <Text className='profile-user-id'>ID：{profile?.id ? profile.id.slice(0, 8) : 'miniapp--'}</Text>
         </View>
-        <Text className='profile-name'>{profile?.username || '创作者'}</Text>
-        <Text className='profile-id'>ID: {profile?.id ? profile.id.slice(0, 8) : '--'}</Text>
-      </View>
-
-      <View className='profile-points-card'>
-        <Text className='profile-points-label'>当前积分余额</Text>
-        <Text className='profile-points-value'>{typeof profile?.points === 'number' ? profile.points : '--'}</Text>
-        <View className='profile-points-btn'>
-          <Text className='profile-points-btn-text'>立即充值</Text>
+        <View className='profile-switch-login' onClick={handleSwitchLogin}>
+          <Text className='profile-switch-login-text'>切换登录⇆</Text>
         </View>
       </View>
 
-      <View className='settings-card'>
-        <Text className='settings-title'>API Key</Text>
-
-        {editingKey ? (
-          <View className='key-edit-row'>
-            <Input
-              className='key-input'
-              value={keyInput}
-              onInput={(e) => setKeyInput(e.detail.value)}
-              placeholder='粘贴你的 API Key'
-              placeholderClass='input-placeholder'
-            />
-            <View className='key-save-btn' onClick={handleSaveKey}>
-              <Text className='key-save-text'>保存</Text>
-            </View>
+      <View className='profile-hero-card'>
+        <View className='profile-hero-level-row'>
+          <Text className='profile-hero-level-value'>{getMemberLevelText(profile?.memberLevel)}</Text>
+        </View>
+        <Text className='profile-hero-points-label'>当前算力值</Text>
+        <Text className='profile-hero-points-value'>{typeof profile?.points === 'number' ? profile.points : '--'}</Text>
+        <View className='profile-hero-actions'>
+          <View className='profile-hero-btn profile-hero-btn--primary' onClick={handleUnlock}>
+            <Text className='profile-hero-btn-text profile-hero-btn-text--primary'>立即解锁</Text>
           </View>
-        ) : (
-          <View className='key-row' onClick={() => { setKeyInput(profile?.apiKey ?? ''); setEditingKey(true); }}>
-            <Text className='key-value'>{maskedKey}</Text>
-            <Text className='key-edit-hint'>点击修改</Text>
+          <View className='profile-hero-btn' onClick={() => Taro.showToast({ title: '客服功能开发中', icon: 'none' })}>
+            <Text className='profile-hero-btn-text'>联系客服</Text>
           </View>
-        )}
-      </View>
-
-      <View className='menu-card'>
-        <View className='menu-row'>
-          <Text className='menu-text'>邀请好友</Text>
-          <Text className='menu-arrow'>›</Text>
-        </View>
-        <View className='menu-row'>
-          <Text className='menu-text'>我的收益</Text>
-          <Text className='menu-arrow'>›</Text>
-        </View>
-        <View className='menu-row'>
-          <Text className='menu-text'>关于我们</Text>
-          <Text className='menu-arrow'>›</Text>
         </View>
       </View>
 
-      <View className='logout-btn' onClick={handleLogout}>
-        <Text className='logout-text'>退出当前会话</Text>
+      <View className='profile-lib-card'>
+        <View className='profile-lib-item' onClick={() => handleOpenLibrary('角色库')}>
+          <Image className='profile-lib-icon' src={roleLibIcon} mode='aspectFit' />
+          <Text className='profile-lib-title'>角色库</Text>
+          <Text className='profile-lib-count'>{overview.characters}</Text>
+        </View>
+        <View className='profile-lib-item' onClick={() => handleOpenLibrary('产品库')}>
+          <Image className='profile-lib-icon' src={productLibIcon} mode='aspectFit' />
+          <Text className='profile-lib-title'>产品库</Text>
+          <Text className='profile-lib-count'>{overview.products}</Text>
+        </View>
+        <View className='profile-lib-item' onClick={() => handleOpenLibrary('风格库')}>
+          <Image className='profile-lib-icon' src={styleLibIcon} mode='aspectFit' />
+          <Text className='profile-lib-title'>风格库</Text>
+          <Text className='profile-lib-count'>{overview.styles}</Text>
+        </View>
+        <View className='profile-lib-item' onClick={() => handleOpenLibrary('知识库')}>
+          <Image className='profile-lib-icon' src={knowledgeLibIcon} mode='aspectFit' />
+          <Text className='profile-lib-title'>知识库</Text>
+          <Text className='profile-lib-count'>{overview.templates}</Text>
+        </View>
+      </View>
+
+      <View className='profile-promo-grid'>
+        <View className='profile-promo-card' onClick={() => handlePromo('分享赚钱')}>
+          <View>
+            <Text className='profile-promo-title'>分享赚钱</Text>
+            <Text className='profile-promo-desc'>分享内容赚算力值</Text>
+          </View>
+          <Image className='profile-promo-icon' src={promoShareIcon} mode='aspectFit' />
+        </View>
+
+        <View className='profile-promo-card' onClick={() => handlePromo('算力消耗')}>
+          <View>
+            <Text className='profile-promo-title'>算力消耗</Text>
+            <Text className='profile-promo-desc'>算力扣除换权益</Text>
+          </View>
+          <Image className='profile-promo-icon' src={promoPointsIcon} mode='aspectFit' />
+        </View>
+      </View>
+
+      <View className='profile-menu-card'>
+        <View className='profile-menu-row' onClick={() => Taro.navigateTo({ url: '/pages/favorites/index' })}>
+          <View className='profile-menu-main'>
+            <Image className='profile-menu-icon' src={menuFavoriteIcon} mode='aspectFit' />
+            <Text className='profile-menu-left'>我的收藏</Text>
+          </View>
+          <Text className='profile-menu-arrow'>›</Text>
+        </View>
+        <View className='profile-menu-row'>
+          <View className='profile-menu-main'>
+            <Image className='profile-menu-icon' src={menuAboutIcon} mode='aspectFit' />
+            <Text className='profile-menu-left'>关于我们</Text>
+          </View>
+          <Text className='profile-menu-arrow'>›</Text>
+        </View>
+        <View className='profile-menu-row' onClick={handleBindApiKey}>
+          <View className='profile-menu-main'>
+            <Image className='profile-menu-icon' src={menuKeyIcon} mode='aspectFit' />
+            <Text className='profile-menu-left'>绑定 API Key</Text>
+          </View>
+          <Text className='profile-menu-arrow'>›</Text>
+        </View>
       </View>
     </View>
   );

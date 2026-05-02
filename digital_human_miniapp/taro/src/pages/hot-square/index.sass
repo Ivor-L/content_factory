@@ -1,171 +1,305 @@
 .hot-square-page
   height: 100vh
-  background: #f8f9fd
+  background: #050505
   display: flex
   flex-direction: column
+  padding-top: 0
+  box-sizing: border-box
 
 .hot-header
-  padding: 32rpx 32rpx 20rpx
-  background: #fff
-  border-radius: 0 0 40rpx 40rpx
-  box-shadow: 0 8rpx 24rpx rgba(31, 41, 55, 0.04)
+  position: fixed
+  top: 0
+  left: 0
+  right: 0
+  z-index: 60
+  padding: calc(env(safe-area-inset-top) + 68rpx) 24rpx 24rpx
+  background: #121212
+  border-radius: 0 0 30rpx 30rpx
+  border-bottom: 1rpx solid rgba(137, 165, 215, 0.2)
 
 .hot-title
   display: block
-  font-size: 44rpx
+  text-align: center
+  font-size: 42rpx
   font-weight: 800
-  color: #111827
-  margin-bottom: 24rpx
+  color: #eaf3ff
+  margin-bottom: 20rpx
 
 .hot-search-row
   display: flex
-  gap: 16rpx
-  margin-bottom: 20rpx
+  gap: 12rpx
+  margin-bottom: 16rpx
 
 .hot-search-input
   flex: 1
-  height: 76rpx
-  background: #f3f4f6
-  border-radius: 20rpx
-  padding: 0 24rpx
+  height: 72rpx
+  background: #202020
+  color: #eaf3ff
+  border-radius: 18rpx
+  padding: 0 22rpx
   font-size: 26rpx
 
 .hot-search-btn
-  width: 132rpx
-  height: 76rpx
-  border-radius: 20rpx
-  background: #4f46e5
+  width: 122rpx
+  height: 72rpx
+  border-radius: 18rpx
+  background: #ecee9f
   display: flex
   align-items: center
   justify-content: center
 
 .hot-search-btn-text
-  color: #fff
-  font-size: 26rpx
-  font-weight: 700
+  color: #121212
+  font-size: 28rpx
+  font-weight: 800
+
+.hot-sort-btn
+  width: 72rpx
+  height: 72rpx
+  display: flex
+  align-items: center
+  justify-content: center
+
+.hot-filter-icon
+  width: 44rpx
+  height: 44rpx
+  position: relative
+  display: block
+
+.hot-filter-icon-top
+  width: 36rpx
+  height: 14rpx
+  border: 4rpx solid #dbe7ff
+  border-bottom: none
+  border-radius: 2rpx 2rpx 0 0
+  box-sizing: border-box
+  display: block
+  margin: 0 auto
+
+.hot-filter-icon-left
+  position: absolute
+  top: 10rpx
+  left: 8rpx
+  width: 4rpx
+  height: 14rpx
+  background: #dbe7ff
+  transform: rotate(-42deg)
+  transform-origin: top
+  border-radius: 999rpx
+
+.hot-filter-icon-right
+  position: absolute
+  top: 10rpx
+  right: 8rpx
+  width: 4rpx
+  height: 14rpx
+  background: #dbe7ff
+  transform: rotate(42deg)
+  transform-origin: top
+  border-radius: 999rpx
+
+.hot-filter-icon-stem
+  width: 4rpx
+  height: 20rpx
+  background: #dbe7ff
+  display: block
+  margin: 8rpx auto 0
+  border-radius: 999rpx
+  box-sizing: border-box
+
+.hot-hints-scroll
+  margin-bottom: 14rpx
+  white-space: nowrap
+
+.hot-hints-list
+  display: flex
+  gap: 10rpx
+  min-width: 100%
+  width: max-content
+
+.hot-hint-chip
+  min-width: 96rpx
+  height: 48rpx
+  padding: 0 16rpx
+  border-radius: 999rpx
+  background: #1a1a1a
+  border: 1rpx solid rgba(145, 175, 229, 0.16)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.hot-hint-chip-text
+  font-size: 22rpx
+  color: #8ea2c8
+  font-weight: 600
 
 .hot-category-scroll
   white-space: nowrap
 
 .hot-category-list
-  display: inline-flex
-  gap: 12rpx
+  display: flex
+  align-items: center
+  justify-content: center
+  min-width: 100%
+  width: max-content
+  gap: 10rpx
 
 .hot-category-chip
-  padding: 12rpx 26rpx
+  min-width: 108rpx
+  height: 56rpx
+  padding: 0 18rpx
   border-radius: 999rpx
-  background: #f3f4f6
-
-.hot-category-chip--active
-  background: #eef2ff
-
-.hot-category-text
-  font-size: 22rpx
-  color: #6b7280
-  font-weight: 600
-
-.hot-category-text--active
-  color: #4338ca
-
-.hot-summary
-  padding: 16rpx 32rpx 0
-
-.hot-summary-text
-  font-size: 22rpx
-  color: #9ca3af
-
-.hot-list-scroll
-  flex: 1
-  padding: 20rpx 32rpx 140rpx
-  box-sizing: border-box
-
-.hot-card
-  background: #fff
-  border-radius: 28rpx
-  overflow: hidden
-  margin-bottom: 20rpx
-
-.hot-cover
-  position: relative
-  width: 100%
-  height: 280rpx
-  background: linear-gradient(120deg, #e0e7ff 0%, #f5d0fe 100%)
+  background: #1a1a1a
+  border: 1rpx solid rgba(145, 175, 229, 0.16)
   display: flex
   align-items: center
   justify-content: center
 
+.hot-category-chip--active
+  background: #ecee9f
+  border-color: #ecee9f
+
+.hot-category-text
+  display: block
+  text-align: center
+  font-size: 24rpx
+  line-height: 1
+  color: #8ea2c8
+  font-weight: 600
+
+.hot-category-text--active
+  color: #161616
+
+.hot-type-chip
+  min-width: 108rpx
+  height: 56rpx
+  padding: 0 18rpx
+  border-radius: 999rpx
+  background: #151515
+  border: 1rpx solid rgba(236, 238, 159, 0.44)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.hot-type-chip-text
+  display: block
+  text-align: center
+  font-size: 24rpx
+  line-height: 1
+  color: #ecee9f
+  font-weight: 700
+
+.hot-summary
+  padding: 14rpx 24rpx 0
+  margin-top: calc(env(safe-area-inset-top) + 380rpx)
+
+.hot-summary-text
+  font-size: 21rpx
+  color: #8094bb
+
+.hot-list-scroll
+  flex: 1
+  margin-top: 14rpx
+
+.hot-list-content
+  column-count: 2
+  column-gap: 16rpx
+  padding: 14rpx 24rpx 130rpx
+  box-sizing: border-box
+
+.hot-card
+  break-inside: avoid
+  background: #141414
+  border-radius: 24rpx
+  overflow: hidden
+  margin-bottom: 16rpx
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+
+.hot-cover
+  position: relative
+  width: 100%
+  background: linear-gradient(120deg, #13264b 0%, #22396e 100%)
+  overflow: hidden
+
+.hot-cover--ratio-1x1
+  aspect-ratio: 1 / 1
+
+.hot-cover--ratio-4x5
+  aspect-ratio: 4 / 5
+
+.hot-cover--ratio-3x4
+  aspect-ratio: 3 / 4
+
 .hot-cover-image
   width: 100%
   height: 100%
-
-.hot-cover-placeholder
-  color: #4338ca
-  font-size: 36rpx
-  font-weight: 800
+  display: block
 
 .hot-badge
   position: absolute
-  left: 20rpx
-  top: 20rpx
-  background: rgba(17, 24, 39, 0.66)
+  left: 16rpx
+  top: 16rpx
+  background: rgba(7, 13, 26, 0.72)
   border-radius: 999rpx
-  padding: 6rpx 16rpx
+  padding: 6rpx 14rpx
 
 .hot-badge-text
-  color: #fff
+  color: #d9e7ff
+  font-size: 19rpx
+
+.hot-video-icon
+  position: absolute
+  right: 16rpx
+  top: 16rpx
+  width: 44rpx
+  height: 44rpx
+  border-radius: 999rpx
+  background: rgba(0, 0, 0, 0.42)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.hot-video-icon-text
+  color: #ffffff
   font-size: 20rpx
+  line-height: 1
+  margin-left: 2rpx
 
 .hot-body
-  padding: 24rpx
+  padding: 18rpx
 
 .hot-item-title
-  display: block
-  font-size: 30rpx
+  display: -webkit-box
+  -webkit-box-orient: vertical
+  -webkit-line-clamp: 2
+  overflow: hidden
+  text-overflow: ellipsis
+  font-size: 26rpx
   font-weight: 700
-  color: #111827
-  margin-bottom: 8rpx
-
-.hot-item-desc
-  display: block
-  color: #6b7280
-  font-size: 24rpx
-  line-height: 1.5
-  margin-bottom: 14rpx
+  color: #e8f2ff
+  line-height: 1.42
+  margin-bottom: 10rpx
 
 .hot-meta-row
   display: flex
   align-items: center
   justify-content: space-between
-  margin-bottom: 16rpx
 
 .hot-meta-author
-  font-size: 22rpx
-  color: #9ca3af
+  font-size: 21rpx
+  color: #7e93b8
 
 .hot-meta-score
-  font-size: 22rpx
-  color: #f97316
-  font-weight: 700
-
-.hot-create-btn
-  height: 76rpx
-  border-radius: 18rpx
-  background: #eef2ff
-  display: flex
-  align-items: center
-  justify-content: center
-
-.hot-create-btn-text
-  font-size: 24rpx
-  color: #4338ca
+  font-size: 21rpx
+  color: #ecee9f
   font-weight: 700
 
 .hot-empty
-  padding: 120rpx 0
+  padding: 100rpx 0
   display: flex
   align-items: center
   justify-content: center
 
 .hot-empty-text
-  font-size: 26rpx
-  color: #9ca3af
+  font-size: 24rpx
+  color: #7e93b8

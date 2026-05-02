@@ -526,3 +526,19 @@ model CreditUsageLog {
   @@map("credit_usage_logs")
   @@schema("public")
 }
+
+model MonetizationSquareConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?
+  config      Json
+  published   Boolean  @default(true)
+  version     Int      @default(1)
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([published])
+  @@map("monetization_square_configs")
+  @@schema("public")
+}

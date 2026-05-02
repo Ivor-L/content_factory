@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestUserContext } from "@/lib/authServer";
-import { callCloudJson } from "@/lib/cloudLLM";
+import {
+  buildCanvasUpstreamHeaders,
+  resolveCanvasUpstreamApiKey,
+  resolveCanvasUpstreamEndpoint,
+} from "@/lib/canvasUpstream";
 import { splitMarkdownDocument } from "@/lib/markdown-frontmatter";
 
 type XhsMetaPayload = {
@@ -56,10 +60,68 @@ function getFallbackTitle(filePath: string): string {
   return title || "内容总结";
 }
 
+function extractAssistantText(payload: unknown): string {
+  if (!payload || typeof payload !== "object") return "";
+  const source = payload as Record<string, unknown>;
+
+  const choices = source.choices;
+  if (Array.isArray(choices) && choices.length > 0) {
+    const content = (choices[0] as any)?.message?.content;
+    if (typeof content === "string") return content.trim();
+    if (Array.isArray(content)) {
+      const text = content
+        .map((part) => (part && typeof part === "object" ? (part as any).text : ""))
+        .filter((item) => typeof item === "string" && item.trim())
+        .join("\n");
+      if (text.trim()) return text.trim();
+    }
+  }
+
+  const candidates = source.candidates;
+  if (Array.isArray(candidates) && candidates.length > 0) {
+    const parts = (candidates[0] as any)?.content?.parts;
+    if (Array.isArray(parts)) {
+      const text = parts
+        .map((part) => (part && typeof part === "object" ? (part as any).text : ""))
+        .filter((item) => typeof item === "string" && item.trim())
+        .join("\n");
+      if (text.trim()) return text.trim();
+    }
+  }
+
+  if (typeof source.output_text === "string") {
+    return source.output_text.trim();
+  }
+
+  return "";
+}
+
+function parseJsonFromText(raw: string): unknown {
+  const text = String(raw || "").trim();
+  if (!text) return null;
+  const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(request: NextRequest) {
-  const { userId } = await getRequestUserContext(request);
+  const { userId, apiKey } = await getRequestUserContext(request, {
+    allowDefaultApiKey: true,
+    useSystemApiKey: true,
+  });
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const upstreamApiKey = resolveCanvasUpstreamApiKey(apiKey);
+  if (!upstreamApiKey) {
+    return NextResponse.json({ error: "画布服务尚未配置，请联系管理员处理。" }, { status: 400 });
+  }
+  const endpoint = resolveCanvasUpstreamEndpoint("chat");
+  if (!endpoint) {
+    return NextResponse.json({ error: "缺少画布对话接口配置" }, { status: 501 });
   }
 
   const body = await request.json().catch(() => null);
@@ -75,34 +137,60 @@ export async function POST(request: NextRequest) {
   const fallbackTitle = getFallbackTitle(filePath);
 
   try {
-    const response = await callCloudJson<XhsMetaPayload>({
-      model: MODEL,
-      temperature: 0.35,
-      maxOutputTokens: 900,
-      system: [
-        "你是资深小红书图文编辑。",
-        "请基于用户提供的正文内容进行总结与重写，生成小红书发布结构。",
-        "核心约束：必须是总结重写，不得直接原样拷贝大段正文。",
-        "输出严格 JSON，不要 markdown 代码块。",
-      ].join("\n"),
-      user: [
-        `文件名参考标题: ${fallbackTitle}`,
-        "请返回 JSON 字段：",
-        '{"title":"","body":"","tags":[]}',
-        "字段要求:",
-        "1) title: 发布标题，12-28字，不加井号。",
-        "2) body: 发布正文，120-320字，口语化，有信息密度，必须是提炼总结而非复制原文。",
-        "3) tags: 4-8个标签，只写词本身，不要#。",
-        "正文如下:",
-        sourceText,
-      ].join("\n"),
-      metadata: {
-        feature: "xhs-layout-meta",
-        userId,
-      },
+    const upstream = await fetch(endpoint, {
+      method: "POST",
+      headers: buildCanvasUpstreamHeaders({ userId, apiKey: upstreamApiKey }),
+      body: JSON.stringify({
+        model: MODEL,
+        stream: false,
+        temperature: 0.35,
+        max_tokens: 900,
+        messages: [
+          {
+            role: "system",
+            content: [
+              "你是资深小红书图文编辑。",
+              "请基于用户提供的正文内容进行总结与重写，生成小红书发布结构。",
+              "核心约束：必须是总结重写，不得直接原样拷贝大段正文。",
+              "输出严格 JSON，不要 markdown 代码块。",
+            ].join("\n"),
+          },
+          {
+            role: "user",
+            content: [
+              `文件名参考标题: ${fallbackTitle}`,
+              "请返回 JSON 字段：",
+              '{"title":"","body":"","tags":[]}',
+              "字段要求:",
+              "1) title: 发布标题，12-28字，不加井号。",
+              "2) body: 发布正文，120-320字，口语化，有信息密度，必须是提炼总结而非复制原文。",
+              "3) tags: 4-8个标签，只写词本身，不要#。",
+              "正文如下:",
+              sourceText,
+            ].join("\n"),
+          },
+        ],
+      }),
+      cache: "no-store",
     });
 
-    const safeMeta = toSafeMeta(response.data ?? {});
+    const upstreamPayload = await upstream.json().catch(() => null);
+    if (!upstream.ok) {
+      const upstreamMsg =
+        typeof (upstreamPayload as any)?.error?.message === "string"
+          ? (upstreamPayload as any).error.message
+          : typeof (upstreamPayload as any)?.error === "string"
+            ? (upstreamPayload as any).error
+            : "";
+      return NextResponse.json(
+        { error: upstreamMsg || `AI 生成失败（上游状态 ${upstream.status}）` },
+        { status: 502 },
+      );
+    }
+
+    const rawText = extractAssistantText(upstreamPayload);
+    const parsed = parseJsonFromText(rawText);
+    const safeMeta = toSafeMeta(parsed ?? {});
 
     if (!safeMeta.title && !safeMeta.body && safeMeta.tags.length === 0) {
       return NextResponse.json({ error: "AI 未生成有效内容" }, { status: 502 });

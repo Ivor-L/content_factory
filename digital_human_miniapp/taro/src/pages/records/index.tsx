@@ -43,8 +43,28 @@ export default function RecordsPage() {
     return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
 
+  const getRecordTypeLabel = (record: any) => {
+    const sourceType = String(record?.sourceType || 'IMAGE').toUpperCase();
+    const modeLabel = record?.type === 'VOICE_CLONE' ? '文字驱动' : '音频驱动';
+    return `${sourceType === 'VIDEO' ? '视频数字人' : '图片数字人'} · ${modeLabel}`;
+  };
+
+  const handleBack = () => {
+    const pages = Taro.getCurrentPages();
+    if (pages.length > 1) {
+      Taro.navigateBack({ delta: 1 });
+      return;
+    }
+    Taro.switchTab({ url: '/pages/home/index' });
+  };
+
   return (
     <ScrollView scrollY className='records-page'>
+      <View className='records-topbar'>
+        <View className='records-back' onClick={handleBack}>
+          <Text className='records-back-text'>‹</Text>
+        </View>
+      </View>
       {loading && <Text className='loading-text'>加载中...</Text>}
       {error && <Text className='error-text'>{error}</Text>}
       {!loading && !error && records.length === 0 && (
@@ -63,7 +83,7 @@ export default function RecordsPage() {
           )}
           <View className='record-info'>
             <View className='record-row'>
-              <Text className='record-type'>{record.type === 'VOICE_CLONE' ? '文字驱动' : '音频驱动'}</Text>
+              <Text className='record-type'>{getRecordTypeLabel(record)}</Text>
               <Text
                 className='record-status'
                 style={{ color: STATUS_COLORS[record.status] ?? '#888' }}

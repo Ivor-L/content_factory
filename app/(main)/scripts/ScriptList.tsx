@@ -3385,6 +3385,7 @@ export function ScriptList({ initialScripts, products, characters }: ScriptListP
                                         copyInsights={selectedReplicationScript ? selectedScriptInsights : null}
                                         videoUrl={activeReplicationScript.videoUrl || newReplicationUploadedUrl}
                                         isVideoUploaded={Boolean(newReplicationUploadedUrl)}
+                                        sourceTitle={(selectedReplicationScript ?? activeReplicationScript)?.title}
                                     />
                                 )}
                             </div>

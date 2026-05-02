@@ -54,13 +54,33 @@ type InlineChunk = {
   flags: TextFlags;
 };
 
-type BlockKind = "heading1" | "heading2" | "heading3" | "heading4" | "paragraph" | "list" | "quote" | "code" | "hr";
+type BlockKind = "heading1" | "heading2" | "heading3" | "heading4" | "paragraph" | "list" | "quote" | "code" | "table" | "hr";
 
-type ParsedBlock = {
-  kind: BlockKind;
+type TextBlockKind = Exclude<BlockKind, "hr" | "table">;
+
+type ParsedTableRow = {
+  cells: InlineChunk[][];
+  header: boolean;
+};
+
+type ParsedTextBlock = {
+  kind: TextBlockKind;
   chunks: InlineChunk[];
   indent: number;
 };
+
+type ParsedTableBlock = {
+  kind: "table";
+  rows: ParsedTableRow[];
+  columnCount: number;
+  indent: number;
+};
+
+type ParsedHrBlock = {
+  kind: "hr";
+};
+
+type ParsedBlock = ParsedTextBlock | ParsedTableBlock | ParsedHrBlock;
 
 type Typography = {
   fontSize: number;
@@ -94,21 +114,53 @@ type RenderLine = {
   height: number;
 };
 
-type LayoutBlock = {
-  kind: Exclude<BlockKind, "hr">;
+type LayoutTextBlock = {
+  kind: TextBlockKind;
   lines: RenderLine[];
   indent: number;
   marginTop: number;
   marginBottom: number;
 };
 
-type PageLine = {
-  kind: Exclude<BlockKind, "hr">;
+type LayoutTableRow = {
+  cells: RenderLine[][];
+  header: boolean;
+  height: number;
+};
+
+type LayoutTableBlock = {
+  kind: "table";
+  rows: LayoutTableRow[];
+  columnCount: number;
+  columnWidth: number;
+  indent: number;
+  marginTop: number;
+  marginBottom: number;
+};
+
+type LayoutBlock = LayoutTextBlock | LayoutTableBlock;
+
+type PageTextLine = {
+  kind: TextBlockKind;
   line: RenderLine;
   indent: number;
   marginTop: number;
   marginBottom: number;
 };
+
+type PageTableRow = {
+  kind: "table";
+  cells: RenderLine[][];
+  header: boolean;
+  rowHeight: number;
+  columnCount: number;
+  columnWidth: number;
+  indent: number;
+  marginTop: number;
+  marginBottom: number;
+};
+
+type PageLine = PageTextLine | PageTableRow;
 
 type CardPage =
   | { type: "cover" }
@@ -647,7 +699,7 @@ function markPlugin(md: MarkdownIt) {
 function getMarkdownParser(): MarkdownIt {
   if (_markdownParser) return _markdownParser;
   const md = new MarkdownIt({
-    html: false,
+    html: true,
     linkify: true,
     breaks: true,
     typographer: false,
@@ -1984,7 +2036,7 @@ function drawTextWithSpacing(ctx: CanvasRenderingContext2D, text: string, x: num
   return cursor - x;
 }
 
-function getTypography(kind: Exclude<BlockKind, "hr">, accentColor: string, textColor: string, config: CardConfig): Typography {
+function getTypography(kind: TextBlockKind, accentColor: string, textColor: string, config: CardConfig): Typography {
   if (kind === "heading1") {
     const size = Math.round(config.fontSize * config.h1Scale);
     return {
@@ -2161,6 +2213,17 @@ function parseInlineChildren(children: Token[] | null | undefined): InlineChunk[
   return chunks;
 }
 
+function stripHtmlTagsPreservingBreaks(input: string): string {
+  if (!input) return "";
+  return input
+    .replace(/<(br|BR)\s*\/?>/g, "\n")
+    .replace(/<\/(p|div|section|article|li|h1|h2|h3|h4|h5|h6)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function parseMarkdownBlocks(markdown: string): ParsedBlock[] {
   const md = getMarkdownParser();
   const tokens = md.parse(markdown ?? "", {});
@@ -2173,6 +2236,23 @@ function parseMarkdownBlocks(markdown: string): ParsedBlock[] {
   let listItemNeedPrefix = false;
   let pendingKind: "paragraph" | "heading" | null = null;
   let pendingHeadingLevel: 1 | 2 | 3 | 4 = 1;
+  let inTable = false;
+  let tableColumnCount = 0;
+  let tableRows: Array<{ cells: InlineChunk[][]; header: boolean }> = [];
+  let currentTableRow: InlineChunk[][] | null = null;
+  let currentTableCell: InlineChunk[] | null = null;
+  let pendingTableHeaderRow = false;
+
+  const flushTable = () => {
+    if (!inTable || tableRows.length === 0) return;
+    const maxCols = Math.max(tableColumnCount, ...tableRows.map((row) => row.cells.length));
+    if (maxCols <= 0) return;
+    const normalizedRows: ParsedTableRow[] = tableRows.map((row) => ({
+      header: row.header,
+      cells: Array.from({ length: maxCols }, (_, idx) => row.cells[idx] ?? []),
+    }));
+    blocks.push({ kind: "table", rows: normalizedRows, columnCount: maxCols, indent: 0 });
+  };
 
   for (const token of tokens) {
     switch (token.type) {
@@ -2217,11 +2297,56 @@ function parseMarkdownBlocks(markdown: string): ParsedBlock[] {
         pendingHeadingLevel = Number(token.tag.replace("h", "")) as 1 | 2 | 3 | 4;
         if (![1, 2, 3, 4].includes(pendingHeadingLevel)) pendingHeadingLevel = 4;
         break;
+      case "table_open":
+        inTable = true;
+        tableColumnCount = 0;
+        tableRows = [];
+        currentTableRow = null;
+        currentTableCell = null;
+        pendingTableHeaderRow = false;
+        break;
+      case "table_close":
+        flushTable();
+        inTable = false;
+        tableColumnCount = 0;
+        tableRows = [];
+        currentTableRow = null;
+        currentTableCell = null;
+        pendingTableHeaderRow = false;
+        break;
+      case "thead_open":
+        pendingTableHeaderRow = true;
+        break;
+      case "tbody_open":
+        pendingTableHeaderRow = false;
+        break;
+      case "tr_open":
+        if (inTable) currentTableRow = [];
+        break;
+      case "tr_close":
+        if (inTable && currentTableRow) {
+          tableColumnCount = Math.max(tableColumnCount, currentTableRow.length);
+          tableRows.push({ cells: currentTableRow, header: pendingTableHeaderRow });
+        }
+        currentTableRow = null;
+        break;
+      case "th_open":
+      case "td_open":
+        if (inTable) currentTableCell = [];
+        break;
+      case "th_close":
+      case "td_close":
+        if (inTable) {
+          if (!currentTableCell) currentTableCell = [];
+          if (currentTableRow) currentTableRow.push(currentTableCell);
+        }
+        currentTableCell = null;
+        break;
       case "paragraph_open":
         pendingKind = "paragraph";
         break;
       case "hr":
-        blocks.push({ kind: "hr", chunks: [], indent: 0 });
+        blocks.push({ kind: "hr" });
         break;
       case "fence":
       case "code_block": {
@@ -2235,7 +2360,12 @@ function parseMarkdownBlocks(markdown: string): ParsedBlock[] {
         const chunks = parseInlineChildren(token.children);
         if (chunks.length === 0) break;
 
-        let kind: Exclude<BlockKind, "hr"> = "paragraph";
+        if (inTable) {
+          if (currentTableCell) currentTableCell.push(...chunks);
+          break;
+        }
+
+        let kind: TextBlockKind = "paragraph";
         if (pendingKind === "heading") {
           kind =
             pendingHeadingLevel === 1
@@ -2259,6 +2389,18 @@ function parseMarkdownBlocks(markdown: string): ParsedBlock[] {
         const listIndent = kind === "list" ? Math.max(0, listStack.length - 1) * 32 : 0;
         const quoteIndent = kind === "quote" ? quoteDepth * 26 : 0;
         blocks.push({ kind, chunks, indent: listIndent + quoteIndent });
+        break;
+      }
+      case "html_inline":
+      case "html_block": {
+        const normalized = stripHtmlTagsPreservingBreaks(token.content || "");
+        if (!normalized) break;
+        const kind: TextBlockKind = quoteDepth > 0 ? "quote" : "paragraph";
+        const indent = quoteDepth > 0 ? quoteDepth * 26 : 0;
+        const lines = normalized.split("\n").map((line) => line.trim()).filter(Boolean);
+        for (const line of lines) {
+          blocks.push({ kind, chunks: [{ text: line, flags: {} }], indent });
+        }
         break;
       }
       case "paragraph_close":
@@ -2351,6 +2493,61 @@ function buildLayoutBlocks(markdown: string, templateId: CardTemplateId, config:
       continue;
     }
 
+    if (block.kind === "table") {
+      const tableTypography = getTypography("paragraph", config.accentColor || template.defaultAccentColor, config.textColor || template.defaultTextColor, config);
+      const tableHeaderTypography: Typography = {
+        ...tableTypography,
+        fontWeight: "700",
+      };
+      const tableMarginTop = 14;
+      const tableMarginBottom = 18;
+      const cellPaddingX = 14;
+      const cellPaddingY = 12;
+      const availableWidth = Math.max(220, metrics.width - block.indent);
+      const columnCount = Math.max(1, block.columnCount);
+      const columnWidth = Math.max(120, Math.floor(availableWidth / columnCount));
+      const rows: LayoutTableRow[] = [];
+
+      for (const row of block.rows) {
+        const cellLines: RenderLine[][] = [];
+        let rowContentHeight = 0;
+        for (let i = 0; i < columnCount; i += 1) {
+          const cellChunks = row.cells[i] ?? [];
+          const lines = wrapInlineChunks(
+            ctx,
+            cellChunks,
+            row.header ? tableHeaderTypography : tableTypography,
+            config.accentColor || template.defaultAccentColor,
+            `rgba(${parseInt((config.accentColor || template.defaultAccentColor).slice(1, 3), 16)}, ${parseInt((config.accentColor || template.defaultAccentColor).slice(3, 5), 16)}, ${parseInt((config.accentColor || template.defaultAccentColor).slice(5, 7), 16)}, 0.2)`,
+            config,
+            Math.max(40, columnWidth - cellPaddingX * 2)
+          );
+          const contentHeight = lines.length > 0
+            ? lines.reduce((sum, line) => sum + line.height, 0)
+            : tableTypography.fontSize * tableTypography.lineHeight;
+          rowContentHeight = Math.max(rowContentHeight, contentHeight);
+          cellLines.push(lines);
+        }
+
+        rows.push({
+          cells: cellLines,
+          header: row.header,
+          height: Math.max(46, rowContentHeight + cellPaddingY * 2),
+        });
+      }
+
+      output.push({
+        kind: "table",
+        rows,
+        columnCount,
+        columnWidth,
+        indent: block.indent,
+        marginTop: tableMarginTop,
+        marginBottom: tableMarginBottom,
+      });
+      continue;
+    }
+
     const typography = getTypography(block.kind, config.accentColor || template.defaultAccentColor, config.textColor || template.defaultTextColor, config);
     const wrappedLines = wrapInlineChunks(
       ctx,
@@ -2402,6 +2599,33 @@ function paginateMarkdown(markdown: string, templateId: CardTemplateId, config: 
     // Secondary heading starts a fresh card page to keep section boundaries clear.
     if (block.kind === "heading2" && currentPage.length > 0) {
       flushPage();
+    }
+
+    if (block.kind === "table") {
+      for (let i = 0; i < block.rows.length; i += 1) {
+        const row = block.rows[i];
+        const marginTop = i === 0 ? block.marginTop : 0;
+        const marginBottom = i === block.rows.length - 1 ? block.marginBottom : 0;
+        const needed = marginTop + row.height + marginBottom;
+
+        if (y + needed > metrics.bottom && currentPage.length > 0) {
+          flushPage();
+        }
+
+        currentPage.push({
+          kind: "table",
+          cells: row.cells,
+          header: row.header,
+          rowHeight: row.height,
+          columnCount: block.columnCount,
+          columnWidth: block.columnWidth,
+          indent: block.indent,
+          marginTop,
+          marginBottom,
+        });
+        y += needed;
+      }
+      continue;
     }
 
     for (let i = 0; i < block.lines.length; i += 1) {
@@ -2564,6 +2788,69 @@ function renderPageCanvas(
 
   for (const lineEntry of page.lines) {
     y += lineEntry.marginTop;
+    if (lineEntry.kind === "table") {
+      const blockX = metrics.x + lineEntry.indent;
+      const tableWidth = lineEntry.columnCount * lineEntry.columnWidth;
+      const rowHeight = lineEntry.rowHeight;
+      const cellPaddingX = 14;
+      const cellPaddingY = 12;
+      const borderColor = "rgba(0,0,0,0.16)";
+      const headerBg = "rgba(0,0,0,0.05)";
+
+      if (lineEntry.header) {
+        drawRoundedRect(ctx, blockX, y, tableWidth, rowHeight, 0, headerBg);
+      }
+
+      ctx.save();
+      ctx.strokeStyle = borderColor;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(blockX, y, tableWidth, rowHeight);
+      for (let col = 1; col < lineEntry.columnCount; col += 1) {
+        const x = blockX + col * lineEntry.columnWidth;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x, y + rowHeight);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      for (let col = 0; col < lineEntry.columnCount; col += 1) {
+        const cellX = blockX + col * lineEntry.columnWidth;
+        const lines = lineEntry.cells[col] ?? [];
+        let cellY = y + cellPaddingY;
+        for (const line of lines) {
+          let textX = cellX + cellPaddingX;
+          for (const chunk of line.chunks) {
+            ctx.font = fontString(chunk.style);
+            ctx.fillStyle = chunk.style.color;
+            ctx.textAlign = "left";
+            ctx.textBaseline = "top";
+
+            const textWidth = measureTextWithSpacing(ctx, chunk.text, chunk.style.letterSpacing);
+            if (chunk.style.highlightColor) {
+              drawRoundedRect(
+                ctx,
+                textX - 2,
+                cellY + 2,
+                textWidth + 4,
+                Math.max(20, chunk.style.fontSize * 1.02),
+                4,
+                chunk.style.highlightColor
+              );
+            }
+
+            drawTextWithSpacing(ctx, chunk.text, textX, cellY, chunk.style.letterSpacing);
+            textX += textWidth;
+          }
+          cellY += line.height;
+        }
+      }
+
+      y += rowHeight;
+      y += lineEntry.marginBottom;
+      continue;
+    }
+
     const textY = y;
     const blockX = metrics.x + lineEntry.indent;
 

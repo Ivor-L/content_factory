@@ -5,6 +5,7 @@ import { emitStoryboardTaskUpsert } from '@/lib/storyboardEvents';
 import { normalizeStoryboardSegments } from '@/lib/storyboardTime';
 import { hydrateViralReferenceMedia } from '@/lib/viralReferenceMedia';
 import { syncTaskToSummary } from '@/lib/taskSummary';
+import { createStoryboardJob } from '@/lib/storyboard/orchestrator';
 import { Prisma } from '@prisma/client';
 
 const STORYBOARD_WORKFLOW_ID = 'flow_storyboard';
@@ -205,17 +206,69 @@ export async function createStoryboardTask(formData: FormData) {
     throw new Error('A reference image is required to start storyboard generation.');
   }
 
-  const webhookUrl = replicationMode === 'viral-clone'
-    ? (process.env.N8N_STORYBOARD_BREAKDOWN_WEBHOOK || 'https://hooks.atomx.top/webhook/storyboard_disassembly_web')
-    : (process.env.N8N_STORYBOARD_GEN_WEBHOOK ||
-       process.env.N8N_STORYBOARD_PLOT_WEBHOOK ||
-       'https://n8n.atomx.top/webhook/storyboard_Plot_web');
+  const webhookUrl =
+    process.env.N8N_STORYBOARD_GEN_WEBHOOK ||
+    process.env.N8N_STORYBOARD_PLOT_WEBHOOK ||
+    'https://n8n.atomx.top/webhook/storyboard_Plot_web';
 
   const apiKey = await resolveApiKey(userId);
 
+  if (replicationMode === 'viral-clone') {
+    const result = await createStoryboardJob({
+      pipelineKey: 'viral_clone',
+      userId,
+      apiKey,
+      script: scriptContent,
+      metadata: {
+        referenceId: referenceId || undefined,
+        creatorId: creatorId || undefined,
+        replicationMode,
+      },
+      source: 'storyboard_action',
+      statusOnCreate: 'BREAKDOWN_PENDING',
+      progressOnCreate: 5,
+      taskData: {
+        videoUrl,
+        coverImage: null,
+        productId: productId || null,
+        characterId,
+        referenceImage,
+        replicationMode,
+        imageModel,
+        videoModel,
+      },
+      payloadData: {
+        productId: productId || null,
+        product_id: productId || null,
+        productName: product?.name || '',
+        product_name: product?.name || '',
+        product_description: product?.description || '',
+        productSellingPoints: sellingPoints,
+        product_selling_points: sellingPoints,
+        referenceImage,
+        imageUrl: referenceImage,
+        videoUrl,
+        video_url: videoUrl,
+        userId,
+        user_id: userId,
+        characterId,
+        character_id: characterId,
+        replicationMode,
+        imageModel,
+        videoModel,
+        reference: referenceSnapshot || undefined,
+        creator: creatorSnapshot || undefined,
+        target_country: rawCountry || undefined,
+        target_language: rawLanguage || undefined,
+      },
+    });
+
+    return { success: true, taskId: result.taskId };
+  }
+
   const task = await prisma.storyboardTask.create({
     data: {
-      status: replicationMode === 'viral-clone' ? 'BREAKDOWN_PENDING' : 'GENERATING_GRID',
+      status: 'GENERATING_GRID',
       videoUrl,
       coverImage: null,
       productId: productId || null,
@@ -278,21 +331,12 @@ export async function createStoryboardTask(formData: FormData) {
     payload.creator = creatorSnapshot;
   }
 
-  if (replicationMode === 'viral-clone') {
-    const appUrl = process.env.N8N_CALLBACK_BASE_URL || process.env.NEXT_PUBLIC_APP_URL;
-    payload.callback_url = `${appUrl}/api/webhook/storyboard-breakdown`;
-    payload.workflow_id = 'flow_storyboard_disassembly';
-    payload.workflow_name = '分镜拆解';
-    if (rawCountry) payload.target_country = rawCountry;
-    if (rawLanguage) payload.target_language = rawLanguage;
-  } else {
-    payload.workflow_id = STORYBOARD_WORKFLOW_ID;
-    payload.workflow_name = STORYBOARD_WORKFLOW_NAME;
-    payload.content_type = rawContentType || 'ugc带货';
-    if (rawCountry) payload.country = rawCountry;
-    if (rawLanguage) payload.videoLanguage = rawLanguage;
-    if (duration) payload.videoDuration = duration;
-  }
+  payload.workflow_id = STORYBOARD_WORKFLOW_ID;
+  payload.workflow_name = STORYBOARD_WORKFLOW_NAME;
+  payload.content_type = rawContentType || 'ugc带货';
+  if (rawCountry) payload.country = rawCountry;
+  if (rawLanguage) payload.videoLanguage = rawLanguage;
+  if (duration) payload.videoDuration = duration;
 
   try {
     console.log('[storyboard] Triggering workflow', {

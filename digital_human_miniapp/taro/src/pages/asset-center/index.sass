@@ -1,106 +1,137 @@
 .assets-page
   min-height: 100vh
-  background: #f8f9fd
+  background: #050505
 
 .assets-header
-  padding: 32rpx
-  background: #fff
-  border-radius: 0 0 40rpx 40rpx
-  box-shadow: 0 8rpx 24rpx rgba(31, 41, 55, 0.04)
+  position: fixed
+  top: 0
+  left: 0
+  right: 0
+  z-index: 60
+  padding: calc(env(safe-area-inset-top) + 66rpx) 24rpx 24rpx
+  background: #121212
+  border-radius: 0 0 30rpx 30rpx
+  border-bottom: 1rpx solid rgba(137, 165, 215, 0.2)
+
+.assets-topbar
+  display: flex
+  align-items: center
+  gap: 10rpx
+  margin-bottom: 16rpx
+
+.assets-back
+  width: 56rpx
+  height: 56rpx
+  border-radius: 16rpx
+  border: 1rpx solid rgba(145, 175, 229, 0.24)
+  background: rgba(32, 32, 32, 0.9)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.assets-back-text
+  color: #e8f2ff
+  font-size: 34rpx
+  line-height: 1
 
 .assets-title
   display: block
-  font-size: 44rpx
+  font-size: 40rpx
   font-weight: 800
-  color: #111827
-  margin-bottom: 24rpx
+  color: #eaf3ff
+  margin-bottom: 0
 
 .assets-tab-grid
   display: grid
   grid-template-columns: 1fr 1fr
-  gap: 16rpx
+  gap: 12rpx
 
 .assets-tab
-  border-radius: 24rpx
-  background: #f3f4f6
-  padding: 20rpx
+  border-radius: 18rpx
+  background: #202020
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+  padding: 18rpx
 
 .assets-tab--active
-  background: #eef2ff
+  background: #ecee9f
+  border-color: #ecee9f
 
 .assets-tab-label
   display: block
-  font-size: 24rpx
-  color: #6b7280
+  font-size: 22rpx
+  color: #8ba1c8
   font-weight: 600
-  margin-bottom: 12rpx
+  margin-bottom: 10rpx
 
 .assets-tab-label--active
-  color: #4338ca
+  color: #161616
 
 .assets-tab-count
   display: block
-  font-size: 34rpx
-  color: #9ca3af
+  font-size: 30rpx
+  color: #a8bad9
   font-weight: 700
 
 .assets-tab-count--active
-  color: #4338ca
+  color: #161616
 
 .assets-content
-  padding: 24rpx 32rpx 140rpx
+  padding: calc(env(safe-area-inset-top) + 320rpx) 24rpx 130rpx
 
 .assets-card
-  background: #fff
-  border-radius: 28rpx
-  padding: 28rpx
-  margin-bottom: 20rpx
+  background: #141414
+  border-radius: 22rpx
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+  padding: 24rpx
+  margin-bottom: 16rpx
 
 .assets-card-title
   display: block
-  font-size: 32rpx
+  font-size: 30rpx
   font-weight: 700
-  color: #111827
-  margin-bottom: 10rpx
+  color: #e8f2ff
+  margin-bottom: 8rpx
 
 .assets-card-desc
   display: block
-  font-size: 24rpx
-  color: #6b7280
-  line-height: 1.55
-  margin-bottom: 20rpx
+  font-size: 23rpx
+  color: #96abd0
+  line-height: 1.5
+  margin-bottom: 16rpx
 
 .assets-card-action
-  height: 76rpx
-  border-radius: 18rpx
-  background: #eef2ff
+  height: 68rpx
+  border-radius: 14rpx
+  background: #ecee9f
+  border: 1rpx solid #ecee9f
   display: flex
   align-items: center
   justify-content: center
 
 .assets-card-action-text
-  font-size: 24rpx
+  font-size: 23rpx
   font-weight: 700
-  color: #4338ca
+  color: #161616
 
 .assets-shortcuts
   display: grid
   grid-template-columns: 1fr 1fr 1fr
-  gap: 16rpx
+  gap: 12rpx
 
 .assets-shortcut-item
-  background: #fff
-  border-radius: 24rpx
-  padding: 20rpx
+  background: #141414
+  border: 1rpx solid rgba(145, 175, 229, 0.16)
+  border-radius: 18rpx
+  padding: 18rpx
 
 .assets-shortcut-title
   display: block
-  font-size: 22rpx
-  color: #9ca3af
+  font-size: 21rpx
+  color: #8ba1c8
   margin-bottom: 8rpx
 
 .assets-shortcut-value
   display: block
-  font-size: 34rpx
-  color: #111827
+  font-size: 30rpx
+  color: #e8f2ff
   font-weight: 700

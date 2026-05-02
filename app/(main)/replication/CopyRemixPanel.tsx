@@ -29,6 +29,8 @@ interface CopyRemixPanelProps {
   copyInsights?: CopyInsights | null;
   isVideoUploaded?: boolean;
   videoUrl?: string;
+  sourceTitle?: string | null;
+  sourceText?: string | null;
 }
 
 type CopyStatus = "idle" | "pending" | "ready" | "failed";
@@ -113,6 +115,8 @@ export function CopyRemixPanel({
   copyInsights,
   isVideoUploaded,
   videoUrl,
+  sourceTitle,
+  sourceText,
 }: CopyRemixPanelProps) {
   const { language } = useLanguage();
   const ui = useMemo(() => {
@@ -804,6 +808,16 @@ export function CopyRemixPanel({
       if (baseCopy?.trim()) {
         payload.originalCopy = baseCopy.trim();
       }
+      const normalizedSourceTitle = (sourceTitle || script?.title || "").trim();
+      const normalizedSourceText = (sourceText || baseCopy || "").trim();
+      if (normalizedSourceTitle) {
+        payload.sourceTitle = normalizedSourceTitle;
+        payload.source_title = normalizedSourceTitle;
+      }
+      if (normalizedSourceText) {
+        payload.sourceText = normalizedSourceText;
+        payload.source_text = normalizedSourceText;
+      }
       if (ideaText.trim()) {
         payload.idea_text = ideaText.trim();
       }
@@ -837,6 +851,9 @@ export function CopyRemixPanel({
     baseCopy,
     ideaText,
     language,
+    sourceText,
+    sourceTitle,
+    remixLanguage,
     wordCountInput,
     ui.missingReplicationId,
     ui.missingVideo,

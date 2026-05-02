@@ -201,6 +201,7 @@ function normalizeQueueItem(raw: RawQueueItem): NormalizedResult | null {
   const platform = normalizePlatform(raw.platform);
   const data = raw.data ?? {};
   const media = extractViralReferenceMedia(data);
+  const recognizedScriptText = extractRecognizedScriptText(data);
 
   if (sourceType === "profile") {
     const creatorCandidate = normalizeCreatorCandidate(platform, data, raw);
@@ -237,7 +238,7 @@ function normalizeQueueItem(raw: RawQueueItem): NormalizedResult | null {
     benchmarkScore,
     remark,
     publishedAt: extractPublishedAt(data),
-    rawPayload: enrichRawPayload(data),
+    rawPayload: enrichRawPayload(data, recognizedScriptText),
     collectorVersion: safeTrim(
       raw.collectorVersion ??
         ((data as Record<string, unknown>).collectorVersion as string | undefined),
@@ -380,6 +381,102 @@ function safeTrim(value?: string | null): string | null {
 
 function truncate(value: string, maxLength: number): string {
   return value.length > maxLength ? value.slice(0, maxLength) : value;
+}
+
+function extractRecognizedScriptText(data: Record<string, unknown>): string | null {
+  const note = data.note as Record<string, unknown> | undefined;
+  const nestedData = data.data as Record<string, unknown> | undefined;
+  const raw = data.raw as Record<string, unknown> | undefined;
+
+  const candidates: unknown[] = [
+    data.scriptText,
+    data.script_text,
+    note?.scriptText,
+    note?.script_text,
+    nestedData?.scriptText,
+    nestedData?.script_text,
+    raw?.scriptText,
+    raw?.script_text,
+    data.ocrText,
+    data.ocr_text,
+    nestedData?.ocrText,
+    nestedData?.ocr_text,
+    raw?.ocrText,
+    raw?.ocr_text,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return normalizeMarkdownText(candidate);
+    }
+    if (Array.isArray(candidate)) {
+      const lines = candidate
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter(Boolean);
+      if (lines.length > 0) {
+        return normalizeMarkdownText(lines.join("\n"));
+      }
+    }
+  }
+
+  return null;
+}
+
+function normalizeMarkdownText(raw: string): string {
+  const normalizedLines = raw
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\u00A0/g, " ")
+    .split("\n")
+    .map((line) => normalizeMarkdownLine(line));
+
+  const compacted: string[] = [];
+  let emptyCount = 0;
+  for (const line of normalizedLines) {
+    if (!line.trim()) {
+      emptyCount += 1;
+      if (emptyCount > 2) continue;
+      compacted.push("");
+      continue;
+    }
+    emptyCount = 0;
+    compacted.push(line);
+  }
+
+  return compacted.join("\n").trim();
+}
+
+function normalizeMarkdownLine(rawLine: string): string {
+  const line = rawLine.replace(/\s+$/g, "");
+  const trimmed = line.trim();
+  if (!trimmed) return "";
+
+  const headingNoSpace = trimmed.match(/^(#{1,6})([^#\s].*)$/);
+  if (headingNoSpace) {
+    return `${headingNoSpace[1]} ${headingNoSpace[2].trim()}`;
+  }
+
+  const unorderedSymbol = trimmed.match(/^[•●▪◦◆◇·]\s*(.+)$/);
+  if (unorderedSymbol) {
+    return `- ${unorderedSymbol[1].trim()}`;
+  }
+
+  const unorderedMarkdown = trimmed.match(/^([-*+])\s*(.+)$/);
+  if (unorderedMarkdown) {
+    return `- ${unorderedMarkdown[2].trim()}`;
+  }
+
+  const orderedList = trimmed.match(/^(\d+)\s*[、.）)]\s*(.+)$/);
+  if (orderedList) {
+    return `${orderedList[1]}. ${orderedList[2].trim()}`;
+  }
+
+  if (trimmed.startsWith(">")) {
+    const quote = trimmed.replace(/^>\s*/, "").trim();
+    return quote ? `> ${quote}` : ">";
+  }
+
+  return trimmed;
 }
 
 function extractSourceId(data: Record<string, unknown>): string | null {
@@ -557,53 +654,64 @@ function inferTypeFromCoverUrl(coverUrl: string | null | undefined): "video" | "
   return null;
 }
 
-function enrichRawPayload(data: Record<string, unknown>): Prisma.InputJsonValue | null {
+function enrichRawPayload(
+  data: Record<string, unknown>,
+  recognizedScriptText?: string | null,
+): Prisma.InputJsonValue | null {
   const base = toJson(data);
   if (!base || typeof base !== "object" || Array.isArray(base)) return base;
-  const existing = (base as Record<string, unknown>).type;
-  if (existing) return base;
+  const baseObj = base as Record<string, unknown>;
+  const withScriptText = recognizedScriptText
+    ? {
+        ...baseObj,
+        scriptText: recognizedScriptText,
+        script_text: recognizedScriptText,
+      }
+    : baseObj;
+  const existing = withScriptText.type;
+  if (existing) return withScriptText as Prisma.InputJsonValue;
 
   // Try to infer type from nested raw.type (e.g. Instagram Apify: raw.type = "Video")
   // or from media_type field, before falling back to XHS CDN URL heuristic
-  const rawNested = (base as Record<string, unknown>).raw;
+  const rawNested = withScriptText.raw;
   const nestedType =
     typeof rawNested === "object" && rawNested !== null
       ? (rawNested as Record<string, unknown>).type
       : null;
-  const mediaType = (base as Record<string, unknown>).media_type;
+  const mediaType = withScriptText.media_type;
 
   if (typeof nestedType === "string" && nestedType) {
     const normalized = nestedType.toLowerCase();
     const mappedType = normalized === "video" ? "video" : normalized === "image" ? "image" : null;
-    if (mappedType) return { ...(base as Record<string, unknown>), type: mappedType } as Prisma.InputJsonValue;
+    if (mappedType) return { ...withScriptText, type: mappedType } as Prisma.InputJsonValue;
   }
   if (typeof mediaType === "string" && mediaType) {
     const normalized = mediaType.toLowerCase();
     const mappedType = normalized.includes("video") ? "video" : normalized.includes("image") ? "image" : null;
-    if (mappedType) return { ...(base as Record<string, unknown>), type: mappedType } as Prisma.InputJsonValue;
+    if (mappedType) return { ...withScriptText, type: mappedType } as Prisma.InputJsonValue;
   }
 
   // Instagram: media_type is a number (1=image, 2=video, 8=carousel/album)
   if (typeof mediaType === "number") {
-    if (mediaType === 2) return { ...(base as Record<string, unknown>), type: "video" } as Prisma.InputJsonValue;
-    if (mediaType === 1 || mediaType === 8) return { ...(base as Record<string, unknown>), type: "image" } as Prisma.InputJsonValue;
+    if (mediaType === 2) return { ...withScriptText, type: "video" } as Prisma.InputJsonValue;
+    if (mediaType === 1 || mediaType === 8) return { ...withScriptText, type: "image" } as Prisma.InputJsonValue;
   }
 
   // Instagram: is_video boolean
-  const isVideoFlag = (base as Record<string, unknown>).is_video;
-  if (isVideoFlag === true) return { ...(base as Record<string, unknown>), type: "video" } as Prisma.InputJsonValue;
-  if (isVideoFlag === false) return { ...(base as Record<string, unknown>), type: "image" } as Prisma.InputJsonValue;
+  const isVideoFlag = withScriptText.is_video;
+  if (isVideoFlag === true) return { ...withScriptText, type: "video" } as Prisma.InputJsonValue;
+  if (isVideoFlag === false) return { ...withScriptText, type: "image" } as Prisma.InputJsonValue;
 
   // Instagram GraphQL: __typename field ("GraphVideo", "GraphImage", "GraphSidecar")
-  const typename = (base as Record<string, unknown>).__typename;
+  const typename = withScriptText.__typename;
   if (typeof typename === "string") {
     const tn = typename.toLowerCase();
-    if (tn.includes("video")) return { ...(base as Record<string, unknown>), type: "video" } as Prisma.InputJsonValue;
-    if (tn.includes("image") || tn.includes("sidecar")) return { ...(base as Record<string, unknown>), type: "image" } as Prisma.InputJsonValue;
+    if (tn.includes("video")) return { ...withScriptText, type: "video" } as Prisma.InputJsonValue;
+    if (tn.includes("image") || tn.includes("sidecar")) return { ...withScriptText, type: "image" } as Prisma.InputJsonValue;
   }
 
   const coverUrl = extractViralReferenceMedia(data).coverUrl;
   const inferred = inferTypeFromCoverUrl(coverUrl);
-  if (!inferred) return base;
-  return { ...(base as Record<string, unknown>), type: inferred } as Prisma.InputJsonValue;
+  if (!inferred) return withScriptText as Prisma.InputJsonValue;
+  return { ...withScriptText, type: inferred } as Prisma.InputJsonValue;
 }

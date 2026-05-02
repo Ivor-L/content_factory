@@ -1,8 +1,42 @@
 import Taro from '@tarojs/taro';
+import { createClient } from '@supabase/supabase-js';
 
-const API_BASE_URL = (process.env.TARO_APP_API_BASE_URL || '').replace(/\/$/, '');
+function getApiBaseUrl(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fromDefine = typeof __API_BASE_URL__ !== 'undefined' ? (String((__API_BASE_URL__ as any) || '').trim()) : '';
+    if (fromDefine) return fromDefine.replace(/\/$/, '');
+  } catch {
+    // ignore
+  }
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const runtime = (typeof globalThis !== 'undefined' ? (globalThis as any) : null);
+    const fromProcess = runtime?.process?.env?.TARO_APP_API_BASE_URL;
+    if (typeof fromProcess === 'string' && fromProcess.trim()) {
+      return fromProcess.trim().replace(/\/$/, '');
+    }
+  } catch {
+    // ignore
+  }
+  return '';
+}
+
+const API_BASE_URL = getApiBaseUrl();
+const SUPABASE_URL = (typeof __SUPABASE_URL__ !== 'undefined' ? String(__SUPABASE_URL__ || '') : '').trim();
+const SUPABASE_ANON_KEY = (typeof __SUPABASE_ANON_KEY__ !== 'undefined' ? String(__SUPABASE_ANON_KEY__ || '') : '').trim();
+const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    })
+  : null;
 
 export type DigitalHumanMode = 'VOICE_CLONE' | 'LIP_SYNC';
+export type DigitalHumanSourceType = 'IMAGE' | 'VIDEO';
 
 export interface DigitalHumanCharacter {
   id: string;
@@ -16,6 +50,7 @@ export interface DigitalHumanVideoRecord {
   id: string;
   type: DigitalHumanMode;
   status: string;
+  sourceType?: DigitalHumanSourceType | null;
   imageUrl: string;
   audioUrl: string;
   scriptContent?: string | null;
@@ -42,6 +77,20 @@ export class NotBoundError extends Error {
     super('NOT_BOUND');
     this.openid = openid;
   }
+}
+
+export interface MiniappLoginPayload {
+  apiKey: string;
+  userId: string;
+  username: string | null;
+  avatarUrl: string | null;
+}
+
+export interface ProfilePayload {
+  id: string;
+  username: string | null;
+  avatarUrl: string | null;
+  memberLevel?: string | null;
 }
 
 function getApiKey(): string | null {
@@ -121,7 +170,7 @@ async function uploadFile(file: string, name: string, mimeType: string): Promise
 export const api = {
   // ── 微信登录 ──────────────────────────────────────────
 
-  async wechatLogin(): Promise<{ apiKey: string; userId: string; username: string | null; avatarUrl: string | null }> {
+  async wechatLogin(): Promise<MiniappLoginPayload> {
     const { code } = await Taro.login();
     const res = await Taro.request({
       url: resolveUrl('/api/auth/wechat/login'),
@@ -141,7 +190,7 @@ export const api = {
       throw new ApiError(res.statusCode, message);
     }
 
-    const payload = res.data as { data: { apiKey: string; userId: string; username: string | null; avatarUrl: string | null } };
+    const payload = res.data as { data: MiniappLoginPayload };
     return payload.data;
   },
 
@@ -150,6 +199,84 @@ export const api = {
       method: 'POST',
       data: { openid, apiKey },
     });
+  },
+
+  async wechatPhoneLogin(code: string): Promise<MiniappLoginPayload> {
+    return request<MiniappLoginPayload>('/api/auth/wechat/phone-login', {
+      method: 'POST',
+      data: { code },
+    });
+  },
+
+  async phoneSendCode(phone: string, purpose: 'login' | 'bind') {
+    return request<{ ok: boolean; ttlSeconds: number; devCode?: string }>('/api/auth/phone/send-code', {
+      method: 'POST',
+      data: { phone, purpose },
+    });
+  },
+
+  async phoneVerify(payload: { phone: string; code: string; purpose: 'login' | 'bind'; email?: string; }) {
+    return request<{
+      ok: boolean;
+      needSignup?: boolean;
+      message?: string;
+      userId?: string;
+      apiKey?: string;
+      username?: string | null;
+      avatarUrl?: string | null;
+    }>('/api/auth/phone/verify', {
+      method: 'POST',
+      data: payload as unknown as Record<string, unknown>,
+    });
+  },
+
+  async emailSendCode(email: string) {
+    return request<{ ok: boolean; ttlSeconds?: number }>('/api/auth/email/send-code', {
+      method: 'POST',
+      data: { email },
+    });
+  },
+
+  async emailVerify(payload: { email: string; otp: string }) {
+    return request<{ session?: { access_token?: string } }>('/api/auth/verify-otp', {
+      method: 'POST',
+      data: payload as unknown as Record<string, unknown>,
+    });
+  },
+
+  async createMiniappSession(accessToken: string) {
+    return request<{ ok: boolean }>('/api/auth/session', {
+      method: 'POST',
+      data: { accessToken },
+    });
+  },
+
+  async getProfile(): Promise<ProfilePayload & { apiKey: string | null }> {
+    const profile = await request<ProfilePayload>('/api/user/profile');
+    return {
+      ...profile,
+      apiKey: getApiKey(),
+    };
+  },
+
+  async emailPasswordLogin(payload: { email: string; password: string }) {
+    // prefer server-side password auth endpoint to avoid shipping extra auth flows in miniapp
+    const res = await request<{ ok?: boolean; accessToken?: string }>('/api/auth/email/password-login', {
+      method: 'POST',
+      data: {
+        email: payload.email,
+        password: payload.password,
+      },
+    });
+    const accessToken = String(res?.accessToken || '').trim();
+    if (!accessToken) throw new Error('邮箱密码登录失败');
+    await this.createMiniappSession(accessToken);
+    return accessToken;
+  },
+
+  async signOutSupabaseClient() {
+    if (!supabase) return;
+    await supabase.auth.signOut().catch(() => {});
   },
 
   // ── 数字人形象 ────────────────────────────────────────
@@ -198,7 +325,9 @@ export const api = {
 
   async createDigitalHumanTask(payload: {
     type: DigitalHumanMode;
-    imageUrl: string;
+    sourceType?: DigitalHumanSourceType;
+    imageUrl?: string;
+    videoUrl?: string;
     audioUrl: string;
     scriptContent?: string;
     emoAudioUrl?: string | null;

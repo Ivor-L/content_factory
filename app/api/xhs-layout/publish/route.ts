@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestUserContext } from "@/lib/authServer";
+import prisma from "@/lib/prisma";
 
 type PublishRequestBody = {
   type?: string;
@@ -8,6 +9,7 @@ type PublishRequestBody = {
   images?: string[];
   video?: string;
   cover?: string;
+  taskId?: string;
 };
 
 type UpstreamResponse = {
@@ -75,6 +77,7 @@ export async function POST(request: NextRequest) {
   const images = normalizeImageUrls(body?.images);
   const video = sanitizeText(body?.video, 2000);
   const cover = sanitizeText(body?.cover, 2000);
+  const taskId = sanitizeText(body?.taskId, 80);
 
   if (type === "normal" && images.length === 0) {
     return NextResponse.json({ error: "图文发布至少需要 1 张图片" }, { status: 400 });
@@ -129,12 +132,64 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: fallback, code: payload?.error?.code || "UPSTREAM_ERROR" }, { status });
     }
 
+    const resultPayload = {
+      id: data.id || "",
+      url: data.url || "",
+      qrcode: data.qrcode || "",
+    };
+
+    if (taskId) {
+      const existingSummary = await prisma.taskSummary.findFirst({
+        where: {
+          taskType: "poster",
+          taskId,
+          userId,
+        },
+        select: {
+          metadata: true,
+        },
+      }).catch(() => null);
+
+      const baseMetadata =
+        existingSummary?.metadata &&
+        typeof existingSummary.metadata === "object" &&
+        !Array.isArray(existingSummary.metadata)
+          ? (existingSummary.metadata as Record<string, unknown>)
+          : {};
+
+      await prisma.taskSummary.updateMany({
+        where: {
+          taskType: "poster",
+          taskId,
+          userId,
+        },
+        data: {
+          metadata: {
+            ...baseMetadata,
+            posterMode:
+              typeof baseMetadata.posterMode === "string"
+                ? baseMetadata.posterMode
+                : "text2image",
+            source:
+              typeof baseMetadata.source === "string"
+                ? baseMetadata.source
+                : "miniapp_xhs_layout",
+            xhsPublish: {
+              id: resultPayload.id,
+              url: resultPayload.url,
+              qrcode: resultPayload.qrcode,
+              title,
+            },
+          },
+          updatedAt: new Date(),
+        },
+      }).catch((error) => {
+        console.error("[xhs-layout/publish] failed to update task summary metadata", error);
+      });
+    }
+
     return NextResponse.json({
-      data: {
-        id: data.id || "",
-        url: data.url || "",
-        qrcode: data.qrcode || "",
-      },
+      data: resultPayload,
     });
   } catch (error) {
     console.error("[xhs-layout/publish] failed", error);

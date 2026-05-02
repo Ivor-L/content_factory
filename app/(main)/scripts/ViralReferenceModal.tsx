@@ -574,6 +574,8 @@ export function ViralReferenceModal({ item, onClose, onExtracted, onExtractionSt
               copyInsights={copyInsights}
               videoUrl={item.videoUrl || undefined}
               isVideoUploaded={Boolean(item.videoUrl)}
+              sourceTitle={item.title}
+              sourceText={item.description}
             />
           ) : (
             <div className="h-full flex items-center justify-center text-sm text-gray-500 dark:text-gray-400">

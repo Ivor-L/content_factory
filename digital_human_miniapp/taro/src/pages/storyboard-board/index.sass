@@ -1,0 +1,557 @@
+.storyboard-board-page
+  min-height: 100vh
+  background: #050505
+  display: flex
+  flex-direction: column
+
+.storyboard-board-nav
+  position: fixed
+  top: 0
+  left: 0
+  right: 0
+  z-index: 60
+  height: calc(env(safe-area-inset-top) + 92rpx)
+  padding: env(safe-area-inset-top) 24rpx 0
+  display: flex
+  align-items: center
+  justify-content: space-between
+  border-bottom: 1rpx solid rgba(137, 165, 215, 0.2)
+  background: #121212
+
+.storyboard-board-back
+  width: 56rpx
+  height: 56rpx
+  display: flex
+  align-items: center
+  justify-content: center
+  background: transparent
+
+.storyboard-board-back-text
+  color: #e8f2ff
+  font-size: 52rpx
+  line-height: 1
+
+.storyboard-board-nav-title
+  font-size: 30rpx
+  color: #e8f2ff
+  font-weight: 800
+
+.storyboard-board-nav-spacer
+  width: 56rpx
+
+.storyboard-board-scroll
+  flex: 1
+  margin-top: calc(env(safe-area-inset-top) + 92rpx)
+  padding-bottom: calc(env(safe-area-inset-bottom) + 168rpx)
+
+.storyboard-board-header
+  margin: 20rpx 24rpx 14rpx
+  padding: 0
+  border-radius: 0
+  background: transparent
+  border: 0
+
+.storyboard-board-title
+  display: block
+  font-size: 30rpx
+  color: #e8f2ff
+  font-weight: 800
+  margin-bottom: 0
+
+.storyboard-board-state
+  margin: 20rpx 24rpx
+  padding: 30rpx 20rpx
+  border-radius: 16rpx
+  background: #141414
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+  text-align: center
+
+.storyboard-board-state-text
+  font-size: 24rpx
+  color: #9cb1d8
+  line-height: 1.6
+
+.storyboard-board-list
+  margin: 0 24rpx 24rpx
+  display: flex
+  flex-direction: column
+  gap: 14rpx
+
+.storyboard-segment-card
+  border-radius: 16rpx
+  padding: 16rpx
+  background: #141414
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+
+.storyboard-segment-head
+  display: flex
+  align-items: center
+  justify-content: space-between
+  margin-bottom: 8rpx
+
+.storyboard-segment-order
+  font-size: 26rpx
+  color: #ecee9f
+  font-weight: 800
+
+.storyboard-segment-status
+  font-size: 22rpx
+  color: #c7d6f2
+
+.storyboard-segment-meta
+  display: block
+  font-size: 21rpx
+  color: #8ea2c8
+  margin-bottom: 8rpx
+
+.storyboard-segment-text
+  display: block
+  font-size: 23rpx
+  line-height: 1.56
+  color: #d7e5ff
+  margin-top: 6rpx
+  white-space: pre-wrap
+
+.storyboard-asset-grid
+  margin-top: 12rpx
+  display: flex
+  flex-direction: column
+  gap: 14rpx
+
+.storyboard-asset-block
+  display: flex
+  flex-direction: column
+  gap: 8rpx
+
+.storyboard-asset-title-row
+  display: flex
+  align-items: center
+  justify-content: space-between
+  gap: 10rpx
+
+.storyboard-asset-title
+  font-size: 22rpx
+  color: #ecee9f
+  font-weight: 700
+
+.storyboard-asset-actions
+  display: flex
+  align-items: center
+  gap: 14rpx
+
+.storyboard-asset-link
+  font-size: 21rpx
+  color: #9db7ff
+
+.storyboard-asset-stage
+  position: relative
+  width: 100%
+  aspect-ratio: 16 / 9
+  border-radius: 12rpx
+  overflow: hidden
+  border: 1rpx solid rgba(255, 255, 255, 0.16)
+  background: #000
+  display: flex
+  align-items: center
+  justify-content: center
+
+.storyboard-asset-image
+  width: 100%
+  height: 100%
+  display: block
+  object-fit: contain
+  background: #000
+
+.storyboard-asset-video
+  width: 100%
+  height: 100%
+  display: block
+  object-fit: contain
+  background: #000
+
+.storyboard-asset-placeholder-icon
+  width: 168rpx
+  height: 168rpx
+  opacity: 0.88
+
+.storyboard-asset-placeholder-icon--image
+  width: 146rpx
+  height: 146rpx
+
+.storyboard-asset-placeholder-icon--video
+  width: 168rpx
+  height: 168rpx
+
+.storyboard-action-bar
+  position: fixed
+  left: 0
+  right: 0
+  bottom: 0
+  padding: 16rpx 24rpx calc(env(safe-area-inset-bottom) + 18rpx)
+  box-sizing: border-box
+  background: #050505
+  border-top: 1rpx solid rgba(137, 165, 215, 0.2)
+  display: flex
+  align-items: center
+  gap: 12rpx
+  z-index: 40
+
+.storyboard-setting-btn
+  width: 74rpx
+  height: 74rpx
+  border-radius: 16rpx
+  border: 1rpx solid rgba(236, 238, 159, 0.35)
+  background: rgba(236, 238, 159, 0.08)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.storyboard-setting-icon
+  font-size: 33rpx
+  color: #ecee9f
+
+.storyboard-action-btn
+  flex: 1
+
+.storyboard-bottom-btn
+  height: 74rpx
+  border-radius: 16rpx
+  display: flex
+  align-items: center
+  justify-content: center
+
+.storyboard-bottom-btn--ghost
+  border: 1rpx solid rgba(236, 238, 159, 0.35)
+  background: rgba(236, 238, 159, 0.08)
+
+.storyboard-bottom-btn--primary
+  background: #ecee9f
+
+.storyboard-bottom-btn-text
+  font-size: 26rpx
+  font-weight: 800
+  color: #131313
+
+.storyboard-bottom-btn-text--ghost
+  color: #ecee9f
+
+.storyboard-edit-mask
+  position: fixed
+  inset: 0
+  background: rgba(0, 0, 0, 0.5)
+  z-index: 80
+  display: flex
+  align-items: flex-end
+
+.storyboard-edit-panel
+  width: 100%
+  height: calc(100vh - 120rpx)
+  border-top-left-radius: 24rpx
+  border-top-right-radius: 24rpx
+  background: #0f0f0f
+  border-top: 1rpx solid rgba(255, 255, 255, 0.1)
+  padding: 18rpx 22rpx calc(18rpx + env(safe-area-inset-bottom))
+  box-sizing: border-box
+  display: flex
+  flex-direction: column
+
+.storyboard-edit-title
+  display: block
+  font-size: 24rpx
+  font-weight: 800
+  color: #e8f2ff
+  margin-bottom: 12rpx
+
+.storyboard-edit-content
+  flex: 1
+  min-height: 0
+
+.storyboard-edit-scroll-inner
+  padding-bottom: 0
+
+.storyboard-edit-composer-space
+  height: calc(470rpx + env(safe-area-inset-bottom))
+
+.storyboard-edit-preview-stage
+  width: 100%
+  aspect-ratio: 16 / 9
+  border-radius: 16rpx
+  border: 1rpx solid rgba(255, 255, 255, 0.1)
+  background: #000
+  overflow: hidden
+  display: flex
+  align-items: center
+  justify-content: center
+  margin-bottom: 16rpx
+
+.storyboard-edit-composer
+  position: absolute
+  left: 22rpx
+  right: 22rpx
+  bottom: calc(env(safe-area-inset-bottom) + 14rpx)
+  z-index: 4
+  transition: transform 0.2s ease
+
+.storyboard-edit-input-card
+  border-radius: 14rpx
+  border: 1rpx solid rgba(255, 255, 255, 0.1)
+  background: #151515
+  padding: 12rpx 12rpx 12rpx
+
+.storyboard-edit-preview-image
+  width: 100%
+  height: 100%
+  object-fit: contain
+  background: #000
+
+.storyboard-edit-preview-video
+  width: 100%
+  height: 100%
+  object-fit: contain
+  background: #000
+
+.storyboard-edit-preview-icon
+  width: 140rpx
+  height: 140rpx
+  opacity: 0.88
+
+.storyboard-edit-textarea
+  width: 100%
+  min-height: 182rpx
+  border-radius: 12rpx
+  background: transparent
+  border: 1rpx solid rgba(255, 255, 255, 0.08)
+  color: #d7e5ff
+  font-size: 22rpx
+  line-height: 1.56
+  padding: 12rpx
+  box-sizing: border-box
+  margin-bottom: 12rpx
+
+.storyboard-edit-ref-row
+  display: flex
+  gap: 10rpx
+  overflow-x: auto
+  padding-bottom: 8rpx
+  margin-bottom: 12rpx
+
+.storyboard-edit-ref-row--top
+  margin-bottom: 10rpx
+
+.storyboard-edit-ref-item
+  width: 110rpx
+  height: 110rpx
+  border-radius: 10rpx
+  border: 1rpx solid rgba(255, 255, 255, 0.14)
+  overflow: hidden
+  position: relative
+  flex-shrink: 0
+
+.storyboard-edit-ref-image
+  width: 100%
+  height: 100%
+
+.storyboard-edit-ref-remove
+  position: absolute
+  right: 4rpx
+  top: 4rpx
+  width: 28rpx
+  height: 28rpx
+  border-radius: 999rpx
+  background: rgba(0, 0, 0, 0.65)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.storyboard-edit-ref-remove-text
+  color: #fff
+  font-size: 20rpx
+  line-height: 1
+
+.storyboard-edit-ref-add
+  width: 110rpx
+  height: 110rpx
+  border-radius: 10rpx
+  border: 1rpx dashed rgba(255, 255, 255, 0.3)
+  background: #101010
+  display: flex
+  align-items: center
+  justify-content: center
+  flex-shrink: 0
+
+.storyboard-edit-ref-add-text
+  font-size: 38rpx
+  color: #a9b3c6
+  line-height: 1
+
+.storyboard-edit-tool-row
+  margin-top: 2rpx
+  display: flex
+  align-items: center
+  justify-content: space-between
+  gap: 12rpx
+
+.storyboard-edit-model-mini
+  width: 310rpx
+  max-width: 310rpx
+  height: 60rpx
+  border-radius: 12rpx
+  border: 1rpx solid rgba(255, 255, 255, 0.12)
+  background: transparent
+  padding: 0 14rpx
+  display: flex
+  align-items: center
+  justify-content: space-between
+
+.storyboard-edit-model-mini-value
+  color: #d8e2f5
+  font-size: 20rpx
+  font-weight: 700
+  max-width: 238rpx
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap
+
+.storyboard-edit-model-mini-arrow
+  color: #d8e2f5
+  font-size: 22rpx
+  line-height: 1
+
+.storyboard-edit-submit-circle
+  width: 64rpx
+  height: 64rpx
+  border-radius: 999rpx
+  background: #ecee9f
+  border: 1rpx solid #ecee9f
+  display: flex
+  align-items: center
+  justify-content: center
+  flex-shrink: 0
+
+.storyboard-edit-submit-icon
+  width: 36rpx
+  height: 36rpx
+
+.storyboard-edit-submit-loading
+  color: #141414
+  font-size: 28rpx
+  font-weight: 800
+  line-height: 1
+
+.storyboard-edit-model-sheet-mask
+  position: fixed
+  inset: 0
+  background: rgba(0, 0, 0, 0.5)
+  z-index: 90
+  display: flex
+  align-items: flex-end
+  padding: 0 16rpx calc(env(safe-area-inset-bottom) + 18rpx)
+  box-sizing: border-box
+
+.storyboard-edit-model-sheet
+  width: 100%
+  border-radius: 22rpx
+  background: #101010
+  border: 1rpx solid rgba(255, 255, 255, 0.12)
+  padding: 18rpx 18rpx 14rpx
+
+.storyboard-edit-model-sheet-title
+  display: block
+  color: #e8f2ff
+  font-size: 26rpx
+  font-weight: 800
+  margin-bottom: 10rpx
+
+.storyboard-edit-model-sheet-list
+  display: flex
+  flex-direction: column
+  gap: 8rpx
+
+.storyboard-edit-model-sheet-item
+  height: 64rpx
+  border-radius: 12rpx
+  border: 1rpx solid rgba(142, 162, 200, 0.3)
+  background: rgba(142, 162, 200, 0.1)
+  display: flex
+  align-items: center
+  padding: 0 14rpx
+
+.storyboard-edit-model-sheet-item--active
+  background: #ecee9f
+  border-color: #ecee9f
+
+.storyboard-edit-model-sheet-item-text
+  color: #d7e5ff
+  font-size: 22rpx
+  font-weight: 700
+
+.storyboard-edit-model-sheet-item-text--active
+  color: #151515
+
+.storyboard-sheet-mask
+  position: fixed
+  inset: 0
+  background: rgba(0, 0, 0, 0.5)
+  z-index: 70
+  display: flex
+  align-items: flex-end
+
+.storyboard-sheet-panel
+  width: 100%
+  border-top-left-radius: 24rpx
+  border-top-right-radius: 24rpx
+  background: #101010
+  border-top: 1rpx solid rgba(255, 255, 255, 0.12)
+  padding: 20rpx 24rpx calc(24rpx + env(safe-area-inset-bottom))
+
+.storyboard-sheet-title
+  display: block
+  font-size: 28rpx
+  color: #e8f2ff
+  font-weight: 800
+  margin-bottom: 12rpx
+
+.storyboard-sheet-label
+  display: block
+  font-size: 22rpx
+  color: #8ea2c8
+  margin-top: 6rpx
+  margin-bottom: 8rpx
+
+.storyboard-sheet-tabs
+  display: flex
+  flex-wrap: wrap
+  gap: 8rpx
+  margin-bottom: 10rpx
+
+.storyboard-sheet-tab
+  padding: 10rpx 14rpx
+  border-radius: 999rpx
+  border: 1rpx solid rgba(142, 162, 200, 0.3)
+  background: rgba(142, 162, 200, 0.1)
+
+.storyboard-sheet-tab--active
+  border-color: #ecee9f
+  background: #ecee9f
+
+.storyboard-sheet-tab-text
+  font-size: 20rpx
+  color: #d7e5ff
+  font-weight: 700
+
+.storyboard-sheet-tab-text--active
+  color: #151515
+
+.storyboard-sheet-confirm
+  margin-top: 28rpx
+  height: 68rpx
+  border-radius: 14rpx
+  background: #ecee9f
+  display: flex
+  align-items: center
+  justify-content: center
+
+.storyboard-sheet-confirm-text
+  font-size: 24rpx
+  color: #151515
+  font-weight: 800

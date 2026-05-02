@@ -162,7 +162,7 @@ export default function Profile() {
             <Zap size={20} className="text-gray-600" />
           </div>
           <div>
-            <h3 className="font-bold text-primary">积分使用情况</h3>
+            <h3 className="font-bold text-primary">算力值使用情况</h3>
             <p className="text-xs text-text-secondary">用于生成数字人视频</p>
           </div>
         </div>
@@ -179,7 +179,7 @@ export default function Profile() {
             />
           </div>
           <p className="text-xs text-text-secondary text-right mt-1">
-            剩余 {user.pointsTotal - user.pointsUsed} 积分
+            剩余 {user.pointsTotal - user.pointsUsed} 算力值
           </p>
         </div>
       </div>

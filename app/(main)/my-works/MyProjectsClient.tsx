@@ -76,6 +76,7 @@ type TaskCardProps = {
   deleting: boolean;
   onTaskClick: (task: TaskSummary) => void;
   onCardKeyDown: (event: KeyboardEvent<HTMLDivElement>, task: TaskSummary) => void;
+  onDownload: (task: TaskSummary) => void;
   onRename: (task: TaskSummary) => void;
   onDelete: (task: TaskSummary) => void;
 };
@@ -697,12 +698,13 @@ function FilterSelect<T extends string>({ label, value, options, onChange }: Fil
 }
 
 type CardActionMenuProps = {
+  onDownload: () => void;
   onRename: () => void;
   onDelete: () => void;
   disabled?: boolean;
 };
 
-function CardActionMenu({ onRename, onDelete, disabled }: CardActionMenuProps) {
+function CardActionMenu({ onDownload, onRename, onDelete, disabled }: CardActionMenuProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -759,6 +761,14 @@ function CardActionMenu({ onRename, onDelete, disabled }: CardActionMenuProps) {
         <div className="absolute right-0 top-11 w-36 rounded-2xl border border-black/10 bg-white/95 p-1 backdrop-blur dark:border-white/10 dark:bg-gray-900/95">
           <button
             type="button"
+            onClick={handleAction(onDownload)}
+            className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800/80"
+          >
+            <Download className="h-4 w-4" />
+            下载
+          </button>
+          <button
+            type="button"
             onClick={handleAction(onRename)}
             className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800/80"
           >
@@ -789,6 +799,7 @@ const TaskCard = memo(function TaskCard({
   deleting,
   onTaskClick,
   onCardKeyDown,
+  onDownload,
   onRename,
   onDelete,
 }: TaskCardProps) {
@@ -831,6 +842,7 @@ const TaskCard = memo(function TaskCard({
         )}
         <div className="pointer-events-none absolute inset-0 border border-white/20 dark:border-white/5" />
         <CardActionMenu
+          onDownload={() => onDownload(task)}
           onRename={() => onRename(task)}
           onDelete={() => onDelete(task)}
           disabled={deleting}
@@ -1392,15 +1404,109 @@ export function MyProjectsClient({
     }
   };
 
+  const resolveTaskImageUrls = useCallback(async (task: TaskSummary): Promise<string[]> => {
+    const collectFallbackImages = () => {
+      const metadataRecord = toRecord(task.metadata);
+      const metadataImages = [
+        getMetadataString(task.metadata, "imageUrl"),
+        getMetadataString(task.metadata, "gridImageUrl"),
+        getMetadataString(task.metadata, "storyboardImageUrl"),
+      ].filter((url): url is string => Boolean(url && url.startsWith("http")));
+      const storyboardImages = getStringArray(metadataRecord?.storyboardImages).filter((url) =>
+        /^https?:\/\//i.test(url),
+      );
+      const thumbnailFallback =
+        task.thumbnailUrl && !looksLikeVideoUrl(task.thumbnailUrl) ? [task.thumbnailUrl] : [];
+      return Array.from(new Set([...metadataImages, ...storyboardImages, ...thumbnailFallback]));
+    };
+
+    const taskLooksLikeText2Image = task.taskType === "creative" || isText2ImagePosterTask(task);
+
+    if (taskLooksLikeText2Image) {
+      const cachedDetail = getCachedValue(creativeDetailCache, task.taskId);
+      if (cachedDetail) {
+        const cachedImages = (cachedDetail.generatedImages || [])
+          .map((img) => img?.url)
+          .filter((url): url is string => typeof url === "string" && /^https?:\/\//i.test(url));
+        if (cachedImages.length > 0) {
+          return Array.from(new Set(cachedImages));
+        }
+      }
+
+      try {
+        const headers = await resolveAuthHeaders();
+        const response = await fetch(`/api/creative-tasks/${task.taskId}`, {
+          cache: "no-store",
+          headers: { ...headers },
+        });
+        if (response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          const detail = (payload?.data ?? null) as CreativeTaskDetail | null;
+          if (detail) {
+            setCachedValue(creativeDetailCache, task.taskId, detail, 60_000);
+            const detailImages = (detail.generatedImages || [])
+              .map((img) => img?.url)
+              .filter((url): url is string => typeof url === "string" && /^https?:\/\//i.test(url));
+            if (detailImages.length > 0) {
+              return Array.from(new Set(detailImages));
+            }
+          }
+        }
+      } catch {
+        // ignore and continue fallback
+      }
+    }
+
+    if (task.taskType === "poster" && !isText2ImagePosterTask(task)) {
+      const cachedImages = getCachedValue(posterImagesCache, task.taskId);
+      if (cachedImages && cachedImages.length > 0) {
+        return Array.from(new Set(cachedImages));
+      }
+
+      try {
+        const headers = await resolveAuthHeaders();
+        const response = await fetch(`/api/xhs-images/jobs/${task.taskId}`, {
+          cache: "no-store",
+          headers: { ...headers },
+        });
+        if (response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          const posterImages = Array.isArray(payload?.data?.images)
+            ? payload.data.images
+                .map((img: { imageUrl?: unknown }) =>
+                  typeof img?.imageUrl === "string" ? img.imageUrl : "",
+                )
+                .filter((url: string) => /^https?:\/\//i.test(url))
+            : [];
+          if (posterImages.length > 0) {
+            setCachedValue(posterImagesCache, task.taskId, posterImages, 60_000);
+            return Array.from(new Set(posterImages));
+          }
+        }
+      } catch {
+        // ignore and continue fallback
+      }
+    }
+
+    return collectFallbackImages();
+  }, [resolveAuthHeaders]);
+
   const handleDownloadTask = useCallback(async (task: TaskSummary | null, images?: string[]) => {
     if (!task) return;
 
     const behavesLikeText2Image = task.taskType === "creative" || isText2ImagePosterTask(task);
-    const hasBatchImages = Array.isArray(images) && images.length > 0;
+    const imageTaskType = behavesLikeText2Image || task.taskType === "poster" || task.taskType === "grid";
+    const resolvedImages =
+      Array.isArray(images) && images.length > 0
+        ? images
+        : imageTaskType
+          ? await resolveTaskImageUrls(task)
+          : [];
+    const hasBatchImages = resolvedImages.length > 0;
 
     // 图文任务：下载全部图片
-    if (hasBatchImages && (behavesLikeText2Image || task.taskType === "poster")) {
-      const uniqueImages = Array.from(new Set(images.filter((item) => typeof item === "string" && item.trim().length > 0)));
+    if (hasBatchImages && imageTaskType) {
+      const uniqueImages = Array.from(new Set(resolvedImages.filter((item) => typeof item === "string" && item.trim().length > 0)));
       const baseName = sanitizeFileBase(task.title || "image", "image");
 
       // Mobile Safari/WebView often blocks async-queued multi-downloads.
@@ -1464,7 +1570,7 @@ export function MyProjectsClient({
     }
     const safeName = sanitizeFileBase(task.title || task.taskType, task.taskType || "video");
     triggerBrowserDownload(toDownloadUrl(videoUrl, `${safeName}.mp4`), `${safeName}.mp4`);
-  }, []);
+  }, [resolveTaskImageUrls]);
 
   const handleDeleteTask = useCallback(
     async (task: TaskSummary | null) => {
@@ -1610,6 +1716,7 @@ export function MyProjectsClient({
                   deleting={deletingId === task.id}
                   onTaskClick={handleTaskClick}
                   onCardKeyDown={handleCardKeyDown}
+                  onDownload={handleDownloadTask}
                   onRename={openRenameModal}
                   onDelete={handleDeleteTask}
                 />

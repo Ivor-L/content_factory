@@ -636,6 +636,21 @@ function renderMarkdownContent(content: string, options?: RenderMarkdownOptions)
     });
   };
 
+  const isTableSeparatorLine = (line: string): boolean => {
+    const trimmed = line.trim();
+    if (!trimmed.includes("|")) return false;
+    const normalized = trimmed.replace(/^\|/, "").replace(/\|$/, "");
+    const cells = normalized.split("|").map((cell) => cell.trim());
+    if (cells.length === 0) return false;
+    return cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+  };
+
+  const parseTableRowLine = (line: string): string[] => {
+    const trimmed = line.trim();
+    const normalized = trimmed.replace(/^\|/, "").replace(/\|$/, "");
+    return normalized.split("|").map((cell) => cell.trim());
+  };
+
   const paragraphClass = context === 'doc'
     ? 'mb-4 whitespace-pre-wrap text-[15px] leading-7 text-gray-800 dark:text-gray-100'
     : 'mb-3 whitespace-pre-wrap text-[15px] leading-7 text-gray-800 dark:text-gray-200';
@@ -760,6 +775,67 @@ function renderMarkdownContent(content: string, options?: RenderMarkdownOptions)
         );
       }
       i += 1;
+      continue;
+    }
+
+    if (
+      i + 1 < lines.length
+      && trimmed.includes("|")
+      && isTableSeparatorLine(lines[i + 1] || "")
+    ) {
+      const headerCells = parseTableRowLine(trimmed);
+      i += 2;
+
+      const bodyRows: string[][] = [];
+      while (i < lines.length) {
+        const rowRaw = lines[i] || "";
+        const rowTrimmed = rowRaw.trim();
+        if (!rowTrimmed) break;
+        if (!rowTrimmed.includes("|")) break;
+        if (isTableSeparatorLine(rowTrimmed)) {
+          i += 1;
+          continue;
+        }
+        bodyRows.push(parseTableRowLine(rowTrimmed));
+        i += 1;
+      }
+
+      const columnCount = Math.max(
+        headerCells.length,
+        ...bodyRows.map((row) => row.length),
+      );
+      const headers = Array.from({ length: columnCount }, (_, idx) => headerCells[idx] ?? "");
+      const rows = bodyRows.map((row) => Array.from({ length: columnCount }, (_, idx) => row[idx] ?? ""));
+
+      nodes.push(
+        <div key={`tbl-${key++}`} className="mb-5 overflow-x-auto rounded-xl border border-gray-200/80 bg-white dark:border-gray-700/80 dark:bg-gray-900/60">
+          <table className="min-w-full border-collapse text-left text-[14px] leading-6 text-gray-800 dark:text-gray-100">
+            <thead className="bg-gray-50/80 dark:bg-gray-800/70">
+              <tr>
+                {headers.map((cell, idx) => (
+                  <th key={`th-${idx}`} className="border-b border-r border-gray-200 px-3 py-2 font-semibold last:border-r-0 dark:border-gray-700">
+                    {renderInlineMarkdown(cell, `tbl-${key}-h-${idx}`)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, rowIdx) => (
+                <tr key={`tr-${rowIdx}`} className="align-top">
+                  {row.map((cell, colIdx) => (
+                    <td
+                      key={`td-${rowIdx}-${colIdx}`}
+                      className="border-r border-b border-gray-200 px-3 py-2 last:border-r-0 dark:border-gray-700"
+                    >
+                      {renderInlineMarkdown(cell, `tbl-${key}-r-${rowIdx}-c-${colIdx}`)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
       continue;
     }
 

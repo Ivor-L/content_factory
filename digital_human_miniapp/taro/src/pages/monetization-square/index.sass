@@ -1,0 +1,179 @@
+.monetization-page
+  min-height: 100vh
+  background: #050505
+  display: flex
+  flex-direction: column
+
+.monetization-nav
+  position: fixed
+  top: 0
+  left: 0
+  right: 0
+  z-index: 50
+  height: calc(env(safe-area-inset-top) + 92rpx)
+  padding: env(safe-area-inset-top) 24rpx 0
+  display: flex
+  align-items: center
+  justify-content: space-between
+  border-bottom: 1rpx solid rgba(137, 165, 215, 0.2)
+  background: #121212
+
+.monetization-back
+  width: 56rpx
+  height: 56rpx
+  display: flex
+  align-items: center
+  justify-content: center
+
+.monetization-back-text
+  color: #e8f2ff
+  font-size: 52rpx
+  line-height: 1
+
+.monetization-nav-title
+  font-size: 30rpx
+  color: #e8f2ff
+  font-weight: 800
+
+.monetization-nav-spacer
+  width: 56rpx
+
+.monetization-body
+  flex: 1
+  margin-top: calc(env(safe-area-inset-top) + 92rpx)
+  padding: 16rpx 24rpx calc(env(safe-area-inset-bottom) + 24rpx)
+  box-sizing: border-box
+
+.monetization-subtitle
+  display: block
+  font-size: 22rpx
+  color: #8ea2c8
+  margin-bottom: 14rpx
+
+.monetization-state
+  margin-top: 24rpx
+  padding: 28rpx 20rpx
+  border-radius: 14rpx
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+  background: #141414
+
+.monetization-state-text
+  text-align: center
+  color: #9cb1d8
+  font-size: 24rpx
+
+.monetization-tab-scroll
+  white-space: nowrap
+  margin-bottom: 16rpx
+
+.monetization-tab-list
+  display: flex
+  gap: 10rpx
+  width: max-content
+  min-width: 100%
+
+.monetization-tab
+  height: 56rpx
+  padding: 0 18rpx
+  border-radius: 999rpx
+  border: 1rpx solid rgba(145, 175, 229, 0.2)
+  background: #1a1a1a
+  display: flex
+  align-items: center
+  justify-content: center
+
+.monetization-tab--active
+  background: #ecee9f
+  border-color: #ecee9f
+
+.monetization-tab-text
+  font-size: 24rpx
+  color: #9cb1d8
+  font-weight: 700
+
+.monetization-tab-text--active
+  color: #151515
+
+.monetization-content-scroll
+  height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 206rpx)
+
+.monetization-grid
+  display: flex
+  flex-direction: column
+  gap: 12rpx
+  padding-bottom: 20rpx
+
+.monetization-card
+  border-radius: 18rpx
+  border: 1rpx solid rgba(145, 175, 229, 0.2)
+  background: #141414
+  overflow: hidden
+
+.monetization-card-media
+  height: 216rpx
+  background: #0f0f0f
+
+.monetization-card-cover
+  width: 100%
+  height: 100%
+  display: block
+
+.monetization-card-fallback
+  width: 100%
+  height: 100%
+  display: flex
+  align-items: center
+  justify-content: center
+  background: linear-gradient(135deg, #1a2c4f 0%, #2b4372 100%)
+
+.monetization-card-fallback-text
+  font-size: 42rpx
+  color: #e7efff
+  font-weight: 800
+
+.monetization-card-body
+  padding: 16rpx
+
+.monetization-card-title
+  display: block
+  font-size: 30rpx
+  color: #e8f2ff
+  font-weight: 800
+
+.monetization-card-desc
+  display: block
+  margin-top: 8rpx
+  font-size: 22rpx
+  line-height: 1.45
+  color: #9cb1d8
+
+.monetization-card-footer
+  margin-top: 14rpx
+  display: flex
+  align-items: center
+  justify-content: space-between
+
+.monetization-card-tags
+  display: flex
+  gap: 8rpx
+
+.monetization-tag
+  padding: 6rpx 12rpx
+  border-radius: 999rpx
+  background: rgba(236, 238, 159, 0.15)
+  color: #ecee9f
+  font-size: 20rpx
+
+.monetization-card-btn
+  height: 52rpx
+  padding: 0 20rpx
+  border-radius: 999rpx
+  background: #ecee9f
+  display: flex
+  align-items: center
+  justify-content: center
+
+.monetization-card-btn-text
+  color: #151515
+  font-size: 23rpx
+  font-weight: 800

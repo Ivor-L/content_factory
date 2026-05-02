@@ -1,5 +1,5 @@
 import { View, Text } from '@tarojs/components';
-import Taro, { useDidShow } from '@tarojs/taro';
+import Taro, { useDidShow, useLoad } from '@tarojs/taro';
 import { useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
 import './index.sass';
@@ -18,6 +18,15 @@ export default function AssetsPage() {
     products: 0,
     styles: 0,
     templates: 0,
+  });
+
+  useLoad((options) => {
+    const rawTab = typeof options?.tab === 'string' ? options.tab : '';
+    const tab = rawTab === 'knowledge' ? 'template' : rawTab;
+    const allowedTabs = new Set(TABS.map((item) => item.id));
+    if (allowedTabs.has(tab)) {
+      setActiveTab(tab);
+    }
   });
 
   useDidShow(() => {
@@ -60,10 +69,24 @@ export default function AssetsPage() {
     return overview.templates;
   };
 
+  const handleBack = () => {
+    const pages = Taro.getCurrentPages();
+    if (pages.length > 1) {
+      Taro.navigateBack({ delta: 1 });
+      return;
+    }
+    Taro.switchTab({ url: '/pages/home/index' });
+  };
+
   return (
     <View className='assets-page'>
       <View className='assets-header'>
-        <Text className='assets-title'>资产管理</Text>
+        <View className='assets-topbar'>
+          <View className='assets-back' onClick={handleBack}>
+            <Text className='assets-back-text'>‹</Text>
+          </View>
+          <Text className='assets-title'>资产管理</Text>
+        </View>
         <View className='assets-tab-grid'>
           {TABS.map((tab) => (
             <View

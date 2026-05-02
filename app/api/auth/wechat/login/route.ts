@@ -48,6 +48,34 @@ export async function POST(request: NextRequest) {
 
   const openid = wxRes.openid;
 
+  // New path: identities table first
+  const wechatIdentity = await prisma.userAuthIdentity.findFirst({
+    where: {
+      provider: 'wechat',
+      providerUid: openid,
+    },
+    select: {
+      userId: true,
+    },
+  });
+
+  if (wechatIdentity?.userId) {
+    const linkedProfile = await prisma.profiles.findUnique({
+      where: { id: wechatIdentity.userId },
+      select: { id: true, api_key: true, username: true, full_name: true, avatar_url: true },
+    });
+    if (linkedProfile?.api_key) {
+      return NextResponse.json({
+        data: {
+          apiKey: linkedProfile.api_key,
+          userId: linkedProfile.id,
+          username: linkedProfile.username ?? linkedProfile.full_name ?? null,
+          avatarUrl: linkedProfile.avatar_url ?? null,
+        },
+      });
+    }
+  }
+
   // 查找已绑定该 openid 的用户
   const profile = await prisma.profiles.findUnique({
     where: { wechat_openid: openid },

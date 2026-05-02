@@ -1,164 +1,226 @@
 .home-page
   min-height: 100vh
-  background: #f8f9fd
-  padding: 32rpx 32rpx 140rpx
+  padding: 0 24rpx 130rpx
   box-sizing: border-box
+  position: relative
+  background: #050505
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif
 
-.home-header
-  margin-bottom: 24rpx
+.home-hero
+  height: 680rpx
+  border-radius: 30rpx
+  overflow: hidden
+  position: relative
+  margin: 0 -24rpx -100rpx
+  border: none
 
-.home-greeting
-  display: block
-  font-size: 42rpx
-  color: #111827
-  font-weight: 800
+.home-hero-video
+  position: relative
+  z-index: 1
+  width: 100%
+  height: 100%
 
-.home-subtitle
-  display: block
-  margin-top: 8rpx
-  font-size: 24rpx
-  color: #9ca3af
+.home-hero-fallback
+  position: absolute
+  inset: 0
+  width: 100%
+  height: 100%
+  z-index: 2
 
-.home-promo-card
-  background: linear-gradient(135deg, #ff9baa 0%, #9478ff 55%, #76bcff 100%)
-  border-radius: 40rpx
-  padding: 34rpx
-  margin-bottom: 28rpx
+.home-hero-mask
+  position: absolute
+  inset: 0
+  z-index: 3
+  background: linear-gradient(180deg, rgba(2, 8, 20, 0.08) 0%, rgba(3, 10, 24, 0.2) 48%, rgba(3, 10, 24, 0.42) 74%, rgba(3, 10, 24, 0.68) 100%)
 
-.home-promo-tag
-  display: inline-block
-  padding: 6rpx 18rpx
-  background: rgba(255, 255, 255, 0.24)
-  border-radius: 999rpx
-  font-size: 20rpx
-  color: #fff
-  font-weight: 700
-  margin-bottom: 14rpx
+.home-hero-fade
+  position: absolute
+  left: 0
+  right: 0
+  bottom: 0
+  height: 220rpx
+  z-index: 4
+  background: linear-gradient(180deg, rgba(5, 5, 5, 0) 0%, rgba(5, 5, 5, 0.32) 42%, rgba(5, 5, 5, 0.74) 70%, #050505 100%)
 
-.home-promo-title
-  display: block
-  font-size: 44rpx
-  line-height: 1.1
-  color: #fff
-  font-weight: 900
-  margin-bottom: 8rpx
+.home-hero-content
+  position: absolute
+  inset: 0
+  z-index: 5
+  display: flex
+  flex-direction: column
+  align-items: center
+  justify-content: center
 
-.home-promo-desc
-  display: block
-  font-size: 24rpx
-  color: rgba(255, 255, 255, 0.9)
-  margin-bottom: 22rpx
-
-.home-promo-points
+.home-hero-title-chip
   display: inline-flex
-  align-items: baseline
+  align-items: center
   gap: 12rpx
 
-.home-promo-points-label
-  font-size: 22rpx
-  color: rgba(255, 255, 255, 0.85)
+.home-hero-title-logo
+  width: 50rpx
+  height: 50rpx
+  border-radius: 14rpx
 
-.home-promo-points-value
+.home-hero-title-chip-text
+  color: #f4f7ff
+  font-size: 44rpx
+  font-weight: 600
+  line-height: 1
+
+.home-hero-main-title
+  margin-top: 14rpx
+  color: #ecf6ff
+  font-size: 30rpx
+  font-weight: 500
+  line-height: 1.2
+  letter-spacing: 0.3rpx
+
+.home-remix-card
+  position: relative
+  height: 268rpx
+  border-radius: 30rpx
+  overflow: hidden
+  z-index: 8
+  margin-bottom: 18rpx
+  border: 1rpx solid rgba(255, 255, 255, 0.14)
+
+.home-remix-cover
+  width: 100%
+  height: 100%
+
+.home-remix-video
+  width: 100%
+  height: 100%
+
+.home-remix-mask
+  position: absolute
+  inset: 0
+  background: linear-gradient(95deg, rgba(5, 9, 19, 0.82) 0%, rgba(5, 9, 19, 0.65) 40%, rgba(5, 9, 19, 0.25) 100%)
+
+.home-remix-content
+  position: absolute
+  left: 26rpx
+  top: 24rpx
+  display: flex
+  flex-direction: column
+
+.home-remix-title
+  color: #f4f9ff
   font-size: 40rpx
-  color: #fff
-  font-weight: 900
+  font-weight: 600
+  line-height: 1.2
+  letter-spacing: 0
 
-.home-section
-  margin-bottom: 24rpx
+.home-remix-desc
+  margin-top: 12rpx
+  color: rgba(227, 236, 251, 0.78)
+  font-size: 24rpx
+  line-height: 1.35
 
-.home-section-head
+.home-remix-btn
+  margin-top: 16rpx
+  width: 198rpx
+  height: 62rpx
+  border-radius: 999rpx
+  background: linear-gradient(135deg, #f0ecaf 0%, #ded07b 100%)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.home-remix-btn-text
+  color: #111111
+  font-size: 32rpx
+  font-weight: 600
+
+.home-feature-grid
+  display: grid
+  grid-template-columns: 1fr 1fr
+  gap: 14rpx
+  margin-bottom: 14rpx
+
+.home-feature-right
+  display: grid
+  grid-template-rows: 1fr 1fr
+  gap: 14rpx
+
+.home-feature-card
+  position: relative
+  border-radius: 30rpx
+  padding: 22rpx
+  border: 1rpx solid rgba(154, 180, 233, 0.2)
+  overflow: hidden
+
+.home-feature-card--video
+  min-height: 286rpx
+  background: #232728
+
+.home-feature-card--image
+  min-height: 136rpx
+  background: #232728
+
+.home-feature-card--edit
+  min-height: 136rpx
+  background: #232728
+
+.home-feature-head
+  display: flex
+  align-items: center
+  gap: 0
+
+.home-feature-title
+  color: #ecf3ff
+  font-size: 36rpx
+  font-weight: 500
+  line-height: 1.2
+  letter-spacing: 0
+
+.home-feature-desc
+  display: block
+  margin-top: 8rpx
+  color: rgba(194, 211, 244, 0.68)
+  font-size: 24rpx
+  line-height: 1.32
+
+.home-action-row
+  height: 164rpx
+  border-radius: 24rpx
   display: flex
   align-items: center
   justify-content: space-between
-  margin-bottom: 12rpx
-
-.home-section-title
-  display: block
-  font-size: 30rpx
-  color: #111827
-  font-weight: 800
-  margin-bottom: 12rpx
-
-.home-section-link
-  font-size: 22rpx
-  color: #4f46e5
-  font-weight: 700
-
-.home-action-list
-  display: flex
-  flex-direction: column
-  gap: 14rpx
-
-.home-action-card
-  background: #fff
-  border-radius: 28rpx
-  padding: 20rpx
-  display: flex
-  align-items: center
-
-.home-action-left
-  width: 88rpx
-  height: 88rpx
-  border-radius: 24rpx
-  background: #eef2ff
-  display: flex
-  align-items: center
-  justify-content: center
-  margin-right: 18rpx
-
-.home-action-badge
-  font-size: 22rpx
-  color: #4338ca
-  font-weight: 800
-
-.home-action-main
-  flex: 1
+  padding: 0 20rpx
+  margin-bottom: 14rpx
+  background: #232728
+  border: 1rpx solid rgba(154, 178, 226, 0.25)
 
 .home-action-title
   display: block
-  font-size: 28rpx
-  color: #111827
-  font-weight: 700
-  margin-bottom: 6rpx
+  color: #edf4ff
+  font-size: 34rpx
+  font-weight: 500
 
 .home-action-desc
   display: block
-  font-size: 22rpx
-  color: #9ca3af
+  margin-top: 6rpx
+  color: rgba(203, 219, 244, 0.78)
+  font-size: 24rpx
 
-.home-action-arrow
-  font-size: 44rpx
-  color: #d1d5db
+.home-card-icon
+  position: absolute
+  right: 8rpx
+  bottom: 6rpx
+  width: 156rpx
+  height: 156rpx
+  opacity: 0.96
+  pointer-events: none
 
-.home-recent-card
-  background: #fff
-  border-radius: 28rpx
-  padding: 24rpx
+.home-card-icon--small
+  width: 92rpx
+  height: 92rpx
+  right: 8rpx
+  bottom: 4rpx
 
-.home-recent-title
-  display: block
-  font-size: 28rpx
-  color: #111827
-  font-weight: 700
-  margin-bottom: 8rpx
-
-.home-recent-desc
-  display: block
-  font-size: 23rpx
-  color: #6b7280
-  line-height: 1.55
-  margin-bottom: 16rpx
-
-.home-recent-btn
-  width: 220rpx
-  height: 66rpx
-  border-radius: 16rpx
-  background: #eef2ff
-  display: flex
-  align-items: center
-  justify-content: center
-
-.home-recent-btn-text
-  color: #4338ca
-  font-size: 23rpx
-  font-weight: 700
+.home-card-icon--action
+  position: static
+  width: 96rpx
+  height: 96rpx
+  margin-right: 2rpx

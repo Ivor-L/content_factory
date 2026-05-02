@@ -100,3 +100,9 @@
 | [20260424-home-agent-chat-unification-plan.md](./20260424-home-agent-chat-unification-plan.md) | 首页与 agent 对话统一到 NexTide 交互 |
 | [20260425-content-factory-wiki-organizer-plan.md](./20260425-content-factory-wiki-organizer-plan.md) | 内容工厂 raw 导入与一键 LLM-Wiki 梳理 |
 | [20260425-content-factory-fixed-output-format-plan.md](./20260425-content-factory-fixed-output-format-plan.md) | 内容工厂固定六段输出格式与下游排版消费对齐 |
+| [20260501-auth-multi-identity-plan.md](./20260501-auth-multi-identity-plan.md) | 多身份登录体系改造（邮箱/微信/手机号）与迁移计划 |
+| [20260501-miniapp-image-generate-page-plan.md](./20260501-miniapp-image-generate-page-plan.md) | 小程序图片生成页（AI作图/信息图/图文卡片）多功能切换方案 |
+| [20260501-miniapp-digital-human-image-video-toggle-plan.md](./20260501-miniapp-digital-human-image-video-toggle-plan.md) | 小程序数字人创建页扩展：图片/视频双入口与后端任务分流方案 |
+| [20260501-storyboard-orchestrator-plan.md](./20260501-storyboard-orchestrator-plan.md) | 分镜编排层（Storyboard Orchestrator）统一化方案与实施计划 |
+| [20260502-monetization-square-config-center-plan.md](./20260502-monetization-square-config-center-plan.md) | 变现广场配置中心方案：后台可配置类目/类型/素材/动作与提示词 |
+| [20260502-image-text-replication-parallel-and-xhs-html-plan.md](./20260502-image-text-replication-parallel-and-xhs-html-plan.md) | 图文复刻并行识别+顺序稳定、标准化MD入库、小红书卡片HTML渲染与二创基底强化 |

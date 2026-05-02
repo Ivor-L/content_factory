@@ -561,6 +561,8 @@ export interface CopyRemixTriggerOptions {
   ideaText?: string | null;
   wordCount?: number;
   language?: string | null;
+  sourceTitle?: string | null;
+  sourceText?: string | null;
 }
 
 export async function triggerCopyRemix(
@@ -601,6 +603,14 @@ export async function triggerCopyRemix(
     payload.language = options.language;
     payload.target_language = options.language;
     payload.targetLanguage = options.language;
+  }
+  if (options.sourceTitle) {
+    payload.source_title = options.sourceTitle;
+    payload.sourceTitle = options.sourceTitle;
+  }
+  if (options.sourceText) {
+    payload.source_text = options.sourceText;
+    payload.sourceText = options.sourceText;
   }
 
   const response = await fetch(webhookUrl, {

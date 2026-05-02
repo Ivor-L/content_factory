@@ -1,0 +1,49 @@
+{
+  "description": "Taro WeApp",
+  "packOptions": {
+    "ignore": [
+      {
+        "type": "folder",
+        "value": "src"
+      },
+      {
+        "type": "folder",
+        "value": "config"
+      },
+      {
+        "type": "folder",
+        "value": "node_modules"
+      },
+      {
+        "type": "folder",
+        "value": ".swc"
+      },
+      {
+        "type": "file",
+        "value": "package-lock.json"
+      }
+    ]
+  },
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "newFeature": true,
+    "coverView": true,
+    "nodeModules": false,
+    "bigPackageSizeSupport": true,
+    "checkSiteMap": true,
+    "checkInvalidKey": true,
+    "checkInvalidPlugin": true,
+    "compileHotReLoad": true,
+    "showShadowRootInWxmlPanel": true
+  },
+  "compileType": "miniprogram",
+  "libVersion": "3.3.0",
+  "appid": "touristappid",
+  "projectname": "digital-human-miniapp",
+  "miniprogramRoot": "dist/",
+  "condition": {}
+}

@@ -1,163 +1,199 @@
 .profile-page
   min-height: 100vh
-  background: #f8f9fd
-  padding: 32rpx 32rpx 140rpx
+  background: radial-gradient(circle at 76% -25%, rgba(236, 238, 159, 0.18) 0%, rgba(5, 5, 5, 0) 40%), #050505
+  padding: calc(env(safe-area-inset-top) + 112rpx) 24rpx 130rpx
   box-sizing: border-box
 
-.profile-hero
+.profile-user-head
+  min-height: 96rpx
+  display: flex
+  align-items: center
+  margin-bottom: 36rpx
+
+.profile-user-avatar
+  width: 78rpx
+  height: 78rpx
+  border-radius: 22rpx
+  border: 1rpx solid rgba(255, 255, 255, 0.14)
+  margin-right: 14rpx
+
+.profile-user-meta
+  display: flex
+  flex-direction: column
+  flex: 1
+
+.profile-user-name
+  color: #f2eee3
+  font-size: 30rpx
+  font-weight: 600
+  line-height: 1.2
+
+.profile-user-id
+  margin-top: 6rpx
+  color: #a7a08f
+  font-size: 19rpx
+
+.profile-switch-login
+  margin-left: 14rpx
+  padding: 8rpx 0 8rpx 16rpx
+
+.profile-switch-login-text
+  color: #9c9788
+  font-size: 30rpx
+  line-height: 1.2
+
+.profile-hero-card
+  border-radius: 34rpx
+  padding: 34rpx 26rpx 26rpx
+  background: linear-gradient(145deg, #f1efaf 0%, #e4db7f 100%)
+  margin-bottom: 40rpx
+
+.profile-hero-level-row
+  display: flex
+  align-items: center
+  justify-content: flex-end
+  margin-bottom: 12rpx
+
+.profile-hero-level-value
+  color: #101010
+  font-size: 22rpx
+  font-weight: 800
+
+.profile-hero-points-label
+  display: block
+  color: rgba(20, 20, 20, 0.68)
+  font-size: 21rpx
+
+.profile-hero-points-value
+  display: block
+  margin-top: 4rpx
+  color: #0f0f0f
+  font-size: 66rpx
+  line-height: 0.96
+  font-weight: 800
+  letter-spacing: 2rpx
+  font-family: 'DIN Alternate', 'DIN Condensed', 'Avenir Next Condensed', 'Helvetica Neue', 'Arial Narrow', sans-serif
+  font-variant-numeric: tabular-nums
+
+.profile-hero-actions
+  margin-top: 20rpx
+  display: flex
+  gap: 16rpx
+
+.profile-hero-btn
+  flex: 1
+  height: 76rpx
+  border-radius: 18rpx
+  border: 1rpx solid rgba(17, 17, 17, 0.18)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.profile-hero-btn--primary
+  background: #090909
+  border-color: #090909
+
+.profile-hero-btn-text
+  color: #1f1f1f
+  font-size: 25rpx
+  font-weight: 700
+
+.profile-hero-btn-text--primary
+  color: #f5f3e8
+
+.profile-lib-card
+  border-radius: 24rpx
+  background: #232728
+  border: 1rpx solid rgba(150, 175, 232, 0.24)
+  padding: 20rpx 12rpx 18rpx
+  margin-bottom: 40rpx
+  display: grid
+  grid-template-columns: repeat(4, 1fr)
+  gap: 14rpx
+
+.profile-lib-item
+  min-height: 148rpx
   display: flex
   flex-direction: column
   align-items: center
-  margin-bottom: 24rpx
-
-.profile-avatar-wrap
-  width: 140rpx
-  height: 140rpx
-  border-radius: 44rpx
-  background: linear-gradient(135deg, #ff9baa 0%, #9478ff 55%, #76bcff 100%)
-  display: flex
-  align-items: center
   justify-content: center
-  margin-bottom: 20rpx
 
-.profile-avatar-text
-  color: #fff
-  font-size: 40rpx
-  font-weight: 900
-
-.profile-name
-  display: block
-  font-size: 34rpx
-  color: #111827
-  font-weight: 800
-  margin-bottom: 6rpx
-
-.profile-id
-  font-size: 22rpx
-  color: #9ca3af
-
-.profile-points-card
-  background: linear-gradient(135deg, #ff9baa 0%, #9478ff 55%, #76bcff 100%)
-  border-radius: 40rpx
-  padding: 30rpx
-  margin-bottom: 20rpx
-
-.profile-points-label
-  display: block
-  color: rgba(255, 255, 255, 0.9)
-  font-size: 22rpx
+.profile-lib-icon
+  width: 76rpx
+  height: 76rpx
   margin-bottom: 10rpx
 
-.profile-points-value
-  display: block
-  color: #fff
-  font-size: 50rpx
-  font-weight: 900
-  margin-bottom: 18rpx
+.profile-lib-title
+  color: #f4f6fb
+  font-size: 27rpx
+  font-weight: 600
+  margin-bottom: 6rpx
 
-.profile-points-btn
-  height: 68rpx
-  border-radius: 16rpx
-  background: rgba(255, 255, 255, 0.25)
+.profile-lib-count
+  color: #c4d0e8
+  font-size: 20rpx
+
+.profile-promo-grid
+  display: grid
+  grid-template-columns: 1fr 1fr
+  gap: 32rpx
+  margin-bottom: 40rpx
+
+.profile-promo-card
+  border-radius: 24rpx
+  min-height: 162rpx
+  padding: 20rpx
   display: flex
-  align-items: center
-  justify-content: center
-
-.profile-points-btn-text
-  color: #fff
-  font-size: 24rpx
-  font-weight: 700
-
-.settings-card
-  background: #fff
-  border-radius: 28rpx
-  padding: 24rpx
-  margin-bottom: 20rpx
-
-.settings-title
-  display: block
-  font-size: 26rpx
-  font-weight: 700
-  color: #111827
-  margin-bottom: 18rpx
-
-.key-row
-  display: flex
-  align-items: center
   justify-content: space-between
-  background: #f3f4f6
-  border-radius: 16rpx
-  padding: 20rpx 24rpx
+  align-items: center
+  background: #232728
+  border: 1rpx solid rgba(255, 255, 255, 0.14)
 
-.key-value
-  font-size: 24rpx
-  color: #111827
-  font-family: monospace
+.profile-promo-title
+  display: block
+  color: #f3efe5
+  font-size: 32rpx
+  font-weight: 500
+  margin-bottom: 8rpx
 
-.key-edit-hint
+.profile-promo-desc
+  color: #aba498
   font-size: 22rpx
-  color: #9ca3af
 
-.key-edit-row
-  display: flex
-  gap: 12rpx
+.profile-promo-icon
+  width: 86rpx
+  height: 86rpx
+  opacity: 0.9
 
-.key-input
-  flex: 1
-  height: 72rpx
-  background: #f3f4f6
-  border-radius: 16rpx
-  padding: 0 20rpx
-  font-size: 24rpx
-
-.key-save-btn
-  width: 110rpx
-  height: 72rpx
-  border-radius: 16rpx
-  background: #4f46e5
-  display: flex
-  align-items: center
-  justify-content: center
-
-.key-save-text
-  color: #fff
-  font-size: 24rpx
-  font-weight: 700
-
-.menu-card
-  background: #fff
-  border-radius: 28rpx
+.profile-menu-card
+  border-radius: 24rpx
+  background: #232728
+  border: 1rpx solid rgba(255, 255, 255, 0.14)
   padding: 8rpx 16rpx
-  margin-bottom: 20rpx
 
-.menu-row
-  height: 92rpx
+.profile-menu-row
+  min-height: 92rpx
   display: flex
   align-items: center
   justify-content: space-between
-  border-bottom: 1rpx solid #f3f4f6
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.1)
 
-.menu-row:last-child
+.profile-menu-row:last-child
   border-bottom: none
 
-.menu-text
-  font-size: 26rpx
-  color: #111827
-  font-weight: 600
-
-.menu-arrow
-  font-size: 32rpx
-  color: #d1d5db
-
-.logout-btn
-  height: 88rpx
-  border-radius: 22rpx
-  background: #fff
+.profile-menu-main
   display: flex
   align-items: center
-  justify-content: center
 
-.logout-text
-  font-size: 24rpx
-  color: #ef4444
-  font-weight: 800
+.profile-menu-icon
+  width: 40rpx
+  height: 40rpx
+  margin-right: 14rpx
+
+.profile-menu-left
+  color: #e6e1d6
+  font-size: 30rpx
+
+.profile-menu-arrow
+  color: #b6afa3
+  font-size: 36rpx

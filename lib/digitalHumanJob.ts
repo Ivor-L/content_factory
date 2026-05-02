@@ -7,10 +7,13 @@ import { planDigitalHumanScript } from '@/lib/digitalHumanScript';
 import { syncTaskToSummary } from '@/lib/taskSummary';
 
 export type DigitalHumanMode = 'LIP_SYNC' | 'VOICE_CLONE';
+export type DigitalHumanSourceType = 'IMAGE' | 'VIDEO';
 
 export interface CreateDigitalHumanJobOptions {
   type: DigitalHumanMode;
-  imageUrl: string;
+  imageUrl?: string | null;
+  videoUrl?: string | null;
+  sourceType?: DigitalHumanSourceType;
   audioUrl: string;
   script?: string | null;
   emoAudioUrl?: string | null;
@@ -34,6 +37,8 @@ export async function createDigitalHumanJob(options: CreateDigitalHumanJobOption
   const {
     type,
     imageUrl,
+    videoUrl,
+    sourceType,
     audioUrl,
     script,
     emoAudioUrl,
@@ -41,8 +46,15 @@ export async function createDigitalHumanJob(options: CreateDigitalHumanJobOption
     userId,
     sourceTaskId,
   } = options;
+  const resolvedSourceType: DigitalHumanSourceType = sourceType === 'VIDEO' ? 'VIDEO' : 'IMAGE';
+  const normalizedImageUrl = typeof imageUrl === 'string' ? imageUrl.trim() : '';
+  const normalizedVideoUrl = typeof videoUrl === 'string' ? videoUrl.trim() : '';
+  const resolvedSourceUrl =
+    resolvedSourceType === 'VIDEO'
+      ? (normalizedVideoUrl || normalizedImageUrl)
+      : (normalizedImageUrl || normalizedVideoUrl);
 
-  if (!type || !imageUrl || !audioUrl) {
+  if (!type || !audioUrl || !resolvedSourceUrl) {
     throw new Error('Missing required fields for digital human job');
   }
   if (type === 'VOICE_CLONE' && !script) {
@@ -112,7 +124,7 @@ export async function createDigitalHumanJob(options: CreateDigitalHumanJobOption
     const digitalHuman = await prisma.digitalHumanVideo.create({
       data: {
         type,
-        imageUrl,
+        imageUrl: resolvedSourceUrl,
         audioUrl,
         scriptContent: script || '',
         status: 'GENERATING',
@@ -134,17 +146,25 @@ export async function createDigitalHumanJob(options: CreateDigitalHumanJobOption
     }
 
     const webhookUrl = process.env.N8N_DIGITAL_HUMAN_WEBHOOK || 'https://hooks.atomx.top/webhook/digital-human-gen';
+    const videoWebhookUrl =
+      process.env.N8N_DIGITAL_HUMAN_VIDEO_WEBHOOK || 'https://hooks.atomx.top/webhook/digital-human-video-lipsync-gen';
+    const targetWebhookUrl = resolvedSourceType === 'VIDEO' ? videoWebhookUrl : webhookUrl;
     const audioDuration = durationSeconds ?? 0;
 
     let payload: Record<string, any> = {
       task_id: digitalHuman.id,
       type,
-      image_url: imageUrl,
+      source_type: resolvedSourceType,
       timestamp: new Date().toISOString(),
       api_key: apiKey,
       workflow_id: workflowIdForCredits,
       audio_duration: audioDuration,
     };
+    if (resolvedSourceType === 'VIDEO') {
+      payload.video_url = resolvedSourceUrl;
+    } else {
+      payload.image_url = resolvedSourceUrl;
+    }
 
     if (type === 'LIP_SYNC') {
       payload = {
@@ -163,7 +183,7 @@ export async function createDigitalHumanJob(options: CreateDigitalHumanJobOption
     }
 
     try {
-      fetch(webhookUrl, {
+      fetch(targetWebhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

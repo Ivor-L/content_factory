@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getRequestUserContext } from '@/lib/authServer';
-import { createDigitalHumanJobs, type DigitalHumanMode } from '@/lib/digitalHumanJob';
+import {
+  createDigitalHumanJobs,
+  type DigitalHumanMode,
+  type DigitalHumanSourceType,
+} from '@/lib/digitalHumanJob';
+
+function inferSourceType(url: string | null | undefined): DigitalHumanSourceType {
+  const normalized = String(url ?? '').trim().toLowerCase();
+  if (/\.(mp4|mov|m4v|webm)(\?|$)/i.test(normalized)) return 'VIDEO';
+  return 'IMAGE';
+}
 
 function serializeVideo(video: Awaited<ReturnType<typeof prisma.digitalHumanVideo.findFirst>> & { id: string }) {
   if (!video) return null;
@@ -9,6 +19,7 @@ function serializeVideo(video: Awaited<ReturnType<typeof prisma.digitalHumanVide
     id: video.id,
     type: video.type,
     status: video.status,
+    sourceType: inferSourceType(video.imageUrl),
     imageUrl: video.imageUrl,
     audioUrl: video.audioUrl,
     scriptContent: video.scriptContent,
@@ -42,7 +53,9 @@ export async function GET(request: NextRequest) {
 type CreatePayload = {
   type?: DigitalHumanMode;
   mode?: DigitalHumanMode;
+  sourceType?: DigitalHumanSourceType | string;
   imageUrl?: string;
+  videoUrl?: string;
   audioUrl?: string;
   emoAudioUrl?: string | null;
   scriptContent?: string | null;
@@ -67,8 +80,16 @@ export async function POST(request: NextRequest) {
   if (!type || (type !== 'LIP_SYNC' && type !== 'VOICE_CLONE')) {
     return NextResponse.json({ error: 'type must be LIP_SYNC or VOICE_CLONE' }, { status: 400 });
   }
-  if (!payload.imageUrl || typeof payload.imageUrl !== 'string') {
-    return NextResponse.json({ error: 'imageUrl is required' }, { status: 400 });
+  const sourceTypeRaw = String(payload.sourceType ?? 'IMAGE').toUpperCase();
+  const sourceType: DigitalHumanSourceType = sourceTypeRaw === 'VIDEO' ? 'VIDEO' : 'IMAGE';
+  const imageUrl = typeof payload.imageUrl === 'string' ? payload.imageUrl.trim() : '';
+  const videoUrl = typeof payload.videoUrl === 'string' ? payload.videoUrl.trim() : '';
+  const resolvedSourceUrl = sourceType === 'VIDEO' ? (videoUrl || imageUrl) : (imageUrl || videoUrl);
+  if (!resolvedSourceUrl) {
+    return NextResponse.json(
+      { error: sourceType === 'VIDEO' ? 'videoUrl is required' : 'imageUrl is required' },
+      { status: 400 }
+    );
   }
   if (!payload.audioUrl || typeof payload.audioUrl !== 'string') {
     return NextResponse.json({ error: 'audioUrl is required' }, { status: 400 });
@@ -95,7 +116,9 @@ export async function POST(request: NextRequest) {
   try {
     const batch = await createDigitalHumanJobs({
       type,
-      imageUrl: payload.imageUrl,
+      sourceType,
+      imageUrl: sourceType === 'IMAGE' ? resolvedSourceUrl : undefined,
+      videoUrl: sourceType === 'VIDEO' ? resolvedSourceUrl : undefined,
       audioUrl: payload.audioUrl,
       script: payload.scriptContent,
       emoAudioUrl: payload.emoAudioUrl,

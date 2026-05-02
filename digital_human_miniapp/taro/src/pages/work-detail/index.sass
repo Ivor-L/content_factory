@@ -1,0 +1,363 @@
+.work-detail-page
+  min-height: 100vh
+  background: #050505
+  display: flex
+  flex-direction: column
+
+.work-detail-nav
+  position: fixed
+  top: 0
+  left: 0
+  right: 0
+  z-index: 60
+  height: calc(env(safe-area-inset-top) + 92rpx)
+  padding: env(safe-area-inset-top) 24rpx 0
+  display: flex
+  align-items: center
+  justify-content: space-between
+  border-bottom: 1rpx solid rgba(137, 165, 215, 0.2)
+  background: #121212
+
+.work-detail-back
+  min-width: 90rpx
+  height: 54rpx
+  border-radius: 12rpx
+  background: #1b1b1b
+  display: flex
+  align-items: center
+  justify-content: center
+
+.work-detail-back-text
+  font-size: 23rpx
+  color: #e8f2ff
+
+.work-detail-nav-title
+  font-size: 30rpx
+  color: #e8f2ff
+  font-weight: 800
+
+.work-detail-nav-spacer
+  width: 90rpx
+
+.work-detail-scroll
+  flex: 1
+  margin-top: calc(env(safe-area-inset-top) + 92rpx)
+
+.work-detail-content
+  flex: 1
+  display: flex
+  flex-direction: column
+  padding-bottom: calc(env(safe-area-inset-bottom) + 168rpx)
+
+.work-detail-card
+  margin: 20rpx 24rpx 130rpx
+  border-radius: 22rpx
+  overflow: hidden
+  background: #141414
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+
+.work-detail-cover-wrap
+  position: relative
+
+.work-detail-cover
+  width: 100%
+  display: block
+
+.work-detail-swiper-wrap
+  position: relative
+  width: 100%
+  aspect-ratio: 3 / 4
+  overflow: hidden
+
+.work-detail-swiper
+  width: 100%
+  height: 100%
+
+.work-detail-swiper-indicator
+  position: absolute
+  right: 14rpx
+  bottom: 14rpx
+  height: 36rpx
+  min-width: 72rpx
+  padding: 0 12rpx
+  border-radius: 999rpx
+  background: rgba(0, 0, 0, 0.48)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.work-detail-swiper-indicator-text
+  color: #ffffff
+  font-size: 19rpx
+
+.work-detail-cover-placeholder
+  width: 100%
+  aspect-ratio: 3 / 4
+  display: flex
+  align-items: center
+  justify-content: center
+  background: #666c78
+
+.work-detail-placeholder-icon
+  width: 96rpx
+  height: 96rpx
+  border-radius: 20rpx
+  background: rgba(255, 255, 255, 0.92)
+  position: relative
+
+.work-detail-placeholder-video-triangle
+  position: absolute
+  left: 38rpx
+  top: 28rpx
+  width: 0
+  height: 0
+  border-top: 20rpx solid transparent
+  border-bottom: 20rpx solid transparent
+  border-left: 30rpx solid #5f6673
+
+.work-detail-placeholder-image-dot
+  position: absolute
+  width: 12rpx
+  height: 12rpx
+  border-radius: 999rpx
+  right: 16rpx
+  top: 16rpx
+  background: #5f6673
+
+.work-detail-placeholder-image-mountain
+  position: absolute
+  left: 16rpx
+  bottom: 16rpx
+  width: 62rpx
+  height: 34rpx
+  background: #5f6673
+  clip-path: polygon(0 100%, 30% 48%, 48% 68%, 72% 28%, 100% 100%)
+
+.work-detail-placeholder-doc
+  position: absolute
+  left: 22rpx
+  top: 18rpx
+  width: 50rpx
+  height: 62rpx
+  border-radius: 10rpx
+  background: #5f6673
+
+.work-detail-placeholder-doc-line
+  position: absolute
+  left: 30rpx
+  height: 4rpx
+  border-radius: 999rpx
+  background: rgba(255, 255, 255, 0.86)
+
+.work-detail-placeholder-doc-line--top
+  top: 30rpx
+  width: 26rpx
+
+.work-detail-placeholder-doc-line--mid
+  top: 42rpx
+  width: 30rpx
+
+.work-detail-placeholder-doc-line--bottom
+  top: 54rpx
+  width: 22rpx
+
+.work-detail-placeholder-pen
+  position: absolute
+  right: 16rpx
+  bottom: 16rpx
+  width: 30rpx
+  height: 8rpx
+  border-radius: 999rpx
+  background: #5f6673
+  transform: rotate(-35deg)
+
+.work-detail-video-icon
+  position: absolute
+  right: 16rpx
+  top: 16rpx
+  width: 48rpx
+  height: 48rpx
+  border-radius: 999rpx
+  background: rgba(0, 0, 0, 0.42)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.work-detail-video-icon-text
+  color: #ffffff
+  font-size: 22rpx
+  line-height: 1
+  margin-left: 2rpx
+
+.work-detail-cover-download
+  position: absolute
+  right: 16rpx
+  top: 16rpx
+  width: 48rpx
+  height: 48rpx
+  border-radius: 999rpx
+  background: rgba(0, 0, 0, 0.46)
+  display: flex
+  align-items: center
+  justify-content: center
+  z-index: 3
+
+.work-detail-cover-download-text
+  color: #ffffff
+  font-size: 28rpx
+  line-height: 1
+
+.work-detail-body
+  padding: 20rpx
+
+.work-detail-title
+  display: block
+  font-size: 32rpx
+  line-height: 1.46
+  color: #e8f2ff
+  font-weight: 800
+  margin-bottom: 10rpx
+
+.work-detail-meta
+  display: flex
+  align-items: center
+  justify-content: space-between
+  margin-bottom: 12rpx
+
+.work-detail-type
+  font-size: 22rpx
+  color: #8ea2c8
+
+.work-detail-status
+  font-size: 22rpx
+  color: #ecee9f
+  font-weight: 700
+
+.work-detail-preview
+  display: block
+  font-size: 23rpx
+  line-height: 1.56
+  color: #c7d6f2
+  margin-bottom: 12rpx
+
+.work-detail-poster-ops
+  margin-bottom: 14rpx
+  display: flex
+  gap: 10rpx
+  flex-wrap: wrap
+
+.work-detail-poster-op-btn
+  min-width: 130rpx
+  height: 56rpx
+  padding: 0 16rpx
+  border-radius: 12rpx
+  border: 1rpx solid rgba(142, 162, 200, 0.38)
+  background: rgba(142, 162, 200, 0.12)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.work-detail-poster-op-btn--primary
+  border-color: rgba(236, 238, 159, 0.5)
+  background: rgba(236, 238, 159, 0.16)
+
+.work-detail-poster-op-btn-text
+  font-size: 22rpx
+  color: #c8d8f7
+  font-weight: 700
+
+.work-detail-poster-op-btn-text--primary
+  color: #ecee9f
+
+.work-detail-date
+  display: block
+  text-align: right
+  font-size: 21rpx
+  color: #7f93b8
+
+.work-detail-qrcode-card
+  margin-bottom: 14rpx
+  padding: 16rpx
+  border-radius: 14rpx
+  background: rgba(236, 238, 159, 0.08)
+  border: 1rpx solid rgba(236, 238, 159, 0.35)
+
+.work-detail-qrcode-title
+  display: block
+  font-size: 22rpx
+  color: #ecee9f
+  font-weight: 700
+  margin-bottom: 8rpx
+
+.work-detail-qrcode-link
+  display: block
+  font-size: 21rpx
+  color: #c7d6f2
+  line-height: 1.5
+  word-break: break-all
+  margin-bottom: 12rpx
+
+.work-detail-qrcode-btn
+  width: 180rpx
+  height: 56rpx
+  border-radius: 10rpx
+  background: #ecee9f
+  display: flex
+  align-items: center
+  justify-content: center
+
+.work-detail-qrcode-btn-text
+  font-size: 22rpx
+  color: #151515
+  font-weight: 700
+
+.work-detail-action-bar
+  position: fixed
+  left: 0
+  right: 0
+  bottom: 0
+  padding: 16rpx 24rpx calc(env(safe-area-inset-bottom) + 18rpx)
+  box-sizing: border-box
+  background: #050505
+  border-top: 1rpx solid rgba(137, 165, 215, 0.2)
+  display: flex
+  gap: 12rpx
+  z-index: 60
+
+.work-detail-action-btn
+  flex: 1
+  height: 74rpx
+  border-radius: 16rpx
+  display: flex
+  align-items: center
+  justify-content: center
+
+.work-detail-action-btn--disabled
+  opacity: 0.6
+
+.work-detail-delete-btn
+  border: 1rpx solid rgba(255, 90, 95, 0.48)
+  background: rgba(255, 90, 95, 0.12)
+
+.work-detail-delete-btn-text
+  font-size: 26rpx
+  color: #ff8f94
+  font-weight: 800
+
+.work-detail-download-btn
+  background: #ecee9f
+
+.work-detail-download-btn-text
+  font-size: 26rpx
+  color: #131313
+  font-weight: 800
+
+.work-detail-empty
+  flex: 1
+  display: flex
+  align-items: center
+  justify-content: center
+
+.work-detail-empty-text
+  color: #7e93b8
+  font-size: 24rpx

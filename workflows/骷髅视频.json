@@ -1,0 +1,537 @@
+{
+  "name": "爆款复刻Veo3-脚本生成",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first()?.json || {};\nconst body = input && typeof input === 'object' && input.body && typeof input.body === 'object' ? input.body : input;\n\nfunction toText(v) {\n  if (v == null) return '';\n  if (Array.isArray(v)) {\n    return v.map((x) => {\n      if (x == null) return '';\n      if (typeof x === 'string') return x;\n      if (typeof x === 'number') return String(x);\n      if (typeof x === 'object') return x.text ?? x.name ?? x.value ?? '';\n      return String(x);\n    }).filter(Boolean).join('\\n').trim();\n  }\n  if (typeof v === 'object') return String(v.text ?? v.value ?? v.name ?? '').trim();\n  return String(v).trim();\n}\n\nfunction toNumber(v) {\n  if (v == null) return NaN;\n  if (typeof v === 'number' && Number.isFinite(v)) return v;\n  const s = toText(v);\n  if (!s) return NaN;\n  const direct = Number(s);\n  if (Number.isFinite(direct)) return direct;\n  const m = s.match(/(\\d+(\\.\\d+)?)/);\n  if (m) {\n    const n = Number(m[1]);\n    if (Number.isFinite(n)) return n;\n  }\n  return NaN;\n}\n\nfunction parseDurationToSec(v, fallback = 32) {\n  if (v == null) return fallback;\n  if (typeof v === 'number' && Number.isFinite(v)) return Math.max(1, Math.round(v));\n  const s0 = toText(v);\n  if (!s0) return fallback;\n  const s = s0.trim();\n  if (/^\\d{1,2}:\\d{2}(:\\d{2})?$/.test(s)) {\n    const parts = s.split(':').map((x) => parseInt(x, 10));\n    if (parts.some((n) => !Number.isFinite(n))) return fallback;\n    if (parts.length === 2) return parts[0] * 60 + parts[1];\n    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];\n  }\n  const minMatch = s.match(/(\\d+)\\s*(分|分钟|min|mins|minute|minutes)/i);\n  const secMatch = s.match(/(\\d+)\\s*(秒|s|sec|secs|second|seconds)/i);\n  if (minMatch || secMatch) {\n    const mins = minMatch ? parseInt(minMatch[1], 10) : 0;\n    const secs = secMatch ? parseInt(secMatch[1], 10) : 0;\n    const total = mins * 60 + secs;\n    return total > 0 ? total : fallback;\n  }\n  const n = toNumber(s);\n  if (Number.isFinite(n) && n > 0) return Math.max(1, Math.round(n));\n  return fallback;\n}\n\nconst task_id = toText(body.task_id) || toText(body.taskId) || toText(body.record_id) || toText(body.recordId) || '';\nconst callback_url = toText(body.callback_url) || toText(body.callbackUrl) || '';\nconst admin_token = toText(body.admin_token) || toText(body.adminToken) || '';\nconst pipeline_key = toText(body.pipeline_key) || toText(body.pipelineKey) || 'skeleton_video';\nconst api_key = toText(body.api_key) || toText(body.apiKey);\nconst app_id = toText(body.app_id) || toText(body.appId);\nconst app_secret = toText(body.app_secret) || toText(body.appSecret);\nconst workflow_id = toText(body.workflow_id) || toText(body.workflowId);\nconst workflow_name = toText(body.workflow_name) || toText(body.workflowName);\n\nconst productDesc = toText(body.product_selling_points || body.productSellingPoints || body.product_description || body.productDescription || body['产品卖点'] || body['产品描述'] || '');\nconst productName = toText(body.product_name || body.productName || body['产品名称'] || '');\nconst language = toText(body.target_language || body.videoLanguage || body.language || body['视频语言'] || 'Chinese');\nconst presenterMode = toText(body.presenterMode || body['人物模式'] || 'talking_head');\n\nconst durationRaw = body.duration_sec ?? body.durationSec ?? body.duration ?? body.videoDuration ?? body['时长'] ?? body['视频时长'] ?? body['时长(秒)'];\nconst durationSec = parseDurationToSec(durationRaw, 32);\nconst segSecondsRaw = body.seg_seconds ?? body.segSeconds ?? body['分段时长'] ?? 8;\nconst segSeconds = Math.max(1, Math.round(toNumber(segSecondsRaw) || 8));\nconst nSegments = Math.max(1, Math.ceil(durationSec / segSeconds));\n\nconst refScript = toText(body.script || body.script_content || body.scriptContent || body.refScript || body['参考脚本'] || body['参考爆款脚本'] || body['爆款脚本'] || '');\nconst personDesc = toText(body.person_desc || body.personDesc || body['达人特征'] || body['达人特征描述'] || body['人物特征'] || '');\nconst viralScriptSummaryRaw = toText(body.viral_script_summary || body.viralScriptSummary || body['爆款脚本总结'] || body['爆款脚本总结JSON'] || body['爆款脚本拆解'] || body['爆款总结'] || '');\n\nlet viralScriptSummary = null;\nif (viralScriptSummaryRaw) {\n  const s = viralScriptSummaryRaw.trim();\n  if (s.startsWith('{') || s.startsWith('[')) {\n    try {\n      viralScriptSummary = JSON.parse(s);\n    } catch {\n      viralScriptSummary = null;\n    }\n  }\n}\n\nreturn [{\n  ...input,\n  ...body,\n  task_id,\n  record_id: task_id,\n  callback_url,\n  admin_token,\n  pipeline_key,\n  api_key,\n  app_id,\n  app_secret,\n  workflow_id,\n  workflow_name,\n  productName,\n  productDesc,\n  personDesc,\n  presenterMode,\n  language,\n  durationSec,\n  segSeconds,\n  nSegments,\n  refScript,\n  viralScriptSummaryRaw,\n  viralScriptSummary,\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        544
+      ],
+      "id": "8ecf2dc6-7f62-4bdb-80de-b817d70836e5",
+      "name": "标准化输入"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url || $('Webhook').item.json.body.callback_url || $('Webhook').item.json.body.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-admin-token",
+              "value": "={{ $json.admin_token || $('Webhook').item.json.body.admin_token || $('Webhook').item.json.body.adminToken }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { task_id: $json.task_id, status: 'success', stage: 'breakdown', pipeline_key: $json.pipeline_key || 'skeleton_video', workflow_id: $json.workflow_id || '', workflow_name: $json.workflow_name || '', shots: $json.shots || [] } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        2096,
+        544
+      ],
+      "id": "dbd6566e-520c-423f-a94a-d4d4783cce0e",
+      "name": "更新状态"
+    },
+    {
+      "parameters": {
+        "jsCode": "function stripFences(s) { return String(s || '').trim().replace(/^```[a-zA-Z]*\\n?/, '').replace(/```$/, '').trim(); }\nfunction safeParse(s) { try { return JSON.parse(s); } catch { return null; } }\nfunction pickRawText(in0) {\n  if (!in0) return '';\n  if (typeof in0 === 'object' && in0.shots && Array.isArray(in0.shots)) return in0;\n  return in0.output || in0.text || in0.response || in0?.candidates?.[0]?.content?.parts?.[0]?.text || '';\n}\nfunction extractFirstJsonObject(str) {\n  const s = String(str || '');\n  const i = s.indexOf('{'), j = s.lastIndexOf('}');\n  return (i < 0 || j <= i) ? null : s.slice(i, j + 1);\n}\nfunction toBool(v) {\n  const t = String(v == null ? '' : v).trim().toLowerCase();\n  if (['1','true','yes','y','是','有'].includes(t)) return true;\n  if (['0','false','no','n','否','无'].includes(t)) return false;\n  return null;\n}\nfunction toText(v) {\n  if (v == null) return '';\n  if (Array.isArray(v)) return v.map((x) => toText(x)).filter(Boolean).join('\\n').trim();\n  if (typeof v === 'object') return String(v.text ?? v.value ?? v.name ?? '').trim();\n  return String(v).trim();\n}\n\nconst in0 = $input.first()?.json || {};\nlet raw = pickRawText(in0);\nlet obj = raw && typeof raw === 'object' && Array.isArray(raw.shots) ? raw : safeParse(extractFirstJsonObject(stripFences(raw)));\nif (!obj || !Array.isArray(obj.shots)) throw new Error('JSON Parse failed or no shots array.');\n\nconst root = $('标准化输入').first()?.json || {};\nconst AI达人 = toText(root['AI达人'] || root.ai_creator || root.creatorName || '');\nconst 产品名称 = toText(root.productName || root.product_name || root['产品名称'] || '');\nconst task_id = toText(root.task_id || root.record_id || root.recordId || '');\nconst callback_url = toText(root.callback_url || root.callbackUrl || '');\nconst admin_token = toText(root.admin_token || root.adminToken || '');\nconst pipeline_key = toText(root.pipeline_key || root.pipelineKey || 'skeleton_video');\nconst workflow_id = toText(root.workflow_id || root.workflowId || '');\nconst workflow_name = toText(root.workflow_name || root.workflowName || '');\n\nconst shots = obj.shots.map((s, idx) => ({\n  idx: s.shot_number || s.idx || s.order || idx + 1,\n  shot_number: s.shot_number || idx + 1,\n  timestamp: s.timestamp || '',\n  time_range: s.timestamp || s.time_range || s.timeRange || '',\n  duration_seconds: s.duration_seconds || s.duration || 8,\n  duration: s.duration_seconds || s.duration || 8,\n  voiceover: String(s.voiceover || s.speech || s.text || ''),\n  action: String(s.action || ''),\n  first_frame: String(s.first_frame || s.image_prompt || '').replace(/[\\r\\n]+/g, ' ').trim(),\n  video_prompt: String(s.video_prompt || s.videoPrompt || '').replace(/[\\r\\n]+/g, ' ').trim(),\n  has_product: toBool(s['是否有产品'] ?? s.has_product ?? s.hasProduct),\n  '是否有产品': toBool(s['是否有产品'] ?? s.has_product ?? s.hasProduct),\n  AI达人,\n  产品名称,\n}));\n\nreturn [{ json: {\n  task_id,\n  callback_url,\n  admin_token,\n  pipeline_key,\n  workflow_id,\n  workflow_name,\n  total_shots: shots.length,\n  shots,\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1424,
+        544
+      ],
+      "id": "6915db98-ab74-4260-841b-fd729c1b82aa",
+      "name": "解析提示词"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gemini-3-flash-preview-thinking",
+          "mode": "list",
+          "cachedResultName": "gemini-3-flash-preview-thinking"
+        },
+        "responsesApiEnabled": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        800,
+        768
+      ],
+      "id": "534998b1-97dd-4335-a119-48d239c89ff6",
+      "name": "gemini3-flash",
+      "credentials": {
+        "openAiApi": {
+          "id": "TVs8cHigrdXKUMDJ",
+          "name": "云雾api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=presenterMode: {{ $json.presenterMode }}\npersonDesc: {{ $json.personDesc }}\nproductName: {{ $json.productName }}\nproductDesc: {{ $json.productDesc }}\nlanguage: {{ $json.language }}\ndurationSec: {{ $json.durationSec }}\nnSegments: {{ $json.nSegments }}\nsegSeconds: {{ $json.segSeconds }}\n\nrefScript:\n{{ $json.viralScriptSummaryRaw }}\n\nRequirement: Dynamic product integration based on scene relevance. Emphasize pacing, user hook, and emotional resonance.",
+        "options": {
+          "systemMessage": "=You are a top-tier TikTok/YouTube Shorts scriptwriter specialized in 3D transparent skeleton health education commercial videos. You master the art of generating high-retention, highly viral narratives using \"timeline progression + scene contrast + emotional hooks\" while seamlessly integrating products.\n\nGOAL:\nWrite a script split into EXACTLY nSegments scenes based on the user inputs. \n\nINPUTS:\n- presenterMode & personDesc (Character constraints)\n- productName & productDesc (The core product to integrate)\n- language (Output language for voiceover)\n- durationSec, nSegments, segSeconds (Strict timing constraints)\n- refScript (Viral structure reference)\n\n---\nCORE VIRAL PRINCIPLES (MUST FOLLOW):\n\n1. The 3-Second Hook (Scene 1)\n- The first voiceover MUST be an anti-common sense question or extreme hypothetical scenario.\n- Formula: \"What would happen if [extreme contrast]\" or \"What if [impossible combination]\"\n- NO boring statements. Example: \"What if your head suddenly weighed sixty pounds?\"\n\n2. Timeline Progression Structure (Extended Arc)\n- Use time nodes to drive the story: Stage 1 / Hour 4 / Hour 8 / Day 3.\n- Build a deep crisis before the solution: \n  -> Phase 1: Early discomfort (buildup).\n  -> Phase 2: Physical mutation/worsening (iron cables, lactic acid).\n  -> Phase 3: Breaking point/SOS signals.\n  -> Phase 4: Product intervention & micro-healing.\n- The emotion must fluctuate: Curiosity -> Tension -> Extreme Shock/Pain -> Relief/Resonance.\n\n3. The 3-Layer Scene Design & Micro-Physiological Visualization\nFor every scene, the action must be highly visualizable (Can a camera shoot it?):\n- Micro-Physiology (CRITICAL): Drive the camera deep into the body. Do not just describe pain; describe the exact internal biological breakdown (e.g., lactic acid buildup, frayed nerve endings, glowing red inflammation, compressed discs, stiff iron-like muscles).\n- Action & Reaction: Show bones grinding, fluids squeezing, or warning lights flashing.\n- NO abstract feelings. Show, don't tell. Use strong verbs (shatter, choke, ignite, melt). NO weak adjectives (very, really, amazing).\n\n---\nDYNAMIC PRODUCT INTEGRATION (CRITICAL FOR COMMERCE):\nThis is a commercial video, but we DO NOT hard sell.\n- The product (productName & productDesc) is the \"solution\" or \"intervention\" to the physical conflict.\n- Scene-by-Scene Evaluation: For EACH scene, explicitly decide if the product should appear and output the boolean field \"是否有产品\".\n- Causality: Only introduce the product when it makes physiological sense (e.g., prevention, mitigation, relief, recovery). Do NOT force it into every scene. \n- Visual Healing: When the product is used, visually show the microscopic mechanisms returning to normal (e.g., red inflammation fading, muscles breathing).\n- If a scene is pure buildup or scientific explanation, set \"是否有产品\": false.\n\n---\nVOICEOVER RULES:\n- Language: MUST match the requested `language`.\n- Extremely Short: 5-10 words per sentence average. ZERO fluff.\n- Second Person: Use \"you\" / \"your body\" to make the audience feel it.\n- Timing: Must fit within `segSeconds`. (Chinese <= 32 chars per 8s; English <= 22 words per 8s).\n- Ending Hook: The final scene MUST contain a hook (Identity hook, suspense hook, or action CTA like \"How many hours did you sit today?\").\n\n---\nOUTPUT SCHEMA:\nYou must output a strictly valid JSON object. No markdown formatting blocks outside the JSON. Do not write visual prompts here, only narrative and actions.\n\n{\n  \"total_shots\": <int>,\n  \"shots\": [\n    {\n      \"shot_number\": <int>,\n      \"timestamp\": \"00:00-00:08\",\n      \"duration_seconds\": <number>,\n      \"voiceover\": \"...\",\n      \"sfx\": [\"...\"],\n      \"action\": \"...\",\n      \"transition_to_next\": \"...\",\n      \"是否有产品\": <boolean>\n    }\n  ]\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        720,
+        544
+      ],
+      "id": "8e53d74a-afd4-4b37-a95e-692fc55b3b44",
+      "name": "脚本生成器",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Webhook').item.json.body.callback_url || $('Webhook').item.json.body.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-admin-token",
+              "value": "={{ $('Webhook').item.json.body.admin_token || $('Webhook').item.json.body.adminToken }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { task_id: $('Webhook').item.json.body.task_id || $('Webhook').item.json.body.taskId || $('Webhook').item.json.body.record_id || $('Webhook').item.json.body.recordId, status: 'failed', stage: 'breakdown', pipeline_key: $('Webhook').item.json.body.pipeline_key || $('Webhook').item.json.body.pipelineKey || 'skeleton_video', error: 'insufficient_points', message: '积分不足' } }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        48,
+        352
+      ],
+      "id": "cc3d42d4-20f3-40c8-8757-5ea9bb72f129",
+      "name": "提醒-积分不足"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Webhook').item.json.body.callback_url || $('Webhook').item.json.body.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-admin-token",
+              "value": "={{ $('Webhook').item.json.body.admin_token || $('Webhook').item.json.body.adminToken }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { task_id: $('Webhook').item.json.body.task_id || $('Webhook').item.json.body.taskId || $('Webhook').item.json.body.record_id || $('Webhook').item.json.body.recordId, status: 'failed', stage: 'breakdown', pipeline_key: $('Webhook').item.json.body.pipeline_key || $('Webhook').item.json.body.pipelineKey || 'skeleton_video', error: 'api_key_invalid', message: 'api-key错误' } }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        48,
+        160
+      ],
+      "id": "e485a043-eb18-4006-8c2b-e3590fd72c25",
+      "name": "提醒-key错误"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Webhook').item.json.body.callback_url || $('Webhook').item.json.body.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-admin-token",
+              "value": "={{ $('Webhook').item.json.body.admin_token || $('Webhook').item.json.body.adminToken }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { task_id: $('Webhook').item.json.body.task_id || $('Webhook').item.json.body.taskId || $('Webhook').item.json.body.record_id || $('Webhook').item.json.body.recordId, status: 'running', stage: 'breakdown', pipeline_key: $('Webhook').item.json.body.pipeline_key || $('Webhook').item.json.body.pipelineKey || 'skeleton_video', message: '正在拆解爆款' } }}",
+        "options": {}
+      },
+      "id": "c70d6d28-e1f3-445a-a257-440a6c270905",
+      "name": "更新进度-拆解中",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        48,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok }}",
+                    "rightValue": "false",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    },
+                    "id": "84e547e5-80ae-4340-a3e9-b76f32d20e0c"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "apikey_invalid"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "1f0f0883-abf7-4c55-8068-85568446efd2",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === false }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "insufficient_points"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "94a60a62-da20-469a-ac15-4867f6a63449",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === true }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pass"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -176,
+        336
+      ],
+      "id": "47bd3235-c3e3-485a-bf68-bd6d597a1fc7",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/api/balance/check?required=100&api_key={{ $('Webhook').item.json.body.api_key }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "required",
+              "value": "={{ $json.data.credit_cost }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -400,
+        352
+      ],
+      "id": "b76544d1-ce61-41f2-ac3a-28535dacadca",
+      "name": "验证api-key",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id={{ $('Webhook').item.json.body.workflow_id || $('Webhook').item.json.body.workflowId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -624,
+        352
+      ],
+      "id": "cb591ec7-9832-4678-b183-a502bba59de2",
+      "name": "查询工作流积分"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "veo-gg",
+        "options": {}
+      },
+      "id": "67696e5b-a0dc-438e-ad10-d270a66b12ef",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1520,
+        352
+      ],
+      "webhookId": "74520f4c-bf49-488e-ac04-7665b8107100"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gemini-3-flash-preview-thinking",
+          "mode": "list",
+          "cachedResultName": "gemini-3-flash-preview-thinking"
+        },
+        "responsesApiEnabled": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        1152,
+        768
+      ],
+      "id": "001e458a-8de1-47f3-9092-993098ca36e2",
+      "name": "gemini3-flash1",
+      "credentials": {
+        "openAiApi": {
+          "id": "TVs8cHigrdXKUMDJ",
+          "name": "云雾api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Here is the narrative script generated in the previous step:\n\n{{ $json.output || $json.text }}\n\nPlease strictly follow the rules in the System Message, generate the highly detailed `first_frame` and `video_prompt` for each shot, and output the final complete JSON.",
+        "options": {
+          "systemMessage": "==You are a top-tier AI video prompt engineer. Your task is to generate precise image and video prompts based on the provided narrative script.\nYou MUST completely adhere to the standard shown in the file \"提示词_prompts.xlsx\".\n\nINPUT: A JSON script with narrative details (voiceover, action, 是否有产品).\n\nGOAL: Enhance the JSON by generating `first_frame` (Image Prompt) and `video_prompt` (Video Prompt) for EVERY shot.\n\nFIRST_FRAME RULES (Mimic Nano Banana Pro style in \"提示词_prompts.xlsx\"):\nMust be a single extremely detailed paragraph per shot:\n\"Vertical 9:16, ultra-real cinematic 3D still image. Location: [Scene location]. Composition: [Shot size/angle]. Action: [Describe the frozen action]. Main skeleton lock: transparent glass-bodied humanoid skeleton with realistic bones visible through a clear body shell, oversized expressive bright blue eyes, slightly comedic face, consistent proportions. [If 是否有产品 is true, add a highly detailed product lock]. Lighting/Atmosphere: [Describe mood/lights].\"\n\nVIDEO_PROMPT RULES (Mimic Kling 3.0 / Veo style in \"提示词_prompts.xlsx\"):\nMust be a single detailed paragraph per shot:\n\"Use the provided reference image of the transparent skeleton character in a 3D animation style; STABILITY LOCK: vertical 9:16, cinematic realism, shallow depth of field, locked tripod or very slow push/slider only, no whip pans, no 360 spins. One simple action per shot. Five fingers only, no extra limbs. Action: [Specific micro-action based on the script]. no on-screen text, no captions, no background music, no generated audio; for educational purposes only, no policy violations.\"\n\nOUTPUT SCHEMA:\n{\n  \"total_shots\": <int>,\n  \"shots\": [\n    {\n      \"shot_number\": <int>,\n      \"timestamp\": \"00:00-00:08\",\n      \"duration_seconds\": <number>,\n      \"voiceover\": \"...\",\n      \"sfx\": [\"...\"],\n      \"action\": \"...\",\n      \"transition_to_next\": \"...\",\n      \"是否有产品\": <boolean>,\n      \"first_frame\": \"...\",\n      \"video_prompt\": \"...\"\n    }\n  ]\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        1072,
+        544
+      ],
+      "id": "0fb35d4c-f4c2-4e1f-a572-baf71faa2020",
+      "name": "提示词生成器",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "查询工作流积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "查询工作流积分": {
+      "main": [
+        [
+          {
+            "node": "验证api-key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "验证api-key": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "提醒-key错误",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "提醒-积分不足",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "更新进度-拆解中",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "更新进度-拆解中": {
+      "main": [
+        [
+          {
+            "node": "标准化输入",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "标准化输入": {
+      "main": [
+        [
+          {
+            "node": "脚本生成器",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "脚本生成器": {
+      "main": [
+        [
+          {
+            "node": "提示词生成器",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提示词生成器": {
+      "main": [
+        [
+          {
+            "node": "解析提示词",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析提示词": {
+      "main": [
+        [
+          {
+            "node": "更新状态",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gemini3-flash": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "脚本生成器",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gemini3-flash1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "提示词生成器",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "de0a925c-5486-483f-9d3e-6c2d954d9b36",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
+  },
+  "id": "KOLdtaFUB5JJRR9r",
+  "tags": []
+}

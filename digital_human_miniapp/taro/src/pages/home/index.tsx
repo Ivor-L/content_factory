@@ -1,17 +1,40 @@
-import { View, Text } from '@tarojs/components';
+import { View, Text, Video, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
+import antHeadLogo from '../../assets/icons/ant-head-logo-small.jpg';
+import videoIcon from '../../assets/home-icons-v2/video.png';
+import imageIcon from '../../assets/home-icons-v2/image.png';
+import swapIcon from '../../assets/home-icons-v2/swap.png';
+import humanIcon from '../../assets/home-icons-v2/human.png';
 import './index.sass';
 
-const QUICK_ACTIONS = [
-  { id: 'copy', title: '写文案', desc: '智能生成高转化文案', path: '/pages/generate/index', badge: '文案' },
-  { id: 'image-text', title: '做图文', desc: '一键复刻爆款图文内容', path: '/pages/hot-square/index', badge: '图文' },
-  { id: 'video', title: '做视频', desc: '数字人驱动，快速生成短视频', path: '/pages/generate/index', badge: '视频' },
+const HERO_VIDEO_ID = 'homeHeroVideo';
+const REMIX_VIDEO_ID = 'homeRemixVideo';
+const HERO_VIDEO_OSS_URL = 'https://oss.atomx.top/miniapp/home/hero-1777626035392.mp4';
+const HERO_POSTER_OSS_URL = 'https://oss.atomx.top/miniapp/home/hero-poster-1777627846532.jpg';
+const REMIX_COVER_OSS_URL = 'https://oss.atomx.top/miniapp/hot-square/fallback-cover-1777628403821.jpg';
+const REMIX_VIDEO_URLS = [
+  'https://oss.atomx.top/miniapp/home/remix-pixar-1777640495240.mp4',
+  'https://oss.atomx.top/miniapp/home/remix-skincare-1777640495240.mp4',
+  'https://oss.atomx.top/miniapp/home/remix-zopia-showcase-4s-1777640844679.mp4',
 ];
 
 export default function HomePage() {
   const [profile, setProfile] = useState<any>(null);
+  const [heroVideoFailed, setHeroVideoFailed] = useState(false);
+  const [heroVideoSrc] = useState(HERO_VIDEO_OSS_URL);
+  const [remixVideoFailed, setRemixVideoFailed] = useState(false);
+  const [remixVideoIndex, setRemixVideoIndex] = useState(0);
+
+  const playHeroVideo = useCallback(() => {
+    const ctx = Taro.createVideoContext(HERO_VIDEO_ID);
+    try {
+      ctx.play();
+    } catch {
+      // noop
+    }
+  }, []);
 
   useDidShow(() => {
     void (async () => {
@@ -22,69 +45,117 @@ export default function HomePage() {
         // Keep page usable even if profile request fails.
       }
     })();
+
+    setTimeout(() => playHeroVideo(), 180);
   });
-
-  const nickname = profile?.username || '创作者';
-  const pointsText = typeof profile?.points === 'number' ? String(profile.points) : '--';
-
-  const handleNavigate = (path) => {
-    if (path.startsWith('/pages/home') || path.startsWith('/pages/hot-square') || path.startsWith('/pages/assets') || path.startsWith('/pages/works') || path.startsWith('/pages/profile')) {
-      Taro.switchTab({ url: path });
-      return;
-    }
-    Taro.navigateTo({ url: path });
-  };
 
   return (
     <View className='home-page'>
-      <View className='home-header'>
-        <View>
-          <Text className='home-greeting'>你好，{nickname}</Text>
-          <Text className='home-subtitle'>今天想创作点什么？</Text>
+      <View className='home-hero'>
+        <Video
+          id={HERO_VIDEO_ID}
+          className='home-hero-video'
+          src={heroVideoSrc}
+          poster={HERO_POSTER_OSS_URL}
+          autoplay
+          loop
+          muted
+          controls={false}
+          showPlayBtn={false}
+          showCenterPlayBtn={false}
+          showFullscreenBtn={false}
+          enablePlayGesture={false}
+          objectFit='cover'
+          initialTime={0}
+          onLoadedData={playHeroVideo}
+          onLoadedMetaData={playHeroVideo}
+          onError={() => {
+            setHeroVideoFailed(true);
+            Taro.showToast({ title: '顶部视频加载失败，已切换封面图', icon: 'none' });
+          }}
+        />
+        {heroVideoFailed && <Image className='home-hero-fallback' src={HERO_POSTER_OSS_URL} mode='aspectFill' />}
+        <View className='home-hero-mask' />
+        <View className='home-hero-fade' />
+        <View className='home-hero-content'>
+          <View className='home-hero-title-chip'>
+            <Image className='home-hero-title-logo' src={antHeadLogo} mode='aspectFill' />
+            <Text className='home-hero-title-chip-text'>小蚁AI</Text>
+          </View>
+          <Text className='home-hero-main-title'>让内容营销更简单</Text>
         </View>
       </View>
 
-      <View className='home-promo-card'>
-        <Text className='home-promo-tag'>AI 创作助手 Pro</Text>
-        <Text className='home-promo-title'>效率提升 10 倍</Text>
-        <Text className='home-promo-desc'>文案、图文、视频一站式生成</Text>
-        <View className='home-promo-points'>
-          <Text className='home-promo-points-label'>当前积分</Text>
-          <Text className='home-promo-points-value'>{pointsText}</Text>
-        </View>
-      </View>
-
-      <View className='home-section'>
-        <Text className='home-section-title'>创作中心</Text>
-        <View className='home-action-list'>
-          {QUICK_ACTIONS.map((item) => (
-            <View key={item.id} className='home-action-card' onClick={() => handleNavigate(item.path)}>
-              <View className='home-action-left'>
-                <Text className='home-action-badge'>{item.badge}</Text>
-              </View>
-              <View className='home-action-main'>
-                <Text className='home-action-title'>{item.title}</Text>
-                <Text className='home-action-desc'>{item.desc}</Text>
-              </View>
-              <Text className='home-action-arrow'>›</Text>
-            </View>
-          ))}
-        </View>
-      </View>
-
-      <View className='home-section'>
-        <View className='home-section-head'>
-          <Text className='home-section-title'>最近创作</Text>
-          <Text className='home-section-link' onClick={() => Taro.switchTab({ url: '/pages/works/index' })}>查看全部</Text>
-        </View>
-        <View className='home-recent-card'>
-          <Text className='home-recent-title'>从爆款广场一键创作</Text>
-          <Text className='home-recent-desc'>选中任意爆款内容，直接生成你的同款图文或脚本。</Text>
-          <View className='home-recent-btn' onClick={() => Taro.switchTab({ url: '/pages/hot-square/index' })}>
-            <Text className='home-recent-btn-text'>去爆款广场</Text>
+      <View
+        className='home-remix-card'
+        onClick={() => Taro.navigateTo({ url: '/pages/remix-generate/index' })}
+      >
+        {!remixVideoFailed && (
+          <Video
+            id={REMIX_VIDEO_ID}
+            className='home-remix-video'
+            src={REMIX_VIDEO_URLS[remixVideoIndex]}
+            poster={REMIX_COVER_OSS_URL}
+            autoplay
+            loop={false}
+            muted
+            controls={false}
+            showPlayBtn={false}
+            showCenterPlayBtn={false}
+            showFullscreenBtn={false}
+            enablePlayGesture={false}
+            objectFit='cover'
+            initialTime={0}
+            onEnded={() => {
+              setRemixVideoIndex((prev) => (prev + 1) % REMIX_VIDEO_URLS.length);
+            }}
+            onError={() => {
+              setRemixVideoFailed(true);
+            }}
+          />
+        )}
+        {remixVideoFailed && <Image className='home-remix-cover' src={REMIX_COVER_OSS_URL} mode='aspectFill' />}
+        <View className='home-remix-mask' />
+        <View className='home-remix-content'>
+          <Text className='home-remix-title'>复刻爆款视频</Text>
+          <Text className='home-remix-desc'>一键生成你的同款大片</Text>
+          <View className='home-remix-btn'>
+            <Text className='home-remix-btn-text'>做同款</Text>
           </View>
         </View>
       </View>
+
+      <View className='home-feature-grid'>
+        <View className='home-feature-card home-feature-card--video' onClick={() => Taro.navigateTo({ url: '/pages/generate/index?feature=digital-human' })}>
+          <View className='home-feature-head'>
+            <Text className='home-feature-title'>AI数字人</Text>
+          </View>
+          <Text className='home-feature-desc'>数字人视频生成</Text>
+          <Image className='home-card-icon home-card-icon--video' src={humanIcon} mode='aspectFit' />
+        </View>
+
+        <View className='home-feature-right'>
+          <View className='home-feature-card home-feature-card--image' onClick={() => Taro.navigateTo({ url: '/pages/image-generate/index' })}>
+            <Text className='home-feature-title'>图片生成</Text>
+            <Text className='home-feature-desc'>文生图 / 图生图</Text>
+            <Image className='home-card-icon home-card-icon--small' src={imageIcon} mode='aspectFit' />
+          </View>
+          <View className='home-feature-card home-feature-card--edit' onClick={() => Taro.navigateTo({ url: '/pages/generate/index?feature=video-generate&category=skeleton-3d' })}>
+            <Text className='home-feature-title'>视频生成</Text>
+            <Text className='home-feature-desc'>文生视频、图生视频</Text>
+            <Image className='home-card-icon home-card-icon--small' src={videoIcon} mode='aspectFit' />
+          </View>
+        </View>
+      </View>
+
+      <View className='home-action-row' onClick={() => Taro.navigateTo({ url: '/pages/monetization-square/index' })}>
+        <View>
+          <Text className='home-action-title'>变现广场</Text>
+          <Text className='home-action-desc'>精选高变现内容模板，一键做同款</Text>
+        </View>
+        <Image className='home-card-icon home-card-icon--action' src={swapIcon} mode='aspectFit' />
+      </View>
+
     </View>
   );
 }

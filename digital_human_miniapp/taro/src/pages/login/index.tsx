@@ -1,36 +1,46 @@
-import { View, Text, Button, Input } from '@tarojs/components';
+import { View, Text, Button, Video, Image } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 import { useState } from 'react';
 import { api, NotBoundError } from '../../utils/api';
+import antHeadLogoYellow from '../../assets/icons/ant-head-logo-yellow.png';
+import wechatIcon from '../../assets/icons/login/wechat.svg';
+import phoneIcon from '../../assets/icons/login/phone.svg';
+import mailIcon from '../../assets/icons/login/mail.svg';
+import passwordIcon from '../../assets/icons/login/password.svg';
 import './index.sass';
-import './index.sass';
+
+const HERO_VIDEO_OSS_URL = 'https://oss.atomx.top/miniapp/home/hero-1777626035392.mp4';
+const HERO_POSTER_OSS_URL = 'https://oss.atomx.top/miniapp/home/hero-poster-1777627846532.jpg';
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
-  const [bindMode, setBindMode] = useState(false);
-  const [openid, setOpenid] = useState('');
-  const [apiKeyInput, setApiKeyInput] = useState('');
-  const [binding, setBinding] = useState(false);
+  const [phoneQuickLoading, setPhoneQuickLoading] = useState(false);
+  const [heroVideoFailed, setHeroVideoFailed] = useState(false);
 
   useLoad(() => {
-    // 已登录则直接跳首页
     const key = Taro.getStorageSync('API_KEY');
     if (key) {
       Taro.switchTab({ url: '/pages/home/index' });
     }
   });
 
-  const handleLogin = async () => {
+  const saveAndEnter = (user: { apiKey: string; userId: string; username: string | null; avatarUrl: string | null }) => {
+    Taro.setStorageSync('API_KEY', user.apiKey);
+    Taro.setStorageSync('USER_INFO', JSON.stringify(user));
+    Taro.switchTab({ url: '/pages/home/index' });
+  };
+
+  const handleWechatLogin = async () => {
     setLoading(true);
     try {
       const result = await api.wechatLogin();
-      Taro.setStorageSync('API_KEY', result.apiKey);
-      Taro.setStorageSync('USER_INFO', JSON.stringify(result));
-      Taro.switchTab({ url: '/pages/home/index' });
+      saveAndEnter(result);
     } catch (err) {
       if (err instanceof NotBoundError) {
-        setOpenid(err.openid);
-        setBindMode(true);
+        Taro.showToast({ title: '微信未绑定，请先完成手机号登录', icon: 'none' });
+        Taro.navigateTo({
+          url: `/pages/login-phone/index?bind=1&openid=${encodeURIComponent(err.openid)}`,
+        });
       } else {
         Taro.showToast({ title: (err as Error).message || '登录失败', icon: 'none' });
       }
@@ -39,66 +49,95 @@ export default function LoginPage() {
     }
   };
 
-  const handleBind = async () => {
-    if (!apiKeyInput.trim()) {
-      Taro.showToast({ title: '请输入 API Key', icon: 'none' });
+  const handleWechatPhoneLogin = async (e: any) => {
+    const phoneCode = String(e?.detail?.code || '').trim();
+    if (!phoneCode) {
+      Taro.showToast({ title: '未获取到手机号授权', icon: 'none' });
       return;
     }
-    setBinding(true);
+
+    setPhoneQuickLoading(true);
     try {
-      const result = await api.wechatBind(openid, apiKeyInput.trim());
-      Taro.setStorageSync('API_KEY', result.apiKey);
-      Taro.setStorageSync('USER_INFO', JSON.stringify(result));
-      Taro.switchTab({ url: '/pages/home/index' });
+      const result = await api.wechatPhoneLogin(phoneCode);
+      saveAndEnter(result);
     } catch (err) {
-      Taro.showToast({ title: (err as Error).message || '绑定失败', icon: 'none' });
+      Taro.showToast({ title: (err as Error).message || '手机号一键登录失败', icon: 'none' });
     } finally {
-      setBinding(false);
+      setPhoneQuickLoading(false);
     }
   };
 
-  if (bindMode) {
-    return (
-      <View className='login-page'>
-        <View className='login-card'>
-          <Text className='login-title'>绑定账号</Text>
-          <Text className='login-desc'>
-            该微信未绑定账号，请输入你在网页版的 API Key 完成绑定。
-          </Text>
-          <Input
-            className='login-input'
-            value={apiKeyInput}
-            onInput={(e) => setApiKeyInput(e.detail.value)}
-            placeholder='粘贴你的 API Key'
-            placeholderClass='input-placeholder'
-          />
-          <Button className='btn-primary' onClick={handleBind} loading={binding} disabled={binding}>
-            确认绑定
-          </Button>
-          <Button className='btn-secondary mt-16' onClick={() => setBindMode(false)}>
-            返回
-          </Button>
-        </View>
-      </View>
-    );
-  }
+  const openOtherLogin = (type: 'phone' | 'email' | 'password') => {
+    const targetMap: Record<'phone' | 'email' | 'password', string> = {
+      phone: '/pages/login-phone/index',
+      email: '/pages/login-email/index',
+      password: '/pages/login-password/index',
+    };
+    Taro.navigateTo({ url: targetMap[type] });
+  };
 
   return (
     <View className='login-page'>
-      <View className='login-card'>
-        <View className='login-logo'>
-          <Text className='login-logo-text'>数字人</Text>
+      <Video
+        className='login-bg-video'
+        src={HERO_VIDEO_OSS_URL}
+        poster={HERO_POSTER_OSS_URL}
+        autoplay
+        loop
+        muted
+        controls={false}
+        showPlayBtn={false}
+        showCenterPlayBtn={false}
+        showFullscreenBtn={false}
+        enablePlayGesture={false}
+        objectFit='cover'
+        initialTime={0}
+        onError={() => setHeroVideoFailed(true)}
+      />
+      <View className='login-bg-mask' />
+      {heroVideoFailed && <View className='login-bg-fallback' />}
+
+      <View className='login-brand-top'>
+        <View className='login-brand-row'>
+          <Image className='login-brand-logo' src={antHeadLogoYellow} mode='aspectFill' />
+          <Text className='login-brand'>小蚁AI</Text>
         </View>
-        <Text className='login-title'>欢迎使用数字人小程序</Text>
-        <Text className='login-desc'>使用微信账号一键登录，开始生成你的数字人营销视频</Text>
-        <Button
-          className='btn-primary btn-wechat'
-          onClick={handleLogin}
-          loading={loading}
-          disabled={loading}
-        >
-          微信一键登录
+        <Text className='login-slogan'>让内容营销更简单</Text>
+      </View>
+
+      <View className='login-card'>
+        <Button className='entry-btn entry-btn--wechat-main' onClick={handleWechatLogin} loading={loading} disabled={loading}>
+          <View className='entry-btn-inner'>
+            <Image className='entry-btn-icon' src={wechatIcon} mode='aspectFit' />
+            <Text className='entry-btn-label'>微信登录</Text>
+          </View>
         </Button>
+
+        <Button
+          className='entry-btn entry-btn--phone-main'
+          openType='getPhoneNumber'
+          onGetPhoneNumber={handleWechatPhoneLogin}
+          loading={phoneQuickLoading}
+          disabled={phoneQuickLoading}
+        >
+          <View className='entry-btn-inner'>
+            <Image className='entry-btn-icon' src={phoneIcon} mode='aspectFit' />
+            <Text className='entry-btn-label'>一键登录</Text>
+          </View>
+        </Button>
+
+        <Text className='other-login-title'>其他登录方式</Text>
+        <View className='other-login-row'>
+          <View className='other-login-icon' onClick={() => openOtherLogin('phone')}>
+            <Image className='other-login-icon-image' src={phoneIcon} mode='aspectFit' />
+          </View>
+          <View className='other-login-icon' onClick={() => openOtherLogin('email')}>
+            <Image className='other-login-icon-image' src={mailIcon} mode='aspectFit' />
+          </View>
+          <View className='other-login-icon' onClick={() => openOtherLogin('password')}>
+            <Image className='other-login-icon-image' src={passwordIcon} mode='aspectFit' />
+          </View>
+        </View>
       </View>
     </View>
   );

@@ -22,6 +22,32 @@ const normalizeWordCount = (value: unknown): number | undefined => {
   return Math.max(WORD_COUNT_MIN, Math.min(WORD_COUNT_MAX, Math.round(parsed)));
 };
 
+const extractSourceTextFromBreakdown = (raw?: string | null): string | undefined => {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const candidates = [
+      parsed.originalCopy,
+      parsed.original_copy,
+      parsed.copyText,
+      parsed.copy_text,
+      parsed.text,
+      parsed.transcript,
+      (parsed.segments as Record<string, unknown> | undefined)?.intro,
+      (parsed.segments as Record<string, unknown> | undefined)?.body,
+      (parsed.segments as Record<string, unknown> | undefined)?.conclusion,
+    ];
+    const text = candidates
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter(Boolean)
+      .join("\n\n")
+      .trim();
+    return text || undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 export async function POST(request: NextRequest) {
   const { userId, apiKey } = await getRequestUserContext(request);
   if (!userId) {
@@ -52,6 +78,12 @@ export async function POST(request: NextRequest) {
       : undefined;
   const language =
     typeof rawLanguage === "string" ? rawLanguage.trim() || undefined : undefined;
+  const sourceTitleRaw = body?.sourceTitle ?? body?.source_title ?? null;
+  const sourceTextRaw = body?.sourceText ?? body?.source_text ?? null;
+  const sourceTitle =
+    typeof sourceTitleRaw === "string" ? sourceTitleRaw.trim() || undefined : undefined;
+  const sourceText =
+    typeof sourceTextRaw === "string" ? sourceTextRaw.trim() || undefined : undefined;
 
   const styleId =
     typeof body?.styleId === "string" ? body.styleId.trim() : typeof body?.style_id === "string" ? body.style_id.trim() : "";
@@ -101,6 +133,8 @@ export async function POST(request: NextRequest) {
     (styleSnapshot as any)?.profileJson ||
     (styleSnapshot as any)?.profile ||
     null;
+  const resolvedSourceTitle = sourceTitle || script?.title || undefined;
+  const resolvedSourceText = sourceText || originalCopy || extractSourceTextFromBreakdown(script?.breakdown) || undefined;
 
   const replication = await prisma.replication.create({
     data: {
@@ -108,7 +142,7 @@ export async function POST(request: NextRequest) {
       type: "COPY",
       result: "{}",
       script: script ? { connect: { id: script.id } } : undefined,
-      inputParams: {
+        inputParams: {
         mode: "copy",
         scriptId: script?.id ?? null,
         videoUrl: resolvedVideoUrl,
@@ -118,10 +152,12 @@ export async function POST(request: NextRequest) {
         originalCopy: originalCopy ?? null,
         ideaText: ideaText ?? null,
         wordCount: requestedWordCount ?? null,
-        language: language ?? null,
-      } as Prisma.InputJsonValue,
-    },
-  });
+          language: language ?? null,
+          sourceTitle: resolvedSourceTitle ?? null,
+          sourceText: resolvedSourceText ?? null,
+        } as Prisma.InputJsonValue,
+      },
+    });
 
   const callbackBase =
     process.env.N8N_CALLBACK_BASE_URL ||
@@ -141,6 +177,8 @@ export async function POST(request: NextRequest) {
       ideaText: ideaText || undefined,
       wordCount: requestedWordCount,
       language: language || undefined,
+      sourceTitle: resolvedSourceTitle || undefined,
+      sourceText: resolvedSourceText || undefined,
       styleId,
       styleSnapshot: styleSnapshot as JsonRecord,
       styleProfile: styleProfile || undefined,

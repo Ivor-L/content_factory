@@ -1,0 +1,493 @@
+import { View, Text, Image, ScrollView, Swiper, SwiperItem } from '@tarojs/components';
+import Taro, { useLoad } from '@tarojs/taro';
+import { useEffect, useMemo, useState } from 'react';
+import { miniappApi } from '../../utils/miniapp-api';
+import './index.sass';
+
+const VIDEO_URL_RE = /\.(mp4|mov|m3u8)(\?|$)|\/video\/|\/master\/|xgvideo/i;
+
+export default function WorkDetailPage() {
+  const [item, setItem] = useState<any | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [currentPosterIndex, setCurrentPosterIndex] = useState(0);
+
+  useLoad((query) => {
+    const cached = Taro.getStorageSync('WORK_DETAIL_ITEM');
+    if (cached && (!query?.id || String(cached.id) === String(query.id))) {
+      setItem(cached);
+    }
+  });
+
+  const posterImages = useMemo<string[]>(() => {
+    const meta = item?.metadata;
+    if (!meta || typeof meta !== 'object') return [];
+    const layout = (meta as Record<string, unknown>).xhsLayout;
+    if (!layout || typeof layout !== 'object') return [];
+    const images = (layout as Record<string, unknown>).images;
+    if (!Array.isArray(images)) return [];
+    return images
+      .map((img) => (typeof img === 'string' ? img.trim() : ''))
+      .filter(Boolean);
+  }, [item]);
+
+  const coverUrl = useMemo<string | null>(() => {
+    if (posterImages.length > 0) return posterImages[0];
+    const thumb = typeof item?.thumbnailUrl === 'string' ? item.thumbnailUrl.trim() : '';
+    if (thumb) return thumb;
+    const preview = typeof item?.preview === 'string' ? item.preview.trim() : '';
+    if (preview && /\.(jpg|jpeg|png|webp)(\?|$)/i.test(preview)) {
+      return preview;
+    }
+    return null;
+  }, [item, posterImages]);
+
+  const isImageText = item?.type === 'image-text';
+  const currentPosterUrl = posterImages[currentPosterIndex] || '';
+
+  useEffect(() => {
+    if (posterImages.length === 0) {
+      setCurrentPosterIndex(0);
+      return;
+    }
+    if (currentPosterIndex > posterImages.length - 1) {
+      setCurrentPosterIndex(0);
+    }
+  }, [currentPosterIndex, posterImages.length]);
+
+  const statusText = useMemo(() => {
+    const status = String(item?.status ?? '').toUpperCase();
+    if (status.includes('COMPLETE') || status === 'DONE' || status === 'SUCCESS') return '已完成';
+    if (status.includes('GENERAT') || status.includes('PROCESS')) return '生成中';
+    if (status.includes('FAIL') || status.includes('ERROR')) return '失败';
+    if (status.includes('PEND') || status.includes('QUEUE') || status.includes('WAIT')) return '待处理';
+    return item?.status || '--';
+  }, [item]);
+
+  const publishQrcode = useMemo(() => {
+    const meta = item?.metadata;
+    if (!meta || typeof meta !== 'object') return '';
+    const publish = (meta as Record<string, unknown>).xhsPublish;
+    if (!publish || typeof publish !== 'object') return '';
+    const qrcode = (publish as Record<string, unknown>).qrcode;
+    return typeof qrcode === 'string' ? qrcode.trim() : '';
+  }, [item]);
+
+  const publishUrl = useMemo(() => {
+    const meta = item?.metadata;
+    if (!meta || typeof meta !== 'object') return '';
+    const publish = (meta as Record<string, unknown>).xhsPublish;
+    if (!publish || typeof publish !== 'object') return '';
+    const url = (publish as Record<string, unknown>).url;
+    return typeof url === 'string' ? url.trim() : '';
+  }, [item]);
+
+  const handleCopyQrcode = () => {
+    if (!publishQrcode) return;
+    Taro.setClipboardData({
+      data: publishQrcode,
+      success: () => {
+        Taro.showToast({ title: '已复制二维码链接', icon: 'success' });
+      },
+      fail: () => {
+        Taro.showToast({ title: '复制失败', icon: 'none' });
+      },
+    });
+  };
+
+  const handleBack = () => {
+    Taro.navigateBack({ delta: 1 });
+  };
+
+  const handlePreviewImage = (index: number) => {
+    if (posterImages.length === 0) return;
+    Taro.previewImage({
+      urls: posterImages,
+      current: posterImages[Math.max(0, Math.min(index, posterImages.length - 1))],
+    });
+  };
+
+  const ensureAlbumPermission = async () => {
+    try {
+      const setting = await Taro.getSetting();
+      const writePermission = setting.authSetting?.['scope.writePhotosAlbum'];
+      if (writePermission === true) return true;
+
+      if (writePermission === false) {
+        const modal = await Taro.showModal({
+          title: '需要相册权限',
+          content: '下载前需要允许保存到相册，请在设置中开启权限',
+          confirmText: '去设置',
+        });
+        if (!modal.confirm) return false;
+        await Taro.openSetting();
+        const next = await Taro.getSetting();
+        return Boolean(next.authSetting?.['scope.writePhotosAlbum']);
+      }
+
+      await Taro.authorize({ scope: 'scope.writePhotosAlbum' });
+      return true;
+    } catch {
+      const modal = await Taro.showModal({
+        title: '需要相册权限',
+        content: '下载前需要允许保存到相册，请在设置中开启权限',
+        confirmText: '去设置',
+      });
+      if (!modal.confirm) return false;
+      try {
+        await Taro.openSetting();
+        const next = await Taro.getSetting();
+        return Boolean(next.authSetting?.['scope.writePhotosAlbum']);
+      } catch {
+        return false;
+      }
+    }
+  };
+
+  const saveMediaFromUrl = async (url: string, mediaType: 'image' | 'video') => {
+    const downloadRes = await Taro.downloadFile({ url });
+    if (!downloadRes.tempFilePath || (typeof downloadRes.statusCode === 'number' && downloadRes.statusCode >= 400)) {
+      throw new Error('下载失败');
+    }
+    if (mediaType === 'video') {
+      await Taro.saveVideoToPhotosAlbum({ filePath: downloadRes.tempFilePath });
+      return;
+    }
+    await Taro.saveImageToPhotosAlbum({ filePath: downloadRes.tempFilePath });
+  };
+
+  const resolveVideoUrl = () => {
+    const candidates: unknown[] = [
+      item?.preview,
+      item?.videoUrl,
+      item?.metadata && typeof item.metadata === 'object'
+        ? (item.metadata as Record<string, unknown>).videoUrl
+        : '',
+      item?.metadata && typeof item.metadata === 'object'
+        ? (item.metadata as Record<string, unknown>).outputUrl
+        : '',
+    ];
+
+    for (const raw of candidates) {
+      if (typeof raw !== 'string') continue;
+      const url = raw.trim();
+      if (!url) continue;
+      if (VIDEO_URL_RE.test(url)) return url;
+    }
+    return '';
+  };
+
+  const resolveSingleImageUrl = () => {
+    if (posterImages.length > 0) return posterImages[0];
+    if (coverUrl && /\.(jpg|jpeg|png|webp)(\?|$)/i.test(coverUrl)) return coverUrl;
+    return '';
+  };
+
+  const handleDelete = async () => {
+    if (!item || deleting) return;
+    const modal = await Taro.showModal({
+      title: '删除作品',
+      content: '删除后不可恢复，确认删除吗？',
+      confirmText: '删除',
+      confirmColor: '#ff5a5f',
+    });
+    if (!modal.confirm) return;
+
+    setDeleting(true);
+    try {
+      await miniappApi.deleteWorkItem(item);
+      Taro.showToast({ title: '已删除', icon: 'success' });
+      setTimeout(() => {
+        Taro.navigateBack({ delta: 1 });
+      }, 360);
+    } catch (error) {
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '删除失败',
+        icon: 'none',
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDownloadImage = async (url: string) => {
+    if (!url || downloading) return;
+    const granted = await ensureAlbumPermission();
+    if (!granted) {
+      Taro.showToast({ title: '未开启相册权限', icon: 'none' });
+      return;
+    }
+
+    setDownloading(true);
+    try {
+      await saveMediaFromUrl(url, 'image');
+      Taro.showToast({ title: '已保存到相册', icon: 'success' });
+    } catch (error) {
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '下载失败',
+        icon: 'none',
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const handleDownloadMain = async () => {
+    if (!item || downloading) return;
+    const granted = await ensureAlbumPermission();
+    if (!granted) {
+      Taro.showToast({ title: '未开启相册权限', icon: 'none' });
+      return;
+    }
+
+    setDownloading(true);
+    try {
+      if (posterImages.length > 1) {
+        let success = 0;
+        for (const url of posterImages) {
+          try {
+            await saveMediaFromUrl(url, 'image');
+            success += 1;
+          } catch {
+            // 忽略单张失败，继续下载后续图片
+          }
+        }
+        if (success === 0) throw new Error('下载失败');
+        Taro.showToast({ title: `已保存 ${success}/${posterImages.length} 张`, icon: 'none' });
+        return;
+      }
+
+      if (item.type === 'video') {
+        const videoUrl = resolveVideoUrl();
+        if (!videoUrl) throw new Error('未找到可下载视频');
+        await saveMediaFromUrl(videoUrl, 'video');
+        Taro.showToast({ title: '视频已保存', icon: 'success' });
+        return;
+      }
+
+      const imageUrl = resolveSingleImageUrl();
+      if (!imageUrl) throw new Error('未找到可下载图片');
+      await saveMediaFromUrl(imageUrl, 'image');
+      Taro.showToast({ title: '已保存到相册', icon: 'success' });
+    } catch (error) {
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '下载失败',
+        icon: 'none',
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const handlePrevPoster = () => {
+    if (posterImages.length <= 1) return;
+    setCurrentPosterIndex((prev) => (prev - 1 + posterImages.length) % posterImages.length);
+  };
+
+  const handleNextPoster = () => {
+    if (posterImages.length <= 1) return;
+    setCurrentPosterIndex((prev) => (prev + 1) % posterImages.length);
+  };
+
+  const handlePreviewCurrentPoster = () => {
+    if (!currentPosterUrl) return;
+    Taro.previewImage({
+      urls: posterImages,
+      current: currentPosterUrl,
+    });
+  };
+
+  const downloadBtnText = posterImages.length > 1 ? '下载全部' : '下载';
+
+  return (
+    <View className='work-detail-page'>
+      <View className='work-detail-nav'>
+        <View className='work-detail-back' onClick={handleBack}>
+          <Text className='work-detail-back-text'>返回</Text>
+        </View>
+        <Text className='work-detail-nav-title'>作品详情</Text>
+        <View className='work-detail-nav-spacer' />
+      </View>
+
+      {!item ? (
+        <View className='work-detail-empty'>
+          <Text className='work-detail-empty-text'>未找到作品，请返回重试</Text>
+        </View>
+      ) : (
+        <View className='work-detail-content'>
+          <ScrollView scrollY className='work-detail-scroll'>
+            <View className='work-detail-card'>
+              <View className='work-detail-cover-wrap'>
+                {isImageText && posterImages.length > 0 ? (
+                  <View className='work-detail-swiper-wrap'>
+                    <Swiper
+                      className='work-detail-swiper'
+                      indicatorDots={false}
+                      circular={false}
+                      current={currentPosterIndex}
+                      onChange={(event) => setCurrentPosterIndex(event.detail.current)}
+                    >
+                      {posterImages.map((url, index) => (
+                        <SwiperItem key={`${url}-${index}`}>
+                          <Image
+                            className='work-detail-cover'
+                            src={url}
+                            mode='aspectFill'
+                            onClick={() => handlePreviewImage(index)}
+                          />
+                        </SwiperItem>
+                      ))}
+                    </Swiper>
+                    <View className='work-detail-swiper-indicator'>
+                      <Text className='work-detail-swiper-indicator-text'>{currentPosterIndex + 1}/{posterImages.length}</Text>
+                    </View>
+                  </View>
+                ) : coverUrl ? (
+                  <Image className='work-detail-cover' src={coverUrl} mode='widthFix' />
+                ) : (
+                  <View className='work-detail-cover-placeholder'>
+                    {renderWorkDetailPlaceholderIcon(getPlaceholderKind(item.type))}
+                  </View>
+                )}
+                {(isImageText ? Boolean(currentPosterUrl) : coverUrl && item.type !== 'video') && (
+                  <View
+                    className='work-detail-cover-download'
+                    onClick={() => {
+                      void handleDownloadImage(isImageText ? currentPosterUrl : (coverUrl as string));
+                    }}
+                  >
+                    <Text className='work-detail-cover-download-text'>↓</Text>
+                  </View>
+                )}
+                {item.type === 'video' && (
+                  <View className='work-detail-video-icon'>
+                    <Text className='work-detail-video-icon-text'>▶</Text>
+                  </View>
+                )}
+              </View>
+
+              <View className='work-detail-body'>
+                <Text className='work-detail-title'>{item.title || '未命名作品'}</Text>
+                <View className='work-detail-meta'>
+                  <Text className='work-detail-type'>{getTypeLabel(item.type)}</Text>
+                  <Text className='work-detail-status'>{statusText}</Text>
+                </View>
+                {!!item.preview && (
+                  <Text className='work-detail-preview'>{item.preview}</Text>
+                )}
+                {isImageText && posterImages.length > 0 && (
+                  <View className='work-detail-poster-ops'>
+                    <View className='work-detail-poster-op-btn' onClick={handlePrevPoster}>
+                      <Text className='work-detail-poster-op-btn-text'>上一页</Text>
+                    </View>
+                    <View className='work-detail-poster-op-btn' onClick={handleNextPoster}>
+                      <Text className='work-detail-poster-op-btn-text'>下一页</Text>
+                    </View>
+                    <View className='work-detail-poster-op-btn' onClick={handlePreviewCurrentPoster}>
+                      <Text className='work-detail-poster-op-btn-text'>预览</Text>
+                    </View>
+                    <View
+                      className='work-detail-poster-op-btn work-detail-poster-op-btn--primary'
+                      onClick={() => {
+                        void handleDownloadImage(currentPosterUrl);
+                      }}
+                    >
+                      <Text className='work-detail-poster-op-btn-text work-detail-poster-op-btn-text--primary'>下载本页</Text>
+                    </View>
+                  </View>
+                )}
+                {publishQrcode && (
+                  <View className='work-detail-qrcode-card'>
+                    <Text className='work-detail-qrcode-title'>小红书发布二维码</Text>
+                    <Text className='work-detail-qrcode-link'>{publishQrcode}</Text>
+                    {!!publishUrl && (
+                      <Text className='work-detail-qrcode-link'>发布链接：{publishUrl}</Text>
+                    )}
+                    <View className='work-detail-qrcode-btn' onClick={handleCopyQrcode}>
+                      <Text className='work-detail-qrcode-btn-text'>复制链接</Text>
+                    </View>
+                  </View>
+                )}
+                <Text className='work-detail-date'>{formatDate(item.createdAt)}</Text>
+              </View>
+            </View>
+          </ScrollView>
+
+          <View className='work-detail-action-bar'>
+            <View
+              className={`work-detail-action-btn work-detail-delete-btn ${deleting ? 'work-detail-action-btn--disabled' : ''}`}
+              onClick={() => {
+                void handleDelete();
+              }}
+            >
+              <Text className='work-detail-delete-btn-text'>{deleting ? '删除中...' : '删除'}</Text>
+            </View>
+            <View
+              className={`work-detail-action-btn work-detail-download-btn ${downloading ? 'work-detail-action-btn--disabled' : ''}`}
+              onClick={() => {
+                void handleDownloadMain();
+              }}
+            >
+              <Text className='work-detail-download-btn-text'>{downloading ? '下载中...' : downloadBtnText}</Text>
+            </View>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function getTypeLabel(type: string) {
+  if (type === 'video') return '视频';
+  if (type === 'image-text') return '图文';
+  if (type === 'copy') return '文案';
+  return '任务';
+}
+
+type PlaceholderKind = 'video' | 'image' | 'copy';
+
+function getPlaceholderKind(type?: string): PlaceholderKind {
+  if (type === 'video') return 'video';
+  if (type === 'image-text') return 'image';
+  return 'copy';
+}
+
+function renderWorkDetailPlaceholderIcon(kind: PlaceholderKind) {
+  if (kind === 'video') {
+    return (
+      <View className='work-detail-placeholder-icon'>
+        <View className='work-detail-placeholder-video-triangle' />
+      </View>
+    );
+  }
+
+  if (kind === 'image') {
+    return (
+      <View className='work-detail-placeholder-icon'>
+        <View className='work-detail-placeholder-image-dot' />
+        <View className='work-detail-placeholder-image-mountain' />
+      </View>
+    );
+  }
+
+  return (
+    <View className='work-detail-placeholder-icon'>
+      <View className='work-detail-placeholder-doc' />
+      <View className='work-detail-placeholder-doc-line work-detail-placeholder-doc-line--top' />
+      <View className='work-detail-placeholder-doc-line work-detail-placeholder-doc-line--mid' />
+      <View className='work-detail-placeholder-doc-line work-detail-placeholder-doc-line--bottom' />
+      <View className='work-detail-placeholder-pen' />
+    </View>
+  );
+}
+
+function formatDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '--';
+
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const hour = String(date.getHours()).padStart(2, '0');
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  return `${month}/${day} ${hour}:${minute}`;
+}

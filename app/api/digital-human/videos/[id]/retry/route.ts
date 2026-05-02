@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getRequestUserContext } from '@/lib/authServer';
-import { createDigitalHumanJob, type DigitalHumanMode } from '@/lib/digitalHumanJob';
+import {
+  createDigitalHumanJob,
+  type DigitalHumanMode,
+  type DigitalHumanSourceType,
+} from '@/lib/digitalHumanJob';
+
+function inferSourceType(url: string | null | undefined): DigitalHumanSourceType {
+  const normalized = String(url ?? '').trim().toLowerCase();
+  if (/\.(mp4|mov|m4v|webm)(\?|$)/i.test(normalized)) return 'VIDEO';
+  return 'IMAGE';
+}
 
 export async function POST(
   request: NextRequest,
@@ -33,9 +43,12 @@ export async function POST(
   }
 
   try {
+    const sourceType = inferSourceType(original.imageUrl);
     await createDigitalHumanJob({
       type: original.type as DigitalHumanMode,
-      imageUrl: original.imageUrl,
+      sourceType,
+      imageUrl: sourceType === 'IMAGE' ? original.imageUrl : undefined,
+      videoUrl: sourceType === 'VIDEO' ? original.imageUrl : undefined,
       audioUrl: original.audioUrl,
       script: original.scriptContent || undefined,
       durationSeconds: original.durationSeconds ?? undefined,

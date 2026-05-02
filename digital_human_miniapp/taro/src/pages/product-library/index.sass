@@ -1,0 +1,216 @@
+.product-library-page
+  min-height: 100vh
+  background: #050505
+  display: flex
+  flex-direction: column
+
+.product-library-header
+  position: fixed
+  top: 0
+  left: 0
+  right: 0
+  z-index: 60
+  padding: calc(env(safe-area-inset-top) + 68rpx) 24rpx 24rpx
+  background: #121212
+  border-radius: 0 0 30rpx 30rpx
+  border-bottom: 1rpx solid rgba(137, 165, 215, 0.2)
+
+.product-library-topbar
+  position: relative
+  display: flex
+  justify-content: center
+  align-items: center
+  min-height: 56rpx
+  margin-bottom: 12rpx
+
+.product-library-back
+  position: absolute
+  left: 0
+  top: 50%
+  transform: translateY(-50%)
+  width: 56rpx
+  height: 56rpx
+  border-radius: 16rpx
+  border: 1rpx solid rgba(145, 175, 229, 0.28)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.product-library-back-text
+  color: #dce9ff
+  font-size: 40rpx
+  line-height: 1
+
+.product-library-title
+  font-size: 40rpx
+  color: #eaf3ff
+  font-weight: 800
+  text-align: center
+
+.product-library-summary
+  color: #8ea2c8
+  font-size: 24rpx
+
+.product-library-list
+  flex: 1
+  margin-top: calc(env(safe-area-inset-top) + 260rpx)
+
+.product-library-grid
+  display: grid
+  grid-template-columns: 1fr 1fr
+  gap: 14rpx
+  padding: 16rpx 24rpx 130rpx
+  box-sizing: border-box
+
+.product-library-card
+  background: #141414
+  border-radius: 22rpx
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+  overflow: hidden
+
+.product-library-add-card
+  min-height: 260rpx
+  background: #141414
+  border-radius: 22rpx
+  border: 1rpx dashed rgba(236, 238, 159, 0.5)
+  display: flex
+  flex-direction: column
+  align-items: center
+  justify-content: center
+  gap: 8rpx
+
+.product-library-add-card-plus
+  color: #ecee9f
+  font-size: 58rpx
+  line-height: 1
+  font-weight: 300
+
+.product-library-add-card-text
+  color: #dbe8ff
+  font-size: 24rpx
+  font-weight: 700
+
+.product-library-cover
+  width: 100%
+  aspect-ratio: 1
+  background: linear-gradient(135deg, #13264b 0%, #22396e 100%)
+
+.product-library-cover-image
+  width: 100%
+  height: 100%
+
+.product-library-cover-placeholder
+  width: 100%
+  height: 100%
+  display: flex
+  align-items: center
+  justify-content: center
+
+.product-library-cover-placeholder-text
+  color: #cfdfff
+  font-size: 30rpx
+  font-weight: 700
+
+.product-library-body
+  padding: 14rpx
+
+.product-library-name
+  display: block
+  font-size: 24rpx
+  color: #eaf3ff
+  font-weight: 700
+  line-height: 1.4
+  margin-bottom: 6rpx
+
+.product-library-meta
+  font-size: 20rpx
+  color: #7f93b8
+
+.product-library-helper
+  display: block
+  text-align: center
+  color: #7f93b8
+  padding: 100rpx 24rpx
+  font-size: 24rpx
+
+.product-modal-overlay
+  position: fixed
+  inset: 0
+  background: rgba(0, 0, 0, 0.62)
+  display: flex
+  align-items: center
+  justify-content: center
+  padding: 28rpx
+  z-index: 200
+
+.product-modal-card
+  width: 100%
+  background: #141414
+  border-radius: 24rpx
+  border: 1rpx solid rgba(145, 175, 229, 0.22)
+  padding: 24rpx
+
+.product-modal-title
+  display: block
+  font-size: 30rpx
+  color: #eaf3ff
+  font-weight: 800
+  margin-bottom: 18rpx
+
+.product-modal-label
+  display: block
+  color: #dce9ff
+  font-size: 22rpx
+  margin-bottom: 8rpx
+
+.product-modal-input
+  width: 100%
+  height: 72rpx
+  border-radius: 14rpx
+  background: #202020
+  color: #eaf3ff
+  padding: 0 18rpx
+  font-size: 24rpx
+  margin-bottom: 14rpx
+  box-sizing: border-box
+
+.product-modal-textarea
+  width: 100%
+  min-height: 120rpx
+  border-radius: 14rpx
+  background: #202020
+  color: #eaf3ff
+  padding: 14rpx 18rpx
+  font-size: 24rpx
+  margin-bottom: 14rpx
+  box-sizing: border-box
+
+.product-modal-actions
+  display: grid
+  grid-template-columns: 1fr 1fr
+  gap: 10rpx
+  margin-top: 6rpx
+
+.product-modal-cancel
+  height: 72rpx
+  border-radius: 14rpx
+  background: #202020
+  display: flex
+  align-items: center
+  justify-content: center
+  color: #eaf3ff
+  font-size: 24rpx
+
+.product-modal-confirm
+  height: 72rpx
+  border-radius: 14rpx
+  background: #ecee9f
+  display: flex
+  align-items: center
+  justify-content: center
+  color: #161616
+  font-size: 24rpx
+  font-weight: 700
+
+.product-modal-confirm--disabled
+  opacity: 0.5

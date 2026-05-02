@@ -1,0 +1,86 @@
+import { NextRequest, NextResponse } from 'next/server';
+import prisma from '@/lib/prisma';
+import { getRequestUserContext } from '@/lib/authServer';
+
+export async function GET(request: NextRequest) {
+  const { userId } = await getRequestUserContext(request);
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const profile = await prisma.profiles.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        username: true,
+        full_name: true,
+        avatar_url: true,
+        plan: true,
+        role: true,
+      },
+    });
+
+    if (!profile) {
+      return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      data: {
+        id: profile.id,
+        username: profile.username ?? profile.full_name ?? null,
+        avatarUrl: profile.avatar_url ?? null,
+        memberLevel: profile.plan || profile.role || null,
+      },
+    });
+  } catch (error) {
+    console.error('[user/profile] get profile failed', error);
+    return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 500 });
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  const { userId } = await getRequestUserContext(request);
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  const avatarUrl = typeof body.avatarUrl === 'string' ? body.avatarUrl.trim() : '';
+  if (!avatarUrl) {
+    return NextResponse.json({ error: 'avatarUrl is required' }, { status: 400 });
+  }
+
+  try {
+    const updated = await prisma.profiles.update({
+      where: { id: userId },
+      data: {
+        avatar_url: avatarUrl,
+        updated_at: new Date(),
+      },
+      select: {
+        id: true,
+        username: true,
+        full_name: true,
+        avatar_url: true,
+      },
+    });
+
+    return NextResponse.json({
+      data: {
+        id: updated.id,
+        username: updated.username ?? updated.full_name ?? null,
+        avatarUrl: updated.avatar_url ?? null,
+      },
+    });
+  } catch (error) {
+    console.error('[user/profile] update avatar failed', error);
+    return NextResponse.json({ error: 'Failed to update avatar' }, { status: 500 });
+  }
+}
