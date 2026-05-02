@@ -1,6 +1,4 @@
 export default defineAppConfig({
-  // 微信小程序代码质量项：启用组件按需注入
-  lazyCodeLoading: 'requiredComponents',
   pages: [
     'pages/home/index',
     'pages/hot-square/index',
