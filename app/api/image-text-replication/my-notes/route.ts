@@ -28,8 +28,8 @@ export async function GET(request: NextRequest) {
 
   const limit = Math.min(Math.max(Number(request.nextUrl.searchParams.get('limit') || 30), 1), 60);
 
-  // "我的" should include all user-created image-text replication notes:
-  // miniapp collect, one-click create, and web-side note tasks.
+  // "我的" is the user's collection and parsing queue, so pending rows must
+  // stay visible and keep their persisted status on the original card.
   const rows = await prisma.imageTextReplicationTask.findMany({
     where: {
       userId,
@@ -54,6 +54,7 @@ export async function GET(request: NextRequest) {
       generatedCopy: row.generatedCopy,
       imageGuidance: row.imageGuidance,
       errorMessage: row.errorMessage,
+      rawPayload: row.generatedImages,
       updatedAt: row.updatedAt,
       createdAt: row.createdAt,
     })),
@@ -67,11 +68,18 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => ({}));
+  if (normalizeText(body.action).toLowerCase() === 'remove') {
+    return removeMyNotes(request, body);
+  }
+
   const sourceTitle = normalizeText(body.sourceTitle) || '未命名笔记';
   const sourceText = normalizeText(body.sourceText);
   const sourceImages = normalizeImages(body.sourceImages);
   const sourceId = normalizeText(body.sourceId) || randomUUID();
   const sourceUrl = normalizeText(body.sourceUrl);
+  const rawPayload = body.rawPayload && typeof body.rawPayload === 'object'
+    ? body.rawPayload
+    : null;
 
   let existing = await prisma.imageTextReplicationTask.findFirst({
     where: {
@@ -97,6 +105,9 @@ export async function POST(request: NextRequest) {
 
   let taskId = existing?.id || '';
   if (existing) {
+    const existingMeta = existing.generatedImages && typeof existing.generatedImages === 'object' && !Array.isArray(existing.generatedImages)
+      ? existing.generatedImages
+      : null;
     await prisma.imageTextReplicationTask.update({
       where: { id: existing.id },
       data: {
@@ -107,7 +118,9 @@ export async function POST(request: NextRequest) {
         status: 'BREAKDOWN_PENDING',
         analysisResult: Prisma.JsonNull,
         generatedCopy: null,
-        generatedImages: Prisma.JsonNull,
+        generatedImages: rawPayload
+          ? toInputJson(rawPayload)
+          : (existingMeta ? toInputJson(existingMeta) : Prisma.JsonNull),
         imageGuidance: Prisma.JsonNull,
         errorMessage: null,
       },
@@ -125,6 +138,7 @@ export async function POST(request: NextRequest) {
         sourcePlatform: 'miniapp-my',
         sourceId,
         sourceUrl,
+        generatedImages: rawPayload ? toInputJson(rawPayload) : Prisma.JsonNull,
       },
     });
     taskId = created.id;
@@ -138,5 +152,41 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     taskId,
     status: 'BREAKDOWN_PENDING',
+  });
+}
+
+export async function DELETE(request: NextRequest) {
+  const body = await request.json().catch(() => ({}));
+  return removeMyNotes(request, body);
+}
+
+async function removeMyNotes(request: NextRequest, body: Record<string, unknown>) {
+  const { userId } = await getRequestUserContext(request);
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const id = normalizeText(body.id);
+  const sourceId = normalizeText(body.sourceId);
+  const sourceUrl = normalizeText(body.sourceUrl);
+
+  if (!id && !sourceId && !sourceUrl) {
+    return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+  }
+
+  const result = await prisma.imageTextReplicationTask.deleteMany({
+    where: {
+      userId,
+      OR: [
+        ...(id ? [{ id }] : []),
+        ...(sourceId ? [{ sourceId }] : []),
+        ...(sourceUrl ? [{ sourceUrl }] : []),
+      ],
+    },
+  });
+
+  return NextResponse.json({
+    success: true,
+    deleted: result.count,
   });
 }

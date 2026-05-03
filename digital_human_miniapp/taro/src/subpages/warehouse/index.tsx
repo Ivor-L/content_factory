@@ -129,6 +129,7 @@ export default function WarehousePage() {
         <View className='warehouse-back' onClick={handleBack}>
           <Text className='warehouse-back-text'>‹</Text>
         </View>
+        <Text className='warehouse-title'>角色库</Text>
       </View>
       <ScrollView scrollY className='warehouse-scroll'>
         {loading && <Text className='loading-text'>加载中...</Text>}

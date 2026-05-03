@@ -10,13 +10,18 @@
   left: 0
   right: 0
   z-index: 50
-  height: calc(env(safe-area-inset-top) + 92rpx)
-  padding: env(safe-area-inset-top) 24rpx 0
+  padding: calc(env(safe-area-inset-top) + 14rpx) 24rpx 14rpx
+  display: flex
+  flex-direction: column
+  gap: 12rpx
+  border-bottom: 1rpx solid rgba(137, 165, 215, 0.2)
+  background: #d4c3ec
+  backdrop-filter: blur(20px)
+
+.monetization-topbar
   display: flex
   align-items: center
   justify-content: space-between
-  border-bottom: 1rpx solid rgba(137, 165, 215, 0.2)
-  background: #121212
 
 .monetization-back
   width: 56rpx
@@ -26,21 +31,61 @@
   justify-content: center
 
 .monetization-back-text
-  color: #e8f2ff
+  color: #161616
   font-size: 52rpx
   line-height: 1
 
 .monetization-nav-title
-  font-size: 30rpx
-  color: #e8f2ff
+  position: absolute
+  left: 50%
+  top: calc(env(safe-area-inset-top) + 12rpx)
+  transform: translateX(-50%)
+  font-size: 40rpx
+  color: #111111
   font-weight: 800
+  line-height: 56rpx
 
 .monetization-nav-spacer
   width: 56rpx
 
+.monetization-top-switch-tabs
+  display: flex
+  align-items: center
+  justify-content: center
+  gap: 72rpx
+  padding-top: 2rpx
+
+.monetization-top-switch-tab
+  position: relative
+  display: inline-flex
+  flex-direction: column
+  align-items: center
+  justify-content: center
+  padding: 2rpx 0 12rpx
+
+.monetization-top-switch-label
+  font-size: 30rpx
+  line-height: 1.2
+  font-weight: 700
+  color: rgba(34, 37, 46, 0.55)
+
+.monetization-top-switch-tab--active
+  .monetization-top-switch-label
+    color: #111111
+
+.monetization-top-switch-underline
+  position: absolute
+  left: 50%
+  bottom: 0
+  transform: translateX(-50%)
+  width: 30rpx
+  height: 8rpx
+  border-radius: 999rpx
+  background: #111111
+
 .monetization-body
   flex: 1
-  margin-top: calc(env(safe-area-inset-top) + 92rpx)
+  margin-top: calc(env(safe-area-inset-top) + 154rpx)
   padding: 16rpx 24rpx calc(env(safe-area-inset-bottom) + 24rpx)
   box-sizing: border-box
 
@@ -53,9 +98,9 @@
 .monetization-state
   margin-top: 24rpx
   padding: 28rpx 20rpx
-  border-radius: 14rpx
-  border: 1rpx solid rgba(145, 175, 229, 0.18)
-  background: #141414
+  border-radius: 18rpx
+  border: 1rpx solid rgba(255, 255, 255, 0.12)
+  background: rgba(20, 20, 20, 0.84)
 
 .monetization-state-text
   text-align: center
@@ -95,12 +140,12 @@
   color: #151515
 
 .monetization-content-scroll
-  height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 206rpx)
+  height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 260rpx)
 
 .monetization-group-list
   display: flex
   flex-direction: column
-  gap: 24rpx
+  gap: 28rpx
 
 .monetization-section
   padding-bottom: 20rpx
@@ -112,8 +157,8 @@
   margin-bottom: 16rpx
 
 .monetization-section-title
-  font-size: 22rpx
-  color: #e8f2ff
+  font-size: 44rpx
+  color: #ffffff
   font-weight: 800
 
 .monetization-demo-scroll
@@ -126,15 +171,15 @@
   min-width: 100%
 
 .monetization-card
-  flex: 0 0 210rpx
-  width: 210rpx
-  border-radius: 9rpx
-  border: 1rpx solid rgba(145, 175, 229, 0.2)
+  flex: 0 0 240rpx
+  width: 240rpx
+  border-radius: 18rpx
+  border: 1rpx solid rgba(255, 255, 255, 0.1)
   background: #141414
   overflow: hidden
 
 .monetization-card-media
-  height: 280rpx
+  height: 320rpx
   background: #0f0f0f
 
 .monetization-card-cover
@@ -151,16 +196,16 @@
   background: linear-gradient(135deg, #1a2c4f 0%, #2b4372 100%)
 
 .monetization-card-fallback-text
-  font-size: 21rpx
+  font-size: 24rpx
   color: #e7efff
   font-weight: 800
 
 .monetization-card-body
-  padding: 7rpx 8rpx
+  padding: 8rpx 10rpx
 
 .monetization-card-title
   display: block
-  font-size: 14rpx
+  font-size: 16rpx
   color: #e8f2ff
   font-weight: 800
   flex: 1
@@ -172,11 +217,11 @@
 .monetization-card-footer
   display: flex
   align-items: center
-  gap: 6rpx
+  gap: 8rpx
 
 .monetization-card-btn
-  height: 24rpx
-  padding: 0 9rpx
+  height: 28rpx
+  padding: 0 12rpx
   border-radius: 999rpx
   background: #ecee9f
   display: flex
@@ -186,5 +231,75 @@
 
 .monetization-card-btn-text
   color: #151515
-  font-size: 11rpx
+  font-size: 13rpx
   font-weight: 800
+
+.monetization-share-scroll
+  height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 210rpx)
+
+.monetization-share-list
+  display: flex
+  flex-direction: column
+  gap: 28rpx
+
+.monetization-share-section
+  padding-bottom: 14rpx
+
+.monetization-share-scroll-row
+  white-space: nowrap
+
+.monetization-share-card-list
+  display: flex
+  gap: 18rpx
+  width: max-content
+  min-width: 100%
+
+.monetization-share-card
+  width: 286rpx
+  flex: 0 0 286rpx
+
+.monetization-share-card-media
+  position: relative
+  height: 430rpx
+  border-radius: 18rpx
+  overflow: hidden
+  box-shadow: 0 16rpx 26rpx rgba(0, 0, 0, 0.24)
+
+.monetization-share-card-media::after
+  content: ''
+  position: absolute
+  inset: 0
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(0, 0, 0, 0.12) 48%, rgba(0, 0, 0, 0.48) 100%)
+
+.monetization-share-card-overlay
+  position: absolute
+  left: 18rpx
+  right: 18rpx
+  bottom: 18rpx
+  z-index: 2
+
+.monetization-share-card-title
+  display: block
+  color: #ffffff
+  font-size: 42rpx
+  font-weight: 800
+  line-height: 1.22
+  white-space: nowrap
+  overflow: hidden
+  text-overflow: ellipsis
+
+.monetization-share-card-stats
+  margin-top: 12rpx
+  display: flex
+  align-items: center
+  justify-content: flex-start
+  gap: 10rpx
+
+.monetization-share-mark
+  width: 40rpx
+  height: 40rpx
+
+.monetization-share-likes
+  color: rgba(255, 255, 255, 0.96)
+  font-size: 30rpx
+  font-weight: 500

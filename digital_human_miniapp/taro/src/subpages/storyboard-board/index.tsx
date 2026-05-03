@@ -357,6 +357,100 @@ export default function StoryboardBoardPage() {
     }
   };
 
+  const handleGenerateAllImages = async () => {
+    const actionKey = 'batch-image';
+    if (isActioning(actionKey)) return;
+    if (!segments.length) {
+      Taro.showToast({ title: '暂无可生图镜头', icon: 'none' });
+      return;
+    }
+
+    let targetSegments = segments.filter((segment) => !normalizeMediaUrl(segment.generatedImage));
+    if (targetSegments.length === 0) {
+      const confirm = await Taro.showModal({
+        title: '重新生成图片？',
+        content: '所有镜头已有首帧图，将重新生成全部镜头图片。',
+        confirmText: '重新生成',
+        cancelText: '取消',
+      });
+      if (!confirm.confirm) return;
+      targetSegments = segments;
+    }
+
+    setActioning(actionKey, true);
+    try {
+      if (demoMode) {
+        targetSegments.forEach((segment) => upsertLocalSegment(segment.id, { status: 'IMAGE_GENERATING' }));
+        Taro.showToast({ title: '演示模式：已一键生图', icon: 'none' });
+        return;
+      }
+
+      const result = await miniappApi.generateStoryboardImages({
+        taskId,
+        segmentIds: targetSegments.map((segment) => segment.id),
+        model: imageModel,
+        aspectRatio: '16:9',
+      });
+      if (result.triggered <= 0) {
+        throw new Error(result.message || '一键生图失败');
+      }
+      targetSegments.forEach((segment) => upsertLocalSegment(segment.id, { status: 'IMAGE_GENERATING' }));
+      Taro.showToast({ title: `已触发生图${result.triggered}个`, icon: 'success' });
+      await loadStatus(true);
+    } catch (error) {
+      Taro.showToast({ title: error instanceof Error ? error.message : '一键生图失败', icon: 'none' });
+    } finally {
+      setActioning(actionKey, false);
+    }
+  };
+
+  const handleGenerateAllVideos = async () => {
+    const actionKey = 'batch-video';
+    if (isActioning(actionKey)) return;
+    if (!segments.length) {
+      Taro.showToast({ title: '暂无可生成视频镜头', icon: 'none' });
+      return;
+    }
+
+    let targetSegments = segments.filter((segment) => !normalizeMediaUrl(segment.generatedVideo));
+    if (targetSegments.length === 0) {
+      const confirm = await Taro.showModal({
+        title: '重新生成视频？',
+        content: '所有镜头已有视频，将重新生成全部镜头视频。',
+        confirmText: '重新生成',
+        cancelText: '取消',
+      });
+      if (!confirm.confirm) return;
+      targetSegments = segments;
+    }
+
+    setActioning(actionKey, true);
+    try {
+      if (demoMode) {
+        targetSegments.forEach((segment) => upsertLocalSegment(segment.id, { status: 'VIDEO_GENERATING' }));
+        Taro.showToast({ title: '演示模式：已一键生成视频', icon: 'none' });
+        return;
+      }
+
+      const result = await miniappApi.generateStoryboardVideos({
+        taskId,
+        segmentIds: targetSegments.map((segment) => segment.id),
+        model: videoModel,
+        allowTextVideo: true,
+      });
+      if (result.triggered <= 0) {
+        throw new Error(result.message || '一键生成视频失败');
+      }
+      targetSegments.forEach((segment) => upsertLocalSegment(segment.id, { status: 'VIDEO_GENERATING' }));
+      Taro.showToast({ title: `已触发视频${result.triggered}个`, icon: 'success' });
+      await loadStatus(true);
+    } catch (error) {
+      Taro.showToast({ title: error instanceof Error ? error.message : '一键生成视频失败', icon: 'none' });
+    } finally {
+      setActioning(actionKey, false);
+    }
+  };
+
   const handleOpenFinalVideo = () => {
     if (!task?.finalVideoUrl) {
       Taro.showToast({ title: '成片还未生成', icon: 'none' });
@@ -516,16 +610,30 @@ export default function StoryboardBoardPage() {
       </ScrollView>
 
       <View className='storyboard-action-bar'>
-        <View className='storyboard-setting-btn' onClick={() => setModelSheetOpen(true)}>
-          <Text className='storyboard-setting-icon'>⚙</Text>
+        <View className='storyboard-action-row storyboard-action-row--primary'>
+          <View className='storyboard-action-btn storyboard-bottom-btn storyboard-bottom-btn--ghost' onClick={() => void handleGenerateAllImages()}>
+            <Text className='storyboard-bottom-btn-text storyboard-bottom-btn-text--ghost'>
+              {isActioning('batch-image') ? '生图中...' : '一键生图'}
+            </Text>
+          </View>
+          <View className='storyboard-action-btn storyboard-bottom-btn storyboard-bottom-btn--primary' onClick={() => void handleGenerateAllVideos()}>
+            <Text className='storyboard-bottom-btn-text'>
+              {isActioning('batch-video') ? '生成中...' : '一键生成视频'}
+            </Text>
+          </View>
         </View>
-        <View className='storyboard-action-btn storyboard-bottom-btn storyboard-bottom-btn--ghost' onClick={handleOpenFinalVideo}>
-          <Text className='storyboard-bottom-btn-text storyboard-bottom-btn-text--ghost'>查看成片</Text>
-        </View>
-        <View className='storyboard-action-btn storyboard-bottom-btn storyboard-bottom-btn--primary' onClick={handleMerge}>
-          <Text className='storyboard-bottom-btn-text'>
-            {isActioning('merge') ? '剪辑中...' : '一键剪辑'}
-          </Text>
+        <View className='storyboard-action-row'>
+          <View className='storyboard-setting-btn' onClick={() => setModelSheetOpen(true)}>
+            <Text className='storyboard-setting-icon'>⚙</Text>
+          </View>
+          <View className='storyboard-action-btn storyboard-bottom-btn storyboard-bottom-btn--ghost' onClick={handleOpenFinalVideo}>
+            <Text className='storyboard-bottom-btn-text storyboard-bottom-btn-text--ghost'>查看成片</Text>
+          </View>
+          <View className='storyboard-action-btn storyboard-bottom-btn storyboard-bottom-btn--primary' onClick={handleMerge}>
+            <Text className='storyboard-bottom-btn-text'>
+              {isActioning('merge') ? '剪辑中...' : '一键剪辑'}
+            </Text>
+          </View>
         </View>
       </View>
 

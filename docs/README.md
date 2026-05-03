@@ -110,3 +110,7 @@
 | [20260502-miniapp-hot-square-data-center-plan.md](./20260502-miniapp-hot-square-data-center-plan.md) | 小程序爆款数据中心：我的分类个人数据 + 后台分类配置与小红书搜索采集 |
 | [20260502-miniapp-hot-square-xhs-collect-plan.md](./20260502-miniapp-hot-square-xhs-collect-plan.md) | 小程序爆款广场新增右下角采集入口：粘贴小红书链接并沉淀到“我的”分类 |
 | [20260503-auth-unified-login-provision-plan.md](./20260503-auth-unified-login-provision-plan.md) | 统一 Web/小程序登录完成器：三端登录后自动建号、绑定身份并强制真实积分开户 |
+| [20260503-miniapp-card-cover-config-plan.md](./20260503-miniapp-card-cover-config-plan.md) | 小程序图文卡片封面配置补齐：封面配置、预览与导出一致性 |
+| [20260504-miniapp-hot-detail-favorite-and-parse-plan.md](./20260504-miniapp-hot-detail-favorite-and-parse-plan.md) | 小程序爆款详情收藏、解析态与详情页展示修复计划 |
+| [20260504-miniapp-library-header-card-fit-plan.md](./20260504-miniapp-library-header-card-fit-plan.md) | 小程序素材库头部与卡片适配：对齐标准页并修复角色卡片溢出 |
+| [20260504-miniapp-hot-video-collect-remix-plan.md](./20260504-miniapp-hot-video-collect-remix-plan.md) | 小程序爆款视频采集与复刻链路：提取文案、下载视频、选择复刻类型并预填参考视频 |

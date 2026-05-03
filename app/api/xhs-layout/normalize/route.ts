@@ -82,7 +82,7 @@ function toSafePayload(raw: unknown, fallback: string): NormalizePayload {
 }
 
 export async function POST(request: NextRequest) {
-  const { userId, apiKey } = await getRequestUserContext(request, {
+  const { userId } = await getRequestUserContext(request, {
     allowDefaultApiKey: true,
     useSystemApiKey: true,
   });
@@ -90,7 +90,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const upstreamApiKey = resolveCanvasUpstreamApiKey(apiKey);
+  // AI 一键优化固定走系统 key，不使用用户个人 API key。
+  const upstreamApiKey = resolveCanvasUpstreamApiKey(null);
   if (!upstreamApiKey) {
     return NextResponse.json({ error: "画布服务尚未配置，请联系管理员处理。" }, { status: 400 });
   }

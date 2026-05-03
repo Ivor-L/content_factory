@@ -21,6 +21,22 @@ type RenderRequestBody = {
   title?: string;
   includeCover?: boolean;
   maxPages?: number;
+  cover?: {
+    coverStyleId?: string;
+    coverTitle?: string;
+    coverSubtitle?: string;
+    coverImage?: string;
+    coverTextColor?: string;
+    coverHighlightColor?: string;
+    coverCardRadius?: number;
+    coverShowStickers?: boolean;
+    coverFontFamily?: string;
+    coverTitleAlignX?: "left" | "center" | "right";
+    coverTitleAlignY?: "top" | "center" | "bottom";
+    coverFontSize?: number;
+    coverSubtitleFontSize?: number;
+    coverLineHeight?: number;
+  };
 };
 
 function sanitizeText(value: unknown, maxLength: number): string {
@@ -101,6 +117,7 @@ export async function POST(request: NextRequest) {
       title: renderTitle,
       includeCover,
       maxPages,
+      cover: body?.cover,
     });
 
     if (svgs.length === 0) {

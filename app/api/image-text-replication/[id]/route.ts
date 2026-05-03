@@ -7,6 +7,29 @@ function parseObject(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+function collectObjects(value: unknown): Record<string, unknown>[] {
+  const result: Record<string, unknown>[] = [];
+  const queue: unknown[] = [value];
+  const seen = new Set<unknown>();
+
+  while (queue.length > 0 && result.length < 160) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object" || seen.has(current)) continue;
+    seen.add(current);
+
+    if (Array.isArray(current)) {
+      queue.push(...current);
+      continue;
+    }
+
+    const obj = current as Record<string, unknown>;
+    result.push(obj);
+    queue.push(...Object.values(obj));
+  }
+
+  return result;
+}
+
 function mapStatus(raw: string): string {
   if (raw === "PROCESSING") return "GENERATE_PENDING";
   if (raw === "FAILED") return "GENERATE_FAILED";
@@ -90,6 +113,78 @@ function normalizeMyNoteAnalysis(value: unknown) {
   };
 }
 
+function pickString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function pickNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) return Math.round(value);
+    if (typeof value === "string") {
+      const normalized = value.replace(/,/g, "").replace(/\+/g, "").trim();
+      if (!normalized) continue;
+      const match = normalized.match(/([\d.]+)/);
+      if (!match) continue;
+      let multiplier = 1;
+      if (/[万w]/i.test(normalized)) multiplier = 10000;
+      else if (/[千k]/i.test(normalized)) multiplier = 1000;
+      const parsed = Number(match[1]);
+      if (Number.isFinite(parsed)) return Math.round(parsed * multiplier);
+    }
+  }
+  return null;
+}
+
+function pickStringByKeys(objects: Record<string, unknown>[], keys: string[]): string | null {
+  for (const obj of objects) {
+    for (const key of keys) {
+      const value = pickString(obj[key]);
+      if (value) return value;
+    }
+  }
+  return null;
+}
+
+function pickNumberByKeys(objects: Record<string, unknown>[], keys: string[]): number | null {
+  for (const obj of objects) {
+    for (const key of keys) {
+      const value = pickNumber(obj[key]);
+      if (value != null) return value;
+    }
+  }
+  return null;
+}
+
+function pickStringByPath(raw: Record<string, unknown>, path: string): string | null {
+  const value = path.split(".").reduce<unknown>((current, key) => {
+    const obj = parseObject(current);
+    return obj ? obj[key] : undefined;
+  }, raw);
+  return pickString(value);
+}
+
+function normalizeMyNoteRaw(value: unknown) {
+  const raw = parseObject(value) ?? {};
+  const author = parseObject(raw.author) ?? {};
+  const stats = parseObject(raw.stats) ?? {};
+  const objects = collectObjects(raw);
+  const authorNameKeys = ["作者昵称", "作者名称", "用户昵称", "用户名称", "博主昵称", "博主", "作者", "nickname", "nickName", "nick_name", "authorName", "author_name", "userName", "username", "name"];
+  const avatarKeys = ["作者头像", "用户头像", "博主头像", "头像", "avatar", "avatarUrl", "avatar_url", "authorAvatar", "author_avatar", "userAvatar", "user_avatar", "image"];
+  return {
+    creatorName: pickString(raw.creatorName, raw.authorName, raw.author_name, raw["作者昵称"], raw["作者名称"], raw["用户昵称"], raw["用户名称"], raw["博主昵称"], raw["博主"], raw["作者"], author.name, author.nickname, author.nickName, author.username) ?? pickStringByKeys(objects, authorNameKeys),
+    creatorAvatarUrl: pickString(raw.creatorAvatarUrl, raw.authorAvatar, raw.author_avatar, raw["作者头像"], raw["用户头像"], raw["博主头像"], raw["头像"], author.avatarUrl, author.avatar_url, author.avatar) ?? pickStringByKeys(objects, avatarKeys),
+    likes: pickNumber(stats.likes, stats.likeCount, stats.like_count, stats.liked_count, raw.likes, raw.likeCount, raw.like_count, raw.liked_count, raw["点赞数"], raw["点赞"], raw["赞数"]) ?? pickNumberByKeys(objects, ["点赞数", "点赞", "赞数", "liked_count", "like_count", "likeCount", "likedCount", "likes"]),
+    collects: pickNumber(stats.collects, stats.collectCount, stats.collect_count, stats.collected_count, raw.collects, raw.collectCount, raw.collect_count, raw.collected_count, raw["收藏数"], raw["收藏"]) ?? pickNumberByKeys(objects, ["收藏数", "收藏", "collected_count", "collect_count", "collectCount", "collectedCount", "collects"]),
+    comments: pickNumber(stats.comments, stats.commentCount, stats.comment_count, raw.comments, raw.commentCount, raw.comment_count, raw["评论数"], raw["评论"]) ?? pickNumberByKeys(objects, ["评论数", "评论", "comment_count", "commentCount", "comments"]),
+    shares: pickNumber(stats.shares, stats.shareCount, stats.share_count, raw.shares, raw.shareCount, raw.share_count, raw["分享数"], raw["分享"]) ?? pickNumberByKeys(objects, ["分享数", "分享", "share_count", "shareCount", "shares"]),
+    videoUrl: pickStringByPath(raw, "media.videoUrl") ?? pickStringByKeys(objects, ["videoUrl", "video_url", "视频地址", "视频链接", "播放地址", "playUrl", "play_url", "masterUrl", "master_url"]),
+    sourceType: pickStringByPath(raw, "media.sourceType") ?? pickString(raw.sourceType, raw.source_type),
+  };
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -154,6 +249,7 @@ export async function GET(
   if (!myNote) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  const rawMeta = normalizeMyNoteRaw(myNote.generatedImages);
 
   return NextResponse.json({
     task: {
@@ -173,8 +269,37 @@ export async function GET(
         platform: myNote.sourcePlatform || '',
         sourceId: myNote.sourceId || '',
         sourceUrl: myNote.sourceUrl || '',
+        creatorName: rawMeta.creatorName,
+        creatorAvatarUrl: rawMeta.creatorAvatarUrl,
+        likes: rawMeta.likes,
+        collects: rawMeta.collects,
+        comments: rawMeta.comments,
+        shares: rawMeta.shares,
+        videoUrl: rawMeta.videoUrl,
+        sourceType: rawMeta.sourceType || (rawMeta.videoUrl ? 'video' : 'image'),
       },
       stylePreset: null,
     },
   });
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { userId } = await getRequestUserContext(request);
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id } = await params;
+  const result = await prisma.imageTextReplicationTask.deleteMany({
+    where: { id, userId },
+  });
+
+  if (result.count === 0) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  return NextResponse.json({ success: true, deleted: result.count });
 }

@@ -1,10 +1,12 @@
-import { View, Text, Image, ScrollView, Swiper, SwiperItem } from '@tarojs/components';
+import { View, Text, Image, ScrollView, Swiper, SwiperItem, Video } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 import { useEffect, useMemo, useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
 import './index.sass';
 
 const VIDEO_URL_RE = /\.(mp4|mov|m3u8)(\?|$)|\/video\/|\/master\/|xgvideo/i;
+const HTTP_URL_RE = /^https?:\/\//i;
+const API_BASE_URL = getApiBaseUrl();
 
 export default function WorkDetailPage() {
   const [item, setItem] = useState<any | null>(null);
@@ -43,6 +45,7 @@ export default function WorkDetailPage() {
   }, [item, posterImages]);
 
   const isImageText = item?.type === 'image-text';
+  const videoUrl = useMemo(() => resolveVideoUrlFromItem(item), [item]);
   const currentPosterUrl = posterImages[currentPosterIndex] || '';
 
   useEffect(() => {
@@ -145,7 +148,11 @@ export default function WorkDetailPage() {
   };
 
   const saveMediaFromUrl = async (url: string, mediaType: 'image' | 'video') => {
-    const downloadRes = await Taro.downloadFile({ url });
+    const apiKey = getApiKey();
+    const downloadRes = await Taro.downloadFile({
+      url: buildDownloadUrl(url, mediaType),
+      header: apiKey ? { 'x-user-api-key': apiKey } : undefined,
+    });
     if (!downloadRes.tempFilePath || (typeof downloadRes.statusCode === 'number' && downloadRes.statusCode >= 400)) {
       throw new Error('下载失败');
     }
@@ -154,27 +161,6 @@ export default function WorkDetailPage() {
       return;
     }
     await Taro.saveImageToPhotosAlbum({ filePath: downloadRes.tempFilePath });
-  };
-
-  const resolveVideoUrl = () => {
-    const candidates: unknown[] = [
-      item?.preview,
-      item?.videoUrl,
-      item?.metadata && typeof item.metadata === 'object'
-        ? (item.metadata as Record<string, unknown>).videoUrl
-        : '',
-      item?.metadata && typeof item.metadata === 'object'
-        ? (item.metadata as Record<string, unknown>).outputUrl
-        : '',
-    ];
-
-    for (const raw of candidates) {
-      if (typeof raw !== 'string') continue;
-      const url = raw.trim();
-      if (!url) continue;
-      if (VIDEO_URL_RE.test(url)) return url;
-    }
-    return '';
   };
 
   const resolveSingleImageUrl = () => {
@@ -258,7 +244,6 @@ export default function WorkDetailPage() {
       }
 
       if (item.type === 'video') {
-        const videoUrl = resolveVideoUrl();
         if (!videoUrl) throw new Error('未找到可下载视频');
         await saveMediaFromUrl(videoUrl, 'video');
         Taro.showToast({ title: '视频已保存', icon: 'success' });
@@ -343,7 +328,38 @@ export default function WorkDetailPage() {
                     </View>
                   </View>
                 ) : coverUrl ? (
-                  <Image className='work-detail-cover' src={coverUrl} mode='widthFix' />
+                  item.type === 'video' && videoUrl ? (
+                    <Video
+                      className='work-detail-video'
+                      src={videoUrl}
+                      poster={coverUrl}
+                      controls
+                      autoplay={false}
+                      muted
+                      showMuteBtn
+                      showCenterPlayBtn
+                      showFullscreenBtn
+                      enablePlayGesture
+                      objectFit='contain'
+                      playBtnPosition='center'
+                    />
+                  ) : (
+                    <Image className='work-detail-cover' src={coverUrl} mode='widthFix' />
+                  )
+                ) : item.type === 'video' && videoUrl ? (
+                  <Video
+                    className='work-detail-video'
+                    src={videoUrl}
+                    controls
+                    autoplay={false}
+                    muted
+                    showMuteBtn
+                    showCenterPlayBtn
+                    showFullscreenBtn
+                    enablePlayGesture
+                    objectFit='contain'
+                    playBtnPosition='center'
+                  />
                 ) : (
                   <View className='work-detail-cover-placeholder'>
                     {renderWorkDetailPlaceholderIcon(getPlaceholderKind(item.type))}
@@ -359,7 +375,7 @@ export default function WorkDetailPage() {
                     <Text className='work-detail-cover-download-text'>↓</Text>
                   </View>
                 )}
-                {item.type === 'video' && (
+                {item.type === 'video' && !videoUrl && (
                   <View className='work-detail-video-icon'>
                     <Text className='work-detail-video-icon-text'>▶</Text>
                   </View>
@@ -435,6 +451,92 @@ export default function WorkDetailPage() {
       )}
     </View>
   );
+}
+
+function getApiBaseUrl(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fromDefine = typeof __API_BASE_URL__ !== 'undefined' ? String((__API_BASE_URL__ as any) || '').trim() : '';
+    if (fromDefine) return fromDefine.replace(/\/$/, '');
+  } catch {
+    // ignore
+  }
+  return '';
+}
+
+function getApiKey(): string {
+  try {
+    return String(Taro.getStorageSync('API_KEY') || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function buildDownloadUrl(url: string, mediaType: 'image' | 'video'): string {
+  const filename = mediaType === 'video' ? `video-${Date.now()}.mp4` : `image-${Date.now()}.jpg`;
+  const path = `/api/proxy/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`;
+  return API_BASE_URL ? `${API_BASE_URL}${path}` : path;
+}
+
+function resolveVideoUrlFromItem(item: any): string {
+  if (!item) return '';
+
+  const metadata = item?.metadata && typeof item.metadata === 'object'
+    ? item.metadata as Record<string, unknown>
+    : null;
+  const urls: string[] = [];
+
+  const pushUrls = (value: unknown, depth = 0) => {
+    if (depth > 4 || value == null) return;
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return;
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        try {
+          pushUrls(JSON.parse(trimmed), depth + 1);
+          return;
+        } catch {
+          // Keep treating it as a plain string below.
+        }
+      }
+      urls.push(trimmed);
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach((entry) => pushUrls(entry, depth + 1));
+      return;
+    }
+
+    if (typeof value === 'object') {
+      Object.values(value as Record<string, unknown>).forEach((entry) => pushUrls(entry, depth + 1));
+    }
+  };
+
+  [
+    item.preview,
+    item.videoUrl,
+    item.resultUrl,
+    item.outputUrl,
+    metadata?.videoUrl,
+    metadata?.video_url,
+    metadata?.resultUrl,
+    metadata?.result_url,
+    metadata?.outputUrl,
+    metadata?.output_url,
+    metadata?.finalVideoUrl,
+    metadata?.final_video_url,
+    metadata?.mediaUrls,
+    metadata?.media_urls,
+    metadata?.outputs,
+    metadata?.result,
+    metadata?.raw,
+  ].forEach((candidate) => pushUrls(candidate));
+
+  const exact = urls.find((url) => VIDEO_URL_RE.test(url));
+  if (exact) return exact;
+  return urls.find((url) => HTTP_URL_RE.test(url)) || '';
 }
 
 function getTypeLabel(type: string) {

@@ -113,8 +113,8 @@ export default function WorksPage() {
       <View className='works-header'>
         <Text className='works-title'>我的作品</Text>
         <View className='works-retention-banner'>
-          <Text className='works-retention-banner-icon'>🔔</Text>
-          <Text className='works-retention-banner-text'>特别提示：作品仅保留5天，超期将自动清理</Text>
+          <View className='works-retention-banner-dot' />
+          <Text className='works-retention-banner-text'>作品保留 5 天，超期自动清理</Text>
         </View>
         <View className='works-tabs'>
           {TABS.map((tab) => (

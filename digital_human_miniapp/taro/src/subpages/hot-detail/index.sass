@@ -10,26 +10,29 @@
   left: 0
   right: 0
   z-index: 60
-  height: calc(env(safe-area-inset-top) + 92rpx)
-  padding: env(safe-area-inset-top) 24rpx 0
+  height: calc(env(safe-area-inset-top) + 54rpx)
+  padding: calc(env(safe-area-inset-top) - 8rpx) 24rpx 0
   display: flex
   align-items: center
   justify-content: space-between
-  border-bottom: 1rpx solid rgba(137, 165, 215, 0.2)
-  background: #121212
+  background: rgba(18, 18, 18, 0.96)
+  border-bottom: 1rpx solid rgba(137, 165, 215, 0.18)
+  box-sizing: border-box
 
 .hot-detail-back
-  min-width: 90rpx
+  width: 54rpx
   height: 54rpx
-  border-radius: 12rpx
+  border-radius: 999rpx
   background: #1b1b1b
   display: flex
   align-items: center
   justify-content: center
 
-.hot-detail-back-text
-  font-size: 23rpx
+.hot-detail-back-icon
+  font-size: 52rpx
+  line-height: 1
   color: #e8f2ff
+  margin-top: -4rpx
 
 .hot-detail-nav-title
   font-size: 30rpx
@@ -37,48 +40,20 @@
   font-weight: 800
 
 .hot-detail-nav-spacer
-  width: 90rpx
-
-.hot-detail-card
-  margin: 20rpx 24rpx 130rpx
-  border-radius: 22rpx
-  overflow: hidden
-  background: #141414
-  border: 1rpx solid rgba(145, 175, 229, 0.18)
+  width: 54rpx
 
 .hot-detail-content
   flex: 1
-  overflow-y: auto
-  margin-top: calc(env(safe-area-inset-top) + 92rpx)
-  padding-bottom: calc(env(safe-area-inset-bottom) + 168rpx)
-
-.hot-detail-action-bar
-  position: fixed
-  left: 0
-  right: 0
-  bottom: 0
-  padding: 16rpx 24rpx calc(env(safe-area-inset-bottom) + 18rpx)
+  margin-top: calc(env(safe-area-inset-top) + 54rpx)
+  padding-bottom: calc(env(safe-area-inset-bottom) + 152rpx)
   box-sizing: border-box
-  background: #050505
-  border-top: 1rpx solid rgba(137, 165, 215, 0.2)
-  display: flex
-  gap: 12rpx
-  z-index: 30
-
-.hot-detail-action-bar--my
-  flex-wrap: wrap
-
-.hot-detail-action-bar--my .hot-detail-action-btn
-  min-width: calc(50% - 6rpx)
-
-.hot-detail-action-btn
-  flex: 1
 
 .hot-detail-swiper-wrap
   position: relative
   width: 100%
   aspect-ratio: 3 / 4
   overflow: hidden
+  background: #0f0f0f
 
 .hot-detail-swiper
   width: 100%
@@ -88,6 +63,23 @@
   width: 100%
   height: 100%
   display: block
+  background: #101010
+
+.hot-detail-cover--single
+  height: auto
+
+.hot-detail-video-wrap
+  width: 100%
+  aspect-ratio: 9 / 16
+  max-height: 78vh
+  background: #0d0d0d
+  overflow: hidden
+
+.hot-detail-video
+  width: 100%
+  height: 100%
+  display: block
+  background: #0d0d0d
 
 .hot-detail-swiper-indicator
   position: absolute
@@ -107,37 +99,156 @@
   font-size: 19rpx
 
 .hot-detail-body
-  padding: 20rpx
+  padding: 22rpx 24rpx 28rpx
+  box-sizing: border-box
 
 .hot-detail-title
   display: block
   font-size: 32rpx
-  line-height: 1.46
+  line-height: 1.45
   color: #e8f2ff
   font-weight: 800
-  margin-bottom: 10rpx
-
-.hot-detail-meta
-  display: flex
-  align-items: center
-  justify-content: space-between
   margin-bottom: 14rpx
 
+.hot-detail-author-row
+  display: flex
+  align-items: center
+  gap: 12rpx
+  margin-bottom: 14rpx
+
+.hot-detail-avatar
+  width: 42rpx
+  height: 42rpx
+  border-radius: 999rpx
+  background: #1d1d1d
+
 .hot-detail-author
+  flex: 1
+  min-width: 0
   font-size: 22rpx
   color: #8ea2c8
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap
 
-.hot-detail-collects
-  font-size: 22rpx
+.hot-detail-status
+  height: 38rpx
+  padding: 0 14rpx
+  border-radius: 999rpx
+  background: rgba(236, 238, 159, 0.12)
   color: #ecee9f
-  font-weight: 700
+  font-size: 20rpx
+  display: flex
+  align-items: center
+
+.hot-detail-stats
+  display: flex
+  gap: 20rpx
+  flex-wrap: wrap
+  margin-bottom: 18rpx
+
+.hot-detail-stat
+  display: flex
+  align-items: center
+  gap: 6rpx
+
+.hot-detail-stat-icon
+  font-size: 25rpx
+  line-height: 1
+  color: #ecee9f
+
+.hot-detail-stat-text
+  font-size: 22rpx
+  color: #a9bbda
 
 .hot-detail-desc
   display: block
-  font-size: 24rpx
-  line-height: 1.58
+  font-size: 25rpx
+  line-height: 1.68
   color: #c7d6f2
-  margin-bottom: 16rpx
+  white-space: pre-wrap
+
+.hot-detail-inline-tip
+  display: block
+  margin-top: 18rpx
+  font-size: 23rpx
+  line-height: 1.5
+  color: #ecee9f
+
+.hot-video-actions-panel
+  margin: 18rpx 0
+  padding: 18rpx
+  border-radius: 22rpx
+  background: rgba(145, 175, 229, 0.08)
+  border: 1rpx solid rgba(145, 175, 229, 0.16)
+
+.hot-video-actions-title
+  display: block
+  font-size: 23rpx
+  color: #91a3c8
+  font-weight: 700
+  margin-bottom: 14rpx
+
+.hot-video-actions-grid
+  display: flex
+  gap: 10rpx
+
+.hot-video-action
+  flex: 1
+  min-width: 0
+  min-height: 72rpx
+  border-radius: 16rpx
+  background: rgba(255, 255, 255, 0.06)
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+  display: flex
+  align-items: center
+  justify-content: center
+  gap: 6rpx
+
+.hot-video-action--primary
+  background: #ecee9f
+  border-color: rgba(236, 238, 159, 0.55)
+
+.hot-video-action--disabled
+  opacity: 0.58
+
+.hot-video-action-icon
+  font-size: 25rpx
+  color: #d8e5ff
+  font-weight: 800
+
+.hot-video-action--primary .hot-video-action-icon
+  color: #111111
+
+.hot-video-action-text
+  font-size: 22rpx
+  color: #d8e5ff
+  font-weight: 700
+
+.hot-video-action--primary .hot-video-action-text
+  color: #111111
+
+.hot-detail-action-bar
+  position: fixed
+  left: 0
+  right: 0
+  bottom: 0
+  padding: 16rpx 24rpx calc(env(safe-area-inset-bottom) + 18rpx)
+  box-sizing: border-box
+  background: #050505
+  border-top: 1rpx solid rgba(137, 165, 215, 0.18)
+  display: flex
+  gap: 12rpx
+  z-index: 70
+
+.hot-detail-action-bar--my
+  flex-wrap: nowrap
+
+.hot-detail-action-bar--my .hot-detail-action-btn
+  min-width: 0
+
+.hot-detail-action-btn
+  flex: 1
 
 .hot-detail-create-btn
   height: 74rpx
@@ -148,7 +259,7 @@
   justify-content: center
 
 .hot-detail-create-btn--disabled
-  opacity: 0.6
+  opacity: 0.62
 
 .hot-detail-create-btn-text
   font-size: 26rpx
@@ -158,68 +269,315 @@
 .hot-detail-fav-btn
   height: 72rpx
   border-radius: 16rpx
-  border: 1rpx solid rgba(236, 238, 159, 0.35)
-  background: rgba(236, 238, 159, 0.08)
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+  background: rgba(145, 175, 229, 0.08)
   display: flex
   align-items: center
   justify-content: center
 
 .hot-detail-fav-btn--active
-  background: #ecee9f
-  border-color: #ecee9f
+  background: rgba(236, 238, 159, 0.18)
+  border-color: rgba(236, 238, 159, 0.24)
 
 .hot-detail-fav-btn-text
-  font-size: 26rpx
-  color: #ecee9f
-  font-weight: 800
+  font-size: 25rpx
+  color: #a9bbda
+  font-weight: 700
 
 .hot-detail-fav-btn-text--active
-  color: #131313
+  color: #dce39d
+
+.hot-detail-ghost-btn
+  height: 72rpx
+  border-radius: 16rpx
+  background: rgba(145, 175, 229, 0.08)
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.hot-detail-ghost-btn-text
+  font-size: 24rpx
+  color: #d6e1f6
+  font-weight: 700
+
+.hot-my-generate-row
+  display: flex
+  gap: 12rpx
+  margin-top: 16rpx
+
+.hot-my-generate-btn
+  flex: 1
 
 .hot-detail-empty
   flex: 1
   display: flex
   align-items: center
   justify-content: center
+  padding: 160rpx 24rpx
 
 .hot-detail-empty-text
   color: #7e93b8
   font-size: 24rpx
 
-.hot-my-scroll
-  flex: 1
-
 .hot-my-section
-  margin-top: 14rpx
-  padding: 14rpx
-  border-radius: 14rpx
-  background: rgba(142, 162, 200, 0.08)
-  border: 1rpx solid rgba(142, 162, 200, 0.22)
+  margin-top: 24rpx
+
+.hot-my-section-header
+  display: flex
+  align-items: center
+  justify-content: space-between
+  gap: 16rpx
+  margin-bottom: 12rpx
 
 .hot-my-section-title
-  display: block
+  display: flex
+  align-items: center
+  flex: 1
+  min-width: 0
   font-size: 24rpx
   color: #ecee9f
   font-weight: 700
-  margin-bottom: 10rpx
+
+.hot-my-copy-btn
+  height: 52rpx
+  min-width: 104rpx
+  padding: 0 22rpx
+  border-radius: 999rpx
+  background: rgba(236, 238, 159, 0.16)
+  border: 1rpx solid rgba(236, 238, 159, 0.34)
+  display: flex
+  align-items: center
+  justify-content: center
+  box-sizing: border-box
+
+.hot-my-copy-btn-text
+  font-size: 22rpx
+  color: #ecee9f
+  font-weight: 700
+
+.hot-my-text-panel
+  padding: 18rpx 18rpx 4rpx
+  border-radius: 18rpx
+  background: #101318
+  border: 1rpx solid rgba(145, 175, 229, 0.16)
+  box-sizing: border-box
 
 .hot-my-empty
-  font-size: 22rpx
-  color: #91a3c8
-
-.hot-my-item
-  margin-bottom: 10rpx
-  &:last-child
-    margin-bottom: 0
-
-.hot-my-item-title
   display: block
-  font-size: 21rpx
-  color: #9fb1d4
-  margin-bottom: 4rpx
+  font-size: 23rpx
+  line-height: 1.56
+  color: #91a3c8
+  padding-bottom: 14rpx
 
 .hot-my-item-text
   display: block
-  font-size: 22rpx
-  line-height: 1.56
+  font-size: 24rpx
+  line-height: 1.62
   color: #d6e1f6
+  white-space: pre-wrap
+  margin-bottom: 14rpx
+  padding-bottom: 14rpx
+  border-bottom: 1rpx solid rgba(145, 175, 229, 0.1)
+
+.hot-my-item-text:last-child
+  border-bottom: 0
+
+.hot-my-item-text--strong
+  color: #e8f2ff
+  font-weight: 800
+
+.hot-rewrite-layer
+  position: fixed
+  inset: 0
+  z-index: 140
+  display: flex
+  align-items: flex-end
+
+.hot-rewrite-mask
+  position: absolute
+  inset: 0
+  background: rgba(0, 0, 0, 0.58)
+
+.hot-rewrite-drawer
+  position: relative
+  z-index: 1
+  width: 100%
+  max-height: 86vh
+  padding: 14rpx 24rpx calc(env(safe-area-inset-bottom) + 18rpx)
+  box-sizing: border-box
+  border-radius: 30rpx 30rpx 0 0
+  background: #111111
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+  box-shadow: 0 -24rpx 48rpx rgba(0, 0, 0, 0.38)
+
+.hot-rewrite-handle
+  width: 74rpx
+  height: 8rpx
+  border-radius: 999rpx
+  background: rgba(216, 229, 255, 0.32)
+  margin: 0 auto 20rpx
+
+.hot-rewrite-kicker
+  display: block
+  font-size: 22rpx
+  color: #ecee9f
+  font-weight: 700
+  margin-bottom: 8rpx
+
+.hot-rewrite-main-title
+  display: block
+  font-size: 34rpx
+  line-height: 1.38
+  color: #e8f2ff
+  font-weight: 900
+  margin-bottom: 16rpx
+
+.hot-rewrite-title-grid
+  display: flex
+  flex-wrap: wrap
+  gap: 10rpx
+  margin-bottom: 18rpx
+
+.hot-rewrite-title-chip
+  max-width: 100%
+  padding: 10rpx 16rpx
+  border-radius: 999rpx
+  background: rgba(145, 175, 229, 0.08)
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+
+.hot-rewrite-title-chip--active
+  background: rgba(236, 238, 159, 0.2)
+  border-color: rgba(236, 238, 159, 0.48)
+
+.hot-rewrite-title-chip-text
+  font-size: 22rpx
+  line-height: 1.36
+  color: #a9bbda
+
+.hot-rewrite-title-chip-text--active
+  color: #ecee9f
+  font-weight: 700
+
+.hot-rewrite-content
+  max-height: 46vh
+  margin-bottom: 16rpx
+
+.hot-rewrite-section-title
+  display: block
+  font-size: 23rpx
+  color: #91a3c8
+  font-weight: 700
+  margin: 14rpx 0 8rpx
+
+.hot-rewrite-body
+  display: block
+  font-size: 25rpx
+  line-height: 1.62
+  color: #d8e5ff
+  white-space: pre-wrap
+
+.hot-rewrite-image-text
+  display: block
+  font-size: 24rpx
+  line-height: 1.58
+  color: #d6e1f6
+  white-space: pre-wrap
+  padding: 12rpx 0
+  border-bottom: 1rpx solid rgba(145, 175, 229, 0.1)
+
+.hot-rewrite-actions
+  display: flex
+  gap: 12rpx
+
+.hot-rewrite-action
+  flex: 1
+  height: 74rpx
+  border-radius: 16rpx
+  background: #ecee9f
+  display: flex
+  align-items: center
+  justify-content: center
+  gap: 8rpx
+
+.hot-rewrite-action-icon
+  font-size: 25rpx
+  color: #111111
+  font-weight: 900
+
+.hot-rewrite-action-text
+  font-size: 24rpx
+  color: #111111
+  font-weight: 800
+
+.hot-rewrite-close
+  height: 68rpx
+  margin-top: 12rpx
+  border-radius: 16rpx
+  background: rgba(145, 175, 229, 0.08)
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.hot-rewrite-close-text
+  font-size: 24rpx
+  color: #d8e5ff
+  font-weight: 700
+
+.hot-remix-layer
+  position: fixed
+  inset: 0
+  z-index: 145
+  display: flex
+  align-items: flex-end
+
+.hot-remix-mask
+  position: absolute
+  inset: 0
+  background: rgba(0, 0, 0, 0.6)
+
+.hot-remix-drawer
+  position: relative
+  z-index: 1
+  width: 100%
+  padding: 14rpx 24rpx calc(env(safe-area-inset-bottom) + 18rpx)
+  box-sizing: border-box
+  border-radius: 30rpx 30rpx 0 0
+  background: #111111
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+  box-shadow: 0 -24rpx 48rpx rgba(0, 0, 0, 0.38)
+
+.hot-remix-title
+  display: block
+  font-size: 34rpx
+  color: #e8f2ff
+  font-weight: 900
+  margin-bottom: 8rpx
+
+.hot-remix-desc
+  display: block
+  font-size: 23rpx
+  line-height: 1.48
+  color: #91a3c8
+  margin-bottom: 18rpx
+
+.hot-remix-option
+  padding: 18rpx
+  border-radius: 18rpx
+  background: rgba(145, 175, 229, 0.08)
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+  margin-bottom: 12rpx
+
+.hot-remix-option-title
+  display: block
+  font-size: 27rpx
+  color: #ecee9f
+  font-weight: 800
+  margin-bottom: 6rpx
+
+.hot-remix-option-desc
+  display: block
+  font-size: 22rpx
+  line-height: 1.42
+  color: #a9bbda

@@ -3,26 +3,27 @@
   "packOptions": {
     "ignore": [
       {
-        "type": "folder",
-        "value": "src"
+        "value": "src",
+        "type": "folder"
       },
       {
-        "type": "folder",
-        "value": "config"
+        "value": "config",
+        "type": "folder"
       },
       {
-        "type": "folder",
-        "value": "node_modules"
+        "value": "node_modules",
+        "type": "folder"
       },
       {
-        "type": "folder",
-        "value": ".swc"
+        "value": ".swc",
+        "type": "folder"
       },
       {
-        "type": "file",
-        "value": "package-lock.json"
+        "value": "package-lock.json",
+        "type": "file"
       }
-    ]
+    ],
+    "include": []
   },
   "setting": {
     "urlCheck": false,
@@ -38,12 +39,32 @@
     "checkInvalidKey": true,
     "checkInvalidPlugin": true,
     "compileHotReLoad": true,
-    "showShadowRootInWxmlPanel": true
+    "showShadowRootInWxmlPanel": true,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "uploadWithSourceMap": true,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
   },
   "compileType": "miniprogram",
   "libVersion": "3.3.0",
-  "appid": "touristappid",
+  "appid": "wx56853eed522b4fe6",
   "projectname": "digital-human-miniapp",
   "miniprogramRoot": "dist/",
-  "condition": {}
+  "condition": {},
+  "simulatorPluginLibVersion": {},
+  "editorSetting": {}
 }

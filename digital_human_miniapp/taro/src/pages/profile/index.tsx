@@ -18,6 +18,7 @@ import './index.sass';
 export default function ProfilePage() {
   const [profile, setProfile] = useState<any>(null);
   const [updatingAvatar, setUpdatingAvatar] = useState(false);
+  const [updatingName, setUpdatingName] = useState(false);
   const [overview, setOverview] = useState({
     templates: 0,
     products: 0,
@@ -105,6 +106,17 @@ export default function ProfilePage() {
     return String(rawLevel);
   };
 
+  const copyProfileId = async () => {
+    const id = String(profile?.id || '').trim();
+    if (!id) return;
+    try {
+      await Taro.setClipboardData({ data: id });
+      Taro.showToast({ title: 'ID已复制', icon: 'none' });
+    } catch {
+      // ignore
+    }
+  };
+
   const handleChangeAvatar = async () => {
     if (updatingAvatar) return;
     try {
@@ -120,19 +132,7 @@ export default function ProfilePage() {
         throw new Error('未绑定 API Key');
       }
 
-      const saveRes = await Taro.request({
-        url: `${__API_BASE_URL__}/api/user/profile`,
-        method: 'PUT',
-        data: { avatarUrl },
-        header: {
-          'Content-Type': 'application/json',
-          'X-User-Api-Key': apiKey,
-        },
-      });
-
-      if (saveRes.statusCode < 200 || saveRes.statusCode >= 300) {
-        throw new Error('保存头像失败');
-      }
+      await api.updateProfile({ avatarUrl });
 
       setProfile((prev) => ({ ...(prev || {}), avatarUrl }));
 
@@ -146,6 +146,42 @@ export default function ProfilePage() {
       Taro.showToast({ title: '头像更新失败', icon: 'none' });
     } finally {
       setUpdatingAvatar(false);
+    }
+  };
+
+  const handleChangeName = async () => {
+    if (updatingName) return;
+    try {
+      const modal = await Taro.showModal({
+        title: '修改昵称',
+        editable: true,
+        content: profile?.username || profile?.full_name || '',
+        placeholderText: '请输入新的昵称',
+        confirmText: '保存',
+        cancelText: '取消',
+      });
+
+      if (!modal.confirm) return;
+      const username = String(modal.content || '').trim();
+      if (!username) {
+        Taro.showToast({ title: '昵称不能为空', icon: 'none' });
+        return;
+      }
+
+      setUpdatingName(true);
+      await api.updateProfile({ username, fullName: username });
+      setProfile((prev) => ({ ...(prev || {}), username }));
+
+      const userInfoStr = Taro.getStorageSync('USER_INFO');
+      const userInfo = userInfoStr ? JSON.parse(userInfoStr as string) : {};
+      userInfo.username = username;
+      Taro.setStorageSync('USER_INFO', JSON.stringify(userInfo));
+
+      Taro.showToast({ title: '昵称已更新', icon: 'success' });
+    } catch {
+      Taro.showToast({ title: '昵称更新失败', icon: 'none' });
+    } finally {
+      setUpdatingName(false);
     }
   };
 
@@ -228,8 +264,8 @@ export default function ProfilePage() {
       <View className='profile-user-head'>
         <Image className='profile-user-avatar' src={profile?.avatarUrl || avatarIcon} mode='aspectFill' onClick={handleChangeAvatar} />
         <View className='profile-user-meta'>
-          <Text className='profile-user-name'>{profile?.username || '本地调试用户'}</Text>
-          <Text className='profile-user-id'>ID：{profile?.id ? profile.id.slice(0, 8) : 'miniapp--'}</Text>
+          <Text className='profile-user-name' onClick={handleChangeName}>{profile?.username || '本地调试用户'}</Text>
+          <Text className='profile-user-id' onClick={copyProfileId}>ID：{profile?.id ? profile.id.slice(0, 8) : 'miniapp--'}</Text>
         </View>
         <View className='profile-switch-login' onClick={handleSwitchLogin}>
           <Text className='profile-switch-login-text'>切换登录⇆</Text>

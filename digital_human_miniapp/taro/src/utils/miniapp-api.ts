@@ -47,9 +47,15 @@ export interface HotItem {
   benchmarkScore?: number | null;
   likes?: number | null;
   collects?: number | null;
+  comments?: number | null;
+  shares?: number | null;
   creatorName?: string | null;
+  creatorAvatarUrl?: string | null;
   sourceUrl?: string | null;
   scriptText?: string | null;
+  myTaskId?: string | null;
+  referenceId?: string | null;
+  isCollected?: boolean;
   source?: 'all' | 'mine';
 }
 
@@ -70,6 +76,14 @@ export interface MyNoteTaskDetail {
     platform?: string;
     sourceId?: string;
     sourceUrl?: string;
+    creatorName?: string | null;
+    creatorAvatarUrl?: string | null;
+    likes?: number | null;
+    collects?: number | null;
+    comments?: number | null;
+    shares?: number | null;
+    videoUrl?: string | null;
+    sourceType?: string | null;
   };
   analysisResult: {
     sourceTitle: string;
@@ -258,7 +272,15 @@ export interface MiniappCollectXhsResult {
   taskId: string;
   status: string;
   title: string;
+  videoUrl?: string | null;
   message?: string;
+}
+
+export interface VideoCopyExtractResult {
+  status: string;
+  text?: string | null;
+  transcript?: string | null;
+  videoUrl?: string | null;
 }
 
 const HOT_VIDEO_URL_RE = /\.(mp4|mov|m3u8)(\?|$)|\/video\/|\/master\/|xgvideo/i;
@@ -286,6 +308,15 @@ function sumKnowledgeFiles(foldersPayload: unknown): number {
 
 function resolveUrl(path: string): string {
   return API_BASE_URL ? `${API_BASE_URL}${path}` : path;
+}
+
+function buildQuery(params: Record<string, string | number | boolean | null | undefined>): string {
+  const pairs: string[] = [];
+  for (const [key, value] of Object.entries(params)) {
+    if (value === null || value === undefined || value === '') continue;
+    pairs.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+  }
+  return pairs.join('&');
 }
 
 function sanitizeUrl(value: unknown): string | null {
@@ -328,6 +359,162 @@ function parseObject(raw: unknown): Record<string, unknown> | null {
   return raw && typeof raw === 'object' && !Array.isArray(raw)
     ? raw as Record<string, unknown>
     : null;
+}
+
+function collectObjects(raw: unknown): Record<string, unknown>[] {
+  const result: Record<string, unknown>[] = [];
+  const queue: unknown[] = [raw];
+  const seen: unknown[] = [];
+
+  while (queue.length > 0 && result.length < 160) {
+    const current = queue.shift();
+    if (!current || typeof current !== 'object') continue;
+    if (seen.includes(current)) continue;
+    seen.push(current);
+
+    if (Array.isArray(current)) {
+      queue.push(...current);
+      continue;
+    }
+
+    const obj = current as Record<string, unknown>;
+    result.push(obj);
+    queue.push(...Object.values(obj));
+  }
+
+  return result;
+}
+
+function pickString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function pickNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    if (typeof value === 'number' && Number.isFinite(value)) return Math.round(value);
+    if (typeof value === 'string') {
+      const normalized = value.replace(/,/g, '').replace(/\+/g, '').trim();
+      if (!normalized) continue;
+      const match = normalized.match(/([\d.]+)/);
+      if (!match) continue;
+      let multiplier = 1;
+      if (/[万w]/i.test(normalized)) multiplier = 10000;
+      else if (/[千k]/i.test(normalized)) multiplier = 1000;
+      const parsed = Number(match[1]);
+      if (Number.isFinite(parsed)) return Math.round(parsed * multiplier);
+    }
+  }
+  return null;
+}
+
+function pickStringByKeys(objects: Record<string, unknown>[], keys: string[]): string | null {
+  for (const obj of objects) {
+    for (const key of keys) {
+      const value = pickString(obj[key]);
+      if (value) return value;
+    }
+  }
+  return null;
+}
+
+function pickNumberByKeys(objects: Record<string, unknown>[], keys: string[]): number | null {
+  for (const obj of objects) {
+    for (const key of keys) {
+      const value = pickNumber(obj[key]);
+      if (value != null) return value;
+    }
+  }
+  return null;
+}
+
+function pickStringByPath(raw: Record<string, unknown> | null | undefined, path: string): string | null {
+  if (!raw) return null;
+  const value = path.split('.').reduce<unknown>((current, key) => {
+    const obj = parseObject(current);
+    return obj ? obj[key] : undefined;
+  }, raw);
+  return pickString(value);
+}
+
+function getHotStats(item: any, rawPayload?: Record<string, unknown> | null) {
+  const stats = parseObject(item?.stats) || {};
+  const rawStats = parseObject(rawPayload?.stats) || {};
+  const objects = collectObjects(rawPayload);
+  return {
+    likes: pickNumber(stats.likes, stats.likeCount, stats.like_count, stats.likedCount, stats.liked_count, rawStats.likes, rawStats.likeCount, rawStats.like_count, rawStats.liked_count, rawPayload?.likes, rawPayload?.likeCount, rawPayload?.like_count, rawPayload?.liked_count, rawPayload?.点赞数, rawPayload?.点赞) ?? pickNumberByKeys(objects, ['点赞数', '点赞', '赞数', 'liked_count', 'like_count', 'likeCount', 'likedCount', 'likes']),
+    collects: pickNumber(stats.collects, stats.collectCount, stats.collect_count, stats.collectedCount, stats.collected_count, rawStats.collects, rawStats.collectCount, rawStats.collect_count, rawStats.collected_count, rawPayload?.collects, rawPayload?.collectCount, rawPayload?.collect_count, rawPayload?.collected_count, rawPayload?.收藏数, rawPayload?.收藏) ?? pickNumberByKeys(objects, ['收藏数', '收藏', 'collected_count', 'collect_count', 'collectCount', 'collectedCount', 'collects']),
+    comments: pickNumber(stats.comments, stats.commentCount, stats.comment_count, rawStats.comments, rawStats.commentCount, rawStats.comment_count, rawPayload?.comments, rawPayload?.commentCount, rawPayload?.comment_count, rawPayload?.评论数, rawPayload?.评论) ?? pickNumberByKeys(objects, ['评论数', '评论', 'comment_count', 'commentCount', 'comments']),
+    shares: pickNumber(stats.shares, stats.shareCount, stats.share_count, rawStats.shares, rawStats.shareCount, rawStats.share_count, rawPayload?.shares, rawPayload?.shareCount, rawPayload?.share_count, rawPayload?.分享数, rawPayload?.分享) ?? pickNumberByKeys(objects, ['分享数', '分享', 'share_count', 'shareCount', 'shares']),
+  };
+}
+
+function getHotVideoMeta(item: any, rawPayload?: Record<string, unknown> | null) {
+  const objects = collectObjects(rawPayload);
+  const videoUrl = pickString(
+    item?.videoUrl,
+    item?.video_url,
+    pickStringByPath(rawPayload, 'media.videoUrl'),
+    rawPayload?.videoUrl,
+    rawPayload?.video_url,
+    rawPayload?.视频地址,
+    rawPayload?.视频链接,
+  ) || pickStringByKeys(objects, ['videoUrl', 'video_url', 'playUrl', 'play_url', 'masterUrl', 'master_url', '视频地址', '视频链接', '播放地址']);
+  const sourceType = pickString(
+    item?.sourceType,
+    item?.source_type,
+    pickStringByPath(rawPayload, 'media.sourceType'),
+    rawPayload?.sourceType,
+    rawPayload?.source_type,
+  );
+  return {
+    videoUrl,
+    sourceType: sourceType || (videoUrl ? 'video' : null),
+  };
+}
+
+function getHotCreator(item: any, rawPayload?: Record<string, unknown> | null) {
+  const creator = parseObject(item?.creator) || {};
+  const author = parseObject(item?.author) || parseObject(rawPayload?.author) || {};
+  const objects = collectObjects(rawPayload);
+  const authorNameKeys = ['作者昵称', '作者名称', '用户昵称', '用户名称', '博主昵称', '博主', '作者', 'nickname', 'nickName', 'nick_name', 'authorName', 'author_name', 'userName', 'username', 'name'];
+  const avatarKeys = ['作者头像', '用户头像', '博主头像', '头像', 'avatar', 'avatarUrl', 'avatar_url', 'authorAvatar', 'author_avatar', 'userAvatar', 'user_avatar', 'image'];
+  return {
+    name: pickString(
+      creator.displayName,
+      creator.name,
+      item?.creatorName,
+      author.name,
+      author.nickname,
+      author.nickName,
+      author.username,
+      rawPayload?.authorName,
+      rawPayload?.author_name,
+      rawPayload?.作者昵称,
+      rawPayload?.作者名称,
+      rawPayload?.用户昵称,
+      rawPayload?.用户名称,
+      rawPayload?.博主昵称,
+      rawPayload?.博主,
+      rawPayload?.作者,
+    ) || pickStringByKeys(objects, authorNameKeys),
+    avatarUrl: pickString(
+      creator.avatarUrl,
+      creator.avatar,
+      item?.creatorAvatarUrl,
+      author.avatarUrl,
+      author.avatar_url,
+      author.avatar,
+      rawPayload?.authorAvatar,
+      rawPayload?.author_avatar,
+      rawPayload?.作者头像,
+      rawPayload?.用户头像,
+      rawPayload?.博主头像,
+      rawPayload?.头像,
+    ) || pickStringByKeys(objects, avatarKeys),
+  };
 }
 
 function collectUrlsFromUnknown(value: unknown): string[] {
@@ -555,16 +742,21 @@ export const miniappApi = {
     source?: 'all' | 'mine';
   }): Promise<HotItem[]> {
     if (params?.source === 'mine') {
-      const query = new URLSearchParams();
-      query.set('limit', String(params?.limit ?? 40));
+      const query = buildQuery({
+        limit: params?.limit ?? 40,
+      });
 
       // Source A: My-note tasks (miniapp + web image-text replication storage).
-      const payload = await request<{ data?: Array<Record<string, unknown>> }>(`/api/image-text-replication/my-notes?${query.toString()}`);
+      const payload = await request<{ data?: Array<Record<string, unknown>> }>(`/api/image-text-replication/my-notes?${query}`);
       const myNotes = Array.isArray(payload?.data) ? payload.data : [];
       const fromMyNotes = myNotes.map((item) => {
         const sourceImages = Array.isArray(item.sourceImages)
           ? item.sourceImages.map((img) => String(img || '').trim()).filter(Boolean)
           : [];
+        const rawPayload = parseObject(item.rawPayload);
+        const stats = getHotStats(item, rawPayload);
+        const creator = getHotCreator(item, rawPayload);
+        const videoMeta = getHotVideoMeta(item, rawPayload);
         const title = String(item.title || item.sourceTitle || '未命名笔记');
         const sourceText = String(item.sourceText || '');
         const sourceUrl = String(item.sourceUrl || '').trim();
@@ -577,30 +769,41 @@ export const miniappApi = {
           category: '我的',
           coverUrl: sourceImages[0] || null,
           mediaUrls: sourceImages,
-          sourceType: 'image',
+          sourceType: videoMeta.sourceType || 'image',
+          videoUrl: videoMeta.videoUrl,
           sourceUrl,
           scriptText: sourceText,
-          creatorName: sourcePlatform || null,
+          likes: stats.likes,
+          collects: stats.collects,
+          comments: stats.comments,
+          shares: stats.shares,
+          creatorName: creator.name || null,
+          creatorAvatarUrl: creator.avatarUrl,
+          myTaskId: String(item.id || ''),
           source: 'mine',
         } as HotItem;
       }).filter((item) => item.id);
 
       // Source B: Web-side viral references imported by this user (especially Xiaohongshu).
-      const refsQuery = new URLSearchParams();
-      refsQuery.set('limit', String(params?.limit ?? 40));
-      refsQuery.set('platform', 'xiaohongshu');
-      if (params?.q?.trim()) refsQuery.set('q', params.q.trim());
-      if (params?.sort) refsQuery.set('sort', params.sort);
-      if (params?.contentType) refsQuery.set('contentType', params.contentType);
+      const refsQuery = buildQuery({
+        limit: params?.limit ?? 40,
+        platform: 'xiaohongshu',
+        q: params?.q?.trim() || undefined,
+        sort: params?.sort,
+        contentType: params?.contentType,
+      });
 
       let fromReferences: HotItem[] = [];
       try {
-        const refsPayload = await request<{ data?: any[] }>(`/api/viral-references?${refsQuery.toString()}`);
+        const refsPayload = await request<{ data?: any[] }>(`/api/viral-references?${refsQuery}`);
         const refsList = Array.isArray(refsPayload?.data) ? refsPayload.data : [];
         fromReferences = refsList.map((item) => {
           const mediaUrls = normalizeHotMediaUrls(item);
           const coverUrl = sanitizeUrl(item.coverUrl) ?? mediaUrls?.[0] ?? null;
           const rawPayload = parseObject(item.rawPayload);
+          const stats = getHotStats(item, rawPayload);
+          const creator = getHotCreator(item, rawPayload);
+          const videoMeta = getHotVideoMeta(item, rawPayload);
           const scriptText = typeof rawPayload?.scriptText === 'string'
             ? rawPayload.scriptText
             : ((item.scriptText as string | null) ?? (item.description as string | null) ?? null);
@@ -611,18 +814,19 @@ export const miniappApi = {
             category: '我的',
             coverUrl,
             mediaUrls,
-            videoUrl: (item.videoUrl as string | null) ?? null,
-            sourceType: (item.sourceType as string | null) ?? null,
-            likes: typeof item.stats?.likes === 'number'
-              ? item.stats.likes
-              : (typeof item.stats?.likes === 'string' ? Number(item.stats.likes) || 0 : null),
-            collects: typeof item.stats?.collects === 'number'
-              ? item.stats.collects
-              : (typeof item.stats?.collects === 'string' ? Number(item.stats.collects) || 0 : null),
-            creatorName: (item.creator?.name as string | null) ?? null,
+            videoUrl: videoMeta.videoUrl ?? ((item.videoUrl as string | null) ?? null),
+            sourceType: videoMeta.sourceType ?? ((item.sourceType as string | null) ?? null),
+            likes: stats.likes,
+            collects: stats.collects,
+            comments: stats.comments,
+            shares: stats.shares,
+            creatorName: creator.name,
+            creatorAvatarUrl: creator.avatarUrl,
             sourceUrl: (item.sourceUrl as string | null) ?? null,
             scriptText,
-            source: 'all',
+            referenceId: String(item.id || ''),
+            isCollected: true,
+            source: 'mine',
           } as HotItem;
         }).filter((item) => item.id);
       } catch {
@@ -641,28 +845,25 @@ export const miniappApi = {
       return merged;
     }
 
-    const query = new URLSearchParams();
-    query.set('limit', String(params?.limit ?? 20));
-    if (params?.sort) {
-      query.set('sort', params.sort);
-    }
-    if (params?.contentType) {
-      query.set('contentType', params.contentType);
-    }
-    if (params?.category && params.category !== '全行业') {
-      query.set('category', params.category);
-    }
-    query.set('scope', 'shared');
-    if (params?.q?.trim()) {
-      query.set('q', params.q.trim());
-    }
+    const query = buildQuery({
+      limit: params?.limit ?? 20,
+      sort: params?.sort,
+      contentType: params?.contentType,
+      category: params?.category && params.category !== '全行业' ? params.category : undefined,
+      scope: 'shared',
+      q: params?.q?.trim() || undefined,
+    });
 
-    const res = await request<{ data?: any[] }>(`/api/viral-references?${query.toString()}`);
+    const res = await request<{ data?: any[] }>(`/api/viral-references?${query}`);
     const list = Array.isArray(res?.data) ? res.data : [];
 
     return list.map((item) => {
       const mediaUrls = normalizeHotMediaUrls(item);
       const coverUrl = sanitizeUrl(item.coverUrl) ?? mediaUrls?.[0] ?? null;
+      const rawPayload = parseObject(item.rawPayload);
+      const stats = getHotStats(item, rawPayload);
+      const creator = getHotCreator(item, rawPayload);
+      const videoMeta = getHotVideoMeta(item, rawPayload);
 
       return {
         id: String(item.id),
@@ -671,16 +872,15 @@ export const miniappApi = {
         category: (item.category as string | null) ?? null,
         coverUrl,
         mediaUrls,
-        videoUrl: (item.videoUrl as string | null) ?? null,
-        sourceType: (item.sourceType as string | null) ?? null,
+        videoUrl: videoMeta.videoUrl ?? ((item.videoUrl as string | null) ?? null),
+        sourceType: videoMeta.sourceType ?? ((item.sourceType as string | null) ?? null),
         benchmarkScore: typeof item.benchmarkScore === 'number' ? item.benchmarkScore : null,
-        likes: typeof item.stats?.likes === 'number'
-          ? item.stats.likes
-          : (typeof item.stats?.likes === 'string' ? Number(item.stats.likes) || 0 : null),
-        collects: typeof item.stats?.collects === 'number'
-          ? item.stats.collects
-          : (typeof item.stats?.collects === 'string' ? Number(item.stats.collects) || 0 : null),
-        creatorName: (item.creator?.name as string | null) ?? null,
+        likes: stats.likes,
+        collects: stats.collects,
+        comments: stats.comments,
+        shares: stats.shares,
+        creatorName: creator.name,
+        creatorAvatarUrl: creator.avatarUrl,
         sourceUrl: (item.sourceUrl as string | null) ?? null,
         scriptText: (item.scriptText as string | null) ?? null,
         source: 'all',
@@ -700,12 +900,44 @@ export const miniappApi = {
         sourcePlatform: 'miniapp',
         sourceId: item.id,
         sourceUrl: item.sourceUrl ?? '',
+        rawPayload: {
+          creatorName: item.creatorName || null,
+          creatorAvatarUrl: item.creatorAvatarUrl || null,
+          stats: {
+            likes: item.likes ?? null,
+            collects: item.collects ?? null,
+            comments: item.comments ?? null,
+            shares: item.shares ?? null,
+          },
+        },
       },
     });
   },
 
+  async removeHotMyNote(params: { id?: string; sourceId?: string; sourceUrl?: string }): Promise<{ deleted: number }> {
+    const payload = await request<{ deleted?: number }>('/api/image-text-replication/my-notes', {
+      method: 'POST',
+      data: {
+        action: 'remove',
+        id: params.id || undefined,
+        sourceId: params.sourceId || undefined,
+        sourceUrl: params.sourceUrl || undefined,
+      },
+    });
+    return { deleted: Number(payload?.deleted || 0) };
+  },
+
+  async removeViralReference(id: string): Promise<{ deleted: number }> {
+    const cleanId = String(id || '').replace(/^ref-/, '').trim();
+    const payload = await request<{ deleted?: number }>('/api/viral-references', {
+      method: 'POST',
+      data: { action: 'remove', ids: cleanId ? [cleanId] : [] },
+    });
+    return { deleted: Number(payload?.deleted || 0) };
+  },
+
   async collectHotXhsNote(url: string): Promise<MiniappCollectXhsResult> {
-    const payload = await request<{ taskId?: string; status?: string; title?: string; message?: string }>('/api/miniapp/hot-square/collect-xhs', {
+    const payload = await request<{ taskId?: string; status?: string; title?: string; videoUrl?: string | null; message?: string }>('/api/miniapp/hot-square/collect-xhs', {
       method: 'POST',
       data: { url },
     });
@@ -714,6 +946,7 @@ export const miniappApi = {
       taskId: String(payload?.taskId || ''),
       status: String(payload?.status || 'BREAKDOWN_PENDING'),
       title: String(payload?.title || '未命名笔记'),
+      videoUrl: typeof payload?.videoUrl === 'string' ? payload.videoUrl : null,
       message: typeof payload?.message === 'string' ? payload.message : undefined,
     };
   },
@@ -759,6 +992,14 @@ export const miniappApi = {
         platform: typeof sourceRaw.platform === 'string' ? sourceRaw.platform : '',
         sourceId: typeof sourceRaw.sourceId === 'string' ? sourceRaw.sourceId : '',
         sourceUrl: typeof sourceRaw.sourceUrl === 'string' ? sourceRaw.sourceUrl : '',
+        creatorName: typeof sourceRaw.creatorName === 'string' ? sourceRaw.creatorName : null,
+        creatorAvatarUrl: typeof sourceRaw.creatorAvatarUrl === 'string' ? sourceRaw.creatorAvatarUrl : null,
+        likes: typeof sourceRaw.likes === 'number' ? sourceRaw.likes : null,
+        collects: typeof sourceRaw.collects === 'number' ? sourceRaw.collects : null,
+        comments: typeof sourceRaw.comments === 'number' ? sourceRaw.comments : null,
+        shares: typeof sourceRaw.shares === 'number' ? sourceRaw.shares : null,
+        videoUrl: typeof sourceRaw.videoUrl === 'string' ? sourceRaw.videoUrl : null,
+        sourceType: typeof sourceRaw.sourceType === 'string' ? sourceRaw.sourceType : null,
       },
       analysisResult: {
         sourceTitle: String(analysisRaw.sourceTitle || ''),
@@ -787,6 +1028,20 @@ export const miniappApi = {
       method: 'POST',
       data: {},
     });
+  },
+
+  async extractMyNoteVideoCopy(taskId: string): Promise<VideoCopyExtractResult> {
+    const payload = await request<{ data?: VideoCopyExtractResult }>(`/api/image-text-replication/${encodeURIComponent(taskId)}/extract-video-copy`, {
+      method: 'POST',
+      data: {},
+    });
+    const data = payload?.data || (payload as unknown as VideoCopyExtractResult);
+    return {
+      status: String(data?.status || 'pending'),
+      text: typeof data?.text === 'string' ? data.text : null,
+      transcript: typeof data?.transcript === 'string' ? data.transcript : null,
+      videoUrl: typeof data?.videoUrl === 'string' ? data.videoUrl : null,
+    };
   },
 
   async triggerImageTextMyNoteRewrite(taskId: string): Promise<{ taskId: string; status: string; workTaskId: string }> {
@@ -1091,13 +1346,14 @@ export const miniappApi = {
   },
 
   async listStylePresets(type = 'xhs-visual'): Promise<StylePresetSummary[]> {
-    const query = new URLSearchParams();
-    query.set('summary', '1');
-    query.set('includeShared', '1');
-    query.set('limit', '50');
-    query.set('type', type);
+    const query = buildQuery({
+      summary: 1,
+      includeShared: 1,
+      limit: 50,
+      type,
+    });
 
-    const payload = await request<{ data?: Array<Record<string, unknown>> }>(`/api/assets/styles?${query.toString()}`);
+    const payload = await request<{ data?: Array<Record<string, unknown>> }>(`/api/assets/styles?${query}`);
     const list = Array.isArray(payload?.data) ? payload.data : [];
     return list.map((item) => ({
       id: String(item.id || ''),
@@ -1232,6 +1488,22 @@ export const miniappApi = {
     title?: string;
     includeCover?: boolean;
     maxPages?: number;
+    cover?: {
+      coverStyleId?: string;
+      coverTitle?: string;
+      coverSubtitle?: string;
+      coverImage?: string;
+      coverTextColor?: string;
+      coverHighlightColor?: string;
+      coverCardRadius?: number;
+      coverShowStickers?: boolean;
+      coverFontFamily?: string;
+      coverTitleAlignX?: 'left' | 'center' | 'right';
+      coverTitleAlignY?: 'top' | 'center' | 'bottom';
+      coverFontSize?: number;
+      coverSubtitleFontSize?: number;
+      coverLineHeight?: number;
+    };
   }): Promise<XhsLayoutRenderResult> {
     const payload = await request<{ data?: Partial<XhsLayoutRenderResult> }>('/api/xhs-layout/render', {
       method: 'POST',
@@ -1242,6 +1514,7 @@ export const miniappApi = {
         title: params.title || '',
         includeCover: params.includeCover !== false,
         maxPages: params.maxPages ?? 8,
+        cover: params.cover || undefined,
       },
     });
     const data = payload?.data || {};
@@ -1254,10 +1527,9 @@ export const miniappApi = {
   },
 
   async getMonetizationSquareConfig(key = 'default'): Promise<MonetizationSquareConfigPayload> {
-    const query = new URLSearchParams();
-    query.set('key', key);
+    const query = buildQuery({ key });
     const payload = await request<{ data?: { config?: MonetizationSquareConfigPayload } }>(
-      `/api/miniapp/monetization-square?${query.toString()}`,
+      `/api/miniapp/monetization-square?${query}`,
     );
     const config = payload?.data?.config;
     if (!config || !Array.isArray(config.categories)) {
@@ -1267,10 +1539,9 @@ export const miniappApi = {
   },
 
   async getHotSquareConfig(key = 'miniapp-hot-square'): Promise<HotSquareConfigPayload> {
-    const query = new URLSearchParams();
-    query.set('key', key);
+    const query = buildQuery({ key });
     const payload = await request<{ data?: { config?: HotSquareConfigPayload } }>(
-      `/api/miniapp/hot-square/config?${query.toString()}`,
+      `/api/miniapp/hot-square/config?${query}`,
     );
     const config = payload?.data?.config;
     if (!config || !Array.isArray(config.categories)) {

@@ -24,6 +24,7 @@ function getApiBaseUrl(): string {
 }
 
 const API_BASE_URL = getApiBaseUrl();
+const AUTH_API_BASE_URL = 'https://auth.atomx.top';
 const ACCESS_TOKEN_STORAGE_KEY = 'MINIAPP_ACCESS_TOKEN';
 const SUPABASE_URL = (typeof __SUPABASE_URL__ !== 'undefined' ? String(__SUPABASE_URL__ || '') : '').trim();
 const SUPABASE_ANON_KEY = (typeof __SUPABASE_ANON_KEY__ !== 'undefined' ? String(__SUPABASE_ANON_KEY__ || '') : '').trim();
@@ -125,8 +126,13 @@ function setAccessToken(accessToken: string | null) {
   }
 }
 
+function shouldUseAuthApi(path: string): boolean {
+  return path.startsWith('/api/auth/') || path === '/api/user/profile';
+}
+
 function resolveUrl(path: string): string {
-  return API_BASE_URL ? `${API_BASE_URL}${path}` : path;
+  const base = shouldUseAuthApi(path) ? AUTH_API_BASE_URL : API_BASE_URL;
+  return base ? `${base}${path}` : path;
 }
 
 async function request<T = unknown>(
@@ -288,6 +294,13 @@ export const api = {
       ...profile,
       apiKey: serverApiKey || getApiKey(),
     };
+  },
+
+  async updateProfile(payload: { username?: string; fullName?: string; avatarUrl?: string | null }) {
+    return request<ProfilePayload>('/api/user/profile', {
+      method: 'PUT',
+      data: payload as Record<string, unknown>,
+    });
   },
 
   async emailPasswordLogin(payload: { email: string; password: string }) {

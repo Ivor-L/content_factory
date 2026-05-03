@@ -36,6 +36,12 @@ const ROUTE_OPTIONS = [
   { label: '作品页', value: '/pages/works/index' },
 ];
 
+function isShareCategory(id: string, name: string): boolean {
+  const normalizedId = String(id || '').trim().toLowerCase();
+  const normalizedName = String(name || '').trim();
+  return normalizedId.startsWith('share-') || normalizedId.startsWith('share_') || normalizedName.startsWith('分享');
+}
+
 function createId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36).slice(-4)}`;
 }
@@ -89,6 +95,23 @@ function createEmptyDemo(): NonNullable<MonetizationItemConfig['demos']>[number]
     coverImageUrl: '',
     demoVideoUrl: '',
     tags: [],
+  };
+}
+
+function ensureDemoAction(
+  demo: NonNullable<MonetizationItemConfig['demos']>[number],
+  fallbackRoute = '/pages/home/index',
+): MonetizationActionConfig {
+  const action = demo.action;
+  if (action?.type === 'route' && String(action.route || '').trim()) {
+    return action;
+  }
+  return {
+    type: 'route',
+    route: fallbackRoute,
+    params: action?.params,
+    featureKey: action?.featureKey,
+    promptTemplate: action?.promptTemplate,
   };
 }
 
@@ -674,67 +697,72 @@ export default function AdminMonetizationSquarePage() {
                 </div>
               ) : (() => {
                 const item = selectedItem;
+                const shareCategory = isShareCategory(selectedCategory.id, selectedCategory.name);
                 const routeInOptions = ROUTE_OPTIONS.some((route) => route.value === item.action.route);
                 return (
                   <div className="space-y-3">
                     <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">子类型详情编辑：{item.title || '未命名'}</div>
 
-                    <div className="rounded-md bg-gray-50 p-3 dark:bg-gray-900/50">
-                      <div className="mb-2 text-xs font-medium text-gray-700 dark:text-gray-300">跳转设置</div>
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                        <label className="space-y-1">
-                          <span className="text-xs text-gray-600 dark:text-gray-300">跳转页面</span>
-                          <select
-                            value={routeInOptions ? item.action.route : '__custom__'}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              if (value === '__custom__') return;
-                              updateItem(selectedCategory.id, item.id, (current) => ({
+                    {!shareCategory && (
+                      <div className="rounded-md bg-gray-50 p-3 dark:bg-gray-900/50">
+                        <div className="mb-2 text-xs font-medium text-gray-700 dark:text-gray-300">跳转设置</div>
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                          <label className="space-y-1">
+                            <span className="text-xs text-gray-600 dark:text-gray-300">跳转页面</span>
+                            <select
+                              value={routeInOptions ? item.action.route : '__custom__'}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                if (value === '__custom__') return;
+                                updateItem(selectedCategory.id, item.id, (current) => ({
+                                  ...current,
+                                  action: { ...current.action, type: 'route', route: value },
+                                }));
+                              }}
+                              className="w-full rounded-md border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                            >
+                              {ROUTE_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                              <option value="__custom__">自定义页面</option>
+                            </select>
+                          </label>
+                          <label className="space-y-1">
+                            <span className="text-xs text-gray-600 dark:text-gray-300">参数（key=value&key2=value2）</span>
+                            <input
+                              value={paramsToQuery(item.action.params)}
+                              onChange={(e) => updateItem(selectedCategory.id, item.id, (current) => ({
                                 ...current,
-                                action: { ...current.action, type: 'route', route: value },
-                              }));
-                            }}
-                            className="w-full rounded-md border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                          >
-                            {ROUTE_OPTIONS.map((option) => (
-                              <option key={option.value} value={option.value}>{option.label}</option>
-                            ))}
-                            <option value="__custom__">自定义页面</option>
-                          </select>
-                        </label>
-                        <label className="space-y-1">
-                          <span className="text-xs text-gray-600 dark:text-gray-300">参数（key=value&key2=value2）</span>
-                          <input
-                            value={paramsToQuery(item.action.params)}
-                            onChange={(e) => updateItem(selectedCategory.id, item.id, (current) => ({
-                              ...current,
-                              action: { ...current.action, params: queryToParams(e.target.value) },
-                            }))}
-                            className="w-full rounded-md border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                            placeholder="mode=ai-tool-leads"
-                          />
-                        </label>
-                      </div>
+                                action: { ...current.action, params: queryToParams(e.target.value) },
+                              }))}
+                              className="w-full rounded-md border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                              placeholder="mode=ai-tool-leads"
+                            />
+                          </label>
+                        </div>
 
-                      {!routeInOptions && (
-                        <label className="mt-2 block space-y-1">
-                          <span className="text-xs text-gray-600 dark:text-gray-300">自定义页面路径</span>
-                          <input
-                            value={item.action.route}
-                            onChange={(e) => updateItem(selectedCategory.id, item.id, (current) => ({
-                              ...current,
-                              action: { ...current.action, type: 'route', route: e.target.value },
-                            }))}
-                            className="w-full rounded-md border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
-                            placeholder="/pages/xxx/index"
-                          />
-                        </label>
-                      )}
-                    </div>
+                        {!routeInOptions && (
+                          <label className="mt-2 block space-y-1">
+                            <span className="text-xs text-gray-600 dark:text-gray-300">自定义页面路径</span>
+                            <input
+                              value={item.action.route}
+                              onChange={(e) => updateItem(selectedCategory.id, item.id, (current) => ({
+                                ...current,
+                                action: { ...current.action, type: 'route', route: e.target.value },
+                              }))}
+                              className="w-full rounded-md border border-gray-300 px-2.5 py-2 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                              placeholder="/pages/xxx/index"
+                            />
+                          </label>
+                        )}
+                      </div>
+                    )}
 
                     <div className="rounded-md bg-gray-50 p-3 dark:bg-gray-900/50">
                       <div className="mb-2 flex items-center justify-between">
-                        <span className="text-xs font-medium text-gray-700 dark:text-gray-300">演示内容（横滑卡片）</span>
+                        <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                          {shareCategory ? '分享卡片（视频号）' : '演示内容（横滑卡片）'}
+                        </span>
                         <button
                           type="button"
                           onClick={() => updateItem(selectedCategory.id, item.id, (current) => ({
@@ -785,6 +813,54 @@ export default function AdminMonetizationSquarePage() {
                                   />
                                 </label>
                               </div>
+
+                              {shareCategory && (
+                                <div className="mt-3 rounded-md border border-purple-200 bg-purple-50/60 p-3 dark:border-purple-800/50 dark:bg-purple-900/20">
+                                  <div className="mb-2 text-xs font-medium text-purple-700 dark:text-purple-300">视频号参数（官方）</div>
+                                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                                    <label className="space-y-1">
+                                      <span className="text-xs text-gray-600 dark:text-gray-300">finderUserName</span>
+                                      <input
+                                        value={String((ensureDemoAction(demo, item.action.route).params?.finderUserName as string) || '')}
+                                        onChange={(e) => updateDemo(selectedCategory.id, item.id, demo.id, (current) => {
+                                          const action = ensureDemoAction(current, item.action.route);
+                                          const nextParams = { ...(action.params || {}), finderUserName: e.target.value };
+                                          return { ...current, action: { ...action, params: nextParams } };
+                                        })}
+                                        className="w-full rounded border border-gray-300 px-2 py-1.5 text-xs dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                                        placeholder="sphxxxxxxxx"
+                                      />
+                                    </label>
+                                    <label className="space-y-1">
+                                      <span className="text-xs text-gray-600 dark:text-gray-300">feedId</span>
+                                      <input
+                                        value={String((ensureDemoAction(demo, item.action.route).params?.feedId as string) || '')}
+                                        onChange={(e) => updateDemo(selectedCategory.id, item.id, demo.id, (current) => {
+                                          const action = ensureDemoAction(current, item.action.route);
+                                          const nextParams = { ...(action.params || {}), feedId: e.target.value };
+                                          return { ...current, action: { ...action, params: nextParams } };
+                                        })}
+                                        className="w-full rounded border border-gray-300 px-2 py-1.5 text-xs dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                                        placeholder="export/UzFfAgtgekIEAQ..."
+                                      />
+                                    </label>
+                                    <label className="space-y-1">
+                                      <span className="text-xs text-gray-600 dark:text-gray-300">点赞展示（可选）</span>
+                                      <input
+                                        value={String((ensureDemoAction(demo, item.action.route).params?.likesText as string) || '')}
+                                        onChange={(e) => updateDemo(selectedCategory.id, item.id, demo.id, (current) => {
+                                          const action = ensureDemoAction(current, item.action.route);
+                                          const nextParams = { ...(action.params || {}), likesText: e.target.value };
+                                          return { ...current, action: { ...action, params: nextParams } };
+                                        })}
+                                        className="w-full rounded border border-gray-300 px-2 py-1.5 text-xs dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+                                        placeholder="10万+"
+                                      />
+                                    </label>
+                                  </div>
+                                  <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">分享变现将读取每张卡片的 finderUserName + feedId 调用 wx.openChannelsActivity。</p>
+                                </div>
+                              )}
 
                               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                                 <div className="space-y-1">

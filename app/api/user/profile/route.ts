@@ -66,18 +66,25 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const avatarUrl = typeof body.avatarUrl === 'string' ? body.avatarUrl.trim() : '';
-  if (!avatarUrl) {
-    return NextResponse.json({ error: 'avatarUrl is required' }, { status: 400 });
+  const avatarUrl = typeof body.avatarUrl === 'string' ? body.avatarUrl.trim() : undefined;
+  const username = typeof body.username === 'string' ? body.username.trim() : undefined;
+  const fullName = typeof body.fullName === 'string' ? body.fullName.trim() : undefined;
+
+  if (avatarUrl === undefined && username === undefined && fullName === undefined) {
+    return NextResponse.json({ error: 'avatarUrl, username or fullName is required' }, { status: 400 });
   }
 
   try {
+    const data: Record<string, unknown> = {
+      updated_at: new Date(),
+    };
+    if (avatarUrl !== undefined) data.avatar_url = avatarUrl || null;
+    if (username !== undefined) data.username = username || null;
+    if (fullName !== undefined) data.full_name = fullName || null;
+
     const updated = await prisma.profiles.update({
       where: { id: userId },
-      data: {
-        avatar_url: avatarUrl,
-        updated_at: new Date(),
-      },
+      data,
       select: {
         id: true,
         username: true,

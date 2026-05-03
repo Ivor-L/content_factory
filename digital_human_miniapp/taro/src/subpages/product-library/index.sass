@@ -3,6 +3,7 @@
   background: #050505
   display: flex
   flex-direction: column
+  overflow-x: hidden
 
 .product-library-header
   position: fixed
@@ -10,10 +11,10 @@
   left: 0
   right: 0
   z-index: 60
-  padding: calc(env(safe-area-inset-top) + 68rpx) 24rpx 24rpx
-  background: #121212
-  border-radius: 0 0 30rpx 30rpx
-  border-bottom: 1rpx solid rgba(137, 165, 215, 0.2)
+  padding: calc(env(safe-area-inset-top) + 12rpx) 24rpx 8rpx
+  box-sizing: border-box
+  background: #050505
+  margin-bottom: 10rpx
 
 .product-library-topbar
   position: relative
@@ -21,7 +22,7 @@
   justify-content: center
   align-items: center
   min-height: 56rpx
-  margin-bottom: 12rpx
+  margin-bottom: 6rpx
 
 .product-library-back
   position: absolute
@@ -30,39 +31,46 @@
   transform: translateY(-50%)
   width: 56rpx
   height: 56rpx
-  border-radius: 16rpx
-  border: 1rpx solid rgba(145, 175, 229, 0.28)
+  border-radius: 0
+  border: 0
+  background: transparent
   display: flex
   align-items: center
   justify-content: center
 
 .product-library-back-text
-  color: #dce9ff
-  font-size: 40rpx
+  color: #e8f2ff
+  font-size: 52rpx
   line-height: 1
 
 .product-library-title
-  font-size: 40rpx
-  color: #eaf3ff
-  font-weight: 800
+  color: #ecf6ff
+  font-size: 46rpx
+  font-weight: 700
+  line-height: 1.2
   text-align: center
 
 .product-library-summary
   color: #8ea2c8
   font-size: 24rpx
+  text-align: center
 
 .product-library-list
   flex: 1
-  margin-top: calc(env(safe-area-inset-top) + 260rpx)
+  margin-top: calc(env(safe-area-inset-top) + 136rpx)
+  width: 100%
+  box-sizing: border-box
+  overflow-x: hidden
 
 .product-library-grid
   display: grid
-  grid-template-columns: 1fr 1fr
+  grid-template-columns: repeat(2, minmax(0, 1fr))
   gap: 14rpx
   padding: 16rpx 24rpx 130rpx
   box-sizing: border-box
 
 .product-library-card
+  min-width: 0
   background: #141414
   border-radius: 22rpx
   border: 1rpx solid rgba(145, 175, 229, 0.18)

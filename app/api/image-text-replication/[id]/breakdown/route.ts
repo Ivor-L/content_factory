@@ -25,7 +25,6 @@ export async function POST(
       status: 'BREAKDOWN_PENDING',
       analysisResult: Prisma.JsonNull,
       generatedCopy: null,
-      generatedImages: Prisma.JsonNull,
       imageGuidance: Prisma.JsonNull,
       errorMessage: null,
     },

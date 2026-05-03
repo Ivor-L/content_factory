@@ -1,27 +1,78 @@
-import { View, Text, Image, Swiper, SwiperItem, ScrollView } from '@tarojs/components';
+import { View, Text, Image, Swiper, SwiperItem, ScrollView, Video } from '@tarojs/components';
 import Taro, { useLoad, useDidShow, useUnload } from '@tarojs/taro';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { miniappApi, type MyNoteTaskDetail } from '../../utils/miniapp-api';
-import { getFavoriteIdSet, toggleFavoriteFromHot } from '../../utils/favorites';
+import { miniappApi, type HotItem, type MyNoteTaskDetail } from '../../utils/miniapp-api';
 import './index.sass';
 
 const HOT_COVER_FALLBACK_URL = 'https://oss.atomx.top/miniapp/hot-square/fallback-cover-1777628403821.jpg';
 const POLL_MS = 2500;
+const HOT_REMOVED_ITEMS_KEY = 'HOT_SQUARE_REMOVED_ITEMS';
 
-function formatLikes(value?: number | null) {
+function formatMetric(value?: number | null) {
   if (typeof value !== 'number' || Number.isNaN(value) || value < 0) return '--';
-  if (value > 10000) return `${(value / 10000).toFixed(1)}万`;
+  if (value >= 10000) return `${(value / 10000).toFixed(1)}万`;
   return String(Math.round(value));
 }
 
+function normalizeStatus(status?: string | null) {
+  return String(status || '').toUpperCase();
+}
+
+function isParsingStatus(status?: string | null) {
+  const key = normalizeStatus(status);
+  if (key.includes('REWRITE_COMPLETED')) return false;
+  if (key.includes('BREAKDOWN_COMPLETED')) return false;
+  return key.includes('BREAKDOWN_PENDING') || key.includes('PENDING') || key.includes('PROCESS');
+}
+
+function canRewriteStatus(status?: string | null) {
+  return normalizeStatus(status).includes('BREAKDOWN_COMPLETED');
+}
+
 function formatMyTaskStatus(status: string) {
-  const key = String(status || '').toUpperCase();
-  if (key.includes('BREAKDOWN_PENDING') || key.includes('PENDING') || key.includes('PROCESS')) return '解析中';
+  const key = normalizeStatus(status);
+  if (isParsingStatus(key)) return '解析中';
   if (key.includes('BREAKDOWN_COMPLETED')) return '解析完成';
   if (key.includes('REWRITE_PENDING')) return '仿写中';
   if (key.includes('REWRITE_COMPLETED')) return '仿写完成';
-  if (key.includes('FAILED') || key.includes('ERROR')) return '失败';
+  if (key.includes('FAILED') || key.includes('ERROR')) return '解析失败';
   return key || '--';
+}
+
+function buildRewritePayload(rewrite: NonNullable<MyNoteTaskDetail['analysisResult']['rewriteResult']>, targetFeature: string) {
+  return {
+    targetFeature,
+    title: rewrite.title,
+    body: rewrite.body,
+    imageTexts: rewrite.imageTexts,
+  };
+}
+
+function rememberRemovedHotItem(...ids: Array<string | null | undefined>) {
+  try {
+    const raw = Taro.getStorageSync(HOT_REMOVED_ITEMS_KEY);
+    const current = raw ? JSON.parse(String(raw)) : [];
+    const list = Array.isArray(current)
+      ? current.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+    const next = new Set(list);
+    ids.map((id) => String(id || '').trim()).filter(Boolean).forEach((id) => next.add(id));
+    Taro.setStorageSync(HOT_REMOVED_ITEMS_KEY, JSON.stringify(Array.from(next).slice(-100)));
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function getTitleOptions(title: string): string[] {
+  const clean = title.trim() || '仿写标题';
+  const compact = clean.replace(/[？?。！!，,]/g, '').slice(0, 24) || clean;
+  return [
+    clean,
+    `${compact}，普通人也能直接套用`,
+    `我把这条爆款拆开看了，关键在这里`,
+    `${compact}的高赞表达法`,
+    `别急着发，先看懂这条为什么能爆`,
+  ].filter(Boolean).slice(0, 5);
 }
 
 export default function HotDetailPage() {
@@ -29,14 +80,22 @@ export default function HotDetailPage() {
   const [myTaskId, setMyTaskId] = useState('');
   const [loadError, setLoadError] = useState('');
 
-  const [item, setItem] = useState<any | null>(null);
+  const [item, setItem] = useState<HotItem | null>(null);
   const [creating, setCreating] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
-  const [favorited, setFavorited] = useState(false);
+  const [collected, setCollected] = useState(false);
+  const [inlineTaskId, setInlineTaskId] = useState('');
+  const [inlineTask, setInlineTask] = useState<MyNoteTaskDetail | null>(null);
 
   const [myTask, setMyTask] = useState<MyNoteTaskDetail | null>(null);
   const [loadingMyTask, setLoadingMyTask] = useState(false);
   const [rewriting, setRewriting] = useState(false);
+  const [extractingVideoCopy, setExtractingVideoCopy] = useState(false);
+  const [downloadingVideo, setDownloadingVideo] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [rewriteDrawerVisible, setRewriteDrawerVisible] = useState(false);
+  const [remixDrawerVisible, setRemixDrawerVisible] = useState(false);
+  const [selectedRewriteTitle, setSelectedRewriteTitle] = useState('');
   const pollTimerRef = useRef<number | null>(null);
 
   const clearPoll = () => {
@@ -47,37 +106,35 @@ export default function HotDetailPage() {
   };
 
   const loadMyTask = async (taskId: string, silent = false) => {
-    if (!taskId) return;
+    if (!taskId) return null;
     if (!silent) setLoadingMyTask(true);
     try {
       const detail = await miniappApi.getImageTextMyNoteTask(taskId);
       setMyTask(detail);
+      return detail;
     } catch (error) {
       if (!silent) {
-        Taro.showToast({
-          title: error instanceof Error ? error.message : '加载失败',
-          icon: 'none',
-        });
+        Taro.showToast({ title: error instanceof Error ? error.message : '加载失败', icon: 'none' });
       }
+      return null;
     } finally {
       if (!silent) setLoadingMyTask(false);
     }
   };
 
-  const startPollingMyTask = (taskId: string) => {
+  const pollTask = (taskId: string, target: 'my' | 'inline') => {
     clearPoll();
     pollTimerRef.current = setInterval(() => {
       void (async () => {
         try {
           const detail = await miniappApi.getImageTextMyNoteTask(taskId);
-          setMyTask(detail);
-          const status = String(detail.status || '').toUpperCase();
+          if (target === 'my') setMyTask(detail);
+          if (target === 'inline') setInlineTask(detail);
+          const status = normalizeStatus(detail.status);
           const isTerminal = status.includes('BREAKDOWN_COMPLETED') || status.includes('REWRITE_COMPLETED') || status.includes('FAILED') || status.includes('ERROR');
-          if (isTerminal && !status.includes('PENDING') && !status.includes('PROCESS')) {
-            clearPoll();
-          }
+          if (isTerminal && !isParsingStatus(status)) clearPoll();
         } catch {
-          // keep polling
+          // Keep polling while network is flaky; the task is persisted server-side.
         }
       })();
     }, POLL_MS) as unknown as number;
@@ -91,17 +148,18 @@ export default function HotDetailPage() {
     if (nextMode === 'my') {
       const taskId = String(query?.myTaskId || '').trim();
       setMyTaskId(taskId);
+      setCollected(true);
       if (taskId) {
         void loadMyTask(taskId);
-        startPollingMyTask(taskId);
+        pollTask(taskId, 'my');
       }
       return;
     }
 
-    const cached = Taro.getStorageSync('HOT_DETAIL_ITEM');
+    const cached = Taro.getStorageSync('HOT_DETAIL_ITEM') as HotItem | null;
     if (cached && (!query?.id || String(cached.id) === String(query.id))) {
       setItem(cached);
-      setFavorited(getFavoriteIdSet().has(String(cached.id)));
+      setCollected(Boolean(cached.isCollected || cached.source === 'mine'));
       return;
     }
 
@@ -111,19 +169,32 @@ export default function HotDetailPage() {
   useDidShow(() => {
     if (mode === 'my' && myTaskId) {
       void loadMyTask(myTaskId, true);
-      if (!pollTimerRef.current) startPollingMyTask(myTaskId);
+      if (!pollTimerRef.current && isParsingStatus(myTask?.status)) pollTask(myTaskId, 'my');
+    }
+    if (mode === 'hot' && inlineTaskId) {
+      void (async () => {
+        const detail = await miniappApi.getImageTextMyNoteTask(inlineTaskId);
+        setInlineTask(detail);
+        if (!pollTimerRef.current && isParsingStatus(detail.status)) pollTask(inlineTaskId, 'inline');
+      })();
     }
   });
 
-  useUnload(() => {
-    clearPoll();
-  });
+  useUnload(() => clearPoll());
 
-  useEffect(() => {
-    return () => {
-      clearPoll();
-    };
-  }, []);
+  useEffect(() => () => clearPoll(), []);
+
+  const activeTask = mode === 'my' ? myTask : inlineTask;
+  const activeTaskId = mode === 'my' ? myTaskId : inlineTaskId;
+  const rewrite = activeTask?.analysisResult?.rewriteResult || null;
+  const rewriteTitleOptions = useMemo(() => getTitleOptions(rewrite?.title || ''), [rewrite?.title]);
+  const taskCanRewrite = Boolean(activeTask && canRewriteStatus(activeTask.status));
+  const hasRewriteResult = Boolean(rewrite);
+  const isParsing = Boolean(activeTask && isParsingStatus(activeTask.status));
+  const activeVideoUrl = mode === 'my'
+    ? (myTask?.source.videoUrl || '')
+    : (inlineTask?.source.videoUrl || item?.videoUrl || '');
+  const isVideoNote = Boolean(activeVideoUrl || item?.sourceType === 'video' || myTask?.source.sourceType === 'video');
 
   const coverUrl = useMemo(() => {
     const raw = typeof item?.coverUrl === 'string' ? item.coverUrl.trim() : '';
@@ -132,9 +203,7 @@ export default function HotDetailPage() {
 
   const detailImages = useMemo(() => {
     const list = Array.isArray(item?.mediaUrls)
-      ? item.mediaUrls
-          .map((url: unknown) => (typeof url === 'string' ? url.trim() : ''))
-          .filter((url: string) => Boolean(url))
+      ? item.mediaUrls.map((url) => (typeof url === 'string' ? url.trim() : '')).filter(Boolean)
       : [];
     if (list.length > 0) return list;
     return [coverUrl];
@@ -142,236 +211,400 @@ export default function HotDetailPage() {
 
   const myImages = useMemo(() => {
     if (!myTask) return [] as string[];
-    if (Array.isArray(myTask.analysisResult?.sourceImages) && myTask.analysisResult.sourceImages.length > 0) {
-      return myTask.analysisResult.sourceImages;
-    }
+    if (Array.isArray(myTask.analysisResult?.sourceImages) && myTask.analysisResult.sourceImages.length > 0) return myTask.analysisResult.sourceImages;
     return myTask.source?.images || [];
   }, [myTask]);
 
   useEffect(() => {
-    if (currentSlide > detailImages.length - 1) {
-      setCurrentSlide(0);
-    }
-  }, [currentSlide, detailImages.length]);
+    const length = mode === 'my' ? Math.max(myImages.length, 1) : detailImages.length;
+    if (currentSlide > length - 1) setCurrentSlide(0);
+  }, [currentSlide, detailImages.length, mode, myImages.length]);
 
   const handleBack = () => {
     clearPoll();
     Taro.navigateBack({ delta: 1 });
   };
 
-  const handleOneClickCreate = async () => {
-    if (!item || creating) return;
+  const handleParseCurrent = async () => {
+    if (!item || creating || inlineTaskId) return;
     setCreating(true);
     try {
       const result = await miniappApi.startOneClickCreate(item);
-      Taro.showToast({ title: '已加入我的，后台解析中', icon: 'none' });
-      console.log('one click create note task:', result.taskId, result.status);
-      setTimeout(() => {
-        const pages = Taro.getCurrentPages();
-        const useRedirect = pages.length >= 9;
-        const nav = useRedirect ? Taro.redirectTo : Taro.navigateTo;
-        nav({
-          url: `/subpages/hot-detail/index?myTaskId=${encodeURIComponent(result.taskId)}&mode=my`,
-          fail: (error) => {
-            console.error('[hot-detail] jump my note failed', error);
-            Taro.showToast({ title: '跳转失败，请重试', icon: 'none' });
-          },
-        });
-      }, 500);
+      setInlineTaskId(result.taskId);
+      setCollected(true);
+      const detail = await miniappApi.getImageTextMyNoteTask(result.taskId);
+      setInlineTask(detail);
+      pollTask(result.taskId, 'inline');
+      Taro.showToast({ title: '已加入我的，正在解析', icon: 'none' });
     } catch (error) {
-      Taro.showToast({
-        title: error instanceof Error ? error.message : '创建失败',
-        icon: 'none',
-      });
+      Taro.showToast({ title: error instanceof Error ? error.message : '解析失败', icon: 'none' });
     } finally {
       setCreating(false);
     }
   };
 
-  const handleToggleFavorite = () => {
-    if (!item) return;
-    const result = toggleFavoriteFromHot(item);
-    setFavorited(result.favorited);
-    Taro.showToast({
-      title: result.favorited ? '已收藏' : '已取消收藏',
-      icon: 'none',
-    });
+  const handleCancelCollect = async () => {
+    if (removing) return;
+    setRemoving(true);
+    try {
+      if (mode === 'my' && myTaskId) {
+        await miniappApi.removeHotMyNote({ id: myTaskId });
+        rememberRemovedHotItem(myTaskId, myTask?.source.sourceId, myTask?.source.sourceUrl);
+        Taro.showToast({ title: '已取消收藏', icon: 'none' });
+        setTimeout(() => Taro.navigateBack({ delta: 1 }), 300);
+        return;
+      }
+
+      if (inlineTaskId) {
+        await miniappApi.removeHotMyNote({ id: inlineTaskId });
+        rememberRemovedHotItem(inlineTaskId, item?.id, item?.sourceUrl);
+        setInlineTaskId('');
+        setInlineTask(null);
+        setCollected(false);
+        clearPoll();
+        Taro.showToast({ title: '已取消收藏', icon: 'none' });
+        return;
+      }
+
+      if (item?.referenceId) {
+        await miniappApi.removeViralReference(item.referenceId);
+        rememberRemovedHotItem(item.id, item.referenceId, item.sourceUrl);
+        Taro.showToast({ title: '已取消收藏', icon: 'none' });
+        setTimeout(() => Taro.navigateBack({ delta: 1 }), 300);
+        return;
+      }
+
+      if (item) {
+        await miniappApi.removeHotMyNote({ sourceId: item.id, sourceUrl: item.sourceUrl || undefined });
+        rememberRemovedHotItem(item.id, item.myTaskId, item.referenceId, item.sourceUrl);
+        setCollected(false);
+        Taro.showToast({ title: '已取消收藏', icon: 'none' });
+      }
+    } catch (error) {
+      Taro.showToast({ title: error instanceof Error ? error.message : '取消失败', icon: 'none' });
+    } finally {
+      setRemoving(false);
+    }
   };
 
   const handleRewrite = async () => {
-    if (!myTaskId || rewriting) return;
+    if (!activeTaskId || rewriting || !taskCanRewrite) return;
     setRewriting(true);
     try {
-      const result = await miniappApi.triggerImageTextMyNoteRewrite(myTaskId);
-      await loadMyTask(myTaskId, true);
-      Taro.showToast({ title: '仿写完成，已添加到作品', icon: 'success' });
-      const latest = await miniappApi.getImageTextMyNoteTask(myTaskId);
-      const rewrite = latest.analysisResult.rewriteResult;
-      if (rewrite) {
-        Taro.setStorageSync('MY_NOTE_REWRITE_PAYLOAD', {
-          targetFeature: 'card-layout',
-          title: rewrite.title,
-          body: rewrite.body,
-          imageTexts: rewrite.imageTexts,
-        });
-      }
-      setTimeout(() => {
-        const pages = Taro.getCurrentPages();
-        const useRedirect = pages.length >= 9;
-        const nav = useRedirect ? Taro.redirectTo : Taro.navigateTo;
-        nav({
-          url: `/subpages/work-detail/index?id=${encodeURIComponent(result.workTaskId)}`,
-          fail: (error) => {
-            console.error('[hot-detail] jump work detail failed', error);
-            Taro.showToast({ title: '跳转失败，请重试', icon: 'none' });
-          },
-        });
-      }, 550);
+      const result = await miniappApi.triggerImageTextMyNoteRewrite(activeTaskId);
+      const latest = await miniappApi.getImageTextMyNoteTask(activeTaskId);
+      if (mode === 'my') setMyTask(latest);
+      if (mode === 'hot') setInlineTask(latest);
+      const latestRewrite = latest.analysisResult.rewriteResult;
+      if (latestRewrite) Taro.setStorageSync('MY_NOTE_REWRITE_PAYLOAD', buildRewritePayload(latestRewrite, 'card-layout'));
+      setSelectedRewriteTitle(latestRewrite?.title || '');
+      setRewriteDrawerVisible(true);
+      Taro.showToast({ title: result.workTaskId ? '仿写完成' : '仿写完成', icon: 'success' });
     } catch (error) {
-      Taro.showToast({
-        title: error instanceof Error ? error.message : '仿写失败',
-        icon: 'none',
-      });
+      Taro.showToast({ title: error instanceof Error ? error.message : '仿写失败', icon: 'none' });
     } finally {
       setRewriting(false);
     }
   };
 
+  const handleRouteToCardLayout = (targetFeature: 'card-layout' | 'infographic') => {
+    if (!rewrite) return;
+    Taro.setStorageSync('MY_NOTE_REWRITE_PAYLOAD', buildRewritePayload({
+      ...rewrite,
+      title: selectedRewriteTitle || rewrite.title,
+    }, targetFeature));
+    Taro.navigateTo({ url: '/subpages/image-generate/index' });
+  };
+
+  const handleOpenRewriteDrawer = () => {
+    if (!rewrite) return;
+    setSelectedRewriteTitle((current) => current || rewrite.title || rewriteTitleOptions[0] || '');
+    setRewriteDrawerVisible(true);
+  };
+
+  const handleExtractVideoCopy = async () => {
+    const taskId = activeTaskId || myTaskId || inlineTaskId;
+    if (!taskId || extractingVideoCopy) return;
+    setExtractingVideoCopy(true);
+    try {
+      const result = await miniappApi.extractMyNoteVideoCopy(taskId);
+      const latest = await miniappApi.getImageTextMyNoteTask(taskId);
+      if (mode === 'my') setMyTask(latest);
+      if (mode === 'hot') setInlineTask(latest);
+      Taro.showToast({ title: result.text || latest.source.text ? '文案已提取' : '已开始后台提取', icon: 'none' });
+    } catch (error) {
+      Taro.showToast({ title: error instanceof Error ? error.message : '提取失败', icon: 'none' });
+    } finally {
+      setExtractingVideoCopy(false);
+    }
+  };
+
+  const handleDownloadVideo = async () => {
+    if (!activeVideoUrl || downloadingVideo) return;
+    setDownloadingVideo(true);
+    try {
+      const res = await Taro.downloadFile({ url: activeVideoUrl });
+      if (res.statusCode && res.statusCode >= 400) throw new Error(`下载失败 ${res.statusCode}`);
+      await Taro.saveVideoToPhotosAlbum({ filePath: res.tempFilePath });
+      Taro.showToast({ title: '已保存到相册', icon: 'success' });
+    } catch (error) {
+      Taro.showToast({ title: error instanceof Error ? error.message : '下载失败，请检查相册权限', icon: 'none' });
+    } finally {
+      setDownloadingVideo(false);
+    }
+  };
+
+  const handleOpenRemix = (type: 'short' | 'long' | 'action-swap') => {
+    if (!activeVideoUrl) return;
+    const params = [
+      `referenceVideoUrl=${encodeURIComponent(activeVideoUrl)}`,
+      'fromHotNote=1',
+      `title=${encodeURIComponent((mode === 'my' ? myTask?.source.title : item?.title) || '爆款视频')}`,
+    ];
+    if (type === 'long') params.push('duration=long');
+    if (type === 'action-swap') params.push('mode=action-swap');
+    Taro.navigateTo({ url: `/subpages/remix-generate/index?${params.join('&')}` });
+    setRemixDrawerVisible(false);
+  };
+
+  const handleCopyExtractedTexts = (texts: Array<{ index: number; text?: string | null }>) => {
+    const content = texts
+      .map((textItem) => String(textItem.text || '').trim())
+      .filter(Boolean)
+      .join('\n\n');
+
+    if (!content) {
+      Taro.showToast({ title: '暂无可复制文案', icon: 'none' });
+      return;
+    }
+
+    Taro.setClipboardData({
+      data: content,
+      success: () => {
+        Taro.showToast({ title: '文案已复制', icon: 'success' });
+      },
+      fail: () => {
+        Taro.showToast({ title: '复制失败', icon: 'none' });
+      },
+    });
+  };
+
+  const renderMedia = (images: string[]) => {
+    if (activeVideoUrl) {
+      return (
+        <View className='hot-detail-video-wrap'>
+          <Video
+            className='hot-detail-video'
+            src={activeVideoUrl}
+            controls
+            autoplay={false}
+            loop={false}
+            showFullscreenBtn
+            showPlayBtn
+          />
+        </View>
+      );
+    }
+    const safeImages = images.length > 0 ? images : [HOT_COVER_FALLBACK_URL];
+    if (safeImages.length > 1) {
+      return (
+        <View className='hot-detail-swiper-wrap'>
+          <Swiper className='hot-detail-swiper' indicatorDots={false} circular={false} current={currentSlide} onChange={(e) => setCurrentSlide(e.detail.current)}>
+            {safeImages.map((url, index) => (
+              <SwiperItem key={`${url}-${index}`}>
+                <Image className='hot-detail-cover' src={url} mode='aspectFill' />
+              </SwiperItem>
+            ))}
+          </Swiper>
+          <View className='hot-detail-swiper-indicator'>
+            <Text className='hot-detail-swiper-indicator-text'>{currentSlide + 1}/{safeImages.length}</Text>
+          </View>
+        </View>
+      );
+    }
+    return <Image className='hot-detail-cover hot-detail-cover--single' src={safeImages[0]} mode='widthFix' />;
+  };
+
+  const renderStats = (stats: { likes?: number | null; collects?: number | null; comments?: number | null; shares?: number | null }) => (
+    <View className='hot-detail-stats'>
+      <View className='hot-detail-stat'><Text className='hot-detail-stat-icon'>♡</Text><Text className='hot-detail-stat-text'>{formatMetric(stats.likes)}</Text></View>
+      <View className='hot-detail-stat'><Text className='hot-detail-stat-icon'>☆</Text><Text className='hot-detail-stat-text'>{formatMetric(stats.collects)}</Text></View>
+      <View className='hot-detail-stat'><Text className='hot-detail-stat-icon'>◌</Text><Text className='hot-detail-stat-text'>{formatMetric(stats.comments)}</Text></View>
+      <View className='hot-detail-stat'><Text className='hot-detail-stat-icon'>↗</Text><Text className='hot-detail-stat-text'>{formatMetric(stats.shares)}</Text></View>
+    </View>
+  );
+
+  const renderRewriteDrawer = () => {
+    if (!rewrite || !rewriteDrawerVisible) return null;
+    const activeTitle = selectedRewriteTitle || rewrite.title || rewriteTitleOptions[0] || '';
+    return (
+      <View className='hot-rewrite-layer'>
+        <View className='hot-rewrite-mask' onClick={() => setRewriteDrawerVisible(false)} />
+        <View className='hot-rewrite-drawer'>
+          <View className='hot-rewrite-handle' />
+          <Text className='hot-rewrite-kicker'>仿写结果</Text>
+          <Text className='hot-rewrite-main-title'>{activeTitle}</Text>
+          <View className='hot-rewrite-title-grid'>
+            {rewriteTitleOptions.map((title) => (
+              <View
+                key={title}
+                className={`hot-rewrite-title-chip ${activeTitle === title ? 'hot-rewrite-title-chip--active' : ''}`}
+                onClick={() => setSelectedRewriteTitle(title)}
+              >
+                <Text className={`hot-rewrite-title-chip-text ${activeTitle === title ? 'hot-rewrite-title-chip-text--active' : ''}`}>{title}</Text>
+              </View>
+            ))}
+          </View>
+          <ScrollView scrollY className='hot-rewrite-content'>
+            <Text className='hot-rewrite-section-title'>正文</Text>
+            <Text className='hot-rewrite-body'>{rewrite.body || '--'}</Text>
+            <Text className='hot-rewrite-section-title'>图片正文</Text>
+            {rewrite.imageTexts.length > 0 ? rewrite.imageTexts.map((text, index) => (
+              <Text key={`${index}-${text}`} className='hot-rewrite-image-text'>{text}</Text>
+            )) : <Text className='hot-rewrite-image-text'>暂无图片正文</Text>}
+          </ScrollView>
+          <View className='hot-rewrite-actions'>
+            <View className='hot-rewrite-action' onClick={() => handleRouteToCardLayout('infographic')}>
+              <Text className='hot-rewrite-action-icon'>▦</Text>
+              <Text className='hot-rewrite-action-text'>生成信息卡片</Text>
+            </View>
+            <View className='hot-rewrite-action' onClick={() => handleRouteToCardLayout('card-layout')}>
+              <Text className='hot-rewrite-action-icon'>▧</Text>
+              <Text className='hot-rewrite-action-text'>生成图文卡片</Text>
+            </View>
+          </View>
+          <View className='hot-rewrite-close' onClick={() => setRewriteDrawerVisible(false)}>
+            <Text className='hot-rewrite-close-text'>关闭</Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  const renderVideoActions = () => {
+    if (!isVideoNote || !activeVideoUrl) return null;
+    return (
+      <View className='hot-video-actions-panel'>
+        <Text className='hot-video-actions-title'>视频笔记能力</Text>
+        <View className='hot-video-actions-grid'>
+          <View className={`hot-video-action ${extractingVideoCopy ? 'hot-video-action--disabled' : ''}`} onClick={handleExtractVideoCopy}>
+            <Text className='hot-video-action-icon'>≡</Text>
+            <Text className='hot-video-action-text'>{extractingVideoCopy ? '提取中...' : '提取文案'}</Text>
+          </View>
+          <View className={`hot-video-action ${downloadingVideo ? 'hot-video-action--disabled' : ''}`} onClick={handleDownloadVideo}>
+            <Text className='hot-video-action-icon'>↓</Text>
+            <Text className='hot-video-action-text'>{downloadingVideo ? '下载中...' : '下载视频'}</Text>
+          </View>
+          <View className='hot-video-action hot-video-action--primary' onClick={() => setRemixDrawerVisible(true)}>
+            <Text className='hot-video-action-icon'>▶</Text>
+            <Text className='hot-video-action-text'>一键复刻</Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  const renderRemixDrawer = () => {
+    if (!remixDrawerVisible || !activeVideoUrl) return null;
+    return (
+      <View className='hot-remix-layer'>
+        <View className='hot-remix-mask' onClick={() => setRemixDrawerVisible(false)} />
+        <View className='hot-remix-drawer'>
+          <View className='hot-rewrite-handle' />
+          <Text className='hot-remix-title'>选择复刻类型</Text>
+          <Text className='hot-remix-desc'>会自动把当前视频放入参考视频，进入后可继续选角色和产品。</Text>
+          <View className='hot-remix-option' onClick={() => handleOpenRemix('short')}>
+            <Text className='hot-remix-option-title'>15s内短视频复刻</Text>
+            <Text className='hot-remix-option-desc'>适合口播、种草、单镜头爆款</Text>
+          </View>
+          <View className='hot-remix-option' onClick={() => handleOpenRemix('long')}>
+            <Text className='hot-remix-option-title'>15s+长视频复刻</Text>
+            <Text className='hot-remix-option-desc'>适合信息密度更高的长视频结构</Text>
+          </View>
+          <View className='hot-remix-option' onClick={() => handleOpenRemix('action-swap')}>
+            <Text className='hot-remix-option-title'>动作/角色替换</Text>
+            <Text className='hot-remix-option-desc'>保留动作节奏，替换成你的角色</Text>
+          </View>
+          <View className='hot-rewrite-close' onClick={() => setRemixDrawerVisible(false)}>
+            <Text className='hot-rewrite-close-text'>关闭</Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
   if (mode === 'my') {
     const extractedTexts = myTask?.analysisResult?.extractedImageTexts || [];
-    const rewrite = myTask?.analysisResult?.rewriteResult || null;
     const statusLabel = formatMyTaskStatus(myTask?.status || '');
-    const canRewrite = Boolean(myTask && String(myTask.status || '').toUpperCase().includes('BREAKDOWN_COMPLETED'));
-    const canRouteToCards = Boolean(rewrite);
-
-    const handleRouteToCardLayout = () => {
-      if (!rewrite) return;
-      Taro.setStorageSync('MY_NOTE_REWRITE_PAYLOAD', {
-        targetFeature: 'card-layout',
-        title: rewrite.title,
-        body: rewrite.body,
-        imageTexts: rewrite.imageTexts,
-      });
-      Taro.navigateTo({ url: '/subpages/image-generate/index' });
-    };
-
-    const handleRouteToInfographic = () => {
-      if (!rewrite) return;
-      Taro.setStorageSync('MY_NOTE_REWRITE_PAYLOAD', {
-        targetFeature: 'infographic',
-        title: rewrite.title,
-        body: rewrite.body,
-        imageTexts: rewrite.imageTexts,
-      });
-      Taro.navigateTo({ url: '/subpages/image-generate/index' });
-    };
-
     return (
       <View className='hot-detail-page'>
         <View className='hot-detail-nav'>
-          <View className='hot-detail-back' onClick={handleBack}>
-            <Text className='hot-detail-back-text'>返回</Text>
-          </View>
+          <View className='hot-detail-back' onClick={handleBack}><Text className='hot-detail-back-icon'>‹</Text></View>
           <Text className='hot-detail-nav-title'>我的笔记</Text>
           <View className='hot-detail-nav-spacer' />
         </View>
 
-        <View className='hot-detail-content'>
-          {!myTask && loadingMyTask ? (
-            <View className='hot-detail-empty'>
-              <Text className='hot-detail-empty-text'>加载中...</Text>
-            </View>
-          ) : !myTask ? (
-            <View className='hot-detail-empty'>
-              <Text className='hot-detail-empty-text'>未找到笔记任务</Text>
-            </View>
-          ) : (
-            <ScrollView scrollY className='hot-my-scroll'>
-              <View className='hot-detail-card'>
-                {myImages.length > 1 ? (
-                  <View className='hot-detail-swiper-wrap'>
-                    <Swiper
-                      className='hot-detail-swiper'
-                      indicatorDots={false}
-                      circular={false}
-                      current={currentSlide}
-                      onChange={(e) => setCurrentSlide(e.detail.current)}
-                    >
-                      {myImages.map((url, index) => (
-                        <SwiperItem key={`${url}-${index}`}>
-                          <Image className='hot-detail-cover' src={url} mode='aspectFill' />
-                        </SwiperItem>
-                      ))}
-                    </Swiper>
-                    <View className='hot-detail-swiper-indicator'>
-                      <Text className='hot-detail-swiper-indicator-text'>{currentSlide + 1}/{myImages.length}</Text>
-                    </View>
-                  </View>
-                ) : (
-                  <Image className='hot-detail-cover' src={myImages[0] || HOT_COVER_FALLBACK_URL} mode='widthFix' />
-                )}
+        {!myTask && loadingMyTask ? (
+          <View className='hot-detail-empty'><Text className='hot-detail-empty-text'>加载中...</Text></View>
+        ) : !myTask ? (
+          <View className='hot-detail-empty'><Text className='hot-detail-empty-text'>未找到笔记任务</Text></View>
+        ) : (
+          <ScrollView scrollY className='hot-detail-content'>
+            {renderMedia(myImages)}
+            <View className='hot-detail-body'>
+              <Text className='hot-detail-title'>{myTask.source.title || '未命名笔记'}</Text>
+              <View className='hot-detail-author-row'>
+                <Image className='hot-detail-avatar' src={myTask.source.creatorAvatarUrl || HOT_COVER_FALLBACK_URL} mode='aspectFill' />
+                <Text className='hot-detail-author'>{myTask.source.creatorName || '匿名作者'}</Text>
+                <Text className='hot-detail-status'>{statusLabel}</Text>
+              </View>
+              {renderStats(myTask.source)}
+              {renderVideoActions()}
+              {!!myTask.source.text && <Text className='hot-detail-desc'>{myTask.source.text}</Text>}
 
-                <View className='hot-detail-body'>
-                  <Text className='hot-detail-title'>{myTask.source.title || '未命名笔记'}</Text>
-                  <View className='hot-detail-meta'>
-                    <Text className='hot-detail-author'>状态：{statusLabel}</Text>
-                    <Text className='hot-detail-collects'>{extractedTexts.length} 条文案</Text>
-                  </View>
-                  {!!myTask.source.text && (
-                    <Text className='hot-detail-desc'>原正文：{myTask.source.text}</Text>
-                  )}
-
-                  <View className='hot-my-section'>
-                    <Text className='hot-my-section-title'>图片文案提取</Text>
-                    {extractedTexts.length === 0 ? (
-                      <Text className='hot-my-empty'>解析中，支持关闭页面后台继续运行</Text>
-                    ) : (
-                      extractedTexts.map((item) => (
-                        <View key={`${item.index}`} className='hot-my-item'>
-                          <Text className='hot-my-item-title'>图 {item.index}</Text>
-                          <Text className='hot-my-item-text'>{item.text || '[空]'}</Text>
-                        </View>
-                      ))
-                    )}
-                  </View>
-
-                  {!!rewrite && (
-                    <View className='hot-my-section'>
-                      <Text className='hot-my-section-title'>仿写结果</Text>
-                      <Text className='hot-my-item-title'>标题</Text>
-                      <Text className='hot-my-item-text'>{rewrite.title || '--'}</Text>
-                      <Text className='hot-my-item-title'>正文</Text>
-                      <Text className='hot-my-item-text'>{rewrite.body || '--'}</Text>
+              {!isVideoNote && <View className='hot-my-section'>
+                <View className='hot-my-section-header'>
+                  <Text className='hot-my-section-title'>图片文案提取</Text>
+                  {extractedTexts.length > 0 && (
+                    <View className='hot-my-copy-btn' onClick={() => handleCopyExtractedTexts(extractedTexts)}>
+                      <Text className='hot-my-copy-btn-text'>复制</Text>
                     </View>
                   )}
                 </View>
-              </View>
-            </ScrollView>
-          )}
-        </View>
+                <View className='hot-my-text-panel'>
+                  {extractedTexts.length === 0 ? (
+                    <Text className='hot-my-empty'>解析中，支持关闭页面后台继续运行</Text>
+                  ) : (
+                    extractedTexts.map((textItem) => <Text key={`${textItem.index}`} className='hot-my-item-text'>{textItem.text || '[空]'}</Text>)
+                  )}
+                </View>
+              </View>}
+
+            </View>
+          </ScrollView>
+        )}
 
         {!!myTask && (
           <View className='hot-detail-action-bar hot-detail-action-bar--my'>
-            {canRouteToCards && (
-              <>
-                <View className='hot-detail-fav-btn hot-detail-action-btn' onClick={handleRouteToInfographic}>
-                  <Text className='hot-detail-fav-btn-text'>生成信息卡片</Text>
-                </View>
-                <View className='hot-detail-fav-btn hot-detail-action-btn' onClick={handleRouteToCardLayout}>
-                  <Text className='hot-detail-fav-btn-text'>生成图文卡片</Text>
-                </View>
-              </>
-            )}
-            <View
-              className={`hot-detail-create-btn hot-detail-action-btn ${!canRewrite || rewriting ? 'hot-detail-create-btn--disabled' : ''}`}
-              onClick={!canRewrite || rewriting ? undefined : handleRewrite}
-            >
-              <Text className='hot-detail-create-btn-text'>
-                {rewriting ? '仿写中...' : (canRewrite ? '一键仿写' : '等待解析完成')}
-              </Text>
+            <View className='hot-detail-fav-btn hot-detail-action-btn hot-detail-fav-btn--active' onClick={handleCancelCollect}>
+              <Text className='hot-detail-fav-btn-text hot-detail-fav-btn-text--active'>{removing ? '取消中...' : '已收藏'}</Text>
             </View>
+            {isVideoNote ? (
+              <View className='hot-detail-create-btn hot-detail-action-btn' onClick={() => setRemixDrawerVisible(true)}>
+                <Text className='hot-detail-create-btn-text'>一键复刻</Text>
+              </View>
+            ) : (
+              <View
+                className={`hot-detail-create-btn hot-detail-action-btn ${(!taskCanRewrite && !hasRewriteResult) || rewriting ? 'hot-detail-create-btn--disabled' : ''}`}
+                onClick={hasRewriteResult ? handleOpenRewriteDrawer : (!taskCanRewrite || rewriting ? undefined : handleRewrite)}
+              >
+                <Text className='hot-detail-create-btn-text'>{hasRewriteResult ? '查看仿写结果' : (rewriting ? '仿写中...' : (taskCanRewrite ? '一键仿写' : '正在解析中'))}</Text>
+              </View>
+            )}
           </View>
         )}
+        {renderRewriteDrawer()}
+        {renderRemixDrawer()}
       </View>
     );
   }
@@ -379,70 +612,60 @@ export default function HotDetailPage() {
   return (
     <View className='hot-detail-page'>
       <View className='hot-detail-nav'>
-        <View className='hot-detail-back' onClick={handleBack}>
-          <Text className='hot-detail-back-text'>返回</Text>
-        </View>
+        <View className='hot-detail-back' onClick={handleBack}><Text className='hot-detail-back-icon'>‹</Text></View>
         <Text className='hot-detail-nav-title'>爆款详情</Text>
         <View className='hot-detail-nav-spacer' />
       </View>
 
       {!item ? (
-        <View className='hot-detail-empty'>
-          <Text className='hot-detail-empty-text'>{loadError || '未找到内容，请返回重试'}</Text>
-        </View>
+        <View className='hot-detail-empty'><Text className='hot-detail-empty-text'>{loadError || '未找到内容，请返回重试'}</Text></View>
       ) : (
-        <View className='hot-detail-content'>
-          <View className='hot-detail-card'>
-            {detailImages.length > 1 ? (
-              <View className='hot-detail-swiper-wrap'>
-                <Swiper
-                  className='hot-detail-swiper'
-                  indicatorDots={false}
-                  circular={false}
-                  current={currentSlide}
-                  onChange={(e) => setCurrentSlide(e.detail.current)}
-                >
-                  {detailImages.map((url, index) => (
-                    <SwiperItem key={`${url}-${index}`}>
-                      <Image className='hot-detail-cover' src={url} mode='aspectFill' />
-                    </SwiperItem>
-                  ))}
-                </Swiper>
-                <View className='hot-detail-swiper-indicator'>
-                  <Text className='hot-detail-swiper-indicator-text'>{currentSlide + 1}/{detailImages.length}</Text>
-                </View>
-              </View>
-            ) : (
-              <Image className='hot-detail-cover' src={coverUrl} mode='widthFix' />
-            )}
+        <>
+          <ScrollView scrollY className='hot-detail-content'>
+            {renderMedia(detailImages)}
             <View className='hot-detail-body'>
               <Text className='hot-detail-title'>{item.title || '未命名内容'}</Text>
-              <View className='hot-detail-meta'>
+              <View className='hot-detail-author-row'>
+                <Image className='hot-detail-avatar' src={item.creatorAvatarUrl || HOT_COVER_FALLBACK_URL} mode='aspectFill' />
                 <Text className='hot-detail-author'>{item.creatorName || '匿名作者'}</Text>
-                <Text className='hot-detail-collects'>♡ {formatLikes(item.likes)}</Text>
+                {activeTask && <Text className='hot-detail-status'>{formatMyTaskStatus(activeTask.status)}</Text>}
               </View>
-              {!!item.description && (
-                <Text className='hot-detail-desc'>{item.description}</Text>
-              )}
+              {renderStats(item)}
+              {renderVideoActions()}
+              {!!item.description && <Text className='hot-detail-desc'>{item.description}</Text>}
+              {inlineTask && isParsing && <Text className='hot-detail-inline-tip'>正在解析图文，完成后可直接一键仿写。</Text>}
             </View>
-          </View>
+          </ScrollView>
           <View className='hot-detail-action-bar'>
-            <View
-              className={`hot-detail-fav-btn hot-detail-action-btn ${favorited ? 'hot-detail-fav-btn--active' : ''}`}
-              onClick={handleToggleFavorite}
-            >
-              <Text className={`hot-detail-fav-btn-text ${favorited ? 'hot-detail-fav-btn-text--active' : ''}`}>
-                {favorited ? '已收藏' : '收藏'}
-              </Text>
-            </View>
-            <View
-              className={`hot-detail-create-btn hot-detail-action-btn ${creating ? 'hot-detail-create-btn--disabled' : ''}`}
-              onClick={handleOneClickCreate}
-            >
-              <Text className='hot-detail-create-btn-text'>{creating ? '创建中...' : '一键同款创作'}</Text>
-            </View>
+            {collected && (
+              <View className='hot-detail-fav-btn hot-detail-action-btn hot-detail-fav-btn--active' onClick={handleCancelCollect}>
+                <Text className='hot-detail-fav-btn-text hot-detail-fav-btn-text--active'>{removing ? '取消中...' : '已收藏'}</Text>
+              </View>
+            )}
+            {isVideoNote && (
+              <View className='hot-detail-create-btn hot-detail-action-btn' onClick={() => setRemixDrawerVisible(true)}>
+                <Text className='hot-detail-create-btn-text'>一键复刻</Text>
+              </View>
+            )}
+            {!isVideoNote && !inlineTask && !taskCanRewrite && (
+              <View className={`hot-detail-create-btn hot-detail-action-btn ${creating ? 'hot-detail-create-btn--disabled' : ''}`} onClick={handleParseCurrent}>
+                <Text className='hot-detail-create-btn-text'>{creating ? '正在解析中' : '解析图文'}</Text>
+              </View>
+            )}
+            {!isVideoNote && inlineTask && !taskCanRewrite && !hasRewriteResult && (
+              <View className='hot-detail-create-btn hot-detail-action-btn hot-detail-create-btn--disabled'>
+                <Text className='hot-detail-create-btn-text'>正在解析中</Text>
+              </View>
+            )}
+            {!isVideoNote && (taskCanRewrite || hasRewriteResult) && (
+              <View className={`hot-detail-create-btn hot-detail-action-btn ${rewriting ? 'hot-detail-create-btn--disabled' : ''}`} onClick={hasRewriteResult ? handleOpenRewriteDrawer : (rewriting ? undefined : handleRewrite)}>
+                <Text className='hot-detail-create-btn-text'>{hasRewriteResult ? '查看仿写结果' : (rewriting ? '仿写中...' : '一键仿写')}</Text>
+              </View>
+            )}
           </View>
-        </View>
+          {renderRewriteDrawer()}
+          {renderRemixDrawer()}
+        </>
       )}
     </View>
   );

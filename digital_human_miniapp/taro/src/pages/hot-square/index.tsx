@@ -19,6 +19,7 @@ const SORT_OPTIONS: Array<{ id: 'recent' | 'likes' | 'collects'; label: string }
 ];
 const SEARCH_HISTORY_KEY = 'HOT_SEARCH_HISTORY';
 const SEARCH_HISTORY_MAX = 10;
+const HOT_REMOVED_ITEMS_KEY = 'HOT_SQUARE_REMOVED_ITEMS';
 
 export default function HotSquarePage() {
   const [activeCategory, setActiveCategory] = useState('我的');
@@ -82,7 +83,7 @@ export default function HotSquarePage() {
         contentType: filter === 'video' ? 'video' : (filter === 'image' ? 'image' : undefined),
         source: category === '我的' ? 'mine' : 'all',
       });
-      setList(data);
+      setList(data.filter((item) => !isRemovedHotItem(item)));
     } catch (error) {
       Taro.showToast({
         title: error instanceof Error ? error.message : '加载失败',
@@ -95,6 +96,7 @@ export default function HotSquarePage() {
 
   useDidShow(() => {
     const boot = async () => {
+      setList((prev) => prev.filter((item) => !isRemovedHotItem(item)));
       setSearchHistory(readSearchHistory());
       try {
         const config = await miniappApi.getHotSquareConfig();
@@ -185,7 +187,7 @@ export default function HotSquarePage() {
     const useRedirect = pages.length >= 9;
 
     if (item?.source === 'mine') {
-      const myTaskId = String(item?.id || '').trim();
+      const myTaskId = String(item?.myTaskId || '').trim();
       if (myTaskId) {
         const url = `/subpages/hot-detail/index?myTaskId=${encodeURIComponent(myTaskId)}&mode=my`;
         const nav = useRedirect ? Taro.redirectTo : Taro.navigateTo;
@@ -196,8 +198,8 @@ export default function HotSquarePage() {
             Taro.showToast({ title: '打开失败，请重试', icon: 'none' });
           },
         });
+        return;
       }
-      return;
     }
 
     const payload = {
@@ -278,7 +280,7 @@ export default function HotSquarePage() {
   const categories = useMemo(() => [...BASE_CATEGORIES, ...dynamicCategories], [dynamicCategories]);
 
   return (
-    <View className='hot-square-page'>
+    <View className={`hot-square-page ${searchFocused && searchHistory.length > 0 ? 'hot-square-page--with-hints' : ''}`}>
       <View className='hot-header'>
         <Text className='hot-title'>爆款广场</Text>
         <View className='hot-search-row'>
@@ -349,60 +351,57 @@ export default function HotSquarePage() {
       </View>
 
       <ScrollView scrollY className='hot-list-scroll'>
-        <View className='hot-list-content'>
-          {list.map((item, index) => {
-            const itemId = String(item.id);
-            const rawCover = typeof item.coverUrl === 'string' ? item.coverUrl : null;
-            const shouldFallback = failedCoverIds.includes(itemId) || isBlockedCover(rawCover);
-            const coverSrc = shouldFallback ? HOT_COVER_FALLBACK_URL : (rawCover as string);
-            const isVideo = isVideoItem(item);
+        {list.length > 0 ? (
+          <View className='hot-list-content'>
+            {list.map((item, index) => {
+              const itemId = String(item.id);
+              const rawCover = typeof item.coverUrl === 'string' ? item.coverUrl : null;
+              const shouldFallback = failedCoverIds.includes(itemId) || isBlockedCover(rawCover);
+              const coverSrc = shouldFallback ? HOT_COVER_FALLBACK_URL : (rawCover as string);
+              const isVideo = isVideoItem(item);
 
-            return (
-              <View
-                key={item.id}
-                className='hot-card'
-                onClick={() => handleOpenDetail(item)}
-              >
-                <View className={`hot-cover ${getCoverRatioClass(item, index)}`}>
-                  <Image
-                    className='hot-cover-image'
-                    src={coverSrc}
-                    mode='aspectFill'
-                    onError={() => {
-                      if (!failedCoverIds.includes(itemId)) {
-                        setFailedCoverIds((prev) => prev.concat(itemId));
-                      }
-                    }}
-                  />
-                  {item.category && (
-                    <View className='hot-badge'>
-                      <Text className='hot-badge-text'>{item.category}</Text>
-                    </View>
-                  )}
-                  {isVideo && (
-                    <View className='hot-video-icon'>
-                      <Text className='hot-video-icon-text'>▶</Text>
-                    </View>
-                  )}
-                </View>
+              return (
+                <View
+                  key={item.id}
+                  className='hot-card'
+                  onClick={() => handleOpenDetail(item)}
+                >
+                  <View className={`hot-cover ${getCoverRatioClass(item, index)}`}>
+                    <Image
+                      className='hot-cover-image'
+                      src={coverSrc}
+                      mode='aspectFill'
+                      onError={() => {
+                        if (!failedCoverIds.includes(itemId)) {
+                          setFailedCoverIds((prev) => prev.concat(itemId));
+                        }
+                      }}
+                    />
+                    {isVideo && (
+                      <View className='hot-video-icon'>
+                        <Text className='hot-video-icon-text'>▶</Text>
+                      </View>
+                    )}
+                  </View>
 
-                <View className='hot-body'>
-                  <Text className='hot-item-title'>{item.title}</Text>
-                  <View className='hot-meta-row'>
-                    <Text className='hot-meta-author'>{item.creatorName || '匿名作者'}</Text>
-                    <Text className='hot-meta-score'>♡ {formatLikes(item.likes)}</Text>
+                  <View className='hot-body'>
+                    <Text className='hot-item-title'>{item.title}</Text>
+                    <View className='hot-meta-row'>
+                      <Text className='hot-meta-author'>{item.creatorName || '匿名作者'}</Text>
+                      <Text className='hot-meta-score'>♡ {formatLikes(item.likes)}</Text>
+                    </View>
                   </View>
                 </View>
-              </View>
-            );
-          })}
-
-          {!loading && list.length === 0 && (
+              );
+            })}
+          </View>
+        ) : (
+          !loading && (
             <View className='hot-empty'>
               <Text className='hot-empty-text'>暂无内容，换个关键词试试</Text>
             </View>
-          )}
-        </View>
+          )
+        )}
       </ScrollView>
 
       <View className='hot-collect-fab' onClick={handleOpenCollect}>
@@ -461,4 +460,27 @@ function updateSearchHistory(keyword: string): string[] {
   const next = [keyword, ...current.filter((item) => item !== keyword)].slice(0, SEARCH_HISTORY_MAX);
   Taro.setStorageSync(SEARCH_HISTORY_KEY, JSON.stringify(next));
   return next;
+}
+
+function readRemovedHotItems(): string[] {
+  try {
+    const raw = Taro.getStorageSync(HOT_REMOVED_ITEMS_KEY);
+    const parsed = raw ? JSON.parse(String(raw)) : [];
+    return Array.isArray(parsed)
+      ? parsed.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function isRemovedHotItem(item: any): boolean {
+  const removed = new Set(readRemovedHotItems());
+  const keys = [
+    item?.id,
+    item?.myTaskId,
+    item?.referenceId,
+    item?.sourceUrl,
+  ].map((value) => String(value || '').trim()).filter(Boolean);
+  return keys.some((key) => removed.has(key));
 }

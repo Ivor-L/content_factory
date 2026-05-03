@@ -120,7 +120,7 @@ export default function HomePage() {
           <Text className='home-remix-title'>复刻爆款视频</Text>
           <Text className='home-remix-desc'>一键生成你的同款大片</Text>
           <View className='home-remix-btn'>
-            <Text className='home-remix-btn-text'>做同款</Text>
+            <Text className='home-remix-btn-text'>一键创作</Text>
           </View>
         </View>
       </View>

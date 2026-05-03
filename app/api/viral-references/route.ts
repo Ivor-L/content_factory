@@ -107,16 +107,35 @@ export async function GET(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const payload = await readJsonBody(request);
+  return removeViralReferences(request, payload);
+}
+
+export async function POST(request: Request) {
+  const payload = await readJsonBody(request);
+  const action = typeof (payload as any)?.action === "string" ? (payload as any).action.trim().toLowerCase() : "";
+  if (action !== "remove") {
+    return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
+  }
+  return removeViralReferences(request, payload);
+}
+
+async function readJsonBody(request: Request): Promise<unknown> {
+  try {
+    return await request.json();
+  } catch (error) {
+    console.error("[viral-references] Failed to parse JSON body", error);
+    return null;
+  }
+}
+
+async function removeViralReferences(request: Request, payload: unknown) {
   const { userId, apiKey } = await getRequestUserContext(request);
   if (!userId && !apiKey) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let payload: unknown;
-  try {
-    payload = await request.json();
-  } catch (error) {
-    console.error("[viral-references] Failed to parse DELETE body", error);
+  if (!payload) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 

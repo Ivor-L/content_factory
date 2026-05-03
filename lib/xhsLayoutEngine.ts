@@ -16,6 +16,26 @@ export type CardTemplateId =
 
 export type XhsLayoutStyleKey = "clean" | "dark" | "gradient";
 
+export type CoverTitleAlignX = "left" | "center" | "right";
+export type CoverTitleAlignY = "top" | "center" | "bottom";
+
+export type CoverConfig = {
+  coverStyleId?: string;
+  coverTitle?: string;
+  coverSubtitle?: string;
+  coverImage?: string;
+  coverTextColor?: string;
+  coverHighlightColor?: string;
+  coverCardRadius?: number;
+  coverShowStickers?: boolean;
+  coverFontFamily?: string;
+  coverTitleAlignX?: CoverTitleAlignX;
+  coverTitleAlignY?: CoverTitleAlignY;
+  coverFontSize?: number;
+  coverSubtitleFontSize?: number;
+  coverLineHeight?: number;
+};
+
 export type TemplateSpec = {
   id: CardTemplateId;
   nameZh: string;
@@ -423,6 +443,30 @@ function getBackgroundPaint(template: TemplateSpec): { fill: string; defs: strin
   };
 }
 
+function getCoverStyleBackground(coverStyleId?: string): { start: string; end: string } {
+  const id = String(coverStyleId || "").trim();
+  switch (id) {
+    case "image-focus":
+      return { start: "#3d2f26", end: "#ccb18f" };
+    case "grid-paper":
+      return { start: "#f5f5f3", end: "#edf2f1" };
+    case "rounded-gray-note":
+      return { start: "#f3f3f3", end: "#dedede" };
+    case "pastel-purple-cat":
+      return { start: "#d8d2ee", end: "#c7bfe6" };
+    case "warm-gray-dog":
+      return { start: "#e6e4df", end: "#d9d7d1" };
+    case "lined-notebook":
+      return { start: "#f8f8f8", end: "#eceef2" };
+    case "lime-question":
+      return { start: "#e9ef97", end: "#d9e66e" };
+    case "mint-splash":
+      return { start: "#bde8ea", end: "#92d8db" };
+    default:
+      return { start: "#f7f0d5", end: "#e9d89a" };
+  }
+}
+
 export function renderCardPageSvg(params: {
   templateId: CardTemplateId;
   title: string;
@@ -430,6 +474,7 @@ export function renderCardPageSvg(params: {
   pageIndex: number;
   totalPages: number;
   isCover: boolean;
+  cover?: CoverConfig;
 }): string {
   const template = resolveTemplate(params.templateId);
   const background = getBackgroundPaint(template);
@@ -442,16 +487,50 @@ export function renderCardPageSvg(params: {
   const pageLabel = `${params.pageIndex + 1}/${Math.max(params.totalPages, 1)}`;
 
   if (params.isCover) {
+    const cover = params.cover || {};
+    const coverTitle = escapeXml((cover.coverTitle || title || "图文卡片").trim());
+    const coverSubtitle = escapeXml((cover.coverSubtitle || "").trim());
+    const coverTextColor = (cover.coverTextColor || template.defaultTextColor || "#1a1a1a").trim();
+    const coverAccentColor = (cover.coverHighlightColor || template.defaultAccentColor || "#d4af37").trim();
+    const coverFontFamily = cover.coverFontFamily || "'PingFang SC','Microsoft YaHei',sans-serif";
+    const coverRadius = Math.max(0, Math.min(64, Math.round(cover.coverCardRadius ?? 42)));
+    const titleSize = Math.max(28, Math.min(220, Math.round(cover.coverFontSize ?? 92)));
+    const subtitleSize = Math.max(22, Math.min(180, Math.round(cover.coverSubtitleFontSize ?? 46)));
+    const lineHeight = Math.max(1.1, Math.min(2, Number(cover.coverLineHeight ?? 1.4)));
+    const alignX = cover.coverTitleAlignX || "center";
+    const alignY = cover.coverTitleAlignY || "center";
+    const coverBg = getCoverStyleBackground(cover.coverStyleId);
+    const textAnchor = alignX === "left" ? "start" : alignX === "right" ? "end" : "middle";
+    const x = alignX === "left" ? 120 : alignX === "right" ? 1122 : 622;
+    const baseY = alignY === "top" ? 420 : alignY === "bottom" ? 1180 : 760;
+    const coverImageSvg = cover.coverImage
+      ? `<image href="${escapeXml(cover.coverImage)}" x="88" y="116" width="1066" height="1424" preserveAspectRatio="xMidYMid slice" opacity="0.78" />`
+      : "";
+    const stickerSvg = cover.coverShowStickers
+      ? `<circle cx="1046" cy="286" r="32" fill="${coverAccentColor}" opacity="0.88" /><circle cx="186" cy="1268" r="28" fill="${coverAccentColor}" opacity="0.22" />`
+      : "";
+    const subtitleSvg = coverSubtitle
+      ? `<text x="${x}" y="${baseY + Math.round(titleSize * lineHeight) + 52}" font-size="${subtitleSize}" fill="${coverTextColor}" opacity="0.9" text-anchor="${textAnchor}" font-family="${coverFontFamily}">${coverSubtitle}</text>`
+      : "";
+
     return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
   <defs>
     ${background.defs}
+    <linearGradient id="cover-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="${coverBg.start}"/>
+      <stop offset="100%" stop-color="${coverBg.end}"/>
+    </linearGradient>
   </defs>
   <rect x="0" y="0" width="${width}" height="${height}" fill="${background.fill}"/>
-  <rect x="88" y="116" width="1066" height="1424" rx="42" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.16)" stroke-width="2"/>
-  <text x="120" y="220" font-size="40" fill="${template.defaultAccentColor}" font-family="'PingFang SC','Microsoft YaHei',sans-serif">${escapeXml(template.nameZh)}</text>
-  <text x="120" y="420" font-size="86" font-weight="700" fill="${template.defaultTextColor}" font-family="'PingFang SC','Microsoft YaHei',sans-serif">${title}</text>
-  <text x="120" y="1500" font-size="36" fill="${template.defaultTextColor}" opacity="0.75" font-family="'PingFang SC','Microsoft YaHei',sans-serif">内容工厂 · 图文卡片</text>
+  <rect x="88" y="116" width="1066" height="1424" rx="${coverRadius}" fill="url(#cover-bg)" />
+  ${coverImageSvg}
+  <rect x="88" y="116" width="1066" height="1424" rx="${coverRadius}" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.16)" stroke-width="2"/>
+  ${stickerSvg}
+  <text x="120" y="220" font-size="40" fill="${coverAccentColor}" font-family="${coverFontFamily}">${escapeXml(template.nameZh)}</text>
+  <text x="${x}" y="${baseY}" font-size="${titleSize}" font-weight="700" fill="${coverTextColor}" text-anchor="${textAnchor}" font-family="${coverFontFamily}" line-height="${lineHeight}">${coverTitle}</text>
+  ${subtitleSvg}
+  <text x="1110" y="1508" text-anchor="end" font-size="30" fill="${coverTextColor}" opacity="0.72" font-family="${coverFontFamily}">内容工厂 · 图文卡片</text>
 </svg>`;
   }
 
@@ -509,6 +588,7 @@ export function buildRenderSvgs(params: {
   title: string;
   includeCover?: boolean;
   maxPages?: number;
+  cover?: CoverConfig;
 }): string[] {
   const includeCover = params.includeCover !== false;
   const maxPages = Math.min(Math.max(params.maxPages ?? 8, 1), 12);
@@ -526,6 +606,7 @@ export function buildRenderSvgs(params: {
         pageIndex: 0,
         totalPages: contentPages.length + 1,
         isCover: true,
+        cover: params.cover,
       }),
     );
   }
@@ -539,6 +620,7 @@ export function buildRenderSvgs(params: {
         pageIndex: includeCover ? index + 1 : index,
         totalPages: includeCover ? contentPages.length + 1 : contentPages.length,
         isCover: false,
+        cover: params.cover,
       }),
     );
   });
@@ -552,6 +634,7 @@ export function buildRenderSvgs(params: {
         pageIndex: 0,
         totalPages: 1,
         isCover: false,
+        cover: params.cover,
       }),
     );
   }

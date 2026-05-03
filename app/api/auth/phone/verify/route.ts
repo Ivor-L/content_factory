@@ -29,7 +29,11 @@ function phoneDigits(phone: string): string {
 
 function buildSyntheticEmail(phone: string): string {
   const digits = phoneDigits(phone) || 'unknown';
-  return `phone_${digits}_${Date.now()}@miniapp.local`;
+  const syntheticEmailDomain = (process.env.SYNTHETIC_EMAIL_DOMAIN || 'miniapp.atomx.top')
+    .trim()
+    .replace(/^@+/, '')
+    .toLowerCase();
+  return `phone_${digits}_${Date.now()}@${syntheticEmailDomain}`;
 }
 
 function toMiniappPayload(result: {

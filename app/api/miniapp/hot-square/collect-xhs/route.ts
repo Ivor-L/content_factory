@@ -11,9 +11,105 @@ type XhsDetailResponse = {
 };
 
 const XHS_URL_RE = /(xiaohongshu\.com\/(explore|discovery\/item)|xhslink\.com)/i;
+const VIDEO_URL_RE = /\.(mp4|mov|m4v|webm|m3u8)(\?|$)|\/video\/|xgvideo|sns-video/i;
 
 function normalizeText(value: unknown): string {
   return String(value ?? '').trim();
+}
+
+function parseObject(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function collectObjects(value: unknown): Record<string, unknown>[] {
+  const result: Record<string, unknown>[] = [];
+  const queue: unknown[] = [value];
+  const seen = new Set<unknown>();
+
+  while (queue.length > 0 && result.length < 160) {
+    const current = queue.shift();
+    if (!current || typeof current !== 'object' || seen.has(current)) continue;
+    seen.add(current);
+
+    if (Array.isArray(current)) {
+      queue.push(...current);
+      continue;
+    }
+
+    const obj = current as Record<string, unknown>;
+    result.push(obj);
+    queue.push(...Object.values(obj));
+  }
+
+  return result;
+}
+
+function getByPath(payload: Record<string, unknown>, path: string): unknown {
+  return path.split('.').reduce<unknown>((current, key) => {
+    const obj = parseObject(current);
+    return obj ? obj[key] : undefined;
+  }, payload);
+}
+
+function pickTextAtPaths(payload: Record<string, unknown>, paths: string[]): string | null {
+  for (const path of paths) {
+    const value = normalizeText(getByPath(payload, path));
+    if (value) return value;
+  }
+  return null;
+}
+
+function pickText(payload: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = normalizeText(payload[key]);
+    if (value) return value;
+  }
+  for (const obj of collectObjects(payload).slice(1)) {
+    for (const key of keys) {
+      const value = normalizeText(obj[key]);
+      if (value) return value;
+    }
+  }
+  return null;
+}
+
+function parseMetric(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return Math.round(value);
+  if (typeof value !== 'string') return null;
+
+  const normalized = value
+    .replace(/,/g, '')
+    .replace(/\+/g, '')
+    .trim()
+    .toLowerCase();
+  if (!normalized) return null;
+
+  const match = normalized.match(/([\d.]+)/);
+  if (!match) return null;
+
+  const parsed = Number(match[1]);
+  if (!Number.isFinite(parsed)) return null;
+
+  let multiplier = 1;
+  if (/[万w]/i.test(normalized)) multiplier = 10000;
+  else if (/[千k]/i.test(normalized)) multiplier = 1000;
+
+  return Math.round(parsed * multiplier);
+}
+
+function pickNumber(payload: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = parseMetric(payload[key]);
+    if (value != null) return value;
+  }
+  for (const obj of collectObjects(payload).slice(1)) {
+    for (const key of keys) {
+      const value = parseMetric(obj[key]);
+      if (value != null) return value;
+    }
+  }
+  return null;
 }
 
 function parseArrayOfString(value: unknown): string[] {
@@ -41,6 +137,50 @@ function normalizeUrls(raw: string[]): string[] {
     result.push(url);
   }
   return result;
+}
+
+function collectUrls(value: unknown): string[] {
+  if (value == null) return [];
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+      try {
+        return collectUrls(JSON.parse(trimmed));
+      } catch {
+        // fallback to delimiter parsing below
+      }
+    }
+    return trimmed.split(/[\s,，]+/).map((item) => item.trim()).filter(Boolean);
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectUrls(item));
+  }
+  const obj = parseObject(value);
+  if (!obj) return [];
+  return [
+    ...collectUrls(obj.url),
+    ...collectUrls(obj.src),
+    ...collectUrls(obj.href),
+    ...collectUrls(obj.imageUrl),
+    ...collectUrls(obj.image_url),
+    ...collectUrls(obj.videoUrl),
+    ...collectUrls(obj.video_url),
+    ...collectUrls(obj.playUrl),
+    ...collectUrls(obj.play_url),
+    ...collectUrls(obj.masterUrl),
+    ...collectUrls(obj.master_url),
+    ...collectUrls(obj.mediaUrl),
+    ...collectUrls(obj.media_url),
+    ...collectUrls(obj.downloadUrl),
+    ...collectUrls(obj.download_url),
+    ...collectUrls(obj.urlDefault),
+    ...collectUrls(obj.url_default),
+  ];
+}
+
+function isVideoUrl(url: string): boolean {
+  return VIDEO_URL_RE.test(url);
 }
 
 function parseNoteIdFromSourceUrl(url: string): string | null {
@@ -153,16 +293,99 @@ export async function POST(request: NextRequest) {
   }
 
   const payload = detail?.data || {};
-  const title = normalizeText(payload['作品标题']) || '未命名笔记';
-  const sourceText = normalizeText(payload['作品描述']);
-  const parsedSourceUrl = normalizeText(payload['作品链接']) || sourceUrl;
+  const title = pickTextAtPaths(payload, [
+    '作品标题',
+    'title',
+    'note.title',
+    'note.display_title',
+    'data.title',
+    'data.display_title',
+    'result.title',
+  ]) || '未命名笔记';
+  const sourceText = pickTextAtPaths(payload, [
+    '作品描述',
+    'description',
+    'desc',
+    'note.desc',
+    'note.description',
+    'data.desc',
+    'data.description',
+    'result.desc',
+  ]) || '';
+  const parsedSourceUrl = pickTextAtPaths(payload, [
+    '作品链接',
+    'sourceUrl',
+    'source_url',
+    'url',
+    'shareUrl',
+    'share_url',
+    'note.url',
+    'data.url',
+  ]) || sourceUrl;
   const parsedSourceId =
-    normalizeText(payload['作品ID']) ||
+    pickTextAtPaths(payload, [
+      '作品ID',
+      'noteId',
+      'note_id',
+      'id',
+      'note.id',
+      'note.noteId',
+      'note.note_id',
+      'data.id',
+      'data.noteId',
+      'data.note_id',
+    ]) ||
     parseNoteIdFromSourceUrl(parsedSourceUrl) ||
     parseNoteIdFromSourceUrl(sourceUrl) ||
     randomUUID();
 
-  const mediaUrls = normalizeUrls(parseArrayOfString(payload['下载地址']));
+  const mediaCandidates = normalizeUrls([
+    ...parseArrayOfString(payload['下载地址']),
+    ...collectUrls(payload['images']),
+    ...collectUrls(payload['imageList']),
+    ...collectUrls(payload['image_list']),
+    ...collectUrls(payload['downloadUrls']),
+    ...collectUrls(payload['download_urls']),
+    ...collectUrls(getByPath(payload, 'note.images')),
+    ...collectUrls(getByPath(payload, 'note.imageList')),
+    ...collectUrls(getByPath(payload, 'data.images')),
+    ...collectUrls(getByPath(payload, 'data.imageList')),
+    ...collectUrls(payload['video']),
+    ...collectUrls(payload['videoUrl']),
+    ...collectUrls(payload['video_url']),
+    ...collectUrls(payload['视频地址']),
+    ...collectUrls(payload['视频链接']),
+    ...collectUrls(payload['播放地址']),
+    ...collectUrls(getByPath(payload, 'note.video')),
+    ...collectUrls(getByPath(payload, 'note.videoUrl')),
+    ...collectUrls(getByPath(payload, 'note.video_url')),
+    ...collectUrls(getByPath(payload, 'data.video')),
+    ...collectUrls(getByPath(payload, 'data.videoUrl')),
+    ...collectUrls(getByPath(payload, 'data.video_url')),
+  ]);
+  const videoUrl = pickText(payload, ['视频地址', '视频链接', '播放地址', 'videoUrl', 'video_url', 'playUrl', 'play_url', 'masterUrl', 'master_url']) ||
+    mediaCandidates.find((url) => isVideoUrl(url)) ||
+    null;
+  const mediaUrls = mediaCandidates.filter((url) => !isVideoUrl(url));
+  const isVideoNote = Boolean(videoUrl);
+  const rawPayload = {
+    author: {
+      name: pickText(payload, ['作者昵称', '作者名称', '用户昵称', '用户名称', '博主昵称', '博主', '作者', 'nickname', 'nickName', 'nick_name', 'authorName', 'author_name', 'userName', 'username', 'name']),
+      avatar: pickText(payload, ['作者头像', '用户头像', '博主头像', '头像', 'avatar', 'avatarUrl', 'avatar_url', 'authorAvatar', 'author_avatar', 'userAvatar', 'user_avatar', 'image']),
+    },
+    stats: {
+      likes: pickNumber(payload, ['点赞数', '点赞', '赞数', 'liked_count', 'like_count', 'likeCount', 'likedCount', 'likes']),
+      collects: pickNumber(payload, ['收藏数', '收藏', 'collected_count', 'collect_count', 'collectCount', 'collectedCount', 'collects']),
+      comments: pickNumber(payload, ['评论数', '评论', 'comment_count', 'commentCount', 'comments']),
+      shares: pickNumber(payload, ['分享数', '分享', 'share_count', 'shareCount', 'shares']),
+    },
+    media: {
+      videoUrl,
+      mediaUrls,
+      sourceType: isVideoNote ? 'video' : 'image',
+    },
+    source: 'miniapp-xhs-collect',
+  };
 
   const existing = await prisma.imageTextReplicationTask.findFirst({
     where: {
@@ -185,7 +408,8 @@ export async function POST(request: NextRequest) {
         sourceText,
         sourceImages: toInputJson(mediaUrls),
         sourceUrl: parsedSourceUrl,
-        status: 'BREAKDOWN_PENDING',
+        status: isVideoNote ? 'VIDEO_COLLECTED' : 'BREAKDOWN_PENDING',
+        generatedImages: toInputJson(rawPayload),
         errorMessage: null,
       },
     });
@@ -195,24 +419,28 @@ export async function POST(request: NextRequest) {
       data: {
         id: randomUUID(),
         userId,
-        status: 'BREAKDOWN_PENDING',
+        status: isVideoNote ? 'VIDEO_COLLECTED' : 'BREAKDOWN_PENDING',
         sourceTitle: title,
         sourceText,
         sourceImages: toInputJson(mediaUrls),
         sourcePlatform: 'miniapp-my',
         sourceId: parsedSourceId,
         sourceUrl: parsedSourceUrl,
+        generatedImages: toInputJson(rawPayload),
       },
     });
     taskId = created.id;
   }
 
-  void runBreakdownForMyNote(taskId);
+  if (!isVideoNote) {
+    void runBreakdownForMyNote(taskId);
+  }
 
   return NextResponse.json({
     taskId,
-    status: 'BREAKDOWN_PENDING',
+    status: isVideoNote ? 'VIDEO_COLLECTED' : 'BREAKDOWN_PENDING',
     title,
+    videoUrl,
     message: '采集成功，已加入“我的”分类',
   });
 }

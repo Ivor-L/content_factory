@@ -40,8 +40,18 @@ export default function RemixGeneratePage() {
 
   useLoad((query) => {
     const mode = String(query?.mode || '').trim().toLowerCase();
+    const referenceFromQuery = String(query?.referenceVideoUrl || query?.reference_video_url || '').trim();
+    const duration = String(query?.duration || '').trim().toLowerCase();
     if (mode === 'action-swap') {
       setScene('ACTION_SWAP');
+    }
+    if (duration === 'long') {
+      setScene('CLONE');
+      setDurationBucket('LONG');
+      setDurationSeconds((prev) => clampDuration(Math.max(prev, 16), 'LONG'));
+    }
+    if (referenceFromQuery) {
+      setReferenceVideoUrl(decodeURIComponent(referenceFromQuery));
     }
   });
 

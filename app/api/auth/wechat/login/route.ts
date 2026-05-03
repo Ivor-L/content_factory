@@ -15,7 +15,11 @@ interface Code2SessionResponse {
 }
 
 function buildSyntheticEmail(openid: string): string {
-  return `wechat_${openid}_${Date.now()}@miniapp.local`;
+  const syntheticEmailDomain = (process.env.SYNTHETIC_EMAIL_DOMAIN || 'miniapp.atomx.top')
+    .trim()
+    .replace(/^@+/, '')
+    .toLowerCase();
+  return `wechat_${openid}_${Date.now()}@${syntheticEmailDomain}`;
 }
 
 function getWechatAppConfig() {

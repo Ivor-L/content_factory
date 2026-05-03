@@ -145,14 +145,261 @@ const inferTagsFromSource = (title: string, body: string): string[] => {
   return Array.from(candidates).slice(0, 8);
 };
 
-const splitRecognizedSections = (input: string): StructuredSection[] => {
+const IMAGE_BLOCK_HEADING_RE = /^#{1,6}\s*图\s*\d+\s*$/i;
+const IMAGE_ONLY_LINE_RE = /^图\s*\d+\s*$/i;
+const STRUCTURE_NOISE_RE = /^(?:>{0,2}\s*)?(?:\[!meta\]\s*)?(?:封面标题|副标题|标题|图文正文|正文|标签|原帖信息|原标题|原正文|标准化拆解|结构总览表|结构模块\s*\d+|重点标注|核心观点|内容摘要|HTML\s*结构块|原始识别全文)\s*[:：]?\s*$/i;
+const TABLE_NOISE_RE = /^\|?\s*(?:序号\s*\||---+\s*\||\d+\s*\|)/;
+const FENCE_RE = /^```/;
+
+const dedupeLineKey = (line: string): string =>
+  line.replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
+
+const normalizeSentenceSpacing = (line: string): string => {
+  return line
+    .replace(/\s+/g, " ")
+    .replace(/\s+([，。！？；：,.!?])/g, "$1")
+    .replace(/([（(])\s+/g, "$1")
+    .replace(/\s+([）)])/g, "$1")
+    .trim();
+};
+
+const shouldDropNoiseLine = (line: string): boolean => {
+  if (!line) return true;
+  const normalized = line.trim().replace(/^[>|-]+\s*/, "").trim();
+  if (!normalized) return true;
+  if (IMAGE_BLOCK_HEADING_RE.test(normalized) || IMAGE_ONLY_LINE_RE.test(normalized)) return true;
+  if (STRUCTURE_NOISE_RE.test(normalized)) return true;
+  if (TABLE_NOISE_RE.test(normalized)) return true;
+  if (FENCE_RE.test(normalized)) return true;
+  if (/^#+\s*(?:原帖信息|标准化拆解|结构总览表|结构模块|重点标注|HTML\s*结构块|原始识别全文)/i.test(normalized)) return true;
+  return false;
+};
+
+const splitIntoRawBlocks = (input: string): string[] => {
+  const lines = input.replace(/\r\n/g, "\n").split("\n");
+  const blocks: string[] = [];
+  let current: string[] = [];
+
+  const flush = () => {
+    const chunk = current.join("\n").trim();
+    if (chunk) blocks.push(chunk);
+    current = [];
+  };
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (IMAGE_BLOCK_HEADING_RE.test(trimmed) || IMAGE_ONLY_LINE_RE.test(trimmed)) {
+      flush();
+      continue;
+    }
+    current.push(rawLine);
+  }
+  flush();
+
+  if (blocks.length > 0) return blocks;
+  return [input.trim()].filter(Boolean);
+};
+
+const sanitizeRecognizedBlock = (rawBlock: string): string => {
+  const lines = rawBlock.replace(/\r\n/g, "\n").split("\n");
+  const paragraphs: string[] = [];
+  let current: string[] = [];
+  let lastKey = "";
+
+  const flushParagraph = () => {
+    if (current.length === 0) return;
+    const paragraph = normalizeSentenceSpacing(current.join(" "));
+    if (paragraph) paragraphs.push(paragraph);
+    current = [];
+  };
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) {
+      flushParagraph();
+      lastKey = "";
+      continue;
+    }
+    const cleaned = normalizeSentenceSpacing(trimmed.replace(/^\|\s*/, "").replace(/^[>-]\s*/, ""));
+    if (shouldDropNoiseLine(cleaned)) continue;
+    const key = dedupeLineKey(cleaned);
+    if (key && key === lastKey) continue;
+    current.push(cleaned);
+    lastKey = key;
+  }
+  flushParagraph();
+  return paragraphs.join("\n\n").trim();
+};
+
+const normalizeRecognizedText = (input: string): string => {
+  const rawBlocks = splitIntoRawBlocks(input);
+  const sanitizedBlocks = rawBlocks
+    .map((block) => sanitizeRecognizedBlock(block))
+    .filter(Boolean);
+
+  if (sanitizedBlocks.length === 0) return "";
+
+  const merged: string[] = [];
+  for (const block of sanitizedBlocks) {
+    const compact = normalizeSentenceSpacing(block.replace(/\n+/g, " ").trim());
+    if (!compact) continue;
+    if (compact.length <= 28 && merged.length > 0) {
+      merged[merged.length - 1] = normalizeSentenceSpacing(`${merged[merged.length - 1]} ${compact}`);
+      continue;
+    }
+    merged.push(block.trim());
+  }
+
+  return merged.join("\n\n").trim();
+};
+
+const isNarrativeSectionHeading = (line: string): boolean => {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (/^(?:[一二三四五六七八九十]{1,3}|[0-9]{1,2})[、.．]\s*\S+/.test(trimmed)) return true;
+  if (/^(?:总结|结论|方法|启发|复盘|注意|核心观点)\s*[：:]/.test(trimmed)) return true;
+  return false;
+};
+
+const isTagOnlyLine = (line: string): boolean => {
+  const tokens = line.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return false;
+  const hashtagCount = tokens.filter((token) => /^#\S+/.test(token)).length;
+  return hashtagCount >= 2 && hashtagCount === tokens.length;
+};
+
+const formatNarrativeMarkdown = (input: string): string => {
   const lines = input
     .replace(/\r\n/g, "\n")
     .split("\n")
-    .map((line) => line.trim())
+    .map((line) => normalizeSentenceSpacing(line))
+    .map((line) => line.replace(/^\|\s*/, ""))
+    .map((line) => line.trimEnd());
+
+  const blocks: string[] = [];
+  let paragraphLines: string[] = [];
+
+  const flushParagraph = () => {
+    if (paragraphLines.length === 0) return;
+    const compact = normalizeSentenceSpacing(paragraphLines.join(" "));
+    if (compact) blocks.push(compact);
+    paragraphLines = [];
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushParagraph();
+      continue;
+    }
+    if (isNarrativeSectionHeading(trimmed)) {
+      flushParagraph();
+      blocks.push(`### ${trimmed}`);
+      continue;
+    }
+    if (isTagOnlyLine(trimmed)) {
+      flushParagraph();
+      blocks.push(`**标签**：${trimmed}`);
+      continue;
+    }
+    paragraphLines.push(trimmed);
+  }
+  flushParagraph();
+
+  return blocks.join("\n\n").trim();
+};
+
+const MARKDOWN_POLISH_INSTRUCTION = [
+  "你是 Markdown 排版编辑器，只做格式整理，不允许改写内容。",
+  "硬性规则：",
+  "1) 不删除任何实质信息，不新增观点，不改动事实和语气。",
+  "2) 只允许调整标题层级、段落换行、列表样式、标点空格。",
+  "3) 输出必须是纯 Markdown，不要代码块围栏，不要解释说明。",
+  "4) 保留原有结构：一级标题、原帖正文、标签、OCR 提取文本(details)。",
+].join("\n");
+
+const stripMarkdownFence = (input: string): string => {
+  const text = input.trim();
+  const fenceMatch = text.match(/^```(?:markdown|md)?\s*([\s\S]*?)\s*```$/i);
+  return fenceMatch ? fenceMatch[1].trim() : text;
+};
+
+const normalizeCompareText = (input: string): string => {
+  return input
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/<\/?details>/gi, " ")
+    .replace(/<summary>[\s\S]*?<\/summary>/gi, " ")
+    .replace(/[#>*`~\-\[\]\(\)_]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+};
+
+const tokenizeForCompare = (input: string): string[] => {
+  const matches = normalizeCompareText(input).match(/[\p{L}\p{N}]+/gu);
+  return matches ? matches.filter(Boolean) : [];
+};
+
+const isPolishedMarkdownSafe = (before: string, after: string): boolean => {
+  const sourceTokens = tokenizeForCompare(before);
+  const outputTokens = tokenizeForCompare(after);
+  if (sourceTokens.length === 0 || outputTokens.length === 0) return false;
+
+  const countMap = new Map<string, number>();
+  for (const token of outputTokens) {
+    countMap.set(token, (countMap.get(token) || 0) + 1);
+  }
+  let matched = 0;
+  for (const token of sourceTokens) {
+    const count = countMap.get(token) || 0;
+    if (count <= 0) continue;
+    matched += 1;
+    countMap.set(token, count - 1);
+  }
+  const recall = matched / sourceTokens.length;
+  const ratio = outputTokens.length / sourceTokens.length;
+  return recall >= 0.92 && ratio >= 0.82 && ratio <= 1.25;
+};
+
+const polishMarkdownWithLlm = async (rawMarkdown: string, authToken?: string | null): Promise<string> => {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (authToken) {
+    headers.Authorization = `Bearer ${authToken}`;
+  }
+
+  const response = await fetch("/api/canvas/text-transform", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      instruction: MARKDOWN_POLISH_INSTRUCTION,
+      upstreamText: rawMarkdown,
+      model: "gemini-3.1-flash-lite-preview",
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((payload as { error?: string }).error || "LLM 排版失败");
+  }
+  const polished = stripMarkdownFence(typeof payload?.result === "string" ? payload.result : "");
+  if (!polished.trim()) {
+    throw new Error("LLM 排版结果为空");
+  }
+  if (!isPolishedMarkdownSafe(rawMarkdown, polished)) {
+    throw new Error("LLM 排版结果偏离原文，已回退");
+  }
+  return polished.trim();
+};
+
+const splitRecognizedSections = (input: string): StructuredSection[] => {
+  const normalizedText = normalizeRecognizedText(input);
+  const blocks = normalizedText
+    .split(/\n{2,}/)
+    .map((block) => normalizeSentenceSpacing(block))
     .filter(Boolean);
 
-  if (lines.length === 0) {
+  if (blocks.length === 0) {
     return [
       {
         heading: "内容结构",
@@ -165,19 +412,24 @@ const splitRecognizedSections = (input: string): StructuredSection[] => {
   }
 
   const sections: StructuredSection[] = [];
-  const chunkSize = Math.max(4, Math.ceil(lines.length / 3));
-  for (let i = 0; i < lines.length; i += chunkSize) {
-    const chunk = lines.slice(i, i + chunkSize);
+  for (let i = 0; i < Math.min(blocks.length, 6); i += 1) {
+    const block = blocks[i];
     const idx = sections.length + 1;
-    const headingLine = chunk[0] || `图文片段 ${idx}`;
-    const subheadingLine = chunk[1] || "要点拆解";
-    const rest = chunk.slice(2).join(" ");
+    const sentences = block
+      .split(/(?<=[。！？!?])/)
+      .map((item) => normalizeSentenceSpacing(item))
+      .filter(Boolean);
+    const firstSentence = sentences[0] || block;
+    const secondSentence = sentences[1] || sentences[0] || "要点拆解";
+    const subheadingLine = firstSentence.slice(0, 36) || `图文片段 ${idx}`;
+    const keyPoint = secondSentence.slice(0, 80) || firstSentence.slice(0, 80) || "暂无关键观点";
+    const summary = normalizeSentenceSpacing(block).slice(0, 240);
     sections.push({
       heading: `结构模块 ${idx}`,
-      subheading: headingLine.slice(0, 36),
-      keyPoint: subheadingLine.slice(0, 80),
-      summary: (rest || chunk.join(" ")).slice(0, 240),
-      htmlHint: `<p><strong>模块 ${idx} 可视化建议：</strong><em>${headingLine.slice(0, 42)}</em></p>`,
+      subheading: subheadingLine,
+      keyPoint,
+      summary,
+      htmlHint: `<p><strong>模块 ${idx} 可视化建议：</strong><em>${subheadingLine.slice(0, 42)}</em></p>`,
     });
   }
 
@@ -197,42 +449,31 @@ const buildStructuredMarkdown = ({
 }): string => {
   const resolvedTitle = sourceTitle.trim() || "爆款图文复刻";
   const resolvedBody = sourceBody.trim() || "暂无原正文";
-  const sections = splitRecognizedSections(rawRecognizedText);
-  const tagLine = tags.map((tag) => `#${tag.replace(/^#+/, "")}`).join(" ");
-  const tableRows = sections
-    .map((section, index) => `| ${index + 1} | ${section.subheading} | ${section.keyPoint} |`)
-    .join("\n");
+  const normalizedRecognizedText = normalizeRecognizedText(rawRecognizedText);
+  const prettySourceBody = formatNarrativeMarkdown(resolvedBody) || resolvedBody;
+  const prettyRecognizedText = normalizeRecognizedText(
+    normalizedRecognizedText || rawRecognizedText || "暂无识别内容",
+  );
+  const tagLine = tags.map((tag) => `#${tag.replace(/^#+/, "")}`).join(" ").trim();
   const parts: string[] = [];
   parts.push(`# ${resolvedTitle}`);
   parts.push("");
-  parts.push("> [!meta] 原帖信息");
-  parts.push(`> 原标题: ${resolvedTitle}`);
-  parts.push(`> 标签: ${tagLine || "#图文复刻 #内容拆解"}`);
+  parts.push("## 原帖正文");
+  parts.push(prettySourceBody);
   parts.push("");
-  parts.push("## 原正文");
-  parts.push(resolvedBody);
-  parts.push("");
-  parts.push("## 标准化拆解");
-  parts.push("### 结构总览表");
-  parts.push("| 序号 | 二级标题 | 三级标题重点 |");
-  parts.push("| --- | --- | --- |");
-  parts.push(tableRows || "| 1 | 核心结构 | 待补充 |");
-  parts.push("");
-  for (const section of sections) {
-    parts.push(`## ${section.heading}`);
-    parts.push(`### ${section.subheading}`);
-    parts.push(`#### 重点标注`);
-    parts.push(`- **核心观点**：${section.keyPoint}`);
-    parts.push(`- **内容摘要**：${section.summary}`);
-    parts.push("");
-    parts.push("#### HTML 结构块");
-    parts.push(section.htmlHint);
+  if (tagLine) {
+    parts.push(`**标签**：${tagLine}`);
     parts.push("");
   }
-  parts.push("## 原始识别全文");
+  parts.push("## OCR 提取文本");
+  parts.push("<details>");
+  parts.push("<summary>展开查看</summary>");
+  parts.push("");
   parts.push("```text");
-  parts.push(rawRecognizedText.trim() || "暂无识别内容");
+  parts.push(prettyRecognizedText || "暂无识别内容");
   parts.push("```");
+  parts.push("");
+  parts.push("</details>");
   return parts.join("\n").trim();
 };
 
@@ -822,10 +1063,11 @@ export function ImageTextReplicationPanel({
         Array.from({ length: Math.min(MAX_RECOGNIZE_CONCURRENCY, total) }, () => worker()),
       );
 
-      const combinedText = orderedResults
+      const combinedTextRaw = orderedResults
         .map((text, index) => `### 图${index + 1}\n${(text || "无法识别").trim()}`)
         .join("\n\n")
         .trim();
+      const combinedText = normalizeRecognizedText(combinedTextRaw) || combinedTextRaw;
       setAnalysisText(combinedText);
       setAnalysisStatus(firstErrorMessage ? "error" : "success");
       setAnalysisError(firstErrorMessage);
@@ -866,28 +1108,27 @@ export function ImageTextReplicationPanel({
       const resolvedSourceTitle = (sourceTitle?.trim() || "图文识别").slice(0, 80);
       const resolvedSourceBody = sourceText?.trim() || "暂无原正文";
       const inferredTags = inferTagsFromSource(resolvedSourceTitle, `${resolvedSourceBody}\n${content}`);
-      const standardizedMarkdown = buildStructuredMarkdown({
+      const standardizedMarkdownBase = buildStructuredMarkdown({
         sourceTitle: resolvedSourceTitle,
         sourceBody: resolvedSourceBody,
         tags: inferredTags,
         rawRecognizedText: content,
       });
+      let standardizedMarkdown = standardizedMarkdownBase;
+      try {
+        standardizedMarkdown = await polishMarkdownWithLlm(standardizedMarkdownBase, authToken);
+      } catch (error) {
+        console.warn("[replication-panel] markdown polish fallback to local formatter", error);
+      }
       const titleBase = slugifyForFile(resolvedSourceTitle);
       const savedAt = new Date();
       const pad = (num: number) => String(num).padStart(2, "0");
       const fileTimeLabel = `${savedAt.getFullYear()}-${pad(savedAt.getMonth() + 1)}-${pad(savedAt.getDate())}-${pad(savedAt.getHours())}-${pad(savedAt.getMinutes())}-${pad(savedAt.getSeconds())}`;
       const path = `01-素材库/raw/${titleBase}-${fileTimeLabel}.md`;
-      const savedAtLabel = new Intl.DateTimeFormat("zh-CN", {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      }).format(savedAt);
+      const savedAtLabel = `${savedAt.getFullYear()}-${pad(savedAt.getMonth() + 1)}-${pad(savedAt.getDate())} ${pad(savedAt.getHours())}:${pad(savedAt.getMinutes())}`;
       const bodyContent = [
         "---",
         `source_title: ${escapeYamlInline(resolvedSourceTitle)}`,
-        "source_text: " + toYamlBlock(resolvedSourceBody),
         `source_tags: [${inferredTags.map((tag) => escapeYamlInline(tag)).join(", ")}]`,
         `source_platform: ${escapeYamlInline(sourcePlatform?.trim() || "")}`,
         `source_url: ${escapeYamlInline(sourceUrl?.trim() || "")}`,
