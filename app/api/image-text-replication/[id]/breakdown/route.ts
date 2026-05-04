@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { getRequestUserContext } from '@/lib/authServer';
-import { runBreakdownForMyNote } from '@/lib/imageTextMyNotes';
+import { retryBreakdownImageForMyNote, runBreakdownForMyNote } from '@/lib/imageTextMyNotes';
 
 export async function POST(
   request: NextRequest,
@@ -17,6 +17,24 @@ export async function POST(
   const task = await prisma.imageTextReplicationTask.findUnique({ where: { id } });
   if (!task || task.userId !== userId) {
     return NextResponse.json({ error: 'Task not found' }, { status: 404 });
+  }
+
+  const body = await request.json().catch(() => ({})) as { imageIndex?: unknown };
+  const imageIndex = Math.floor(Number(body?.imageIndex));
+  if (Number.isFinite(imageIndex) && imageIndex > 0) {
+    try {
+      const result = await retryBreakdownImageForMyNote(id, imageIndex);
+      return NextResponse.json({
+        taskId: id,
+        status: result.status,
+        imageText: result.imageText,
+      });
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : '图片重试失败' },
+        { status: 400 },
+      );
+    }
   }
 
   await prisma.imageTextReplicationTask.update({

@@ -14,24 +14,6 @@ const TABS = [
 
 const WORK_RETENTION_DAYS = 5;
 const RETENTION_MS = WORK_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-const DEMO_STORYBOARD_TASK_ID = 'demo-skeleton-storyboard';
-
-function buildDemoStoryboardCard(): WorkItem {
-  return {
-    id: DEMO_STORYBOARD_TASK_ID,
-    title: '演示：3D骨骼分镜板',
-    type: 'task',
-    taskType: 'storyboard',
-    status: 'COMPLETED',
-    createdAt: new Date().toISOString(),
-    preview: '用于测试分镜板展示效果的演示任务卡片',
-    thumbnailUrl: null,
-    metadata: {
-      isDemoStoryboard: true,
-    },
-    source: 'task',
-  };
-}
 
 export default function WorksPage() {
   const [activeTab, setActiveTab] = useState('all');
@@ -116,11 +98,7 @@ export default function WorksPage() {
     const base = activeTab === 'all'
       ? works
       : works.filter((item) => item.type === activeTab);
-
-    const sorted = sortWorksByCreatedAtDesc(base);
-    const hasDemo = sorted.some((item) => String(item?.id || '') === DEMO_STORYBOARD_TASK_ID);
-    if (hasDemo || activeTab !== 'all') return sorted;
-    return sortWorksByCreatedAtDesc([...sorted, buildDemoStoryboardCard()]);
+    return sortWorksByCreatedAtDesc(base);
   }, [works, activeTab]);
   const workColumns = useMemo(() => splitAlternatingColumns(filteredWorks), [filteredWorks]);
 
@@ -135,10 +113,9 @@ export default function WorksPage() {
     Taro.setStorageSync('WORK_DETAIL_ITEM', payload);
     const taskType = String(item?.taskType || '').toLowerCase();
     if (item?.source === 'task' && taskType === 'storyboard') {
-      const isDemo = Boolean((item?.metadata as Record<string, unknown> | null)?.isDemoStoryboard);
       const storyboardTaskId = String(item?.taskId || item?.id || '').trim();
       Taro.navigateTo({
-        url: `/subpages/storyboard-board/index?id=${encodeURIComponent(storyboardTaskId)}&title=${encodeURIComponent(payload.title)}${isDemo ? '&demo=1' : ''}`,
+        url: `/subpages/storyboard-board/index?id=${encodeURIComponent(storyboardTaskId)}&title=${encodeURIComponent(payload.title)}`,
       });
       return;
     }
@@ -268,10 +245,10 @@ function pickWorkCover(item: any): string | null {
   if (layoutCover) return layoutCover;
 
   const thumb = typeof item?.thumbnailUrl === 'string' ? item.thumbnailUrl.trim() : '';
-  if (thumb) return thumb;
+  if (thumb && isImageUrl(thumb)) return thumb;
 
   const preview = typeof item?.preview === 'string' ? item.preview.trim() : '';
-  if (preview && /\.(jpg|jpeg|png|webp)(\?|$)/i.test(preview)) {
+  if (preview && isImageUrl(preview)) {
     return preview;
   }
 
@@ -310,9 +287,15 @@ function getPosterImages(item: any): string[] {
   const layout = metadata?.xhsLayout && typeof metadata.xhsLayout === 'object'
     ? metadata.xhsLayout as Record<string, unknown>
     : null;
+  const canvasImage = metadata?.canvasImage && typeof metadata.canvasImage === 'object'
+    ? metadata.canvasImage as Record<string, unknown>
+    : null;
 
   const candidates = [
     layout?.images,
+    canvasImage?.images,
+    canvasImage?.generatedImages,
+    canvasImage?.generated_images,
     metadata?.images,
     metadata?.imageUrls,
     metadata?.image_urls,

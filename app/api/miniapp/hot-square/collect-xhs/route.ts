@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
+import type { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { getRequestUserContext } from '@/lib/authServer';
 import { toInputJson } from '@/lib/jsonUtils';
@@ -195,6 +196,108 @@ function parseNoteIdFromSourceUrl(url: string): string | null {
   }
 }
 
+function buildMiniappWebReferenceSourceId(userId: string, sourceId: string): string {
+  return `miniapp:${userId}:${sourceId}`;
+}
+
+async function syncMiniappCollectToWebReference(
+  db: Prisma.TransactionClient,
+  input: {
+    userId: string;
+    taskId: string;
+    sourceId: string;
+    sourceUrl: string;
+    title: string;
+    description: string;
+    mediaUrls: string[];
+    videoUrl: string | null;
+    sourceType: string;
+    author: Record<string, unknown>;
+    stats: Record<string, unknown>;
+    rawPayload: Record<string, unknown>;
+  },
+) {
+  const webSourceId = buildMiniappWebReferenceSourceId(input.userId, input.sourceId);
+  const allMediaUrls = normalizeUrls([
+    ...input.mediaUrls,
+    ...(input.videoUrl ? [input.videoUrl] : []),
+  ]);
+  const coverUrl = input.mediaUrls[0] || null;
+  const rawPayload = {
+    ...input.rawPayload,
+    miniappMyNoteId: input.taskId,
+    originalSourceId: input.sourceId,
+    sourceId: webSourceId,
+    source_id: webSourceId,
+    xhsSourceId: input.sourceId,
+    xhs_source_id: input.sourceId,
+    title: input.title,
+    desc: input.description,
+    description: input.description,
+    url: input.sourceUrl,
+    link: input.sourceUrl,
+    pageUrl: input.sourceUrl,
+    media: {
+      ...(input.rawPayload.media && typeof input.rawPayload.media === 'object'
+        ? input.rawPayload.media as Record<string, unknown>
+        : {}),
+      sourceType: input.sourceType,
+      mediaUrls: input.mediaUrls,
+      videoUrl: input.videoUrl,
+    },
+    scriptText: input.description,
+    script_text: input.description,
+    source: 'miniapp-xhs-collect',
+  };
+
+  await db.viralReferenceItem.upsert({
+    where: {
+      platform_sourceId: {
+        platform: 'xiaohongshu',
+        sourceId: webSourceId,
+      },
+    },
+    update: {
+      sourceType: input.sourceType,
+      sourceUrl: input.sourceUrl,
+      title: input.title,
+      description: input.description,
+      coverUrl,
+      videoUrl: input.videoUrl,
+      mediaUrls: toInputJson(allMediaUrls.length > 0 ? allMediaUrls : null),
+      stats: toInputJson(input.stats),
+      author: toInputJson(input.author),
+      category: '我的',
+      remark: 'miniapp-xhs-collect',
+      rawPayload: toInputJson(rawPayload),
+      collectorVersion: 'miniapp_xhs_collect_v1',
+      ingestedBy: input.userId,
+      ingestedAt: new Date(),
+      publishedAt: new Date(),
+    },
+    create: {
+      platform: 'xiaohongshu',
+      sourceType: input.sourceType,
+      sourceId: webSourceId,
+      sourceUrl: input.sourceUrl,
+      title: input.title,
+      description: input.description,
+      coverUrl,
+      videoUrl: input.videoUrl,
+      mediaUrls: toInputJson(allMediaUrls.length > 0 ? allMediaUrls : null),
+      stats: toInputJson(input.stats),
+      author: toInputJson(input.author),
+      category: '我的',
+      remark: 'miniapp-xhs-collect',
+      rawPayload: toInputJson(rawPayload),
+      collectorVersion: 'miniapp_xhs_collect_v1',
+      ingestedBy: input.userId,
+      ingestedAt: new Date(),
+      publishedAt: new Date(),
+    },
+  });
+}
+
 function resolveXhsDownloaderBaseUrl(): string {
   const candidates = [
     process.env.XHS_DOWNLOADER_BASE_URL,
@@ -387,50 +490,69 @@ export async function POST(request: NextRequest) {
     source: 'miniapp-xhs-collect',
   };
 
-  const existing = await prisma.imageTextReplicationTask.findFirst({
-    where: {
-      userId,
-      sourcePlatform: 'miniapp-my',
-      sourceId: parsedSourceId,
-    },
-    orderBy: {
-      updatedAt: 'desc',
-    },
-  });
-
-  let taskId = existing?.id || '';
-
-  if (existing) {
-    await prisma.imageTextReplicationTask.update({
-      where: { id: existing.id },
-      data: {
-        sourceTitle: title,
-        sourceText,
-        sourceImages: toInputJson(mediaUrls),
-        sourceUrl: parsedSourceUrl,
-        status: isVideoNote ? 'VIDEO_COLLECTED' : 'BREAKDOWN_PENDING',
-        generatedImages: toInputJson(rawPayload),
-        errorMessage: null,
-      },
-    });
-    taskId = existing.id;
-  } else {
-    const created = await prisma.imageTextReplicationTask.create({
-      data: {
-        id: randomUUID(),
+  const taskId = await prisma.$transaction(async (tx) => {
+    const existing = await tx.imageTextReplicationTask.findFirst({
+      where: {
         userId,
-        status: isVideoNote ? 'VIDEO_COLLECTED' : 'BREAKDOWN_PENDING',
-        sourceTitle: title,
-        sourceText,
-        sourceImages: toInputJson(mediaUrls),
         sourcePlatform: 'miniapp-my',
         sourceId: parsedSourceId,
-        sourceUrl: parsedSourceUrl,
-        generatedImages: toInputJson(rawPayload),
+      },
+      orderBy: {
+        updatedAt: 'desc',
       },
     });
-    taskId = created.id;
-  }
+
+    let savedTaskId = existing?.id || '';
+
+    if (existing) {
+      await tx.imageTextReplicationTask.update({
+        where: { id: existing.id },
+        data: {
+          sourceTitle: title,
+          sourceText,
+          sourceImages: toInputJson(mediaUrls),
+          sourceUrl: parsedSourceUrl,
+          status: isVideoNote ? 'VIDEO_COLLECTED' : 'BREAKDOWN_PENDING',
+          generatedImages: toInputJson(rawPayload),
+          errorMessage: null,
+        },
+      });
+      savedTaskId = existing.id;
+    } else {
+      const created = await tx.imageTextReplicationTask.create({
+        data: {
+          id: randomUUID(),
+          userId,
+          status: isVideoNote ? 'VIDEO_COLLECTED' : 'BREAKDOWN_PENDING',
+          sourceTitle: title,
+          sourceText,
+          sourceImages: toInputJson(mediaUrls),
+          sourcePlatform: 'miniapp-my',
+          sourceId: parsedSourceId,
+          sourceUrl: parsedSourceUrl,
+          generatedImages: toInputJson(rawPayload),
+        },
+      });
+      savedTaskId = created.id;
+    }
+
+    await syncMiniappCollectToWebReference(tx, {
+      userId,
+      taskId: savedTaskId,
+      sourceId: parsedSourceId,
+      sourceUrl: parsedSourceUrl,
+      title,
+      description: sourceText,
+      mediaUrls,
+      videoUrl,
+      sourceType: isVideoNote ? 'video' : 'note',
+      author: rawPayload.author,
+      stats: rawPayload.stats,
+      rawPayload,
+    });
+
+    return savedTaskId;
+  });
 
   if (!isVideoNote) {
     void runBreakdownForMyNote(taskId);

@@ -146,81 +146,167 @@
 .home-feature-card
   position: relative
   border-radius: 30rpx
-  padding: 22rpx
-  border: 1rpx solid rgba(154, 180, 233, 0.2)
+  padding: 28rpx
+  border: 1rpx solid rgba(12, 12, 12, 0.16)
   overflow: hidden
 
 .home-feature-card--video
   min-height: 286rpx
-  background: #232728
+  background: #aeb9ac
 
 .home-feature-card--image
   min-height: 136rpx
-  background: #232728
+  background: #b5a7ca
 
 .home-feature-card--edit
   min-height: 136rpx
-  background: #232728
-
-.home-feature-head
-  display: flex
-  align-items: center
-  gap: 0
+  background: #c9a9b7
 
 .home-feature-title
-  color: #ecf3ff
-  font-size: 36rpx
-  font-weight: 500
+  position: absolute
+  left: 28rpx
+  bottom: 24rpx
+  right: 24rpx
+  color: #111111
+  font-size: 32rpx
+  font-weight: 700
   line-height: 1.2
   letter-spacing: 0
 
-.home-feature-desc
-  display: block
-  margin-top: 8rpx
-  color: rgba(194, 211, 244, 0.68)
-  font-size: 24rpx
-  line-height: 1.32
+.home-feature-title--large
+  font-size: 44rpx
+  line-height: 1.16
 
 .home-action-row
   height: 164rpx
   border-radius: 24rpx
-  display: flex
-  align-items: center
-  justify-content: space-between
-  padding: 0 20rpx
+  position: relative
+  padding: 24rpx 28rpx
+  box-sizing: border-box
   margin-bottom: 14rpx
-  background: #232728
-  border: 1rpx solid rgba(154, 178, 226, 0.25)
+  background: #ecee9f
+  border: 1rpx solid rgba(17, 17, 17, 0.16)
+  overflow: hidden
 
 .home-action-title
-  display: block
-  color: #edf4ff
-  font-size: 34rpx
-  font-weight: 500
-
-.home-action-desc
-  display: block
-  margin-top: 6rpx
-  color: rgba(203, 219, 244, 0.78)
-  font-size: 24rpx
-
-.home-card-icon
   position: absolute
-  right: 8rpx
-  bottom: 6rpx
-  width: 156rpx
-  height: 156rpx
-  opacity: 0.96
+  left: 28rpx
+  bottom: 24rpx
+  right: 104rpx
+  color: #111111
+  font-size: 34rpx
+  font-weight: 700
+  line-height: 1.18
+
+.home-card-icon-shell
+  position: absolute
+  left: 24rpx
+  top: 22rpx
+  width: 68rpx
+  height: 68rpx
+  border-radius: 999rpx
+  display: flex
+  align-items: center
+  justify-content: center
+  background: rgba(0, 0, 0, 0.12)
   pointer-events: none
 
-.home-card-icon--small
-  width: 92rpx
-  height: 92rpx
-  right: 8rpx
-  bottom: 4rpx
+.home-card-icon-shell--large
+  width: 78rpx
+  height: 78rpx
 
-.home-card-icon--action
-  position: static
-  width: 96rpx
-  height: 96rpx
-  margin-right: 2rpx
+.home-card-icon-shell--coin
+  background: rgba(17, 17, 17, 0.1)
+
+.home-flat-icon
+  position: relative
+  width: 34rpx
+  height: 34rpx
+  color: #111111
+
+.home-card-icon-shell--large .home-flat-icon
+  width: 38rpx
+  height: 38rpx
+
+.home-flat-human-head
+  position: absolute
+  left: 10rpx
+  top: 4rpx
+  width: 18rpx
+  height: 18rpx
+  border-radius: 999rpx
+  border: 4rpx solid currentColor
+  box-sizing: border-box
+
+.home-flat-human-body
+  position: absolute
+  left: 4rpx
+  bottom: 4rpx
+  width: 30rpx
+  height: 16rpx
+  border: 4rpx solid currentColor
+  border-bottom: 0
+  border-radius: 18rpx 18rpx 0 0
+  box-sizing: border-box
+
+.home-flat-icon--image
+  border: 4rpx solid currentColor
+  border-radius: 7rpx
+  box-sizing: border-box
+
+.home-flat-image-dot
+  position: absolute
+  right: 6rpx
+  top: 6rpx
+  width: 6rpx
+  height: 6rpx
+  border-radius: 999rpx
+  background: currentColor
+
+.home-flat-image-mountain
+  position: absolute
+  left: 6rpx
+  bottom: 6rpx
+  width: 19rpx
+  height: 12rpx
+  border-left: 4rpx solid currentColor
+  border-top: 4rpx solid currentColor
+  background: transparent
+  transform: skewX(-20deg) rotate(45deg)
+  clip-path: polygon(0 100%, 42% 30%, 68% 68%, 100% 100%)
+
+.home-flat-image-mountain--back
+  left: 17rpx
+  width: 12rpx
+  opacity: 0.72
+
+.home-flat-icon--video
+  border: 4rpx solid currentColor
+  border-radius: 7rpx
+  box-sizing: border-box
+
+.home-flat-video-play
+  position: absolute
+  left: 13rpx
+  top: 9rpx
+  width: 12rpx
+  height: 12rpx
+  border-right: 4rpx solid currentColor
+  border-top: 4rpx solid currentColor
+  transform: rotate(45deg)
+  box-sizing: border-box
+
+.home-flat-yen
+  color: #111111
+  font-size: 34rpx
+  font-weight: 800
+  line-height: 1
+
+.home-card-arrow
+  position: absolute
+  right: 26rpx
+  top: 24rpx
+  color: #111111
+  font-size: 42rpx
+  font-weight: 700
+  line-height: 1

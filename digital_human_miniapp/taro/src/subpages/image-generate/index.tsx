@@ -88,6 +88,20 @@ type CardCoverStyleId =
   | 'lime-question'
   | 'mint-splash';
 
+type CardCoverHighlightStyle = 'line' | 'circle' | 'fill';
+
+type CardCoverStyleSpec = {
+  id: CardCoverStyleId;
+  title: string;
+  desc: string;
+  preview: string;
+  defaultTextColor: string;
+  defaultHighlightColor: string;
+  defaultCardRadius: number;
+  defaultShowStickers: boolean;
+  highlightStyle: CardCoverHighlightStyle;
+};
+
 type CardStylePreset = {
   id: CardStyleId;
   title: string;
@@ -662,16 +676,118 @@ const CARD_COVER_MODE_OPTIONS: Array<{ id: CardCoverMode; title: string }> = [
   { id: 'custom', title: '自定义' },
 ];
 
-const CARD_COVER_STYLE_OPTIONS: Array<{ id: CardCoverStyleId; title: string; desc: string; preview: string }> = [
-  { id: 'image-focus', title: '图像主视觉', desc: '偏沉浸感封面', preview: 'linear-gradient(135deg,#3d2f26,#8b6a57 45%,#ccb18f)' },
-  { id: 'grid-paper', title: '方格手账', desc: '纸感清爽', preview: 'linear-gradient(135deg,#f5f5f3,#edf2f1)' },
-  { id: 'rounded-gray-note', title: '圆角灰卡', desc: '柔和圆角', preview: 'linear-gradient(135deg,#f3f3f3,#dedede)' },
-  { id: 'pastel-purple-cat', title: '紫调猫咪', desc: '轻松活泼', preview: 'linear-gradient(135deg,#d8d2ee,#c7bfe6)' },
-  { id: 'warm-gray-dog', title: '暖灰小狗', desc: '暖色调', preview: 'linear-gradient(135deg,#e6e4df,#d9d7d1)' },
-  { id: 'lined-notebook', title: '横线本', desc: '笔记感', preview: 'linear-gradient(135deg,#f8f8f8,#eceef2)' },
-  { id: 'lime-question', title: '亮黄提问', desc: '高对比吸睛', preview: 'linear-gradient(135deg,#e9ef97,#d9e66e)' },
-  { id: 'mint-splash', title: '薄荷气泡', desc: '柔亮清新', preview: 'linear-gradient(135deg,#bde8ea,#92d8db)' },
+const CARD_COVER_STYLE_OPTIONS: CardCoverStyleSpec[] = [
+  {
+    id: 'image-focus',
+    title: '图像主视觉',
+    desc: '偏沉浸感封面',
+    preview: 'linear-gradient(135deg,#3d2f26,#8b6a57 45%,#ccb18f)',
+    defaultTextColor: '#f6efe3',
+    defaultHighlightColor: '#ffb347',
+    defaultCardRadius: 0,
+    defaultShowStickers: false,
+    highlightStyle: 'fill',
+  },
+  {
+    id: 'grid-paper',
+    title: '方格手账',
+    desc: '纸感清爽',
+    preview: 'linear-gradient(135deg,#f5f5f3,#edf2f1)',
+    defaultTextColor: '#111111',
+    defaultHighlightColor: '#f89b2f',
+    defaultCardRadius: 0,
+    defaultShowStickers: false,
+    highlightStyle: 'line',
+  },
+  {
+    id: 'rounded-gray-note',
+    title: '圆角灰卡',
+    desc: '柔和圆角',
+    preview: 'linear-gradient(135deg,#f3f3f3,#dedede)',
+    defaultTextColor: '#121212',
+    defaultHighlightColor: '#ff7d87',
+    defaultCardRadius: 46,
+    defaultShowStickers: true,
+    highlightStyle: 'fill',
+  },
+  {
+    id: 'pastel-purple-cat',
+    title: '紫调猫咪',
+    desc: '轻松活泼',
+    preview: 'linear-gradient(135deg,#d8d2ee,#c7bfe6)',
+    defaultTextColor: '#27272f',
+    defaultHighlightColor: '#9de8d5',
+    defaultCardRadius: 0,
+    defaultShowStickers: true,
+    highlightStyle: 'line',
+  },
+  {
+    id: 'warm-gray-dog',
+    title: '暖灰小狗',
+    desc: '暖色调',
+    preview: 'linear-gradient(135deg,#e6e4df,#d9d7d1)',
+    defaultTextColor: '#2b2c33',
+    defaultHighlightColor: '#e7b6ff',
+    defaultCardRadius: 0,
+    defaultShowStickers: true,
+    highlightStyle: 'circle',
+  },
+  {
+    id: 'lined-notebook',
+    title: '横线本',
+    desc: '笔记感',
+    preview: 'linear-gradient(135deg,#f8f8f8,#eceef2)',
+    defaultTextColor: '#111111',
+    defaultHighlightColor: '#9bea94',
+    defaultCardRadius: 0,
+    defaultShowStickers: false,
+    highlightStyle: 'circle',
+  },
+  {
+    id: 'lime-question',
+    title: '亮黄提问',
+    desc: '高对比吸睛',
+    preview: 'linear-gradient(135deg,#e9ef97,#d9e66e)',
+    defaultTextColor: '#2a2a2a',
+    defaultHighlightColor: '#77eb7f',
+    defaultCardRadius: 42,
+    defaultShowStickers: true,
+    highlightStyle: 'fill',
+  },
+  {
+    id: 'mint-splash',
+    title: '薄荷气泡',
+    desc: '柔亮清新',
+    preview: 'linear-gradient(135deg,#bde8ea,#92d8db)',
+    defaultTextColor: '#172a2a',
+    defaultHighlightColor: '#74f0a3',
+    defaultCardRadius: 36,
+    defaultShowStickers: false,
+    highlightStyle: 'line',
+  },
 ];
+
+const CARD_COVER_STYLE_INDEX = new Map<CardCoverStyleId, CardCoverStyleSpec>(
+  CARD_COVER_STYLE_OPTIONS.map((item) => [item.id, item]),
+);
+
+const COVER_CARD_RADIUS_MIN = 0;
+const COVER_CARD_RADIUS_MAX = 64;
+const COVER_TITLE_FONT_SIZE_MIN = 28;
+const COVER_TITLE_FONT_SIZE_MAX = 220;
+const COVER_SUBTITLE_FONT_SIZE_MIN = 22;
+const COVER_SUBTITLE_FONT_SIZE_MAX = 180;
+const COVER_LINE_HEIGHT_MIN = 1.1;
+const COVER_LINE_HEIGHT_MAX = 2;
+
+function getCardCoverStyleSpec(styleId: CardCoverStyleId): CardCoverStyleSpec {
+  return CARD_COVER_STYLE_INDEX.get(styleId) || CARD_COVER_STYLE_OPTIONS[0];
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
+}
 
 const CARD_COVER_TITLE_ALIGN_X_OPTIONS: Array<{ id: 'left' | 'center' | 'right'; title: string }> = [
   { id: 'left', title: '左对齐' },
@@ -686,10 +802,12 @@ const CARD_COVER_TITLE_ALIGN_Y_OPTIONS: Array<{ id: 'top' | 'center' | 'bottom';
 ];
 
 const TEXT_COLOR_PRESETS = [
-  '#333333', '#000000', '#495057', '#1c7ed6', '#d6336c', '#37b24d', '#f08c00', '#ffffff',
+  '#f6efe3', '#111111', '#121212', '#172a2a', '#2a2a2a', '#333333', '#000000', '#ffffff',
+  '#495057', '#1c7ed6', '#d6336c', '#37b24d', '#f08c00',
 ];
 
 const ACCENT_COLOR_PRESETS = [
+  '#ffb347', '#f89b2f', '#ff7d87', '#9de8d5', '#e7b6ff', '#9bea94', '#77eb7f', '#74f0a3',
   '#FF9500', '#FF2D55', '#007AFF', '#34C759', '#5856D6', '#00F5FF', '#FF4500', '#000000', '#fbbf24', '#f472b6',
 ];
 
@@ -1788,15 +1906,15 @@ export default function ImageGeneratePage() {
   const [cardCoverImage, setCardCoverImage] = useState('');
   const [cardCoverTitle, setCardCoverTitle] = useState('');
   const [cardCoverSubtitle, setCardCoverSubtitle] = useState('');
-  const [cardCoverTextColor, setCardCoverTextColor] = useState('#3f3a2a');
-  const [cardCoverHighlightColor, setCardCoverHighlightColor] = useState('#c99500');
-  const [cardCoverCardRadius, setCardCoverCardRadius] = useState(42);
-  const [cardCoverShowStickers, setCardCoverShowStickers] = useState(true);
+  const [cardCoverTextColor, setCardCoverTextColor] = useState('#f6efe3');
+  const [cardCoverHighlightColor, setCardCoverHighlightColor] = useState('#ffb347');
+  const [cardCoverCardRadius, setCardCoverCardRadius] = useState(0);
+  const [cardCoverShowStickers, setCardCoverShowStickers] = useState(false);
   const [cardCoverFontFamily, setCardCoverFontFamily] = useState(CARD_FONT_FAMILY_OPTIONS[0].id);
   const [cardCoverTitleAlignX, setCardCoverTitleAlignX] = useState<'left' | 'center' | 'right'>('center');
   const [cardCoverTitleAlignY, setCardCoverTitleAlignY] = useState<'top' | 'center' | 'bottom'>('center');
-  const [cardCoverFontSize, setCardCoverFontSize] = useState(92);
-  const [cardCoverSubtitleFontSize, setCardCoverSubtitleFontSize] = useState(46);
+  const [cardCoverFontSize, setCardCoverFontSize] = useState(195);
+  const [cardCoverSubtitleFontSize, setCardCoverSubtitleFontSize] = useState(96);
   const [cardCoverLineHeight, setCardCoverLineHeight] = useState(1.4);
   const [cardEditorMode, setCardEditorMode] = useState<CardEditorMode>('edit');
   const [cardSettingsOpen, setCardSettingsOpen] = useState(false);
@@ -1808,6 +1926,15 @@ export default function ImageGeneratePage() {
   const [injectedFromMyNote, setInjectedFromMyNote] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [cardUserCleared, setCardUserCleared] = useState(false);
+
+  const applyCardCoverStyleDefaults = (styleId: CardCoverStyleId) => {
+    const spec = getCardCoverStyleSpec(styleId);
+    setCardCoverStyleId(spec.id);
+    setCardCoverTextColor(spec.defaultTextColor);
+    setCardCoverHighlightColor(spec.defaultHighlightColor);
+    setCardCoverCardRadius(spec.defaultCardRadius);
+    setCardCoverShowStickers(spec.defaultShowStickers);
+  };
 
   const selectedCardStylePreset = useMemo(() => getCardStylePreset(selectedCardStyle), [selectedCardStyle]);
   const selectedCardStyleModePreset = useMemo(() => {
@@ -1912,7 +2039,12 @@ export default function ImageGeneratePage() {
         setCardCoverMode(prefs.cardCoverMode);
       }
       if (prefs.cardCoverStyleId && CARD_COVER_STYLE_OPTIONS.some((item) => item.id === prefs.cardCoverStyleId)) {
-        setCardCoverStyleId(prefs.cardCoverStyleId);
+        const styleSpec = getCardCoverStyleSpec(prefs.cardCoverStyleId);
+        setCardCoverStyleId(styleSpec.id);
+        setCardCoverTextColor(styleSpec.defaultTextColor);
+        setCardCoverHighlightColor(styleSpec.defaultHighlightColor);
+        setCardCoverCardRadius(styleSpec.defaultCardRadius);
+        setCardCoverShowStickers(styleSpec.defaultShowStickers);
       }
       if (typeof prefs.cardCoverImage === 'string') {
         setCardCoverImage(prefs.cardCoverImage);
@@ -1930,7 +2062,7 @@ export default function ImageGeneratePage() {
         setCardCoverHighlightColor(prefs.cardCoverHighlightColor);
       }
       if (typeof prefs.cardCoverCardRadius === 'number') {
-        setCardCoverCardRadius(prefs.cardCoverCardRadius);
+        setCardCoverCardRadius(clampNumber(prefs.cardCoverCardRadius, COVER_CARD_RADIUS_MIN, COVER_CARD_RADIUS_MAX));
       }
       if (typeof prefs.cardCoverShowStickers === 'boolean') {
         setCardCoverShowStickers(prefs.cardCoverShowStickers);
@@ -1945,13 +2077,13 @@ export default function ImageGeneratePage() {
         setCardCoverTitleAlignY(prefs.cardCoverTitleAlignY);
       }
       if (typeof prefs.cardCoverFontSize === 'number') {
-        setCardCoverFontSize(prefs.cardCoverFontSize);
+        setCardCoverFontSize(clampNumber(prefs.cardCoverFontSize, COVER_TITLE_FONT_SIZE_MIN, COVER_TITLE_FONT_SIZE_MAX));
       }
       if (typeof prefs.cardCoverSubtitleFontSize === 'number') {
-        setCardCoverSubtitleFontSize(prefs.cardCoverSubtitleFontSize);
+        setCardCoverSubtitleFontSize(clampNumber(prefs.cardCoverSubtitleFontSize, COVER_SUBTITLE_FONT_SIZE_MIN, COVER_SUBTITLE_FONT_SIZE_MAX));
       }
       if (typeof prefs.cardCoverLineHeight === 'number') {
-        setCardCoverLineHeight(prefs.cardCoverLineHeight);
+        setCardCoverLineHeight(clampNumber(prefs.cardCoverLineHeight, COVER_LINE_HEIGHT_MIN, COVER_LINE_HEIGHT_MAX));
       }
       if (prefs.cardEditorMode && (prefs.cardEditorMode === 'edit' || prefs.cardEditorMode === 'preview')) {
         setCardEditorMode(prefs.cardEditorMode);
@@ -2504,7 +2636,7 @@ export default function ImageGeneratePage() {
       );
       const imagePayload = [...remoteImages, ...uploadedLocalImages].slice(0, 5);
 
-      const result = await miniappApi.generateCanvasImages({
+      const result = await miniappApi.startCanvasImageJob({
         prompt: aiPrompt.trim(),
         model: selectedModel,
         size: '1024x1024',
@@ -2512,12 +2644,18 @@ export default function ImageGeneratePage() {
         image: imagePayload,
       });
 
-      if (result.images.length > 0) {
-        Taro.setStorageSync('IMAGE_GEN_LAST_RESULT', result.images);
-        Taro.showToast({ title: `生成成功 ${result.images.length} 张`, icon: 'success' });
-      } else {
-        Taro.showToast({ title: '任务已提交，请稍后查看结果', icon: 'none' });
-      }
+      Taro.setStorageSync('IMAGE_GEN_LAST_TASK_ID', result.taskId);
+      Taro.showModal({
+        title: '图片生产中',
+        content: '图片生产中，请在作品中查看生成结果',
+        cancelText: '继续生成',
+        confirmText: '去作品查看',
+        success: (res) => {
+          if (res.confirm) {
+            Taro.switchTab({ url: '/pages/works/index' });
+          }
+        },
+      });
     } catch (error) {
       Taro.showToast({
         title: error instanceof Error ? error.message : 'AI作图失败',
@@ -2671,7 +2809,7 @@ export default function ImageGeneratePage() {
         coverHighlightColor: cardCoverHighlightColor,
         coverCardRadius: cardCoverCardRadius,
         coverShowStickers: cardCoverShowStickers,
-        coverFontFamily: cardCoverFontFamily,
+        coverFontFamily: CARD_FONT_FAMILY_STACK_MAP[cardCoverFontFamily] || CARD_FONT_FAMILY_STACK_MAP.system,
         coverTitleAlignX: cardCoverTitleAlignX,
         coverTitleAlignY: cardCoverTitleAlignY,
         coverFontSize: cardCoverFontSize,
@@ -2696,7 +2834,7 @@ export default function ImageGeneratePage() {
           coverHighlightColor: cardCoverHighlightColor,
           coverCardRadius: cardCoverCardRadius,
           coverShowStickers: cardCoverShowStickers,
-          coverFontFamily: cardCoverFontFamily,
+          coverFontFamily: CARD_FONT_FAMILY_STACK_MAP[cardCoverFontFamily] || CARD_FONT_FAMILY_STACK_MAP.system,
           coverTitleAlignX: cardCoverTitleAlignX,
           coverTitleAlignY: cardCoverTitleAlignY,
           coverFontSize: cardCoverFontSize,
@@ -2886,7 +3024,7 @@ export default function ImageGeneratePage() {
             coverHighlightColor: cardCoverHighlightColor,
             coverCardRadius: cardCoverCardRadius,
             coverShowStickers: cardCoverShowStickers,
-            coverFontFamily: cardCoverFontFamily,
+            coverFontFamily: CARD_FONT_FAMILY_STACK_MAP[cardCoverFontFamily] || CARD_FONT_FAMILY_STACK_MAP.system,
             coverTitleAlignX: cardCoverTitleAlignX,
             coverTitleAlignY: cardCoverTitleAlignY,
             coverFontSize: cardCoverFontSize,
@@ -3009,7 +3147,7 @@ export default function ImageGeneratePage() {
                     <View
                       key={item.id}
                       className={`cover-style-card cover-style-card--h ${cardCoverStyleId === item.id ? 'cover-style-card--active' : ''}`}
-                      onClick={() => setCardCoverStyleId(item.id)}
+                      onClick={() => applyCardCoverStyleDefaults(item.id)}
                     >
                       <View className={`cover-style-preview cover-style-preview--${item.id}`}>
                         <View className='cover-style-preview-overlay'>
@@ -3094,7 +3232,7 @@ export default function ImageGeneratePage() {
             <View className='card-config-row'>
               <Text className='card-config-label'>封面圆角</Text>
               <View className='card-config-chips'>
-                {[0, 24, 42, 56].map((radius) => (
+                {[0, 24, 36, 42, 46, 56, 64].map((radius) => (
                   <View
                     key={radius}
                     className={`tiny-chip ${cardCoverCardRadius === radius ? 'tiny-chip--active' : ''}`}
@@ -3162,13 +3300,13 @@ export default function ImageGeneratePage() {
             <View className='card-config-row'>
               <Text className='card-config-label'>标题字号</Text>
               <View className='card-config-chips'>
-                {CARD_FONT_SCALE_OPTIONS.slice(2).map((item) => (
+                {[92, 120, 150, 180, 195, 210, 220].map((size) => (
                   <View
-                    key={item.id}
-                    className={`tiny-chip ${Math.round(cardCoverFontSize) === Math.round(CARD_FONT_SCALE_FACTOR_MAP[item.id] * 92) ? 'tiny-chip--active' : ''}`}
-                    onClick={() => setCardCoverFontSize(CARD_FONT_SCALE_FACTOR_MAP[item.id] * 92)}
+                    key={size}
+                    className={`tiny-chip ${Math.round(cardCoverFontSize) === size ? 'tiny-chip--active' : ''}`}
+                    onClick={() => setCardCoverFontSize(size)}
                   >
-                    <Text className={`tiny-chip-text ${Math.round(cardCoverFontSize) === Math.round(CARD_FONT_SCALE_FACTOR_MAP[item.id] * 92) ? 'tiny-chip-text--active' : ''}`}>{item.title}</Text>
+                    <Text className={`tiny-chip-text ${Math.round(cardCoverFontSize) === size ? 'tiny-chip-text--active' : ''}`}>{size}</Text>
                   </View>
                 ))}
               </View>
@@ -3176,13 +3314,13 @@ export default function ImageGeneratePage() {
             <View className='card-config-row'>
               <Text className='card-config-label'>副标题字号</Text>
               <View className='card-config-chips'>
-                {CARD_FONT_SCALE_OPTIONS.slice(0, 8).map((item) => (
+                {[46, 64, 80, 96, 120, 150, 180].map((size) => (
                   <View
-                    key={item.id}
-                    className={`tiny-chip ${Math.round(cardCoverSubtitleFontSize) === Math.round(CARD_FONT_SCALE_FACTOR_MAP[item.id] * 46) ? 'tiny-chip--active' : ''}`}
-                    onClick={() => setCardCoverSubtitleFontSize(CARD_FONT_SCALE_FACTOR_MAP[item.id] * 46)}
+                    key={size}
+                    className={`tiny-chip ${Math.round(cardCoverSubtitleFontSize) === size ? 'tiny-chip--active' : ''}`}
+                    onClick={() => setCardCoverSubtitleFontSize(size)}
                   >
-                    <Text className={`tiny-chip-text ${Math.round(cardCoverSubtitleFontSize) === Math.round(CARD_FONT_SCALE_FACTOR_MAP[item.id] * 46) ? 'tiny-chip-text--active' : ''}`}>{item.title}</Text>
+                    <Text className={`tiny-chip-text ${Math.round(cardCoverSubtitleFontSize) === size ? 'tiny-chip-text--active' : ''}`}>{size}</Text>
                   </View>
                 ))}
               </View>
@@ -3190,11 +3328,11 @@ export default function ImageGeneratePage() {
             <View className='card-config-row'>
               <Text className='card-config-label'>封面行高</Text>
               <View className='card-config-chips'>
-                {[1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8].map((value) => (
+                {[1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.8, 2.0].map((value) => (
                   <View
                     key={value}
                     className={`tiny-chip ${cardCoverLineHeight === value ? 'tiny-chip--active' : ''}`}
-                    onClick={() => setCardCoverLineHeight(value)}
+                    onClick={() => setCardCoverLineHeight(clampNumber(value, COVER_LINE_HEIGHT_MIN, COVER_LINE_HEIGHT_MAX))}
                   >
                     <Text className={`tiny-chip-text ${cardCoverLineHeight === value ? 'tiny-chip-text--active' : ''}`}>{value.toFixed(1)}</Text>
                   </View>

@@ -108,6 +108,13 @@ type TitleFormulaCandidate = {
   reason: string;
 };
 
+type ExtractedImageText = {
+  index: number;
+  text: string;
+  success: boolean;
+  error?: string | null;
+};
+
 async function imageUrlToDataUrl(imageUrl: string): Promise<string> {
   if (imageUrl.startsWith('data:')) return imageUrl;
   const res = await fetch(imageUrl, { cache: 'no-store' });
@@ -398,6 +405,105 @@ export async function runBreakdownForMyNote(noteId: string): Promise<void> {
       },
     });
   }
+}
+
+export async function retryBreakdownImageForMyNote(
+  noteId: string,
+  imageIndex: number,
+): Promise<{ status: string; imageText: ExtractedImageText }> {
+  const note = await prisma.imageTextReplicationTask.findUnique({
+    where: { id: noteId },
+  });
+
+  if (!note) {
+    throw new Error('笔记不存在');
+  }
+
+  const sourceImages = parseSourceImages(note.sourceImages);
+  const normalizedIndex = Math.floor(Number(imageIndex));
+  if (!Number.isFinite(normalizedIndex) || normalizedIndex < 1 || normalizedIndex > sourceImages.length) {
+    throw new Error('图片序号无效');
+  }
+
+  const analysis = parseObject(note.analysisResult) || {};
+  const rawTexts = Array.isArray(analysis.extractedImageTexts) ? analysis.extractedImageTexts : [];
+  const existingTexts = new Map<number, ExtractedImageText>();
+
+  for (const item of rawTexts) {
+    const obj = parseObject(item);
+    if (!obj) continue;
+    const idx = Math.floor(Number(obj.index));
+    if (!Number.isFinite(idx) || idx < 1) continue;
+    existingTexts.set(idx, {
+      index: idx,
+      text: typeof obj.text === 'string' ? obj.text : '',
+      success: Boolean(obj.success),
+      error: typeof obj.error === 'string' ? obj.error : null,
+    });
+  }
+
+  const nextTexts: ExtractedImageText[] = sourceImages.map((_, index) => {
+    const idx = index + 1;
+    return existingTexts.get(idx) || {
+      index: idx,
+      text: '[识别失败]',
+      success: false,
+      error: '未识别',
+    };
+  });
+
+  await prisma.imageTextReplicationTask.update({
+    where: { id: noteId },
+    data: {
+      status: 'BREAKDOWN_PENDING',
+      errorMessage: null,
+    },
+  });
+
+  let imageText: ExtractedImageText;
+  try {
+    const text = await callVisionExactText(sourceImages[normalizedIndex - 1]);
+    imageText = {
+      index: normalizedIndex,
+      text,
+      success: true,
+      error: null,
+    };
+  } catch (error) {
+    imageText = {
+      index: normalizedIndex,
+      text: '[识别失败]',
+      success: false,
+      error: error instanceof Error ? error.message : '识别失败',
+    };
+  }
+
+  nextTexts[normalizedIndex - 1] = imageText;
+  const hasAnySuccess = nextTexts.some((item) => item.success && normalizeText(item.text));
+  const status = hasAnySuccess ? 'BREAKDOWN_COMPLETED' : 'BREAKDOWN_FAILED';
+  const { rewriteResult: _rewriteResult, ...analysisWithoutRewrite } = analysis;
+
+  const nextAnalysisResult = {
+    ...analysisWithoutRewrite,
+    sourceTitle: note.sourceTitle || '',
+    sourceText: note.sourceText || '',
+    sourceImages,
+    extractedImageTexts: nextTexts,
+    completedAt: new Date().toISOString(),
+  };
+
+  await prisma.imageTextReplicationTask.update({
+    where: { id: noteId },
+    data: {
+      status,
+      analysisResult: toInputJson(nextAnalysisResult),
+      generatedCopy: null,
+      imageGuidance: toInputJson([]),
+      errorMessage: hasAnySuccess ? null : '图片文案提取失败',
+    },
+  });
+
+  return { status, imageText };
 }
 
 export async function rewriteMyNoteAndCreateWork(noteId: string): Promise<{ workTaskId: string }> {

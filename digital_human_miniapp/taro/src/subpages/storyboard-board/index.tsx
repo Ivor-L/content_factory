@@ -32,7 +32,6 @@ function decodeQueryText(value: string): string {
 export default function StoryboardBoardPage() {
   const [taskId, setTaskId] = useState('');
   const [title, setTitle] = useState('3D骨骼分镜板');
-  const [demoMode, setDemoMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState('');
   const [task, setTask] = useState<StoryboardTaskStatusResult | null>(null);
@@ -81,15 +80,6 @@ export default function StoryboardBoardPage() {
 
   const loadStatus = async (silent = false) => {
     if (!taskId) return;
-    if (demoMode) {
-      const demoTask = buildDemoTask(taskId);
-      setTask(demoTask);
-      setImageModel(demoTask.imageModel || 'nanoBananapro');
-      setVideoModel(demoTask.videoModel || 'veo3.1-fast');
-      setErrorText('');
-      setLoading(false);
-      return;
-    }
     if (!silent) setLoading(true);
     try {
       const data = await miniappApi.getStoryboardStatus(taskId);
@@ -107,7 +97,6 @@ export default function StoryboardBoardPage() {
   useLoad((query) => {
     const id = String(query?.id || '').trim();
     const incomingTitle = decodeQueryText(String(query?.title || ''));
-    const incomingDemo = String(query?.demo || '').trim() === '1';
     if (!id) {
       setErrorText('缺少任务ID');
       setLoading(false);
@@ -115,7 +104,6 @@ export default function StoryboardBoardPage() {
     }
     setTaskId(id);
     if (incomingTitle) setTitle(incomingTitle);
-    setDemoMode(incomingDemo);
   });
 
   useDidShow(() => {
@@ -125,10 +113,6 @@ export default function StoryboardBoardPage() {
 
   useEffect(() => {
     if (!taskId) return;
-    if (demoMode) {
-      void loadStatus(false);
-      return;
-    }
 
     clearTimer();
     timerRef.current = setInterval(() => {
@@ -139,7 +123,7 @@ export default function StoryboardBoardPage() {
     return () => {
       clearTimer();
     };
-  }, [taskId, shouldKeepPolling, demoMode]);
+  }, [taskId, shouldKeepPolling]);
 
   usePullDownRefresh(() => {
     void (async () => {
@@ -323,9 +307,7 @@ export default function StoryboardBoardPage() {
       ? { generatedImage: assetUrl, push_image_url: true, status: 'IMAGE_READY' }
       : { generatedVideo: assetUrl, push_video_url: true, status: 'VIDEO_READY' };
     try {
-      if (!demoMode) {
-        await miniappApi.updateStoryboardSegment(segment.id, patch);
-      }
+      await miniappApi.updateStoryboardSegment(segment.id, patch);
       const params = getSegmentParams(segment);
       const historyKey = editingType === 'image' ? 'image_history' : 'video_history';
       const nextHistory = uniqueStrings([
@@ -392,11 +374,9 @@ export default function StoryboardBoardPage() {
     const prompt = editingPrompt.trim();
     setSavingPrompt(true);
     try {
-      if (!demoMode) {
-        await miniappApi.updateStoryboardSegment(segmentId, editingType === 'image'
-          ? { imagePrompt: prompt, subject_refs: editingRefs }
-          : { videoPrompt: prompt, video_refs: editingRefs });
-      }
+      await miniappApi.updateStoryboardSegment(segmentId, editingType === 'image'
+        ? { imagePrompt: prompt, subject_refs: editingRefs }
+        : { videoPrompt: prompt, video_refs: editingRefs });
       upsertLocalSegment(segmentId, editingType === 'image'
         ? { imagePrompt: prompt }
         : { videoPrompt: prompt });
@@ -424,12 +404,6 @@ export default function StoryboardBoardPage() {
     if (isActioning(actionKey)) return;
     setActioning(actionKey, true);
     try {
-      if (demoMode) {
-        upsertLocalSegment(segment.id, { status: 'IMAGE_GENERATING' });
-        Taro.showToast({ title: '演示模式：已触发生图', icon: 'none' });
-        return;
-      }
-
       const result = await miniappApi.generateStoryboardImages({
         taskId,
         segmentIds: [segment.id],
@@ -453,12 +427,6 @@ export default function StoryboardBoardPage() {
     if (isActioning(actionKey)) return;
     setActioning(actionKey, true);
     try {
-      if (demoMode) {
-        upsertLocalSegment(segment.id, { status: 'VIDEO_GENERATING' });
-        Taro.showToast({ title: '演示模式：已触发视频生成', icon: 'none' });
-        return;
-      }
-
       const result = await miniappApi.generateStoryboardVideos({
         taskId,
         segmentIds: [segment.id],
@@ -499,12 +467,6 @@ export default function StoryboardBoardPage() {
 
     setActioning(actionKey, true);
     try {
-      if (demoMode) {
-        targetSegments.forEach((segment) => upsertLocalSegment(segment.id, { status: 'IMAGE_GENERATING' }));
-        Taro.showToast({ title: '演示模式：已一键生图', icon: 'none' });
-        return;
-      }
-
       const result = await miniappApi.generateStoryboardImages({
         taskId,
         segmentIds: targetSegments.map((segment) => segment.id),
@@ -546,12 +508,6 @@ export default function StoryboardBoardPage() {
 
     setActioning(actionKey, true);
     try {
-      if (demoMode) {
-        targetSegments.forEach((segment) => upsertLocalSegment(segment.id, { status: 'VIDEO_GENERATING' }));
-        Taro.showToast({ title: '演示模式：已一键生成视频', icon: 'none' });
-        return;
-      }
-
       const result = await miniappApi.generateStoryboardVideos({
         taskId,
         segmentIds: targetSegments.map((segment) => segment.id),
@@ -602,10 +558,6 @@ export default function StoryboardBoardPage() {
     if (isActioning(actionKey)) return;
     setActioning(actionKey, true);
     try {
-      if (demoMode) {
-        Taro.showToast({ title: '演示模式：已触发一键剪辑', icon: 'none' });
-        return;
-      }
       await miniappApi.mergeStoryboard(taskId);
       Taro.showToast({ title: '已触发一键剪辑', icon: 'success' });
       await loadStatus(true);
@@ -632,9 +584,7 @@ export default function StoryboardBoardPage() {
     setDeleting(true);
     clearTimer();
     try {
-      if (!demoMode) {
-        await miniappApi.deleteStoryboardTask(taskId);
-      }
+      await miniappApi.deleteStoryboardTask(taskId);
       Taro.showToast({ title: mode === 'cancel' ? '已取消' : '已删除', icon: 'success' });
       setTimeout(() => {
         const pages = Taro.getCurrentPages();
@@ -1089,54 +1039,4 @@ function getModelLabel(
 ): string {
   const found = list.find((item) => item.id === id);
   return found?.label || id || '默认模型';
-}
-
-function buildDemoTask(taskId: string): StoryboardTaskStatusResult {
-  return {
-    id: taskId,
-    status: 'VIDEO_GENERATION_COMPLETED',
-    progress: 88,
-    imageModel: 'nanoBananapro',
-    videoModel: 'veo3.1-fast',
-    finalVideoUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
-    references: [],
-    segments: [
-      {
-        id: `${taskId}-seg-1`,
-        order: 0,
-        duration: 5,
-        timeRange: '00:00-00:05',
-        imagePrompt: '产品置于黑色展台，机械骨骼缓慢展开，聚光灯扫过金属纹理',
-        videoPrompt: '镜头推进，机械骨骼从静止到启动，工业风灯光，慢动作',
-        generatedImage: 'https://picsum.photos/seed/skeleton-demo-1/960/1280',
-        generatedVideo: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
-        status: 'VIDEO_READY',
-        originalScript: '开场展示产品主体，骨骼结构启动并形成强记忆点。',
-      },
-      {
-        id: `${taskId}-seg-2`,
-        order: 1,
-        duration: 6,
-        timeRange: '00:05-00:11',
-        imagePrompt: '产品特写，参数标签环绕，蓝色HUD元素叠加',
-        videoPrompt: '环绕运镜展示细节，参数标签逐条点亮，科技感',
-        generatedImage: 'https://picsum.photos/seed/skeleton-demo-2/960/1280',
-        generatedVideo: null,
-        status: 'IMAGE_READY',
-        originalScript: '切到细节特写，强调核心卖点与参数优势。',
-      },
-      {
-        id: `${taskId}-seg-3`,
-        order: 2,
-        duration: 4,
-        timeRange: '00:11-00:15',
-        imagePrompt: '产品与品牌口号同框，背景渐变光墙，结束定格',
-        videoPrompt: '镜头拉远形成品牌收束，字幕浮现，结尾停帧',
-        generatedImage: null,
-        generatedVideo: null,
-        status: 'PENDING',
-        originalScript: '品牌口号收尾，形成完整营销闭环。',
-      },
-    ],
-  };
 }

@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, Image } from '@tarojs/components';
+import { View, Text, ScrollView, Image, Video } from '@tarojs/components';
 import Taro, { useDidShow, useLoad } from '@tarojs/taro';
 import { useMemo, useState } from 'react';
 import { api } from '../../utils/api';
@@ -6,52 +6,40 @@ import { miniappApi } from '../../utils/miniapp-api';
 import './index.sass';
 
 type DurationBucket = 'SHORT' | 'LONG';
-type RemixScene = 'CLONE' | 'ACTION_SWAP';
 type RemixStrategy = 'ONE_CLICK' | 'STORYBOARD';
-type TopSwitchKey = 'SHORT' | 'LONG' | 'ACTION_SWAP';
-
-const DURATION_BUCKETS: Array<{ key: DurationBucket; label: string; min: number; max: number }> = [
-  { key: 'SHORT', label: '15s内短视频', min: 5, max: 15 },
-  { key: 'LONG', label: '15s+长视频', min: 16, max: 60 },
-];
 
 const STRATEGIES: Array<{ key: RemixStrategy; title: string; desc: string }> = [
-  { key: 'ONE_CLICK', title: '一键生成', desc: 'seedance2.0，效果好，但价格较高' },
-  { key: 'STORYBOARD', title: '分镜生成', desc: '操控性好，性价比高' },
+  { key: 'ONE_CLICK', title: '一键生成', desc: '基于 seedance2.0 生成，效果好，但价格较高' },
+  { key: 'STORYBOARD', title: '分镜控制', desc: '基于 veo3.0 生成，操控性好，性价比高' },
 ];
 
-function clampDuration(value: number, bucket: DurationBucket): number {
-  const conf = DURATION_BUCKETS.find((item) => item.key === bucket) || DURATION_BUCKETS[0];
-  return Math.max(conf.min, Math.min(conf.max, value));
+function clampDuration(value: number): number {
+  return Math.max(5, Math.min(60, value));
 }
 
 export default function RemixGeneratePage() {
-  const [scene, setScene] = useState<RemixScene>('CLONE');
   const [characters, setCharacters] = useState<any[]>([]);
-  const [selectedCharIdx, setSelectedCharIdx] = useState(0);
+  const [selectedCharIdx, setSelectedCharIdx] = useState(-1);
   const [products, setProducts] = useState<Array<{ id: string; name: string; images: string[] }>>([]);
   const [selectedProductId, setSelectedProductId] = useState('');
   const [referenceVideoUrl, setReferenceVideoUrl] = useState('');
+  const [referencePreviewPath, setReferencePreviewPath] = useState('');
+  const [referencePosterPath, setReferencePosterPath] = useState('');
+  const [referenceFileName, setReferenceFileName] = useState('');
   const [uploadingVideo, setUploadingVideo] = useState(false);
-  const [durationBucket, setDurationBucket] = useState<DurationBucket>('SHORT');
   const [durationSeconds, setDurationSeconds] = useState(10);
   const [strategy, setStrategy] = useState<RemixStrategy>('ONE_CLICK');
   const [submitting, setSubmitting] = useState(false);
 
   useLoad((query) => {
-    const mode = String(query?.mode || '').trim().toLowerCase();
     const referenceFromQuery = String(query?.referenceVideoUrl || query?.reference_video_url || '').trim();
     const duration = String(query?.duration || '').trim().toLowerCase();
-    if (mode === 'action-swap') {
-      setScene('ACTION_SWAP');
-    }
     if (duration === 'long') {
-      setScene('CLONE');
-      setDurationBucket('LONG');
-      setDurationSeconds((prev) => clampDuration(Math.max(prev, 16), 'LONG'));
+      setDurationSeconds((prev) => clampDuration(Math.max(prev, 16)));
     }
     if (referenceFromQuery) {
       setReferenceVideoUrl(decodeURIComponent(referenceFromQuery));
+      setReferencePreviewPath(decodeURIComponent(referenceFromQuery));
     }
   });
 
@@ -85,29 +73,12 @@ export default function RemixGeneratePage() {
     Taro.navigateTo({ url: '/subpages/warehouse/index' });
   };
 
-  const handleSwitchDurationBucket = (next: DurationBucket) => {
-    if (durationBucket === next) return;
-    setDurationBucket(next);
-    setDurationSeconds((prev) => clampDuration(prev, next));
-  };
-
-  const getActiveTopSwitch = (): TopSwitchKey => {
-    if (scene === 'ACTION_SWAP') return 'ACTION_SWAP';
-    return durationBucket === 'LONG' ? 'LONG' : 'SHORT';
-  };
-
-  const handleTopSwitch = (next: TopSwitchKey) => {
-    if (next === 'ACTION_SWAP') {
-      setScene('ACTION_SWAP');
-      return;
-    }
-    setScene('CLONE');
-    const bucket = next === 'LONG' ? 'LONG' : 'SHORT';
-    handleSwitchDurationBucket(bucket);
+  const handleGoProductLibrary = () => {
+    Taro.navigateTo({ url: '/subpages/product-library/index' });
   };
 
   const changeDuration = (delta: number) => {
-    setDurationSeconds((prev) => clampDuration(prev + delta, durationBucket));
+    setDurationSeconds((prev) => clampDuration(prev + delta));
   };
 
   const handleChooseReferenceVideo = async () => {
@@ -118,6 +89,7 @@ export default function RemixGeneratePage() {
     if (!chooseRes?.tempFilePath) return;
 
     const filePath = chooseRes.tempFilePath;
+    const posterPath = typeof chooseRes.thumbTempFilePath === 'string' ? chooseRes.thumbTempFilePath : '';
     const ext = (filePath.split('.').pop() || 'mp4').toLowerCase();
     const mimeByExt: Record<string, string> = {
       mp4: 'video/mp4',
@@ -128,11 +100,18 @@ export default function RemixGeneratePage() {
     const mimeType = mimeByExt[ext] || 'video/mp4';
     const filename = `remix-reference-${Date.now()}.${ext}`;
 
+    setReferencePreviewPath(filePath);
+    setReferencePosterPath(posterPath);
+    setReferenceFileName(filename);
+    setReferenceVideoUrl('');
     setUploadingVideo(true);
     try {
       const url = await api.uploadMedia(filePath, filename, mimeType);
       setReferenceVideoUrl(url);
     } catch {
+      setReferencePreviewPath('');
+      setReferencePosterPath('');
+      setReferenceFileName('');
       Taro.showToast({ title: '视频上传失败', icon: 'none' });
     } finally {
       setUploadingVideo(false);
@@ -140,19 +119,14 @@ export default function RemixGeneratePage() {
   };
 
   const submitHint = useMemo(() => {
+    const durationBucket: DurationBucket = durationSeconds > 15 ? 'LONG' : 'SHORT';
     if (strategy === 'ONE_CLICK') {
       return durationBucket === 'SHORT' ? '预计扣除算力值 280' : '预计扣除算力值 520';
     }
     return durationBucket === 'SHORT' ? '预计扣除算力值 140' : '预计扣除算力值 260';
-  }, [strategy, durationBucket]);
-
-  const pageTitle = scene === 'ACTION_SWAP' ? '动作/角色替换' : '爆款复刻';
+  }, [strategy, durationSeconds]);
 
   const handleSubmit = async () => {
-    if (!selectedCharacter) {
-      Taro.showToast({ title: '请先选择角色', icon: 'none' });
-      return;
-    }
     if (!referenceVideoUrl) {
       Taro.showToast({ title: '请先上传参考视频', icon: 'none' });
       return;
@@ -160,24 +134,29 @@ export default function RemixGeneratePage() {
 
     setSubmitting(true);
     try {
+      const durationBucket: DurationBucket = durationSeconds > 15 ? 'LONG' : 'SHORT';
       const result = await miniappApi.createStoryboardJob({
-        pipelineKey: strategy === 'ONE_CLICK' ? 'viral_clone' : 'skeleton_video',
-        title: `爆款复刻-${durationSeconds}s`,
-        script: strategy === 'STORYBOARD' ? `参考视频复刻，目标时长${durationSeconds}秒` : '',
+        pipelineKey: 'viral_clone',
+        title: `一键复刻-${durationSeconds}s`,
+        script: `参考视频爆款复刻，目标时长${durationSeconds}秒。第一阶段拆解参考视频，第二阶段替换产品或角色，第三阶段生成视频。`,
         productId: selectedProductId || undefined,
-        characterId: selectedCharacter.id,
+        characterId: selectedCharacter?.id || undefined,
         source: 'miniapp_remix_generate_page',
         metadata: {
           entry: 'remix_generate_page',
           feature: 'viral_remix',
-          remix_scene: scene === 'ACTION_SWAP' ? 'action_swap' : 'clone',
+          title: `一键复刻-${durationSeconds}s`,
+          remix_scene: 'one_click_remix',
           duration_bucket: durationBucket,
           duration_seconds: durationSeconds,
           strategy,
-          strategy_label: strategy === 'ONE_CLICK' ? 'seedance2.0' : 'storyboard',
-          character_id: selectedCharacter.id,
-          character_name: selectedCharacter.name || '',
+          strategy_label: strategy === 'ONE_CLICK' ? 'seedance2.0' : 'veo3.0',
+          generation_model: strategy === 'ONE_CLICK' ? 'seedance2.0' : 'veo3.0',
+          character_id: selectedCharacter?.id || null,
+          character_name: selectedCharacter?.name || '',
           reference_video_url: referenceVideoUrl,
+          reference_video_poster: referencePosterPath || null,
+          reference_video_filename: referenceFileName || null,
           selected_product_id: selectedProductId || null,
         },
       });
@@ -188,7 +167,7 @@ export default function RemixGeneratePage() {
 
       Taro.showToast({ title: '复刻任务已创建', icon: 'success' });
       Taro.navigateTo({
-        url: `/subpages/storyboard-board/index?id=${encodeURIComponent(result.taskId)}&title=${encodeURIComponent('爆款复刻任务')}`,
+        url: `/subpages/storyboard-board/index?id=${encodeURIComponent(result.taskId)}&title=${encodeURIComponent('一键复刻')}`,
       });
     } catch (error) {
       Taro.showToast({ title: (error as Error).message || '提交失败', icon: 'none' });
@@ -205,30 +184,7 @@ export default function RemixGeneratePage() {
             <View className='remix-back' onClick={handleBack}>
               <Text className='remix-back-text'>‹</Text>
             </View>
-            <Text className='remix-title'>{pageTitle}</Text>
-          </View>
-          <View className='remix-mode-tabs remix-mode-tabs--triple'>
-            <View
-              className={`mode-switch-tab ${getActiveTopSwitch() === 'SHORT' ? 'mode-switch-tab--active' : ''}`}
-              onClick={() => handleTopSwitch('SHORT')}
-            >
-              <Text className='mode-switch-label'>15s内短视频</Text>
-              {getActiveTopSwitch() === 'SHORT' && <View className='mode-switch-underline' />}
-            </View>
-            <View
-              className={`mode-switch-tab ${getActiveTopSwitch() === 'LONG' ? 'mode-switch-tab--active' : ''}`}
-              onClick={() => handleTopSwitch('LONG')}
-            >
-              <Text className='mode-switch-label'>15s+长视频</Text>
-              {getActiveTopSwitch() === 'LONG' && <View className='mode-switch-underline' />}
-            </View>
-            <View
-              className={`mode-switch-tab ${getActiveTopSwitch() === 'ACTION_SWAP' ? 'mode-switch-tab--active' : ''}`}
-              onClick={() => handleTopSwitch('ACTION_SWAP')}
-            >
-              <Text className='mode-switch-label'>动作/角色替换</Text>
-              {getActiveTopSwitch() === 'ACTION_SWAP' && <View className='mode-switch-underline' />}
-            </View>
+            <Text className='remix-title'>一键复刻</Text>
           </View>
         </View>
 
@@ -237,23 +193,63 @@ export default function RemixGeneratePage() {
             <View className='section-title-icon section-title-icon--video' />
             <Text className='section-title'>参考视频</Text>
           </View>
-          <Text className='tip-bullet'>• 特别提示：视频建议单镜头，转场视频建议拆分后分别复刻。</Text>
-          <View className='upload-box' onClick={handleChooseReferenceVideo}>
-            <Text className='upload-plus'>+</Text>
-            <Text className='upload-text'>{referenceVideoUrl ? '已上传参考视频，点击更换' : uploadingVideo ? '上传中...' : '添加视频'}</Text>
-          </View>
+          {referencePreviewPath ? (
+            <View className='upload-preview-card' onClick={handleChooseReferenceVideo}>
+              <View className='upload-preview-stage'>
+                {referencePosterPath ? (
+                  <Image className='upload-preview-image' src={referencePosterPath} mode='aspectFit' />
+                ) : (
+                  <Video
+                    className='upload-preview-video'
+                    src={referencePreviewPath}
+                    controls={false}
+                    autoplay={false}
+                    muted
+                    showCenterPlayBtn={false}
+                    showFullscreenBtn={false}
+                    objectFit='contain'
+                  />
+                )}
+                {uploadingVideo && (
+                  <View className='upload-preview-overlay'>
+                    <View className='upload-spinner' />
+                    <Text className='upload-preview-status'>上传中...</Text>
+                  </View>
+                )}
+              </View>
+              <View className='upload-preview-footer'>
+                <Text className='upload-preview-name'>{referenceFileName || '参考视频'}</Text>
+                <Text className='upload-preview-change'>{uploadingVideo ? '请稍候' : '更换'}</Text>
+              </View>
+            </View>
+          ) : (
+            <View className='upload-box' onClick={handleChooseReferenceVideo}>
+              {uploadingVideo ? <View className='upload-spinner upload-spinner--box' /> : <Text className='upload-plus'>+</Text>}
+              <Text className='upload-text'>{uploadingVideo ? '上传中...' : '添加视频'}</Text>
+            </View>
+          )}
         </View>
 
         <View className='section'>
-          <View className='section-title-row'>
-            <View className='section-title-icon section-title-icon--role' />
-            <Text className='section-title'>选择角色</Text>
+          <View className='section-title-row section-title-row--between'>
+            <View className='section-title-main'>
+              <View className='section-title-icon section-title-icon--role' />
+              <Text className='section-title'>选择角色</Text>
+            </View>
+            <View className='section-add-btn' onClick={handleGoRoleLibrary}>
+              <Text className='section-add-btn-text'>添加角色</Text>
+            </View>
           </View>
           <ScrollView scrollX className='card-scroll'>
             <View className='card-list'>
-              <View className='item-card item-card--add' onClick={handleGoRoleLibrary}>
-                <View className='item-add-plus'>+</View>
-                <Text className='item-add-name'>添加角色</Text>
+              <View
+                className={`item-card ${selectedCharIdx < 0 ? 'item-card--active' : ''}`}
+                onClick={() => setSelectedCharIdx(-1)}
+              >
+                <View className='item-avatar item-avatar--option'>
+                  <View className='item-option-icon' />
+                </View>
+                <Text className='item-name'>不使用角色</Text>
               </View>
               {characters.map((char, idx) => (
                 <View
@@ -271,9 +267,14 @@ export default function RemixGeneratePage() {
         </View>
 
         <View className='section'>
-          <View className='section-title-row'>
-            <View className='section-title-icon section-title-icon--product' />
-            <Text className='section-title'>选择产品</Text>
+          <View className='section-title-row section-title-row--between'>
+            <View className='section-title-main'>
+              <View className='section-title-icon section-title-icon--product' />
+              <Text className='section-title'>选择产品</Text>
+            </View>
+            <View className='section-add-btn' onClick={handleGoProductLibrary}>
+              <Text className='section-add-btn-text'>添加产品</Text>
+            </View>
           </View>
           <ScrollView scrollX className='card-scroll'>
             <View className='card-list'>

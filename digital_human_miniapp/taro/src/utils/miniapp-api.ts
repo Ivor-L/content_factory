@@ -23,6 +23,7 @@ function getApiBaseUrl(): string {
 }
 
 const API_BASE_URL = getApiBaseUrl();
+const ACCESS_TOKEN_STORAGE_KEY = 'MINIAPP_ACCESS_TOKEN';
 
 export type TaskStatus = 'PENDING' | 'GENERATING' | 'COMPLETED' | 'FAILED' | string;
 
@@ -245,6 +246,12 @@ export interface CanvasImageGenerationResult {
   raw: unknown;
 }
 
+export interface CanvasImageJobResult {
+  taskId: string;
+  status: string;
+  message: string;
+}
+
 export interface XhsLayoutRenderResult {
   taskId: string;
   title: string;
@@ -371,6 +378,18 @@ function sanitizeUrl(value: unknown): string | null {
 
 function isVideoUrl(url: string): boolean {
   return HOT_VIDEO_URL_RE.test(url);
+}
+
+function isImageUrl(url: string): boolean {
+  return !isVideoUrl(url);
+}
+
+function pickImageUrl(...values: unknown[]): string | null {
+  for (const value of values) {
+    const url = sanitizeUrl(value);
+    if (url && isImageUrl(url)) return url;
+  }
+  return null;
 }
 
 function uniqueUrls(urls: string[]): string[] {
@@ -675,7 +694,28 @@ function extractCanvasImageUrls(payload: unknown): string[] {
 
 function getApiKey(): string | null {
   try {
-    return Taro.getStorageSync('API_KEY') || null;
+    const apiKey = String(Taro.getStorageSync('API_KEY') || '').trim();
+    return apiKey || null;
+  } catch {
+    return null;
+  }
+}
+
+function setApiKey(apiKey: string | null) {
+  try {
+    const normalized = String(apiKey || '').trim();
+    if (normalized) {
+      Taro.setStorageSync('API_KEY', normalized);
+    }
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function getAccessToken(): string | null {
+  try {
+    const token = String(Taro.getStorageSync(ACCESS_TOKEN_STORAGE_KEY) || '').trim();
+    return token || null;
   } catch {
     return null;
   }
@@ -689,12 +729,16 @@ async function request<T = unknown>(
   } = {},
 ): Promise<T> {
   const apiKey = getApiKey();
+  const accessToken = getAccessToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
   if (apiKey) {
     headers['X-User-Api-Key'] = apiKey;
+  }
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`;
   }
 
   const res = await Taro.request({
@@ -852,8 +896,45 @@ function toProductSummary(raw: {
 export const miniappApi = {
   async getProfile(): Promise<MiniappProfile> {
     const userInfoStr = Taro.getStorageSync('USER_INFO');
-    const userInfo = userInfoStr ? JSON.parse(userInfoStr as string) : null;
-    const apiKey = getApiKey();
+    let userInfo = userInfoStr ? JSON.parse(userInfoStr as string) : null;
+    let apiKey = getApiKey();
+    let memberLevel: string | null = null;
+
+    try {
+      const profileMeta = await request<{
+        data?: {
+          id?: string;
+          username?: string | null;
+          avatarUrl?: string | null;
+          memberLevel?: string | null;
+          apiKey?: string | null;
+        };
+      }>('/api/user/profile');
+      const serverProfile = profileMeta?.data;
+      const serverApiKey = typeof serverProfile?.apiKey === 'string' ? serverProfile.apiKey.trim() : '';
+      if (serverApiKey) {
+        apiKey = serverApiKey;
+        setApiKey(serverApiKey);
+      }
+      memberLevel = serverProfile?.memberLevel ?? null;
+
+      if (serverProfile?.id) {
+        const nextUserInfo = {
+          ...(userInfo || {}),
+          userId: serverProfile.id,
+          username: serverProfile.username ?? userInfo?.username ?? null,
+          avatarUrl: serverProfile.avatarUrl ?? userInfo?.avatarUrl ?? null,
+          apiKey: apiKey ?? null,
+        };
+        userInfo = nextUserInfo;
+        Taro.setStorageSync('USER_INFO', JSON.stringify(nextUserInfo));
+      }
+    } catch (error) {
+      // Some online environments may not expose this endpoint yet.
+      if (!isHttpStatusError(error, 401) && !isHttpStatusError(error, 404)) {
+        memberLevel = null;
+      }
+    }
 
     let points: number | null = null;
     if (apiKey) {
@@ -862,19 +943,6 @@ export const miniappApi = {
         points = typeof credits?.balance === 'number' ? credits.balance : null;
       } catch {
         points = null;
-      }
-    }
-
-    let memberLevel: string | null = null;
-    if (apiKey) {
-      try {
-        const profileMeta = await request<{ data?: { memberLevel?: string | null } }>('/api/user/profile');
-        memberLevel = profileMeta?.data?.memberLevel ?? null;
-      } catch (error) {
-        // Some online environments may not expose this endpoint yet.
-        if (!isHttpStatusError(error, 404)) {
-          memberLevel = null;
-        }
       }
     }
 
@@ -1220,6 +1288,27 @@ export const miniappApi = {
     });
   },
 
+  async retryImageTextMyNoteBreakdown(taskId: string, imageIndex: number): Promise<{ taskId: string; status: string; imageText?: MyNoteImageTextItem }> {
+    const payload = await request<{ taskId: string; status: string; imageText?: Partial<MyNoteImageTextItem> }>(`/api/image-text-replication/${encodeURIComponent(taskId)}/breakdown`, {
+      method: 'POST',
+      data: { imageIndex },
+    });
+    const rawImageText = payload?.imageText || null;
+    const indexValue = Number(rawImageText?.index);
+    return {
+      taskId: String(payload?.taskId || taskId),
+      status: String(payload?.status || 'BREAKDOWN_PENDING'),
+      imageText: rawImageText
+        ? {
+            index: Number.isFinite(indexValue) && indexValue > 0 ? Math.floor(indexValue) : imageIndex,
+            text: String(rawImageText.text || ''),
+            success: Boolean(rawImageText.success),
+            error: typeof rawImageText.error === 'string' ? rawImageText.error : null,
+          }
+        : undefined,
+    };
+  },
+
   async extractMyNoteVideoCopy(taskId: string): Promise<VideoCopyExtractResult> {
     const payload = await request<{ data?: VideoCopyExtractResult }>(`/api/image-text-replication/${encodeURIComponent(taskId)}/extract-video-copy`, {
       method: 'POST',
@@ -1373,6 +1462,7 @@ export const miniappApi = {
       for (const item of videos) {
         const resultUrl = typeof item.resultUrl === 'string' ? item.resultUrl : null;
         const scriptContent = typeof item.scriptContent === 'string' ? item.scriptContent : '';
+        const sourceImageUrl = pickImageUrl(item.coverUrl, item.thumbnailUrl, item.imageUrl);
         works.push({
           id: String(item.id),
           title: item.type === 'VOICE_CLONE' ? '数字人文字驱动视频' : '数字人口型驱动视频',
@@ -1382,16 +1472,14 @@ export const miniappApi = {
           taskId: String(item.id),
           createdAt: String(item.createdAt ?? new Date().toISOString()),
           preview: scriptContent || null,
-          thumbnailUrl:
-            (item.coverUrl as string | null) ??
-            (item.imageUrl as string | null) ??
-            null,
+          thumbnailUrl: sourceImageUrl,
           metadata: {
             type: typeof item.type === 'string' ? item.type : '',
             scriptContent,
             resultUrl,
             videoUrl: resultUrl,
             sourceType: typeof item.sourceType === 'string' ? item.sourceType : '',
+            sourceImageUrl,
           },
           source: 'digitalHuman',
         });
@@ -1678,6 +1766,36 @@ export const miniappApi = {
     return {
       images: extractCanvasImageUrls(payload),
       raw: payload,
+    };
+  },
+
+  async startCanvasImageJob(params: {
+    prompt: string;
+    model: string;
+    size?: '1024x1024' | '1536x1024' | '1024x1536';
+    n?: number;
+    image?: string[];
+    images?: string[];
+  }): Promise<CanvasImageJobResult> {
+    const imageInput = Array.isArray(params.image)
+      ? params.image
+      : (Array.isArray(params.images) ? params.images : []);
+
+    const payload = await request<{ data?: Partial<CanvasImageJobResult> }>('/api/miniapp/canvas/images/jobs', {
+      method: 'POST',
+      data: {
+        prompt: params.prompt,
+        model: params.model,
+        size: params.size ?? '1024x1024',
+        n: typeof params.n === 'number' ? params.n : 1,
+        image: imageInput.slice(0, 5),
+      },
+    });
+    const resultData = payload?.data || {};
+    return {
+      taskId: typeof resultData.taskId === 'string' ? resultData.taskId : '',
+      status: typeof resultData.status === 'string' ? resultData.status : 'PROCESSING',
+      message: typeof resultData.message === 'string' ? resultData.message : '图片生产中，请在作品中查看生成结果',
     };
   },
 

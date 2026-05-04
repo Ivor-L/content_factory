@@ -114,6 +114,10 @@
 | [20260504-miniapp-hot-detail-favorite-and-parse-plan.md](./20260504-miniapp-hot-detail-favorite-and-parse-plan.md) | 小程序爆款详情收藏、解析态与详情页展示修复计划 |
 | [20260504-miniapp-library-header-card-fit-plan.md](./20260504-miniapp-library-header-card-fit-plan.md) | 小程序素材库头部与卡片适配：对齐标准页并修复角色卡片溢出 |
 | [20260504-miniapp-hot-video-collect-remix-plan.md](./20260504-miniapp-hot-video-collect-remix-plan.md) | 小程序爆款视频采集与复刻链路：提取文案、下载视频、选择复刻类型并预填参考视频 |
+| [20260504-miniapp-xhs-collect-web-sync-plan.md](./20260504-miniapp-xhs-collect-web-sync-plan.md) | 小程序小红书采集同步 Web 爆款内容：复用 viral references 数据源并隔离个人 sourceId |
+| [20260504-miniapp-xhs-image-ocr-retry-plan.md](./20260504-miniapp-xhs-image-ocr-retry-plan.md) | 小程序小红书图文单张 OCR 失败项点击重试计划 |
+| [20260504-miniapp-ai-image-work-status-plan.md](./20260504-miniapp-ai-image-work-status-plan.md) | 小程序 AI 作图生成状态提示、后台任务与作品沉淀计划 |
+| [20260504-miniapp-one-click-remix-stage-plan.md](./20260504-miniapp-one-click-remix-stage-plan.md) | 小程序一键复刻入口合并、上传预览与三阶段详情页计划 |
 | [20260504-miniapp-referral-and-points-api-plan.md](./20260504-miniapp-referral-and-points-api-plan.md) | 小程序分享赚钱与算力消耗接口补齐计划 |
 | [20260504-miniapp-product-analysis-plan.md](./20260504-miniapp-product-analysis-plan.md) | 小程序产品上传分析与产品库结果查看计划 |
 | [20260504-character-library-view-edit-delete-plan.md](./20260504-character-library-view-edit-delete-plan.md) | Web 角色库查看/编辑/删除与创建表单交互优化计划 |

@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, Textarea, Image } from '@tarojs/components';
+import { View, Text, ScrollView, Textarea, Image, Video } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../utils/api';
@@ -31,6 +31,9 @@ export default function GeneratePage() {
   const [script, setScript] = useState('');
   const [audioUrl, setAudioUrl] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
+  const [videoPreviewPath, setVideoPreviewPath] = useState('');
+  const [videoPosterPath, setVideoPosterPath] = useState('');
+  const [videoFileName, setVideoFileName] = useState('');
   const [skeletonScript, setSkeletonScript] = useState('');
   const [products, setProducts] = useState<Array<{ id: string; name: string; images: string[] }>>([]);
   const [selectedProductId, setSelectedProductId] = useState('');
@@ -130,6 +133,13 @@ export default function GeneratePage() {
     setAudioUrl('');
   };
 
+  const resetVideoUpload = () => {
+    setVideoUrl('');
+    setVideoPreviewPath('');
+    setVideoPosterPath('');
+    setVideoFileName('');
+  };
+
   const ensureProductsLoaded = async () => {
     if (products.length > 0 && characters.length > 0) return;
     try {
@@ -166,6 +176,7 @@ export default function GeneratePage() {
     if (!chooseRes?.tempFilePath) return;
 
     const filePath = chooseRes.tempFilePath;
+    const posterPath = typeof chooseRes.thumbTempFilePath === 'string' ? chooseRes.thumbTempFilePath : '';
     const ext = (filePath.split('.').pop() || 'mp4').toLowerCase();
     const mimeByExt: Record<string, string> = {
       mp4: 'video/mp4',
@@ -176,11 +187,16 @@ export default function GeneratePage() {
     const mimeType = mimeByExt[ext] || 'video/mp4';
     const filename = `digital-human-source-${Date.now()}.${ext}`;
 
+    setVideoPreviewPath(filePath);
+    setVideoPosterPath(posterPath);
+    setVideoFileName(filename);
+    setVideoUrl('');
     setUploadingVideo(true);
     try {
       const url = await api.uploadMedia(filePath, filename, mimeType);
       setVideoUrl(url);
     } catch {
+      resetVideoUpload();
       Taro.showToast({ title: '视频上传失败', icon: 'none' });
     } finally {
       setUploadingVideo(false);
@@ -236,7 +252,7 @@ export default function GeneratePage() {
       Taro.showToast({ title: '已提交生成任务', icon: 'success' });
       setScript('');
       setAudioUrl('');
-      if (sourceType === 'VIDEO') setVideoUrl('');
+      if (sourceType === 'VIDEO') resetVideoUpload();
     } catch (err) {
       Taro.showToast({ title: (err as Error).message || '提交失败', icon: 'none' });
     } finally {
@@ -436,14 +452,46 @@ export default function GeneratePage() {
             {sourceType === 'VIDEO' && (
               <View className='section'>
                 {renderSectionTitle('upload-video', '上传驱动视频')}
-                <View className='upload-row upload-row--large' onClick={handleChooseVideo}>
-                  <View className='upload-row-content'>
-                    <Text className='upload-row-plus'>+</Text>
-                    <Text className='upload-row-text'>
-                      {videoUrl ? '已上传视频，点击更换' : uploadingVideo ? '上传中...' : '点击选择视频文件'}
-                    </Text>
+                {videoPreviewPath ? (
+                  <View className='video-upload-preview-card'>
+                    <View className='video-upload-preview-frame'>
+                      {videoPosterPath ? (
+                        <Image className='video-upload-poster' src={videoPosterPath} mode='aspectFit' />
+                      ) : (
+                        <Video
+                          className='video-upload-video'
+                          src={videoPreviewPath}
+                          controls={false}
+                          autoplay={false}
+                          muted
+                          showCenterPlayBtn={false}
+                          showFullscreenBtn={false}
+                          objectFit='contain'
+                        />
+                      )}
+                      <View className='video-upload-preview-mask'>
+                        <Text className='video-upload-preview-status'>
+                          {uploadingVideo ? '上传中...' : '视频已上传'}
+                        </Text>
+                      </View>
+                    </View>
+                    <View className='video-upload-preview-footer'>
+                      <Text className='video-upload-preview-name'>{videoFileName || '驱动视频'}</Text>
+                      <View className='video-upload-change-btn' onClick={handleChooseVideo}>
+                        <Text className='video-upload-change-text'>更换</Text>
+                      </View>
+                    </View>
                   </View>
-                </View>
+                ) : (
+                  <View className='upload-row upload-row--large upload-row--video' onClick={handleChooseVideo}>
+                    <View className='upload-row-content upload-row-content--video'>
+                      <Text className='upload-row-plus'>+</Text>
+                      <Text className='upload-row-text'>
+                        {uploadingVideo ? '上传中...' : '点击选择视频文件'}
+                      </Text>
+                    </View>
+                  </View>
+                )}
               </View>
             )}
 

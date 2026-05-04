@@ -3,10 +3,6 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { useCallback, useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
 import antHeadLogo from '../../assets/icons/ant-head-logo-small.jpg';
-import videoIcon from '../../assets/home-icons-v2/video.png';
-import imageIcon from '../../assets/home-icons-v2/image.png';
-import swapIcon from '../../assets/home-icons-v2/swap.png';
-import humanIcon from '../../assets/home-icons-v2/human.png';
 import './index.sass';
 
 const HERO_VIDEO_ID = 'homeHeroVideo';
@@ -19,6 +15,8 @@ const REMIX_VIDEO_URLS = [
   'https://oss.atomx.top/miniapp/home/remix-skincare-1777640495240.mp4',
   'https://oss.atomx.top/miniapp/home/remix-zopia-showcase-4s-1777640844679.mp4',
 ];
+
+type HomeFlatIcon = 'human' | 'image' | 'video' | 'coin';
 
 export default function HomePage() {
   const [profile, setProfile] = useState<any>(null);
@@ -125,37 +123,74 @@ export default function HomePage() {
         </View>
       </View>
 
-      <View className='home-feature-grid'>
+        <View className='home-feature-grid'>
         <View className='home-feature-card home-feature-card--video' onClick={() => Taro.navigateTo({ url: '/subpages/generate/index?feature=digital-human' })}>
-          <View className='home-feature-head'>
-            <Text className='home-feature-title'>AI数字人</Text>
+          <View className='home-card-icon-shell home-card-icon-shell--large'>
+            {renderHomeFlatIcon('human')}
           </View>
-          <Text className='home-feature-desc'>数字人视频生成</Text>
-          <Image className='home-card-icon home-card-icon--video' src={humanIcon} mode='aspectFit' />
+          <Text className='home-card-arrow'>↗</Text>
+          <Text className='home-feature-title home-feature-title--large'>AI数字人</Text>
         </View>
 
         <View className='home-feature-right'>
           <View className='home-feature-card home-feature-card--image' onClick={() => Taro.navigateTo({ url: '/subpages/image-generate/index' })}>
+            <View className='home-card-icon-shell'>
+              {renderHomeFlatIcon('image')}
+            </View>
+            <Text className='home-card-arrow'>↗</Text>
             <Text className='home-feature-title'>图片生成</Text>
-            <Text className='home-feature-desc'>文生图 / 图生图</Text>
-            <Image className='home-card-icon home-card-icon--small' src={imageIcon} mode='aspectFit' />
           </View>
           <View className='home-feature-card home-feature-card--edit' onClick={() => Taro.navigateTo({ url: '/subpages/generate/index?feature=video-generate&category=skeleton-3d' })}>
+            <View className='home-card-icon-shell'>
+              {renderHomeFlatIcon('video')}
+            </View>
+            <Text className='home-card-arrow'>↗</Text>
             <Text className='home-feature-title'>视频生成</Text>
-            <Text className='home-feature-desc'>文生视频、图生视频</Text>
-            <Image className='home-card-icon home-card-icon--small' src={videoIcon} mode='aspectFit' />
           </View>
         </View>
       </View>
 
       <View className='home-action-row' onClick={() => Taro.navigateTo({ url: '/subpages/monetization-square/index' })}>
-        <View>
-          <Text className='home-action-title'>变现广场</Text>
-          <Text className='home-action-desc'>精选高变现内容模板，一键做同款</Text>
+        <View className='home-card-icon-shell home-card-icon-shell--coin'>
+          {renderHomeFlatIcon('coin')}
         </View>
-        <Image className='home-card-icon home-card-icon--action' src={swapIcon} mode='aspectFit' />
+        <Text className='home-card-arrow'>↗</Text>
+        <Text className='home-action-title'>变现广场</Text>
       </View>
 
     </View>
+  );
+}
+
+function renderHomeFlatIcon(type: HomeFlatIcon) {
+  if (type === 'human') {
+    return (
+      <View className='home-flat-icon home-flat-icon--human'>
+        <View className='home-flat-human-head' />
+        <View className='home-flat-human-body' />
+      </View>
+    );
+  }
+
+  if (type === 'image') {
+    return (
+      <View className='home-flat-icon home-flat-icon--image'>
+        <View className='home-flat-image-dot' />
+        <View className='home-flat-image-mountain home-flat-image-mountain--back' />
+        <View className='home-flat-image-mountain' />
+      </View>
+    );
+  }
+
+  if (type === 'video') {
+    return (
+      <View className='home-flat-icon home-flat-icon--video'>
+        <View className='home-flat-video-play' />
+      </View>
+    );
+  }
+
+  return (
+    <Text className='home-flat-yen'>¥</Text>
   );
 }

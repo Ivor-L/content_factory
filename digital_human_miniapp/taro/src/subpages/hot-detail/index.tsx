@@ -99,6 +99,7 @@ export default function HotDetailPage() {
   const [rewriteDrawerVisible, setRewriteDrawerVisible] = useState(false);
   const [remixDrawerVisible, setRemixDrawerVisible] = useState(false);
   const [selectedRewriteTitle, setSelectedRewriteTitle] = useState('');
+  const [retryingImageIndex, setRetryingImageIndex] = useState<number | null>(null);
   const pollTimerRef = useRef<number | null>(null);
 
   const clearPoll = () => {
@@ -424,6 +425,21 @@ export default function HotDetailPage() {
     });
   };
 
+  const handleRetryImageText = async (imageIndex: number) => {
+    if (!myTaskId || retryingImageIndex) return;
+    setRetryingImageIndex(imageIndex);
+    try {
+      await miniappApi.retryImageTextMyNoteBreakdown(myTaskId, imageIndex);
+      const latest = await loadMyTask(myTaskId, true);
+      if (latest && isParsingStatus(latest.status)) pollTask(myTaskId, 'my');
+      Taro.showToast({ title: '已重试该张识别', icon: 'none' });
+    } catch (error) {
+      Taro.showToast({ title: error instanceof Error ? error.message : '重试失败', icon: 'none' });
+    } finally {
+      setRetryingImageIndex(null);
+    }
+  };
+
   const renderMedia = (images: string[]) => {
     if (activeVideoUrl) {
       return (
@@ -619,7 +635,21 @@ export default function HotDetailPage() {
                   {extractedTexts.length === 0 ? (
                     <Text className='hot-my-empty'>解析中，支持关闭页面后台继续运行</Text>
                   ) : (
-                    extractedTexts.map((textItem) => <Text key={`${textItem.index}`} className='hot-my-item-text'>{textItem.text || '[空]'}</Text>)
+                    extractedTexts.map((textItem) => {
+                      const failed = !textItem.success;
+                      const retrying = retryingImageIndex === textItem.index;
+                      return (
+                        <View
+                          key={`${textItem.index}`}
+                          className={`hot-my-item-row ${failed ? 'hot-my-item-row--failed' : ''} ${retrying ? 'hot-my-item-row--loading' : ''}`}
+                          onClick={failed && !retrying ? () => handleRetryImageText(textItem.index) : undefined}
+                        >
+                          <Text className={`hot-my-item-text ${failed ? 'hot-my-item-text--failed' : ''}`}>
+                            {retrying ? '重试中...' : (failed ? '失败失败，点击重试' : (textItem.text || '[空]'))}
+                          </Text>
+                        </View>
+                      );
+                    })
                   )}
                 </View>
               </View>}

@@ -595,9 +595,15 @@ function getPosterImages(item: any): string[] {
   const layout = metadata?.xhsLayout && typeof metadata.xhsLayout === 'object'
     ? metadata.xhsLayout as Record<string, unknown>
     : null;
+  const canvasImage = metadata?.canvasImage && typeof metadata.canvasImage === 'object'
+    ? metadata.canvasImage as Record<string, unknown>
+    : null;
 
   const candidates = [
     layout?.images,
+    canvasImage?.images,
+    canvasImage?.generatedImages,
+    canvasImage?.generated_images,
     metadata?.images,
     metadata?.imageUrls,
     metadata?.image_urls,
