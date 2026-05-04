@@ -10,6 +10,13 @@ type ProductStatusMeta = {
   className: string;
 };
 
+type ProductImageDraft = {
+  id: string;
+  localPath: string;
+  url: string;
+  status: 'uploading' | 'uploaded' | 'failed';
+};
+
 function parseJsonValue(raw: string | null | undefined): unknown {
   if (!raw) return null;
   try {
@@ -102,11 +109,12 @@ export default function ProductLibraryPage() {
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
   const [detailProduct, setDetailProduct] = useState<ProductSummary | null>(null);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [imagesText, setImagesText] = useState('');
+  const [imageDrafts, setImageDrafts] = useState<ProductImageDraft[]>([]);
 
   const loadProducts = async () => {
     setLoading(true);
@@ -141,14 +149,83 @@ export default function ProductLibraryPage() {
   const resetForm = () => {
     setName('');
     setDescription('');
-    setImagesText('');
+    setImageDrafts([]);
   };
 
-  const parseImageInput = (value: string): string[] => {
-    return value
-      .split(/\n|,/)
-      .map((item) => item.trim())
-      .filter(Boolean);
+  const handleCloseModal = () => {
+    if (submitting || uploadingImages) return;
+    setModalOpen(false);
+    resetForm();
+  };
+
+  const removeImageDraft = (id: string) => {
+    if (submitting || uploadingImages) return;
+    setImageDrafts((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleChooseImages = async () => {
+    if (submitting || uploadingImages) return;
+    const remaining = Math.max(0, 6 - imageDrafts.length);
+    if (remaining === 0) {
+      Taro.showToast({ title: '最多上传 6 张图片', icon: 'none' });
+      return;
+    }
+
+    try {
+      const result = await Taro.chooseImage({
+        count: remaining,
+        sizeType: ['compressed'],
+        sourceType: ['album', 'camera'],
+      });
+      const paths = (result.tempFilePaths || []).slice(0, remaining);
+      if (paths.length === 0) return;
+
+      const drafts = paths.map((localPath, index) => ({
+        id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`,
+        localPath,
+        url: '',
+        status: 'uploading' as const,
+      }));
+
+      setImageDrafts((prev) => [...prev, ...drafts]);
+      setUploadingImages(true);
+
+      let failedUploads = 0;
+      await Promise.all(drafts.map(async (draft, index) => {
+        try {
+          const ext = (draft.localPath.split('.').pop() || 'jpg').toLowerCase();
+          const mimeByExt: Record<string, string> = {
+            jpg: 'image/jpeg',
+            jpeg: 'image/jpeg',
+            png: 'image/png',
+            webp: 'image/webp',
+            heic: 'image/heic',
+          };
+          const url = await miniappApi.uploadMedia(
+            draft.localPath,
+            `product-${Date.now()}-${index + 1}.${ext}`,
+            mimeByExt[ext] || 'image/jpeg',
+          );
+          setImageDrafts((prev) => prev.map((item) =>
+            item.id === draft.id ? { ...item, url, status: 'uploaded' } : item,
+          ));
+        } catch {
+          failedUploads += 1;
+          setImageDrafts((prev) => prev.map((item) =>
+            item.id === draft.id ? { ...item, status: 'failed' } : item,
+          ));
+        }
+      }));
+
+      Taro.showToast({
+        title: failedUploads > 0 ? `${failedUploads} 张上传失败` : '图片上传完成',
+        icon: failedUploads > 0 ? 'none' : 'success',
+      });
+    } catch {
+      // canceled
+    } finally {
+      setUploadingImages(false);
+    }
   };
 
   const handleCreate = async () => {
@@ -157,13 +234,27 @@ export default function ProductLibraryPage() {
       Taro.showToast({ title: '请填写产品名称', icon: 'none' });
       return;
     }
+    if (uploadingImages) {
+      Taro.showToast({ title: '图片还在上传中', icon: 'none' });
+      return;
+    }
+
+    const failedCount = imageDrafts.filter((item) => item.status === 'failed').length;
+    if (failedCount > 0) {
+      Taro.showToast({ title: '请删除上传失败的图片后重试', icon: 'none' });
+      return;
+    }
+
+    const imageUrls = imageDrafts
+      .map((item) => item.url.trim())
+      .filter(Boolean);
 
     setSubmitting(true);
     try {
       await miniappApi.createProduct({
         name: trimmedName,
         description: description.trim(),
-        images: parseImageInput(imagesText),
+        images: imageUrls,
       });
       Taro.showToast({ title: '产品已提交分析', icon: 'success' });
       setModalOpen(false);
@@ -255,23 +346,51 @@ export default function ProductLibraryPage() {
               onInput={(e) => setDescription(e.detail.value)}
             />
 
-            <Text className='product-modal-label'>图片 URL</Text>
-            <Textarea
-              className='product-modal-textarea'
-              value={imagesText}
-              placeholder='可选，每行一条或用逗号分隔'
-              onInput={(e) => setImagesText(e.detail.value)}
-            />
+            <Text className='product-modal-label'>产品图片</Text>
+            <View
+              className={`product-image-picker ${uploadingImages ? 'product-image-picker--disabled' : ''}`}
+              onClick={handleChooseImages}
+            >
+              <Text className='product-image-picker-plus'>+</Text>
+              <Text className='product-image-picker-text'>
+                {uploadingImages ? '图片上传中...' : '从手机相册选择或拍照'}
+              </Text>
+              <Text className='product-image-picker-meta'>{imageDrafts.length}/6</Text>
+            </View>
+
+            {imageDrafts.length > 0 && (
+              <View className='product-image-grid'>
+                {imageDrafts.map((item) => (
+                  <View key={item.id} className='product-image-thumb'>
+                    <Image
+                      className='product-image-thumb-img'
+                      src={item.localPath || item.url}
+                      mode='aspectFill'
+                    />
+                    {item.status !== 'uploaded' && (
+                      <View className={`product-image-thumb-mask product-image-thumb-mask--${item.status}`}>
+                        <Text className='product-image-thumb-status'>
+                          {item.status === 'uploading' ? '上传中' : '失败'}
+                        </Text>
+                      </View>
+                    )}
+                    <View className='product-image-remove' onClick={() => removeImageDraft(item.id)}>
+                      <Text className='product-image-remove-text'>×</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
 
             <View className='product-modal-actions'>
-              <View className='product-modal-cancel' onClick={() => setModalOpen(false)}>
+              <View className='product-modal-cancel' onClick={handleCloseModal}>
                 <Text>取消</Text>
               </View>
               <View
-                className={`product-modal-confirm ${submitting ? 'product-modal-confirm--disabled' : ''}`}
-                onClick={submitting ? undefined : handleCreate}
+                className={`product-modal-confirm ${submitting || uploadingImages ? 'product-modal-confirm--disabled' : ''}`}
+                onClick={submitting || uploadingImages ? undefined : handleCreate}
               >
-                <Text>{submitting ? '分析中...' : '分析并保存'}</Text>
+                <Text>{submitting ? '分析中...' : uploadingImages ? '上传中...' : '分析并保存'}</Text>
               </View>
             </View>
           </View>

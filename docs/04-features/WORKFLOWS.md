@@ -137,7 +137,7 @@
 | 脚本用途 | 触发 n8n 工作流 | 环境变量 | 默认 webhook | 回调接口 |
 |----------|---------------|---------|-------------|---------|
 | `one-click`（一键复刻） | script_extract_web | `N8N_SCRIPT_BREAKDOWN_WEBHOOK` | `https://hooks.atomx.top/webhook/script_extract_web` | `/api/webhook/replication/script` |
-| `storyboard`（分镜复刻） | storyboard_disassembly_web | `N8N_STORYBOARD_BREAKDOWN_WEBHOOK` | `https://hooks.atomx.top/webhook/storyboard_disassembly_web` | `/api/webhook/storyboard-breakdown` |
+| `storyboard`（分镜复刻） | miniapp_viral_breakdown_grid | `N8N_STORYBOARD_BREAKDOWN_WEBHOOK` | `https://hooks.atomx.top/webhook/miniapp_viral_breakdown_grid` | `/api/webhook/storyboard-breakdown` |
 | `extract-copy`（提取文案） | extract_copy | `N8N_EXTRACT_COPY_WEBHOOK` | `https://hooks.atomx.top/webhook/extract_copy` | `/api/webhook/replication/script` |
 
 #### 完整触发链路
@@ -154,7 +154,7 @@ triggerScriptBreakdown()
 breakdownScript()  [lib/n8n.ts]
   ↓  按 scriptPurpose 分叉
   ├─ one-click   → N8N_SCRIPT_BREAKDOWN_WEBHOOK (script_extract_web, flow_script_dna)
-  ├─ storyboard  → N8N_STORYBOARD_BREAKDOWN_WEBHOOK (storyboard_disassembly_web, flow_storyboard_disassembly)
+  ├─ storyboard  → N8N_STORYBOARD_BREAKDOWN_WEBHOOK (miniapp_viral_breakdown_grid, flow_storyboard_disassembly)
   └─ extract-copy→ N8N_EXTRACT_COPY_WEBHOOK (extract_copy)
 ```
 

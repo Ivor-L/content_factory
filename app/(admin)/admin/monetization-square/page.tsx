@@ -136,6 +136,53 @@ function createEmptyCategory(): MonetizationCategoryConfig {
   };
 }
 
+function createShareDemo(title = '新视频号视频'): NonNullable<MonetizationItemConfig['demos']>[number] {
+  return {
+    id: createId('share-video'),
+    title,
+    subtitle: '',
+    coverImageUrl: '',
+    demoVideoUrl: '',
+    tags: ['视频号'],
+    action: {
+      type: 'route',
+      route: '/pages/home/index',
+      params: {
+        finderUserName: '',
+        feedId: '',
+        likesText: '10万+',
+      },
+    },
+  };
+}
+
+function createShareCategory(): MonetizationCategoryConfig {
+  return {
+    id: 'share-monetization',
+    name: '分享变现',
+    items: [
+      {
+        id: 'channels-video-share',
+        title: '视频号分享列表',
+        subtitle: '配置视频号视频，用户点击后打开对应视频号内容',
+        coverImageUrl: '',
+        demoVideoUrl: '',
+        tags: ['视频号', '分享变现'],
+        action: {
+          type: 'route',
+          route: '/pages/home/index',
+          params: {},
+          featureKey: 'monetization_channels_video_share',
+        },
+        demos: [
+          createShareDemo('视频号视频 1'),
+          createShareDemo('视频号视频 2'),
+        ],
+      },
+    ],
+  };
+}
+
 function prepareVisualConfig(config: MonetizationSquareConfigPayload): MonetizationSquareConfigPayload {
   return {
     ...config,
@@ -217,6 +264,11 @@ export default function AdminMonetizationSquarePage() {
     if (items.length === 0) return null;
     return items.find((item) => item.id === selectedItemId) || items[0];
   }, [selectedCategory, selectedItemId]);
+
+  const hasShareCategory = useMemo(
+    () => visualConfig.categories.some((category) => isShareCategory(category.id, category.name)),
+    [visualConfig.categories],
+  );
 
   useEffect(() => {
     if (!selectedCategory && visualConfig.categories.length > 0) {
@@ -389,6 +441,24 @@ export default function AdminMonetizationSquarePage() {
     setMessage('已恢复默认模板（未保存）。');
   };
 
+  const handleAddShareCategory = () => {
+    if (hasShareCategory) {
+      const existing = visualConfig.categories.find((category) => isShareCategory(category.id, category.name));
+      if (existing) {
+        setSelectedCategoryId(existing.id);
+        setSelectedItemId(existing.items[0]?.id || '');
+        setMessage('已定位到现有分享变现分类。');
+      }
+      return;
+    }
+
+    const next = createShareCategory();
+    setVisualConfig((prev) => ({ ...prev, categories: [...prev.categories, next] }));
+    setSelectedCategoryId(next.id);
+    setSelectedItemId(next.items[0]?.id || '');
+    setMessage('已添加分享变现分类，请填写视频号参数后保存。');
+  };
+
   const handleSave = async () => {
     if (!token) return;
 
@@ -532,6 +602,13 @@ export default function AdminMonetizationSquarePage() {
               className="rounded-md border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
             >
               恢复默认模板
+            </button>
+            <button
+              onClick={handleAddShareCategory}
+              type="button"
+              className="rounded-md border border-purple-300 px-3 py-1.5 text-xs text-purple-700 hover:bg-purple-50 dark:border-purple-500/50 dark:text-purple-200 dark:hover:bg-purple-500/10"
+            >
+              {hasShareCategory ? '定位分享变现' : '+ 添加分享变现'}
             </button>
           </div>
         </div>
@@ -767,11 +844,11 @@ export default function AdminMonetizationSquarePage() {
                           type="button"
                           onClick={() => updateItem(selectedCategory.id, item.id, (current) => ({
                             ...current,
-                            demos: [...(current.demos || []), createEmptyDemo()],
+                            demos: [...(current.demos || []), shareCategory ? createShareDemo() : createEmptyDemo()],
                           }))}
                           className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-white dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
                         >
-                          + 添加演示
+                          {shareCategory ? '+ 添加视频' : '+ 添加演示'}
                         </button>
                       </div>
 
@@ -782,7 +859,7 @@ export default function AdminMonetizationSquarePage() {
                           return (
                             <div key={demo.id} className="rounded border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
                               <div className="mb-2 flex items-center justify-between">
-                                <div className="text-xs font-medium text-gray-700 dark:text-gray-300">演示卡片</div>
+                                <div className="text-xs font-medium text-gray-700 dark:text-gray-300">{shareCategory ? '分享视频' : '演示卡片'}</div>
                                 <button
                                   type="button"
                                   onClick={() => updateItem(selectedCategory.id, item.id, (current) => ({
@@ -858,7 +935,7 @@ export default function AdminMonetizationSquarePage() {
                                       />
                                     </label>
                                   </div>
-                                  <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">分享变现将读取每张卡片的 finderUserName + feedId 调用 wx.openChannelsActivity。</p>
+                                  <p className="mt-2 text-[11px] text-gray-500 dark:text-gray-400">必须填写 finderUserName + feedId，小程序才会展示这条分享视频；点击后会调用 wx.openChannelsActivity 打开视频号内容。</p>
                                 </div>
                               )}
 

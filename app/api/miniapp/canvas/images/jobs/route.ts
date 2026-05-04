@@ -3,6 +3,8 @@ import { after, NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getRequestUserContext } from "@/lib/authServer";
 import { toInputJson } from "@/lib/jsonUtils";
+import { getAssetBucket, posterImagePath } from "@/lib/storagePaths";
+import { uploadToStorage } from "@/lib/storageUpload";
 
 type ImageJobBody = {
   prompt?: unknown;
@@ -105,6 +107,80 @@ function extractImageUrls(payload: unknown): string[] {
     }
   }
   return urls;
+}
+
+type InlineImage = {
+  data: string;
+  mimeType: string;
+};
+
+function collectInlineImages(value: unknown, depth = 0): InlineImage[] {
+  if (depth > 6 || value == null) return [];
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectInlineImages(item, depth + 1));
+  }
+
+  if (typeof value !== "object") return [];
+
+  const obj = value as Record<string, unknown>;
+  const inline = obj.inline_data || obj.inlineData || obj.inlineDataV1 || obj.inlineDataV2;
+  const inlineObj = inline && typeof inline === "object" ? inline as Record<string, unknown> : null;
+  const inlineData = inlineObj?.data;
+  if (inlineObj && typeof inlineData === "string" && inlineData.trim()) {
+    const mimeType =
+      (typeof inlineObj.mime_type === "string" && inlineObj.mime_type) ||
+      (typeof inlineObj.mimeType === "string" && inlineObj.mimeType) ||
+      "image/png";
+    return [{ data: inlineData.trim(), mimeType }];
+  }
+
+  const directData = obj.data;
+  const directMimeType = obj.mime_type || obj.mimeType;
+  if (
+    typeof directData === "string" &&
+    directData.trim() &&
+    typeof directMimeType === "string" &&
+    directMimeType.startsWith("image/")
+  ) {
+    return [{ data: directData.trim(), mimeType: directMimeType }];
+  }
+
+  return Object.values(obj).flatMap((item) => collectInlineImages(item, depth + 1));
+}
+
+function extensionFromMimeType(mimeType: string) {
+  if (/jpe?g/i.test(mimeType)) return "jpg";
+  if (/webp/i.test(mimeType)) return "webp";
+  return "png";
+}
+
+async function uploadInlineImages(params: {
+  payload: unknown;
+  userId: string;
+  taskId: string;
+}): Promise<string[]> {
+  const inlineImages = collectInlineImages(params.payload).slice(0, 4);
+  if (inlineImages.length === 0) return [];
+
+  const uploaded = await Promise.all(
+    inlineImages.map(async (image, index) => {
+      const normalizedData = image.data.replace(/^data:.*;base64,/i, "").trim();
+      if (!normalizedData) return "";
+
+      const extension = extensionFromMimeType(image.mimeType);
+      const uploadResult = await uploadToStorage({
+        bucket: getAssetBucket(),
+        path: posterImagePath(params.userId, params.taskId, `canvas-${index + 1}.${extension}`),
+        body: Buffer.from(normalizedData, "base64"),
+        contentType: image.mimeType,
+        upsert: true,
+      });
+      return uploadResult.publicUrl;
+    }),
+  );
+
+  return uploaded.filter(Boolean);
 }
 
 function buildMetadata(input: {
@@ -302,7 +378,10 @@ export async function POST(request: NextRequest) {
           : rawText.slice(0, 240);
         throw new Error(message || `图片生成失败：HTTP ${response.status}`);
       }
-      const generatedImages = extractImageUrls(payload);
+      let generatedImages = extractImageUrls(payload);
+      if (generatedImages.length === 0) {
+        generatedImages = await uploadInlineImages({ payload, userId, taskId });
+      }
       if (generatedImages.length === 0) {
         throw new Error("图片生成完成但未返回图片地址");
       }

@@ -339,6 +339,35 @@ async function postJson(url: string, body: Record<string, unknown>) {
   return parsed;
 }
 
+function getImageDimensions(url: string): Promise<{ width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) {
+      resolve(null);
+      return;
+    }
+
+    const image = new Image();
+    const timeout = window.setTimeout(() => {
+      image.onload = null;
+      image.onerror = null;
+      resolve(null);
+    }, 7000);
+
+    image.onload = () => {
+      window.clearTimeout(timeout);
+      const width = image.naturalWidth || image.width;
+      const height = image.naturalHeight || image.height;
+      resolve(width > 0 && height > 0 ? { width, height } : null);
+    };
+    image.onerror = () => {
+      window.clearTimeout(timeout);
+      resolve(null);
+    };
+    image.src = trimmedUrl;
+  });
+}
+
 async function getJson(url: string) {
   const response = await fetch(url, {
     method: "GET",
@@ -1248,12 +1277,15 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
       });
 
       try {
+        const sourceDimensions = await getImageDimensions(imageUrl);
         const response = await postJson("/api/digital-human/videos", {
           type: "VOICE_CLONE",
           scriptContent,
           audioUrl,
           imageUrl,
           emoAudioUrl,
+          sourceWidth: sourceDimensions?.width,
+          sourceHeight: sourceDimensions?.height,
         });
         const record = response as { data?: { id?: string } };
         const videoId = record?.data?.id;

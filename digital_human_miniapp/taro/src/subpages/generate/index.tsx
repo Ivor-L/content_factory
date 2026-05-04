@@ -11,8 +11,14 @@ const SOURCE_TYPES = [
 ] as const;
 
 const MODES = [
-  { key: 'VOICE_CLONE', label: '文字驱动', desc: '输入脚本文字，AI 自动克隆音色并合成语音' },
-  { key: 'LIP_SYNC', label: '音频驱动', desc: '上传已有音频，直接用于口型同步' },
+  { key: 'VOICE_CLONE', label: '文字驱动', desc: '使用克隆音色阅读文案' },
+  { key: 'LIP_SYNC', label: '音频驱动', desc: '使用语音驱动数字人' },
+] as const;
+
+const VIDEO_VOICE_SOURCES = [
+  { key: 'UPLOAD', label: '上传音色' },
+  { key: 'RECORD', label: '录音' },
+  { key: 'ROLE', label: '角色音色' },
 ] as const;
 
 const VIDEO_CATEGORIES = [
@@ -21,27 +27,35 @@ const VIDEO_CATEGORIES = [
   { key: 'SKELETON_3D', label: '3D骨骼' },
 ] as const;
 
+const SKELETON_DURATION_OPTIONS = [32, 64, 96] as const;
+const DEFAULT_SKELETON_DURATION_SECONDS = 64;
+
 export default function GeneratePage() {
   const [pageMode, setPageMode] = useState<'digital-human' | 'video-generate'>('digital-human');
   const [videoCategory, setVideoCategory] = useState<'MARKETING' | 'SHORT_DRAMA' | 'SKELETON_3D'>('SKELETON_3D');
   const [sourceType, setSourceType] = useState<'IMAGE' | 'VIDEO'>('IMAGE');
   const [mode, setMode] = useState<'VOICE_CLONE' | 'LIP_SYNC'>('VOICE_CLONE');
+  const [videoVoiceSource, setVideoVoiceSource] = useState<'UPLOAD' | 'RECORD' | 'ROLE'>('UPLOAD');
   const [characters, setCharacters] = useState<any[]>([]);
   const [selectedCharIdx, setSelectedCharIdx] = useState(0);
   const [script, setScript] = useState('');
   const [audioUrl, setAudioUrl] = useState('');
+  const [recordedAudioUrl, setRecordedAudioUrl] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
   const [videoPreviewPath, setVideoPreviewPath] = useState('');
   const [videoPosterPath, setVideoPosterPath] = useState('');
   const [videoFileName, setVideoFileName] = useState('');
   const [skeletonScript, setSkeletonScript] = useState('');
+  const [skeletonDurationSeconds, setSkeletonDurationSeconds] = useState<number>(DEFAULT_SKELETON_DURATION_SECONDS);
   const [products, setProducts] = useState<Array<{ id: string; name: string; images: string[] }>>([]);
   const [selectedProductId, setSelectedProductId] = useState('');
   const [uploadingAudio, setUploadingAudio] = useState(false);
   const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [recording, setRecording] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const submitLockRef = useRef(false);
+  const recorderManager = Taro.getRecorderManager ? Taro.getRecorderManager() : null;
 
   useLoad((options) => {
     const feature = String(options?.feature || '').trim().toLowerCase();
@@ -78,6 +92,13 @@ export default function GeneratePage() {
   });
 
   const selectedChar = characters[selectedCharIdx];
+  const selectedRoleVoiceUrl = selectedChar?.voiceUrl || '';
+  const videoVoiceUrl =
+    videoVoiceSource === 'ROLE'
+      ? selectedRoleVoiceUrl
+      : videoVoiceSource === 'RECORD'
+        ? recordedAudioUrl
+        : audioUrl;
 
   useEffect(() => {
     const onKeyboard = (result: { height?: number }) => {
@@ -94,22 +115,22 @@ export default function GeneratePage() {
       Taro.showToast({ title: '请先选择数字人角色', icon: 'none' });
       return;
     }
-    if (!skeletonScript.trim()) {
-      Taro.showToast({ title: '请输入分镜脚本文案', icon: 'none' });
-      return;
-    }
+    const scriptText = skeletonScript.trim();
     setSubmitting(true);
     try {
       const result = await miniappApi.createStoryboardJob({
         pipelineKey: 'skeleton_video',
-        title: '小程序骷髅分镜视频',
-        script: skeletonScript.trim(),
+        title: `小程序骷髅分镜视频-${skeletonDurationSeconds}s`,
+        script: scriptText,
         productId: selectedProductId || undefined,
         characterId: selectedChar.id,
         source: 'miniapp_generate_page',
         metadata: {
           entry: 'generate_page',
           feature: 'skeleton_storyboard',
+          duration_seconds: skeletonDurationSeconds,
+          duration_sec: skeletonDurationSeconds,
+          script_optional: true,
           selected_product_id: selectedProductId || null,
           character_id: selectedChar.id,
           character_name: selectedChar.name || '',
@@ -131,6 +152,7 @@ export default function GeneratePage() {
     if (sourceType === nextType) return;
     setSourceType(nextType);
     setAudioUrl('');
+    setRecordedAudioUrl('');
   };
 
   const resetVideoUpload = () => {
@@ -166,6 +188,31 @@ export default function GeneratePage() {
     } finally {
       setUploadingAudio(false);
     }
+  };
+
+  const handleStartRecord = () => {
+    if (!recorderManager) {
+      Taro.showToast({ title: '当前环境不支持录音', icon: 'none' });
+      return;
+    }
+    recorderManager.onStop(async (res) => {
+      setUploadingAudio(true);
+      try {
+        const url = await api.uploadMedia(res.tempFilePath, `voice-record-${Date.now()}.m4a`, 'audio/mp4');
+        setRecordedAudioUrl(url);
+      } catch {
+        Taro.showToast({ title: '录音上传失败', icon: 'none' });
+      } finally {
+        setUploadingAudio(false);
+        setRecording(false);
+      }
+    });
+    recorderManager.start({ duration: 60000, format: 'm4a' });
+    setRecording(true);
+  };
+
+  const handleStopRecord = () => {
+    recorderManager?.stop();
   };
 
   const handleChooseVideo = async () => {
@@ -205,16 +252,20 @@ export default function GeneratePage() {
 
   const handleSubmit = async () => {
     if (submitLockRef.current || submitting) return;
-    if (!selectedChar) {
+    if (sourceType === 'IMAGE' && !selectedChar) {
       Taro.showToast({ title: '请先在形象库添加数字人', icon: 'none' });
       return;
     }
-    if (!selectedChar.voiceUrl) {
+    if (sourceType === 'IMAGE' && !selectedChar.voiceUrl) {
       Taro.showToast({ title: '该形象未绑定音色', icon: 'none' });
       return;
     }
     if (sourceType === 'VIDEO' && !videoUrl) {
       Taro.showToast({ title: '请先上传驱动视频', icon: 'none' });
+      return;
+    }
+    if (sourceType === 'VIDEO' && mode === 'VOICE_CLONE' && !videoVoiceUrl) {
+      Taro.showToast({ title: '请先选择或创建音色', icon: 'none' });
       return;
     }
     if (mode === 'VOICE_CLONE' && !script.trim()) {
@@ -235,7 +286,7 @@ export default function GeneratePage() {
             type: mode,
             sourceType: 'VIDEO' as const,
             videoUrl,
-            audioUrl: mode === 'LIP_SYNC' ? audioUrl : (selectedChar.voiceUrl || ''),
+            audioUrl: mode === 'LIP_SYNC' ? audioUrl : videoVoiceUrl,
             scriptContent: mode === 'VOICE_CLONE' ? script.trim() : undefined,
           }
           : {
@@ -252,7 +303,10 @@ export default function GeneratePage() {
       Taro.showToast({ title: '已提交生成任务', icon: 'success' });
       setScript('');
       setAudioUrl('');
-      if (sourceType === 'VIDEO') resetVideoUpload();
+      if (sourceType === 'VIDEO') {
+        setRecordedAudioUrl('');
+        resetVideoUpload();
+      }
     } catch (err) {
       Taro.showToast({ title: (err as Error).message || '提交失败', icon: 'none' });
     } finally {
@@ -323,6 +377,121 @@ export default function GeneratePage() {
         </View>
       </ScrollView>
       {characters.length === 0 && <Text className='empty-hint'>暂无形象，请先在「形象库」添加</Text>}
+    </View>
+  );
+
+  const renderVideoUploadSection = () => (
+    <View className='section'>
+      {renderSectionTitle('upload-video', '上传驱动视频')}
+      {videoPreviewPath ? (
+        <View className='video-upload-preview-card'>
+          <View className='video-upload-preview-frame'>
+            {videoPosterPath ? (
+              <Image className='video-upload-poster' src={videoPosterPath} mode='aspectFit' />
+            ) : (
+              <Video
+                className='video-upload-video'
+                src={videoPreviewPath}
+                controls={false}
+                autoplay={false}
+                muted
+                showCenterPlayBtn={false}
+                showFullscreenBtn={false}
+                objectFit='contain'
+              />
+            )}
+            <View className='video-upload-preview-mask'>
+              <Text className='video-upload-preview-status'>
+                {uploadingVideo ? '上传中...' : '视频已上传'}
+              </Text>
+            </View>
+          </View>
+          <View className='video-upload-preview-footer'>
+            <Text className='video-upload-preview-name'>{videoFileName || '驱动视频'}</Text>
+            <View className='video-upload-change-btn' onClick={handleChooseVideo}>
+              <Text className='video-upload-change-text'>更换</Text>
+            </View>
+          </View>
+        </View>
+      ) : (
+        <View className='upload-row upload-row--large upload-row--video' onClick={handleChooseVideo}>
+          <View className='upload-row-content upload-row-content--video'>
+            <Text className='upload-row-plus'>+</Text>
+            <Text className='upload-row-text'>
+              {uploadingVideo ? '上传中...' : '点击选择视频文件'}
+            </Text>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+
+  const renderVoiceSourceSection = () => (
+    <View className='section'>
+      {renderSectionTitle('audio', '选择音色')}
+      <View className='voice-source-tabs'>
+        {VIDEO_VOICE_SOURCES.map((item) => (
+          <View
+            key={item.key}
+            className={`voice-source-tab ${videoVoiceSource === item.key ? 'voice-source-tab--active' : ''}`}
+            onClick={() => setVideoVoiceSource(item.key)}
+          >
+            <Text className={`voice-source-tab-text ${videoVoiceSource === item.key ? 'voice-source-tab-text--active' : ''}`}>
+              {item.label}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      {videoVoiceSource === 'UPLOAD' && (
+        <View className='upload-row' onClick={handleChooseAudio}>
+          <View className='upload-row-content'>
+            <Text className='upload-row-plus'>+</Text>
+            <Text className='upload-row-text'>
+              {audioUrl ? '已上传音色，点击更换' : uploadingAudio ? '上传中...' : '点击选择音频文件'}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {videoVoiceSource === 'RECORD' && (
+        <View className='upload-row' onClick={recording ? handleStopRecord : handleStartRecord}>
+          <View className='upload-row-content'>
+            <Text className='upload-row-plus'>{recording ? '-' : '+'}</Text>
+            <Text className='upload-row-text'>
+              {recording ? '正在录音，点击停止' : recordedAudioUrl ? '已录制音色，点击重录' : uploadingAudio ? '上传中...' : '点击开始录音'}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {videoVoiceSource === 'ROLE' && (
+        <>
+          <ScrollView scrollX className='character-scroll'>
+            <View className='character-list'>
+              <View className='character-item character-item--add' onClick={handleGoRoleLibrary}>
+                <View className='character-add-plus'>+</View>
+                <Text className='character-add-name'>添加角色</Text>
+              </View>
+              {characters.map((char, idx) => (
+                <View
+                  key={char.id ?? idx}
+                  className={`character-item ${idx === selectedCharIdx ? 'character-item--active' : ''}`}
+                  onClick={() => setSelectedCharIdx(idx)}
+                >
+                  <Image className='character-avatar' src={char.imageUrl} mode='aspectFill' />
+                  <Text className='character-name'>{char.name || `角色 ${idx + 1}`}</Text>
+                  <Text className={`voice-source-role-status ${char.voiceUrl ? 'voice-source-role-status--ready' : ''}`}>
+                    {char.voiceUrl ? '已绑定音色' : '未绑定音色'}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+          {characters.length === 0 && <Text className='empty-hint'>暂无角色音色，可先上传或录音。</Text>}
+          {selectedChar && !selectedChar.voiceUrl && <Text className='empty-hint'>当前角色未绑定音色，请换一个角色或改用上传/录音。</Text>}
+        </>
+      )}
     </View>
   );
 
@@ -432,6 +601,23 @@ export default function GeneratePage() {
                 </View>
 
                 <View className='section'>
+                  {renderSectionTitle('clock', '生成时长')}
+                  <View className='duration-options'>
+                    {SKELETON_DURATION_OPTIONS.map((seconds) => (
+                      <View
+                        key={seconds}
+                        className={`duration-option ${skeletonDurationSeconds === seconds ? 'duration-option--active' : ''}`}
+                        onClick={() => setSkeletonDurationSeconds(seconds)}
+                      >
+                        <Text className={`duration-option-value ${skeletonDurationSeconds === seconds ? 'duration-option-value--active' : ''}`}>
+                          {seconds}s
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+
+                <View className='section'>
                   <Text className='mode-desc'>任务创建后会进入分镜工作流，完成后可在「作品」里查看状态与结果。</Text>
                 </View>
               </>
@@ -447,68 +633,29 @@ export default function GeneratePage() {
 
         {pageMode === 'digital-human' && (
           <>
-            {renderCharacterPicker()}
-
             {sourceType === 'VIDEO' && (
-              <View className='section'>
-                {renderSectionTitle('upload-video', '上传驱动视频')}
-                {videoPreviewPath ? (
-                  <View className='video-upload-preview-card'>
-                    <View className='video-upload-preview-frame'>
-                      {videoPosterPath ? (
-                        <Image className='video-upload-poster' src={videoPosterPath} mode='aspectFit' />
-                      ) : (
-                        <Video
-                          className='video-upload-video'
-                          src={videoPreviewPath}
-                          controls={false}
-                          autoplay={false}
-                          muted
-                          showCenterPlayBtn={false}
-                          showFullscreenBtn={false}
-                          objectFit='contain'
-                        />
-                      )}
-                      <View className='video-upload-preview-mask'>
-                        <Text className='video-upload-preview-status'>
-                          {uploadingVideo ? '上传中...' : '视频已上传'}
-                        </Text>
-                      </View>
-                    </View>
-                    <View className='video-upload-preview-footer'>
-                      <Text className='video-upload-preview-name'>{videoFileName || '驱动视频'}</Text>
-                      <View className='video-upload-change-btn' onClick={handleChooseVideo}>
-                        <Text className='video-upload-change-text'>更换</Text>
-                      </View>
-                    </View>
-                  </View>
-                ) : (
-                  <View className='upload-row upload-row--large upload-row--video' onClick={handleChooseVideo}>
-                    <View className='upload-row-content upload-row-content--video'>
-                      <Text className='upload-row-plus'>+</Text>
-                      <Text className='upload-row-text'>
-                        {uploadingVideo ? '上传中...' : '点击选择视频文件'}
-                      </Text>
-                    </View>
-                  </View>
-                )}
-              </View>
+              renderVideoUploadSection()
             )}
 
+            {sourceType === 'IMAGE' && renderCharacterPicker()}
+
             <View className='section'>
-              <View className='mode-tabs'>
+              {renderSectionTitle('model', '驱动方式')}
+              <View className='mode-card-list'>
                 {MODES.map((m) => (
                   <View
                     key={m.key}
-                    className={`mode-tab ${mode === m.key ? 'mode-tab--active' : ''}`}
+                    className={`mode-card ${mode === m.key ? 'mode-card--active' : ''}`}
                     onClick={() => setMode(m.key)}
                   >
-                    <Text className='mode-tab-label'>{m.label}</Text>
+                    <Text className='mode-card-title'>{m.label}</Text>
+                    <Text className='mode-card-desc'>{m.desc}</Text>
                   </View>
                 ))}
               </View>
-              <Text className='mode-desc'>{MODES.find((m) => m.key === mode)?.desc}</Text>
             </View>
+
+            {sourceType === 'VIDEO' && mode === 'VOICE_CLONE' && renderVoiceSourceSection()}
 
             {mode === 'LIP_SYNC' && (
               <View className='section'>
@@ -532,7 +679,7 @@ export default function GeneratePage() {
           <View className='bottom-composer-card'>
             <View className='bottom-composer-title-row'>
               <Text className='bottom-composer-title'>
-                {pageMode === 'video-generate' ? '3D骨骼分镜脚本文案' : '脚本内容'}
+                {pageMode === 'video-generate' ? '3D骨骼分镜脚本文案（可选）' : '脚本内容'}
               </Text>
               <View className='bottom-composer-title-actions'>
                 <Text
@@ -563,7 +710,7 @@ export default function GeneratePage() {
                 setScript(e.detail.value);
               }}
               placeholder={pageMode === 'video-generate'
-                ? '输入产品描述、卖点或参考脚本，系统会自动生成骷髅分镜与提示词...'
+                ? '可输入产品描述、卖点或参考脚本；留空也会按所选时长自动生成骷髅分镜与提示词...'
                 : '在此输入你想让数字人说的文字...'}
               maxlength={pageMode === 'video-generate' ? 3000 : 500}
               fixed

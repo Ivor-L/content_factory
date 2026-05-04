@@ -15,6 +15,19 @@ const REMIX_VIDEO_URLS = [
   'https://oss.atomx.top/miniapp/home/remix-skincare-1777640495240.mp4',
   'https://oss.atomx.top/miniapp/home/remix-zopia-showcase-4s-1777640844679.mp4',
 ];
+const IMAGE_ICON_SVG = encodeSvgDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#111111" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/>
+  <circle cx="8.5" cy="9" r="1.5"/>
+  <path d="m5 17 4.5-4.5 3.5 3.5 2.5-2.5L19 17"/>
+</svg>
+`);
+const VIDEO_ICON_SVG = encodeSvgDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#111111" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="3.5" y="5" width="17" height="14" rx="2.5"/>
+  <path d="m10 9 5 3-5 3V9Z"/>
+</svg>
+`);
 
 type HomeFlatIcon = 'human' | 'image' | 'video' | 'coin';
 
@@ -174,23 +187,21 @@ function renderHomeFlatIcon(type: HomeFlatIcon) {
 
   if (type === 'image') {
     return (
-      <View className='home-flat-icon home-flat-icon--image'>
-        <View className='home-flat-image-dot' />
-        <View className='home-flat-image-mountain home-flat-image-mountain--back' />
-        <View className='home-flat-image-mountain' />
-      </View>
+      <Image className='home-flat-icon home-flat-icon-image' src={IMAGE_ICON_SVG} mode='aspectFit' />
     );
   }
 
   if (type === 'video') {
     return (
-      <View className='home-flat-icon home-flat-icon--video'>
-        <View className='home-flat-video-play' />
-      </View>
+      <Image className='home-flat-icon home-flat-icon-image' src={VIDEO_ICON_SVG} mode='aspectFit' />
     );
   }
 
   return (
     <Text className='home-flat-yen'>¥</Text>
   );
+}
+
+function encodeSvgDataUri(svg: string) {
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg.trim())}`;
 }

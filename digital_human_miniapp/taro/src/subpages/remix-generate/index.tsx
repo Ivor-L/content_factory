@@ -6,29 +6,28 @@ import { miniappApi } from '../../utils/miniapp-api';
 import './index.sass';
 
 type DurationBucket = 'SHORT' | 'LONG';
-type RemixStrategy = 'ONE_CLICK' | 'STORYBOARD';
-
-const STRATEGIES: Array<{ key: RemixStrategy; title: string; desc: string }> = [
-  { key: 'ONE_CLICK', title: '一键生成', desc: '基于 seedance2.0 生成，效果好，但价格较高' },
-  { key: 'STORYBOARD', title: '分镜控制', desc: '基于 veo3.0 生成，操控性好，性价比高' },
-];
+type RemixMode = 'SMART' | 'ACTION';
 
 function clampDuration(value: number): number {
   return Math.max(5, Math.min(60, value));
 }
 
 export default function RemixGeneratePage() {
-  const [characters, setCharacters] = useState<any[]>([]);
-  const [selectedCharIdx, setSelectedCharIdx] = useState(-1);
+  const [remixMode, setRemixMode] = useState<RemixMode>('SMART');
   const [products, setProducts] = useState<Array<{ id: string; name: string; images: string[] }>>([]);
   const [selectedProductId, setSelectedProductId] = useState('');
   const [referenceVideoUrl, setReferenceVideoUrl] = useState('');
   const [referencePreviewPath, setReferencePreviewPath] = useState('');
   const [referencePosterPath, setReferencePosterPath] = useState('');
   const [referenceFileName, setReferenceFileName] = useState('');
+  const [referenceDurationSeconds, setReferenceDurationSeconds] = useState<number | null>(null);
   const [uploadingVideo, setUploadingVideo] = useState(false);
-  const [durationSeconds, setDurationSeconds] = useState(10);
-  const [strategy, setStrategy] = useState<RemixStrategy>('ONE_CLICK');
+  const [videoUploadProgress, setVideoUploadProgress] = useState(0);
+  const [sourceImageUrl, setSourceImageUrl] = useState('');
+  const [sourceImagePreviewPath, setSourceImagePreviewPath] = useState('');
+  const [sourceImageFileName, setSourceImageFileName] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [durationSeconds, setDurationSeconds] = useState(15);
   const [submitting, setSubmitting] = useState(false);
 
   useLoad((query) => {
@@ -40,25 +39,37 @@ export default function RemixGeneratePage() {
     if (referenceFromQuery) {
       setReferenceVideoUrl(decodeURIComponent(referenceFromQuery));
       setReferencePreviewPath(decodeURIComponent(referenceFromQuery));
+      setReferenceDurationSeconds(null);
+    }
+    const mode = String(query?.mode || query?.remixMode || '').trim().toLowerCase();
+    if (mode === 'action-swap' || mode === 'action' || mode === 'action-transfer') {
+      setRemixMode('ACTION');
     }
   });
 
   useDidShow(() => {
     void (async () => {
       try {
-        const [roleList, productList] = await Promise.all([
-          api.getDigitalHumans(),
-          miniappApi.getProducts(),
-        ]);
-        setCharacters(roleList);
+        const productList = await miniappApi.getProducts();
         setProducts(productList);
       } catch {
         Taro.showToast({ title: '加载数据失败', icon: 'none' });
       }
     })();
-  });
 
-  const selectedCharacter = characters[selectedCharIdx];
+    try {
+      const pickedImage = Taro.getStorageSync('REMIX_ACTION_SOURCE_IMAGE_URL');
+      if (typeof pickedImage === 'string' && /^https?:\/\//i.test(pickedImage.trim())) {
+        const url = pickedImage.trim();
+        setSourceImageUrl(url);
+        setSourceImagePreviewPath(url);
+        setSourceImageFileName('AI生成图片');
+        Taro.removeStorageSync('REMIX_ACTION_SOURCE_IMAGE_URL');
+      }
+    } catch {
+      // ignore storage read errors
+    }
+  });
 
   const handleBack = () => {
     const pages = Taro.getCurrentPages();
@@ -67,10 +78,6 @@ export default function RemixGeneratePage() {
       return;
     }
     Taro.switchTab({ url: '/pages/home/index' });
-  };
-
-  const handleGoRoleLibrary = () => {
-    Taro.navigateTo({ url: '/subpages/warehouse/index' });
   };
 
   const handleGoProductLibrary = () => {
@@ -89,7 +96,9 @@ export default function RemixGeneratePage() {
     if (!chooseRes?.tempFilePath) return;
 
     const filePath = chooseRes.tempFilePath;
-    const posterPath = typeof chooseRes.thumbTempFilePath === 'string' ? chooseRes.thumbTempFilePath : '';
+    const posterPath = typeof (chooseRes as { thumbTempFilePath?: string }).thumbTempFilePath === 'string'
+      ? (chooseRes as { thumbTempFilePath?: string }).thumbTempFilePath || ''
+      : '';
     const ext = (filePath.split('.').pop() || 'mp4').toLowerCase();
     const mimeByExt: Record<string, string> = {
       mp4: 'video/mp4',
@@ -103,30 +112,107 @@ export default function RemixGeneratePage() {
     setReferencePreviewPath(filePath);
     setReferencePosterPath(posterPath);
     setReferenceFileName(filename);
+    setReferenceDurationSeconds(
+      typeof chooseRes.duration === 'number' && Number.isFinite(chooseRes.duration)
+        ? chooseRes.duration
+        : null,
+    );
     setReferenceVideoUrl('');
     setUploadingVideo(true);
+    setVideoUploadProgress(0);
     try {
-      const url = await api.uploadMedia(filePath, filename, mimeType);
+      const url = await api.uploadMedia(filePath, filename, mimeType, {
+        direct: true,
+        type: 'viral-remix-video',
+        onProgress: setVideoUploadProgress,
+      });
       setReferenceVideoUrl(url);
     } catch {
       setReferencePreviewPath('');
       setReferencePosterPath('');
       setReferenceFileName('');
+      setReferenceDurationSeconds(null);
+      setVideoUploadProgress(0);
       Taro.showToast({ title: '视频上传失败', icon: 'none' });
     } finally {
       setUploadingVideo(false);
     }
   };
 
-  const submitHint = useMemo(() => {
-    const durationBucket: DurationBucket = durationSeconds > 15 ? 'LONG' : 'SHORT';
-    if (strategy === 'ONE_CLICK') {
-      return durationBucket === 'SHORT' ? '预计扣除算力值 280' : '预计扣除算力值 520';
+  const handleChooseSourceImage = async () => {
+    const chooseRes = await Taro.chooseImage({
+      count: 1,
+      sourceType: ['album', 'camera'],
+      sizeType: ['compressed'],
+    });
+    const filePath = chooseRes?.tempFilePaths?.[0];
+    if (!filePath) return;
+
+    const ext = (filePath.split('.').pop() || 'jpg').toLowerCase();
+    const mimeByExt: Record<string, string> = {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      webp: 'image/webp',
+    };
+    const mimeType = mimeByExt[ext] || 'image/jpeg';
+    const filename = `action-transfer-source-${Date.now()}.${ext}`;
+
+    setSourceImagePreviewPath(filePath);
+    setSourceImageFileName(filename);
+    setSourceImageUrl('');
+    setUploadingImage(true);
+    try {
+      const url = await api.uploadMedia(filePath, filename, mimeType);
+      setSourceImageUrl(url);
+      setSourceImagePreviewPath(url);
+    } catch {
+      setSourceImagePreviewPath('');
+      setSourceImageFileName('');
+      Taro.showToast({ title: '图片上传失败', icon: 'none' });
+    } finally {
+      setUploadingImage(false);
     }
-    return durationBucket === 'SHORT' ? '预计扣除算力值 140' : '预计扣除算力值 260';
-  }, [strategy, durationSeconds]);
+  };
+
+  const handleGoAiImage = () => {
+    Taro.navigateTo({ url: '/subpages/image-generate/index?from=action-transfer' });
+  };
+
+  const submitHint = useMemo(() => {
+    if (remixMode === 'ACTION') return '预计扣除算力值 280';
+    const durationBucket: DurationBucket = durationSeconds > 15 ? 'LONG' : 'SHORT';
+    return durationBucket === 'SHORT' ? '预计扣除算力值 280' : '预计扣除算力值 520';
+  }, [remixMode, durationSeconds]);
 
   const handleSubmit = async () => {
+    if (remixMode === 'ACTION') {
+      if (!sourceImageUrl) {
+        Taro.showToast({ title: '请先上传图片', icon: 'none' });
+        return;
+      }
+      if (!referenceVideoUrl) {
+        Taro.showToast({ title: '请先上传参考视频', icon: 'none' });
+        return;
+      }
+
+      setSubmitting(true);
+      try {
+        const result = await api.createActionTransferTask({
+          imageUrl: sourceImageUrl,
+          videoUrl: referenceVideoUrl,
+          durationSeconds: referenceDurationSeconds,
+        });
+        Taro.showToast({ title: '动作复刻任务已创建', icon: 'success' });
+        Taro.navigateTo({ url: `/subpages/records/index?id=${encodeURIComponent(result.id)}` });
+      } catch (error) {
+        Taro.showToast({ title: (error as Error).message || '提交失败', icon: 'none' });
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
     if (!referenceVideoUrl) {
       Taro.showToast({ title: '请先上传参考视频', icon: 'none' });
       return;
@@ -134,26 +220,20 @@ export default function RemixGeneratePage() {
 
     setSubmitting(true);
     try {
-      const durationBucket: DurationBucket = durationSeconds > 15 ? 'LONG' : 'SHORT';
       const result = await miniappApi.createStoryboardJob({
         pipelineKey: 'viral_clone',
         title: `一键复刻-${durationSeconds}s`,
-        script: `参考视频爆款复刻，目标时长${durationSeconds}秒。第一阶段拆解参考视频，第二阶段替换产品或角色，第三阶段生成视频。`,
+        script: `参考视频爆款复刻，目标时长${durationSeconds}秒。第一阶段拆解参考视频，第二阶段替换用户选择的产品，第三阶段生成视频。`,
         productId: selectedProductId || undefined,
-        characterId: selectedCharacter?.id || undefined,
         source: 'miniapp_remix_generate_page',
         metadata: {
           entry: 'remix_generate_page',
           feature: 'viral_remix',
           title: `一键复刻-${durationSeconds}s`,
           remix_scene: 'one_click_remix',
-          duration_bucket: durationBucket,
+          duration_bucket: durationSeconds > 15 ? 'LONG' : 'SHORT',
           duration_seconds: durationSeconds,
-          strategy,
-          strategy_label: strategy === 'ONE_CLICK' ? 'seedance2.0' : 'veo3.0',
-          generation_model: strategy === 'ONE_CLICK' ? 'seedance2.0' : 'veo3.0',
-          character_id: selectedCharacter?.id || null,
-          character_name: selectedCharacter?.name || '',
+          person_reference_imported: false,
           reference_video_url: referenceVideoUrl,
           reference_video_poster: referencePosterPath || null,
           reference_video_filename: referenceFileName || null,
@@ -184,9 +264,64 @@ export default function RemixGeneratePage() {
             <View className='remix-back' onClick={handleBack}>
               <Text className='remix-back-text'>‹</Text>
             </View>
-            <Text className='remix-title'>一键复刻</Text>
+            <Text className='remix-title'>爆款复刻</Text>
+          </View>
+          <View className='remix-scene-tabs'>
+            <View
+              className={`remix-scene-tab ${remixMode === 'SMART' ? 'remix-scene-tab--active' : ''}`}
+              onClick={() => setRemixMode('SMART')}
+            >
+              <Text className='remix-scene-tab-text'>智能复刻</Text>
+              {remixMode === 'SMART' && <View className='remix-scene-underline' />}
+            </View>
+            <View
+              className={`remix-scene-tab ${remixMode === 'ACTION' ? 'remix-scene-tab--active' : ''}`}
+              onClick={() => setRemixMode('ACTION')}
+            >
+              <Text className='remix-scene-tab-text'>动作复刻</Text>
+              {remixMode === 'ACTION' && <View className='remix-scene-underline' />}
+            </View>
           </View>
         </View>
+
+        {remixMode === 'ACTION' && (
+          <View className='section'>
+            <View className='section-title-row section-title-row--between'>
+              <View className='section-title-main'>
+                <View className='section-title-icon section-title-icon--image' />
+                <Text className='section-title'>上传图片</Text>
+              </View>
+              <View className='section-add-btn' onClick={handleGoAiImage}>
+                <Text className='section-add-btn-text'>用AI生成图片</Text>
+              </View>
+            </View>
+            {sourceImagePreviewPath ? (
+              <View
+                className='upload-preview-card upload-preview-card--image upload-preview-card--action-media'
+                onClick={handleChooseSourceImage}
+              >
+                <View className='upload-preview-stage upload-preview-stage--image upload-preview-stage--action-media'>
+                  <Image className='upload-preview-image' src={sourceImagePreviewPath} mode='aspectFit' />
+                  {uploadingImage && (
+                    <View className='upload-preview-overlay'>
+                      <View className='upload-spinner' />
+                      <Text className='upload-preview-status'>上传中...</Text>
+                    </View>
+                  )}
+                </View>
+                <View className='upload-preview-footer'>
+                  <Text className='upload-preview-name'>{sourceImageFileName || '图片'}</Text>
+                  <Text className='upload-preview-change'>{uploadingImage ? '请稍候' : '更换'}</Text>
+                </View>
+              </View>
+            ) : (
+              <View className='upload-box upload-box--action-media' onClick={handleChooseSourceImage}>
+                {uploadingImage ? <View className='upload-spinner upload-spinner--box' /> : <Text className='upload-plus'>+</Text>}
+                <Text className='upload-text'>{uploadingImage ? '上传中...' : '添加图片'}</Text>
+              </View>
+            )}
+          </View>
+        )}
 
         <View className='section'>
           <View className='section-title-row'>
@@ -194,8 +329,11 @@ export default function RemixGeneratePage() {
             <Text className='section-title'>参考视频</Text>
           </View>
           {referencePreviewPath ? (
-            <View className='upload-preview-card' onClick={handleChooseReferenceVideo}>
-              <View className='upload-preview-stage'>
+            <View
+              className={`upload-preview-card ${remixMode === 'ACTION' ? 'upload-preview-card--action-media' : ''}`}
+              onClick={handleChooseReferenceVideo}
+            >
+              <View className={`upload-preview-stage ${remixMode === 'ACTION' ? 'upload-preview-stage--action-media' : ''}`}>
                 {referencePosterPath ? (
                   <Image className='upload-preview-image' src={referencePosterPath} mode='aspectFit' />
                 ) : (
@@ -213,7 +351,7 @@ export default function RemixGeneratePage() {
                 {uploadingVideo && (
                   <View className='upload-preview-overlay'>
                     <View className='upload-spinner' />
-                    <Text className='upload-preview-status'>上传中...</Text>
+                    <Text className='upload-preview-status'>上传中 {videoUploadProgress}%</Text>
                   </View>
                 )}
               </View>
@@ -223,89 +361,59 @@ export default function RemixGeneratePage() {
               </View>
             </View>
           ) : (
-            <View className='upload-box' onClick={handleChooseReferenceVideo}>
+            <View
+              className={`upload-box ${remixMode === 'ACTION' ? 'upload-box--action-media' : ''}`}
+              onClick={handleChooseReferenceVideo}
+            >
               {uploadingVideo ? <View className='upload-spinner upload-spinner--box' /> : <Text className='upload-plus'>+</Text>}
-              <Text className='upload-text'>{uploadingVideo ? '上传中...' : '添加视频'}</Text>
+              <Text className='upload-text'>{uploadingVideo ? `上传中 ${videoUploadProgress}%` : '添加视频'}</Text>
             </View>
           )}
         </View>
 
-        <View className='section'>
-          <View className='section-title-row section-title-row--between'>
-            <View className='section-title-main'>
-              <View className='section-title-icon section-title-icon--role' />
-              <Text className='section-title'>选择角色</Text>
-            </View>
-            <View className='section-add-btn' onClick={handleGoRoleLibrary}>
-              <Text className='section-add-btn-text'>添加角色</Text>
-            </View>
-          </View>
-          <ScrollView scrollX className='card-scroll'>
-            <View className='card-list'>
-              <View
-                className={`item-card ${selectedCharIdx < 0 ? 'item-card--active' : ''}`}
-                onClick={() => setSelectedCharIdx(-1)}
-              >
-                <View className='item-avatar item-avatar--option'>
-                  <View className='item-option-icon' />
-                </View>
-                <Text className='item-name'>不使用角色</Text>
+        {remixMode === 'SMART' && (
+          <View className='section'>
+            <View className='section-title-row section-title-row--between'>
+              <View className='section-title-main'>
+                <View className='section-title-icon section-title-icon--product' />
+                <Text className='section-title'>选择产品</Text>
               </View>
-              {characters.map((char, idx) => (
-                <View
-                  key={char.id ?? idx}
-                  className={`item-card ${idx === selectedCharIdx ? 'item-card--active' : ''}`}
-                  onClick={() => setSelectedCharIdx(idx)}
-                >
-                  <Image className='item-avatar' src={char.imageUrl} mode='aspectFill' />
-                  <Text className='item-name'>{char.name || `角色${idx + 1}`}</Text>
-                </View>
-              ))}
-            </View>
-          </ScrollView>
-          {characters.length === 0 && <Text className='hint-text'>暂无角色，请先在形象库添加。</Text>}
-        </View>
-
-        <View className='section'>
-          <View className='section-title-row section-title-row--between'>
-            <View className='section-title-main'>
-              <View className='section-title-icon section-title-icon--product' />
-              <Text className='section-title'>选择产品</Text>
-            </View>
-            <View className='section-add-btn' onClick={handleGoProductLibrary}>
-              <Text className='section-add-btn-text'>添加产品</Text>
-            </View>
-          </View>
-          <ScrollView scrollX className='card-scroll'>
-            <View className='card-list'>
-              <View
-                className={`item-card ${selectedProductId === '' ? 'item-card--active' : ''}`}
-                onClick={() => setSelectedProductId('')}
-              >
-                <View className='item-avatar item-avatar--option'>
-                  <View className='item-option-icon' />
-                </View>
-                <Text className='item-name'>不使用产品</Text>
+              <View className='section-add-btn' onClick={handleGoProductLibrary}>
+                <Text className='section-add-btn-text'>添加产品</Text>
               </View>
-              {products.map((product) => (
-                <View
-                  key={product.id}
-                  className={`item-card ${selectedProductId === product.id ? 'item-card--active' : ''}`}
-                  onClick={() => setSelectedProductId(product.id)}
-                >
-                  {product.images?.[0] ? (
-                    <Image className='item-avatar' src={product.images[0]} mode='aspectFill' />
-                  ) : (
-                    <View className='item-avatar' />
-                  )}
-                  <Text className='item-name'>{product.name}</Text>
-                </View>
-              ))}
             </View>
-          </ScrollView>
-        </View>
+            <ScrollView scrollX className='card-scroll'>
+              <View className='card-list'>
+                <View
+                  className={`item-card ${selectedProductId === '' ? 'item-card--active' : ''}`}
+                  onClick={() => setSelectedProductId('')}
+                >
+                  <View className='item-avatar item-avatar--option'>
+                    <View className='item-option-icon' />
+                  </View>
+                  <Text className='item-name'>不使用产品</Text>
+                </View>
+                {products.map((product) => (
+                  <View
+                    key={product.id}
+                    className={`item-card ${selectedProductId === product.id ? 'item-card--active' : ''}`}
+                    onClick={() => setSelectedProductId(product.id)}
+                  >
+                    {product.images?.[0] ? (
+                      <Image className='item-avatar' src={product.images[0]} mode='aspectFill' />
+                    ) : (
+                      <View className='item-avatar' />
+                    )}
+                    <Text className='item-name'>{product.name}</Text>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+        )}
 
-        <View className='section'>
+        {remixMode === 'SMART' && (
+          <View className='section'>
           <View className='section-title-row'>
             <View className='section-title-icon section-title-icon--clock' />
             <Text className='section-title'>时长选择</Text>
@@ -320,26 +428,9 @@ export default function RemixGeneratePage() {
               <Text className='step-btn-text'>+</Text>
             </View>
           </View>
-        </View>
+          </View>
+        )}
 
-        <View className='section'>
-          <View className='section-title-row'>
-            <View className='section-title-icon section-title-icon--strategy' />
-            <Text className='section-title'>复刻策略</Text>
-          </View>
-          <View className='strategy-grid'>
-            {STRATEGIES.map((item) => (
-              <View
-                key={item.key}
-                className={`strategy-card ${strategy === item.key ? 'strategy-card--active' : ''}`}
-                onClick={() => setStrategy(item.key)}
-              >
-                <Text className='strategy-title'>{item.title}</Text>
-                <Text className='strategy-desc'>{item.desc}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
       </ScrollView>
 
       <View className='fixed-submit-bar'>

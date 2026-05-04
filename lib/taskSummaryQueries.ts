@@ -158,19 +158,15 @@ async function reconcilePosterSummaries(
     const metadataWithImages = attachPosterImagesToMetadata(task.metadata, source.generatedImagesJson);
     const hasMissingPosterImages = metadataWithImages !== task.metadata;
 
-    if (!hasMissingThumbnail && !hasStatusMismatch) {
-      return hasMissingPosterImages
-        ? {
-            ...task,
-            metadata: metadataWithImages,
-          }
-        : task;
+    if (!hasMissingThumbnail && !hasStatusMismatch && !hasMissingPosterImages) {
+      return task;
     }
 
     const updateData: {
       status?: string;
       progress?: number;
       thumbnailUrl?: string;
+      metadata?: Prisma.InputJsonValue;
       updatedAt: Date;
     } = { updatedAt: now };
     if (hasStatusMismatch) {
@@ -181,6 +177,9 @@ async function reconcilePosterSummaries(
     }
     if (hasMissingThumbnail && fallbackThumbnail) {
       updateData.thumbnailUrl = fallbackThumbnail;
+    }
+    if (hasMissingPosterImages) {
+      updateData.metadata = metadataWithImages as Prisma.InputJsonValue;
     }
 
     repairOps.push(

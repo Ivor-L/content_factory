@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 
 const BREAKDOWN_WEBHOOK =
   process.env.N8N_STORYBOARD_BREAKDOWN_WEBHOOK ||
-  "https://hooks.atomx.top/webhook/storyboard_disassembly_web";
+  "https://hooks.atomx.top/webhook/miniapp_viral_breakdown_grid";
 
 async function resolveApiKey(userId: string): Promise<string> {
   const profile = await prisma.profiles.findUnique({

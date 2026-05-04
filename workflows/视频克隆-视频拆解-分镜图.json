@@ -1,0 +1,1739 @@
+{
+  "name": "视频克隆-视频拆解-分镜图",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('获取任务表信息').first().json.app_token }}/tables/{{ $('获取任务表信息').first().json.table_id }}/records/{{ $('提取任务字段').first().json.record_id}}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Auth:getAccessToken auth1').first().json.app_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  {\n    \"fields\": {\n      \"拆解进度\": \"已完成\"\n    }\n  }\n}}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        7072,
+        320
+      ],
+      "id": "b98afd47-86aa-43fa-890f-4adb45e74494",
+      "name": "更新进度-画面拆解已完成"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "output",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        6624,
+        320
+      ],
+      "id": "0e9e6da9-6591-49d2-8b77-4db47a25fe67",
+      "name": "Aggregate1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('获取拆解表信息').first().json.app_token }}/tables/{{ $('获取拆解表信息').first().json.table_id }}/records/batch_create",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Auth:getAccessToken auth1').first().json.app_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { records: $json.output } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        6848,
+        320
+      ],
+      "id": "33e1ab94-55f8-43c1-a684-b1e507bdb4f5",
+      "name": "拆解结果写入飞书1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "84e28dc1-db60-4f18-b9eb-e16f35146219",
+              "leftValue": "={{ !!$('读取任务记录').item.json.data.record.fields['爆款视频'][0].file_token }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        800,
+        320
+      ],
+      "id": "3fc4a25d-605e-42e4-b3b7-1aae5f496b16",
+      "name": "是否上传视频？"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('获取任务表信息').first().json.app_token }}/tables/{{ $('获取任务表信息').first().json.table_id }}/records/{{ $('提取任务字段').first().json.record_id}}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Auth:getAccessToken auth1').item.json.app_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"fields\":{\"拆解进度\":\"正在拆解分镜\"}}",
+        "options": {}
+      },
+      "id": "a3a09fb8-043a-4bd7-8a46-1565552055fe",
+      "name": "更新进度-拆解中",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        576,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===============================\n// 提取任务字段（兼容多种入参形态）+ 新增：达人特征/产品卖点/达人照片/产品图片\n// ===============================\n\nconst inputData = $input.item.json || {};\n\nfunction pickRecordRoot(x) {\n  const item0 = x?.data?.items?.[0];\n  if (item0 && (item0.fields || item0.record_id || item0.id)) return item0;\n  const r1 = x?.body?.data?.record;\n  if (r1 && (r1.fields || r1.record_id)) return r1;\n  const r2 = x?.data?.record;\n  if (r2 && (r2.fields || r2.record_id)) return r2;\n  const r3 = x?.record;\n  if (r3 && (r3.fields || r3.record_id)) return r3;\n  if (x?.fields || x?.record_id) return x;\n  return {};\n}\n\nconst rec = pickRecordRoot(inputData);\nconst fields = rec.fields || {};\n\nconst getText = (v) => {\n  if (v == null) return '';\n  if (typeof v === 'string' || typeof v === 'number') return String(v);\n  if (Array.isArray(v)) {\n    const texts = v\n      .map(x => (x?.text ?? x?.value ?? x?.link ?? x?.url ?? (typeof x === 'string' ? x : '')))\n      .filter(Boolean);\n    return texts.join('；');\n  }\n  return String(v.text ?? v.value ?? v.link ?? v.url ?? '');\n};\n\nconst getNumber = (v, def = 0) => {\n  const s = getText(v).trim();\n  if (!s) return def;\n  const n = Number(s);\n  return Number.isFinite(n) ? n : def;\n};\n\nconst getFileTokens = (v) => {\n  if (!Array.isArray(v)) return [];\n  return v\n    .map(f => ({\n      file_token: f.file_token || f.fileToken || f.token || f.id || '',\n      name: f.name || '',\n      url: f.url || '',\n      tmp_url: f.tmp_url || '',\n      mimeType: f.type || f.mimeType || '',\n      size: f.size || 0,\n    }))\n    .filter(x => x.file_token);\n};\n\nconst script_name = getText(fields['脚本名称']);\nconst break_no = getText(fields['拆解编号']);\nconst status = getText(fields['状态']);\nconst shot_limit_s = getNumber(fields['单镜头上限(s)'], 15);\n\n// 兼容：你有时用“爆款视频”，有时用“参考爆款视频”\nconst videoFiles = getFileTokens(fields['爆款视频'] || fields['参考爆款视频']);\nconst mainVideo = videoFiles[0] || {};\nconst video_file_token = mainVideo.file_token || '';\nconst video_file_name = mainVideo.name || '';\nconst video_url = mainVideo.url || '';\nconst video_tmp_url_api = mainVideo.tmp_url || '';\n\n// 新增：达人/产品信息（字段名按你截图：达人特征、产品卖点、达人照片、产品图片）\nconst talent_traits = getText(fields['达人特征']);\nconst product_selling_points = getText(fields['产品卖点']);\nconst product_name = getText(fields['产品名称']);\n\nconst talentPhotos = getFileTokens(fields['达人照片']);\nconst productImages = getFileTokens(fields['产品图片']);\nconst talent_photo_token = talentPhotos[0]?.file_token || '';\nconst product_image_token = productImages[0]?.file_token || '';\n\nconst rec_api_key = getText(fields['api_key']);\nconst rec_app_id = getText(fields['app_id']);\nconst rec_app_secret = getText(fields['app_secret']);\n\nconst record_id =\n  rec.record_id ||\n  rec.id ||\n  getText(fields['record_id']) ||\n  inputData?.body?.record_id ||\n  inputData?.record_id ||\n  (() => { try { return $('Webhook').item.json.body?.record_id } catch (e) { return '' } })() ||\n  'unknown_record';\n\nconst try_access_token = (() => {\n  try {\n    const j = $('Auth:getAccessToken auth1').first().json || {};\n    return j.tenant_access_token || j.app_access_token || j.access_token || '';\n  } catch (e) {\n    return '';\n  }\n})();\n\nconst try_task_app_token = (() => { try { return $('获取任务表信息').first().json.app_token } catch(e){ return '' } })();\nconst try_task_table_id  = (() => { try { return $('获取任务表信息').first().json.table_id } catch(e){ return '' } })();\nconst try_break_app_token = (() => { try { return $('获取拆解表信息').first().json.app_token } catch(e){ return '' } })();\nconst try_break_table_id  = (() => { try { return $('获取拆解表信息').first().json.table_id } catch(e){ return '' } })();\n\nreturn [{\n  json: {\n    script_name,\n    break_no,\n    status,\n    shot_limit_s,\n\n    // 视频\n    video_file_token,\n    video_file_name,\n    video_url,\n    video_tmp_url_api,\n\n    // 任务主键\n    record_id,\n\n    // 新增：目标达人/产品信息\n    product_name,\n    talent_traits,\n    product_selling_points,\n    talent_photo_token,\n    product_image_token,\n\n    // 凭证\n    api_key: rec_api_key || (() => { try { return $('Webhook').item.json.body?.api_key } catch(e){ return '' } })(),\n    app_id: rec_app_id || (() => { try { return $('Webhook').item.json.body?.app_id } catch(e){ return '' } })(),\n    app_secret: rec_app_secret || (() => { try { return $('Webhook').item.json.body?.app_secret } catch(e){ return '' } })(),\n    try_get_access_token: try_access_token,\n\n    // 表信息\n    try_task_app_token,\n    try_task_table_id,\n    try_break_app_token,\n    try_break_table_id,\n\n    _raw_fields: fields,\n  }\n}];\n"
+      },
+      "id": "751d326d-3d70-465d-9929-5084df5831ca",
+      "name": "提取任务字段",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -448,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('获取任务表信息').first().json.app_token }}/tables/{{ $('获取任务表信息').first().json.table_id }}/records/{{ $('Webhook').item.json.body.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Auth:getAccessToken auth1').first().json.app_access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "28d44667-90fa-4e1a-bf8e-a4119be679bf",
+      "name": "读取任务记录",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -672,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "bitable",
+        "operation": "bitable:parseUrl",
+        "url": "={{ $('Webhook').item.json.body.table_link2 }}"
+      },
+      "id": "cc4edd61-ed2c-451b-b26f-c134b480a903",
+      "name": "获取拆解表信息",
+      "type": "n8n-nodes-feishu-lite.feishuNode",
+      "typeVersion": 1,
+      "position": [
+        -1568,
+        128
+      ],
+      "credentials": {
+        "feishuCredentialsApi": {
+          "id": "btdmK3iP1r3sO21a",
+          "name": "Feishu account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "bitable",
+        "operation": "bitable:parseUrl",
+        "url": "={{ $('Webhook').item.json.body.table_link }}"
+      },
+      "id": "df2db02c-2fa7-44fb-9476-10bb00323c50",
+      "name": "获取任务表信息",
+      "type": "n8n-nodes-feishu-lite.feishuNode",
+      "typeVersion": 1,
+      "position": [
+        -1792,
+        128
+      ],
+      "credentials": {
+        "feishuCredentialsApi": {
+          "id": "btdmK3iP1r3sO21a",
+          "name": "Feishu account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"app_id\": \"{{ $('Webhook').item.json.body.app_id }}\",\n  \"app_secret\": \"{{ $('Webhook').item.json.body.app_secret }}\"\n}",
+        "options": {}
+      },
+      "id": "ddef1403-7055-4fdc-802f-ceeeb93367d1",
+      "name": "Auth:getAccessToken auth1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2016,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===============================\n// 整理分析提示词（Gemini generateContent）\n// ✅ 直接用二进制视频 base64\n// ✅ 固定 8s 分段拆解（最后一段允许 <8s 但必须输出）\n// ✅ 强制输出段数 = ceil(video_duration/8)\n// ✅ Agent 只输出必要字段：shot_no/subtitle_original/scene_context/video_prompt\n// ✅ 严禁输出参考视频人物特征（避免后续生图吸走参考人外观）\n// ✅ 强制“产品手位”一致（左/右手）\n// ✅ 彻底禁止任何关键帧生图提示词字段（start_frame_prompt/end_frame_prompt 等）\n// ===============================\n\nfunction normalizeB64(s) {\n  if (!s) return '';\n  if (typeof s !== 'string') s = String(s);\n  s = s.trim().replace(/^\\\\\"+|\\\\\"+$/g, '').trim();\n  const m = s.match(/^data:([^;]+);base64,(.+)$/i);\n  if (m && m[2]) return m[2].trim();\n  return s.replace(/\\s+/g, '');\n}\n\nconst j = $json || {};\nconst task = $('提取任务字段').first().json || {};\nconst record_id = task.record_id || j.record_id || 'unknown_record';\n\n// Extract from File 节点把 base64 放到了 json.video\nconst videoB64 = normalizeB64(j.video);\nif (!videoB64) throw new Error('缺少视频 base64：请确认 Extract from File 输出 json.video');\n\nconst mimeType = 'video/mp4';\n\n// ✅ 从“清洗json”拿压缩后的英文身份/产品（没有就兜底原始字段）\nconst idPack = (() => {\n  try { return $('清洗json').first().json || {}; } catch(e) { return {}; }\n})();\nconst model_identity_en = String(idPack.model_identity_en || '').trim();\nconst outfit_desc_en = String(idPack.outfit_desc_en || '').trim();\n\nconst talent_traits_raw = String(task.talent_traits || '').trim();\nconst product_name = String(task.product_name || '').trim();\nconst product_selling_points_raw = String(task.product_selling_points || '').trim();\n\nconst clip_duration_s = 8;\nconst video_path = `/tmp/${record_id}.mp4`;\n\n// ✅ 取时长（来自 ffprobe -> 解析视频时长）\nconst durPack = (() => {\n  try { return $('解析视频时长').first().json || {}; } catch (e) { return {}; }\n})();\nconst video_duration_s = Number(durPack.video_duration_s || 0);\nconst expected_clips = (Number.isFinite(video_duration_s) && video_duration_s > 0)\n  ? Math.ceil(video_duration_s / clip_duration_s)\n  : null;\n\n// ---------------- instruction：只产出必要字段（强制“去人物特征” + “手位一致” + “禁止关键帧提示词”） ----------------\nconst instruction = `\nYou are a video understanding agent.\n\nYou MUST split the entire timeline into consecutive clips of 8.00 seconds starting from 0s.\nCRITICAL:\n- Video duration is ${Number.isFinite(video_duration_s) ? video_duration_s.toFixed(3) : 'UNKNOWN'} seconds.\n- You MUST output EXACTLY ${expected_clips ?? 'N'} items (shot_no 1..${expected_clips ?? 'N'}).\n- shot_no=1 starts at 0s; shot_no=i starts at (i-1)*8.00 seconds.\n- The LAST clip may be shorter than 8.00 seconds, but you MUST still output it.\n- Do NOT drop the last partial clip.\n\nOutput ONLY a JSON array. No markdown. No extra text. No time_range.\n\nEach item MUST be EXACTLY:\n{\n  \"shot_no\": 1,\n  \"subtitle_original\": \"Transcript ONLY for this clip (its own time span).\",\n  \"scene_context\": \"ENGLISH, 60-170 chars. Describe ONLY: environment/background, camera/framing, pose/action (generic), lighting, mood, NON-human props + PRODUCT HAND (LEFT/RIGHT). ABSOLUTELY DO NOT describe any human appearance.\",\n  \"video_prompt\": \"<A SINGLE JSON STRING following the schema below>\"\n}\n\nABSOLUTE BAN: DO NOT output ANY extra keys besides:\nshot_no, subtitle_original, scene_context, video_prompt\n\nCRITICAL: KEYFRAME/IMAGE PROMPT BAN\n- Do NOT output: start_frame_prompt, end_frame_prompt, image_prompt, keyframe_prompt, prompt_start, prompt_end, negative_prompt_for_image\n- Do NOT output any fields for generating images or keyframes. None.\n\nSTRICT HUMAN-APPEARANCE BAN (very important):\n- Do NOT mention hair, face, eyes, lips, makeup, skin tone, ethnicity, age, gender.\n- Do NOT mention clothing/outfit, jewelry, earrings, necklace, piercings, nails, tattoos, body shape.\n- If you must refer to the subject, use ONLY: \"the model\" / \"the person\" / \"the subject\" (no descriptors).\n- scene_context must be reusable with a DIFFERENT person inserted later.\n\nPRODUCT HAND CONSISTENCY (critical):\n- If the product is visible/handled/applied: include EXACT token in scene_context:\n  \"PRODUCT HAND: RIGHT HAND\" OR \"PRODUCT HAND: LEFT HAND\"\n- Determine the hand from the video. If ambiguous, default to \"PRODUCT HAND: RIGHT HAND\".\n- IMPORTANT: Keep the SAME product hand across ALL clips. Use the first clear occurrence as the global choice.\n\nvideo_prompt MUST be a JSON STRING (not an object) and MUST include:\n- schema_version \"1.0\"\n- scene_index (same as shot_no)\n- audio_transcript (same as subtitle_original)\n- dialogue (same as subtitle_original)\n- beats (sum duration_seconds = 8 for full clips; for LAST partial clip, sum MUST equal its real clip length)\n- camera, lighting, motion, constraints, negative\n- process_description MUST include timeline and the same PRODUCT HAND choice\n- video_settings.total_duration_seconds MUST equal the clip duration (8.00 for full clips; last partial duration for last clip)\n- aspect_ratio 9:16, fps 25\n`.trim();\n\n// 给 Agent 的上下文：让它知道身份/产品，但严禁在输出里复述\nconst contextBlock = `\nMODEL IDENTITY (for later prompt composition; DO NOT repeat or paraphrase in output):\n${model_identity_en || talent_traits_raw || 'Not provided'}\n\nOUTFIT / PRODUCT (for later prompt composition; DO NOT repeat or paraphrase in output):\n${outfit_desc_en || `${product_name ? ('Name: ' + product_name + '\\n') : ''}${product_selling_points_raw}` || 'Not provided'}\n\nGLOBAL CONSTRAINTS:\n- Photorealistic\n- Vertical 9:16\n- No on-screen text / watermark / UI / logos\n- Output must NOT contain any human appearance details (hair/face/clothes/jewelry/makeup/skin tone).\n- Output MUST lock PRODUCT HAND consistently across clips.\n- Output MUST NOT contain any keyframe/image prompt fields.\n`.trim();\n\nconst gemini_body = {\n  contents: [\n    {\n      role: 'user',\n      parts: [\n        { text: `${instruction}\\n\\n${contextBlock}` },\n        { inline_data: { mime_type: mimeType, data: videoB64 } }\n      ]\n    }\n  ],\n  generationConfig: {\n    temperature: 0.1,\n    topP: 0.9,\n    maxOutputTokens: 8192\n  }\n};\n\nreturn [{\n  json: {\n    record_id,\n    clip_duration_s,\n    video_path,\n    video_duration_s: Number.isFinite(video_duration_s) ? Number(video_duration_s.toFixed(3)) : undefined,\n    expected_clips,\n    gemini_body\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2368,
+        320
+      ],
+      "id": "ca4477fb-b23c-4ae7-8c53-c9e0d37bfbae",
+      "name": "整理分析提示词"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://47.107.158.233:8080/api/credits/deduct",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "api_key",
+              "value": "={{ $('Webhook').first().json.body.api_key }}"
+            },
+            {
+              "name": "amount",
+              "value": "={{ Number($('查询工作流积分').first().json.data.credit_cost || 0) }}"
+            },
+            {
+              "name": "reason",
+              "value": "测试"
+            },
+            {
+              "name": "workflow_id",
+              "value": "={{ $('查询工作流积分').first().json.data.workflow_id }}"
+            },
+            {
+              "name": "workflow_name",
+              "value": "={{ $('查询工作流积分').first().json.data.workflow_name }}"
+            }
+          ]
+        },
+        "options": {
+          "redirect": {
+            "redirect": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        7296,
+        320
+      ],
+      "id": "bd4845aa-814a-4706-878d-179baf803076",
+      "name": "扣除积分"
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/api/balance/check?required=100&api_key={{ $('Webhook').item.json.body.api_key }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "required",
+              "value": "={{ $json.data.credit_cost }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1120,
+        128
+      ],
+      "id": "d92bf01e-f804-45f9-98cc-70510de6bdd1",
+      "name": "验证api-key",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok }}",
+                    "rightValue": "false",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    },
+                    "id": "84e547e5-80ae-4340-a3e9-b76f32d20e0c"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "apikey_invalid"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "1f0f0883-abf7-4c55-8068-85568446efd2",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === false }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "insufficient_points"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "94a60a62-da20-469a-ac15-4867f6a63449",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === true }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pass"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -896,
+        112
+      ],
+      "id": "4abb2fe5-9e77-43ec-9666-6c47f4601470",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('获取任务表信息').item.json.app_token }}/tables/{{ $('获取任务表信息').item.json.table_id }}/records/{{ $('Webhook').item.json.body.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Auth:getAccessToken auth1').first().json.app_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"fields\":{\"拆解进度\":\"api-key错误\"}}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -672,
+        -64
+      ],
+      "id": "ae5ac0d2-f08a-4324-87e2-0385c1c3c089",
+      "name": "提醒-key错误"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://open.feishu.cn/open-apis/bitable/v1/apps/{{ $('获取任务表信息').item.json.app_token }}/tables/{{ $('获取任务表信息').item.json.table_id }}/records/{{ $('Webhook').item.json.body.record_id }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "user_id_type",
+              "value": "open_id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Auth:getAccessToken auth1').first().json.app_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"fields\":{\"拆解进度\":\"积分不足\"}}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -672,
+        128
+      ],
+      "id": "0e360cdf-51ca-4593-b351-f928ff9b6016",
+      "name": "提醒-积分不足"
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id={{ $('Webhook').item.json.body.workflow_id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1344,
+        128
+      ],
+      "id": "3b584afa-dcb3-4e11-8f3f-9e49388f50b8",
+      "name": "查询工作流积分"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6e6241ce-997a-4dfe-87e4-16079d77aa7f",
+              "name": "fields.镜号",
+              "value": "={{ $json.shot_no }}",
+              "type": "number"
+            },
+            {
+              "id": "f48ea81f-667c-4055-90df-ecb85b131515",
+              "name": "fields.原字幕",
+              "value": "={{ $json.subtitle_original }}",
+              "type": "string"
+            },
+            {
+              "id": "new-field-1",
+              "name": "fields.首帧视频截图",
+              "value": "={{ $json.start_frame_file_token ? [{ \"file_token\": $json.start_frame_file_token }] : [] }}",
+              "type": "array"
+            },
+            {
+              "id": "new-field-2",
+              "name": "fields.尾帧视频截图",
+              "value": "={{ $json.end_frame_file_token ? [{ \"file_token\": $json.end_frame_file_token }] : [] }}",
+              "type": "array"
+            },
+            {
+              "id": "new-field-3",
+              "name": "fields.首帧AI提示词",
+              "value": "={{ $json.start_frame_prompt }}",
+              "type": "string"
+            },
+            {
+              "id": "new-field-4",
+              "name": "fields.尾帧AI提示词",
+              "value": "={{ $json.end_frame_prompt }}",
+              "type": "string"
+            },
+            {
+              "id": "new-field-5",
+              "name": "fields.视频提示词",
+              "value": "={{ $json.video_prompt }}",
+              "type": "string"
+            },
+            {
+              "id": "link-parent-record-id",
+              "name": "fields.对应关联",
+              "value": "={{ [ $('提取任务字段').first().json.record_id ] }}",
+              "type": "array"
+            },
+            {
+              "id": "637140a0-7bed-457d-a34c-b2a3ccfaf240",
+              "name": "fields.产品名称",
+              "value": "={{ $('读取任务记录').item.json.data.record.fields['产品名称'] }}",
+              "type": "string"
+            },
+            {
+              "id": "77ae075a-f29f-4844-8ddb-d4ee67c2b507",
+              "name": "fields.使用AI达人",
+              "value": "={{ $('读取任务记录').item.json.data.record.fields['使用AI达人'] }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        6400,
+        320
+      ],
+      "id": "a52fe9e2-ca4d-41a0-a9db-cce2b0673a6f",
+      "name": "Edit Fields1"
+    },
+    {
+      "parameters": {
+        "url": "=https://open.feishu.cn/open-apis/drive/v1/medias/{{ $('读取任务记录').item.json.data.record.fields['爆款视频'][0].file_token }}/download",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Auth:getAccessToken auth1').item.json.tenant_access_token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "video"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1024,
+        320
+      ],
+      "id": "436bf95e-37f5-4225-bfb8-793aa5a78d4a",
+      "name": "下载拆解视频"
+    },
+    {
+      "parameters": {
+        "operation": "binaryToPropery",
+        "binaryPropertyName": "video",
+        "destinationKey": "video",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        2144,
+        320
+      ],
+      "id": "b4661f3d-43b4-4582-b285-94b9310f021c",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://yunwu.ai/v1beta/models/gemini-2.5-pro:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.gemini_body }}",
+        "options": {
+          "response": {
+            "response": {}
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2592,
+        320
+      ],
+      "id": "0f8e9ae9-902c-4636-a781-2529b7e5e424",
+      "name": "分析Agent-视频理解",
+      "retryOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mMIH382GnJoMSu4L",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "shots",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        3040,
+        320
+      ],
+      "id": "fbd4bbcc-5ed8-400e-9d5a-19489d7d467a",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = [];\nconst sourceItems = $items('计算切片+截图路径（8s一体）');\n\nfor (const item of sourceItems) {\n  const j = item.json || {};\n  if (j.shot_no == null) throw new Error('缺少 shot_no（来自 计算切片+截图路径）');\n  if (!j.frame_path_start || !j.frame_path_end) throw new Error(`缺少 frame_path_start/end：shot_no=${j.shot_no}`);\n\n  results.push({\n    json: {\n      ...j,\n      frame_path: j.frame_path_start,\n      frame_type: 'start_frame',\n    }\n  });\n\n  results.push({\n    json: {\n      ...j,\n      frame_path: j.frame_path_end,\n      frame_type: 'end_frame',\n    }\n  });\n}\n\nreturn results;\n"
+      },
+      "id": "8aa8c290-3cac-4b2b-ac85-16e4f17aaac9",
+      "name": "拆分首尾帧",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3712,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ \"/tmp/\" + $('提取任务字段').first().json.record_id + \".mp4\" }}",
+        "dataPropertyName": "video",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        1248,
+        320
+      ],
+      "id": "a68aff41-299a-4e85-9bc3-6b52fdb4ac74",
+      "name": "保存视频到磁盘"
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $json.frame_path }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        3936,
+        400
+      ],
+      "id": "10a4360d-ed4f-4bf5-a174-9ec7801d14f3",
+      "name": "读取截图"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===============================\n// 累积帧到缓存（修复 seen 可能不存在导致报错）\n// ✅ 兼容旧缓存：只有 frames 没有 seen\n// ✅ 用 record_id 隔离任务\n// ✅ 去重：shot_no + frame_type + frame_path\n// ===============================\n\n// 兼容不同 n8n 环境的 staticData API\nconst store =\n  (typeof $getWorkflowStaticData === 'function')\n    ? $getWorkflowStaticData('node')\n    : (typeof getWorkflowStaticData === 'function')\n      ? getWorkflowStaticData('node')\n      : null;\n\nif (!store) {\n  throw new Error(\"当前 Code 节点环境不支持 Workflow Static Data（找不到 $getWorkflowStaticData / getWorkflowStaticData）\");\n}\n\n// record_id：优先当前输入，其次提取任务字段\nconst recordId =\n  String(\n    $input.first()?.json?.record_id ??\n    $('提取任务字段')?.first()?.json?.record_id ??\n    'unknown_record'\n  );\n\n// ✅ 关键：兼容旧结构（只要存在就补齐 seen）\nif (!store[recordId] || typeof store[recordId] !== 'object') {\n  store[recordId] = {};\n}\nif (!Array.isArray(store[recordId].frames)) {\n  store[recordId].frames = [];\n}\nif (!store[recordId].seen || typeof store[recordId].seen !== 'object') {\n  store[recordId].seen = {};\n}\n\n// 当前批次 items（分批上传 batch size=3）\nconst cur = $input.all().map(i => i.json || {});\nif (!cur.length) {\n  return [{\n    json: {\n      record_id: recordId,\n      frames: store[recordId].frames,\n      frames_count: store[recordId].frames.length,\n      added: 0,\n      skipped: 0\n    }\n  }];\n}\n\nlet added = 0;\nlet skipped = 0;\n\nfor (const f of cur) {\n  const shotNo = f.shot_no;\n  const frameType = f.frame_type;\n  const framePath = f.frame_path;\n\n  if (shotNo == null || !frameType || !framePath) {\n    // 这里不直接 throw，避免偶发字段缺失把整批卡死；你要更严格可以改成 throw\n    skipped++;\n    continue;\n  }\n\n  const k = `${shotNo}|${frameType}|${framePath}`;\n\n  // ✅ 这里不会再读 undefined 了\n  if (store[recordId].seen[k]) {\n    skipped++;\n    continue;\n  }\n\n  store[recordId].seen[k] = true;\n  store[recordId].frames.push(f);\n  added++;\n}\n\nreturn [{\n  json: {\n    record_id: recordId,\n    frames: store[recordId].frames,\n    frames_count: store[recordId].frames.length,\n    added,\n    skipped\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5280,
+        320
+      ],
+      "id": "28bf5141-ec95-4481-b348-010ad0d09875",
+      "name": "累积帧到缓存"
+    },
+    {
+      "parameters": {
+        "jsCode": "const frames = Array.isArray($json.frames) ? $json.frames : [];\nif (!frames.length) throw new Error('frames 为空：请确认“累积帧到缓存”有输出 frames[]');\n\nconst miss = frames.find(f => f.shot_no == null || !f.frame_type);\nif (miss) {\n  throw new Error(`frames 缺少 shot_no/frame_type：示例 keys=${Object.keys(miss).join(',')}`);\n}\n\nconst byShot = new Map();\n\nfor (const f of frames) {\n  const shotNo = Number(f.shot_no);\n  if (!Number.isFinite(shotNo)) continue;\n\n  if (!byShot.has(shotNo)) byShot.set(shotNo, { ...f });\n  const t = byShot.get(shotNo);\n\n  if (f.frame_type === 'start_frame') t.start_frame_file_token = f.frame_file_token;\n  if (f.frame_type === 'end_frame')   t.end_frame_file_token   = f.frame_file_token;\n}\n\n// 强校验：每个镜头必须两张都有\nconst out = Array.from(byShot.values()).sort((a,b)=>a.shot_no-b.shot_no);\n\nconst bad = out.find(x => !x.start_frame_file_token || !x.end_frame_file_token);\nif (bad) {\n  throw new Error(`镜头缺首/尾帧 token：shot_no=${bad.shot_no}, start=${!!bad.start_frame_file_token}, end=${!!bad.end_frame_file_token}`);\n}\n\nreturn out.map(x => ({ json: x }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5952,
+        400
+      ],
+      "id": "f07012ee-0ef5-4527-b0a7-74bd84c007a2",
+      "name": "汇总帧 token"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 上传返回（当前批次）\nconst uploadItems = $input.all();\n\n// 关键：从“生成文件信息”取回这一批的原始 frame 元数据（这里才有 shot_no / frame_type）\nconst frameItems = $items('生成文件信息');\n\nif (!uploadItems.length) return [];\nif (!frameItems.length) {\n  throw new Error('绑定失败：未拿到“生成文件信息”的 items（本批次帧元数据为空）');\n}\n\nif (uploadItems.length !== frameItems.length) {\n  throw new Error(`绑定失败：上传数量(${uploadItems.length}) != 帧数量(${frameItems.length})，顺序无法按位置绑定`);\n}\n\nreturn uploadItems.map((upItem, idx) => {\n  const up = upItem.json || {};\n  const frame = frameItems[idx].json || {};\n\n  const fileToken =\n    up.body?.data?.file_token ||\n    up.data?.file_token ||\n    up.file_token ||\n    '';\n\n  if (!fileToken) {\n    throw new Error(`上传结果缺少 file_token，idx=${idx}，keys=${Object.keys(up).join(',')}`);\n  }\n\n  // 输出必须保留 frame 的 shot_no / frame_type\n  return {\n    json: {\n      ...frame,\n      frame_file_token: fileToken,\n    }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5056,
+        320
+      ],
+      "id": "d71a7099-b7d0-49f6-a212-f1c5b28272ee",
+      "name": "绑定云空间 token"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "984c1bcc-839d-49f6-aa8c-482c5b1c71d4",
+              "leftValue": "={{ $node[\"分批上传关键帧图片\"].context[\"noItemsLeft\"] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5728,
+        400
+      ],
+      "id": "e670ba37-de95-4aaa-be55-000156aa30d1",
+      "name": "是否还有下一批"
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        5504,
+        320
+      ],
+      "id": "11db24fd-dd12-4ba1-b05f-33cfe74a44ef",
+      "name": "Wait2",
+      "webhookId": "d2021f1a-8b4a-4e38-9b70-a3b0596b2693"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nif (!items.length) return [];\n\nconst output = await Promise.all(items.map(async (item, index) => {\n  const binary = item.binary || {};\n  const keys = Object.keys(binary);\n  if (!keys.length) throw new Error(`没有 Binary，index=${index}`);\n\n  const key = keys.includes('data') ? 'data' : keys[0];\n  const binData = binary[key];\n\n  const buffer = await this.helpers.getBinaryDataBuffer(index, key);\n  const realSize = buffer.length;\n\n  const fileName =\n    binData.fileName ||\n    item.json.frame_path?.split('/').pop() ||\n    `shot_${index}.jpg`;\n\n  return {\n    json: {\n      ...item.json,\n      fileName,\n      fileSize: realSize,\n      binaryKey: key,\n    },\n    binary: {\n      [key]: {\n        ...binData,\n        fileName,\n        fileSize: realSize\n      }\n    }\n  };\n}));\n\nreturn output;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4608,
+        320
+      ],
+      "id": "1a01d926-09bc-4cb2-8bce-1ac4e1c94736",
+      "name": "生成文件信息"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://open.feishu.cn/open-apis/drive/v1/medias/upload_all",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Auth:getAccessToken auth1').first().json.app_access_token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "file_name",
+              "value": "={{ $json.fileName }}"
+            },
+            {
+              "name": "parent_type",
+              "value": "bitable_file"
+            },
+            {
+              "name": "parent_node",
+              "value": "={{ $('获取任务表信息').first().json.app_token }}"
+            },
+            {
+              "name": "size",
+              "value": "={{ $json.fileSize }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4832,
+        320
+      ],
+      "id": "60fee39c-d3ef-4a06-9607-2a66cb883499",
+      "name": "上传素材到云空间",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "batchSize": 3,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        4384,
+        400
+      ],
+      "id": "6f4ef76a-5e30-4ee0-b1b0-3a7c17f04f70",
+      "name": "分批上传关键帧图片"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        6176,
+        320
+      ],
+      "id": "8cafe1b6-5934-4a2c-a76a-8e6fb2ca0e17",
+      "name": "合并数据"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===============================\n// 清洗结果（只保留 video_prompt）\n// 输入：Gemini 返回 candidates[0].content.parts[].text 的 “JSON 数组”\n// 输出：{ parsed_shots_count, shots[] }；shots 每项仅：shot_no/subtitle_original/scene_context/video_prompt\n// ✅ 严禁输出关键帧生图提示词字段（start_frame_prompt/end_frame_prompt 等）\n// ✅ video_prompt 强制为 JSON string，并补齐必要字段\n// ✅ 强校验：shots 数量必须 == ceil(video_duration/8)，否则抛错触发 retry\n// ===============================\n\nconst items = $input.all();\n\nfunction toStr(v) {\n  if (v == null) return '';\n  if (typeof v === 'string') return v;\n  try { return JSON.stringify(v); } catch (e) { return String(v); }\n}\n\n// 1) 从各种可能位置提取 Gemini 返回的 text\nfunction pickText(allItems) {\n  for (const it of allItems) {\n    const j = it?.json ?? {};\n\n    // 常见结构：j.candidates[0].content.parts[].text\n    if (Array.isArray(j.candidates) && j.candidates.length) {\n      const parts = j.candidates?.[0]?.content?.parts;\n      if (Array.isArray(parts) && parts.length) {\n        const t = parts.map(p => p?.text).filter(Boolean).join('\\n').trim();\n        if (t) return t;\n      }\n    }\n\n    // 兼容：j.response.candidates[0].content.parts[].text\n    const c = j?.response?.candidates?.[0];\n    if (c?.content?.parts?.length) {\n      const t = c.content.parts.map(p => p?.text).filter(Boolean).join('\\n').trim();\n      if (t) return t;\n    }\n\n    // 兼容：节点可能直接放 text/output\n    if (typeof j.text === 'string' && j.text.trim()) return j.text.trim();\n    if (typeof j.output === 'string' && j.output.trim()) return j.output.trim();\n  }\n  return '';\n}\n\n// 2) 清理 fenced json + 截取 JSON 主体\nfunction extractJsonText(raw) {\n  let t = toStr(raw).trim();\n  if (!t) return '';\n\n  t = t.replace(/\\r\\n/g, '\\n').replace(/\\r/g, '\\n').trim();\n\n  // 去掉 ```json / ``` fence（只处理首尾）\n  t = t.replace(/^```(?:json)?\\s*/i, '').replace(/```$/i, '').trim();\n\n  // 截取第一个 [ 或 { 到最后一个 ] 或 }\n  const firstArr = t.indexOf('[');\n  const firstObj = t.indexOf('{');\n  let start = -1;\n  if (firstArr >= 0 && firstObj >= 0) start = Math.min(firstArr, firstObj);\n  else start = firstArr >= 0 ? firstArr : firstObj;\n\n  const lastArr = t.lastIndexOf(']');\n  const lastObj = t.lastIndexOf('}');\n  let end = -1;\n  if (lastArr >= 0 && lastObj >= 0) end = Math.max(lastArr, lastObj);\n  else end = lastArr >= 0 ? lastArr : lastObj;\n\n  if (start >= 0 && end > start) t = t.slice(start, end + 1).trim();\n\n  // 智能引号兜底\n  t = t.replace(/[“”]/g, '\"').replace(/[‘’]/g, \"'\").replace(/\\uFEFF/g, '');\n\n  return t;\n}\n\nfunction safeParseJSON(s) {\n  try { return JSON.parse(s); } catch (e) {\n    // 常见尾逗号容错\n    const s2 = s.replace(/,\\s*([}\\]])/g, '$1');\n    return JSON.parse(s2);\n  }\n}\n\n// 3) 关键帧/生图字段黑名单：任何地方出现都要删\nconst BANNED_KEYS = new Set([\n  'start_frame_prompt', 'end_frame_prompt',\n  'image_prompt', 'keyframe_prompt',\n  'prompt_start', 'prompt_end',\n  'negative_prompt_for_image',\n  'start_frame', 'end_frame',\n]);\n\nfunction stripBannedKeysDeep(obj) {\n  if (!obj || typeof obj !== 'object') return obj;\n  if (Array.isArray(obj)) return obj.map(stripBannedKeysDeep);\n  const out = {};\n  for (const [k, v] of Object.entries(obj)) {\n    if (BANNED_KEYS.has(k)) continue;\n    out[k] = stripBannedKeysDeep(v);\n  }\n  return out;\n}\n\n// 4) beats 修正：补齐到指定时长（默认 8；最后一段可能更短）\nfunction normalizeBeatsToTotal(beats, total) {\n  if (!Array.isArray(beats) || !beats.length) return beats;\n\n  const ds = beats.map(b => Number(b?.duration_seconds)).filter(x => Number.isFinite(x) && x > 0);\n  if (ds.length !== beats.length) return beats;\n\n  const sum = ds.reduce((a,b)=>a+b, 0);\n  const diff = Number((total - sum).toFixed(3));\n\n  // 容许 0.1 的误差，不动\n  if (Math.abs(diff) <= 0.1) return beats;\n\n  // 把差值加到最后一个 beat\n  const last = beats[beats.length - 1];\n  const lastD = Number(last.duration_seconds);\n  if (Number.isFinite(lastD) && lastD > 0) {\n    last.duration_seconds = Number((lastD + diff).toFixed(3));\n    if (last.duration_seconds < 0.2) last.duration_seconds = 0.2; // 兜底避免负数\n  }\n  return beats;\n}\n\n// ========== 主流程 ==========\nconst raw = pickText(items);\nif (!raw) throw new Error('未找到 Gemini 返回文本：请确认上游节点返回 candidates/content/parts/text');\n\nconst jsonText = extractJsonText(raw);\nif (!jsonText) throw new Error('清洗后 JSON 文本为空：raw_head=' + raw.slice(0, 200));\n\nlet parsed;\ntry {\n  parsed = safeParseJSON(jsonText);\n} catch (e) {\n  throw new Error(\n    'JSON 解析失败（可能被截断或混入非JSON文本）\\n' +\n    'head:\\n' + jsonText.slice(0, 260) + '\\n' +\n    'tail:\\n' + jsonText.slice(Math.max(0, jsonText.length - 260))\n  );\n}\n\nconst arr = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.shots) ? parsed.shots : []);\nif (!arr.length) throw new Error('AI 返回 shots 为空或结构不对（期望 JSON 数组）');\n\n// ✅ 强校验：shots 数量必须等于 ceil(video_duration/8)\nconst durPack = (() => { try { return $('解析视频时长').first().json || {}; } catch(e) { return {}; } })();\nconst video_duration_s = Number(durPack.video_duration_s || 0);\nconst CLIP = 8;\n\nif (Number.isFinite(video_duration_s) && video_duration_s > 0) {\n  const expected = Math.ceil(video_duration_s / CLIP);\n  if (arr.length !== expected) {\n    throw new Error(`分镜数量不对：expected=${expected}, got=${arr.length}, video_duration_s=${video_duration_s}`);\n  }\n}\n\n// 计算每段真实时长：前面都是 8，最后一段是 video_duration_s - 8*(n-1)\nfunction clipLenForShot(shotNo, totalShots, videoDur) {\n  if (!Number.isFinite(videoDur) || videoDur <= 0) return 8;\n  if (shotNo < totalShots) return 8;\n  const last = videoDur - (totalShots - 1) * 8;\n  return Math.max(0.2, Number(last.toFixed(3))); // 最小给 0.2s 防止极端\n}\n\nconst totalShots = arr.length;\n\nconst shots = arr.map((x, idx) => {\n  const shot_no = Number(x?.shot_no ?? (idx + 1)) || (idx + 1);\n  const subtitle_original = String(x?.subtitle_original ?? '').trim();\n  const scene_context = String(x?.scene_context ?? '').trim();\n\n  // 只保留 4 字段（硬裁剪）\n  let vp = x?.video_prompt;\n\n  // 兼容：有些模型会把 video_prompt 给成对象\n  if (vp && typeof vp === 'object') vp = JSON.stringify(vp);\n\n  if (typeof vp !== 'string' || !vp.trim()) {\n    throw new Error(`shot_no=${shot_no} 缺少 video_prompt（必须是 JSON string）`);\n  }\n\n  // video_prompt 内部必须是 JSON\n  let vpObj;\n  try {\n    vpObj = safeParseJSON(vp);\n  } catch (e) {\n    throw new Error(`shot_no=${shot_no} 的 video_prompt 不是合法 JSON：head=${vp.slice(0, 160)}`);\n  }\n\n  // 深度清理：删掉 banned keys\n  vpObj = stripBannedKeysDeep(vpObj);\n\n  // 该段的真实时长：最后一段可能 < 8\n  const thisDur = clipLenForShot(shot_no, totalShots, video_duration_s);\n\n  // 补齐/修正必要字段\n  vpObj.schema_version = vpObj.schema_version || '1.0';\n  vpObj.scene_index = shot_no;\n  vpObj.reference_priority = vpObj.reference_priority || 'keyframes';\n  vpObj.audio_transcript = vpObj.audio_transcript || subtitle_original;\n  vpObj.dialogue = vpObj.dialogue || vpObj.audio_transcript || subtitle_original;\n\n  // beats 修正到 thisDur\n  if (Array.isArray(vpObj.beats)) {\n    vpObj.beats = normalizeBeatsToTotal(vpObj.beats, thisDur);\n  }\n\n  // negative/constraints 兼容：不强行改格式，但给 array 时补 must\n  if (Array.isArray(vpObj.negative)) {\n    const must = [\"Any on-screen text\",\"Watermarks\",\"Blur\",\"Distortion\",\"Cartoon look\",\"Background warping\"];\n    for (const m of must) if (!vpObj.negative.includes(m)) vpObj.negative.push(m);\n  }\n\n  vpObj.video_settings = vpObj.video_settings || {};\n  vpObj.video_settings.total_duration_seconds = thisDur;\n  vpObj.video_settings.aspect_ratio = vpObj.video_settings.aspect_ratio || '9:16';\n  vpObj.video_settings.fps = vpObj.video_settings.fps ?? 25;\n  vpObj.video_settings.look = vpObj.video_settings.look\n    || 'TikTok-native smartphone video, realistic phone texture (subtle noise + mild compression), slight handheld micro-shake';\n\n  // 最终 stringify（保证下游写库是 string）\n  const video_prompt = JSON.stringify(vpObj);\n\n  return {\n    shot_no,\n    subtitle_original,\n    scene_context,\n    video_prompt,\n  };\n});\n\nreturn [{\n  json: {\n    parsed_shots_count: shots.length,\n    shots,\n    _debug_raw_head: raw.slice(0, 220),\n    _debug_json_head: jsonText.slice(0, 220),\n    video_duration_s: Number.isFinite(video_duration_s) ? Number(video_duration_s.toFixed(3)) : undefined\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2816,
+        320
+      ],
+      "id": "ddecb546-482f-4ab6-901f-841fbc6d07ec",
+      "name": "清洗结果"
+    },
+    {
+      "parameters": {
+        "command": "=rm /tmp/{{ $('提取任务字段').first().json.record_id }}*"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        7520,
+        320
+      ],
+      "id": "7277ccb4-9f41-4f83-b7e7-8e6e2bb75c56",
+      "name": "清理缓存"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "video_Analysis_veo",
+        "options": {}
+      },
+      "id": "be156e86-443a-45ed-b0e0-490cc72f40e2",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2240,
+        128
+      ],
+      "webhookId": "a1ff7f49-76f8-4a6a-8657-9fc91829451d"
+    },
+    {
+      "parameters": {
+        "jsCode": "const store =\n  (typeof $getWorkflowStaticData === 'function')\n    ? $getWorkflowStaticData('node')\n    : (typeof getWorkflowStaticData === 'function')\n      ? getWorkflowStaticData('node')\n      : null;\n\nconst recordId =\n  String($json.record_id ?? $('提取任务字段')?.first()?.json?.record_id ?? 'unknown_record');\n\nif (store && store[recordId]) delete store[recordId];\n\nreturn [{ json: { cleared: true, record_id: recordId } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7744,
+        320
+      ],
+      "id": "500441f9-8994-4562-8ec6-537fabb7929e",
+      "name": "清理数据"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// 当前 item：来自“读取截图”，通常只剩文件信息 + binary\nconst cur = $input.item;\nconst j = cur.json || {};\nconst bin = cur.binary || {};\n\n// 从“拆分首尾帧”取回原始帧元数据（这里一定有 shot_no / frame_type / frame_path）\nconst metas = $items('拆分首尾帧').map(x => x.json || {});\nif (!metas.length) throw new Error('补回失败：拿不到“拆分首尾帧”的数据');\n\nconst fileName = String(j.fileName || '');\nconst filePath = String(j.filePath || j.path || j.frame_path || '');\n\nconst guessPath = filePath || (fileName ? `/tmp/${fileName}` : '');\n\nconst meta =\n  metas.find(m => String(m.frame_path) === guessPath) ||\n  metas.find(m => fileName && String(m.frame_path).endsWith(`/${fileName}`)) ||\n  null;\n\nif (!meta) {\n  const sample = metas.slice(0, 3).map(m => m.frame_path).join(' | ');\n  throw new Error(`补回失败：无法匹配元数据。fileName=${fileName}, filePath=${filePath}, guessPath=${guessPath}, metas_sample=${sample}`);\n}\n\n// meta 放前面，确保 shot_no/frame_type 不会被覆盖丢掉\nreturn {\n  json: {\n    ...meta,\n    ...j,\n    frame_path: meta.frame_path || guessPath,\n  },\n  binary: bin,\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4160,
+        400
+      ],
+      "id": "ec2261d6-db9f-409b-b1d7-748c5cf6ca4a",
+      "name": "补回帧元数据"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const task = $('提取任务字段').first().json || {};\nconst recordId = task.record_id || $json.record_id || 'unknown_record';\n\n// 从清洗结果来的 shot_no（展示用）\nconst shotNo = Number($json.shot_no ?? 1);\nif (!Number.isFinite(shotNo) || shotNo <= 0) throw new Error(`shot_no 非法：${$json.shot_no}`);\n\n// start_time：优先用清洗结果输出的 start_time（更稳）\nlet start = Number($json.start_time);\nif (!Number.isFinite(start) || start < 0) {\n  // 兜底：按 8s 步长推\n  start = (shotNo - 1) * 8;\n}\n\n// duration：关键！最后一段会是 3s\nlet duration_s = Number($json.duration_s ?? 8);\nif (!Number.isFinite(duration_s) || duration_s <= 0) duration_s = 8;\n\n// 从“整理分析提示词”或“解析视频时长”取总时长（用于 clamp）\nconst meta = (() => { try { return $('整理分析提示词').first().json || {}; } catch(e){ return {}; }})();\nconst durPack = (() => { try { return $('解析视频时长').first().json || {}; } catch(e){ return {}; }})();\nconst video_duration_s = Number(meta.video_duration_s || durPack.video_duration_s || 0);\n\nconst video_path = `/tmp/${recordId}.mp4`;\nconst frame_path_start = `/tmp/${recordId}_shot${shotNo}_start.jpg`;\nconst frame_path_end   = `/tmp/${recordId}_shot${shotNo}_end.jpg`;\n\n// 首帧：start + 0.2\nlet cap_s = start + 0.2;\n\n// 尾帧：start + duration - 0.2（最小不小于 start+0.2）\nlet cap_e = start + Math.max(0.2, duration_s - 0.2);\n\n// clamp 到视频总时长（保险，避免接近末尾抽不到）\nif (Number.isFinite(video_duration_s) && video_duration_s > 0) {\n  const maxT = Math.max(0, video_duration_s - 0.2);\n  cap_s = Math.min(cap_s, maxT);\n  cap_e = Math.min(cap_e, maxT);\n  // 再保证 cap_e >= cap_s\n  if (cap_e < cap_s) cap_e = cap_s;\n}\n\ncap_s = Number(cap_s.toFixed(3));\ncap_e = Number(cap_e.toFixed(3));\n\nreturn {\n  json: {\n    ...$json,\n\n    record_id: recordId,\n    shot_no: shotNo,\n\n    video_duration_s: Number.isFinite(video_duration_s) ? Number(video_duration_s.toFixed(3)) : undefined,\n\n    video_path,\n    frame_path_start,\n    frame_path_end,\n\n    duration_s: Number(duration_s.toFixed(3)),\n    cap_s,\n    cap_e,\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3264,
+        400
+      ],
+      "id": "f468ff83-c4cd-4d5e-9a1e-1a38d4a42b9c",
+      "name": "计算切片+截图路径（8s一体）"
+    },
+    {
+      "parameters": {
+        "executeOnce": false,
+        "command": "=sh -c '\nIN=\"{{ $json.video_path }}\";\nS=\"{{ $json.frame_path_start }}\";\nE=\"{{ $json.frame_path_end }}\";\nCS=\"{{ $json.cap_s }}\";\nCE=\"{{ $json.cap_e }}\";\n\n# 1) 首帧\nffmpeg -hide_banner -loglevel error -y \\\n  -ss \"$CS\" -i \"$IN\" -frames:v 1 -q:v 3 \"$S\" || true\n\n# 2) 尾帧\nffmpeg -hide_banner -loglevel error -y \\\n  -ss \"$CE\" -i \"$IN\" -frames:v 1 -q:v 3 \"$E\" || true\n\n# 兜底：首帧都没有就直接报错（否则后面全是空）\n[ -s \"$S\" ] || { echo \"start frame missing\"; exit 1; }\n\n# 兜底：尾帧缺失复制首帧\n[ -s \"$E\" ] || cp \"$S\" \"$E\"\n'\n"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        3488,
+        400
+      ],
+      "id": "a6f770fe-8e0f-44e1-922e-7c7741d1d6a1",
+      "name": "ffmpeg 截图+截取视频"
+    },
+    {
+      "parameters": {
+        "jsCode": "const task = $('提取任务字段').first().json || {};\nconst talent_traits = task.talent_traits || '';\nconst product_name = task.product_name || '';\nconst product_selling_points = task.product_selling_points || '';\n\nconst instruction = `\nYou are a concise English copywriter.\nConvert the inputs into concise English for image prompting.\nReturn ONLY JSON:\n{\n  \"model_identity_en\": \"...\",\n  \"outfit_desc_en\": \"...\"\n}\nRules:\n- Each field <= 140 characters.\n- Do NOT add extra keys.\n`;\n\nconst gemini_body = {\n  contents: [{\n    role: 'user',\n    parts: [{\n      text: `${instruction}\\n\\nModel Identity (raw): ${talent_traits}\\n\\nOutfit/Product (raw): ${product_name}; ${product_selling_points}`\n    }]\n  }],\n  generationConfig: { temperature: 0.2, topP: 0.9, maxOutputTokens: 512 }\n};\n\nreturn [{ json: { gemini_body } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        320
+      ],
+      "id": "b3f253dd-1e58-45df-9e79-b698d0011af1",
+      "name": "压缩身份与产品英文（Gemini）"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 清洗 + 解析 fenced JSON（兼容 ```json ... ``` 和前后杂质）\n// 目标输出：model_identity_en, outfit_desc_en\n\nconst item = $input.first()?.json || {};\n\nfunction toStr(v) {\n  if (v == null) return '';\n  if (typeof v === 'string') return v;\n  try { return JSON.stringify(v); } catch (e) { return String(v); }\n}\n\n// 1) 找到最可能的文本来源：优先 output\nfunction pickRaw(j) {\n  if (typeof j.output === 'string' && j.output.trim()) return j.output;\n  if (typeof j.text === 'string' && j.text.trim()) return j.text;\n\n  // 兼容 Gemini/OpenAI 常见结构（有就取）\n  const c = j?.candidates?.[0] || j?.response?.candidates?.[0];\n  const parts = c?.content?.parts;\n  if (Array.isArray(parts) && parts.length) {\n    const t = parts.map(p => p?.text).filter(Boolean).join('\\n').trim();\n    if (t) return t;\n  }\n\n  return toStr(j);\n}\n\n// 2) 去掉 ```json fence + 截取 { ... } 主体\nfunction extractJsonObjectText(raw) {\n  let t = toStr(raw).trim();\n  if (!t) return '';\n\n  // 统一换行\n  t = t.replace(/\\r\\n/g, '\\n').replace(/\\r/g, '\\n');\n\n  // 去掉 code fence\n  t = t.replace(/^```(?:json)?\\s*/i, '').replace(/```$/i, '').trim();\n\n  // 有些会把 JSON 放在中间：截取第一个 { 到最后一个 }\n  const i = t.indexOf('{');\n  const j = t.lastIndexOf('}');\n  if (i >= 0 && j > i) t = t.slice(i, j + 1).trim();\n\n  // 替换可能出现的智能引号\n  t = t\n    .replace(/[“”]/g, '\"')\n    .replace(/[‘’]/g, \"'\");\n\n  // 去掉不可见字符\n  t = t.replace(/\\uFEFF/g, '');\n\n  return t;\n}\n\n// 3) parse（带兜底报错片段）\nfunction safeParse(s) {\n  try {\n    return JSON.parse(s);\n  } catch (e) {\n    // 第二次兜底：常见“末尾多逗号”\n    const s2 = s.replace(/,\\s*([}\\]])/g, '$1');\n    try {\n      return JSON.parse(s2);\n    } catch (e2) {\n      throw new Error(\n        '英文压缩 JSON parse 失败：\\n' +\n        '---raw_head---\\n' + s.slice(0, 220) + '\\n' +\n        '---raw_tail---\\n' + s.slice(Math.max(0, s.length - 220))\n      );\n    }\n  }\n}\n\nconst raw = pickRaw(item);\nconst s = extractJsonObjectText(raw);\nif (!s) throw new Error('清洗后 JSON 为空：请确认上游输出在字段 output');\n\nconst obj = safeParse(s);\n\n// 输出标准字段（容错：字段名可能不一致）\nconst model_identity_en =\n  String(obj.model_identity_en ?? obj.model_identity ?? obj.identity ?? '').trim();\n\nconst outfit_desc_en =\n  String(obj.outfit_desc_en ?? obj.outfit_description_en ?? obj.outfit_desc ?? obj.outfit ?? '').trim();\n\nreturn [{\n  json: {\n    model_identity_en,\n    outfit_desc_en,\n    _raw: raw,      // 方便你调试，确认上游到底回了啥\n    _json_text: s   // 清洗后的 JSON 文本\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        320
+      ],
+      "id": "829f6aa6-cc64-4117-9121-e8727daf53de",
+      "name": "清洗json"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "gpt-4o"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        80,
+        544
+      ],
+      "id": "f7efbccb-56bf-4ac7-a91c-785fa976e699",
+      "name": "gpt",
+      "credentials": {
+        "openAiApi": {
+          "id": "TVs8cHigrdXKUMDJ",
+          "name": "云雾api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=",
+        "options": {
+          "systemMessage": "={{ $json.gemini_body.contents[0].parts[0].text }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        0,
+        320
+      ],
+      "id": "8109bf55-31f7-41d1-9c36-7faaf33010f5",
+      "name": "脚本生成器",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "command": "=sh -c '\nIN=\"/tmp/{{ $(\"提取任务字段\").first().json.record_id }}.mp4\";\nffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"$IN\"\n'"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        1472,
+        256
+      ],
+      "id": "d05638d5-1807-44ba-b41d-4d8e250b3a74",
+      "name": "ffprobe 获取时长"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = String($json.stdout ?? $json.data ?? '').trim();\nconst duration = Number(raw);\nif (!Number.isFinite(duration) || duration <= 0) {\n  throw new Error(`ffprobe 时长解析失败：raw=${raw}`);\n}\nreturn [{ json: { video_duration_s: duration } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1696,
+        256
+      ],
+      "id": "7ba163e3-3f8a-489b-ae30-f06fbd6598f8",
+      "name": "解析视频时长"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1920,
+        320
+      ],
+      "id": "5fed78fc-c7fa-4f11-8fbc-1919ef54c751",
+      "name": "Merge"
+    }
+  ],
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "hooks.flowonn.com",
+            "x-real-ip": "101.126.59.8",
+            "x-forwarded-for": "101.126.59.8",
+            "x-forwarded-proto": "https",
+            "connection": "close",
+            "content-length": "468",
+            "user-agent": "Go-http-client/1.1",
+            "content-type": "application/json",
+            "x-base-automation-ua": "automation/1.0.0",
+            "x-tt-env": "prod",
+            "x-tt-logid": "02177167974039400000000000000000000ffffeb8412544eaeb2",
+            "accept-encoding": "gzip"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "record_id": "recvbAYyboQNVE",
+            "workflow_id": "flow_analysis_video_Veo",
+            "table_link": "https://my.feishu.cn/base/OzchbMB9UanOdqscNqZctxwpnsg?table=tblq1MyuD9ZuelRO&view=vew3HXRwTo",
+            "table_link2": "https://my.feishu.cn/base/OzchbMB9UanOdqscNqZctxwpnsg?table=tbliQocoTq3f4U8g&view=vew3HXRwTo",
+            "app_id": "cli_a8d48c9783a4d00e",
+            "app_secret": "UMpMwnXyEnqaqjCV1NhaUbzPU8W8vIA7",
+            "app_token": "OzchbMB9UanOdqscNqZctxwpnsg",
+            "api_key": "sk_S-XJvpVKGGwnac1AlEFs3avCWZpqdOGaMMW27Y8iSPY"
+          },
+          "webhookUrl": "http://localhost:5678/webhook/video_Analysis_veo",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "更新进度-画面拆解已完成": {
+      "main": [
+        [
+          {
+            "node": "扣除积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate1": {
+      "main": [
+        [
+          {
+            "node": "拆解结果写入飞书1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "拆解结果写入飞书1": {
+      "main": [
+        [
+          {
+            "node": "更新进度-画面拆解已完成",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "是否上传视频？": {
+      "main": [
+        [
+          {
+            "node": "下载拆解视频",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "更新进度-拆解中": {
+      "main": [
+        [
+          {
+            "node": "是否上传视频？",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提取任务字段": {
+      "main": [
+        [
+          {
+            "node": "压缩身份与产品英文（Gemini）",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读取任务记录": {
+      "main": [
+        [
+          {
+            "node": "提取任务字段",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "获取拆解表信息": {
+      "main": [
+        [
+          {
+            "node": "查询工作流积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "获取任务表信息": {
+      "main": [
+        [
+          {
+            "node": "获取拆解表信息",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth:getAccessToken auth1": {
+      "main": [
+        [
+          {
+            "node": "获取任务表信息",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "整理分析提示词": {
+      "main": [
+        [
+          {
+            "node": "分析Agent-视频理解",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "扣除积分": {
+      "main": [
+        [
+          {
+            "node": "清理缓存",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "验证api-key": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "提醒-key错误",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "提醒-积分不足",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "读取任务记录",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "查询工作流积分": {
+      "main": [
+        [
+          {
+            "node": "验证api-key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "Aggregate1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "下载拆解视频": {
+      "main": [
+        [
+          {
+            "node": "保存视频到磁盘",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "整理分析提示词",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "分析Agent-视频理解": {
+      "main": [
+        [
+          {
+            "node": "清洗结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "计算切片+截图路径（8s一体）",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "合并数据",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "拆分首尾帧": {
+      "main": [
+        [
+          {
+            "node": "读取截图",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "保存视频到磁盘": {
+      "main": [
+        [
+          {
+            "node": "ffprobe 获取时长",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "读取截图": {
+      "main": [
+        [
+          {
+            "node": "补回帧元数据",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "累积帧到缓存": {
+      "main": [
+        [
+          {
+            "node": "Wait2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "汇总帧 token": {
+      "main": [
+        [
+          {
+            "node": "合并数据",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "绑定云空间 token": {
+      "main": [
+        [
+          {
+            "node": "累积帧到缓存",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "是否还有下一批": {
+      "main": [
+        [
+          {
+            "node": "汇总帧 token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "分批上传关键帧图片",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait2": {
+      "main": [
+        [
+          {
+            "node": "是否还有下一批",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "生成文件信息": {
+      "main": [
+        [
+          {
+            "node": "上传素材到云空间",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "上传素材到云空间": {
+      "main": [
+        [
+          {
+            "node": "绑定云空间 token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "分批上传关键帧图片": {
+      "main": [
+        [],
+        [
+          {
+            "node": "生成文件信息",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "合并数据": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "清洗结果": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Auth:getAccessToken auth1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "清理缓存": {
+      "main": [
+        [
+          {
+            "node": "清理数据",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "补回帧元数据": {
+      "main": [
+        [
+          {
+            "node": "分批上传关键帧图片",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "计算切片+截图路径（8s一体）": {
+      "main": [
+        [
+          {
+            "node": "ffmpeg 截图+截取视频",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ffmpeg 截图+截取视频": {
+      "main": [
+        [
+          {
+            "node": "拆分首尾帧",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "压缩身份与产品英文（Gemini）": {
+      "main": [
+        [
+          {
+            "node": "脚本生成器",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "清洗json": {
+      "main": [
+        [
+          {
+            "node": "更新进度-拆解中",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gpt": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "脚本生成器",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "脚本生成器": {
+      "main": [
+        [
+          {
+            "node": "清洗json",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ffprobe 获取时长": {
+      "main": [
+        [
+          {
+            "node": "解析视频时长",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析视频时长": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "fd6ab76d-3a1a-48a6-9369-91748bfe9065",
+  "meta": {
+    "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
+  },
+  "id": "UrdlfO5ysJ1PAV08",
+  "tags": []
+}

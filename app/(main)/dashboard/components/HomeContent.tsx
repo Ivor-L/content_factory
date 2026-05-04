@@ -41,6 +41,7 @@ import { useTenant } from '@/hooks/useTenant';
 import { Modal } from '@/components/Modal';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { DigitalHumanModal } from '@/components/DigitalHumanModal';
+import { TaskSubmittedModal } from '@/components/TaskSubmittedModal';
 import { QuickPosterForm, QuickGridForm } from './QuickActionForms';
 import { CreativeQuickStartModal } from './CreativeQuickStart';
 import { MarkdownWechatLayoutModal } from './MarkdownWechatLayoutModal';
@@ -211,6 +212,11 @@ type ConfirmDialogState = {
   confirmText?: string;
   isDanger?: boolean;
   onConfirm: () => Promise<void> | void;
+};
+
+type SubmittedTaskDialogState = {
+  taskId?: string | null;
+  type?: 'creative' | 'poster' | 'grid' | 'digitalHuman' | 'replication' | 'storyboard';
 };
 
 type FileTreeNode = {
@@ -1746,6 +1752,7 @@ export function HomeContent() {
   const [showContentOutputPopover, setShowContentOutputPopover] = useState(false);
   const [posterIdeaSeed, setPosterIdeaSeed] = useState('');
   const [digitalHumanScriptSeed, setDigitalHumanScriptSeed] = useState('');
+  const [submittedTaskDialog, setSubmittedTaskDialog] = useState<SubmittedTaskDialogState | null>(null);
   const [fileTreeWidth, setFileTreeWidth] = useState(DEFAULT_FILE_TREE_WIDTH);
   const [docPreviewWidth, setDocPreviewWidth] = useState(DEFAULT_DOC_PREVIEW_WIDTH);
   const [isResizingFileTree, setIsResizingFileTree] = useState(false);
@@ -4104,6 +4111,44 @@ export function HomeContent() {
     setShowDigitalHumanModal(true);
   }, []);
 
+  const clearQuickActionSeeds = useCallback(() => {
+    setPosterIdeaSeed('');
+    setDigitalHumanScriptSeed('');
+  }, []);
+
+  const handleTaskSubmitted = useCallback(
+    (type: SubmittedTaskDialogState['type'], taskId?: string | null) => {
+      setShowGridModal(false);
+      setShowPosterModal(false);
+      setShowCreativeModal(false);
+      setShowDigitalHumanModal(false);
+      setSubmittedTaskDialog({ type, taskId });
+    },
+    [],
+  );
+
+  const handleSubmittedContinue = useCallback(() => {
+    clearQuickActionSeeds();
+    setSubmittedTaskDialog(null);
+  }, [clearQuickActionSeeds]);
+
+  const handleSubmittedView = useCallback(() => {
+    const taskId = submittedTaskDialog?.taskId;
+    const type = submittedTaskDialog?.type;
+    clearQuickActionSeeds();
+    setSubmittedTaskDialog(null);
+    const params = new URLSearchParams();
+    if (taskId) {
+      params.set('taskId', taskId);
+    } else if (type === 'digitalHuman') {
+      params.set('type', 'digitalHuman');
+    } else if (type === 'replication') {
+      params.set('type', 'replication');
+    }
+    const query = params.toString();
+    router.push(getTenantPath(`/my-works${query ? `?${query}` : ''}`));
+  }, [clearQuickActionSeeds, getTenantPath, router, submittedTaskDialog?.taskId, submittedTaskDialog?.type]);
+
   const streamingPreviewMessage = useMemo<ChatMessageRow | null>(() => {
     if (!assistantLoading) return null;
     const previewText = extractStructuredTextPreview(streamingReply);
@@ -5462,7 +5507,10 @@ export function HomeContent() {
             title={<span className="text-base font-semibold">九宫格创作</span>}
             maxWidth="max-w-4xl"
           >
-            <QuickGridForm onClose={() => setShowGridModal(false)} />
+            <QuickGridForm
+              onClose={() => setShowGridModal(false)}
+              onSubmitted={(taskId) => handleTaskSubmitted('grid', taskId)}
+            />
           </Modal>
         )}
 
@@ -5482,6 +5530,7 @@ export function HomeContent() {
                 setShowPosterModal(false);
                 setPosterIdeaSeed('');
               }}
+              onSubmitted={(taskId) => handleTaskSubmitted('poster', taskId)}
             />
           </Modal>
         )}
@@ -5504,11 +5553,13 @@ export function HomeContent() {
             <DigitalHumanModal
               hideInternalTitle
               showAssistant={false}
+              disableAutoRedirect
               defaultScript={digitalHumanScriptSeed}
               onClose={() => {
                 setShowDigitalHumanModal(false);
                 setDigitalHumanScriptSeed('');
               }}
+              onSuccess={(taskId) => handleTaskSubmitted('digitalHuman', taskId)}
             />
           </Modal>
         )}
@@ -5533,7 +5584,16 @@ export function HomeContent() {
           }}
         />
 
-        <CreativeQuickStartModal isOpen={showCreativeModal} onClose={() => setShowCreativeModal(false)} />
+        <CreativeQuickStartModal
+          isOpen={showCreativeModal}
+          onClose={() => setShowCreativeModal(false)}
+          onSubmitted={(taskId) => handleTaskSubmitted('creative', taskId)}
+        />
+        <TaskSubmittedModal
+          isOpen={Boolean(submittedTaskDialog)}
+          onContinue={handleSubmittedContinue}
+          onView={handleSubmittedView}
+        />
         <ConfirmModal
           isOpen={Boolean(confirmDialog)}
           onClose={() => setConfirmDialog(null)}

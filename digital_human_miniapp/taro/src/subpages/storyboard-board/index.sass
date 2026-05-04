@@ -59,6 +59,157 @@
   font-weight: 800
   margin-bottom: 0
 
+.remix-stage-section
+  margin: 0 24rpx 18rpx
+  padding: 18rpx 16rpx
+  border-radius: 16rpx
+  background: #141414
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+
+.remix-stage-track
+  display: grid
+  grid-template-columns: repeat(3, 1fr)
+  gap: 10rpx
+
+.remix-stage-item
+  position: relative
+  min-width: 0
+  display: flex
+  flex-direction: column
+  align-items: center
+  text-align: center
+  padding-top: 4rpx
+
+.remix-stage-dot
+  width: 48rpx
+  height: 48rpx
+  border-radius: 999rpx
+  border: 2rpx solid rgba(142, 162, 200, 0.42)
+  background: #101010
+  display: flex
+  align-items: center
+  justify-content: center
+  position: relative
+  z-index: 2
+  box-sizing: border-box
+
+.remix-stage-dot--done
+  background: #ecee9f
+  border-color: #ecee9f
+
+.remix-stage-dot--active
+  border-color: #ecee9f
+  box-shadow: 0 0 0 6rpx rgba(236, 238, 159, 0.1)
+
+.remix-stage-dot-text
+  color: #9badcf
+  font-size: 22rpx
+  font-weight: 900
+
+.remix-stage-dot--done .remix-stage-dot-text
+  color: #151515
+
+.remix-stage-dot--active .remix-stage-dot-text
+  color: #ecee9f
+
+.remix-stage-line
+  position: absolute
+  left: calc(50% + 24rpx)
+  top: 28rpx
+  width: calc(100% - 28rpx)
+  height: 2rpx
+  background: rgba(142, 162, 200, 0.22)
+  z-index: 1
+
+.remix-stage-line--done
+  background: rgba(236, 238, 159, 0.75)
+
+.remix-stage-name
+  display: block
+  width: 100%
+  margin-top: 12rpx
+  color: #9badcf
+  font-size: 22rpx
+  line-height: 1.25
+  font-weight: 900
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap
+
+.remix-stage-name--done,
+.remix-stage-name--active
+  color: #ecee9f
+
+.remix-stage-desc
+  display: block
+  margin-top: 6rpx
+  width: 100%
+  color: #7f8fae
+  font-size: 18rpx
+  line-height: 1.36
+
+.storyboard-section-title
+  display: block
+  font-size: 22rpx
+  color: #8ea2c8
+  font-weight: 700
+  margin-bottom: 10rpx
+
+.storyboard-grid-section,
+.storyboard-structure-section,
+.storyboard-clone-section
+  margin: 0 24rpx 16rpx
+
+.storyboard-grid-image
+  width: 100%
+  border-radius: 14rpx
+  background: #050505
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+  box-sizing: border-box
+
+.storyboard-structure-section,
+.storyboard-clone-section
+  padding: 16rpx
+  border-radius: 16rpx
+  background: #141414
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+  box-sizing: border-box
+
+.storyboard-structure-item,
+.storyboard-clone-item
+  padding: 14rpx 0
+  border-top: 1rpx solid rgba(145, 175, 229, 0.12)
+
+.storyboard-structure-item:first-of-type,
+.storyboard-clone-item:first-of-type
+  border-top: 0
+  padding-top: 0
+
+.storyboard-structure-title,
+.storyboard-clone-title
+  display: block
+  color: #ecee9f
+  font-size: 23rpx
+  line-height: 1.4
+  font-weight: 800
+  margin-bottom: 6rpx
+
+.storyboard-structure-text,
+.storyboard-structure-note,
+.storyboard-clone-prompt
+  display: block
+  color: #d7e5ff
+  font-size: 22rpx
+  line-height: 1.55
+  white-space: pre-wrap
+
+.storyboard-structure-note
+  color: #8ea2c8
+  margin-top: 4rpx
+
+.storyboard-clone-prompt
+  color: #c7d6f2
+
 .storyboard-reference-section
   margin: 0 24rpx 16rpx
 
@@ -263,6 +414,7 @@
   gap: 10rpx
 
 .storyboard-asset-title
+  display: block
   font-size: 22rpx
   color: #ecee9f
   font-weight: 700

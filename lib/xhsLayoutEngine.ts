@@ -205,6 +205,35 @@ export const TEMPLATE_SPECS: TemplateSpec[] = [
 
 const TEMPLATE_INDEX = new Map(TEMPLATE_SPECS.map((item) => [item.id, item]));
 
+type MarkdownTextBlock = {
+  kind: "text";
+  lines: string[];
+};
+
+type MarkdownTableBlock = {
+  kind: "table";
+  rows: string[][];
+  columnCount: number;
+};
+
+type MarkdownBlock = MarkdownTextBlock | MarkdownTableBlock;
+
+type SvgTextItem = {
+  kind: "text";
+  text: string;
+};
+
+type SvgTableRow = {
+  kind: "table-row";
+  cells: string[][];
+  header: boolean;
+  height: number;
+  columnCount: number;
+  columnWidth: number;
+};
+
+type SvgPageItem = SvgTextItem | SvgTableRow;
+
 function normalizeMetaKey(raw: string): string {
   return raw.trim().toLowerCase().replace(/\s+/g, "_").replace(/-/g, "_");
 }
@@ -376,7 +405,57 @@ function cleanLine(line: string): string {
     .trim();
 }
 
-export function markdownToLayoutLines(markdown: string): string[] {
+function splitMarkdownTableRow(line: string): string[] {
+  const trimmed = line.trim();
+  const source = trimmed.startsWith("|") && trimmed.endsWith("|")
+    ? trimmed.slice(1, -1)
+    : trimmed;
+  const cells: string[] = [];
+  let current = "";
+  let escaping = false;
+
+  for (const char of source) {
+    if (escaping) {
+      current += char;
+      escaping = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaping = true;
+      continue;
+    }
+    if (char === "|") {
+      cells.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+
+  cells.push(current.trim());
+  return cells;
+}
+
+function isMarkdownTableSeparator(line: string): boolean {
+  const cells = splitMarkdownTableRow(line);
+  if (cells.length < 2) return false;
+  return cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, "")));
+}
+
+function isPotentialMarkdownTableRow(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed.includes("|")) return false;
+  return splitMarkdownTableRow(trimmed).length >= 2;
+}
+
+function cleanTableCell(cell: string): string {
+  return cleanLine(cell)
+    .replace(/^<br\s*\/?>|<br\s*\/?>$/gi, "")
+    .replace(/<br\s*\/?>/gi, " / ")
+    .trim();
+}
+
+function parseMarkdownBlocksForLayout(markdown: string): MarkdownBlock[] {
   const normalized = preprocessMarkdownForCard(markdown)
     .replace(/\r\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
@@ -384,10 +463,65 @@ export function markdownToLayoutLines(markdown: string): string[] {
 
   if (!normalized) return [];
 
-  return normalized
-    .split("\n")
-    .map((line) => cleanLine(line))
-    .filter(Boolean);
+  const sourceLines = normalized.split("\n");
+  const blocks: MarkdownBlock[] = [];
+  let textLines: string[] = [];
+  let index = 0;
+
+  const flushText = () => {
+    const cleaned = textLines.map((line) => cleanLine(line)).filter(Boolean);
+    if (cleaned.length > 0) {
+      blocks.push({ kind: "text", lines: cleaned });
+    }
+    textLines = [];
+  };
+
+  while (index < sourceLines.length) {
+    const line = sourceLines[index] || "";
+    const nextLine = sourceLines[index + 1] || "";
+    const trimmed = line.trim();
+
+    if (
+      isPotentialMarkdownTableRow(trimmed) &&
+      isMarkdownTableSeparator(nextLine)
+    ) {
+      flushText();
+      const rows: string[][] = [splitMarkdownTableRow(trimmed).map(cleanTableCell)];
+      index += 2;
+
+      while (index < sourceLines.length && isPotentialMarkdownTableRow(sourceLines[index] || "")) {
+        rows.push(splitMarkdownTableRow(sourceLines[index] || "").map(cleanTableCell));
+        index += 1;
+      }
+
+      const columnCount = Math.max(2, ...rows.map((row) => row.length));
+      blocks.push({
+        kind: "table",
+        columnCount,
+        rows: rows.map((row) => Array.from({ length: columnCount }, (_, cellIndex) => row[cellIndex] || "")),
+      });
+      continue;
+    }
+
+    if (!trimmed) {
+      flushText();
+      index += 1;
+      continue;
+    }
+
+    textLines.push(line);
+    index += 1;
+  }
+
+  flushText();
+  return blocks;
+}
+
+export function markdownToLayoutLines(markdown: string): string[] {
+  return parseMarkdownBlocksForLayout(markdown).flatMap((block) => {
+    if (block.kind === "text") return block.lines;
+    return block.rows.map((row) => row.filter(Boolean).join(" "));
+  });
 }
 
 function wrapLineByWidth(raw: string, maxChars = 20): string[] {
@@ -414,6 +548,106 @@ export function paginateLayoutLines(lines: string[], maxPageLines = 18): string[
     pages.push(wrapped.slice(cursor, cursor + maxPageLines));
   }
   return pages.length > 0 ? pages : [[]];
+}
+
+function estimateTextUnits(text: string): number {
+  let units = 0;
+  for (const char of Array.from(text)) {
+    if (/\s/.test(char)) {
+      units += 0.34;
+    } else if (/[A-Za-z0-9]/.test(char)) {
+      units += 0.58;
+    } else if (/[,.!?;:'"(){}\[\]<>/\\|`~@#$%^&*_+=-]/.test(char)) {
+      units += 0.42;
+    } else {
+      units += 1;
+    }
+  }
+  return units;
+}
+
+function wrapTextByUnits(text: string, maxUnits: number): string[] {
+  const normalized = String(text || "").trim();
+  if (!normalized) return [""];
+
+  const lines: string[] = [];
+  let current = "";
+  let currentUnits = 0;
+
+  for (const char of Array.from(normalized)) {
+    const charUnits = estimateTextUnits(char);
+    if (current && currentUnits + charUnits > maxUnits) {
+      lines.push(current);
+      current = char;
+      currentUnits = charUnits;
+      continue;
+    }
+    current += char;
+    currentUnits += charUnits;
+  }
+
+  if (current) lines.push(current);
+  return lines.length > 0 ? lines : [""];
+}
+
+function paginateMarkdownBlocks(markdown: string, maxPageLines = 18): SvgPageItem[][] {
+  const blocks = parseMarkdownBlocksForLayout(markdown);
+  if (blocks.length === 0) return [[{ kind: "text", text: "暂无内容" }]];
+
+  const pages: SvgPageItem[][] = [];
+  let currentPage: SvgPageItem[] = [];
+  let usedUnits = 0;
+  const maxUnits = Math.max(1, maxPageLines);
+
+  const flushPage = () => {
+    if (currentPage.length > 0) {
+      pages.push(currentPage);
+      currentPage = [];
+      usedUnits = 0;
+    }
+  };
+
+  const pushItem = (item: SvgPageItem, units: number) => {
+    if (currentPage.length > 0 && usedUnits + units > maxUnits) {
+      flushPage();
+    }
+    currentPage.push(item);
+    usedUnits += units;
+  };
+
+  for (const block of blocks) {
+    if (block.kind === "text") {
+      for (const line of block.lines) {
+        for (const wrapped of wrapLineByWidth(line, 20)) {
+          pushItem({ kind: "text", text: wrapped }, 1);
+        }
+      }
+      continue;
+    }
+
+    const columnCount = Math.max(1, block.columnCount);
+    const columnWidth = Math.floor(1002 / columnCount);
+    const maxCellUnits = Math.max(4, Math.floor((columnWidth - 44) / 34));
+
+    block.rows.forEach((row, rowIndex) => {
+      const cells = Array.from({ length: columnCount }, (_, cellIndex) =>
+        wrapTextByUnits(row[cellIndex] || "", maxCellUnits),
+      );
+      const maxLines = Math.max(1, ...cells.map((cellLines) => cellLines.length));
+      const rowHeight = Math.max(64, 28 + maxLines * 44);
+      pushItem({
+        kind: "table-row",
+        cells,
+        header: rowIndex === 0,
+        height: rowHeight,
+        columnCount,
+        columnWidth,
+      }, rowHeight / 72 + (rowIndex === 0 ? 0.25 : 0));
+    });
+  }
+
+  flushPage();
+  return pages.length > 0 ? pages : [[{ kind: "text", text: "暂无内容" }]];
 }
 
 function escapeXml(text: string): string {
@@ -470,7 +704,8 @@ function getCoverStyleBackground(coverStyleId?: string): { start: string; end: s
 export function renderCardPageSvg(params: {
   templateId: CardTemplateId;
   title: string;
-  pageLines: string[];
+  pageLines?: string[];
+  pageItems?: SvgPageItem[];
   pageIndex: number;
   totalPages: number;
   isCover: boolean;
@@ -482,7 +717,7 @@ export function renderCardPageSvg(params: {
   const height = 1656;
 
   const title = escapeXml(params.title || "图文卡片");
-  const lines = params.pageLines.map((line) => escapeXml(line));
+  const pageItems: SvgPageItem[] = params.pageItems || (params.pageLines || []).map((text) => ({ kind: "text", text }));
 
   const pageLabel = `${params.pageIndex + 1}/${Math.max(params.totalPages, 1)}`;
 
@@ -534,8 +769,40 @@ export function renderCardPageSvg(params: {
 </svg>`;
   }
 
-  const textBlocks = lines
-    .map((line, index) => `<text x="120" y="${260 + index * 72}" font-size="42" fill="${template.defaultTextColor}" font-family="'PingFang SC','Microsoft YaHei',sans-serif">${line}</text>`)
+  let cursorY = 260;
+  const contentBlocks = pageItems
+    .map((item) => {
+      if (item.kind === "text") {
+        const block = `<text x="120" y="${cursorY}" font-size="42" fill="${template.defaultTextColor}" font-family="'PingFang SC','Microsoft YaHei',sans-serif">${escapeXml(item.text)}</text>`;
+        cursorY += 72;
+        return block;
+      }
+
+      const tableX = 120;
+      const tableY = cursorY - 38;
+      const tableWidth = item.columnCount * item.columnWidth;
+      const borderColor = template.defaultTextColor;
+      const fillColor = item.header ? template.defaultAccentColor : template.defaultTextColor;
+      const fillOpacity = item.header ? "0.14" : "0.03";
+      const cellsSvg = item.cells
+        .map((cellLines, cellIndex) => {
+          const x = tableX + cellIndex * item.columnWidth;
+          const divider = cellIndex > 0
+            ? `<line x1="${x}" y1="${tableY}" x2="${x}" y2="${tableY + item.height}" stroke="${borderColor}" stroke-opacity="0.24" stroke-width="2"/>`
+            : "";
+          const textSvg = cellLines
+            .map((cellLine, lineIndex) => `<text x="${x + 22}" y="${tableY + 42 + lineIndex * 44}" font-size="34" font-weight="${item.header ? 700 : 500}" fill="${template.defaultTextColor}" font-family="'PingFang SC','Microsoft YaHei',sans-serif">${escapeXml(cellLine)}</text>`)
+            .join("\n");
+          return `${divider}\n${textSvg}`;
+        })
+        .join("\n");
+      const block = `<g>
+    <rect x="${tableX}" y="${tableY}" width="${tableWidth}" height="${item.height}" fill="${fillColor}" fill-opacity="${fillOpacity}" stroke="${borderColor}" stroke-opacity="0.28" stroke-width="2"/>
+    ${cellsSvg}
+  </g>`;
+      cursorY += item.height;
+      return block;
+    })
     .join("\n  ");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -546,7 +813,7 @@ export function renderCardPageSvg(params: {
   <rect x="0" y="0" width="${width}" height="${height}" fill="${background.fill}"/>
   <rect x="84" y="84" width="1074" height="1488" rx="30" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.12)" stroke-width="2"/>
   <text x="120" y="176" font-size="56" font-weight="700" fill="${template.defaultAccentColor}" font-family="'PingFang SC','Microsoft YaHei',sans-serif">${title}</text>
-  ${textBlocks}
+  ${contentBlocks}
   <text x="1110" y="1540" text-anchor="end" font-size="30" fill="${template.defaultTextColor}" opacity="0.72" font-family="'PingFang SC','Microsoft YaHei',sans-serif">${escapeXml(pageLabel)}</text>
 </svg>`;
 }
@@ -593,8 +860,7 @@ export function buildRenderSvgs(params: {
   const includeCover = params.includeCover !== false;
   const maxPages = Math.min(Math.max(params.maxPages ?? 8, 1), 12);
 
-  const lines = markdownToLayoutLines(params.markdown);
-  const contentPages = paginateLayoutLines(lines, 18).slice(0, includeCover ? maxPages - 1 : maxPages);
+  const contentPages = paginateMarkdownBlocks(params.markdown, 18).slice(0, includeCover ? maxPages - 1 : maxPages);
 
   const svgs: string[] = [];
   if (includeCover) {
@@ -602,7 +868,7 @@ export function buildRenderSvgs(params: {
       renderCardPageSvg({
         templateId: params.templateId,
         title: params.title,
-        pageLines: [],
+        pageItems: [],
         pageIndex: 0,
         totalPages: contentPages.length + 1,
         isCover: true,
@@ -611,12 +877,12 @@ export function buildRenderSvgs(params: {
     );
   }
 
-  contentPages.forEach((pageLines, index) => {
+  contentPages.forEach((pageItems, index) => {
     svgs.push(
       renderCardPageSvg({
         templateId: params.templateId,
         title: params.title,
-        pageLines,
+        pageItems,
         pageIndex: includeCover ? index + 1 : index,
         totalPages: includeCover ? contentPages.length + 1 : contentPages.length,
         isCover: false,
@@ -630,7 +896,7 @@ export function buildRenderSvgs(params: {
       renderCardPageSvg({
         templateId: params.templateId,
         title: params.title,
-        pageLines: ["暂无内容"],
+        pageItems: [{ kind: "text", text: "暂无内容" }],
         pageIndex: 0,
         totalPages: 1,
         isCover: false,

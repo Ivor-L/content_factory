@@ -92,6 +92,13 @@ const pickWorkflowData = (body: JsonRecord, eventData: JsonRecord | null): JsonR
   return eventData;
 };
 
+const pickStoryboardGridUrl = (body: JsonRecord, workflowData: JsonRecord | null): string =>
+  toText(body?.storyboard_grid_url) ||
+  toText(body?.storyboardGridUrl) ||
+  toText(workflowData?.storyboard_grid_url) ||
+  toText(workflowData?.storyboardGridUrl) ||
+  "";
+
 const pickSegments = (
   body: JsonRecord,
   eventData: JsonRecord | null,
@@ -155,8 +162,8 @@ const isFailedStatus = (status: string): boolean =>
 
 /**
  * Webhook endpoint for receiving storyboard breakdown results from n8n workflow
- * n8n workflow: tLaBL56s8ZyC1FGb (视频克隆-veo3-视频拆解web)
- * Webhook path: /webhook/storyboard_disassembly_web
+ * n8n workflow: 小程序首页爆款拆解 / 分镜拆解
+ * Webhook path: /webhook/miniapp_viral_breakdown_grid
  */
 export async function POST(req: NextRequest) {
   try {
@@ -176,6 +183,7 @@ export async function POST(req: NextRequest) {
     const taskId = pickTaskId(req, body, eventData);
     const status = normalizeStatus(body, eventData);
     const errorMessage = pickErrorMessage(body, eventData);
+    const storyboardGridUrl = pickStoryboardGridUrl(body, workflowData);
 
     console.log("[storyboard-breakdown] Received webhook:", {
       task_id: taskId,
@@ -279,6 +287,10 @@ export async function POST(req: NextRequest) {
     if (isCompleted) {
       updateData.status = "BREAKDOWN_COMPLETED";
       updateData.detailedBreakdown = workflowData || { segments };
+      if (storyboardGridUrl) {
+        updateData.storyboardImageUrl = storyboardGridUrl;
+        updateData.coverImage = storyboardGridUrl;
+      }
     } else if (isFailed) {
       updateData.status = "BREAKDOWN_FAILED";
     }
@@ -297,13 +309,13 @@ export async function POST(req: NextRequest) {
 
     // 3. Create segments if breakdown was successful
     if (isCompleted && segments.length > 0) {
-      // Fetch task with character and product for subject_refs
+      // Fetch product only for subject_refs. Person references are intentionally
+      // excluded because image generation can flag imported faces as sensitive.
       const task = await prisma.storyboardTask.findUnique({
         where: { id: taskId },
-        include: { product: true, character: true },
+        include: { product: true },
       });
 
-      const characterAvatar = (task?.character as any)?.avatar || null;
       const productImages = (task?.product as any)?.images || null;
       const productImageUrl = Array.isArray(productImages)
         ? productImages[0]
@@ -349,11 +361,8 @@ export async function POST(req: NextRequest) {
             ? mustShow.includes("product") || mustShow.includes("商品") || mustShow.includes("产品")
             : true;
 
-        // Build subject_refs based on AI-determined has_person / has_product
+        // Build image refs from the selected product and the extracted reference frame only.
         const subjectRefs: Array<{ type: string; url: string; label: string }> = [];
-        if (parsedHasPerson !== false && characterAvatar) {
-          subjectRefs.push({ type: "character", url: characterAvatar, label: "模特图" });
-        }
         if (parsedHasProduct !== false && productImageUrl) {
           subjectRefs.push({ type: "product", url: productImageUrl, label: "产品图" });
         }

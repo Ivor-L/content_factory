@@ -11,7 +11,7 @@ export interface StoryboardWorkflowProfile {
 
 const DEFAULT_STORYBOARD_SCRIPT_WEBHOOK =
   'https://n8n.atomx.top/webhook/897bb7fb-b878-4135-9aaf-d60beba1dbef';
-const DEFAULT_STORYBOARD_BREAKDOWN_WEBHOOK = 'https://hooks.atomx.top/webhook/storyboard_disassembly_web';
+const DEFAULT_STORYBOARD_BREAKDOWN_WEBHOOK = 'https://hooks.atomx.top/webhook/miniapp_viral_breakdown_grid';
 const DEFAULT_SKELETON_WEBHOOK = 'https://hooks.atomx.top/webhook/veo-gg-web';
 
 const RAW_PROFILES: Record<StoryboardPipelineKey, StoryboardWorkflowProfile> = {
@@ -28,7 +28,7 @@ const RAW_PROFILES: Record<StoryboardPipelineKey, StoryboardWorkflowProfile> = {
     workflowId: 'flow_storyboard_disassembly',
     workflowName: '分镜拆解',
     webhookUrl: (process.env.N8N_STORYBOARD_BREAKDOWN_WEBHOOK || '').trim() || DEFAULT_STORYBOARD_BREAKDOWN_WEBHOOK,
-    callbackPath: '/api/webhook/storyboard/unified',
+    callbackPath: '/api/webhook/storyboard-breakdown',
     defaultSource: 'storyboard',
   },
   skeleton_video: {

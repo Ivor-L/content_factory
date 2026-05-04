@@ -54,6 +54,7 @@
 | [n8n-workflow-sync.md](./05-n8n/n8n-workflow-sync.md) | n8n 线上工作流与仓库快照同步手册 |
 | [n8n-storyboard-breakdown-fix.md](./05-n8n/n8n-storyboard-breakdown-fix.md) | 分镜拆解工作流修复（Gemini 场景检测） |
 | [writing-style-workflow-refactor.md](./05-n8n/writing-style-workflow-refactor.md) | 写作风格提取工作流重构（去除飞书依赖） |
+| [miniapp-viral-breakdown-workflow.md](./05-n8n/miniapp-viral-breakdown-workflow.md) | 小程序首页爆款拆解工作流：ffmpeg 分镜网格、OSS 上传、中文结构与复刻提示词 |
 
 ---
 
@@ -122,3 +123,6 @@
 | [20260504-miniapp-product-analysis-plan.md](./20260504-miniapp-product-analysis-plan.md) | 小程序产品上传分析与产品库结果查看计划 |
 | [20260504-character-library-view-edit-delete-plan.md](./20260504-character-library-view-edit-delete-plan.md) | Web 角色库查看/编辑/删除与创建表单交互优化计划 |
 | [20260504-style-library-image-performance-plan.md](./20260504-style-library-image-performance-plan.md) | 风格库图片加载性能优化：缩略图生成、列表优先加载与懒加载 |
+| [20260504-xhs-markdown-table-render-plan.md](./20260504-xhs-markdown-table-render-plan.md) | 小红书卡片 Markdown 表格渲染：Web/小程序预览、后端导出与 AI 排版对齐 |
+| [20260504-xhs-rewrite-prompt-unification-plan.md](./20260504-xhs-rewrite-prompt-unification-plan.md) | 小红书一键仿写 Prompt 统一：Web/小程序共用标题公式、正文改写与 Gemini generateContent 模型 |
+| [20260504-miniapp-remix-upload-optimization-plan.md](./20260504-miniapp-remix-upload-optimization-plan.md) | 小程序爆款复刻视频上传优化：OSS 表单直传、进度显示与服务端上传兜底 |

@@ -1,5 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getOssClient, getOssPublicUrl, hasOssUploadConfig } from "@/lib/oss";
+import { getOssClient, getOssPublicUrl, getOssUploadConfig, hasOssUploadConfig } from "@/lib/oss";
+
+const POST_POLICY_EXPIRES_MS = 10 * 60 * 1000;
+const MAX_DIRECT_UPLOAD_BYTES = 200 * 1024 * 1024;
+
+function getOssUploadUrl(): string {
+  const { region, bucket } = getOssUploadConfig();
+  const cleanRegion = String(region || "")
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\.aliyuncs\.com$/i, "")
+    .replace(/\/+$/g, "");
+  if (!bucket || !cleanRegion) return "";
+  return `https://${bucket}.${cleanRegion}.aliyuncs.com`;
+}
 
 export async function POST(request: NextRequest) {
   const { filename, contentType, type } = await request.json().catch(() => ({}));
@@ -34,8 +48,35 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "OSS public URL unavailable" }, { status: 503 });
     }
     const publicUrl = `${cdnHost}/${encodeURI(key)}`;
+    const postPolicy = {
+      expiration: new Date(Date.now() + POST_POLICY_EXPIRES_MS).toISOString(),
+      conditions: [
+        ["content-length-range", 0, MAX_DIRECT_UPLOAD_BYTES],
+        ["eq", "$key", key],
+        ["eq", "$success_action_status", "200"],
+        ["starts-with", "$Content-Type", contentType.split("/")[0] ? `${contentType.split("/")[0]}/` : ""],
+      ],
+    };
+    const postSignature = client.calculatePostSignature(postPolicy);
+    const postUploadUrl = getOssUploadUrl();
 
-    return NextResponse.json({ uploadUrl: signedUrl, publicUrl, key });
+    return NextResponse.json({
+      uploadUrl: signedUrl,
+      publicUrl,
+      key,
+      method: "PUT",
+      postUploadUrl,
+      postFormData: {
+        key,
+        policy: postSignature.policy,
+        OSSAccessKeyId: postSignature.OSSAccessKeyId,
+        Signature: postSignature.Signature,
+        success_action_status: "200",
+        "Content-Type": contentType,
+      },
+      postMaxBytes: MAX_DIRECT_UPLOAD_BYTES,
+      postExpiresInSeconds: Math.floor(POST_POLICY_EXPIRES_MS / 1000),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to generate presigned URL";
     console.error("[upload/presign] error:", message);

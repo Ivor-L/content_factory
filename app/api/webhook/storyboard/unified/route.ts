@@ -12,6 +12,7 @@ type ShotPayload = {
   idx?: unknown;
   order?: unknown;
   shot_number?: unknown;
+  shot_id?: unknown;
   time_range?: unknown;
   timeRange?: unknown;
   timestamp?: unknown;
@@ -19,15 +20,35 @@ type ShotPayload = {
   estimatedSeconds?: unknown;
   estimated_seconds?: unknown;
   duration_seconds?: unknown;
+  duration_sec?: unknown;
+  durationSec?: unknown;
+  start_sec?: unknown;
+  startSec?: unknown;
+  end_sec?: unknown;
+  endSec?: unknown;
   voiceover?: unknown;
   speech?: unknown;
   text?: unknown;
   original_script?: unknown;
+  rewritten_script?: unknown;
+  visual_description?: unknown;
+  visual_content_description?: unknown;
+  shot_goal?: unknown;
   image_prompt?: unknown;
   imagePrompt?: unknown;
   first_frame?: unknown;
   video_prompt?: unknown;
   videoPrompt?: unknown;
+  camera_notes?: unknown;
+  camera_shot_size?: unknown;
+  camera_angle?: unknown;
+  camera_movement?: unknown;
+  lighting_notes?: unknown;
+  lighting_atmosphere?: unknown;
+  reference_frame_url?: unknown;
+  referenceFrameUrl?: unknown;
+  ref_frame_image?: unknown;
+  ref_frame_url?: unknown;
   image_url?: unknown;
   imageUrl?: unknown;
   video_url?: unknown;
@@ -97,6 +118,28 @@ const readBool = (value: unknown): boolean | null => {
   return null;
 };
 
+const extractFirstProductImage = (images: unknown): string | null => {
+  if (!images) return null;
+  if (Array.isArray(images)) {
+    const first = images.find((item) => typeof item === 'string' && item.trim());
+    return typeof first === 'string' ? first.trim() : null;
+  }
+  if (typeof images !== 'string') return null;
+
+  try {
+    const parsed = JSON.parse(images);
+    if (Array.isArray(parsed)) {
+      const first = parsed.find((item) => typeof item === 'string' && item.trim());
+      return typeof first === 'string' ? first.trim() : null;
+    }
+    if (typeof parsed === 'string' && parsed.trim()) return parsed.trim();
+  } catch {
+    const first = images.split(',').map((item) => item.trim()).find(Boolean);
+    if (first) return first;
+  }
+  return images.trim() || null;
+};
+
 const normalizeStatus = (input: string, hasShots: boolean): string => {
   const status = input.toLowerCase();
   if (['success', 'succeeded', 'completed', 'done', 'finished'].includes(status)) return 'COMPLETED';
@@ -108,6 +151,7 @@ const normalizeStatus = (input: string, hasShots: boolean): string => {
 };
 
 const statusToProgress = (status: string): number => {
+  if (status === 'BREAKDOWN_COMPLETED') return 30;
   if (status === 'COMPLETED') return 100;
   if (status === 'FAILED') return 0;
   if (status === 'QUEUED') return 10;
@@ -134,10 +178,16 @@ const pickStage = (body: JsonRecord, workflowData: JsonRecord | null): string =>
 const pickShots = (body: JsonRecord, workflowData: JsonRecord | null): ShotPayload[] => {
   const candidates = [
     body.shots,
+    body.segments,
+    body.scenes,
     (body.data as JsonRecord | undefined)?.shots,
+    (body.data as JsonRecord | undefined)?.segments,
+    (body.data as JsonRecord | undefined)?.scenes,
     body.results,
     (body.data as JsonRecord | undefined)?.results,
     workflowData?.shots,
+    workflowData?.segments,
+    workflowData?.scenes,
     workflowData?.results,
     workflowData?.scene_breakdown,
   ];
@@ -150,6 +200,14 @@ const pickShots = (body: JsonRecord, workflowData: JsonRecord | null): ShotPaylo
   }
   return [];
 };
+
+const pickStoryboardGridUrl = (body: JsonRecord, workflowData: JsonRecord | null): string =>
+  readString(body.storyboard_grid_url) ||
+  readString(body.storyboardGridUrl) ||
+  readString((body.data as JsonRecord | undefined)?.storyboard_grid_url) ||
+  readString((body.data as JsonRecord | undefined)?.storyboardGridUrl) ||
+  readString(workflowData?.storyboard_grid_url) ||
+  readString(workflowData?.storyboardGridUrl);
 
 const asJsonValue = (
   value: unknown,
@@ -185,6 +243,7 @@ export async function POST(request: Request) {
 
     const stage = pickStage(body, workflowData);
     const shots = pickShots(body, workflowData);
+    const storyboardGridUrl = pickStoryboardGridUrl(body, workflowData);
     const normalizedStatus = normalizeStatus(readString(body.status) || readString(workflowData?.status), shots.length > 0);
     const errorMessage =
       readString(body.error) ||
@@ -193,32 +252,86 @@ export async function POST(request: Request) {
       readString(workflowData?.error) ||
       readString((body.data as JsonRecord | undefined)?.error);
 
-    const task = await prisma.storyboardTask.findUnique({ where: { id: taskId } });
+    const task = await prisma.storyboardTask.findUnique({
+      where: { id: taskId },
+      include: { product: true },
+    });
     if (!task) {
       return NextResponse.json({ success: true, ignored: true, reason: 'task_not_found', task_id: taskId });
     }
 
     if (shots.length > 0) {
+      const productImageUrl = extractFirstProductImage(task.product?.images);
       const segmentInputs = shots.map((shot, index) => {
         const hasProduct = readBool(shot['是否有产品'] ?? shot.has_product ?? shot.hasProduct);
         const hasPerson = readBool(shot.has_person ?? shot.hasPerson);
+        const startSec = readNumber(shot.start_sec ?? shot.startSec);
+        const endSec = readNumber(shot.end_sec ?? shot.endSec);
+        const durationFromRange =
+          startSec !== null && endSec !== null && endSec > startSec
+            ? Math.round((endSec - startSec) * 1000) / 1000
+            : null;
+        const cameraFromColumns = [
+          readString(shot.camera_shot_size),
+          readString(shot.camera_angle),
+          readString(shot.camera_movement),
+        ]
+          .filter(Boolean)
+          .join(' / ');
+        const referenceFrameUrl =
+          readString(shot.reference_frame_url) ||
+          readString(shot.referenceFrameUrl) ||
+          readString(shot.ref_frame_image) ||
+          readString(shot.ref_frame_url);
+        const subjectRefs = [
+          hasProduct !== false && productImageUrl
+            ? { type: 'product', url: productImageUrl, label: '产品图' }
+            : null,
+          referenceFrameUrl
+            ? { type: 'reference_frame', url: referenceFrameUrl, label: '参考帧' }
+            : null,
+        ].filter(Boolean);
 
         return {
           taskId,
-          order: readPositiveInt(shot.idx ?? shot.order ?? shot.shot_number, index + 1),
+          order: readPositiveInt(shot.idx ?? shot.order ?? shot.shot_number ?? shot.shot_id, index + 1),
           duration: readPositiveNumber(
-            shot.duration ?? shot.estimatedSeconds ?? shot.estimated_seconds ?? shot.duration_seconds,
-            8,
+            shot.duration ??
+              shot.duration_sec ??
+              shot.durationSec ??
+              shot.estimatedSeconds ??
+              shot.estimated_seconds ??
+              shot.duration_seconds,
+            durationFromRange ?? 8,
           ),
-          timeRange: readString(shot.time_range ?? shot.timeRange ?? shot.timestamp),
+          timeRange:
+            readString(shot.time_range ?? shot.timeRange ?? shot.timestamp) ||
+            (startSec !== null && endSec !== null
+              ? `${startSec}-${endSec}s`
+              : ''),
           originalScript: readString(shot.voiceover ?? shot.speech ?? shot.text ?? shot.original_script),
+          rewrittenScript: readString(shot.rewritten_script),
+          visualDescription: readString(
+            shot.visual_description ??
+              shot.visual_content_description ??
+              shot.shot_goal,
+          ),
           imagePrompt: readString(shot.image_prompt ?? shot.imagePrompt ?? shot.first_frame),
-          videoPrompt: readString(shot.video_prompt ?? shot.videoPrompt),
+          videoPrompt: readString(
+            shot.video_prompt ??
+              shot.videoPrompt ??
+              shot.visual_content_description,
+          ),
+          cameraNotes: readString(shot.camera_notes) || cameraFromColumns,
+          lightingNotes: readString(shot.lighting_notes ?? shot.lighting_atmosphere),
           generatedImage: readString(shot.image_url ?? shot.imageUrl),
           generatedVideo: readString(shot.video_url ?? shot.videoUrl),
           generationParams: {
-            hasProduct,
-            hasPerson,
+            has_product: hasProduct,
+            has_person: hasPerson,
+            reference_frame_url: referenceFrameUrl || null,
+            subject_refs: subjectRefs,
+            image_history: [],
             stage,
           },
         };
@@ -235,16 +348,28 @@ export async function POST(request: Request) {
             duration: segment.duration,
             timeRange: segment.timeRange,
             originalScript: segment.originalScript || null,
+            rewrittenScript: segment.rewrittenScript || null,
+            visualDescription: segment.visualDescription || null,
             imagePrompt: segment.imagePrompt || null,
             videoPrompt: segment.videoPrompt || null,
+            cameraNotes: segment.cameraNotes || null,
+            lightingNotes: segment.lightingNotes || null,
             generatedImage: segment.generatedImage || null,
             generatedVideo: segment.generatedVideo || null,
             generationParams: segment.generationParams as Prisma.InputJsonValue,
-            status: normalizedStatus,
+            status: normalizedStatus === 'COMPLETED' ? 'PENDING_IMAGE' : normalizedStatus,
           })),
         }),
       ]);
     }
+
+    const taskStatus = normalizedStatus === 'COMPLETED' && shots.length > 0
+      ? 'BREAKDOWN_COMPLETED'
+      : normalizedStatus;
+
+    const taskProgress = taskStatus === 'BREAKDOWN_COMPLETED'
+      ? 30
+      : statusToProgress(normalizedStatus);
 
     const mergedBreakdown = {
       ...(task.detailedBreakdown && typeof task.detailedBreakdown === 'object' ? (task.detailedBreakdown as JsonRecord) : {}),
@@ -255,19 +380,26 @@ export async function POST(request: Request) {
         null,
       last_callback: {
         stage,
-        status: normalizedStatus,
+        status: taskStatus,
         has_shots: shots.length > 0,
         received_at: new Date().toISOString(),
       },
+      ...(storyboardGridUrl ? { storyboard_grid_url: storyboardGridUrl } : {}),
       workflow_data: workflowData,
     };
 
     const updatedTask = await prisma.storyboardTask.update({
       where: { id: taskId },
       data: {
-        status: normalizedStatus,
-        progress: statusToProgress(normalizedStatus),
+        status: taskStatus,
+        progress: taskProgress,
         detailedBreakdown: asJsonValue(mergedBreakdown),
+        ...(storyboardGridUrl
+          ? {
+            storyboardImageUrl: storyboardGridUrl,
+            coverImage: storyboardGridUrl,
+          }
+          : {}),
       },
     });
 
@@ -277,7 +409,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       task_id: taskId,
-      status: normalizedStatus,
+      status: taskStatus,
       stage,
       segment_count: shots.length,
       error: errorMessage || null,

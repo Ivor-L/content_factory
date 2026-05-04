@@ -169,11 +169,12 @@ export default function StoryboardBoardPage() {
   const buildTaskDefaultRefs = (): StoryboardRef[] => {
     const refs: StoryboardRef[] = [];
     for (const ref of task?.references || []) {
+      if (ref.type !== 'product') continue;
       if (!ref.imageUrl) continue;
       refs.push({
-        type: ref.type,
+        type: 'product',
         url: ref.imageUrl,
-        label: ref.type === 'product' ? '产品图' : '角色图',
+        label: '产品图',
       });
     }
     return refs;
@@ -602,7 +603,14 @@ export default function StoryboardBoardPage() {
   };
 
   const segments = task?.segments || [];
-  const references = task?.references || [];
+  const references = (task?.references || []).filter((ref) => ref.type === 'product');
+  const taskMetadata = getTaskMetadata(task);
+  const workflowData = getWorkflowData(task);
+  const storyboardGridUrl = getStoryboardGridUrl(task);
+  const contentStructure = getContentStructure(workflowData);
+  const cloneClips = getCloneClips(workflowData);
+  const isViralRemix = taskMetadata.feature === 'viral_remix';
+  const remixStageItems = isViralRemix ? buildRemixStages(task, segments, taskMetadata) : [];
   const isPreparingStoryboard = !errorText && segments.length === 0;
   const canShowActionBar = !loading && !errorText && segments.length > 0;
 
@@ -622,14 +630,68 @@ export default function StoryboardBoardPage() {
         <View className='storyboard-board-back' onClick={handleBack}>
           <Text className='storyboard-board-back-text'>‹</Text>
         </View>
-        <Text className='storyboard-board-nav-title'>分镜板</Text>
+        <Text className='storyboard-board-nav-title'>{isViralRemix ? '爆款复刻' : '分镜板'}</Text>
         <View className='storyboard-board-nav-spacer' />
       </View>
 
       <ScrollView scrollY className='storyboard-board-scroll'>
         <View className='storyboard-board-header'>
-          <Text className='storyboard-board-title'>{title || '分镜任务'}</Text>
+          <Text className='storyboard-board-title'>{isViralRemix ? '一键复刻' : (title || '分镜任务')}</Text>
         </View>
+
+        {!loading && !errorText && isViralRemix && (
+          <View className='remix-stage-section'>
+            <View className='remix-stage-track'>
+              {remixStageItems.map((stage, index) => (
+                <View key={stage.key} className='remix-stage-item'>
+                  <View className={`remix-stage-dot remix-stage-dot--${stage.state}`}>
+                    <Text className='remix-stage-dot-text'>{index + 1}</Text>
+                  </View>
+                  {index < remixStageItems.length - 1 && <View className={`remix-stage-line remix-stage-line--${stage.state}`} />}
+                  <Text className={`remix-stage-name remix-stage-name--${stage.state}`}>{stage.title}</Text>
+                  <Text className='remix-stage-desc'>{stage.desc}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {!loading && !errorText && isViralRemix && storyboardGridUrl && (
+          <View className='storyboard-grid-section'>
+            <Text className='storyboard-section-title'>分镜网格图</Text>
+            <Image
+              className='storyboard-grid-image'
+              src={storyboardGridUrl}
+              mode='widthFix'
+              onClick={() => Taro.previewImage({ current: storyboardGridUrl, urls: [storyboardGridUrl] })}
+            />
+          </View>
+        )}
+
+        {!loading && !errorText && isViralRemix && contentStructure.length > 0 && (
+          <View className='storyboard-structure-section'>
+            <Text className='storyboard-section-title'>中文内容结构</Text>
+            {contentStructure.map((item) => (
+              <View key={item.key} className='storyboard-structure-item'>
+                <Text className='storyboard-structure-title'>{item.label}{item.timeRange ? ` · ${item.timeRange}` : ''}</Text>
+                <Text className='storyboard-structure-text'>{item.summary}</Text>
+                {!!item.mechanism && <Text className='storyboard-structure-note'>{item.mechanism}</Text>}
+              </View>
+            ))}
+          </View>
+        )}
+
+        {!loading && !errorText && isViralRemix && cloneClips.length > 0 && (
+          <View className='storyboard-clone-section'>
+            <Text className='storyboard-section-title'>可重复生成脚本</Text>
+            {cloneClips.map((clip, index) => (
+              <View key={`${clip.clipIndex}-${index}`} className='storyboard-clone-item'>
+                <Text className='storyboard-clone-title'>Clip {clip.clipIndex} · {clip.duration}s {clip.timeRange ? `· ${clip.timeRange}` : ''}</Text>
+                <Text className='storyboard-clone-prompt'>{clip.prompt}</Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         {!loading && !errorText && references.length > 0 && (
           <View className='storyboard-reference-section'>
@@ -641,11 +703,11 @@ export default function StoryboardBoardPage() {
                     {ref.imageUrl ? (
                       <Image className='storyboard-reference-image' src={ref.imageUrl} mode='aspectFill' />
                     ) : (
-                      <Text className='storyboard-reference-placeholder'>{ref.type === 'product' ? '产品' : '角色'}</Text>
+                      <Text className='storyboard-reference-placeholder'>产品</Text>
                     )}
                   </View>
                   <View className='storyboard-reference-info'>
-                    <Text className='storyboard-reference-label'>{ref.type === 'product' ? '参考产品' : '参考角色'}</Text>
+                    <Text className='storyboard-reference-label'>参考产品</Text>
                     <Text className='storyboard-reference-name'>{ref.name}</Text>
                   </View>
                 </View>
@@ -655,11 +717,11 @@ export default function StoryboardBoardPage() {
         )}
 
         {(loading || isPreparingStoryboard) && (
-          <View className='storyboard-board-pending'>
-            <View className='storyboard-board-spinner'>
-              <View className='storyboard-board-spinner-core' />
-            </View>
-            <Text className='storyboard-board-pending-title'>正在生成分镜</Text>
+            <View className='storyboard-board-pending'>
+              <View className='storyboard-board-spinner'>
+                <View className='storyboard-board-spinner-core' />
+              </View>
+            <Text className='storyboard-board-pending-title'>{isViralRemix ? getPendingTitle(taskMetadata) : '正在生成分镜'}</Text>
             <Text className='storyboard-board-pending-text'>任务已在后端运行，退出页面后也会继续处理</Text>
             <View className='storyboard-board-cancel-btn' onClick={() => void handleDeleteTask('cancel')}>
               <Text className='storyboard-board-cancel-text'>{deleting ? '取消中...' : '取消生成'}</Text>
@@ -701,6 +763,7 @@ export default function StoryboardBoardPage() {
 
                 <View className='storyboard-asset-grid'>
                   <View className='storyboard-asset-block'>
+                    {isViralRemix && <Text className='storyboard-asset-title'>产品/角色替换图</Text>}
                     <View className='storyboard-asset-stage' onClick={() => handleEditPrompt(segment, 'image')}>
                       {showImage ? (
                         <Image
@@ -717,6 +780,7 @@ export default function StoryboardBoardPage() {
                   </View>
 
                   <View className='storyboard-asset-block'>
+                    {isViralRemix && <Text className='storyboard-asset-title'>视频生成</Text>}
                     <View className='storyboard-asset-stage' onClick={() => handleEditPrompt(segment, 'video')}>
                       {showVideo ? (
                         <Video
@@ -1022,6 +1086,154 @@ function uniqueStrings(values: string[]): string[] {
     result.push(normalized);
   }
   return result;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function getTaskMetadata(task: StoryboardTaskStatusResult | null): Record<string, unknown> {
+  const detailed = task?.detailedBreakdown && typeof task.detailedBreakdown === 'object'
+    ? task.detailedBreakdown
+    : null;
+  const metadata = detailed?.metadata && typeof detailed.metadata === 'object' && !Array.isArray(detailed.metadata)
+    ? detailed.metadata as Record<string, unknown>
+    : {};
+  return metadata;
+}
+
+function getWorkflowData(task: StoryboardTaskStatusResult | null): Record<string, unknown> {
+  const detailed = asRecord(task?.detailedBreakdown);
+  const nested = asRecord(detailed?.workflow_data) || asRecord(detailed?.workflowData);
+  return nested || detailed || {};
+}
+
+function getStoryboardGridUrl(task: StoryboardTaskStatusResult | null): string {
+  const detailed = asRecord(task?.detailedBreakdown);
+  const workflowData = getWorkflowData(task);
+  return normalizeMediaUrl(
+    String(
+      detailed?.storyboard_grid_url ||
+        detailed?.storyboardGridUrl ||
+        workflowData.storyboard_grid_url ||
+        workflowData.storyboardGridUrl ||
+        '',
+    ),
+  );
+}
+
+function readStructureItem(value: unknown): { timeRange: string; summary: string; mechanism: string } | null {
+  if (typeof value === 'string' && value.trim()) {
+    return { timeRange: '', summary: value.trim(), mechanism: '' };
+  }
+  const record = asRecord(value);
+  if (!record) return null;
+  const summary = normalizeText(String(record.summary || record.description || record.text || ''));
+  const mechanism = normalizeText(String(record.mechanism || record.replication_note || record.note || ''));
+  const timeRange = normalizeText(String(record.time_range || record.timeRange || ''));
+  if (!summary && !mechanism) return null;
+  return { timeRange, summary: summary || mechanism, mechanism };
+}
+
+function getContentStructure(workflowData: Record<string, unknown>): Array<{
+  key: string;
+  label: string;
+  timeRange: string;
+  summary: string;
+  mechanism: string;
+}> {
+  const structure = asRecord(workflowData.content_structure) || asRecord(workflowData.contentStructure);
+  if (!structure) return [];
+  const entries = [
+    ['hook', '开头钩子'],
+    ['buildup', '中间铺垫'],
+    ['climax', '高潮'],
+    ['cta', '结尾CTA'],
+  ] as const;
+  return entries
+    .map(([key, label]) => {
+      const item = readStructureItem(structure[key]);
+      return item ? { key, label, ...item } : null;
+    })
+    .filter((item): item is {
+      key: string;
+      label: string;
+      timeRange: string;
+      summary: string;
+      mechanism: string;
+    } => Boolean(item));
+}
+
+function getCloneClips(workflowData: Record<string, unknown>): Array<{
+  clipIndex: number;
+  timeRange: string;
+  duration: number;
+  prompt: string;
+}> {
+  const clonePrompt = asRecord(workflowData.clone_prompt) || asRecord(workflowData.clonePrompt);
+  const clips = Array.isArray(clonePrompt?.clips) ? clonePrompt.clips : [];
+  return clips
+    .map((item, index) => {
+      const record = asRecord(item);
+      if (!record) return null;
+      const prompt = normalizeText(String(record.prompt || ''));
+      if (!prompt) return null;
+      return {
+        clipIndex: Number(record.clip_index || record.clipIndex || index + 1) || index + 1,
+        timeRange: normalizeText(String(record.time_range || record.timeRange || '')),
+        duration: Number(record.duration || 0) || 0,
+        prompt,
+      };
+    })
+    .filter((item): item is {
+      clipIndex: number;
+      timeRange: string;
+      duration: number;
+      prompt: string;
+    } => Boolean(item));
+}
+
+function buildRemixStages(
+  task: StoryboardTaskStatusResult | null,
+  segments: StoryboardSegmentItem[],
+  metadata: Record<string, unknown>,
+): Array<{ key: string; title: string; desc: string; state: 'done' | 'active' | 'todo' }> {
+  const hasSegments = segments.length > 0;
+  const hasImages = segments.some((segment) => Boolean(normalizeMediaUrl(segment.generatedImage)));
+  const hasVideos = segments.some((segment) => Boolean(normalizeMediaUrl(segment.generatedVideo)));
+  const hasFinalVideo = Boolean(normalizeMediaUrl(task?.finalVideoUrl || ''));
+  const isStoryboardControl = metadata.strategy === 'STORYBOARD';
+
+  return [
+    {
+      key: 'breakdown',
+      title: isStoryboardControl ? '分镜板生成' : '爆款拆解',
+      desc: hasSegments
+        ? '已得到分镜提示词和分镜板'
+        : isStoryboardControl
+          ? '正在进入分镜板链路'
+          : '正在对接 n8n 拆解参考视频',
+      state: hasSegments ? 'done' : 'active',
+    },
+    {
+      key: 'replace',
+      title: '产品/角色替换',
+      desc: hasImages ? '可查看、修改或重新生成分镜图' : hasSegments ? '等待生成替换后的分镜图' : '等待爆款拆解完成',
+      state: hasImages ? 'done' : hasSegments ? 'active' : 'todo',
+    },
+    {
+      key: 'video',
+      title: '视频生成',
+      desc: hasFinalVideo ? '成片已生成' : hasVideos ? '分镜视频已生成，可一键剪辑' : hasImages ? '可基于提示词和分镜图生成视频' : '等待分镜图完成',
+      state: hasFinalVideo || hasVideos ? 'done' : hasImages ? 'active' : 'todo',
+    },
+  ];
+}
+
+function getPendingTitle(metadata: Record<string, unknown>): string {
+  return metadata.strategy === 'STORYBOARD' ? '正在生成分镜板' : '正在进行爆款拆解';
 }
 
 function isUserCancel(error: unknown): boolean {

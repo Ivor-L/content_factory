@@ -167,7 +167,7 @@ export async function breakdownScript(scriptData: ScriptData & { scriptId: strin
   if (scriptPurpose === 'storyboard') {
     webhookUrl =
       process.env.N8N_STORYBOARD_BREAKDOWN_WEBHOOK ||
-      'https://hooks.atomx.top/webhook/storyboard_disassembly_web';
+      'https://hooks.atomx.top/webhook/miniapp_viral_breakdown_grid';
     defaultWorkflowId = 'flow_storyboard_disassembly';
   } else if (scriptPurpose === 'extract-copy') {
     webhookUrl = process.env.N8N_EXTRACT_COPY_WEBHOOK || 'https://hooks.atomx.top/webhook/extract_copy';

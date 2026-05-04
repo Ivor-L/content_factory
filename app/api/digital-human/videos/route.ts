@@ -60,6 +60,8 @@ type CreatePayload = {
   emoAudioUrl?: string | null;
   scriptContent?: string | null;
   durationSeconds?: number | string | null;
+  sourceWidth?: number | string | null;
+  sourceHeight?: number | string | null;
   sourceTaskId?: string | null;
 };
 
@@ -108,6 +110,26 @@ export async function POST(request: NextRequest) {
     parsedDuration != null && Number.isFinite(parsedDuration) && parsedDuration > 0
       ? parsedDuration
       : null;
+  const parsedSourceWidth =
+    typeof payload.sourceWidth === 'number'
+      ? payload.sourceWidth
+      : payload.sourceWidth != null
+        ? Number(payload.sourceWidth)
+        : null;
+  const parsedSourceHeight =
+    typeof payload.sourceHeight === 'number'
+      ? payload.sourceHeight
+      : payload.sourceHeight != null
+        ? Number(payload.sourceHeight)
+        : null;
+  const sourceWidth =
+    parsedSourceWidth != null && Number.isFinite(parsedSourceWidth) && parsedSourceWidth > 0
+      ? parsedSourceWidth
+      : null;
+  const sourceHeight =
+    parsedSourceHeight != null && Number.isFinite(parsedSourceHeight) && parsedSourceHeight > 0
+      ? parsedSourceHeight
+      : null;
   const sourceTaskId =
     typeof payload.sourceTaskId === 'string' && payload.sourceTaskId.trim().length > 0
       ? payload.sourceTaskId.trim()
@@ -117,6 +139,8 @@ export async function POST(request: NextRequest) {
     const batch = await createDigitalHumanJobs({
       type,
       sourceType,
+      sourceWidth,
+      sourceHeight,
       imageUrl: sourceType === 'IMAGE' ? resolvedSourceUrl : undefined,
       videoUrl: sourceType === 'VIDEO' ? resolvedSourceUrl : undefined,
       audioUrl: payload.audioUrl,

@@ -5,6 +5,7 @@ import { toInputJson } from '@/lib/jsonUtils';
 import { analyzeScriptDuration } from '@/lib/digitalHumanLimits';
 import { planDigitalHumanScript } from '@/lib/digitalHumanScript';
 import { syncTaskToSummary } from '@/lib/taskSummary';
+import sharp from 'sharp';
 
 export type DigitalHumanMode = 'LIP_SYNC' | 'VOICE_CLONE';
 export type DigitalHumanSourceType = 'IMAGE' | 'VIDEO';
@@ -14,6 +15,8 @@ export interface CreateDigitalHumanJobOptions {
   imageUrl?: string | null;
   videoUrl?: string | null;
   sourceType?: DigitalHumanSourceType;
+  sourceWidth?: number | null;
+  sourceHeight?: number | null;
   audioUrl: string;
   script?: string | null;
   emoAudioUrl?: string | null;
@@ -33,12 +36,92 @@ function estimateCreditsWorkflow(durationSeconds?: number | null) {
   return 'flow_digital_human';
 }
 
+function normalizeDimension(value: number | null | undefined): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
+  return Math.round(value);
+}
+
+function roundToMultiple(value: number, multiple: number) {
+  return Math.max(multiple, Math.round(value / multiple) * multiple);
+}
+
+function computeWan480pSize(sourceWidth: number, sourceHeight: number) {
+  const baseArea = 832 * 480;
+  const aspectRatio = sourceWidth / sourceHeight;
+  const targetWidth = roundToMultiple(Math.sqrt(baseArea * aspectRatio), 16);
+  const targetHeight = roundToMultiple(Math.sqrt(baseArea / aspectRatio), 16);
+
+  return {
+    aspectRatio,
+    targetWidth,
+    targetHeight,
+  };
+}
+
+async function probeImageDimensions(imageUrl: string): Promise<{ width: number; height: number } | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const response = await fetch(imageUrl, {
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType && !contentType.toLowerCase().startsWith('image/')) {
+      return null;
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const metadata = await sharp(buffer).metadata();
+    const width = normalizeDimension(metadata.width ?? null);
+    const height = normalizeDimension(metadata.height ?? null);
+    if (!width || !height) return null;
+
+    return { width, height };
+  } catch (error) {
+    console.warn('Failed to probe digital human source image dimensions', {
+      imageUrl,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function resolveSourceDimensions(options: {
+  sourceType: DigitalHumanSourceType;
+  sourceUrl: string;
+  sourceWidth?: number | null;
+  sourceHeight?: number | null;
+}) {
+  const providedWidth = normalizeDimension(options.sourceWidth);
+  const providedHeight = normalizeDimension(options.sourceHeight);
+  if (providedWidth && providedHeight) {
+    return { width: providedWidth, height: providedHeight, source: 'client' as const };
+  }
+
+  if (options.sourceType === 'IMAGE') {
+    const probed = await probeImageDimensions(options.sourceUrl);
+    if (probed) {
+      return { ...probed, source: 'server_probe' as const };
+    }
+  }
+
+  return null;
+}
+
 export async function createDigitalHumanJob(options: CreateDigitalHumanJobOptions) {
   const {
     type,
     imageUrl,
     videoUrl,
     sourceType,
+    sourceWidth,
+    sourceHeight,
     audioUrl,
     script,
     emoAudioUrl,
@@ -150,6 +233,15 @@ export async function createDigitalHumanJob(options: CreateDigitalHumanJobOption
       process.env.N8N_DIGITAL_HUMAN_VIDEO_WEBHOOK || 'https://hooks.atomx.top/webhook/digital-human-video-lipsync-gen';
     const targetWebhookUrl = resolvedSourceType === 'VIDEO' ? videoWebhookUrl : webhookUrl;
     const audioDuration = durationSeconds ?? 0;
+    const sourceDimensions = await resolveSourceDimensions({
+      sourceType: resolvedSourceType,
+      sourceUrl: resolvedSourceUrl,
+      sourceWidth,
+      sourceHeight,
+    });
+    const outputDimensions = sourceDimensions
+      ? computeWan480pSize(sourceDimensions.width, sourceDimensions.height)
+      : null;
 
     let payload: Record<string, any> = {
       task_id: digitalHuman.id,
@@ -160,6 +252,19 @@ export async function createDigitalHumanJob(options: CreateDigitalHumanJobOption
       workflow_id: workflowIdForCredits,
       audio_duration: audioDuration,
     };
+    if (sourceDimensions && outputDimensions) {
+      payload = {
+        ...payload,
+        source_width: sourceDimensions.width,
+        source_height: sourceDimensions.height,
+        source_dimensions_source: sourceDimensions.source,
+        aspect_ratio: Number(outputDimensions.aspectRatio.toFixed(6)),
+        target_width: outputDimensions.targetWidth,
+        target_height: outputDimensions.targetHeight,
+        comfy_width_node_id: 327,
+        comfy_height_node_id: 326,
+      };
+    }
     if (resolvedSourceType === 'VIDEO') {
       payload.video_url = resolvedSourceUrl;
     } else {

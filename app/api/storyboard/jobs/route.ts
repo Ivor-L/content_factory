@@ -86,7 +86,9 @@ export async function POST(request: Request) {
       };
     }
 
-    if (parsed.characterId) {
+    const allowCharacterReference = parsed.pipelineKey !== 'viral_clone';
+
+    if (parsed.characterId && allowCharacterReference) {
       const character = await prisma.character.findFirst({
         where: { id: parsed.characterId, userId },
         select: {
@@ -122,7 +124,7 @@ export async function POST(request: Request) {
       title: parsed.title,
       script: parsed.script,
       creativeTaskId: parsed.creativeTaskId,
-      characterId: parsed.characterId,
+      characterId: allowCharacterReference ? parsed.characterId : '',
       productId: parsed.productId,
       metadata,
       source: parsed.source || 'storyboard_jobs_api',
@@ -139,11 +141,17 @@ export async function POST(request: Request) {
         status: result.status,
         pipelineKey: result.pipelineKey,
         workflowId: result.workflowId,
+        workflowTriggered: result.workflowTriggered,
       },
     });
   } catch (error) {
     console.error('[storyboard/jobs] Failed to create storyboard job', error);
-    return NextResponse.json({ error: 'Failed to create storyboard job' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Failed to create storyboard job';
+    const isWorkflowError = message.toLowerCase().includes('n8n webhook failed');
+    return NextResponse.json(
+      { error: isWorkflowError ? message : 'Failed to create storyboard job' },
+      { status: 500 }
+    );
   }
 }
 

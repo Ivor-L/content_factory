@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1242" height="1656" viewBox="0 0 1242 1656">
+  <defs>
+    
+  </defs>
+  <rect x="0" y="0" width="1242" height="1656" fill="#121211"/>
+  <rect x="84" y="84" width="1074" height="1488" rx="30" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.12)" stroke-width="2"/>
+  <text x="120" y="176" font-size="56" font-weight="700" fill="#d9c8a6" font-family="'PingFang SC','Microsoft YaHei',sans-serif">综合素质评价</text>
+  <text x="120" y="260" font-size="42" fill="#ece6dc" font-family="'PingFang SC','Microsoft YaHei',sans-serif">综合素质评价</text>
+  <text x="120" y="332" font-size="42" fill="#ece6dc" font-family="'PingFang SC','Microsoft YaHei',sans-serif">四、艺术素养</text>
+  <g>
+    <rect x="120" y="366" width="1002" height="72" fill="#d9c8a6" fill-opacity="0.14" stroke="#ece6dc" stroke-opacity="0.28" stroke-width="2"/>
+    
+<text x="142" y="408" font-size="34" font-weight="700" fill="#ece6dc" font-family="'PingFang SC','Microsoft YaHei',sans-serif">项目</text>
+<line x1="621" y1="366" x2="621" y2="438" stroke="#ece6dc" stroke-opacity="0.24" stroke-width="2"/>
+<text x="643" y="408" font-size="34" font-weight="700" fill="#ece6dc" font-family="'PingFang SC','Microsoft YaHei',sans-serif">内容</text>
+  </g>
+  <g>
+    <rect x="120" y="438" width="1002" height="72" fill="#ece6dc" fill-opacity="0.03" stroke="#ece6dc" stroke-opacity="0.28" stroke-width="2"/>
+    
+<text x="142" y="480" font-size="34" font-weight="500" fill="#ece6dc" font-family="'PingFang SC','Microsoft YaHei',sans-serif">活动名称</text>
+<line x1="621" y1="438" x2="621" y2="510" stroke="#ece6dc" stroke-opacity="0.24" stroke-width="2"/>
+<text x="643" y="480" font-size="34" font-weight="500" fill="#ece6dc" font-family="'PingFang SC','Microsoft YaHei',sans-serif">社区书法展览活动</text>
+  </g>
+  <g>
+    <rect x="120" y="510" width="1002" height="72" fill="#ece6dc" fill-opacity="0.03" stroke="#ece6dc" stroke-opacity="0.28" stroke-width="2"/>
+    
+<text x="142" y="552" font-size="34" font-weight="500" fill="#ece6dc" font-family="'PingFang SC','Microsoft YaHei',sans-serif">参加时间</text>
+<line x1="621" y1="510" x2="621" y2="582" stroke="#ece6dc" stroke-opacity="0.24" stroke-width="2"/>
+<text x="643" y="552" font-size="34" font-weight="500" fill="#ece6dc" font-family="'PingFang SC','Microsoft YaHei',sans-serif">自填</text>
+  </g>
+  <g>
+    <rect x="120" y="582" width="1002" height="72" fill="#ece6dc" fill-opacity="0.03" stroke="#ece6dc" stroke-opacity="0.28" stroke-width="2"/>
+    
+<text x="142" y="624" font-size="34" font-weight="500" fill="#ece6dc" font-family="'PingFang SC','Microsoft YaHei',sans-serif">时长</text>
+<line x1="621" y1="582" x2="621" y2="654" stroke="#ece6dc" stroke-opacity="0.24" stroke-width="2"/>
+<text x="643" y="624" font-size="34" font-weight="500" fill="#ece6dc" font-family="'PingFang SC','Microsoft YaHei',sans-serif">1小时</text>
+  </g>
+  <g>
+    <rect x="120" y="654" width="1002" height="72" fill="#ece6dc" fill-opacity="0.03" stroke="#ece6dc" stroke-opacity="0.28" stroke-width="2"/>
+    
+<text x="142" y="696" font-size="34" font-weight="500" fill="#ece6dc" font-family="'PingFang SC','Microsoft YaHei',sans-serif">艺术项目</text>
+<line x1="621" y1="654" x2="621" y2="726" stroke="#ece6dc" stroke-opacity="0.24" stroke-width="2"/>
+<text x="643" y="696" font-size="34" font-weight="500" fill="#ece6dc" font-family="'PingFang SC','Microsoft YaHei',sans-serif">书法</text>
+  </g>
+  <g>
+    <rect x="120" y="726" width="1002" height="72" fill="#ece6dc" fill-opacity="0.03" stroke="#ece6dc" stroke-opacity="0.28" stroke-width="2"/>
+    
+<text x="142" y="768" font-size="34" font-weight="500" fill="#ece6dc" font-family="'PingFang SC','Microsoft YaHei',sans-serif">活动地点</text>
+<line x1="621" y1="726" x2="621" y2="798" stroke="#ece6dc" stroke-opacity="0.24" stroke-width="2"/>
+<text x="643" y="768" font-size="34" font-weight="500" fill="#ece6dc" font-family="'PingFang SC','Microsoft YaHei',sans-serif">社区活动中心</text>
+  </g>
+  <text x="120" y="836" font-size="42" fill="#ece6dc" font-family="'PingFang SC','Microsoft YaHei',sans-serif">活动内容：</text>
+  <text x="120" y="908" font-size="42" fill="#ece6dc" font-family="'PingFang SC','Microsoft YaHei',sans-serif">我参加了社区组织的书法展览活动。</text>
+  <text x="1110" y="1540" text-anchor="end" font-size="30" fill="#ece6dc" opacity="0.72" font-family="'PingFang SC','Microsoft YaHei',sans-serif">1/1</text>
+</svg>

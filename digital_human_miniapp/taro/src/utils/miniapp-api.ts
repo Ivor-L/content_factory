@@ -154,6 +154,7 @@ export interface CreateStoryboardJobResult {
   status: string;
   pipelineKey: StoryboardPipelineKey;
   workflowId: string;
+  workflowTriggered?: boolean;
 }
 
 export interface StoryboardSegmentItem {
@@ -184,6 +185,7 @@ export interface StoryboardTaskStatusResult {
   imageModel?: string | null;
   videoModel?: string | null;
   finalVideoUrl: string | null;
+  detailedBreakdown?: Record<string, unknown> | null;
   references: StoryboardReferenceItem[];
   segments: StoryboardSegmentItem[];
 }
@@ -712,6 +714,25 @@ function setApiKey(apiKey: string | null) {
   }
 }
 
+function extractErrorMessage(payload: unknown, fallback: string): string {
+  if (!payload || typeof payload !== 'object') return fallback;
+
+  const data = payload as Record<string, unknown>;
+  const error = data.error;
+  if (typeof error === 'string' && error.trim()) return error.trim();
+  if (error && typeof error === 'object') {
+    const errorObj = error as Record<string, unknown>;
+    const message = errorObj.message;
+    if (typeof message === 'string' && message.trim()) return message.trim();
+    const code = errorObj.code;
+    if (typeof code === 'string' && code.trim()) return code.trim();
+  }
+
+  const message = data.message;
+  if (typeof message === 'string' && message.trim()) return message.trim();
+  return fallback;
+}
+
 function getAccessToken(): string | null {
   try {
     const token = String(Taro.getStorageSync(ACCESS_TOKEN_STORAGE_KEY) || '').trim();
@@ -749,12 +770,49 @@ async function request<T = unknown>(
   });
 
   if (res.statusCode < 200 || res.statusCode >= 300) {
-    const payload = res.data as Record<string, unknown> | null;
-    const message = (payload?.error as string) ?? `HTTP ${res.statusCode}`;
+    const message = extractErrorMessage(res.data, `HTTP ${res.statusCode}`);
     throw new Error(message);
   }
 
   return res.data as T;
+}
+
+async function uploadFile(filePath: string, name: string, mimeType: string): Promise<string> {
+  const apiKey = getApiKey();
+  const accessToken = getAccessToken();
+  const headers: Record<string, string> = {};
+
+  if (apiKey) {
+    headers['X-User-Api-Key'] = apiKey;
+  }
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
+
+  const res = await Taro.uploadFile({
+    url: resolveUrl('/api/upload'),
+    filePath,
+    name: 'file',
+    header: headers,
+    formData: { filename: name, contentType: mimeType },
+  });
+
+  if (res.statusCode < 200 || res.statusCode >= 300) {
+    let payload: unknown = null;
+    try {
+      payload = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+    } catch {
+      payload = res.data;
+    }
+    throw new Error(extractErrorMessage(payload, '上传失败'));
+  }
+
+  const payload = typeof res.data === 'string'
+    ? (JSON.parse(res.data) as Record<string, unknown>)
+    : (res.data as Record<string, unknown>);
+  const url = typeof payload?.url === 'string' ? payload.url.trim() : '';
+  if (!url) throw new Error('上传结果缺少图片地址');
+  return url;
 }
 
 function isHttpStatusError(error: unknown, statusCode: number): boolean {
@@ -764,6 +822,7 @@ function isHttpStatusError(error: unknown, statusCode: number): boolean {
 
 function detectWorkType(item: any): WorkItem['type'] {
   const taskType = String(item?.taskType ?? '').toLowerCase();
+  if (taskType === 'storyboard') return 'video';
   if (taskType.includes('video') || taskType.includes('digital') || taskType === 't2v') return 'video';
   if (taskType.includes('poster') || taskType.includes('image')) return 'image-text';
   if (taskType.includes('script') || taskType.includes('copy') || taskType.includes('writing')) return 'copy';
@@ -894,6 +953,10 @@ function toProductSummary(raw: {
 }
 
 export const miniappApi = {
+  async uploadMedia(filePath: string, name: string, mimeType: string): Promise<string> {
+    return uploadFile(filePath, name, mimeType);
+  },
+
   async getProfile(): Promise<MiniappProfile> {
     const userInfoStr = Taro.getStorageSync('USER_INFO');
     let userInfo = userInfoStr ? JSON.parse(userInfoStr as string) : null;
@@ -1351,6 +1414,7 @@ export const miniappApi = {
       status: String(data.status || 'ANALYZING'),
       pipelineKey: (String(data.pipelineKey || input.pipelineKey) as StoryboardPipelineKey),
       workflowId: String(data.workflowId || ''),
+      workflowTriggered: data.workflowTriggered === true,
     };
   },
 
@@ -1463,9 +1527,14 @@ export const miniappApi = {
         const resultUrl = typeof item.resultUrl === 'string' ? item.resultUrl : null;
         const scriptContent = typeof item.scriptContent === 'string' ? item.scriptContent : '';
         const sourceImageUrl = pickImageUrl(item.coverUrl, item.thumbnailUrl, item.imageUrl);
+        const isActionTransfer = String(item.type || '').toUpperCase() === 'ACTION_TRANSFER';
         works.push({
           id: String(item.id),
-          title: item.type === 'VOICE_CLONE' ? '数字人文字驱动视频' : '数字人口型驱动视频',
+          title: isActionTransfer
+            ? '动作复刻视频'
+            : item.type === 'VOICE_CLONE'
+              ? '数字人文字驱动视频'
+              : '数字人口型驱动视频',
           type: 'video',
           status: normalizeStatus(item.status),
           taskType: 'digitalHuman',
@@ -1480,6 +1549,7 @@ export const miniappApi = {
             videoUrl: resultUrl,
             sourceType: typeof item.sourceType === 'string' ? item.sourceType : '',
             sourceImageUrl,
+            referenceVideoUrl: isActionTransfer && typeof item.audioUrl === 'string' ? item.audioUrl : '',
           },
           source: 'digitalHuman',
         });
@@ -1501,6 +1571,10 @@ export const miniappApi = {
       imageModel: typeof data.imageModel === 'string' ? data.imageModel : null,
       videoModel: typeof data.videoModel === 'string' ? data.videoModel : null,
       finalVideoUrl: typeof data.finalVideoUrl === 'string' ? data.finalVideoUrl : null,
+      detailedBreakdown:
+        data.detailedBreakdown && typeof data.detailedBreakdown === 'object' && !Array.isArray(data.detailedBreakdown)
+          ? data.detailedBreakdown as Record<string, unknown>
+          : null,
       references: Array.isArray(data.references)
         ? data.references
           .map((item: any) => ({
@@ -1731,12 +1805,14 @@ export const miniappApi = {
   async triggerImageTextReplicationGenerate(taskId: string, params: {
     stylePresetId: string;
     topicHint?: string;
+    imageCount?: number;
   }): Promise<{ taskId: string; status: string }> {
     return request<{ taskId: string; status: string }>(`/api/image-text-replication/${encodeURIComponent(taskId)}/generate`, {
       method: 'POST',
       data: {
         stylePresetId: params.stylePresetId,
         topicHint: params.topicHint ?? '',
+        imageCount: typeof params.imageCount === 'number' ? params.imageCount : undefined,
       },
     });
   },

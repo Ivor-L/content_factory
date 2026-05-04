@@ -190,6 +190,60 @@ export const DEFAULT_MONETIZATION_SQUARE_CONFIG: MonetizationSquareConfigPayload
         },
       ],
     },
+    {
+      id: 'share-monetization',
+      name: '分享变现',
+      items: [
+        {
+          id: 'channels-video-share',
+          title: '视频号分享列表',
+          subtitle: '配置视频号视频，用户点击后打开对应视频号内容',
+          tags: ['视频号', '分享变现'],
+          action: {
+            type: 'route',
+            route: '/pages/home/index',
+            params: {},
+            featureKey: 'monetization_channels_video_share',
+          },
+          demos: [
+            {
+              id: 'channels-video-demo-1',
+              title: '视频号视频 1',
+              subtitle: '填写 finderUserName 和 feedId 后在小程序分享变现页展示',
+              coverImageUrl: '',
+              demoVideoUrl: '',
+              tags: ['视频号'],
+              action: {
+                type: 'route',
+                route: '/pages/home/index',
+                params: {
+                  finderUserName: '',
+                  feedId: '',
+                  likesText: '10万+',
+                },
+              },
+            },
+            {
+              id: 'channels-video-demo-2',
+              title: '视频号视频 2',
+              subtitle: '可上传封面图，也可粘贴封面 URL',
+              coverImageUrl: '',
+              demoVideoUrl: '',
+              tags: ['视频号'],
+              action: {
+                type: 'route',
+                route: '/pages/home/index',
+                params: {
+                  finderUserName: '',
+                  feedId: '',
+                  likesText: '5万+',
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
   ],
 };
 

@@ -1,0 +1,528 @@
+{
+  "name": "小程序首页-爆款拆解-分镜网格-OSS",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "miniapp_viral_breakdown_grid",
+        "options": {}
+      },
+      "id": "miniapp-viral-webhook",
+      "name": "Webhook",
+      "position": [
+        -1600,
+        0
+      ],
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const root = $json || {};\nconst body = root.body && typeof root.body === 'object' && !Array.isArray(root.body)\n  ? root.body\n  : root;\n\nfunction parseMaybeJson(value) {\n  if (!value) return {};\n  if (typeof value === 'object' && !Array.isArray(value)) return value;\n  if (typeof value !== 'string') return {};\n  try {\n    const parsed = JSON.parse(value);\n    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};\n  } catch {\n    return {};\n  }\n}\n\nconst data = parseMaybeJson(body.data || root.data);\nconst metadata = {\n  ...parseMaybeJson(root.metadata),\n  ...parseMaybeJson(body.metadata),\n  ...parseMaybeJson(data.metadata),\n};\n\nconst pick = (...vals) => {\n  for (const v of vals) {\n    if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();\n  }\n  return '';\n};\n\nfunction normalizeSourceUrl(value) {\n  const raw = pick(value);\n  if (!raw) return '';\n  if (/^https?:\\/\\//i.test(raw)) return raw;\n  if (raw.startsWith('//')) return `https:${raw}`;\n  return raw;\n}\n\nconst taskId = pick(\n  body.task_id, body.taskId, body.record_id, body.recordId,\n  data.task_id, data.taskId, data.record_id, data.recordId,\n  root.task_id, root.taskId, root.record_id, root.recordId\n);\nconst videoUrl = normalizeSourceUrl(pick(\n  body.video_url, body.videoUrl, body.url,\n  body.reference_video_url, body.referenceVideoUrl,\n  data.video_url, data.videoUrl, data.url,\n  data.reference_video_url, data.referenceVideoUrl,\n  metadata.video_url, metadata.videoUrl,\n  metadata.reference_video_url, metadata.referenceVideoUrl\n));\nconst callbackUrl = pick(body.callback_url, body.callbackUrl, data.callback_url, data.callbackUrl, root.callback_url, root.callbackUrl).replace(/\\/$/, '');\nconst appUrl = pick(body.app_url, body.appUrl, data.app_url, data.appUrl, root.app_url, root.appUrl).replace(/\\/$/, '');\nconst adminToken = pick(body.admin_token, body.adminToken, data.admin_token, data.adminToken, root.admin_token, root.adminToken);\nconst apiKey = pick(body.api_key, body.apiKey, data.api_key, data.apiKey, root.api_key, root.apiKey);\n\nif (!taskId) throw new Error('task_id/taskId is required');\nif (!videoUrl || !/^https?:\\/\\//i.test(videoUrl)) {\n  throw new Error(\n    `video_url is required; tried video_url/videoUrl/url/reference_video_url/referenceVideoUrl/metadata.reference_video_url. body_keys=${Object.keys(body).join(',')}; data_keys=${Object.keys(data).join(',')}; metadata_keys=${Object.keys(metadata).join(',')}`\n  );\n}\nif (!callbackUrl) throw new Error('callback_url is required');\n\nconst frameIntervalSec = Math.max(0.5, Number(body.frame_interval_s || body.frameIntervalSec || 1) || 1);\nconst maxOverviewFrames = Math.max(10, Number(body.max_overview_frames || body.maxOverviewFrames || 40) || 40);\nconst clipMaxSeconds = Math.min(15, Math.max(4, Number(body.clip_max_seconds || body.clipMaxSeconds || 15) || 15));\n\nreturn {\n  json: {\n    taskId,\n    record_id: taskId,\n    videoUrl,\n    original_video_url: videoUrl,\n    callbackUrl,\n    appUrl,\n    adminToken,\n    apiKey,\n    userId: pick(body.user_id, body.userId, data.user_id, data.userId),\n    productName: pick(body.product_name, body.productName, data.product_name, data.productName, metadata.product_name, metadata.productName),\n    productDescription: pick(body.product_description, body.productDescription, data.product_description, data.productDescription, metadata.product_description, metadata.productDescription),\n    productSellingPoints: pick(body.product_selling_points, body.productSellingPoints, data.product_selling_points, data.productSellingPoints, metadata.product_selling_points, metadata.productSellingPoints),\n    targetLanguage: pick(body.target_language, body.targetLanguage, data.target_language, data.targetLanguage, metadata.target_language, metadata.targetLanguage, '中文'),\n    targetCountry: pick(body.target_country, body.targetCountry, data.target_country, data.targetCountry, metadata.target_country, metadata.targetCountry, '中国'),\n    workflowId: pick(body.workflow_id, body.workflowId, data.workflow_id, data.workflowId, 'flow_miniapp_viral_breakdown'),\n    workflowName: pick(body.workflow_name, body.workflowName, data.workflow_name, data.workflowName, '小程序首页爆款拆解'),\n    pipelineKey: 'miniapp_viral_breakdown_grid',\n    frameIntervalSec,\n    maxOverviewFrames,\n    clipMaxSeconds,\n    workDir: `/tmp/miniapp_viral_bd_${taskId}`\n  }\n};"
+      },
+      "id": "miniapp-viral-prepare",
+      "name": "准备参数",
+      "position": [
+        -1376,
+        0
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "command": "=WORK_DIR=\"{{ $json.workDir }}\"\nVIDEO_URL=\"{{ $json.videoUrl }}\"\nLOCAL_VIDEO_PATH=\"$WORK_DIR/input.mp4\"\nTASK_ID=\"{{ $json.taskId }}\"\n\nmkdir -p \"$WORK_DIR\" || exit 1\nexport VIDEO_URL LOCAL_VIDEO_PATH TASK_ID\n\nnode <<'NODE'\nconst fs = require('fs');\nconst http = require('http');\nconst https = require('https');\nconst { URL } = require('url');\n\nconst videoUrl = process.env.VIDEO_URL;\nconst outputPath = process.env.LOCAL_VIDEO_PATH;\nconst taskId = process.env.TASK_ID;\n\nfunction download(url, dest, redirects = 0) {\n  return new Promise((resolve, reject) => {\n    if (redirects > 5) return reject(new Error('too many redirects'));\n    const parsed = new URL(url);\n    const client = parsed.protocol === 'https:' ? https : http;\n    const req = client.get(url, (res) => {\n      const code = res.statusCode || 0;\n      if ([301, 302, 303, 307, 308].includes(code) && res.headers.location) {\n        const nextUrl = new URL(res.headers.location, url).toString();\n        res.resume();\n        return resolve(download(nextUrl, dest, redirects + 1));\n      }\n      if (code < 200 || code >= 300) {\n        res.resume();\n        return reject(new Error(`download failed with status ${code}`));\n      }\n      const file = fs.createWriteStream(dest);\n      res.pipe(file);\n      file.on('finish', () => {\n        file.close(() => {\n          const stat = fs.statSync(dest);\n          if (!stat.size) return reject(new Error('empty file'));\n          process.stdout.write(JSON.stringify({ taskId, localVideoPath: dest, size: stat.size }) + '\\n');\n          resolve();\n        });\n      });\n      file.on('error', reject);\n    });\n    req.on('error', reject);\n    req.setTimeout(120000, () => req.destroy(new Error('download timeout')));\n  });\n}\n\ndownload(videoUrl, outputPath).catch((err) => {\n  console.error(JSON.stringify({ success: false, message: err.message }));\n  process.exit(1);\n});\nNODE"
+      },
+      "id": "miniapp-viral-download",
+      "name": "下载视频到本地",
+      "position": [
+        -1152,
+        0
+      ],
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = String($json.stdout || '').trim();\nif (!raw) throw new Error('下载视频到本地没有返回 stdout');\nlet parsed;\ntry { parsed = JSON.parse(raw); } catch (e) {\n  throw new Error(`解析下载结果失败: ${e.message}; raw=${raw.slice(0, 500)}`);\n}\nif (!parsed.localVideoPath) throw new Error('下载结果缺少 localVideoPath');\nreturn { json: { ...$('准备参数').first().json, localVideoPath: parsed.localVideoPath, videoSize: parsed.size || 0 } };"
+      },
+      "id": "miniapp-viral-parse-download",
+      "name": "解析下载结果",
+      "position": [
+        -928,
+        0
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "command": "=sh -c '\nIN=\"{{ $json.localVideoPath }}\";\nffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"$IN\"\n'"
+      },
+      "id": "miniapp-viral-ffprobe",
+      "name": "ffprobe 获取时长",
+      "position": [
+        -704,
+        0
+      ],
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const base = $('解析下载结果').first().json;\nconst duration = Number(String($json.stdout || '').trim());\nif (!Number.isFinite(duration) || duration <= 0) {\n  throw new Error(`ffprobe duration invalid: ${$json.stdout}`);\n}\nconst clipMaxSeconds = Number(base.clipMaxSeconds || 15);\nconst totalClips = Math.max(1, Math.ceil(duration / clipMaxSeconds));\nreturn {\n  json: {\n    ...base,\n    videoDurationSec: Number(duration.toFixed(3)),\n    totalClips\n  }\n};"
+      },
+      "id": "miniapp-viral-parse-duration",
+      "name": "解析视频时长",
+      "position": [
+        -480,
+        0
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "command": "=WORK_DIR=\"{{ $json.workDir }}\"\nIN=\"{{ $json.localVideoPath }}\"\nDURATION=\"{{ $json.videoDurationSec }}\"\nFRAME_INTERVAL=\"{{ $json.frameIntervalSec }}\"\nMAX_OVERVIEW=\"{{ $json.maxOverviewFrames }}\"\nCLIP_MAX=\"{{ $json.clipMaxSeconds }}\"\nTASK_ID=\"{{ $json.taskId }}\"\n\nmkdir -p \"$WORK_DIR/grids\"\nexport WORK_DIR IN DURATION FRAME_INTERVAL MAX_OVERVIEW CLIP_MAX TASK_ID\n\nnode <<'NODE'\nconst { execFileSync } = require('child_process');\nconst fs = require('fs');\nconst path = require('path');\n\nconst workDir = process.env.WORK_DIR;\nconst input = process.env.IN;\nconst duration = Number(process.env.DURATION);\nconst configuredInterval = Number(process.env.FRAME_INTERVAL || 1);\nconst maxOverview = Number(process.env.MAX_OVERVIEW || 40);\nconst clipMax = Math.min(15, Number(process.env.CLIP_MAX || 15));\nconst taskId = process.env.TASK_ID;\n\nfunction ceil(n) { return Math.max(1, Math.ceil(n)); }\nfunction fmt(sec) {\n  const s = Math.max(0, Number(sec) || 0);\n  const mm = Math.floor(s / 60);\n  const ss = Math.floor(s % 60);\n  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;\n}\nfunction escapeDrawtext(value) {\n  return String(value || '')\n    .replace(/\\\\/g, '\\\\\\\\')\n    .replace(/:/g, '\\\\:')\n    .replace(/'/g, \"\\\\\\\\'\")\n    .replace(/\\[/g, '\\\\[')\n    .replace(/\\]/g, '\\\\]');\n}\nfunction safeTs(sec) {\n  if (!Number.isFinite(duration) || duration <= 0) return Math.max(0, Number(sec) || 0);\n  return Math.min(Math.max(0, Number(sec) || 0), Math.max(0, duration - 0.05));\n}\nfunction makeGrid({ start, len, kind, clipIndex }) {\n  const expected = Math.max(1, Math.ceil(len / configuredInterval));\n  const frameCount = kind === 'full' ? Math.min(maxOverview, expected) : Math.min(15, expected);\n  const interval = Math.max(0.25, len / frameCount);\n  const rows = ceil(frameCount / 5);\n  const frameDir = path.join(workDir, 'grids', `${kind}_${String(clipIndex).padStart(2, '0')}_frames`);\n  const out = path.join(workDir, 'grids', `${kind}_${String(clipIndex).padStart(2, '0')}.jpg`);\n  fs.rmSync(frameDir, { recursive: true, force: true });\n  fs.mkdirSync(frameDir, { recursive: true });\n\n  for (let i = 0; i < frameCount; i += 1) {\n    const offset = Math.min(Math.max(0, len - 0.05), i * interval);\n    const ts = safeTs(start + offset);\n    const framePath = path.join(frameDir, `frame_${String(i + 1).padStart(3, '0')}.jpg`);\n    const label = `${kind === 'full' ? 'FULL' : 'CLIP ' + clipIndex}  #${i + 1}  ${fmt(ts)}`;\n    const vf = [\n      'scale=360:-2',\n      `drawtext=text='${escapeDrawtext(label)}':x=10:y=10:fontsize=22:fontcolor=yellow:borderw=3:bordercolor=black`\n    ].join(',');\n    execFileSync('ffmpeg', [\n      '-hide_banner', '-loglevel', 'error', '-y',\n      '-ss', String(ts),\n      '-i', input,\n      '-frames:v', '1',\n      '-vf', vf,\n      '-q:v', '3',\n      framePath\n    ], { stdio: ['ignore', 'pipe', 'pipe'] });\n  }\n\n  execFileSync('ffmpeg', [\n    '-hide_banner', '-loglevel', 'error', '-y',\n    '-framerate', '1',\n    '-i', path.join(frameDir, 'frame_%03d.jpg'),\n    '-vf', `tile=5x${rows}:margin=2:padding=2:color=black`,\n    '-frames:v', '1',\n    '-q:v', '3',\n    out\n  ], { stdio: ['ignore', 'pipe', 'pipe'] });\n  const stat = fs.statSync(out);\n  if (!stat.size) throw new Error(`grid output empty: ${out}`);\n\n  return {\n    kind,\n    clip_index: clipIndex,\n    filePath: out,\n    fileName: `${taskId}_${kind}_${String(clipIndex).padStart(2, '0')}.jpg`,\n    start_sec: Number(start.toFixed(3)),\n    end_sec: Number(Math.min(duration, start + len).toFixed(3)),\n    duration: Number(len.toFixed(3)),\n    time_range: `${fmt(start)}-${fmt(Math.min(duration, start + len))}`,\n    columns: 5,\n    rows,\n    frame_count: frameCount\n  };\n}\n\nconst grids = [];\ngrids.push(makeGrid({ start: 0, len: duration, kind: 'full', clipIndex: 0 }));\n\nconst totalClips = Math.max(1, Math.ceil(duration / clipMax));\nfor (let i = 0; i < totalClips; i += 1) {\n  const start = i * clipMax;\n  const len = Math.max(0.2, Math.min(clipMax, duration - start));\n  grids.push(makeGrid({ start, len, kind: 'clip', clipIndex: i + 1 }));\n}\n\nprocess.stdout.write(JSON.stringify({ taskId, duration, total_clips: totalClips, grids }) + '\\n');\nNODE"
+      },
+      "id": "miniapp-viral-generate-grids",
+      "name": "ffmpeg生成5列分镜网格",
+      "position": [
+        -256,
+        0
+      ],
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = String($json.stdout || '').trim();\nif (!raw) throw new Error('生成分镜网格没有返回 stdout');\nlet parsed;\ntry { parsed = JSON.parse(raw); } catch (e) {\n  throw new Error(`解析分镜网格失败: ${e.message}; raw=${raw.slice(0, 1000)}`);\n}\nif (!Array.isArray(parsed.grids) || !parsed.grids.length) throw new Error('未生成任何分镜网格');\nconst base = $('解析视频时长').first().json;\nreturn parsed.grids.map((grid) => ({ json: { ...base, ...grid, gridCount: parsed.grids.length, totalClipBoards: parsed.total_clips } }));"
+      },
+      "id": "miniapp-viral-parse-grids",
+      "name": "解析网格列表",
+      "position": [
+        -32,
+        0
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $json.filePath }}",
+        "options": {}
+      },
+      "id": "miniapp-viral-read-grid",
+      "name": "读取网格图片",
+      "position": [
+        192,
+        0
+      ],
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://atomx.top/api/upload/image",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "miniapp-viral-upload-oss",
+      "name": "上传网格到OSS",
+      "position": [
+        416,
+        0
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "parameters": {
+        "jsCode": "const uploads = $input.all();\nconst grids = $('解析网格列表').all();\nreturn uploads.map((item, index) => {\n  const upload = item.json || {};\n  const grid = grids[index]?.json || {};\n  const url = String(upload.url || upload.data?.url || upload.fileUrl || upload.publicUrl || '').trim();\n  if (!url) {\n    throw new Error(`OSS 上传结果缺少 url，index=${index}, response=${JSON.stringify(upload).slice(0, 500)}`);\n  }\n  return { json: { ...grid, oss_url: url, upload_response: upload } };\n});"
+      },
+      "id": "miniapp-viral-attach-oss",
+      "name": "绑定OSS网格URL",
+      "position": [
+        640,
+        0
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "jsCode": "const boards = $input.all().map(i => i.json || {});\nconst base = $('解析视频时长').first().json;\nconst full = boards.find(b => b.kind === 'full');\nconst clips = boards\n  .filter(b => b.kind === 'clip')\n  .sort((a, b) => Number(a.clip_index || 0) - Number(b.clip_index || 0));\nif (!full?.oss_url) throw new Error('缺少全片分镜网格 OSS URL');\nreturn [{\n  json: {\n    ...base,\n    storyboard_grid_url: full.oss_url,\n    storyboard_grid: full,\n    clip_boards: clips.map(c => ({\n      clip_index: c.clip_index,\n      time_range: c.time_range,\n      duration: c.duration,\n      start_sec: c.start_sec,\n      end_sec: c.end_sec,\n      grid_url: c.oss_url,\n      rows: c.rows,\n      columns: c.columns,\n      frame_count: c.frame_count\n    }))\n  }\n}];"
+      },
+      "id": "miniapp-viral-aggregate-boards",
+      "name": "汇总OSS网格",
+      "position": [
+        864,
+        0
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "fileSelector": "={{ $json.localVideoPath }}",
+        "options": {}
+      },
+      "id": "miniapp-viral-read-video",
+      "name": "读取视频文件",
+      "position": [
+        1088,
+        0
+      ],
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1
+    },
+    {
+      "parameters": {
+        "jsCode": "function pickBinaryKey(bin) {\n  if (!bin || typeof bin !== 'object') return '';\n  if (bin.data) return 'data';\n  const keys = Object.keys(bin);\n  return keys[0] || '';\n}\nfunction text(v, fallback = '') {\n  const s = v == null ? '' : String(v).trim();\n  return s || fallback;\n}\n\nconst item = $input.first();\nconst j = item.json || {};\nconst binaryKey = pickBinaryKey(item.binary || {});\nif (!binaryKey) throw new Error('读取视频文件后缺少 binary data');\nconst buffer = await this.helpers.getBinaryDataBuffer(0, binaryKey);\nif (!buffer?.length) throw new Error('视频 binary 为空');\n\nconst clipBoards = Array.isArray(j.clip_boards) ? j.clip_boards : [];\n\nconst instruction = `\n你是一个爆款短视频拆解与复刻提示词专家。你正在为“小程序首页-爆款复刻”的第一步“爆款拆解”生成结构化结果。\n\n你会收到完整视频。n8n 已经用 ffmpeg 生成了分镜网格图：\n- 全片总览分镜图：${j.storyboard_grid_url}\n- 分段分镜板：${JSON.stringify(clipBoards)}\n\n你必须严格参考 Arcads clone-ad / analyze-video skill 的拆解方式：\n1. 先做 source video analysis：识别总时长、核心风格、镜头数量、对白词数、叙事类型。\n2. 再做 beat map：按真实内容节奏拆为 HOOK / SHOW / DEMO / PROOF / VERDICT / CTA 等节拍。\n3. 提炼 defining traits：找出 2-4 个让这个视频区别于普通 UGC/广告的特征。\n4. 区分 what transfers 与 what gets swapped：\n   - transfers：节奏、镜头语法、构图、情绪曲线、产品出现方式、转场、信任机制、CTA方式。\n   - swapped：原产品、原品牌、原卖点、原人物身份、原场景中不可复用的信息。\n5. 改写复刻提示词时复制“广告语法”，不要复制原品牌名或原素材本身。\n\n任务：\n1. 先理解完整视频的爆款机制，不要只做画面描述。\n2. 输出中文内容结构：开头钩子、中间铺垫、高潮、结尾CTA。\n3. 输出可复刻提示词。\n4. 如果视频总时长超过15秒，clone_prompt.clips 必须拆成多个 <=15秒 clip，按顺序生成；不要输出一个超长提示词。\n5. 每个 clip 都要有 start_state、end_state、handoff_to_next，方便后续按顺序生成和拼接。\n6. 输出 scenes，用于兼容现有分镜表和后续首帧/视频生成。\n\n硬性要求：\n- 输出 ONLY JSON，不要 markdown，不要解释。\n- 中文字段用中文。\n- image_prompt 和 video_prompt 用英文，适合后续视频/图片模型。\n- clone_prompt.global_prompt 可以中英混合，但 clip.prompt 必须是英文模型提示词。\n- 每个 clone_prompt.clips[].duration 必须 <= 15。\n- 如果总时长 <= 15，也至少输出 1 个 clip。\n- 保留原视频的广告语法：镜头节奏、画面顺序、情绪推进、CTA方式、字幕/贴纸/口播结构、产品出现方式。\n- 不要照抄具体品牌名，除非它是用户提供的新产品。\n- 生成提示词遵循 Subject + Action + Camera + Style + Constraints 的顺序。\n- UGC/广告复刻提示词必须包含真实拍摄缺陷：手机质感、轻微手持抖动、自然光/环境声/轻微过曝或虚焦等，除非原视频不是 UGC。\n- 如果有对白或字幕，必须提取 dialogue_pattern：句式结构、语气、停顿、爆点词，而不是照抄原句。\n- 每个 clip.prompt 必须是可直接用于视频生成的英文提示词；超过15秒时，后续 clip 必须写明承接上一个 clip 的结尾状态。\n\n输出 JSON schema：\n{\n  \"pipeline_key\": \"miniapp_viral_breakdown_grid\",\n  \"analysis_model\": \"gemini-3.1-flash-lite-preview\",\n  \"total_duration\": ${Number(j.videoDurationSec || 0)},\n  \"storyboard_grid_url\": \"${j.storyboard_grid_url}\",\n  \"clip_boards\": ${JSON.stringify(clipBoards)},\n  \"source_video_analysis\": {\n    \"duration\": 0,\n    \"style_name\": \"\",\n    \"format\": \"UGC / product demo / skit / testimonial / product hero / other\",\n    \"aspect_ratio\": \"\",\n    \"shot_count\": 0,\n    \"dialogue_word_count\": 0,\n    \"dialogue_pattern\": \"\",\n    \"edit_rhythm\": \"\",\n    \"camera_language\": \"\",\n    \"technical_texture\": \"\",\n    \"product_role\": \"\"\n  },\n  \"beat_map\": [\n    {\n      \"time_range\": \"00:00-00:03\",\n      \"beat\": \"HOOK\",\n      \"visual\": \"\",\n      \"dialogue_or_text\": \"\",\n      \"function\": \"\",\n      \"replication_note\": \"\"\n    }\n  ],\n  \"defining_traits\": [],\n  \"what_transfers\": [],\n  \"what_gets_swapped\": [],\n  \"content_structure\": {\n    \"hook\": {\"time_range\": \"\", \"summary\": \"\", \"mechanism\": \"\", \"replication_note\": \"\"},\n    \"buildup\": {\"time_range\": \"\", \"summary\": \"\", \"mechanism\": \"\", \"replication_note\": \"\"},\n    \"climax\": {\"time_range\": \"\", \"summary\": \"\", \"mechanism\": \"\", \"replication_note\": \"\"},\n    \"cta\": {\"time_range\": \"\", \"summary\": \"\", \"mechanism\": \"\", \"replication_note\": \"\"}\n  },\n  \"viral_mechanism\": {\n    \"core_idea\": \"\",\n    \"attention_triggers\": [],\n    \"retention_devices\": [],\n    \"trust_devices\": [],\n    \"conversion_devices\": []\n  },\n  \"clone_prompt\": {\n    \"generation_strategy\": \"single_clip or multi_clip_sequential\",\n    \"global_style_rules\": \"\",\n    \"global_negative_rules\": \"\",\n    \"dialogue_adaptation_rules\": \"\",\n    \"clips\": [\n      {\n        \"clip_index\": 1,\n        \"time_range\": \"00:00-00:15\",\n        \"duration\": 15,\n        \"role\": \"hook/setup/climax/cta\",\n        \"start_state\": \"\",\n        \"prompt\": \"English model-ready prompt for this <=15s clip, with timestamp beats if useful.\",\n        \"end_state\": \"\",\n        \"handoff_to_next\": \"\"\n      }\n    ]\n  },\n  \"scenes\": [\n    {\n      \"order\": 1,\n      \"time_range\": \"00:00-00:03\",\n      \"duration\": 3,\n      \"start_time\": \"00:00\",\n      \"shot_goal\": \"\",\n      \"visual_content_description\": \"\",\n      \"location_setting\": \"\",\n      \"character_desc\": \"\",\n      \"emotion_state\": \"\",\n      \"action_blocking\": \"\",\n      \"product_desc\": \"\",\n      \"must_show\": \"\",\n      \"on_screen_text_graphics\": \"\",\n      \"camera_shot_size\": \"\",\n      \"camera_angle\": \"\",\n      \"camera_movement\": \"\",\n      \"composition_notes\": \"\",\n      \"lighting_atmosphere\": \"\",\n      \"color_grading\": \"\",\n      \"original_script\": \"\",\n      \"rewritten_script\": \"\",\n      \"language_style\": \"\",\n      \"emphasis_notes\": \"\",\n      \"audio_bgm\": \"\",\n      \"audio_sfx\": \"\",\n      \"ambient_sound\": \"\",\n      \"editing_transition\": \"\",\n      \"pacing_notes\": \"\",\n      \"constraints_real_shoot\": \"\",\n      \"constraints_compliance\": \"\",\n      \"image_prompt\": \"English image prompt\",\n      \"video_prompt\": \"English video prompt\",\n      \"visual_description\": \"\",\n      \"camera_notes\": \"\",\n      \"lighting_notes\": \"\",\n      \"has_person\": true,\n      \"has_product\": true\n    }\n  ]\n}\n\n用户新产品信息：\n- product_name: ${text(j.productName, '未提供')}\n- product_description: ${text(j.productDescription, '未提供')}\n- product_selling_points: ${text(j.productSellingPoints, '未提供')}\n\n目标语言/地区：\n- language: ${text(j.targetLanguage, '中文')}\n- country: ${text(j.targetCountry, '中国')}\n`.trim();\n\nreturn [{\n  json: {\n    ...j,\n    gemini_body: {\n      contents: [{\n        role: 'user',\n        parts: [\n          { text: instruction },\n          { inline_data: { mime_type: 'video/mp4', data: buffer.toString('base64') } }\n        ]\n      }],\n      generationConfig: {\n        response_mime_type: 'application/json',\n        temperature: 0.2,\n        topP: 0.9,\n        maxOutputTokens: 12000\n      }\n    }\n  },\n  binary: item.binary\n}];"
+      },
+      "id": "miniapp-viral-build-gemini",
+      "name": "组装Gemini拆解请求",
+      "position": [
+        1312,
+        0
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://yunwu.ai/v1beta/models/gemini-3.1-flash-lite-preview:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.gemini_body }}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "id": "miniapp-viral-gemini",
+      "name": "Gemini爆款拆解",
+      "position": [
+        1536,
+        0
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "mMIH382GnJoMSu4L",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const base = $('汇总OSS网格').first().json || {};\nconst current = $json || {};\n\nfunction getAllText(root) {\n  const parts = root?.candidates?.[0]?.content?.parts || root?.response?.candidates?.[0]?.content?.parts || [];\n  return parts.map(p => p?.text || '').join('\\n').trim();\n}\nfunction stripFence(value) {\n  let t = String(value || '').trim();\n  t = t.replace(/^```(?:json)?\\s*/i, '').replace(/\\s*```$/i, '').trim();\n  const startObj = t.indexOf('{');\n  const endObj = t.lastIndexOf('}');\n  if (startObj >= 0 && endObj > startObj) t = t.slice(startObj, endObj + 1);\n  return t.replace(/[“”]/g, '\"').replace(/[‘’]/g, \"'\");\n}\nfunction parseJson(raw) {\n  const text = stripFence(raw);\n  try { return JSON.parse(text); } catch (e) {\n    const fixed = text.replace(/,\\s*([}\\]])/g, '$1');\n    return JSON.parse(fixed);\n  }\n}\nfunction toNumber(v, fallback = 0) {\n  const n = Number(v);\n  return Number.isFinite(n) ? n : fallback;\n}\nfunction text(v) {\n  return v == null ? '' : String(v).trim();\n}\nfunction normalizeClipDurations(clonePrompt, totalDuration) {\n  const clips = Array.isArray(clonePrompt?.clips) ? clonePrompt.clips : [];\n  if (!clips.length) return clonePrompt;\n  clonePrompt.clips = clips.map((clip, idx) => {\n    const duration = Math.min(15, Math.max(0.2, toNumber(clip.duration, 15)));\n    return {\n      clip_index: toNumber(clip.clip_index, idx + 1),\n      time_range: text(clip.time_range),\n      duration,\n      role: text(clip.role),\n      start_state: text(clip.start_state),\n      prompt: text(clip.prompt),\n      end_state: text(clip.end_state),\n      handoff_to_next: text(clip.handoff_to_next),\n    };\n  });\n  clonePrompt.generation_strategy = totalDuration > 15 ? 'multi_clip_sequential' : (clonePrompt.generation_strategy || 'single_clip');\n  return clonePrompt;\n}\n\nconst rawText = getAllText(current);\nif (!rawText) throw new Error(`Gemini 返回格式异常: ${JSON.stringify(current).slice(0, 1200)}`);\n\nlet parsed;\ntry { parsed = parseJson(rawText); } catch (e) {\n  throw new Error(`Gemini JSON 解析失败: ${e.message}; raw=${rawText.slice(0, 2000)}`);\n}\n\nconst totalDuration = toNumber(parsed.total_duration, base.videoDurationSec || 0);\nconst scenes = Array.isArray(parsed.scenes) ? parsed.scenes : [];\nif (!scenes.length) throw new Error('Gemini 未返回 scenes 数组');\n\nconst normalized = {\n  ...parsed,\n  pipeline_key: parsed.pipeline_key || base.pipelineKey,\n  analysis_model: 'gemini-3.1-flash-lite-preview',\n  total_duration: totalDuration,\n  scene_count: scenes.length,\n  storyboard_grid_url: parsed.storyboard_grid_url || base.storyboard_grid_url,\n  clip_boards: Array.isArray(parsed.clip_boards) && parsed.clip_boards.length ? parsed.clip_boards : base.clip_boards,\n  clone_prompt: normalizeClipDurations(parsed.clone_prompt || {}, totalDuration),\n  scenes,\n};\n\nconst segments = scenes.map((scene, idx) => ({\n  ...scene,\n  order: toNumber(scene.order, idx + 1),\n  duration: toNumber(scene.duration, 8),\n  time_range: text(scene.time_range),\n  original_script: text(scene.original_script),\n  rewritten_script: text(scene.rewritten_script),\n  visual_description: text(scene.visual_description || scene.visual_content_description),\n  camera_notes: text(scene.camera_notes || [scene.camera_shot_size, scene.camera_angle, scene.camera_movement].filter(Boolean).join(' / ')),\n  lighting_notes: text(scene.lighting_notes || scene.lighting_atmosphere),\n  image_prompt: text(scene.image_prompt),\n  video_prompt: text(scene.video_prompt),\n  has_person: scene.has_person !== false,\n  has_product: scene.has_product !== false,\n}));\n\nreturn {\n  json: {\n    ...base,\n    workflow_data: normalized,\n    segments,\n    sceneCount: segments.length,\n    totalDuration,\n    gemini_raw_text: rawText\n  }\n};"
+      },
+      "id": "miniapp-viral-parse-gemini",
+      "name": "解析Gemini拆解结果",
+      "position": [
+        1760,
+        0
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const data = $json || {};\nconst workflowData = data.workflow_data || {};\nreturn {\n  json: {\n    task_id: data.taskId,\n    taskId: data.taskId,\n    record_id: data.taskId,\n    status: 'completed',\n    storyboard_grid_url: workflowData.storyboard_grid_url || data.storyboard_grid_url,\n    segments: data.segments || [],\n    workflow_data: workflowData,\n    api_key: data.apiKey || ''\n  }\n};"
+      },
+      "id": "miniapp-viral-callback-payload",
+      "name": "准备App回调Payload",
+      "position": [
+        1984,
+        0
+      ],
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('准备参数').first().json.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-admin-token",
+              "value": "={{ $('准备参数').first().json.adminToken }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "miniapp-viral-callback",
+      "name": "回调App-爆款拆解完成",
+      "position": [
+        2208,
+        0
+      ],
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2
+    },
+    {
+      "parameters": {
+        "command": "=rm -rf {{ $('准备参数').first().json.workDir }}"
+      },
+      "id": "miniapp-viral-cleanup",
+      "name": "清理临时文件",
+      "position": [
+        2432,
+        0
+      ],
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "准备参数",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "准备参数": {
+      "main": [
+        [
+          {
+            "node": "下载视频到本地",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "下载视频到本地": {
+      "main": [
+        [
+          {
+            "node": "解析下载结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析下载结果": {
+      "main": [
+        [
+          {
+            "node": "ffprobe 获取时长",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ffprobe 获取时长": {
+      "main": [
+        [
+          {
+            "node": "解析视频时长",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析视频时长": {
+      "main": [
+        [
+          {
+            "node": "ffmpeg生成5列分镜网格",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ffmpeg生成5列分镜网格": {
+      "main": [
+        [
+          {
+            "node": "解析网格列表",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析网格列表": {
+      "main": [
+        [
+          {
+            "node": "读取网格图片",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读取网格图片": {
+      "main": [
+        [
+          {
+            "node": "上传网格到OSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "上传网格到OSS": {
+      "main": [
+        [
+          {
+            "node": "绑定OSS网格URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "绑定OSS网格URL": {
+      "main": [
+        [
+          {
+            "node": "汇总OSS网格",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "汇总OSS网格": {
+      "main": [
+        [
+          {
+            "node": "读取视频文件",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "读取视频文件": {
+      "main": [
+        [
+          {
+            "node": "组装Gemini拆解请求",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "组装Gemini拆解请求": {
+      "main": [
+        [
+          {
+            "node": "Gemini爆款拆解",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini爆款拆解": {
+      "main": [
+        [
+          {
+            "node": "解析Gemini拆解结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析Gemini拆解结果": {
+      "main": [
+        [
+          {
+            "node": "准备App回调Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "准备App回调Payload": {
+      "main": [
+        [
+          {
+            "node": "回调App-爆款拆解完成",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "回调App-爆款拆解完成": {
+      "main": [
+        [
+          {
+            "node": "清理临时文件",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "pinData": {},
+  "tags": [],
+  "active": false,
+  "versionId": "miniapp-viral-breakdown-grid-oss-v1",
+  "meta": {
+    "instanceId": "generated-by-codex"
+  }
+}

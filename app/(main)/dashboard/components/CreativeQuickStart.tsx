@@ -40,6 +40,7 @@ const DEFAULT_SMART_TOASTS = {
 interface CreativeQuickStartModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSubmitted?: (taskId?: string | null) => void;
 }
 
 type StyleProfileJson = Record<string, any>;
@@ -76,6 +77,7 @@ const LAST_STYLE_KEY = 'creative_quick_start_last_style_id';
 export function CreativeQuickStartModal({
   isOpen,
   onClose,
+  onSubmitted,
 }: CreativeQuickStartModalProps) {
   const router = useRouter();
   const { t, language } = useLanguage();
@@ -370,8 +372,13 @@ export function CreativeQuickStartModal({
       }
 
       resetForm();
-      onClose();
-      router.push(taskId ? `${myWorksPath}?taskId=${taskId}` : myWorksPath);
+      if (onSubmitted) {
+        onSubmitted(taskId);
+        router.refresh();
+      } else {
+        onClose();
+        router.push(taskId ? `${myWorksPath}?taskId=${taskId}` : myWorksPath);
+      }
     } catch (error) {
       if (progressToastId) {
         toast.error(error instanceof Error ? error.message : failedMessage, {

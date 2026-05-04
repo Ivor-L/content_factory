@@ -27,7 +27,6 @@ async function findStoryboardTask(id: string) {
     },
     include: {
       product: true,
-      character: true,
       segments: {
         orderBy: { order: "asc" },
       },
@@ -54,7 +53,6 @@ async function findStoryboardTask(id: string) {
     },
     include: {
       product: true,
-      character: true,
       segments: {
         orderBy: { order: "asc" },
       },
@@ -88,6 +86,7 @@ export async function GET(
         imageModel: (task as any).imageModel,
         videoModel: (task as any).videoModel,
         finalVideoUrl: (task as any).finalVideoUrl,
+        detailedBreakdown: (task as any).detailedBreakdown ?? null,
         references: [
           task.product
             ? {
@@ -95,14 +94,6 @@ export async function GET(
                 type: "product",
                 name: task.product.name,
                 imageUrl: extractFirstProductImage(task.product.images),
-              }
-            : null,
-          task.character
-            ? {
-                id: task.character.id,
-                type: "character",
-                name: task.character.name,
-                imageUrl: task.character.avatar || null,
               }
             : null,
         ].filter(Boolean),

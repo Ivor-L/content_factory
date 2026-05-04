@@ -14,6 +14,32 @@ function toGeneratedImageItems(images: string[]) {
   }));
 }
 
+function buildSummaryMetadata(
+  value: unknown,
+  images: string[],
+  title: string | null | undefined,
+): Record<string, unknown> {
+  const current = parseObject(value) ?? {};
+  const currentLayout = parseObject(current.xhsLayout) ?? {};
+
+  return {
+    ...current,
+    posterMode: "text2image",
+    source: typeof current.source === "string" && current.source
+      ? current.source
+      : "image_text_replication",
+    images,
+    imageUrls: images,
+    xhsLayout: {
+      ...currentLayout,
+      title: typeof currentLayout.title === "string" && currentLayout.title
+        ? currentLayout.title
+        : title || "图文作品",
+      images,
+    },
+  };
+}
+
 export async function POST(request: NextRequest) {
   const adminToken = request.headers.get("x-admin-token");
   if (!adminToken || adminToken !== process.env.ADMIN_TOKEN) {
@@ -65,6 +91,17 @@ export async function POST(request: NextRequest) {
     const normalizedImages = (generatedImages ?? []).filter(Boolean);
     const resolvedCopy = generatedCopy || task.ideaText || "";
     const imageItems = toGeneratedImageItems(normalizedImages);
+    const summary = await prisma.taskSummary.findFirst({
+      where: { taskType: "poster", taskId },
+      select: { metadata: true, title: true },
+    });
+    const summaryMetadata = normalizedImages.length > 0
+      ? buildSummaryMetadata(
+          summary?.metadata,
+          normalizedImages,
+          summary?.title || task.title,
+        )
+      : null;
     const nextMetadata = {
       ...metadata,
       custom: {
@@ -99,6 +136,7 @@ export async function POST(request: NextRequest) {
           status: "COMPLETED",
           progress: 100,
           thumbnailUrl: normalizedImages[0] || null,
+          metadata: summaryMetadata ? toInputJson(summaryMetadata) ?? undefined : undefined,
           updatedAt: new Date(),
         },
       }),

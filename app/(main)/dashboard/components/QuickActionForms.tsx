@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 import { clampPosterCount, DEFAULT_POSTER_COUNT, POSTER_COUNT_MAX, POSTER_COUNT_MIN } from '@/lib/posterConfig';
 import { getStylePreviewImageUrl } from '@/lib/stylePreviewImage';
 import type { StylePresetLite } from '@/types/creative';
-import { useTenant } from '@/hooks/useTenant';
+import { emitCreditsRefresh } from '@/lib/creditsBus';
 
 type Product = { id: string; name: string; images?: string | null };
 type Script = {
@@ -225,6 +225,7 @@ export function QuickReplicationForm({ onClose }: QuickReplicationFormProps) {
 interface QuickPosterFormProps {
   onClose: () => void;
   initialIdeaText?: string;
+  onSubmitted?: (taskId?: string | null) => void;
 }
 
 const createPosterFormState = (initialIdeaText = '') => ({
@@ -234,7 +235,7 @@ const createPosterFormState = (initialIdeaText = '') => ({
   posterCount: DEFAULT_POSTER_COUNT,
 });
 
-export function QuickPosterForm({ onClose, initialIdeaText = '' }: QuickPosterFormProps) {
+export function QuickPosterForm({ onClose, initialIdeaText = '', onSubmitted }: QuickPosterFormProps) {
   const { t, language } = useLanguage();
   const languageLabel =
     language === 'zh-TW' ? '繁体' : language === 'en' ? 'English' : '简体';
@@ -270,7 +271,7 @@ export function QuickPosterForm({ onClose, initialIdeaText = '' }: QuickPosterFo
       setStylesLoading(true);
       setStylesError(null);
       try {
-        const res = await fetch('/api/assets/styles?limit=20', {
+        const res = await fetch('/api/assets/styles?type=xhs-visual&summary=1&limit=20', {
           headers: { Authorization: `Bearer ${token}` },
           signal,
         });
@@ -359,8 +360,14 @@ export function QuickPosterForm({ onClose, initialIdeaText = '' }: QuickPosterFo
           ? copy.newTask.direct.queuedLong
           : copy?.newTask?.direct?.queued ?? '已创建图文计划，生成大约需要 1-2 分钟';
       toast.success(queuedMessage);
-      setForm(createPosterFormState());
-      onClose();
+      emitCreditsRefresh();
+      const taskId = (payload as { data?: { taskId?: string } })?.data?.taskId ?? null;
+      if (onSubmitted) {
+        onSubmitted(taskId);
+      } else {
+        setForm(createPosterFormState());
+        onClose();
+      }
       router.refresh();
     } catch (error) {
       console.error(error);
@@ -446,6 +453,7 @@ export function QuickPosterForm({ onClose, initialIdeaText = '' }: QuickPosterFo
           <div className="grid gap-2 grid-cols-3 sm:grid-cols-4">
             {displayedStyles.map((style) => {
               const isActive = style.id === form.styleId;
+              const previewImageUrl = getStylePreviewImageUrl(style);
               return (
                 <button
                   type="button"
@@ -461,9 +469,9 @@ export function QuickPosterForm({ onClose, initialIdeaText = '' }: QuickPosterFo
                       : 'border-gray-200 dark:border-white/10 hover:border-gray-300 dark:hover:border-white/20 bg-white dark:bg-white/5',
                   )}
                 >
-                  {getStylePreviewImageUrl(style) ? (
+                  {previewImageUrl ? (
                     <img
-                      src={getStylePreviewImageUrl(style) ?? ""}
+                      src={previewImageUrl}
                       alt={style.name}
                       className="h-10 w-10 rounded-lg object-cover"
                       loading="lazy"
@@ -549,6 +557,7 @@ export function QuickPosterForm({ onClose, initialIdeaText = '' }: QuickPosterFo
 
 interface QuickGridFormProps {
   onClose: () => void;
+  onSubmitted?: (taskId?: string | null) => void;
 }
 
 const GRID_CONTENT_TYPES = [
@@ -563,9 +572,8 @@ const GRID_ASPECT_RATIOS = [
   { value: '16:9', label: '16:9 · 横屏' },
 ];
 
-export function QuickGridForm({ onClose }: QuickGridFormProps) {
+export function QuickGridForm({ onClose, onSubmitted }: QuickGridFormProps) {
   const router = useRouter();
-  const { basePath } = useTenant();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [ideaText, setIdeaText] = useState('');
   const [contentType, setContentType] = useState(GRID_CONTENT_TYPES[0].value);
@@ -703,10 +711,12 @@ export function QuickGridForm({ onClose }: QuickGridFormProps) {
       }
       const taskId = (payload as { data?: { taskId?: string } })?.data?.taskId;
       toast.success('九宫格任务已创建，稍后在“我的项目”查看');
-      onClose();
-      const tenantPrefix = basePath || '';
-      const target = `${tenantPrefix}/my-works${taskId ? `?taskId=${taskId}` : ''}`;
-      router.push(target || '/my-works');
+      if (onSubmitted) {
+        onSubmitted(taskId ?? null);
+      } else {
+        onClose();
+      }
+      router.refresh();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '创建失败');
     } finally {

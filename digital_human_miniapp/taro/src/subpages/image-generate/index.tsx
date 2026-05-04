@@ -1,6 +1,6 @@
 import { View, Text, ScrollView, Textarea, Image, Input, RichText, Swiper, SwiperItem, Picker } from '@tarojs/components';
-import Taro, { useDidHide, useDidShow } from '@tarojs/taro';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import Taro, { useDidHide, useDidShow, useLoad } from '@tarojs/taro';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
 import { api } from '../../utils/api';
 import tplImage1 from '../../assets/home-icons-v2/image.webp';
@@ -28,6 +28,8 @@ const FEATURE_TABS: Array<{ key: FeatureKey; label: string }> = [
   { key: 'infographic', label: '信息图' },
   { key: 'card-layout', label: '图文卡片' },
 ];
+const ACTION_TRANSFER_IMAGE_RETURN_KEY = 'REMIX_ACTION_SOURCE_IMAGE_URL';
+const WORK_SELECT_TARGET_STORAGE_KEY = 'WORK_SELECT_TARGET';
 
 const IMAGE_MODELS = [
   { key: 'gpt-image-2-all', name: 'gpt-image-2', desc: '细节表现优秀，适合精细创作', badge: '推荐' },
@@ -812,12 +814,14 @@ const ACCENT_COLOR_PRESETS = [
 ];
 
 const CARD_MAX_PAGE_OPTIONS = [4, 6, 8, 10];
+const INFOGRAPHIC_COUNT_OPTIONS = [1, 2, 3, 4, 5];
 const IMAGE_GENERATE_PREFS_KEY = 'IMAGE_GENERATE_PREFS_V1';
 
 type ImageGeneratePrefs = {
   activeFeature?: FeatureKey;
   selectedModel?: string;
   selectedTemplate?: string;
+  infographicCount?: number;
   selectedCardStyle?: CardStyleId;
   selectedCardStyleMode?: CardStyleModeId;
   cardIncludeCover?: boolean;
@@ -1425,6 +1429,46 @@ function applyInlineTokenStyles(html: string, textColor: string, accentColor: st
     .replace(/<code class="md-inline-code">/g, `<code style="${codeStyle}">`);
 }
 
+function splitMiniMarkdownTableRow(line: string): string[] {
+  const trimmed = line.trim();
+  const source = trimmed.startsWith('|') && trimmed.endsWith('|') ? trimmed.slice(1, -1) : trimmed;
+  const cells: string[] = [];
+  let current = '';
+  let escaping = false;
+
+  for (const char of source) {
+    if (escaping) {
+      current += char;
+      escaping = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaping = true;
+      continue;
+    }
+    if (char === '|') {
+      cells.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+
+  cells.push(current.trim());
+  return cells;
+}
+
+function isMiniMarkdownTableSeparator(line: string): boolean {
+  const cells = splitMiniMarkdownTableRow(line);
+  if (cells.length < 2) return false;
+  return cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, '')));
+}
+
+function isMiniMarkdownTableRow(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed.includes('|') && splitMiniMarkdownTableRow(trimmed).length >= 2;
+}
+
 function renderMiniMarkdown(markdown: string, previewStyle: PreviewRenderStyle): string {
   const normalizedMarkdown = (markdown || '')
     .replace(/\r\n/g, '\n')
@@ -1455,11 +1499,16 @@ function renderMiniMarkdown(markdown: string, previewStyle: PreviewRenderStyle):
   const hrStyle = 'border:0;border-top:1px solid rgba(127,127,127,0.35);margin:10px 0;';
   const imageStyle = 'width:100%;border-radius:8px;margin:6px 0;';
   const spacerStyle = 'margin:0;height:8px;';
+  const tableStyle = `width:100%;margin:${Math.max(6, paragraphGap)}px 0 ${paragraphGap + 2}px;color:${textColor};font-size:${px(12, bodyScaleFactor, 10)}px;line-height:1.42;border-left:1px solid rgba(127,127,127,0.32);border-top:1px solid rgba(127,127,127,0.32);`;
+  const tableRowStyle = 'display:flex;width:100%;';
+  const thStyle = `box-sizing:border-box;border-right:1px solid rgba(127,127,127,0.32);border-bottom:1px solid rgba(127,127,127,0.32);padding:5px 6px;background:${accentSoftColor};font-weight:700;color:${textColor};`;
+  const tdStyle = `box-sizing:border-box;border-right:1px solid rgba(127,127,127,0.26);border-bottom:1px solid rgba(127,127,127,0.26);padding:5px 6px;color:${textColor};`;
   const lines = normalizedMarkdown.split('\n');
   const blocks: string[] = [];
   let inUl = false;
   let inOl = false;
   let inCode = false;
+  let index = 0;
   const closeLists = () => {
     if (inUl) {
       blocks.push('</ul>');
@@ -1471,7 +1520,8 @@ function renderMiniMarkdown(markdown: string, previewStyle: PreviewRenderStyle):
     }
   };
 
-  for (const rawLine of lines) {
+  while (index < lines.length) {
+    const rawLine = lines[index];
     const line = rawLine.trimEnd();
     const trimmed = line.trim();
 
@@ -1484,17 +1534,39 @@ function renderMiniMarkdown(markdown: string, previewStyle: PreviewRenderStyle):
         inCode = false;
         blocks.push('</code></pre>');
       }
+      index += 1;
       continue;
     }
 
     if (inCode) {
       blocks.push(`${escapeHtml(line)}\n`);
+      index += 1;
+      continue;
+    }
+
+    if (isMiniMarkdownTableRow(trimmed) && isMiniMarkdownTableSeparator(lines[index + 1] || '')) {
+      closeLists();
+      const headerCells = splitMiniMarkdownTableRow(trimmed);
+      const tableRows: string[][] = [];
+      index += 2;
+      while (index < lines.length && isMiniMarkdownTableRow(lines[index] || '')) {
+        tableRows.push(splitMiniMarkdownTableRow(lines[index] || ''));
+        index += 1;
+      }
+      const columnCount = Math.max(2, headerCells.length, ...tableRows.map((row) => row.length));
+      const renderCells = (row: string[], style: string) =>
+        Array.from({ length: columnCount }, (_, cellIndex) => {
+          const content = applyInlineTokenStyles(parseInlineMarkdown(row[cellIndex] || ''), textColor, accentColor, accentSoftColor);
+          return `<div style="${style};width:${(100 / columnCount).toFixed(4)}%;">${content}</div>`;
+        }).join('');
+      blocks.push(`<div style="${tableStyle}"><div style="${tableRowStyle}">${renderCells(headerCells, thStyle)}</div>${tableRows.map((row) => `<div style="${tableRowStyle}">${renderCells(row, tdStyle)}</div>`).join('')}</div>`);
       continue;
     }
 
     if (!trimmed) {
       closeLists();
       blocks.push(`<p class="md-spacer" style="${spacerStyle}"></p>`);
+      index += 1;
       continue;
     }
 
@@ -1504,6 +1576,7 @@ function renderMiniMarkdown(markdown: string, previewStyle: PreviewRenderStyle):
       const level = Math.min(3, hMatch[1].length);
       const headingStyle = level === 1 ? h1Style : level === 2 ? h2Style : h3Style;
       blocks.push(`<h${level} style="${headingStyle}">${applyInlineTokenStyles(parseInlineMarkdown(hMatch[2]), textColor, accentColor, accentSoftColor)}</h${level}>`);
+      index += 1;
       continue;
     }
 
@@ -1511,6 +1584,7 @@ function renderMiniMarkdown(markdown: string, previewStyle: PreviewRenderStyle):
     if (quoteMatch) {
       closeLists();
       blocks.push(`<blockquote style="${quoteStyle}">${applyInlineTokenStyles(parseInlineMarkdown(quoteMatch[1]), textColor, accentColor, accentSoftColor)}</blockquote>`);
+      index += 1;
       continue;
     }
 
@@ -1525,6 +1599,7 @@ function renderMiniMarkdown(markdown: string, previewStyle: PreviewRenderStyle):
         blocks.push(`<ul style="${ulStyle}">`);
       }
       blocks.push(`<li style="${liStyle}">${applyInlineTokenStyles(parseInlineMarkdown(ulMatch[1]), textColor, accentColor, accentSoftColor)}</li>`);
+      index += 1;
       continue;
     }
 
@@ -1539,6 +1614,7 @@ function renderMiniMarkdown(markdown: string, previewStyle: PreviewRenderStyle):
         blocks.push(`<ol style="${ulStyle}">`);
       }
       blocks.push(`<li style="${liStyle}">${applyInlineTokenStyles(parseInlineMarkdown(olMatch[1]), textColor, accentColor, accentSoftColor)}</li>`);
+      index += 1;
       continue;
     }
 
@@ -1546,6 +1622,7 @@ function renderMiniMarkdown(markdown: string, previewStyle: PreviewRenderStyle):
     if (hrMatch) {
       closeLists();
       blocks.push(`<hr style="${hrStyle}" />`);
+      index += 1;
       continue;
     }
 
@@ -1553,11 +1630,13 @@ function renderMiniMarkdown(markdown: string, previewStyle: PreviewRenderStyle):
     if (imageMatch) {
       closeLists();
       blocks.push(`<img class="md-image" style="${imageStyle}" src="${escapeAttr(imageMatch[2])}" alt="${escapeAttr(imageMatch[1])}" />`);
+      index += 1;
       continue;
     }
 
     closeLists();
     blocks.push(`<p style="${bodyStyle}">${applyInlineTokenStyles(parseInlineMarkdown(trimmed), textColor, accentColor, accentSoftColor)}</p>`);
+    index += 1;
   }
 
   closeLists();
@@ -1790,6 +1869,10 @@ function paginatePreviewMarkdown(
     if (/^```/.test(trimmed)) return 1.05;
     if (inCode) return Math.max(0.9, (codeFontPx * 1.46) / bodyLinePx);
 
+    if (isMiniMarkdownTableRow(trimmed)) {
+      return Math.max(0.85, (bodyFontPx * 1.55 + 12) / bodyLinePx);
+    }
+
     const h1Match = trimmed.match(/^#\s+(.+)$/);
     if (h1Match) {
       const wrap = estimateWrapCount(h1Match[1], h1FontPx, richTextWidthPx);
@@ -1873,6 +1956,7 @@ function paginatePreviewMarkdown(
 
 export default function ImageGeneratePage() {
   const [activeFeature, setActiveFeature] = useState<FeatureKey>('ai-image');
+  const [returnTarget, setReturnTarget] = useState('');
   const [windowWidthPx, setWindowWidthPx] = useState(375);
 
   const [refImages, setRefImages] = useState<string[]>([]);
@@ -1881,10 +1965,12 @@ export default function ImageGeneratePage() {
 
   const [infographicTemplates, setInfographicTemplates] = useState<InfographicTemplate[]>(FALLBACK_INFOGRAPHIC_TEMPLATES);
   const [selectedTemplate, setSelectedTemplate] = useState(FALLBACK_INFOGRAPHIC_TEMPLATES[0].id);
+  const [infographicCount, setInfographicCount] = useState(3);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [infoContent, setInfoContent] = useState('');
   const [infoSubmitting, setInfoSubmitting] = useState(false);
   const [aiSubmitting, setAiSubmitting] = useState(false);
+  const aiSubmitLockedRef = useRef(false);
 
   const [selectedCardStyle, setSelectedCardStyle] = useState<CardStyleId>(CARD_LAYOUT_STYLES[0].id);
   const [selectedCardStyleMode, setSelectedCardStyleMode] = useState<CardStyleModeId>('');
@@ -1965,6 +2051,14 @@ export default function ImageGeneratePage() {
     [infographicTemplates, selectedTemplate],
   );
 
+  useLoad((query) => {
+    const from = String(query?.from || '').trim();
+    if (from === 'action-transfer') {
+      setReturnTarget('action-transfer');
+      setActiveFeature('ai-image');
+    }
+  });
+
   useEffect(() => {
     try {
       const raw = Taro.getStorageSync(IMAGE_GENERATE_PREFS_KEY);
@@ -1979,6 +2073,9 @@ export default function ImageGeneratePage() {
       }
       if (prefs.selectedTemplate && typeof prefs.selectedTemplate === 'string') {
         setSelectedTemplate(prefs.selectedTemplate);
+      }
+      if (typeof prefs.infographicCount === 'number' && INFOGRAPHIC_COUNT_OPTIONS.includes(prefs.infographicCount)) {
+        setInfographicCount(prefs.infographicCount);
       }
       const resolvedStyleId = resolveCardStyleId(prefs.selectedCardStyle);
       setSelectedCardStyle(resolvedStyleId);
@@ -2098,6 +2195,7 @@ export default function ImageGeneratePage() {
       activeFeature,
       selectedModel,
       selectedTemplate,
+      infographicCount,
       selectedCardStyle,
       selectedCardStyleMode,
       cardIncludeCover,
@@ -2134,6 +2232,7 @@ export default function ImageGeneratePage() {
     activeFeature,
     selectedModel,
     selectedTemplate,
+    infographicCount,
     selectedCardStyle,
     selectedCardStyleMode,
     cardIncludeCover,
@@ -2622,8 +2721,9 @@ export default function ImageGeneratePage() {
       Taro.showToast({ title: '请先填写图片描述', icon: 'none' });
       return;
     }
-    if (aiSubmitting) return;
+    if (aiSubmitLockedRef.current || aiSubmitting) return;
 
+    aiSubmitLockedRef.current = true;
     setAiSubmitting(true);
     try {
       const remoteImages = refImages.filter((item) => /^https?:\/\//i.test(item));
@@ -2645,23 +2745,35 @@ export default function ImageGeneratePage() {
       });
 
       Taro.setStorageSync('IMAGE_GEN_LAST_TASK_ID', result.taskId);
-      Taro.showModal({
-        title: '图片生产中',
-        content: '图片生产中，请在作品中查看生成结果',
-        cancelText: '继续生成',
-        confirmText: '去作品查看',
-        success: (res) => {
-          if (res.confirm) {
-            Taro.switchTab({ url: '/pages/works/index' });
+      try {
+        const modalResult = await Taro.showModal({
+          title: '图片生产中',
+          content: returnTarget === 'action-transfer'
+            ? '图片生产中，完成后在作品详情点“用于动作复刻”即可带回。'
+            : '图片生产中，请在作品中查看生成结果',
+          cancelText: '继续',
+          confirmText: '作品',
+        });
+        if (modalResult.confirm) {
+          if (returnTarget === 'action-transfer') {
+            Taro.setStorageSync(WORK_SELECT_TARGET_STORAGE_KEY, {
+              target: 'action-transfer',
+              storageKey: ACTION_TRANSFER_IMAGE_RETURN_KEY,
+              backUrl: '/subpages/remix-generate/index?mode=action-transfer',
+            });
           }
-        },
-      });
+          await Taro.switchTab({ url: '/pages/works/index' });
+        }
+      } catch {
+        Taro.showToast({ title: '任务已提交，请到作品查看', icon: 'none' });
+      }
     } catch (error) {
       Taro.showToast({
         title: error instanceof Error ? error.message : 'AI作图失败',
         icon: 'none',
       });
     } finally {
+      aiSubmitLockedRef.current = false;
       setAiSubmitting(false);
     }
   };
@@ -2693,6 +2805,7 @@ export default function ImageGeneratePage() {
       const generated = await miniappApi.triggerImageTextReplicationGenerate(start.taskId, {
         stylePresetId: pickedTemplate.id,
         topicHint: pickedTemplate.title || '信息图',
+        imageCount: infographicCount,
       });
 
       Taro.setStorageSync('INFOGRAPHIC_LAST_TASK_ID', generated.taskId || start.taskId);
@@ -3752,6 +3865,21 @@ export default function ImageGeneratePage() {
                 </View>
               </View>
             </ScrollView>
+
+            {renderSectionTitle('model', '生成张数')}
+            <View className='count-option-row'>
+              {INFOGRAPHIC_COUNT_OPTIONS.map((count) => (
+                <View
+                  key={count}
+                  className={`count-option ${infographicCount === count ? 'count-option--active' : ''}`}
+                  onClick={() => setInfographicCount(count)}
+                >
+                  <Text className={`count-option-text ${infographicCount === count ? 'count-option-text--active' : ''}`}>
+                    {count}张
+                  </Text>
+                </View>
+              ))}
+            </View>
 
           </View>
         )}

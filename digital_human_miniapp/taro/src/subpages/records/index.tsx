@@ -44,6 +44,7 @@ export default function RecordsPage() {
   };
 
   const getRecordTypeLabel = (record: any) => {
+    if (record?.type === 'ACTION_TRANSFER') return '动作复刻';
     const sourceType = String(record?.sourceType || 'IMAGE').toUpperCase();
     const modeLabel = record?.type === 'VOICE_CLONE' ? '文字驱动' : '音频驱动';
     return `${sourceType === 'VIDEO' ? '视频数字人' : '图片数字人'} · ${modeLabel}`;

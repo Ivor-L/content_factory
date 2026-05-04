@@ -42,7 +42,6 @@ export async function POST(
       where: { id },
       include: {
         product: true,
-        character: true,
       },
     });
 
@@ -140,7 +139,6 @@ export async function POST(
     }
 
     const taskLevelProductImage = extractFirstProductImage(task.product?.images);
-    const taskLevelCharacterImage = (task.character as any)?.avatar || null;
 
     const triggers = segments.map(async (segment) => {
       // Replace [PRODUCT] placeholder in prompt
@@ -152,23 +150,34 @@ export async function POST(
       // Extract per-segment refs from generationParams, fall back to task-level
       const generationParams = segment.generationParams as Record<string, any> | null;
       const referenceFrameUrl = generationParams?.reference_frame_url || null;
-      const subjectRefs: Array<{ type: string; url: string }> = generationParams?.subject_refs || [];
-      const characterRef = subjectRefs.find((r) => r.type === "character");
+      const subjectRefs: Array<{ type: string; url: string }> = Array.isArray(generationParams?.subject_refs)
+        ? generationParams.subject_refs
+        : [];
       const productRef = subjectRefs.find((r) => r.type === "product");
       const hasPersonFlag = generationParams?.has_person ?? true;
       const hasProductFlag = generationParams?.has_product ?? true;
-      const characterImageUrl = hasPersonFlag ? (characterRef?.url || taskLevelCharacterImage || null) : null;
       const productImageUrl = hasProductFlag ? (productRef?.url || taskLevelProductImage || null) : null;
+      const image2Prompt = [
+        prompt,
+        "",
+        "Product replacement mode:",
+        "- Use the reference frame as the composition, camera, lighting, pose, layout, and scene anchor.",
+        "- Use the product reference image only to replace the original product with the selected product.",
+        "- Do not use or import any person, face, model, celebrity, or character identity reference.",
+        "- Keep people in the reference frame generic and natural if they appear; do not preserve or copy a real person's identity.",
+        "- Preserve the viral ad shot grammar while swapping only the product identity where applicable.",
+      ].join("\n");
 
       const payload = {
         segment_id: segment.id,
         task_id: id,
-        prompt,
+        prompt: image2Prompt,
         reference_frame_url: referenceFrameUrl,
         has_person: hasPersonFlag,
         has_product: hasProductFlag,
         product_image_url: productImageUrl,
-        character_image_url: characterImageUrl,
+        character_image_url: null,
+        image_edit_mode: "product_replace",
         model,
         aspect_ratio: aspectRatio,
         callback_url: callbackUrl,

@@ -171,6 +171,8 @@ async function fetchTaskData(taskType: TaskType, taskId: string): Promise<any> {
           status: true,
           scriptContent: true,
           coverImage: true,
+          storyboardImageUrl: true,
+          detailedBreakdown: true,
           progress: true,
           createdAt: true,
           updatedAt: true,
@@ -299,11 +301,12 @@ function extractSummaryData(taskType: TaskType, taskData: any): any {
       if (typeof taskData.scriptContent === 'string' && taskData.scriptContent.trim()) {
         metadata.scriptContent = taskData.scriptContent.trim();
       }
+      const isActionTransfer = taskData.type === 'ACTION_TRANSFER';
       return {
         ...base,
-        title: '数字人视频',
+        title: isActionTransfer ? '动作复刻视频' : '数字人视频',
         status: taskData.status,
-        preview: taskData.scriptContent?.substring(0, 100),
+        preview: isActionTransfer ? '图片角色动作复刻' : taskData.scriptContent?.substring(0, 100),
         thumbnailUrl: taskData.resultUrl || taskData.imageUrl,
         metadata,
       };
@@ -322,15 +325,41 @@ function extractSummaryData(taskType: TaskType, taskData: any): any {
         },
       };
 
-    case 'storyboard':
+    case 'storyboard': {
+      const detailed = normalizeJsonRecord(taskData.detailedBreakdown);
+      const detailedMetadata = normalizeJsonRecord(detailed?.metadata);
+      const isViralRemix = detailedMetadata?.feature === 'viral_remix';
+      const title = typeof detailedMetadata?.title === 'string' && detailedMetadata.title.trim()
+        ? detailedMetadata.title.trim()
+        : isViralRemix
+          ? '一键复刻'
+          : '分镜视频';
+      const referenceVideoUrl = typeof detailedMetadata?.reference_video_url === 'string'
+        ? detailedMetadata.reference_video_url
+        : undefined;
+      const referencePoster = typeof detailedMetadata?.reference_video_poster === 'string'
+        ? detailedMetadata.reference_video_poster
+        : undefined;
       return {
         ...base,
-        title: '分镜视频',
+        title,
         status: taskData.status,
         preview: taskData.scriptContent?.substring(0, 100),
-        thumbnailUrl: taskData.coverImage,
+        thumbnailUrl: taskData.coverImage || taskData.storyboardImageUrl || referencePoster || referenceVideoUrl,
         progress: taskData.progress,
+        metadata: isViralRemix
+          ? {
+            feature: 'viral_remix',
+            referenceVideoUrl,
+            referencePoster,
+            videoUrl: referenceVideoUrl,
+            durationSeconds: detailedMetadata?.duration_seconds,
+            strategy: detailedMetadata?.strategy,
+            strategyLabel: detailedMetadata?.strategy_label,
+          }
+          : undefined,
       };
+    }
 
     case 'grid': {
       const detailed = normalizeJsonRecord(taskData.detailedBreakdown);

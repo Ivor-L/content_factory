@@ -6,6 +6,7 @@ import { toInputJson } from "@/lib/jsonUtils";
 import { deductCredits } from "@/lib/credits";
 import { getCreditCost } from "@/lib/creditCosts";
 import { logCreditUsage } from "@/lib/logCreditUsage";
+import { rewriteXhsNote } from "@/lib/xhsRewritePrompt";
 
 const WORKFLOW_ID = "flow_image_text_replication";
 const WORKFLOW_NAME = "图文复刻";
@@ -189,6 +190,20 @@ function extractStyleProfileFromStyle(style: { metadata?: unknown; spec?: unknow
   return null;
 }
 
+function parseStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => normalizeText(item)).filter(Boolean);
+}
+
+function extractImageTextsFromMarkdown(value: string): string[] {
+  const blocks = value
+    .split(/(?:^|\n)#{2,4}\s*图\s*\d+\s*\n/i)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (blocks.length > 1) return blocks;
+  return value.trim() ? [value.trim()] : [];
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -222,6 +237,8 @@ export async function POST(
     style_profile_json?: string | null;
     style_json?: string | null;
     图文排版风格JSON?: string | null;
+    imageCount?: number | string | null;
+    image_count?: number | string | null;
   } = {};
   try {
     body = await request.json();
@@ -254,12 +271,17 @@ export async function POST(
   const replication = parseObject(custom.replication) ?? {};
   const sourceTitle = String(replication.sourceTitle ?? task.title ?? "爆款图文复刻").trim();
   const sourceText = String(replication.sourceText ?? task.ideaText ?? "").trim();
+  const parsedImageTexts = parseStringArray(replication.rewrittenImageTexts);
+  const sourceImageTexts = parsedImageTexts.length ? parsedImageTexts : extractImageTextsFromMarkdown(sourceText);
 
   const sourceImagesRaw = replication.sourceImages;
   const sourceImages = Array.isArray(sourceImagesRaw)
     ? sourceImagesRaw.filter((item) => typeof item === "string") as string[]
     : [];
-  const imageCount = clampImageCount(sourceImages.length || 3);
+  const requestedImageCount = Number(body.imageCount ?? body.image_count);
+  const imageCount = clampImageCount(
+    Number.isFinite(requestedImageCount) ? requestedImageCount : sourceImages.length || 3,
+  );
 
   const resolvedApiKey = contextApiKey ?? (await getApiKeyForUser(userId).catch(() => null));
   if (!resolvedApiKey) {
@@ -268,19 +290,6 @@ export async function POST(
 
   const costPerImage = await getCreditCost("image_text_replication", 2);
   const totalCost = imageCount * costPerImage;
-  try {
-    await deductCredits(resolvedApiKey, {
-      amount: totalCost,
-      workflowId: WORKFLOW_ID,
-      workflowName: WORKFLOW_NAME,
-      reason: "image_text_replication",
-    });
-    logCreditUsage({ featureKey: "image_text_replication", userId, amount: totalCost, success: true });
-  } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : "积分不足";
-    logCreditUsage({ featureKey: "image_text_replication", userId, amount: totalCost, success: false, errorMessage });
-    return NextResponse.json({ error: errorMessage }, { status: 402 });
-  }
 
   const explicitStyleProfile =
     normalizeJsonString(body.styleProfileJson) ||
@@ -306,9 +315,35 @@ export async function POST(
   }
 
   const topicHint = (body.topicHint || "").trim();
-  const generationText = topicHint
-    ? `${topicHint}\n\n${sourceText || sourceTitle}`
-    : sourceText || sourceTitle;
+  let rewritten;
+  try {
+    rewritten = await rewriteXhsNote({
+      title: sourceTitle,
+      body: topicHint ? `${topicHint}\n\n${sourceText}` : sourceText,
+      imageTexts: sourceImageTexts,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "仿写失败";
+    logCreditUsage({ featureKey: "image_text_replication", userId, amount: totalCost, success: false, errorMessage: message });
+    return NextResponse.json({ error: message }, { status: 502 });
+  }
+
+  const generationTitle = rewritten.title || sourceTitle;
+  const generationText = rewritten.body || sourceText || sourceTitle;
+
+  try {
+    await deductCredits(resolvedApiKey, {
+      amount: totalCost,
+      workflowId: WORKFLOW_ID,
+      workflowName: WORKFLOW_NAME,
+      reason: "image_text_replication",
+    });
+    logCreditUsage({ featureKey: "image_text_replication", userId, amount: totalCost, success: true });
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : "积分不足";
+    logCreditUsage({ featureKey: "image_text_replication", userId, amount: totalCost, success: false, errorMessage });
+    return NextResponse.json({ error: errorMessage }, { status: 402 });
+  }
 
   const nextCustom = {
     ...custom,
@@ -326,6 +361,11 @@ export async function POST(
       phase: "generate",
       topicHint: topicHint || null,
       stylePresetId: stylePresetId ?? null,
+      rewrittenTitle: generationTitle,
+      rewrittenBody: generationText,
+      rewrittenImageTexts: rewritten.imageTexts,
+      titleFormula: rewritten.titleFormula,
+      tags: rewritten.tags,
     },
   };
   const nextMetadata = {
@@ -339,7 +379,7 @@ export async function POST(
       data: {
         status: "GENERATE_PENDING",
         progress: 20,
-        title: sourceTitle,
+        title: generationTitle,
         ideaText: generationText,
         errorMessage: null,
         metadata: toInputJson(nextMetadata) ?? undefined,
@@ -368,7 +408,7 @@ export async function POST(
         userId,
         taskType: "poster",
         taskId: id,
-        title: sourceTitle,
+        title: generationTitle,
         status: "PROCESSING",
         preview: generationText.slice(0, 140),
         progress: 20,
@@ -381,7 +421,7 @@ export async function POST(
         },
       },
       update: {
-        title: sourceTitle,
+        title: generationTitle,
         status: "PROCESSING",
         preview: generationText.slice(0, 140),
         progress: 20,
@@ -408,7 +448,7 @@ export async function POST(
     workflowId: WORKFLOW_ID,
     workflow_name: WORKFLOW_NAME,
     workflowName: WORKFLOW_NAME,
-    title: sourceTitle,
+    title: generationTitle,
     text: generationText,
     style_profile_json: styleProfileJson,
     styleProfileJson: styleProfileJson,

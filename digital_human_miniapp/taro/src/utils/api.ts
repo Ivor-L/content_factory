@@ -37,8 +37,8 @@ const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
     })
   : null;
 
-export type DigitalHumanMode = 'VOICE_CLONE' | 'LIP_SYNC';
-export type DigitalHumanSourceType = 'IMAGE' | 'VIDEO';
+export type DigitalHumanMode = 'VOICE_CLONE' | 'LIP_SYNC' | 'ACTION_TRANSFER';
+export type DigitalHumanSourceType = 'IMAGE' | 'VIDEO' | 'ACTION_TRANSFER';
 
 export interface DigitalHumanCharacter {
   id: string;
@@ -94,6 +94,21 @@ export interface ProfilePayload {
   avatarUrl: string | null;
   memberLevel?: string | null;
   apiKey?: string | null;
+}
+
+interface UploadMediaOptions {
+  direct?: boolean;
+  type?: string;
+  onProgress?: (progress: number) => void;
+}
+
+interface PresignUploadPayload {
+  uploadUrl?: string;
+  publicUrl: string;
+  key: string;
+  postUploadUrl?: string;
+  postFormData?: Record<string, string>;
+  postMaxBytes?: number;
 }
 
 function getApiKey(): string | null {
@@ -174,20 +189,29 @@ async function request<T = unknown>(
   return payload as T;
 }
 
-async function uploadFile(file: string, name: string, mimeType: string): Promise<string> {
+async function uploadFile(
+  file: string,
+  name: string,
+  mimeType: string,
+  options: UploadMediaOptions = {},
+): Promise<string> {
   const apiKey = getApiKey();
   const header: Record<string, string> = {};
   if (apiKey) {
     header['X-User-Api-Key'] = apiKey;
   }
 
-  const res = await Taro.uploadFile({
+  const uploadTask = Taro.uploadFile({
     url: resolveUrl('/api/upload'),
     filePath: file,
     name: 'file',
     header,
     formData: { filename: name, contentType: mimeType },
   });
+  uploadTask.progress((progress) => {
+    options.onProgress?.(Math.max(0, Math.min(99, Number(progress.progress) || 0)));
+  });
+  const res = await uploadTask;
 
   if (res.statusCode < 200 || res.statusCode >= 300) {
     throw new ApiError(res.statusCode, 'Upload failed');
@@ -198,7 +222,63 @@ async function uploadFile(file: string, name: string, mimeType: string): Promise
     : (res.data as Record<string, unknown>);
 
   if (!data?.url) throw new ApiError(500, 'No URL returned from upload');
+  options.onProgress?.(100);
   return data.url as string;
+}
+
+async function requestUploadPresign(name: string, mimeType: string, type?: string): Promise<PresignUploadPayload> {
+  return request<PresignUploadPayload>('/api/upload/presign', {
+    method: 'POST',
+    data: { filename: name, contentType: mimeType, type },
+  });
+}
+
+async function uploadFileDirectToOss(
+  file: string,
+  name: string,
+  mimeType: string,
+  options: UploadMediaOptions,
+): Promise<string> {
+  const presign = await requestUploadPresign(name, mimeType, options.type);
+  if (!presign.postUploadUrl || !presign.postFormData || !presign.publicUrl) {
+    throw new ApiError(503, 'Direct upload unavailable');
+  }
+
+  const uploadTask = Taro.uploadFile({
+    url: presign.postUploadUrl,
+    filePath: file,
+    name: 'file',
+    formData: presign.postFormData,
+    timeout: 10 * 60 * 1000,
+  });
+  uploadTask.progress((progress) => {
+    options.onProgress?.(Math.max(0, Math.min(99, Number(progress.progress) || 0)));
+  });
+  const res = await uploadTask;
+
+  if (res.statusCode < 200 || res.statusCode >= 300) {
+    throw new ApiError(res.statusCode, 'Direct upload failed');
+  }
+
+  options.onProgress?.(100);
+  return presign.publicUrl;
+}
+
+async function uploadMediaFile(
+  file: string,
+  name: string,
+  mimeType: string,
+  options: UploadMediaOptions = {},
+): Promise<string> {
+  if (options.direct) {
+    try {
+      return await uploadFileDirectToOss(file, name, mimeType, options);
+    } catch (error) {
+      console.warn('[upload] direct OSS upload failed, falling back to server upload:', error);
+      options.onProgress?.(0);
+    }
+  }
+  return uploadFile(file, name, mimeType, options);
 }
 
 export const api = {
@@ -358,8 +438,13 @@ export const api = {
 
   // ── 媒体上传 ──────────────────────────────────────────
 
-  async uploadMedia(filePath: string, name: string, mimeType: string): Promise<string> {
-    return uploadFile(filePath, name, mimeType);
+  async uploadMedia(
+    filePath: string,
+    name: string,
+    mimeType: string,
+    options?: UploadMediaOptions,
+  ): Promise<string> {
+    return uploadMediaFile(filePath, name, mimeType, options);
   },
 
   // ── 生成记录 ──────────────────────────────────────────
@@ -379,6 +464,17 @@ export const api = {
     durationSeconds?: number | null;
   }): Promise<DigitalHumanVideoRecord> {
     return request<DigitalHumanVideoRecord>('/api/digital-human/videos', {
+      method: 'POST',
+      data: payload as unknown as Record<string, unknown>,
+    });
+  },
+
+  async createActionTransferTask(payload: {
+    imageUrl: string;
+    videoUrl: string;
+    durationSeconds?: number | null;
+  }): Promise<DigitalHumanVideoRecord> {
+    return request<DigitalHumanVideoRecord>('/api/action-transfer/videos', {
       method: 'POST',
       data: payload as unknown as Record<string, unknown>,
     });

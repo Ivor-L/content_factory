@@ -60,7 +60,7 @@ cp .vibe/credentials.env.example .vibe/credentials.env
 
 这些变量用于触发 n8n 工作流，集中在 [n8n.ts](file:///Users/kaka/Desktop/软件开发/content-factory-web%203/lib/n8n.ts)：
 
-- `N8N_STORYBOARD_BREAKDOWN_WEBHOOK`：分镜拆解工作流触发地址（默认 `https://hooks.atomx.top/webhook/storyboard_disassembly_web`）
+- `N8N_STORYBOARD_BREAKDOWN_WEBHOOK`：分镜拆解工作流触发地址（默认 `https://hooks.atomx.top/webhook/miniapp_viral_breakdown_grid`）
 - `N8N_CALLBACK_BASE_URL`：App 回调基础 URL（n8n 需要能访问到该地址；本地开发需配置 cpolar/ngrok 等内网穿透）
 - `N8N_PRODUCT_ANALYSIS_WEBHOOK`
 - `N8N_SCRIPT_BREAKDOWN_WEBHOOK`

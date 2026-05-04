@@ -7,17 +7,39 @@ import './index.sass';
 const VIDEO_URL_RE = /\.(mp4|mov|m3u8)(\?|$)|\/video\/|\/master\/|xgvideo/i;
 const HTTP_URL_RE = /^https?:\/\//i;
 const API_BASE_URL = getApiBaseUrl();
+const ACTION_TRANSFER_IMAGE_RETURN_KEY = 'REMIX_ACTION_SOURCE_IMAGE_URL';
+const WORK_SELECT_TARGET_STORAGE_KEY = 'WORK_SELECT_TARGET';
+
+type WorkSelectTarget = {
+  target: 'action-transfer';
+  storageKey: string;
+  backUrl: string;
+};
 
 export default function WorkDetailPage() {
   const [item, setItem] = useState<any | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [currentPosterIndex, setCurrentPosterIndex] = useState(0);
+  const [selectTarget, setSelectTarget] = useState<WorkSelectTarget | null>(null);
 
   useLoad((query) => {
     const cached = Taro.getStorageSync('WORK_DETAIL_ITEM');
     if (cached && (!query?.id || String(cached.id) === String(query.id))) {
       setItem(cached);
+    }
+    const target = Taro.getStorageSync(WORK_SELECT_TARGET_STORAGE_KEY);
+    if (
+      target &&
+      typeof target === 'object' &&
+      target.target === 'action-transfer' &&
+      typeof target.storageKey === 'string'
+    ) {
+      setSelectTarget({
+        target: 'action-transfer',
+        storageKey: target.storageKey || ACTION_TRANSFER_IMAGE_RETURN_KEY,
+        backUrl: typeof target.backUrl === 'string' && target.backUrl ? target.backUrl : '/subpages/remix-generate/index?mode=action-transfer',
+      });
     }
   });
 
@@ -37,6 +59,12 @@ export default function WorkDetailPage() {
   const isImageText = item?.type === 'image-text';
   const videoUrl = useMemo(() => resolveVideoUrlFromItem(item), [item]);
   const currentPosterUrl = posterImages[currentPosterIndex] || '';
+  const isProcessing = useMemo(() => isWorkProcessingStatus(item?.status), [item?.status]);
+  const selectableImageUrl = useMemo(() => {
+    if (!selectTarget || isProcessing) return '';
+    if (isImageText && currentPosterUrl) return currentPosterUrl;
+    return resolveSingleImageUrl();
+  }, [currentPosterUrl, isImageText, isProcessing, posterImages, selectTarget, coverUrl]);
 
   useEffect(() => {
     if (posterImages.length === 0) {
@@ -56,7 +84,6 @@ export default function WorkDetailPage() {
     if (status.includes('PEND') || status.includes('QUEUE') || status.includes('WAIT')) return '待处理';
     return item?.status || '--';
   }, [item]);
-  const isProcessing = useMemo(() => isWorkProcessingStatus(item?.status), [item?.status]);
   const canDownload = Boolean(item) && !isProcessing;
 
   const publishQrcode = useMemo(() => {
@@ -155,10 +182,23 @@ export default function WorkDetailPage() {
     await Taro.saveImageToPhotosAlbum({ filePath: downloadRes.tempFilePath });
   };
 
-  const resolveSingleImageUrl = () => {
+  function resolveSingleImageUrl() {
     if (posterImages.length > 0) return posterImages[0];
     if (coverUrl && /\.(jpg|jpeg|png|webp)(\?|$)/i.test(coverUrl)) return coverUrl;
     return '';
+  }
+
+  const handleUseForActionTransfer = () => {
+    if (!selectTarget || !selectableImageUrl) {
+      Taro.showToast({ title: '未找到可使用图片', icon: 'none' });
+      return;
+    }
+    Taro.setStorageSync(selectTarget.storageKey || ACTION_TRANSFER_IMAGE_RETURN_KEY, selectableImageUrl);
+    Taro.removeStorageSync(WORK_SELECT_TARGET_STORAGE_KEY);
+    Taro.showToast({ title: '已选择图片', icon: 'success' });
+    setTimeout(() => {
+      Taro.navigateTo({ url: selectTarget.backUrl || '/subpages/remix-generate/index?mode=action-transfer' });
+    }, 260);
   };
 
   const handleDelete = async () => {
@@ -435,6 +475,14 @@ export default function WorkDetailPage() {
           </ScrollView>
 
           <View className='work-detail-action-bar'>
+            {selectTarget && (
+              <View
+                className={`work-detail-action-btn work-detail-use-btn ${!selectableImageUrl ? 'work-detail-action-btn--disabled' : ''}`}
+                onClick={handleUseForActionTransfer}
+              >
+                <Text className='work-detail-use-btn-text'>用于动作复刻</Text>
+              </View>
+            )}
             <View
               className={`work-detail-action-btn work-detail-delete-btn ${deleting ? 'work-detail-action-btn--disabled' : ''}`}
               onClick={() => {

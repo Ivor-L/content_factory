@@ -198,10 +198,13 @@
 
 .product-modal-card
   width: 100%
+  max-height: 86vh
   background: #141414
   border-radius: 24rpx
   border: 1rpx solid rgba(145, 175, 229, 0.22)
   padding: 24rpx
+  box-sizing: border-box
+  overflow-y: auto
 
 .product-modal-title
   display: block
@@ -237,6 +240,90 @@
   font-size: 24rpx
   margin-bottom: 14rpx
   box-sizing: border-box
+
+.product-image-picker
+  position: relative
+  min-height: 148rpx
+  border-radius: 16rpx
+  border: 1rpx dashed rgba(236, 238, 159, 0.46)
+  background: #202020
+  display: flex
+  flex-direction: column
+  align-items: center
+  justify-content: center
+  gap: 6rpx
+  margin-bottom: 14rpx
+
+.product-image-picker--disabled
+  opacity: 0.72
+
+.product-image-picker-plus
+  color: #ecee9f
+  font-size: 44rpx
+  line-height: 1
+
+.product-image-picker-text
+  color: #eaf3ff
+  font-size: 24rpx
+  font-weight: 700
+
+.product-image-picker-meta
+  position: absolute
+  right: 16rpx
+  bottom: 12rpx
+  color: #8ea2c8
+  font-size: 20rpx
+
+.product-image-grid
+  display: grid
+  grid-template-columns: repeat(3, minmax(0, 1fr))
+  gap: 10rpx
+  margin-bottom: 16rpx
+
+.product-image-thumb
+  position: relative
+  aspect-ratio: 1
+  border-radius: 14rpx
+  overflow: hidden
+  background: #0d0d0d
+  border: 1rpx solid rgba(145, 175, 229, 0.16)
+
+.product-image-thumb-img
+  width: 100%
+  height: 100%
+
+.product-image-thumb-mask
+  position: absolute
+  inset: 0
+  display: flex
+  align-items: center
+  justify-content: center
+  background: rgba(0, 0, 0, 0.48)
+
+.product-image-thumb-mask--failed
+  background: rgba(64, 8, 8, 0.72)
+
+.product-image-thumb-status
+  color: #ffffff
+  font-size: 22rpx
+  font-weight: 800
+
+.product-image-remove
+  position: absolute
+  top: 8rpx
+  right: 8rpx
+  width: 36rpx
+  height: 36rpx
+  border-radius: 50%
+  background: rgba(0, 0, 0, 0.62)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.product-image-remove-text
+  color: #ffffff
+  font-size: 30rpx
+  line-height: 1
 
 .product-modal-actions
   display: grid

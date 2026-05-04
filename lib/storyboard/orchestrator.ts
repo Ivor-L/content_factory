@@ -36,6 +36,7 @@ export interface StoryboardJobResult {
   status: string;
   pipelineKey: StoryboardPipelineKey;
   workflowId: string;
+  workflowTriggered: boolean;
 }
 
 export function readString(value: unknown): string {
@@ -83,6 +84,12 @@ function buildN8nPayload(input: {
   const script = readString(request.script);
   const title = readString(request.title);
   const source = readString(request.source);
+  const metadata = request.metadata || {};
+  const referenceVideoUrl =
+    readString(metadata.reference_video_url) ||
+    readString(metadata.referenceVideoUrl) ||
+    readString(metadata.video_url) ||
+    readString(metadata.videoUrl);
 
   return {
     task_id: taskId,
@@ -106,17 +113,34 @@ function buildN8nPayload(input: {
     title,
     creative_task_id: readString(request.creativeTaskId) || undefined,
     source: source || undefined,
-    metadata: request.metadata || undefined,
+    metadata,
     pipeline_key: request.pipelineKey,
+    ...(referenceVideoUrl
+      ? {
+        video_url: referenceVideoUrl,
+        videoUrl: referenceVideoUrl,
+        reference_video_url: referenceVideoUrl,
+        referenceVideoUrl,
+      }
+      : {}),
     ...(request.payloadData || {}),
   };
+}
+
+function readPositiveIntFromRecord(record: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = record[key];
+    const num = typeof value === 'number' ? value : Number(readString(value));
+    if (Number.isFinite(num) && num > 0) return Math.round(num);
+  }
+  return null;
 }
 
 async function triggerStoryboardWorkflow(input: {
   taskId: string;
   webhookUrl: string;
   payload: Record<string, unknown>;
-}) {
+}): Promise<void> {
   const { taskId, webhookUrl, payload } = input;
 
   try {
@@ -138,11 +162,17 @@ async function triggerStoryboardWorkflow(input: {
     });
     await syncTaskToSummary({ taskType: 'storyboard', taskId, operation: 'update' });
     emitStoryboardTaskUpsert(failedTask);
+    throw error;
   }
 }
 
 export async function createStoryboardJob(request: StoryboardJobRequest): Promise<StoryboardJobResult> {
+  const metadata = request.metadata || {};
   const profile = getStoryboardWorkflowProfile(request.pipelineKey);
+  const payloadData = request.payloadData || {};
+  const durationSeconds =
+    readPositiveIntFromRecord(payloadData, ['duration_seconds', 'duration_sec', 'durationSeconds', 'duration']) ??
+    readPositiveIntFromRecord(metadata, ['duration_seconds', 'duration_sec', 'durationSeconds', 'duration']);
 
   const task = await prisma.storyboardTask.create({
     data: {
@@ -153,7 +183,8 @@ export async function createStoryboardJob(request: StoryboardJobRequest): Promis
       detailedBreakdown: {
         pipeline_key: request.pipelineKey,
         source: request.source || profile.defaultSource,
-        metadata: request.metadata || {},
+        metadata,
+        ...(durationSeconds ? { duration_seconds: durationSeconds } : {}),
       },
       ...(request.taskData || {}),
     } as any,
@@ -169,15 +200,27 @@ export async function createStoryboardJob(request: StoryboardJobRequest): Promis
   emitStoryboardTaskUpsert(syncedTask);
 
   const callbackUrl = `${APP_BASE_URL}${profile.callbackPath}`;
+  const workflowRequest: StoryboardJobRequest = durationSeconds
+    ? {
+      ...request,
+      metadata,
+      payloadData: {
+        ...payloadData,
+        duration_sec: durationSeconds,
+        duration_seconds: durationSeconds,
+        duration: durationSeconds,
+      },
+    }
+    : request;
   const payload = buildN8nPayload({
     taskId: task.id,
-    request,
+    request: workflowRequest,
     callbackUrl,
     workflowId: profile.workflowId,
     workflowName: profile.workflowName,
   });
 
-  void triggerStoryboardWorkflow({
+  await triggerStoryboardWorkflow({
     taskId: task.id,
     webhookUrl: profile.webhookUrl,
     payload,
@@ -188,5 +231,6 @@ export async function createStoryboardJob(request: StoryboardJobRequest): Promis
     status: syncedTask.status,
     pipelineKey: request.pipelineKey,
     workflowId: profile.workflowId,
+    workflowTriggered: true,
   };
 }

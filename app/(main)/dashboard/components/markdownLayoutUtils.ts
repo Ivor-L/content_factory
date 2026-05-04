@@ -32,6 +32,46 @@ function renderInlineMarkdown(input: string) {
   return withLink;
 }
 
+function splitMarkdownTableRow(line: string): string[] {
+  const trimmed = line.trim();
+  const source = trimmed.startsWith('|') && trimmed.endsWith('|') ? trimmed.slice(1, -1) : trimmed;
+  const cells: string[] = [];
+  let current = '';
+  let escaping = false;
+
+  for (const char of source) {
+    if (escaping) {
+      current += char;
+      escaping = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaping = true;
+      continue;
+    }
+    if (char === '|') {
+      cells.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+
+  cells.push(current.trim());
+  return cells;
+}
+
+function isMarkdownTableSeparator(line: string) {
+  const cells = splitMarkdownTableRow(line);
+  if (cells.length < 2) return false;
+  return cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, '')));
+}
+
+function isMarkdownTableRow(line: string) {
+  const trimmed = line.trim();
+  return trimmed.includes('|') && splitMarkdownTableRow(trimmed).length >= 2;
+}
+
 export function markdownToSimpleHtml(markdown: string) {
   const body = stripFrontmatter(markdown);
   const lines = body.replace(/\r\n/g, '\n').split('\n');
@@ -56,6 +96,21 @@ export function markdownToSimpleHtml(markdown: string) {
       }
       if (i < lines.length) i += 1;
       html.push(`<pre><code>${escapeHtml(block.join('\n'))}</code></pre>`);
+      continue;
+    }
+
+    if (isMarkdownTableRow(trimmed) && isMarkdownTableSeparator(lines[i + 1] || '')) {
+      const headerCells = splitMarkdownTableRow(trimmed);
+      const rows: string[][] = [];
+      i += 2;
+      while (i < lines.length && isMarkdownTableRow(lines[i])) {
+        rows.push(splitMarkdownTableRow(lines[i]));
+        i += 1;
+      }
+      const columnCount = Math.max(2, headerCells.length, ...rows.map((row) => row.length));
+      const renderCells = (cells: string[], tag: 'th' | 'td') =>
+        Array.from({ length: columnCount }, (_, index) => `<${tag}>${renderInlineMarkdown(cells[index] || '')}</${tag}>`).join('');
+      html.push(`<table><thead><tr>${renderCells(headerCells, 'th')}</tr></thead><tbody>${rows.map((row) => `<tr>${renderCells(row, 'td')}</tr>`).join('')}</tbody></table>`);
       continue;
     }
 
@@ -117,7 +172,8 @@ export function markdownToSimpleHtml(markdown: string) {
         /^\d+\.\s+/.test(next) ||
         next.startsWith('>') ||
         /^(-{3,}|\*{3,}|_{3,})$/.test(next) ||
-        next.startsWith('```')
+        next.startsWith('```') ||
+        (isMarkdownTableRow(next) && isMarkdownTableSeparator(lines[i + 1] || ''))
       ) {
         break;
       }
@@ -162,6 +218,9 @@ export function buildWechatExportHtml(title: string, contentHtml: string, fontSc
     .article h3 { margin: 22px 0 10px; font-size: 21px; font-weight: 600; color: #111; }
     .article p { margin: 18px 0; }
     .article ul,.article ol { margin: 18px 0; padding-left: 24px; }
+    .article table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: .95em; }
+    .article th,.article td { border: 1px solid #dedede; padding: 9px 11px; vertical-align: top; }
+    .article th { background: #f6f6f6; font-weight: 700; }
     .article blockquote { margin: 20px 0; border-left: 4px solid #07c160; background: #f6fffa; border-radius: 8px; padding: 12px 14px; }
     .article code { background: #f5f5f5; border-radius: 4px; padding: 1px 6px; font-size: .92em; }
     .article pre { margin: 20px 0; overflow: auto; background: #f7f7f9; border-radius: 8px; padding: 14px; }
@@ -194,6 +253,9 @@ export function buildXhsExportHtml(title: string, contentHtml: string) {
     .card h3 { margin: 20px 0 10px; font-size: 22px; line-height: 1.34; font-weight: 700; color: #334155; }
     .card p { margin: 16px 0; font-size: 18px; line-height: 1.9; }
     .card ul,.card ol { margin: 16px 0; padding-left: 26px; font-size: 18px; line-height: 1.9; }
+    .card table { width: 100%; border-collapse: collapse; margin: 18px 0; font-size: 17px; line-height: 1.7; }
+    .card th,.card td { border: 1px solid #ffd9c7; padding: 9px 11px; vertical-align: top; }
+    .card th { background: #fff1e7; font-weight: 700; color: #1f2937; }
     .card blockquote { margin: 18px 0; padding: 12px 14px; border-left: 4px solid #ff7a45; background: #fff5ee; border-radius: 8px; }
     .card code { background: #fff1e7; border-radius: 4px; padding: 1px 6px; }
     .card pre { background: #fff4ee; border-radius: 10px; padding: 14px; overflow: auto; }

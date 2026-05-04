@@ -25,7 +25,7 @@ interface DigitalHumanModalProps {
   defaultScript?: string;
   sourceTaskId?: string;
   disableAutoRedirect?: boolean;
-  onSuccess?: () => void | Promise<void>;
+  onSuccess?: (taskId?: string | null) => void | Promise<void>;
   hideInternalTitle?: boolean;
   showAssistant?: boolean;
 }
@@ -394,6 +394,35 @@ export function DigitalHumanModal({
     });
   };
 
+  const getImageDimensions = (url: string): Promise<{ width: number; height: number } | null> => {
+    return new Promise((resolve) => {
+      const trimmedUrl = url.trim();
+      if (!trimmedUrl) {
+        resolve(null);
+        return;
+      }
+
+      const image = new Image();
+      const timeout = window.setTimeout(() => {
+        image.onload = null;
+        image.onerror = null;
+        resolve(null);
+      }, 7000);
+
+      image.onload = () => {
+        window.clearTimeout(timeout);
+        const width = image.naturalWidth || image.width;
+        const height = image.naturalHeight || image.height;
+        resolve(width > 0 && height > 0 ? { width, height } : null);
+      };
+      image.onerror = () => {
+        window.clearTimeout(timeout);
+        resolve(null);
+      };
+      image.src = trimmedUrl;
+    });
+  };
+
   const uploadFile = async (file: File) => {
     setUploading(true);
     try {
@@ -495,18 +524,33 @@ export function DigitalHumanModal({
     submitLockRef.current = true;
     setLoading(true);
     try {
+      const sourceDimensions = await getImageDimensions(imageUrl);
+      let submittedTaskId: string | null = null;
       for (const chunk of trimmedScriptChunks) {
         const formData = new FormData();
         formData.append('type', mode);
         formData.append('imageUrl', imageUrl);
         formData.append('audioUrl', audioUrl);
         formData.append('duration', audioDuration.toString());
+        if (sourceDimensions) {
+          formData.append('sourceWidth', String(sourceDimensions.width));
+          formData.append('sourceHeight', String(sourceDimensions.height));
+        }
         if (userId) formData.append('userId', userId);
         if (sourceTaskId) formData.append('sourceTaskId', sourceTaskId);
         if (mode === 'VOICE_CLONE') {
           formData.append('script', chunk ?? '');
         }
-        await createDigitalHumanVideo(formData);
+        const result = await createDigitalHumanVideo(formData);
+        const firstJobId =
+          typeof result?.jobs?.[0]?.id === 'string'
+            ? result.jobs[0].id
+            : typeof result?.jobIds?.[0] === 'string'
+              ? result.jobIds[0]
+              : null;
+        if (firstJobId && submittedTaskId == null) {
+          submittedTaskId = firstJobId;
+        }
       }
 
       if (toastId) {
@@ -516,7 +560,7 @@ export function DigitalHumanModal({
       }
 
       if (onSuccess) {
-        await onSuccess();
+        await onSuccess(submittedTaskId);
       }
       if (!disableAutoRedirect) {
         router.push(myProjectsPath);

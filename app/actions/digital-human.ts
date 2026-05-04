@@ -11,6 +11,8 @@ export async function createDigitalHumanVideo(formData: FormData) {
   const emoAudioUrl = (formData.get('emoAudioUrl') as string | null) || undefined;
   const script = (formData.get('script') as string | null) || undefined;
   const duration = formData.get('duration');
+  const rawSourceWidth = formData.get('sourceWidth');
+  const rawSourceHeight = formData.get('sourceHeight');
   const clientUserId = (formData.get('userId') as string | null) || undefined;
   const rawSourceTaskId = (formData.get('sourceTaskId') as string | null)?.trim();
   const sourceTaskId = rawSourceTaskId && rawSourceTaskId.length > 0 ? rawSourceTaskId : undefined;
@@ -26,10 +28,18 @@ export async function createDigitalHumanVideo(formData: FormData) {
   const parsedDuration = duration != null ? Number(duration) : NaN;
   const durationSeconds =
     Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : null;
+  const parsedSourceWidth = rawSourceWidth != null ? Number(rawSourceWidth) : NaN;
+  const parsedSourceHeight = rawSourceHeight != null ? Number(rawSourceHeight) : NaN;
+  const sourceWidth =
+    Number.isFinite(parsedSourceWidth) && parsedSourceWidth > 0 ? parsedSourceWidth : null;
+  const sourceHeight =
+    Number.isFinite(parsedSourceHeight) && parsedSourceHeight > 0 ? parsedSourceHeight : null;
 
-  await createDigitalHumanJobs({
+  const result = await createDigitalHumanJobs({
     type,
     imageUrl,
+    sourceWidth,
+    sourceHeight,
     audioUrl,
     script,
     emoAudioUrl,
@@ -38,5 +48,10 @@ export async function createDigitalHumanVideo(formData: FormData) {
     sourceTaskId,
   });
 
-  return { success: true };
+  return {
+    success: true,
+    jobIds: result.jobs.map((job) => job.id),
+    jobs: result.jobs.map((job) => ({ id: job.id })),
+    isSplit: result.isSplit,
+  };
 }

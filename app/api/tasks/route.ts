@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
       status,
       limit: limitParam,
       offset: offsetParam,
-      includeEnrichment: false,
+      includeEnrichment: true,
       includeTotal: false,
     });
 

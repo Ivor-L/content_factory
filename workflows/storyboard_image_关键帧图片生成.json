@@ -21,7 +21,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const body = $json.body || $json;\n\nfunction s(v) {\n  return v == null ? '' : String(v);\n}\n\nreturn {\n  json: {\n    segment_id: s(body.segment_id),\n    task_id: s(body.task_id),\n    prompt: s(body.prompt),\n    product_image_url: s(body.product_image_url),\n    character_image_url: s(body.character_image_url),\n    reference_frame_url: s(body.reference_frame_url),\n    model: s(body.model || 'nanoBananapro'),\n    aspect_ratio: s(body.aspect_ratio || '9:16'),\n    callback_url: s(body.callback_url),\n    api_key: s(body.api_key),\n    admin_token: s(body.admin_token),\n    workflow_id: s(body.workflow_id || 'flow_image_video_Veo')\n  }\n};"
+        "jsCode": "const body = $json.body || $json;\n\nfunction s(v) {\n  return v == null ? '' : String(v);\n}\n\nreturn {\n  json: {\n    segment_id: s(body.segment_id),\n    task_id: s(body.task_id),\n    prompt: s(body.prompt),\n    product_image_url: s(body.product_image_url),\n    reference_frame_url: s(body.reference_frame_url),\n    image_edit_mode: s(body.image_edit_mode || 'product_replace'),\n    model: s(body.model || 'nanoBananapro'),\n    aspect_ratio: s(body.aspect_ratio || '9:16'),\n    callback_url: s(body.callback_url),\n    api_key: s(body.api_key),\n    admin_token: s(body.admin_token),\n    workflow_id: s(body.workflow_id || 'flow_image_video_Veo')\n  }\n};"
       },
       "id": "41c33ab9-72d7-4c1c-8496-79389e89790d",
       "name": "准备所有数据",
@@ -30,61 +30,6 @@
       "position": [
         1872,
         32
-      ]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "id": "has_character_url",
-              "leftValue": "={{ $json.character_image_url }}",
-              "rightValue": "",
-              "operator": {
-                "type": "string",
-                "operation": "notEmpty",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "99a01445-85e0-4b46-806d-e28b4794f6a8",
-      "name": "IF-有角色图",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        2096,
-        -16
-      ]
-    },
-    {
-      "parameters": {
-        "url": "={{ $json.character_image_url }}",
-        "options": {
-          "response": {
-            "response": {
-              "responseFormat": "file",
-              "outputPropertyName": "person_file"
-            }
-          }
-        }
-      },
-      "id": "bfed0b14-9552-4092-bd53-bc5f78e7f551",
-      "name": "下载角色图",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        2288,
-        -208
       ]
     },
     {
@@ -203,21 +148,6 @@
         "combineBy": "combineAll",
         "options": {}
       },
-      "id": "a52e9e97-dc67-4243-9bbe-2bf6131b59d5",
-      "name": "合并角色图",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3.2,
-      "position": [
-        2544,
-        -128
-      ]
-    },
-    {
-      "parameters": {
-        "mode": "combine",
-        "combineBy": "combineAll",
-        "options": {}
-      },
       "id": "e3b1520c-43e4-4d6d-b6a2-d2daaabee849",
       "name": "合并产品图",
       "type": "n8n-nodes-base.merge",
@@ -245,7 +175,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const j = $json || {};\n\nfunction s(v) {\n  return v == null ? '' : String(v).trim();\n}\n\nconst parts = [];\n\n// 1. 添加文字提示词 (必须有，或者设为空字符串)\nparts.push({ text: s(j.prompt) || \"Generate a high quality image\" });\n\n// 2. 动态添加图片\nif (j.person_image_b64) {\n  parts.push({ text: 'Image - MODEL (face reference)' });\n  parts.push({\n    inline_data: {\n      mime_type: s(j.person_mime_type || 'image/jpeg'),\n      data: j.person_image_b64\n    }\n  });\n}\n\nif (j.product_image_b64) {\n  parts.push({ text: 'Image - PRODUCT (product reference)' });\n  parts.push({\n    inline_data: {\n      mime_type: s(j.product_mime_type || 'image/jpeg'),\n      data: j.product_image_b64\n    }\n  });\n}\n\nif (j.reference_frame_b64) {\n  parts.push({ text: 'Image - REFERENCE (style/composition reference)' });\n  parts.push({\n    inline_data: {\n      mime_type: s(j.reference_frame_mime || 'image/jpeg'),\n      data: j.reference_frame_b64\n    }\n  });\n}\n\nconst request_body = {\n  contents: [{ role: 'user', parts }],\n  generationConfig: {\n    responseModalities: ['IMAGE'],\n    imageConfig: { aspectRatio: s(j.aspect_ratio || '9:16') }\n  }\n};\n\nconst modelMap = {\n  nanoBananapro: 'gemini-3-pro-image-preview',\n  nanoBanana2: 'gemini-3.1-flash-image-preview'\n};\n\nreturn {\n  json: {\n    ...j,\n    request_body,\n    api_model: modelMap[s(j.model)] || 'gemini-3-pro-image-preview'\n  }\n};"
+        "jsCode": "const j = $json || {};\n\nfunction s(v) {\n  return v == null ? '' : String(v).trim();\n}\n\nfunction pushInline(parts, { b64, mimeType, label }) {\n  if (!b64) return;\n  parts.push({ text: label });\n  parts.push({\n    inline_data: {\n      mime_type: mimeType || 'image/jpeg',\n      data: b64,\n    }\n  });\n}\n\nconst prod_b64 = s(j.product_image_b64);\nconst prod_mime = s(j.product_mime_type || 'image/jpeg');\nconst ref_b64 = s(j.reference_frame_b64);\nconst ref_mime = s(j.reference_frame_mime || 'image/jpeg');\n\nconst prompt = s(j.prompt) || 'Generate a high quality product replacement image';\nconst ratio = s(j.aspect_ratio || '9:16');\n\nconst parts = [];\nparts.push({\n  text: [\n    prompt,\n    '',\n    'Reference image rules:',\n    '- Image 1, if present, is PRODUCT reference. Use it only to replace the product identity, shape, material, package, and visible brand structure.',\n    '- Image 2, if present, is REFERENCE FRAME. Use it as the primary anchor for composition, crop, camera height, subject placement, scene layout, lighting direction, shadow logic, and storytelling purpose.',\n    '- Do not import any person, face, model, celebrity, or character identity reference.',\n    '- If people appear in the reference frame, keep them generic and natural; do not preserve or copy a real person identity.',\n    '- Preserve the original shot design and viral ad grammar. Replace only the product where applicable.',\n    '- No subtitles, UI overlays, watermark, border, collage, extra products, or product deformation.'\n  ].join('\\n')\n});\n\nif (prod_b64) {\n  pushInline(parts, {\n    b64: prod_b64,\n    mimeType: prod_mime,\n    label: 'Image 1 - PRODUCT reference for product replacement'\n  });\n}\n\nif (ref_b64) {\n  pushInline(parts, {\n    b64: ref_b64,\n    mimeType: ref_mime,\n    label: prod_b64\n      ? 'Image 2 - REFERENCE FRAME for composition and scene replication'\n      : 'Image 1 - REFERENCE FRAME for composition and scene replication'\n  });\n}\n\nconst request_body = {\n  contents: [{ role: 'user', parts }],\n  generationConfig: {\n    responseModalities: ['IMAGE'],\n    imageConfig: { aspectRatio: ratio }\n  }\n};\n\nconst modelMap = {\n  nanoBananapro: 'gemini-3-pro-image-preview',\n  nanoBanana2: 'gemini-3.1-flash-image-preview'\n};\n\nreturn {\n  json: {\n    ...j,\n    request_body,\n    api_model: modelMap[s(j.model)] || 'gemini-3-pro-image-preview'\n  }\n};"
       },
       "id": "4050b78e-52cb-4472-a448-f19cdd0de61a",
       "name": "组装生图请求体",
@@ -386,7 +316,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const j = $json || {};\n\nfunction s(v) {\n  return v == null ? '' : String(v);\n}\n\nasync function readBinaryBase64(keyCandidates) {\n  const keys = Object.keys($binary || {});\n  let hitKey = '';\n\n  for (const k of keyCandidates) {\n    if (keys.includes(k)) {\n      hitKey = k;\n      break;\n    }\n  }\n\n  if (!hitKey) return { ok: false, b64: '', mime: '' };\n\n  try {\n    const buf = await this.helpers.getBinaryDataBuffer(0, hitKey);\n    const meta = $binary[hitKey] || {};\n    return {\n      ok: true,\n      b64: buf.toString('base64'),\n      mime: s(meta.mimeType || 'image/jpeg')\n    };\n  } catch (e) {\n    return { ok: false, b64: '', mime: '' };\n  }\n}\n\nconst personImg = await readBinaryBase64(['person_file', 'character_file']);\nconst productImg = await readBinaryBase64(['product_file']);\nconst referenceImg = await readBinaryBase64(['reference_file', 'frame_file']);\n\nreturn {\n  json: {\n    ...j,\n    person_image_b64: personImg.b64,\n    person_mime_type: personImg.mime,\n    product_image_b64: productImg.b64,\n    product_mime_type: productImg.mime,\n    reference_frame_b64: referenceImg.b64,\n    reference_frame_mime: referenceImg.mime\n  },\n  binary: $binary\n};"
+        "jsCode": "const j = $json || {};\n\nfunction s(v) {\n  return v == null ? '' : String(v);\n}\n\nasync function readBinaryBase64(keyCandidates) {\n  const keys = Object.keys($binary || {});\n  let hitKey = '';\n\n  for (const k of keyCandidates) {\n    if (keys.includes(k)) {\n      hitKey = k;\n      break;\n    }\n  }\n\n  if (!hitKey) return { ok: false, b64: '', mime: '' };\n\n  try {\n    const buf = await this.helpers.getBinaryDataBuffer(0, hitKey);\n    const meta = $binary[hitKey] || {};\n    return {\n      ok: true,\n      b64: buf.toString('base64'),\n      mime: s(meta.mimeType || 'image/jpeg')\n    };\n  } catch (e) {\n    return { ok: false, b64: '', mime: '' };\n  }\n}\n\nconst productImg = await readBinaryBase64(['product_file']);\nconst referenceImg = await readBinaryBase64(['reference_file', 'frame_file']);\n\nreturn {\n  json: {\n    ...j,\n    product_image_b64: productImg.b64,\n    product_mime_type: productImg.mime,\n    reference_frame_b64: referenceImg.b64,\n    reference_frame_mime: referenceImg.mime\n  },\n  binary: $binary\n};"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -498,16 +428,16 @@
           "body": {
             "segment_id": "cmnbmtye400038mq2le9x42on",
             "task_id": "cmnbmqtgg00018mq2hjomiqxq",
-            "prompt": "You are rebuilding a commercial still from a source-video shot for viral-clone production.\n\nCore rule:\nPreserve the original shot design, composition, camera logic, scene structure, lighting logic, emotional purpose, and action staging.\nOnly replace subject identity where applicable.\nDo not redesign the shot.\n\nReference image usage rules:\n- The reference frame image is the primary anchor for composition, crop, perspective, camera height, subject placement, scene layout, background structure, lighting direction, shadow logic, and storytelling purpose.\n- The character reference image, if provided, is only for replacing and locking character identity, including face identity, hairstyle, body type, and appearance consistency.\n- The product reference image, if provided, is only for replacing and locking product identity, including shape, proportion, material, surface finish, packaging form, and branding structure.\n- Do not let the character reference image change the shot design.\n- Do not let the product reference image change the shot design.\n- Do not print or describe any image URLs in the output.\n\nCharacter identity:\n- character_name: N/A\n- shot_has_person: false\n- character_desc: N/A\n\nProduct identity:\n- product_name: N/A\n- product_description: N/A\n- primary_product_benefit_for_this_shot: N/A\n- shot_has_product: false\n- product_desc_in_shot: N/A\n\nShot purpose and visual anchor:\n- shot_goal: N/A\n- visual_content_description: N/A\n- location_setting: N/A\n- emotion_state: N/A\n- action_blocking: N/A\n- must_show: N/A\n- on_screen_text_graphics: none\n\nCamera and composition:\n- camera_shot_size: N/A\n- camera_angle: N/A\n- camera_movement: N/A\n- composition_notes: N/A\n- camera_notes: N/A\n\nLighting and color:\n- lighting_atmosphere: N/A\n- color_grading: N/A\n- lighting_notes: N/A\n\nNegative rules:\n- no new composition\n- no new camera angle\n- no new scene concept\n- no extra people\n- no extra products\n- no subtitles\n- no UI overlays\n- no watermark\n- no border\n- no collage\n- no product deformation\n- no off-model face\n- no redesign of wardrobe logic unless character reference explicitly requires it\n\nOutput target:\nA photorealistic commercial still that looks like the same original shot, with only the character identity and/or product identity replaced when applicable.",
+            "prompt": "You are rebuilding a commercial still from a source-video shot for viral-clone production.\n\nCore rule:\nPreserve the original shot design, composition, camera logic, scene structure, lighting logic, emotional purpose, and action staging.\nOnly replace subject identity where applicable.\nDo not redesign the shot.\n\nReference image usage rules:\n- The reference frame image is the primary anchor for composition, crop, perspective, camera height, subject placement, scene layout, background structure, lighting direction, shadow logic, and storytelling purpose.\n- The product reference image, if provided, is only for replacing and locking product identity, including shape, proportion, material, surface finish, packaging form, and branding structure.\n- Do not let the product reference image change the shot design.\n- Do not print or describe any image URLs in the output.\n\nProduct identity:\n- product_name: N/A\n- product_description: N/A\n- primary_product_benefit_for_this_shot: N/A\n- shot_has_product: false\n- product_desc_in_shot: N/A\n\nShot purpose and visual anchor:\n- shot_goal: N/A\n- visual_content_description: N/A\n- location_setting: N/A\n- emotion_state: N/A\n- action_blocking: N/A\n- must_show: N/A\n- on_screen_text_graphics: none\n\nCamera and composition:\n- camera_shot_size: N/A\n- camera_angle: N/A\n- camera_movement: N/A\n- composition_notes: N/A\n- camera_notes: N/A\n\nLighting and color:\n- lighting_atmosphere: N/A\n- color_grading: N/A\n- lighting_notes: N/A\n\nNegative rules:\n- no new composition\n- no new camera angle\n- no new scene concept\n- no extra people\n- no extra products\n- no subtitles\n- no UI overlays\n- no watermark\n- no border\n- no collage\n- no product deformation\n\nOutput target:\nA photorealistic commercial still that looks like the same original shot, with only the product identity replaced when applicable.",
             "reference_frame_url": "https://oss.atomx.top/storyboard/images/1774781078705-6c6hxcapq4s.png",
             "product_image_url": null,
-            "character_image_url": null,
             "model": "nanoBananapro",
             "aspect_ratio": "9:16",
             "callback_url": "https://atomx.top/api/webhook/storyboard-image",
             "api_key": "sk_aLO8hb0hNm2PYMJ07Loak8Fzjm3Q-KEuWIPLTDQUu_8",
             "admin_token": "275287b02ecb09b4e248e3f34052bf92d9938f2f8ee008483d30d8f93decb4e9",
-            "workflow_id": "YPzVxDvKVKPVmPuo"
+            "workflow_id": "YPzVxDvKVKPVmPuo",
+            "image_edit_mode": "product_replace"
           },
           "webhookUrl": "http://localhost:5678/webhook/storyboard-image-generate",
           "executionMode": "production"
@@ -534,11 +464,6 @@
       "main": [
         [
           {
-            "node": "IF-有角色图",
-            "type": "main",
-            "index": 0
-          },
-          {
             "node": "IF-有产品图",
             "type": "main",
             "index": 0
@@ -548,46 +473,6 @@
             "type": "main",
             "index": 0
           },
-          {
-            "node": "合并角色图",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF-有角色图": {
-      "main": [
-        [
-          {
-            "node": "下载角色图",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "合并角色图",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "下载角色图": {
-      "main": [
-        [
-          {
-            "node": "合并角色图",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "合并角色图": {
-      "main": [
-        [
           {
             "node": "合并产品图",
             "type": "main",
