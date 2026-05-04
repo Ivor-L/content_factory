@@ -22,6 +22,9 @@ export default function ProfilePage() {
     styles: 0,
     characters: 0,
   });
+  const hasIdentity = Boolean(profile?.id || profile?.apiKey || Taro.getStorageSync('API_KEY'));
+  const displayName = hasIdentity ? (profile?.username || profile?.full_name || '未命名用户') : '未登录用户';
+  const displayId = profile?.id ? profile.id.slice(0, 8) : '--';
 
   useDidShow(() => {
     void (async () => {
@@ -98,7 +101,15 @@ export default function ProfilePage() {
     }
   };
 
+  const promptLogin = () => {
+    Taro.navigateTo({ url: '/subpages/login/index' });
+  };
+
   const handleChangeAvatar = async () => {
+    if (!hasIdentity) {
+      promptLogin();
+      return;
+    }
     if (updatingAvatar) return;
     try {
       const res = await Taro.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
@@ -131,6 +142,10 @@ export default function ProfilePage() {
   };
 
   const handleChangeName = async () => {
+    if (!hasIdentity) {
+      promptLogin();
+      return;
+    }
     if (updatingName) return;
     try {
       const modal = await Taro.showModal({
@@ -264,6 +279,10 @@ export default function ProfilePage() {
   };
 
   const handleSwitchLogin = () => {
+    if (!hasIdentity) {
+      promptLogin();
+      return;
+    }
     Taro.showModal({
       title: '切换登录',
       content: '确定退出当前账号并重新登录吗？',
@@ -287,11 +306,11 @@ export default function ProfilePage() {
       <View className='profile-user-head'>
         <Image className='profile-user-avatar' src={profile?.avatarUrl || avatarIcon} mode='aspectFill' onClick={handleChangeAvatar} />
         <View className='profile-user-meta'>
-          <Text className='profile-user-name' onClick={handleChangeName}>{profile?.username || '本地调试用户'}</Text>
-          <Text className='profile-user-id' onClick={copyProfileId}>ID：{profile?.id ? profile.id.slice(0, 8) : 'miniapp--'}</Text>
+          <Text className='profile-user-name' onClick={handleChangeName}>{displayName}</Text>
+          <Text className='profile-user-id' onClick={copyProfileId}>ID：{displayId}</Text>
         </View>
         <View className='profile-switch-login' onClick={handleSwitchLogin}>
-          <Text className='profile-switch-login-text'>切换登录⇆</Text>
+          <Text className='profile-switch-login-text'>{hasIdentity ? '切换登录⇆' : '去登录'}</Text>
         </View>
       </View>
 
