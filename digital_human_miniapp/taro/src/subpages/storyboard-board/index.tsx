@@ -6,7 +6,6 @@ import type { StoryboardSegmentItem, StoryboardTaskStatusResult } from '../../ut
 import { api } from '../../utils/api';
 import imageIcon from '../../assets/icons/storyboard-placeholder-image.svg';
 import videoIcon from '../../assets/icons/storyboard-placeholder-video.svg';
-import regenerateIcon from '../../assets/icons/storyboard-submit-regenerate.svg';
 import './index.sass';
 
 const POLL_INTERVAL = 4000;
@@ -18,6 +17,7 @@ const VIDEO_MODELS = [
   { id: 'veo3.1-fast', label: 'Veo 3.1 Fast' },
   { id: 'veo_3_1-fast', label: 'Veo 3.1 Fast(兼容)' },
 ];
+type StoryboardRef = { type: string; url: string; label?: string };
 
 function decodeQueryText(value: string): string {
   const text = String(value || '').trim();
@@ -43,8 +43,9 @@ export default function StoryboardBoardPage() {
   const [editingPrompt, setEditingPrompt] = useState('');
   const [editingImageModel, setEditingImageModel] = useState('nanoBananapro');
   const [editingVideoModel, setEditingVideoModel] = useState('veo3.1-fast');
-  const [editingRefs, setEditingRefs] = useState<Array<{ type: string; url: string; label?: string }>>([]);
+  const [editingRefs, setEditingRefs] = useState<StoryboardRef[]>([]);
   const [uploadingRef, setUploadingRef] = useState(false);
+  const [uploadingAsset, setUploadingAsset] = useState(false);
   const [editModelSheetOpen, setEditModelSheetOpen] = useState(false);
   const [savingPrompt, setSavingPrompt] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -52,6 +53,7 @@ export default function StoryboardBoardPage() {
   const [modelSheetOpen, setModelSheetOpen] = useState(false);
   const [imageErrorMap, setImageErrorMap] = useState<Record<string, boolean>>({});
   const [videoErrorMap, setVideoErrorMap] = useState<Record<string, boolean>>({});
+  const [deleting, setDeleting] = useState(false);
   const timerRef = useRef<number | null>(null);
 
   const clearTimer = () => {
@@ -180,6 +182,67 @@ export default function StoryboardBoardPage() {
     setVideoErrorMap((prev) => ({ ...prev, [segmentId]: failed }));
   };
 
+  const buildTaskDefaultRefs = (): StoryboardRef[] => {
+    const refs: StoryboardRef[] = [];
+    for (const ref of task?.references || []) {
+      if (!ref.imageUrl) continue;
+      refs.push({
+        type: ref.type,
+        url: ref.imageUrl,
+        label: ref.type === 'product' ? '产品图' : '角色图',
+      });
+    }
+    return refs;
+  };
+
+  const getSegmentParams = (segment: StoryboardSegmentItem): Record<string, unknown> => (
+    segment.generationParams && typeof segment.generationParams === 'object' && !Array.isArray(segment.generationParams)
+      ? segment.generationParams
+      : {}
+  );
+
+  const getSegmentRefs = (segment: StoryboardSegmentItem, type: 'image' | 'video'): StoryboardRef[] => {
+    const rawParams = getSegmentParams(segment);
+    const key = type === 'image' ? 'subject_refs' : 'video_refs';
+    const stored = Array.isArray(rawParams[key])
+      ? (rawParams[key] as unknown[])
+        .map((item) => {
+          const obj = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+          return {
+            type: String(obj.type || 'custom'),
+            url: String(obj.url || '').trim(),
+            label: typeof obj.label === 'string' ? obj.label : undefined,
+          };
+        })
+        .filter((item) => item.url)
+      : [];
+    const defaults = buildTaskDefaultRefs();
+    const refs = [...stored, ...defaults];
+    if (type === 'video' && segment.generatedImage) {
+      refs.unshift({ type: 'reference_frame', url: segment.generatedImage, label: '首帧图' });
+    }
+    const seen = new Set<string>();
+    return refs.filter((ref) => {
+      const url = normalizeMediaUrl(ref.url);
+      if (!url || seen.has(url)) return false;
+      seen.add(url);
+      ref.url = url;
+      return true;
+    }).slice(0, 6);
+  };
+
+  const getSegmentAssets = (segment: StoryboardSegmentItem, type: 'image' | 'video'): string[] => {
+    const current = normalizeMediaUrl(type === 'image' ? segment.generatedImage : segment.generatedVideo);
+    const rawParams = getSegmentParams(segment);
+    const historyKey = type === 'image' ? 'image_history' : 'video_history';
+    const history = Array.isArray(rawParams[historyKey])
+      ? (rawParams[historyKey] as unknown[])
+        .map((item) => normalizeMediaUrl(typeof item === 'string' ? item : ''))
+        .filter(Boolean)
+      : [];
+    return uniqueStrings([current, ...history]);
+  };
+
   const handleOpenAsset = (type: 'image' | 'video', segment: StoryboardSegmentItem) => {
     const imageUrl = normalizeMediaUrl(segment.generatedImage);
     const videoUrl = normalizeMediaUrl(segment.generatedVideo);
@@ -200,7 +263,7 @@ export default function StoryboardBoardPage() {
           status: segment.status,
           createdAt: new Date().toISOString(),
           preview: videoUrl,
-          thumbnailUrl: null,
+          thumbnailUrl: imageUrl || null,
           metadata: null,
           source: 'task',
         });
@@ -212,26 +275,12 @@ export default function StoryboardBoardPage() {
   };
 
   const handleEditPrompt = (segment: StoryboardSegmentItem, type: 'image' | 'video') => {
-    const rawParams = ((segment as unknown as { generationParams?: unknown }).generationParams || null) as
-      | { subject_refs?: Array<{ type?: string; url?: string; label?: string }>; video_refs?: Array<{ type?: string; url?: string; label?: string }> }
-      | null;
-    const subjectRefs = Array.isArray(rawParams?.subject_refs)
-      ? rawParams!.subject_refs
-        .map((item) => ({ type: String(item?.type || 'custom'), url: String(item?.url || '').trim(), label: item?.label }))
-        .filter((item) => item.url)
-      : [];
-    const videoRefs = Array.isArray(rawParams?.video_refs)
-      ? rawParams!.video_refs
-        .map((item) => ({ type: String(item?.type || 'custom'), url: String(item?.url || '').trim(), label: item?.label }))
-        .filter((item) => item.url)
-      : [];
-
     setEditingSegmentId(segment.id);
     setEditingType(type);
     setEditingPrompt(type === 'image' ? (segment.imagePrompt || '') : (segment.videoPrompt || ''));
     setEditingImageModel(imageModel);
     setEditingVideoModel(videoModel);
-    setEditingRefs(type === 'image' ? subjectRefs : videoRefs);
+    setEditingRefs(getSegmentRefs(segment, type));
   };
 
   const closeEditPrompt = () => {
@@ -256,9 +305,80 @@ export default function StoryboardBoardPage() {
       setEditingRefs((prev) => [...prev, { type: 'custom', url: uploaded, label: '参考图' }].slice(0, 6));
       Taro.showToast({ title: '参考图已上传', icon: 'success' });
     } catch (error) {
+      if (isUserCancel(error)) return;
       Taro.showToast({ title: error instanceof Error ? error.message : '上传失败', icon: 'none' });
     } finally {
       setUploadingRef(false);
+    }
+  };
+
+  const handleSelectAsset = async (url: string) => {
+    const segment = editingSegment;
+    const assetUrl = normalizeMediaUrl(url);
+    if (!segment || !assetUrl) return;
+    const currentUrl = normalizeMediaUrl(editingType === 'image' ? segment.generatedImage : segment.generatedVideo);
+    if (assetUrl === currentUrl) return;
+
+    const patch = editingType === 'image'
+      ? { generatedImage: assetUrl, push_image_url: true, status: 'IMAGE_READY' }
+      : { generatedVideo: assetUrl, push_video_url: true, status: 'VIDEO_READY' };
+    try {
+      if (!demoMode) {
+        await miniappApi.updateStoryboardSegment(segment.id, patch);
+      }
+      const params = getSegmentParams(segment);
+      const historyKey = editingType === 'image' ? 'image_history' : 'video_history';
+      const nextHistory = uniqueStrings([
+        currentUrl,
+        ...(Array.isArray(params[historyKey]) ? (params[historyKey] as unknown[]).map((item) => normalizeMediaUrl(typeof item === 'string' ? item : '')) : []),
+      ]).slice(0, 20);
+      upsertLocalSegment(segment.id, {
+        ...(editingType === 'image'
+          ? { generatedImage: assetUrl, status: 'IMAGE_READY' }
+          : { generatedVideo: assetUrl, status: 'VIDEO_READY' }),
+        generationParams: { ...params, [historyKey]: nextHistory },
+      });
+    } catch (error) {
+      Taro.showToast({ title: error instanceof Error ? error.message : '切换素材失败', icon: 'none' });
+    }
+  };
+
+  const handleUploadAsset = async () => {
+    const segment = editingSegment;
+    if (!segment || uploadingAsset) return;
+    try {
+      let uploaded = '';
+      setUploadingAsset(true);
+      if (editingType === 'image') {
+        const choose = await Taro.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['album'] });
+        const tempPath = choose?.tempFilePaths?.[0];
+        if (!tempPath) return;
+        const ext = (tempPath.split('.').pop() || 'jpg').toLowerCase();
+        const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+        uploaded = await api.uploadMedia(tempPath, `storyboard-image-${Date.now()}.${ext}`, mime);
+      } else {
+        const choose = await Taro.chooseVideo({ sourceType: ['album'], compressed: true });
+        const tempPath = choose?.tempFilePath;
+        if (!tempPath) return;
+        const ext = (tempPath.split('.').pop() || 'mp4').toLowerCase();
+        const mimeByExt: Record<string, string> = {
+          mp4: 'video/mp4',
+          mov: 'video/quicktime',
+          m4v: 'video/mp4',
+          webm: 'video/webm',
+        };
+        uploaded = await api.uploadMedia(tempPath, `storyboard-video-${Date.now()}.${ext}`, mimeByExt[ext] || 'video/mp4');
+      }
+
+      if (uploaded) {
+        await handleSelectAsset(uploaded);
+        Taro.showToast({ title: '素材已添加', icon: 'success' });
+      }
+    } catch (error) {
+      if (isUserCancel(error)) return;
+      Taro.showToast({ title: error instanceof Error ? error.message : '上传失败', icon: 'none' });
+    } finally {
+      setUploadingAsset(false);
     }
   };
 
@@ -496,12 +616,51 @@ export default function StoryboardBoardPage() {
     }
   };
 
+  const handleDeleteTask = async (mode: 'delete' | 'cancel' = 'delete') => {
+    if (!taskId || deleting) return;
+    const modal = await Taro.showModal({
+      title: mode === 'cancel' ? '取消生成' : '删除分镜板',
+      content: mode === 'cancel'
+        ? '取消后会直接删除这个分镜任务，确认取消生成吗？'
+        : '删除后不可恢复，确认删除这个分镜板吗？',
+      confirmText: mode === 'cancel' ? '取消生成' : '删除',
+      confirmColor: '#ff5a5f',
+      cancelText: '取消',
+    });
+    if (!modal.confirm) return;
+
+    setDeleting(true);
+    clearTimer();
+    try {
+      if (!demoMode) {
+        await miniappApi.deleteStoryboardTask(taskId);
+      }
+      Taro.showToast({ title: mode === 'cancel' ? '已取消' : '已删除', icon: 'success' });
+      setTimeout(() => {
+        const pages = Taro.getCurrentPages();
+        if (pages.length > 1) {
+          Taro.navigateBack({ delta: 1 });
+        } else {
+          Taro.switchTab({ url: '/pages/works/index' });
+        }
+      }, 360);
+    } catch (error) {
+      Taro.showToast({ title: error instanceof Error ? error.message : '删除失败', icon: 'none' });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const segments = task?.segments || [];
+  const references = task?.references || [];
+  const isPreparingStoryboard = !errorText && segments.length === 0;
+  const canShowActionBar = !loading && !errorText && segments.length > 0;
 
   const editingSegment = useMemo(
     () => segments.find((item) => item.id === editingSegmentId) || null,
     [segments, editingSegmentId],
   );
+  const editingAssets = editingSegment ? getSegmentAssets(editingSegment, editingType) : [];
   const composerStyle = useMemo(
     () => (keyboardHeight > 0 ? { transform: `translateY(-${keyboardHeight}px)` } : undefined),
     [keyboardHeight],
@@ -522,21 +681,45 @@ export default function StoryboardBoardPage() {
           <Text className='storyboard-board-title'>{title || '分镜任务'}</Text>
         </View>
 
-        {loading && (
-          <View className='storyboard-board-state'>
-            <Text className='storyboard-board-state-text'>分镜加载中...</Text>
+        {!loading && !errorText && references.length > 0 && (
+          <View className='storyboard-reference-section'>
+            <Text className='storyboard-reference-title'>主体参考</Text>
+            <View className='storyboard-reference-list'>
+              {references.map((ref) => (
+                <View key={`${ref.type}-${ref.id}`} className='storyboard-reference-card'>
+                  <View className='storyboard-reference-image-wrap'>
+                    {ref.imageUrl ? (
+                      <Image className='storyboard-reference-image' src={ref.imageUrl} mode='aspectFill' />
+                    ) : (
+                      <Text className='storyboard-reference-placeholder'>{ref.type === 'product' ? '产品' : '角色'}</Text>
+                    )}
+                  </View>
+                  <View className='storyboard-reference-info'>
+                    <Text className='storyboard-reference-label'>{ref.type === 'product' ? '参考产品' : '参考角色'}</Text>
+                    <Text className='storyboard-reference-name'>{ref.name}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {(loading || isPreparingStoryboard) && (
+          <View className='storyboard-board-pending'>
+            <View className='storyboard-board-spinner'>
+              <View className='storyboard-board-spinner-core' />
+            </View>
+            <Text className='storyboard-board-pending-title'>正在生成分镜</Text>
+            <Text className='storyboard-board-pending-text'>任务已在后端运行，退出页面后也会继续处理</Text>
+            <View className='storyboard-board-cancel-btn' onClick={() => void handleDeleteTask('cancel')}>
+              <Text className='storyboard-board-cancel-text'>{deleting ? '取消中...' : '取消生成'}</Text>
+            </View>
           </View>
         )}
 
         {!loading && !!errorText && (
           <View className='storyboard-board-state'>
             <Text className='storyboard-board-state-text'>{errorText}</Text>
-          </View>
-        )}
-
-        {!loading && !errorText && segments.length === 0 && (
-          <View className='storyboard-board-state'>
-            <Text className='storyboard-board-state-text'>脚本已提交，正在拆解分镜，请稍候下拉刷新</Text>
           </View>
         )}
 
@@ -609,6 +792,7 @@ export default function StoryboardBoardPage() {
         )}
       </ScrollView>
 
+      {canShowActionBar && (
       <View className='storyboard-action-bar'>
         <View className='storyboard-action-row storyboard-action-row--primary'>
           <View className='storyboard-action-btn storyboard-bottom-btn storyboard-bottom-btn--ghost' onClick={() => void handleGenerateAllImages()}>
@@ -636,6 +820,7 @@ export default function StoryboardBoardPage() {
           </View>
         </View>
       </View>
+      )}
 
       {modelSheetOpen && (
         <View className='storyboard-sheet-mask' onClick={() => setModelSheetOpen(false)}>
@@ -674,6 +859,15 @@ export default function StoryboardBoardPage() {
             <View className='storyboard-sheet-confirm' onClick={() => setModelSheetOpen(false)}>
               <Text className='storyboard-sheet-confirm-text'>完成</Text>
             </View>
+            <View
+              className='storyboard-sheet-danger'
+              onClick={() => {
+                setModelSheetOpen(false);
+                void handleDeleteTask('delete');
+              }}
+            >
+              <Text className='storyboard-sheet-danger-text'>{deleting ? '删除中...' : '删除分镜板'}</Text>
+            </View>
           </View>
         </View>
       )}
@@ -693,11 +887,63 @@ export default function StoryboardBoardPage() {
                     )
                   ) : (
                     normalizeMediaUrl(editingSegment.generatedVideo) ? (
-                      <Video className='storyboard-edit-preview-video' src={normalizeMediaUrl(editingSegment.generatedVideo)} controls />
+                      <Video
+                        className='storyboard-edit-preview-video'
+                        src={normalizeMediaUrl(editingSegment.generatedVideo)}
+                        poster={normalizeMediaUrl(editingSegment.generatedImage)}
+                        controls
+                      />
                     ) : (
                       <Image className='storyboard-edit-preview-icon' src={videoIcon} mode='aspectFit' />
                     )
                   )}
+                  {(editingType === 'image'
+                    ? normalizeMediaUrl(editingSegment.generatedImage)
+                    : normalizeMediaUrl(editingSegment.generatedVideo)) && (
+                    <View className='storyboard-edit-detail-btn' onClick={() => handleOpenAsset(editingType, editingSegment)}>
+                      <Text className='storyboard-edit-detail-text'>详情</Text>
+                    </View>
+                  )}
+                </View>
+
+                <View className='storyboard-edit-assets-section'>
+                  <View className='storyboard-edit-assets-head'>
+                    <Text className='storyboard-edit-assets-title'>素材</Text>
+                    <Text className='storyboard-edit-assets-tip'>选中的素材会作为当前片段展示</Text>
+                  </View>
+                  <ScrollView scrollX className='storyboard-edit-assets-scroll'>
+                    <View className='storyboard-edit-assets-row'>
+                      <View className='storyboard-edit-asset-add' onClick={() => void handleUploadAsset()}>
+                        <Text className='storyboard-edit-asset-add-text'>{uploadingAsset ? '...' : '+'}</Text>
+                      </View>
+                      {editingAssets.map((assetUrl) => {
+                        const activeUrl = normalizeMediaUrl(editingType === 'image' ? editingSegment.generatedImage : editingSegment.generatedVideo);
+                        const active = assetUrl === activeUrl;
+                        return (
+                          <View
+                            key={assetUrl}
+                            className={`storyboard-edit-asset-item ${active ? 'storyboard-edit-asset-item--active' : ''}`}
+                            onClick={() => void handleSelectAsset(assetUrl)}
+                          >
+                            {editingType === 'image' ? (
+                              <Image className='storyboard-edit-asset-thumb' src={assetUrl} mode='aspectFill' />
+                            ) : (
+                              <>
+                                {normalizeMediaUrl(editingSegment.generatedImage) ? (
+                                  <Image className='storyboard-edit-asset-thumb' src={normalizeMediaUrl(editingSegment.generatedImage)} mode='aspectFill' />
+                                ) : (
+                                  <Image className='storyboard-edit-asset-video-icon' src={videoIcon} mode='aspectFit' />
+                                )}
+                                <View className='storyboard-edit-asset-video-badge'>
+                                  <Text className='storyboard-edit-asset-video-badge-text'>视频</Text>
+                                </View>
+                              </>
+                            )}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </ScrollView>
                 </View>
                 <View className='storyboard-edit-composer-space' />
               </View>
@@ -752,7 +998,7 @@ export default function StoryboardBoardPage() {
                     {(savingPrompt || isActioning(`${editingSegment.id}-${editingType === 'image' ? 'regen-image' : 'regen-video'}`)) ? (
                       <Text className='storyboard-edit-submit-loading'>...</Text>
                     ) : (
-                      <Image className='storyboard-edit-submit-icon' src={regenerateIcon} mode='aspectFit' />
+                      <Text className='storyboard-edit-submit-arrow'>↑</Text>
                     )}
                   </View>
                 </View>
@@ -816,6 +1062,27 @@ function normalizeMediaUrl(value: string | null | undefined): string {
   return raw;
 }
 
+function uniqueStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const normalized = normalizeMediaUrl(value);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(normalized);
+  }
+  return result;
+}
+
+function isUserCancel(error: unknown): boolean {
+  const message = error instanceof Error
+    ? error.message
+    : typeof error === 'object' && error !== null && 'errMsg' in error
+      ? String((error as { errMsg?: unknown }).errMsg || '')
+      : String(error || '');
+  return /cancel|取消/i.test(message);
+}
+
 function getModelLabel(
   list: Array<{ id: string; label: string }>,
   id: string,
@@ -832,6 +1099,7 @@ function buildDemoTask(taskId: string): StoryboardTaskStatusResult {
     imageModel: 'nanoBananapro',
     videoModel: 'veo3.1-fast',
     finalVideoUrl: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
+    references: [],
     segments: [
       {
         id: `${taskId}-seg-1`,

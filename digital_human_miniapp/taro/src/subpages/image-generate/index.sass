@@ -6,7 +6,7 @@
   overflow-y: auto
 
 .image-gen-page--no-fixed-submit
-  padding-bottom: calc(28rpx + env(safe-area-inset-bottom))
+  padding-bottom: calc(140rpx + env(safe-area-inset-bottom))
 
 .image-gen-header
   position: fixed
@@ -407,7 +407,7 @@
   overflow: hidden
 
 .info-input-box--card-editor
-  min-height: 820rpx
+  min-height: 980rpx
   display: flex
   flex-direction: column
 
@@ -419,7 +419,7 @@
   margin: 0
 
 .textarea--card-editor
-  min-height: 700rpx
+  min-height: 860rpx
   flex: 1
 
 .info-input-actions
@@ -450,6 +450,12 @@
 
 .input-action-btn-text--ghost
   color: #d5e3fd
+
+.input-action-btn-icon
+  margin-right: 6rpx
+  color: #ecee9f
+  font-size: 24rpx
+  font-weight: 800
 
 .card-style-row
   display: flex
@@ -528,6 +534,7 @@
 .card-topbar-export
   height: 56rpx
   min-width: 170rpx
+  margin-left: auto
   border-radius: 999rpx
   border: 1rpx solid rgba(236, 238, 159, 0.42)
   background: rgba(236, 238, 159, 0.14)
@@ -590,19 +597,28 @@
   color: #edf2b5
 
 .card-setting-trigger
-  height: 56rpx
+  width: 54rpx
+  height: 54rpx
+  flex-shrink: 0
   border-radius: 999rpx
   border: 1rpx solid rgba(145, 175, 229, 0.34)
   background: rgba(145, 175, 229, 0.1)
-  padding: 0 24rpx
   display: flex
   align-items: center
   justify-content: center
 
+.card-setting-trigger--active
+  border-color: rgba(236, 238, 159, 0.72)
+  background: rgba(236, 238, 159, 0.18)
+
 .card-setting-trigger-text
   color: #d5e3fd
-  font-size: 22rpx
+  font-size: 28rpx
   font-weight: 700
+  line-height: 1
+
+.card-setting-trigger-text--active
+  color: #edf2b5
 
 .card-settings-overlay
   position: fixed
@@ -1437,6 +1453,67 @@
   right: 24rpx
   bottom: calc(24rpx + env(safe-area-inset-bottom))
   z-index: 40
+
+.image-gen-bottom-composer
+  position: fixed
+  left: 24rpx
+  right: 24rpx
+  bottom: calc(20rpx + env(safe-area-inset-bottom))
+  z-index: 50
+  transition: transform 0.2s ease
+
+.image-gen-bottom-composer-card
+  border-radius: 22rpx
+  background: #151515
+  border: 1rpx solid rgba(145, 175, 229, 0.28)
+  box-shadow: 0 -16rpx 40rpx rgba(0, 0, 0, 0.34)
+  padding: 18rpx
+  box-sizing: border-box
+
+.image-gen-bottom-title-row
+  display: flex
+  align-items: center
+  justify-content: space-between
+  gap: 16rpx
+  margin-bottom: 12rpx
+
+.image-gen-bottom-title
+  color: #dce7fb
+  font-size: 24rpx
+  font-weight: 700
+
+.image-gen-bottom-title-actions
+  display: flex
+  align-items: center
+  gap: 12rpx
+  flex-shrink: 0
+
+.image-gen-bottom-count
+  color: #6f84ad
+  font-size: 22rpx
+
+.image-gen-bottom-textarea
+  width: 100%
+  min-height: 180rpx
+  max-height: 360rpx
+  border-radius: 16rpx
+  background: #202020
+  border: 1rpx solid rgba(145, 175, 229, 0.2)
+  color: #dbe8ff
+  padding: 18rpx 20rpx
+  font-size: 26rpx
+  line-height: 1.55
+  box-sizing: border-box
+
+.image-gen-bottom-footer
+  margin-top: 14rpx
+
+.info-input-actions--bottom
+  padding: 0 0 14rpx
+  gap: 10rpx
+
+.image-gen-fixed-sub--bottom
+  margin-bottom: 10rpx
 
 .image-gen-fixed-sub
   display: block

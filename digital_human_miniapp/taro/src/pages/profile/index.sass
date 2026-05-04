@@ -53,10 +53,13 @@
   line-height: 1.2
 
 .profile-hero-card
+  position: relative
+  z-index: 1
   border-radius: 34rpx
-  padding: 34rpx 26rpx 26rpx
+  padding: 34rpx 26rpx 62rpx
   background: linear-gradient(145deg, #f1efaf 0%, #e4db7f 100%)
-  margin-bottom: 40rpx
+  margin: 0 14rpx
+  box-shadow: 0 26rpx 48rpx rgba(0, 0, 0, 0.22)
 
 .profile-hero-level-row
   display: flex
@@ -112,14 +115,17 @@
   color: #f5f3e8
 
 .profile-lib-card
+  position: relative
+  z-index: 2
   border-radius: 24rpx
-  background: #232728
-  border: 1rpx solid rgba(150, 175, 232, 0.24)
+  background: linear-gradient(180deg, #2a2f30 0%, #202425 100%)
+  border: 1rpx solid rgba(241, 239, 175, 0.22)
   padding: 20rpx 12rpx 18rpx
-  margin-bottom: 40rpx
+  margin: -34rpx 0 40rpx
   display: grid
   grid-template-columns: repeat(4, 1fr)
   gap: 14rpx
+  box-shadow: 0 -8rpx 24rpx rgba(241, 239, 175, 0.1), 0 20rpx 42rpx rgba(0, 0, 0, 0.28)
 
 .profile-lib-item
   min-height: 148rpx
@@ -146,13 +152,13 @@
 .profile-promo-grid
   display: grid
   grid-template-columns: 1fr 1fr
-  gap: 32rpx
-  margin-bottom: 40rpx
+  gap: 20rpx
+  margin-bottom: 32rpx
 
 .profile-promo-card
   border-radius: 24rpx
-  min-height: 162rpx
-  padding: 20rpx
+  min-height: 128rpx
+  padding: 16rpx 18rpx
   display: flex
   justify-content: space-between
   align-items: center
@@ -162,17 +168,17 @@
 .profile-promo-title
   display: block
   color: #f3efe5
-  font-size: 32rpx
+  font-size: 28rpx
   font-weight: 500
-  margin-bottom: 8rpx
+  margin-bottom: 6rpx
 
 .profile-promo-desc
   color: #aba498
-  font-size: 22rpx
+  font-size: 20rpx
 
 .profile-promo-icon
-  width: 86rpx
-  height: 86rpx
+  width: 72rpx
+  height: 72rpx
   opacity: 0.9
 
 .profile-menu-card

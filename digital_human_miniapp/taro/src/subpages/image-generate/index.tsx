@@ -1,5 +1,5 @@
 import { View, Text, ScrollView, Textarea, Image, Input, RichText, Swiper, SwiperItem, Picker } from '@tarojs/components';
-import Taro, { useDidShow } from '@tarojs/taro';
+import Taro, { useDidHide, useDidShow } from '@tarojs/taro';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
 import { api } from '../../utils/api';
@@ -813,6 +813,7 @@ type PreviewRenderStyle = {
   headingSpacing: CardHeadingSpacing;
   padding: CardPadding;
   fontFamily: CardFontFamily;
+  spacingScale?: number;
 };
 
 type CardPreviewThemeSpec = {
@@ -822,6 +823,280 @@ type CardPreviewThemeSpec = {
   modeTextColor?: Partial<Record<CardStyleModeId, string>>;
   modeBackground?: Partial<Record<CardStyleModeId, string>>;
   modeContentBackground?: Partial<Record<CardStyleModeId, string>>;
+};
+
+type CardStyleLayoutParams = {
+  background: string;
+  backgroundImage?: string;
+  textColor: string;
+  accent: string;
+  spacing: number;
+  headerHeight: number;
+  footerHeight: number;
+  contentBackground?: string;
+  contentPaddingX?: number;
+  contentPaddingY?: number;
+};
+
+const CARD_STYLE_LAYOUT_PARAMS: Record<CardStyleId, CardStyleLayoutParams> = {
+  'apple-notes': {
+    background: '#ffffff',
+    textColor: '#333333',
+    accent: '#c99500',
+    spacing: 1,
+    headerHeight: 46,
+    footerHeight: 8,
+    contentPaddingX: 0,
+    contentPaddingY: 0,
+  },
+  instagram: {
+    background: 'linear-gradient(135deg,#833ab4 0%,#fd1d1d 50%,#fcb045 100%)',
+    textColor: '#1a1a1a',
+    accent: '#ffe08c',
+    spacing: 1.04,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentBackground: 'rgba(255,255,255,0.75)',
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  'coil-notebook': {
+    background: '#5271ff',
+    backgroundImage: `url("${md2CoilBg}")`,
+    textColor: '#24292e',
+    accent: '#d6e3ff',
+    spacing: 1,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentBackground: '#ffffff',
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  'pop-art': {
+    background: 'radial-gradient(rgba(17,24,39,0.2) 1.1px, transparent 1.3px), linear-gradient(0deg,#fde041,#fde041)',
+    textColor: '#252a34',
+    accent: '#2f5dff',
+    spacing: 1.02,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  bytedance: {
+    background:
+      'radial-gradient(circle at 86% 10%, rgba(0, 102, 255, 0.16) 0, transparent 20%), radial-gradient(circle at 14% 88%, rgba(250, 44, 25, 0.14) 0, transparent 20%), linear-gradient(155deg,#ffffff 0%,#f3f7ff 100%)',
+    textColor: '#24292e',
+    accent: '#0066ff',
+    spacing: 1,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentBackground: 'rgba(255,255,255,0.92)',
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  alibaba: {
+    background:
+      'radial-gradient(circle at 84% 18%, rgba(255, 106, 0, 0.2) 0, transparent 24%), radial-gradient(circle at 72% 28%, rgba(255, 140, 0, 0.14) 0, transparent 18%), linear-gradient(145deg,#ffffff 0%,#fff1e8 100%)',
+    textColor: '#333333',
+    accent: '#ff6a00',
+    spacing: 1,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentBackground: 'rgba(255,255,255,0.9)',
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  'art-deco': {
+    background:
+      'linear-gradient(45deg, rgba(212, 175, 55, 0.12) 0 1px, transparent 1px 16px), linear-gradient(-45deg, rgba(212, 175, 55, 0.1) 0 1px, transparent 1px 16px), linear-gradient(145deg,#0a0a0a 0%,#1a1a1a 60%,#2a2518 100%)',
+    textColor: '#f7f0d1',
+    accent: '#d4af37',
+    spacing: 1.08,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  glassmorphism: {
+    background: '#161616',
+    textColor: 'rgba(255,255,255,0.85)',
+    accent: '#8cc6ff',
+    spacing: 1,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentBackground: 'rgba(255,255,255,0.08)',
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  warm: {
+    background: 'linear-gradient(135deg,#fff8f5 0%,#ffeae0 100%)',
+    textColor: '#2f2a2a',
+    accent: '#f08b58',
+    spacing: 1.06,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  minimal: {
+    background: '#ffffff',
+    textColor: '#222222',
+    accent: '#6b7280',
+    spacing: 0.96,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  minimalist: {
+    background: '#ffffff',
+    textColor: '#000000',
+    accent: '#111111',
+    spacing: 0.93,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  dreamy: {
+    background: 'linear-gradient(135deg,#f5f7ff 0%,#e8f0ff 100%)',
+    textColor: '#2f355d',
+    accent: '#a855f7',
+    spacing: 1.04,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  nature: {
+    background: '#f9fcf7',
+    textColor: '#2d4730',
+    accent: '#3f7f4c',
+    spacing: 1.02,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  xiaohongshu: {
+    background: '#8863cf',
+    textColor: '#ffffff',
+    accent: '#ffe7ff',
+    spacing: 1.01,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  notebook: {
+    background: 'linear-gradient(rgba(107, 114, 128, 0.1) 1px, transparent 1px), linear-gradient(0deg,#f5f5f5,#f5f5f5)',
+    textColor: '#2d3748',
+    accent: '#6b7280',
+    spacing: 1,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentBackground: 'rgba(255,255,255,0.9)',
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  business: {
+    background:
+      'linear-gradient(90deg, rgba(37,99,235,0.08) 1px, transparent 1px), linear-gradient(rgba(37,99,235,0.05) 1px, transparent 1px), linear-gradient(180deg,#ffffff 0%,#f3f6fb 100%)',
+    textColor: '#1f2937',
+    accent: '#2563eb',
+    spacing: 0.98,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentBackground: 'rgba(255,255,255,0.92)',
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  'japanese-magazine': {
+    background: '#ffffff',
+    textColor: '#222222',
+    accent: '#8b5e3c',
+    spacing: 0.95,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  darktech: {
+    background: '#0f1218',
+    textColor: '#e6fbff',
+    accent: '#00d4ff',
+    spacing: 1.03,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  typewriter: {
+    background:
+      'radial-gradient(rgba(106, 93, 69, 0.16) 1px, transparent 1.3px), linear-gradient(145deg,#f8f3e3 0%,#efe2c3 100%)',
+    textColor: '#4a3b2a',
+    accent: '#6a5d45',
+    spacing: 1.08,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentBackground: 'rgba(255,249,236,0.9)',
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  watercolor: {
+    background: 'linear-gradient(to right,rgba(173,216,230,0.6),rgba(221,160,221,0.6),rgba(255,182,193,0.6),rgba(173,216,230,0.6))',
+    textColor: '#374151',
+    accent: '#6f4ee6',
+    spacing: 1.06,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  'traditional-chinese': {
+    background: '#f8f0e0',
+    textColor: '#3f2a1f',
+    accent: '#8c3a3a',
+    spacing: 1.08,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  fairytale: {
+    background: '#f8f0ff',
+    textColor: '#344a9a',
+    accent: '#f472b6',
+    spacing: 1.08,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  cyberpunk: {
+    background:
+      'linear-gradient(90deg, rgba(0,245,255,0.12) 1px, transparent 1px), linear-gradient(rgba(217,70,239,0.1) 1px, transparent 1px), linear-gradient(145deg,#0d0e19 0%,#301b5e 60%,#571089 100%)',
+    textColor: '#e0e0e0',
+    accent: '#00f5ff',
+    spacing: 1.02,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentBackground: 'rgba(13,14,25,0.58)',
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
+  'meadow-dawn': {
+    background: '#f0e6d2',
+    backgroundImage: `url("${md2MeadowDawnBg}")`,
+    textColor: '#5a4a3f',
+    accent: '#5f7a4a',
+    spacing: 1.07,
+    headerHeight: 0,
+    footerHeight: 10,
+    contentBackground: `linear-gradient(rgba(255,253,245,0.84), rgba(255,253,245,0.84)), url("${md2MeadowDawnBg}")`,
+    contentPaddingX: 20,
+    contentPaddingY: 18,
+  },
 };
 
 const CARD_PREVIEW_THEME_SPEC_MAP: Record<CardStyleId, CardPreviewThemeSpec> = {
@@ -1042,9 +1317,10 @@ function renderMiniMarkdown(markdown: string, previewStyle: PreviewRenderStyle):
   const h2ScaleFactor = CARD_FONT_SCALE_FACTOR_MAP[h2FontScale] || 1;
   const h3ScaleFactor = CARD_FONT_SCALE_FACTOR_MAP[h3FontScale] || 1;
   const bodyScaleFactor = CARD_FONT_SCALE_FACTOR_MAP[bodyFontScale] || 1;
-  const lineHeight = density === 'compact' ? 1.5 : density === 'relaxed' ? 1.72 : 1.6;
-  const paragraphGap = density === 'compact' ? 6 : density === 'relaxed' ? 12 : 8;
-  const listGap = density === 'compact' ? 3 : density === 'relaxed' ? 7 : 5;
+  const spacingScale = Math.max(0.78, Math.min(1.36, previewStyle.spacingScale || 1));
+  const lineHeight = (density === 'compact' ? 1.5 : density === 'relaxed' ? 1.72 : 1.6) * Math.max(0.94, Math.min(1.12, spacingScale));
+  const paragraphGap = Math.round((density === 'compact' ? 6 : density === 'relaxed' ? 12 : 8) * spacingScale);
+  const listGap = Math.round((density === 'compact' ? 3 : density === 'relaxed' ? 7 : 5) * spacingScale);
   const headingBottom = headingSpacing === 'tight' ? 3 : headingSpacing === 'wide' ? 12 : 8;
   const headingTop = headingSpacing === 'tight' ? 6 : headingSpacing === 'wide' ? 12 : 9;
   const padding = previewStyle.padding === 'xs' ? 10 : previewStyle.padding === 'sm' ? 14 : previewStyle.padding === 'lg' ? 24 : 18;
@@ -1337,6 +1613,7 @@ function paginatePreviewMarkdown(
   bodyFontScale: CardFontScale,
   padding: CardPadding,
   styleId: CardStyleId,
+  styleLayout: CardStyleLayoutParams,
   windowWidthPx: number,
 ): string[] {
   const cleaned = stripPreviewFrontmatter(markdown)
@@ -1357,9 +1634,10 @@ function paginatePreviewMarkdown(
   const h3ScaleFactor = CARD_FONT_SCALE_FACTOR_MAP[h3FontScale] || 1;
   const bodyScaleFactor = CARD_FONT_SCALE_FACTOR_MAP[bodyFontScale] || 1;
   const px = (size: number, factor: number = 1, min: number = 10) => Math.max(min, Math.round(size * factor));
-  const lineHeight = density === 'compact' ? 1.5 : density === 'relaxed' ? 1.72 : 1.6;
-  const paragraphGap = density === 'compact' ? 6 : density === 'relaxed' ? 12 : 8;
-  const listGap = density === 'compact' ? 3 : density === 'relaxed' ? 7 : 5;
+  const spacingScale = Math.max(0.78, Math.min(1.36, styleLayout.spacing || 1));
+  const lineHeight = (density === 'compact' ? 1.5 : density === 'relaxed' ? 1.72 : 1.6) * Math.max(0.94, Math.min(1.12, spacingScale));
+  const paragraphGap = Math.round((density === 'compact' ? 6 : density === 'relaxed' ? 12 : 8) * spacingScale);
+  const listGap = Math.round((density === 'compact' ? 3 : density === 'relaxed' ? 7 : 5) * spacingScale);
   const headingBottom = 8;
   const headingTop = 9;
   const markdownPaddingPx = padding === 'xs' ? 10 : padding === 'sm' ? 14 : padding === 'lg' ? 24 : 18;
@@ -1375,15 +1653,16 @@ function paginatePreviewMarkdown(
   const cardHeightPx = 980 * rpxScale;
   const pageHorizontalPaddingPx = 24 * rpxScale * 2;
   const previewCardPaddingPx = 22 * rpxScale * 2;
-  const contentShellPadXPx = styleId === 'apple-notes' ? 0 : 20 * rpxScale * 2;
-  const contentShellPadYPx = styleId === 'apple-notes' ? 0 : 18 * rpxScale * 2;
-  const appleHeaderDeductPx = styleId === 'apple-notes' ? 46 * rpxScale : 0;
+  const contentShellPadXPx = Math.max(0, (styleLayout.contentPaddingX ?? (styleId === 'apple-notes' ? 0 : 20)) * rpxScale * 2);
+  const contentShellPadYPx = Math.max(0, (styleLayout.contentPaddingY ?? (styleId === 'apple-notes' ? 0 : 18)) * rpxScale * 2);
+  const headerDeductPx = Math.max(0, (styleLayout.headerHeight || 0) * rpxScale);
+  const footerDeductPx = Math.max(0, (styleLayout.footerHeight || 0) * rpxScale);
 
   const pageWidthPx = Math.max(260, safeWindowWidthPx - pageHorizontalPaddingPx);
   const cardInnerWidthPx = Math.max(200, pageWidthPx - previewCardPaddingPx);
   const cardInnerHeightPx = Math.max(200, cardHeightPx - previewCardPaddingPx);
   const richTextWidthPx = Math.max(120, cardInnerWidthPx - contentShellPadXPx - markdownPaddingPx * 2);
-  const richTextHeightPx = Math.max(180, cardInnerHeightPx - contentShellPadYPx - appleHeaderDeductPx - markdownPaddingPx * 2 - 6);
+  const richTextHeightPx = Math.max(180, cardInnerHeightPx - contentShellPadYPx - headerDeductPx - footerDeductPx - markdownPaddingPx * 2 - 6);
   const bodyLinePx = Math.max(12, bodyFontPx * lineHeight);
   const maxUnits = richTextHeightPx / bodyLinePx;
 
@@ -1527,6 +1806,8 @@ export default function ImageGeneratePage() {
   const [cardPreviewImages, setCardPreviewImages] = useState<string[]>([]);
   const [cardPreviewPageIndex, setCardPreviewPageIndex] = useState(0);
   const [injectedFromMyNote, setInjectedFromMyNote] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [cardUserCleared, setCardUserCleared] = useState(false);
 
   const selectedCardStylePreset = useMemo(() => getCardStylePreset(selectedCardStyle), [selectedCardStyle]);
   const selectedCardStyleModePreset = useMemo(() => {
@@ -1536,9 +1817,10 @@ export default function ImageGeneratePage() {
   }, [selectedCardStyleMode, selectedCardStylePreset]);
 
   useEffect(() => {
+    if (cardUserCleared) return;
     if (cardMarkdown.trim()) return;
     setCardMarkdown(selectedCardStylePreset.defaultMarkdown);
-  }, [cardMarkdown, selectedCardStylePreset.defaultMarkdown]);
+  }, [cardMarkdown, cardUserCleared, selectedCardStylePreset.defaultMarkdown]);
 
   useEffect(() => {
     const modes = selectedCardStylePreset.modes || [];
@@ -1763,7 +2045,7 @@ export default function ImageGeneratePage() {
         id: style.id,
         title: style.name || `模板${idx + 1}`,
         tag: style.status === 'FAILED' ? '不可用' : '风格模板',
-        preview: style.previewUrl || FALLBACK_INFOGRAPHIC_TEMPLATES[idx % FALLBACK_INFOGRAPHIC_TEMPLATES.length].preview,
+        preview: style.thumbnailUrl || style.previewUrl || FALLBACK_INFOGRAPHIC_TEMPLATES[idx % FALLBACK_INFOGRAPHIC_TEMPLATES.length].preview,
         status: style.status,
       }));
 
@@ -1812,7 +2094,10 @@ export default function ImageGeneratePage() {
           if (mergedText) setInfoContent(mergedText);
         } else {
           setActiveFeature('card-layout');
-          if (mergedText) setCardMarkdown(mergedText);
+          if (mergedText) {
+            setCardUserCleared(false);
+            setCardMarkdown(mergedText);
+          }
         }
         setInjectedFromMyNote(true);
         Taro.removeStorageSync('MY_NOTE_REWRITE_PAYLOAD');
@@ -1820,11 +2105,25 @@ export default function ImageGeneratePage() {
     }
   });
 
+  useDidHide(() => {
+    setCardUserCleared(false);
+  });
+
   useEffect(() => {
     if (activeFeature !== 'card-layout' && cardSettingsOpen) {
       setCardSettingsOpen(false);
     }
   }, [activeFeature, cardSettingsOpen]);
+
+  useEffect(() => {
+    const onKeyboard = (result: { height?: number }) => {
+      setKeyboardHeight(Math.max(0, Number(result?.height || 0)));
+    };
+    Taro.onKeyboardHeightChange(onKeyboard);
+    return () => {
+      Taro.offKeyboardHeightChange(onKeyboard);
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -1848,6 +2147,7 @@ export default function ImageGeneratePage() {
 
   const cardPreviewPages = useMemo(() => {
     try {
+    const styleLayout = CARD_STYLE_LAYOUT_PARAMS[selectedCardStylePreset.id];
     const styleThemeSpec = CARD_PREVIEW_THEME_SPEC_MAP[selectedCardStylePreset.id];
     const modeId = selectedCardStyleModePreset?.id || '';
     const textColor = styleThemeSpec?.modeTextColor?.[modeId]
@@ -1866,6 +2166,7 @@ export default function ImageGeneratePage() {
       cardBodyFontScale,
       cardPadding,
       selectedCardStylePreset.id,
+      styleLayout,
       windowWidthPx,
     );
     const previewStyle: PreviewRenderStyle = {
@@ -1880,6 +2181,7 @@ export default function ImageGeneratePage() {
       headingSpacing: cardHeadingSpacing,
       padding: cardPadding,
       fontFamily: cardFontFamily,
+      spacingScale: styleLayout.spacing,
     };
       const pages = pageMarkdown.map((md) => renderMiniMarkdown(md, previewStyle)).filter(Boolean);
       if (cardIncludeCover) {
@@ -1951,23 +2253,27 @@ export default function ImageGeneratePage() {
   }, [cardFontFamily, cardHeadingSpacing, cardPadding, cardRadius, cardThemeColor, selectedCardStyleModePreset?.id, selectedCardStylePreset.id]);
   const cardPreviewThemeInlineStyle = useMemo(() => {
     try {
+      const styleLayout = CARD_STYLE_LAYOUT_PARAMS[selectedCardStylePreset.id];
       const styleThemeSpec = CARD_PREVIEW_THEME_SPEC_MAP[selectedCardStylePreset.id];
       const modeId = selectedCardStyleModePreset?.id || '';
       const background = styleThemeSpec?.modeBackground?.[modeId]
+        || styleLayout?.background
         || styleThemeSpec?.cardBackground
         || selectedCardStyleModePreset?.previewBackground
         || selectedCardStylePreset.previewBackground;
       const textColor = styleThemeSpec?.modeTextColor?.[modeId]
+        || styleLayout?.textColor
         || styleThemeSpec?.textColor
         || selectedCardStyleModePreset?.textColor
         || selectedCardStylePreset.textColor;
       const accentColor = selectedCardStyleModePreset?.accentColor
+        || styleLayout?.accent
         || selectedCardStylePreset.accentColor
         || CARD_THEME_ACCENT_MAP[cardThemeColor]
         || CARD_THEME_ACCENT_MAP.amber;
       const accentSoftColor = CARD_THEME_ACCENT_SOFT_MAP[cardThemeColor] || CARD_THEME_ACCENT_SOFT_MAP.amber;
       const baseStyle = buildPreviewBackgroundStyle(background);
-      const textureImage = CARD_STYLE_PREVIEW_IMAGE_MAP[selectedCardStylePreset.id];
+      const textureImage = styleLayout?.backgroundImage || CARD_STYLE_PREVIEW_IMAGE_MAP[selectedCardStylePreset.id];
       const inlineStyle: Record<string, string> = {
         ...baseStyle,
         color: textColor,
@@ -2001,11 +2307,22 @@ export default function ImageGeneratePage() {
   }, [cardThemeColor, selectedCardStyleModePreset, selectedCardStylePreset]);
 
   const cardPreviewContentInlineStyle = useMemo(() => {
+    const styleLayout = CARD_STYLE_LAYOUT_PARAMS[selectedCardStylePreset.id];
     const styleThemeSpec = CARD_PREVIEW_THEME_SPEC_MAP[selectedCardStylePreset.id];
     const modeId = selectedCardStyleModePreset?.id || '';
-    const contentBackground = styleThemeSpec?.modeContentBackground?.[modeId] ?? styleThemeSpec?.contentBackground;
-    if (!contentBackground) return {} as Record<string, string>;
-    return buildPreviewBackgroundStyle(contentBackground);
+    const contentBackground = styleThemeSpec?.modeContentBackground?.[modeId]
+      ?? styleThemeSpec?.contentBackground
+      ?? styleLayout?.contentBackground;
+    const backgroundStyle = contentBackground ? buildPreviewBackgroundStyle(contentBackground) : {};
+    const paddingX = styleLayout?.contentPaddingX;
+    const paddingY = styleLayout?.contentPaddingY;
+    const paddingStyle = (typeof paddingX === 'number' && typeof paddingY === 'number')
+      ? { padding: `${paddingY}rpx ${paddingX}rpx` }
+      : {};
+    return {
+      ...backgroundStyle,
+      ...paddingStyle,
+    } as Record<string, string>;
   }, [selectedCardStyleModePreset, selectedCardStylePreset.id]);
 
   const cardPreviewRichtextClass = useMemo(() => {
@@ -2132,6 +2449,7 @@ export default function ImageGeneratePage() {
         Taro.showToast({ title: '剪贴板为空', icon: 'none' });
         return;
       }
+      setCardUserCleared(false);
       setCardMarkdown((prev) => (prev ? `${prev}\n${text}` : text));
       Taro.showToast({ title: '已粘贴', icon: 'success' });
     } catch {
@@ -2154,6 +2472,7 @@ export default function ImageGeneratePage() {
         Taro.showToast({ title: '优化结果为空，请重试', icon: 'none' });
         return;
       }
+      setCardUserCleared(false);
       setCardMarkdown(nextMarkdown);
       Taro.showToast({ title: '已优化为标准 Markdown', icon: 'success' });
     } catch (error) {
@@ -2399,6 +2718,7 @@ export default function ImageGeneratePage() {
         taskId: renderResult.taskId || '',
       });
 
+      setCardUserCleared(false);
       setCardMarkdown(renderMarkdown);
       setCardPreviewImages(publishImages);
       Taro.setStorageSync('CARD_LAYOUT_PREVIEW_MD', renderMarkdown);
@@ -3076,6 +3396,7 @@ export default function ImageGeneratePage() {
                   setSelectedCardStyleMode(firstMode ? firstMode.id : '');
                   setCardPreviewImages([]);
                   if (!cardMarkdown.trim()) {
+                    setCardUserCleared(false);
                     setCardMarkdown(item.defaultMarkdown);
                   }
                 }}
@@ -3158,10 +3479,53 @@ export default function ImageGeneratePage() {
     }
     void handleCreateCard();
   };
+  const showBottomComposer = activeFeature === 'ai-image' || activeFeature === 'infographic';
+  const bottomComposerStyle = useMemo(
+    () => (keyboardHeight > 0 ? { transform: `translateY(-${keyboardHeight}px)` } : undefined),
+    [keyboardHeight],
+  );
+  const bottomComposerTitle = activeFeature === 'ai-image'
+    ? '图片创意描述'
+    : activeFeature === 'infographic'
+      ? '输入内容'
+      : '粘贴 Markdown / 文案';
+  const bottomComposerValue = activeFeature === 'ai-image'
+    ? aiPrompt
+    : activeFeature === 'infographic'
+      ? infoContent
+      : cardMarkdown;
+  const bottomComposerMaxLength = activeFeature === 'ai-image'
+    ? 800
+    : activeFeature === 'infographic'
+      ? 1200
+      : 2400;
+  const bottomComposerPlaceholder = activeFeature === 'ai-image'
+    ? '请用一句话描述您的创意...'
+    : activeFeature === 'infographic'
+      ? '输入或粘贴文案，系统会按所选模板排版成信息图。'
+      : '粘贴网页端的小红书 Markdown，自动转卡片布局。';
+  const handleBottomComposerInput = (value: string) => {
+    if (activeFeature === 'ai-image') {
+      setAiPrompt(value);
+      return;
+    }
+    if (activeFeature === 'infographic') {
+      setInfoContent(value);
+      return;
+    }
+    setCardUserCleared(activeFeature === 'card-layout' && !value.trim());
+    setCardMarkdown(value);
+  };
+
+  const handleClearCardMarkdown = () => {
+    setCardUserCleared(true);
+    setCardMarkdown('');
+    setCardPreviewImages([]);
+  };
 
   return (
     <View className='image-gen-root'>
-      <View className={`image-gen-page ${showFixedSubmit ? '' : 'image-gen-page--no-fixed-submit'}`}>
+      <View className={`image-gen-page ${showBottomComposer ? 'image-gen-page--with-composer' : showFixedSubmit ? '' : 'image-gen-page--no-fixed-submit'}`}>
         <View className='image-gen-header'>
           <View className='image-gen-topbar'>
             <View className='image-gen-back' onClick={handleBack}>
@@ -3223,16 +3587,6 @@ export default function ImageGeneratePage() {
               </View>
             </ScrollView>
 
-            {renderSectionTitle('prompt', '图片创意描述', (
-              <Text className='quick-action' onClick={() => setAiPrompt('')}>清空</Text>
-            ))}
-            <Textarea
-              className='textarea'
-              value={aiPrompt}
-              onInput={(e) => setAiPrompt(e.detail.value)}
-              placeholder='请用一句话描述您的创意...'
-              maxlength={800}
-            />
           </View>
         )}
 
@@ -3248,7 +3602,7 @@ export default function ImageGeneratePage() {
                     className={`template-card template-card--portrait ${selectedTemplate === tpl.id ? 'template-card--active' : ''}`}
                     onClick={() => setSelectedTemplate(tpl.id)}
                   >
-                    <Image className='template-preview' src={tpl.preview} mode='aspectFill' />
+                    <Image className='template-preview' src={tpl.preview} mode='aspectFill' lazyLoad />
                     <View className='template-overlay'>
                       <Text className='template-title'>{tpl.title}</Text>
                     </View>
@@ -3261,24 +3615,6 @@ export default function ImageGeneratePage() {
               </View>
             </ScrollView>
 
-            {renderSectionTitle('edit', '输入内容')}
-            <View className='info-input-box'>
-              <Textarea
-                className='textarea textarea--info'
-                value={infoContent}
-                onInput={(e) => setInfoContent(e.detail.value)}
-                placeholder='输入或粘贴文案，系统会按所选模板排版成信息图。'
-                maxlength={1200}
-              />
-              <View className='info-input-actions'>
-                <View className='input-action-btn' onClick={handleFindInspiration}>
-                  <Text className='input-action-btn-text'>没有文案？去找灵感</Text>
-                </View>
-                <View className='input-action-btn input-action-btn--ghost' onClick={handlePasteInfoContent}>
-                  <Text className='input-action-btn-text input-action-btn-text--ghost'>粘贴</Text>
-                </View>
-              </View>
-            </View>
           </View>
         )}
 
@@ -3292,17 +3628,20 @@ export default function ImageGeneratePage() {
                 >
                   <Text className={`card-mode-btn-text ${cardEditorMode === 'edit' ? 'card-mode-btn-text--active' : ''}`}>编辑</Text>
                 </View>
-              <View
-                className={`card-mode-btn ${cardEditorMode === 'preview' ? 'card-mode-btn--active' : ''}`}
-                onClick={() => setCardEditorMode('preview')}
-              >
-                <Text className={`card-mode-btn-text ${cardEditorMode === 'preview' ? 'card-mode-btn-text--active' : ''}`}>预览</Text>
+                <View
+                  className={`card-mode-btn ${cardEditorMode === 'preview' ? 'card-mode-btn--active' : ''}`}
+                  onClick={() => setCardEditorMode('preview')}
+                >
+                  <Text className={`card-mode-btn-text ${cardEditorMode === 'preview' ? 'card-mode-btn-text--active' : ''}`}>预览</Text>
+                </View>
               </View>
+              <View
+                className={`card-setting-trigger ${cardSettingsOpen ? 'card-setting-trigger--active' : ''}`}
+                onClick={() => setCardSettingsOpen((prev) => !prev)}
+              >
+                <Text className={`card-setting-trigger-text ${cardSettingsOpen ? 'card-setting-trigger-text--active' : ''}`}>⚙</Text>
               </View>
               {renderCardExportButton()}
-              <View className='card-setting-trigger' onClick={() => setCardSettingsOpen((prev) => !prev)}>
-                <Text className='card-setting-trigger-text'>{cardSettingsOpen ? '关闭设置' : '设置'}</Text>
-              </View>
             </View>
 
             {cardEditorMode === 'edit' && (
@@ -3312,7 +3651,11 @@ export default function ImageGeneratePage() {
                   <Textarea
                     className='textarea textarea--info textarea--card-editor'
                     value={cardMarkdown}
-                    onInput={(e) => setCardMarkdown(e.detail.value)}
+                    onInput={(e) => {
+                      const value = e.detail.value;
+                      setCardUserCleared(!value.trim());
+                      setCardMarkdown(value);
+                    }}
                     placeholder='粘贴网页端的小红书 Markdown，自动转卡片布局。'
                     maxlength={2400}
                   />
@@ -3320,52 +3663,20 @@ export default function ImageGeneratePage() {
                     <View className='input-action-btn' onClick={handleFindInspiration}>
                       <Text className='input-action-btn-text'>没有文案？去找灵感</Text>
                     </View>
+                    <View className='input-action-btn input-action-btn--ghost' onClick={handleClearCardMarkdown}>
+                      <Text className='input-action-btn-text input-action-btn-text--ghost'>清空</Text>
+                    </View>
                     <View className='input-action-btn input-action-btn--ghost' onClick={handlePasteCardMarkdown}>
                       <Text className='input-action-btn-text input-action-btn-text--ghost'>粘贴</Text>
                     </View>
                     <View className='input-action-btn input-action-btn--ghost' onClick={() => void handleOptimizeCardMarkdown()}>
-                      <Text className='input-action-btn-text input-action-btn-text--ghost'>{cardOptimizing ? '优化中...' : 'AI一键优化'}</Text>
+                      <Text className='input-action-btn-text input-action-btn-text--ghost'>
+                        <Text className='input-action-btn-icon'>✦</Text>
+                        {cardOptimizing ? '排版中...' : 'AI排版'}
+                      </Text>
                     </View>
                   </View>
                 </View>
-                {renderSectionTitle('preview', '实时预览')}
-                <View className='preview-swiper-wrap preview-swiper-wrap--inline'>
-                  <Swiper
-                    className='preview-swiper'
-                    indicatorDots={false}
-                    circular={false}
-                    current={cardPreviewPageIndex}
-                    onChange={(event) => setCardPreviewPageIndex(event.detail.current)}
-                  >
-                    {cardPreviewPages.map((html, idx) => (
-                      <SwiperItem key={`inline-preview-page-${idx}`}>
-                        <View className='preview-swiper-item'>
-                          <View className={`preview-card ${cardPreviewThemeClass}`} style={cardPreviewThemeInlineStyle}>
-                            {selectedCardStyle === 'apple-notes' && (
-                              <View className='preview-apple-header'>
-                                <View className='preview-apple-header-left'>
-                                  <Text className='preview-apple-header-icon'>‹</Text>
-                                  <Text className='preview-apple-header-title'>备忘录</Text>
-                                </View>
-                                <View className='preview-apple-header-right'>
-                                  <Text className='preview-apple-header-icon'>↥</Text>
-                                  <Text className='preview-apple-header-icon'>◌</Text>
-                                </View>
-                              </View>
-                            )}
-                            <View className={cardPreviewContentShellClass} style={cardPreviewContentInlineStyle}>
-                              <RichText className={cardPreviewRichtextClass} nodes={html} />
-                            </View>
-                          </View>
-                        </View>
-                      </SwiperItem>
-                    ))}
-                  </Swiper>
-                  <View className='preview-swiper-indicator'>
-                    <Text className='preview-swiper-indicator-text'>{cardPreviewPageIndex + 1}/{cardPreviewPages.length}</Text>
-                  </View>
-                </View>
-                {renderCardPresetSwitcher()}
               </>
             )}
 
@@ -3447,7 +3758,76 @@ export default function ImageGeneratePage() {
         </View>
       )}
 
-      {showFixedSubmit && (
+      {showBottomComposer ? (
+        <View className='image-gen-bottom-composer' style={bottomComposerStyle}>
+          <View className='image-gen-bottom-composer-card'>
+            <View className='image-gen-bottom-title-row'>
+              <Text className='image-gen-bottom-title'>{bottomComposerTitle}</Text>
+              <View className='image-gen-bottom-title-actions'>
+                <Text
+                  className='quick-action'
+                  onClick={() => {
+                    if (activeFeature === 'ai-image') {
+                      setAiPrompt('');
+                      return;
+                    }
+                    if (activeFeature === 'infographic') {
+                      setInfoContent('');
+                      return;
+                    }
+                    if (activeFeature === 'card-layout') {
+                      handleClearCardMarkdown();
+                      return;
+                    }
+                    setCardMarkdown('');
+                  }}
+                >
+                  清空
+                </Text>
+                <Text className='image-gen-bottom-count'>{bottomComposerValue.length}/{bottomComposerMaxLength}</Text>
+              </View>
+            </View>
+            <Textarea
+              className='image-gen-bottom-textarea'
+              value={bottomComposerValue}
+              onInput={(e) => handleBottomComposerInput(e.detail.value)}
+              placeholder={bottomComposerPlaceholder}
+              maxlength={bottomComposerMaxLength}
+              fixed
+              autoHeight
+              adjustPosition={false}
+              cursorSpacing={20}
+            />
+            <View className='image-gen-bottom-footer'>
+              {activeFeature !== 'ai-image' && (
+                <View className='info-input-actions info-input-actions--bottom'>
+                  <View className='input-action-btn' onClick={handleFindInspiration}>
+                    <Text className='input-action-btn-text'>没有文案？去找灵感</Text>
+                  </View>
+                  <View
+                    className='input-action-btn input-action-btn--ghost'
+                    onClick={activeFeature === 'infographic' ? handlePasteInfoContent : handlePasteCardMarkdown}
+                  >
+                    <Text className='input-action-btn-text input-action-btn-text--ghost'>粘贴</Text>
+                  </View>
+                  {activeFeature === 'card-layout' && (
+                    <View className='input-action-btn input-action-btn--ghost' onClick={() => void handleOptimizeCardMarkdown()}>
+                      <Text className='input-action-btn-text input-action-btn-text--ghost'>
+                        <Text className='input-action-btn-icon'>✦</Text>
+                        {cardOptimizing ? '排版中...' : 'AI排版'}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
+              <Text className='image-gen-fixed-sub image-gen-fixed-sub--bottom'>{fixedSubmitSub}</Text>
+              <View className={`cta-btn ${fixedSubmitting ? 'cta-btn--disabled' : ''}`} onClick={handleFixedSubmit}>
+                <Text className='cta-btn-text'>{fixedSubmitLabel}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      ) : showFixedSubmit && (
         <View className='image-gen-fixed-submit'>
           <Text className='image-gen-fixed-sub'>{fixedSubmitSub}</Text>
           <View className={`cta-btn ${fixedSubmitting ? 'cta-btn--disabled' : ''}`} onClick={handleFixedSubmit}>

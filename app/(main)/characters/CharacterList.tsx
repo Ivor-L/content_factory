@@ -13,6 +13,7 @@ import { deleteCharacter } from './actions';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { EmptyState } from '@/components/EmptyState';
 import { CharacterEmptyGuide } from '@/components/characters/CharacterEmptyGuide';
+import { CalendarDays, Edit3, Music2, Trash2 } from 'lucide-react';
 
 interface Character {
   id: string;
@@ -37,6 +38,7 @@ export function CharacterList({
   const router = useRouter();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCharacter, setEditingCharacter] = useState<Character | null>(null);
+  const [detailCharacter, setDetailCharacter] = useState<Character | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [characterToDelete, setCharacterToDelete] = useState<string | null>(null);
   const { t } = useLanguage();
@@ -57,18 +59,19 @@ export function CharacterList({
     if (!characterToDelete) return;
 
     try {
-        await deleteCharacter(characterToDelete);
-        toast.success(t.common.success);
-        router.refresh();
+      await deleteCharacter(characterToDelete);
+      toast.success(t.common.success);
+      setDetailCharacter(null);
+      router.refresh();
     } catch (error) {
-        console.error(error);
-        toast.error(t.common.error);
+      console.error(error);
+      toast.error(t.common.error);
     }
   };
 
-  const handleEdit = (e: React.MouseEvent, character: Character) => {
-    e.preventDefault();
+  const handleEdit = (character: Character) => {
     setEditingCharacter(character);
+    setDetailCharacter(null);
     setIsModalOpen(true);
   };
 
@@ -114,11 +117,20 @@ export function CharacterList({
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {initialCharacters.map((character) => (
-            <div
+            <article
               key={character.id}
-              className="group block bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden"
+              role="button"
+              tabIndex={0}
+              onClick={() => setDetailCharacter(character)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setDetailCharacter(character);
+                }
+              }}
+              className="group block cursor-pointer overflow-hidden rounded-xl bg-white text-left shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-primary dark:bg-gray-800"
             >
-              <div className="relative h-64 bg-gray-50 dark:bg-gray-700 overflow-hidden">
+              <div className="relative aspect-[3/4] bg-gray-50 dark:bg-gray-700 overflow-hidden">
                 {character.avatar ? (
                   <img
                     src={character.avatar}
@@ -136,34 +148,98 @@ export function CharacterList({
               <div className="p-5">
                 <h3 className="text-lg font-bold text-gray-900 dark:text-white truncate mb-1">{character.name}</h3>
                 {character.voiceId && (
-                    <div className="mt-2" onClick={(e) => e.preventDefault()}>
-                        <audio controls src={character.voiceId} className="w-full h-8" />
-                    </div>
+                  <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                    <audio controls src={character.voiceId} className="w-full h-8" />
+                  </div>
                 )}
                 <div className="mt-4 flex items-center justify-between text-xs text-gray-400 dark:text-gray-500">
                   <span suppressHydrationWarning>{new Date(character.createdAt).toLocaleDateString()}</span>
-                  <div className="flex items-center gap-2">
-                      <button
-                          onClick={(e) => handleEdit(e, character)}
-                          className="text-gray-400 hover:text-primary p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
-                          title={t.common.edit}
-                      >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 00 2 2h11a2 2 0 00 2-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
-                      </button>
-                      <button
-                          onClick={(e) => handleDeleteClick(e, character.id)}
-                          className="text-gray-400 hover:text-red-600 p-1 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors group-hover:opacity-100"
-                          title={t.common.delete}
-                      >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                      </button>
-                  </div>
+                  <span className="rounded-full bg-gray-100 px-2 py-1 text-gray-500 dark:bg-gray-700 dark:text-gray-300">
+                    {t.common.edit}
+                  </span>
                 </div>
               </div>
-            </div>
+            </article>
           ))}
         </div>
       )}
+
+      <Modal
+        isOpen={Boolean(detailCharacter)}
+        onClose={() => setDetailCharacter(null)}
+        title={detailCharacter?.name || t.characters.title}
+        maxWidth="max-w-3xl"
+      >
+        {detailCharacter && (
+          <div className="grid gap-6 md:grid-cols-[minmax(220px,280px)_1fr]">
+            <div className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800">
+              {detailCharacter.avatar ? (
+                <img
+                  src={detailCharacter.avatar}
+                  alt={detailCharacter.name}
+                  className="aspect-[3/4] h-full w-full object-cover object-center"
+                />
+              ) : (
+                <div className="flex aspect-[3/4] items-center justify-center text-sm text-gray-400">
+                  No Avatar
+                </div>
+              )}
+            </div>
+            <div className="flex min-w-0 flex-col gap-5">
+              <div>
+                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{t.characters.name}</p>
+                <h2 className="mt-1 break-words text-2xl font-bold text-gray-950 dark:text-white">
+                  {detailCharacter.name}
+                </h2>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-200">
+                  <Music2 className="h-4 w-4" />
+                  {t.characters.voice}
+                </div>
+                {detailCharacter.voiceId ? (
+                  <audio controls src={detailCharacter.voiceId} className="w-full" />
+                ) : (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    {t.characters.voicePlaceholder}
+                  </p>
+                )}
+              </div>
+
+              <div className="grid gap-3 text-sm text-gray-500 dark:text-gray-400 sm:grid-cols-2">
+                <div className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-700">
+                  <CalendarDays className="h-4 w-4" />
+                  <span suppressHydrationWarning>{new Date(detailCharacter.createdAt).toLocaleString()}</span>
+                </div>
+                <div className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 dark:border-gray-700">
+                  <CalendarDays className="h-4 w-4" />
+                  <span suppressHydrationWarning>{new Date(detailCharacter.updatedAt).toLocaleString()}</span>
+                </div>
+              </div>
+
+              <div className="mt-auto grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => handleEdit(detailCharacter)}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-black px-4 text-sm font-semibold text-white transition-colors hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-200"
+                >
+                  <Edit3 className="h-4 w-4" />
+                  {t.common.edit}
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleDeleteClick(e, detailCharacter.id)}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 text-sm font-semibold text-red-600 transition-colors hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {t.common.delete}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         isOpen={isModalOpen}
@@ -174,9 +250,13 @@ export function CharacterList({
         title={editingCharacter ? t.characters.editTitle : t.characters.formTitle}
       >
         <CharacterForm 
-            onSuccess={handleCharacterCreated} 
-            initialData={editingCharacter || undefined}
-            key={editingCharacter?.id || 'new'}
+          onSuccess={handleCharacterCreated}
+          onCancel={() => {
+            setIsModalOpen(false);
+            setEditingCharacter(null);
+          }}
+          initialData={editingCharacter || undefined}
+          key={editingCharacter?.id || 'new'}
         />
       </Modal>
 

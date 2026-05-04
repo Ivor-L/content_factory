@@ -24,43 +24,85 @@ type ReferralsPayload = {
 export default function ReferralsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [needsApiKey, setNeedsApiKey] = useState(false);
   const [payload, setPayload] = useState<ReferralsPayload | null>(null);
 
+  const loadReferrals = async () => {
+    try {
+      setLoading(true);
+      setNeedsApiKey(false);
+      const profile = await miniappApi.getProfile();
+      const apiKey = profile?.apiKey || Taro.getStorageSync('API_KEY') || '';
+      if (!apiKey) {
+        setNeedsApiKey(true);
+        setError('请先绑定 API Key');
+        return;
+      }
+
+      const res = await Taro.request({
+        url: `${__API_BASE_URL__}/api/referrals`,
+        method: 'GET',
+        header: {
+          'Content-Type': 'application/json',
+          'X-User-Api-Key': apiKey,
+        },
+      });
+
+      if (res.statusCode === 401) {
+        setNeedsApiKey(true);
+        throw new Error('请先绑定有效的 API Key');
+      }
+
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        throw new Error('加载失败');
+      }
+
+      setPayload((res.data || {}) as ReferralsPayload);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '分享有礼加载失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useLoad(() => {
+    void loadReferrals();
+  });
+
+  const handleBindApiKey = async () => {
+    const modal = await Taro.showModal({
+      title: '绑定 API Key',
+      editable: true,
+      placeholderText: '请输入你的 API Key',
+      content: '',
+      confirmText: '绑定',
+      cancelText: '取消',
+    });
+
+    if (!modal.confirm) return;
+    const apiKey = (modal.content || '').trim();
+    if (!apiKey) {
+      Taro.showToast({ title: 'API Key 不能为空', icon: 'none' });
+      return;
+    }
+
     void (async () => {
       try {
-        setLoading(true);
-        const profile = await miniappApi.getProfile();
-        const apiKey = profile?.apiKey || Taro.getStorageSync('API_KEY') || '';
-        if (!apiKey) throw new Error('未绑定 API Key');
-
-        const res = await Taro.request({
-          url: `${__API_BASE_URL__}/api/referrals`,
-          method: 'GET',
-          header: {
-            'Content-Type': 'application/json',
-            'X-User-Api-Key': apiKey,
-          },
-        });
-
-        if (res.statusCode < 200 || res.statusCode >= 300) {
-          throw new Error('加载失败');
-        }
-
-        setPayload((res.data || {}) as ReferralsPayload);
-        setError(null);
+        Taro.setStorageSync('API_KEY', apiKey);
+        setNeedsApiKey(false);
+        Taro.showToast({ title: '已绑定 API Key', icon: 'success' });
+        await loadReferrals();
       } catch {
-        setError('分享有礼加载失败');
-      } finally {
-        setLoading(false);
+        Taro.showToast({ title: '绑定失败，请重试', icon: 'none' });
       }
     })();
-  });
+  };
 
   const shareLink = useMemo(() => {
     const code = payload?.shareCode;
     if (!code) return '';
-    return `${__API_BASE_URL__}/share?ref=${encodeURIComponent(code)}`;
+    return `${__API_BASE_URL__}/register?ref=${encodeURIComponent(code)}`;
   }, [payload?.shareCode]);
 
   const handleBack = () => {
@@ -99,7 +141,14 @@ export default function ReferralsPage() {
       </View>
 
       {loading && <Text className='ref-helper'>加载中...</Text>}
-      {!loading && error && <Text className='ref-helper'>{error}</Text>}
+      {!loading && error && (
+        <View className='ref-state-card'>
+          <Text className='ref-helper'>{error}</Text>
+          <View className='ref-copy-btn' onClick={needsApiKey ? handleBindApiKey : loadReferrals}>
+            <Text className='ref-copy-btn-text'>{needsApiKey ? '去绑定' : '重试'}</Text>
+          </View>
+        </View>
+      )}
 
       {!loading && !error && (
         <>

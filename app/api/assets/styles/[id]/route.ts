@@ -27,12 +27,13 @@ export async function DELETE(
       : null;
   const storagePath = metadata?.storagePath;
   const analysisPath = metadata?.analysisPath;
+  const thumbnailStoragePath = metadata?.thumbnailStoragePath;
 
   await prisma.stylePreset.delete({
     where: { id: style.id },
   });
 
-  await removeAssetFiles([storagePath, analysisPath]);
+  await removeAssetFiles([storagePath, analysisPath, thumbnailStoragePath]);
 
   return NextResponse.json({ data: { id: style.id } });
 }

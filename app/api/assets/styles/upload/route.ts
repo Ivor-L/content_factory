@@ -6,6 +6,7 @@ import { getApiKeyForUser, getRequestUserContext } from "@/lib/authServer";
 import { getAssetBucket, stylePreviewPath } from "@/lib/storagePaths";
 import { uploadToStorage } from "@/lib/storageUpload";
 import { toInputJson } from "@/lib/jsonUtils";
+import { createStylePreviewThumbnail } from "@/lib/stylePreviewThumbnails";
 
 const DEFAULT_STYLE_TYPE = "xhs-visual";
 const STYLE_WORKFLOW_WEBHOOK =
@@ -90,6 +91,18 @@ export async function POST(request: NextRequest) {
     contentType: file.type || "application/octet-stream",
   });
 
+  let thumbnail: Awaited<ReturnType<typeof createStylePreviewThumbnail>> = null;
+  try {
+    thumbnail = await createStylePreviewThumbnail({
+      userId,
+      source: buffer,
+      originalFilename: filename,
+      contentType: file.type,
+    });
+  } catch (error) {
+    console.warn("Failed to create style preview thumbnail", error);
+  }
+
   const style = await prisma.stylePreset.create({
     data: {
       userId,
@@ -103,6 +116,18 @@ export async function POST(request: NextRequest) {
         contentType: file.type,
         originalFilename: filename,
         storagePath: uploadResult.path,
+        ...(thumbnail
+          ? {
+              thumbnailUrl: thumbnail.publicUrl,
+              thumbnailStoragePath: thumbnail.storagePath,
+              thumbnail: {
+                width: thumbnail.width,
+                height: thumbnail.height,
+                size: thumbnail.size,
+                contentType: thumbnail.contentType,
+              },
+            }
+          : {}),
         processingStatus: "PENDING",
         ...(sceneTypeInput || styleGoalInput
           ? {
@@ -240,7 +265,13 @@ export async function POST(request: NextRequest) {
     (await prisma.stylePreset.findUnique({ where: { id: style.id } })) || style;
 
   return NextResponse.json(
-    { data: { ...latestStyle, previewUpload: uploadResult.publicUrl } },
+    {
+      data: {
+        ...latestStyle,
+        thumbnailUrl: thumbnail?.publicUrl ?? null,
+        previewUpload: uploadResult.publicUrl,
+      },
+    },
     { status: 201 }
   );
 }

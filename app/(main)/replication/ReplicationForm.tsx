@@ -897,7 +897,8 @@ export default function ReplicationForm({ products, scripts, characters = [], pr
             onSuccess={() => {
                 setIsCharacterModalOpen(false);
                 router.refresh();
-            }} 
+            }}
+            onCancel={() => setIsCharacterModalOpen(false)}
         />
       </Modal>
       {isDHSetupOpen && session?.access_token && (

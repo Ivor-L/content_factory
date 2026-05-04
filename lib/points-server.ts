@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { requireEnv } from './env';
+import { getRequestUserContext } from '@/lib/authServer';
 
 const DEFAULT_POINTS_API_BASE = 'https://api.atomx.top';
 
@@ -67,6 +68,14 @@ export async function getStoredUserApiKey(request: Request) {
   }
 
   return profile.api_key;
+}
+
+export async function resolveRequestApiKey(request: Request) {
+  const { apiKey } = await getRequestUserContext(request, {
+    allowDefaultApiKey: false,
+  });
+  const headerApiKey = request.headers.get('x-user-api-key')?.trim() ?? '';
+  return apiKey || headerApiKey || null;
 }
 
 export async function readTextSafe(res: Response) {

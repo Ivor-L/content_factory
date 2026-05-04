@@ -353,7 +353,13 @@ export function CreativeScriptPreviewModal({
                     >
                       {s.thumbnailUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={s.thumbnailUrl} alt={s.name} className="absolute inset-0 w-full h-full object-cover" />
+                        <img
+                          src={s.thumbnailUrl}
+                          alt={s.name}
+                          className="absolute inset-0 w-full h-full object-cover"
+                          loading="lazy"
+                          decoding="async"
+                        />
                       ) : (
                         <div className="absolute inset-0 bg-gradient-to-br from-purple-100 to-pink-100 dark:from-purple-900 dark:to-pink-900" />
                       )}

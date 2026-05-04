@@ -21,17 +21,7 @@ export default function WorkDetailPage() {
     }
   });
 
-  const posterImages = useMemo<string[]>(() => {
-    const meta = item?.metadata;
-    if (!meta || typeof meta !== 'object') return [];
-    const layout = (meta as Record<string, unknown>).xhsLayout;
-    if (!layout || typeof layout !== 'object') return [];
-    const images = (layout as Record<string, unknown>).images;
-    if (!Array.isArray(images)) return [];
-    return images
-      .map((img) => (typeof img === 'string' ? img.trim() : ''))
-      .filter(Boolean);
-  }, [item]);
+  const posterImages = useMemo<string[]>(() => getPosterImages(item), [item]);
 
   const coverUrl = useMemo<string | null>(() => {
     if (posterImages.length > 0) return posterImages[0];
@@ -66,6 +56,8 @@ export default function WorkDetailPage() {
     if (status.includes('PEND') || status.includes('QUEUE') || status.includes('WAIT')) return '待处理';
     return item?.status || '--';
   }, [item]);
+  const isProcessing = useMemo(() => isWorkProcessingStatus(item?.status), [item?.status]);
+  const canDownload = Boolean(item) && !isProcessing;
 
   const publishQrcode = useMemo(() => {
     const meta = item?.metadata;
@@ -197,6 +189,10 @@ export default function WorkDetailPage() {
   };
 
   const handleDownloadImage = async (url: string) => {
+    if (!canDownload) {
+      Taro.showToast({ title: '生成中的任务暂不可下载', icon: 'none' });
+      return;
+    }
     if (!url || downloading) return;
     const granted = await ensureAlbumPermission();
     if (!granted) {
@@ -219,6 +215,10 @@ export default function WorkDetailPage() {
   };
 
   const handleDownloadMain = async () => {
+    if (!canDownload) {
+      Taro.showToast({ title: '生成中的任务暂不可下载', icon: 'none' });
+      return;
+    }
     if (!item || downloading) return;
     const granted = await ensureAlbumPermission();
     if (!granted) {
@@ -288,7 +288,7 @@ export default function WorkDetailPage() {
     <View className='work-detail-page'>
       <View className='work-detail-nav'>
         <View className='work-detail-back' onClick={handleBack}>
-          <Text className='work-detail-back-text'>返回</Text>
+          <Text className='work-detail-back-text'>‹</Text>
         </View>
         <Text className='work-detail-nav-title'>作品详情</Text>
         <View className='work-detail-nav-spacer' />
@@ -313,9 +313,9 @@ export default function WorkDetailPage() {
                       onChange={(event) => setCurrentPosterIndex(event.detail.current)}
                     >
                       {posterImages.map((url, index) => (
-                        <SwiperItem key={`${url}-${index}`}>
+                        <SwiperItem key={`${url}-${index}`} className='work-detail-swiper-item'>
                           <Image
-                            className='work-detail-cover'
+                            className='work-detail-cover work-detail-swiper-image'
                             src={url}
                             mode='aspectFill'
                             onClick={() => handlePreviewImage(index)}
@@ -365,7 +365,7 @@ export default function WorkDetailPage() {
                     {renderWorkDetailPlaceholderIcon(getPlaceholderKind(item.type))}
                   </View>
                 )}
-                {(isImageText ? Boolean(currentPosterUrl) : coverUrl && item.type !== 'video') && (
+                {canDownload && (isImageText ? Boolean(currentPosterUrl) : coverUrl && item.type !== 'video') && (
                   <View
                     className='work-detail-cover-download'
                     onClick={() => {
@@ -389,7 +389,12 @@ export default function WorkDetailPage() {
                   <Text className='work-detail-status'>{statusText}</Text>
                 </View>
                 {!!item.preview && (
-                  <Text className='work-detail-preview'>{item.preview}</Text>
+                  <View className='work-detail-preview-card'>
+                    <Text className='work-detail-preview-label'>
+                      {item.taskType === 'digitalHuman' ? '口播文案' : '内容'}
+                    </Text>
+                    <Text className='work-detail-preview'>{item.preview}</Text>
+                  </View>
                 )}
                 {isImageText && posterImages.length > 0 && (
                   <View className='work-detail-poster-ops'>
@@ -403,7 +408,7 @@ export default function WorkDetailPage() {
                       <Text className='work-detail-poster-op-btn-text'>预览</Text>
                     </View>
                     <View
-                      className='work-detail-poster-op-btn work-detail-poster-op-btn--primary'
+                      className={`work-detail-poster-op-btn work-detail-poster-op-btn--primary ${!canDownload ? 'work-detail-poster-op-btn--disabled' : ''}`}
                       onClick={() => {
                         void handleDownloadImage(currentPosterUrl);
                       }}
@@ -439,12 +444,12 @@ export default function WorkDetailPage() {
               <Text className='work-detail-delete-btn-text'>{deleting ? '删除中...' : '删除'}</Text>
             </View>
             <View
-              className={`work-detail-action-btn work-detail-download-btn ${downloading ? 'work-detail-action-btn--disabled' : ''}`}
+              className={`work-detail-action-btn work-detail-download-btn ${downloading || !canDownload ? 'work-detail-action-btn--disabled' : ''}`}
               onClick={() => {
                 void handleDownloadMain();
               }}
             >
-              <Text className='work-detail-download-btn-text'>{downloading ? '下载中...' : downloadBtnText}</Text>
+              <Text className='work-detail-download-btn-text'>{isProcessing ? '生成中不可下载' : downloading ? '下载中...' : downloadBtnText}</Text>
             </View>
           </View>
         </View>
@@ -539,11 +544,109 @@ function resolveVideoUrlFromItem(item: any): string {
   return urls.find((url) => HTTP_URL_RE.test(url)) || '';
 }
 
+function collectImageUrls(value: unknown, depth = 0): string[] {
+  if (depth > 5 || value == null) return [];
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        return collectImageUrls(JSON.parse(trimmed), depth + 1);
+      } catch {
+        return isImageUrl(trimmed) ? [trimmed] : [];
+      }
+    }
+    return isImageUrl(trimmed) ? [trimmed] : [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => collectImageUrls(entry, depth + 1));
+  }
+
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    const preferred = [
+      obj.url,
+      obj.imageUrl,
+      obj.image_url,
+      obj.src,
+      obj.publicUrl,
+      obj.public_url,
+      obj.thumbnailUrl,
+      obj.thumbnail_url,
+      obj.coverUrl,
+      obj.cover_url,
+    ].flatMap((entry) => collectImageUrls(entry, depth + 1));
+    if (preferred.length > 0) return preferred;
+    return Object.values(obj).flatMap((entry) => collectImageUrls(entry, depth + 1));
+  }
+
+  return [];
+}
+
+function getPosterImages(item: any): string[] {
+  const metadata = item?.metadata && typeof item.metadata === 'object'
+    ? item.metadata as Record<string, unknown>
+    : null;
+  const custom = metadata?.custom && typeof metadata.custom === 'object'
+    ? metadata.custom as Record<string, unknown>
+    : null;
+  const layout = metadata?.xhsLayout && typeof metadata.xhsLayout === 'object'
+    ? metadata.xhsLayout as Record<string, unknown>
+    : null;
+
+  const candidates = [
+    layout?.images,
+    metadata?.images,
+    metadata?.imageUrls,
+    metadata?.image_urls,
+    metadata?.generatedImages,
+    metadata?.generated_images,
+    metadata?.generatedImagesJson,
+    metadata?.generated_images_json,
+    custom?.xhsLayout,
+    custom?.images,
+    custom?.imageUrls,
+    custom?.image_urls,
+    custom?.generatedImages,
+    custom?.generated_images,
+    item?.images,
+    item?.imageUrls,
+    item?.image_urls,
+    item?.generatedImages,
+    item?.generated_images,
+    item?.generatedImagesJson,
+    item?.generated_images_json,
+  ];
+
+  const urls = candidates.flatMap((candidate) => collectImageUrls(candidate));
+  return Array.from(new Set(urls));
+}
+
+function isImageUrl(value: string) {
+  if (!/^https?:\/\//i.test(value)) return false;
+  return !VIDEO_URL_RE.test(value);
+}
+
 function getTypeLabel(type: string) {
   if (type === 'video') return '视频';
   if (type === 'image-text') return '图文';
   if (type === 'copy') return '文案';
   return '任务';
+}
+
+function isWorkProcessingStatus(value: unknown) {
+  const status = String(value || '').toUpperCase();
+  return (
+    status.includes('GENERAT') ||
+    status.includes('PROCESS') ||
+    status.includes('PEND') ||
+    status.includes('QUEUE') ||
+    status.includes('WAIT') ||
+    status.includes('RUNNING') ||
+    status.includes('START')
+  );
 }
 
 type PlaceholderKind = 'video' | 'image' | 'copy';

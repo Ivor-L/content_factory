@@ -92,9 +92,13 @@ export async function DELETE(request: NextRequest, context: DeleteContext) {
     return NextResponse.json({ error: "Missing taskId" }, { status: 400 });
   }
 
-  const summary = await prisma.taskSummary.findUnique({
-    where: { id: taskId },
-  });
+  const summary =
+    (await prisma.taskSummary.findUnique({
+      where: { id: taskId },
+    })) ??
+    (await prisma.taskSummary.findFirst({
+      where: { taskId, userId },
+    }));
 
   if (!summary || summary.userId !== userId) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });

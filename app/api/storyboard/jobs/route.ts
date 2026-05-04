@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     const payloadData: Record<string, unknown> = {};
     const metadata: Record<string, unknown> = { ...(parsed.metadata || {}) };
 
-    if (parsed.pipelineKey === 'skeleton_video' && parsed.productId) {
+    if (parsed.productId) {
       const product = await prisma.product.findFirst({
         where: { id: parsed.productId, userId },
         select: {
@@ -86,6 +86,35 @@ export async function POST(request: Request) {
       };
     }
 
+    if (parsed.characterId) {
+      const character = await prisma.character.findFirst({
+        where: { id: parsed.characterId, userId },
+        select: {
+          id: true,
+          name: true,
+          avatar: true,
+        },
+      });
+
+      if (!character) {
+        return NextResponse.json({ error: 'Selected character not found' }, { status: 400 });
+      }
+
+      taskData.characterId = character.id;
+      payloadData.character_id = character.id;
+      payloadData.characterId = character.id;
+      payloadData.character_name = character.name || '';
+      payloadData.characterName = character.name || '';
+      payloadData.character_avatar = character.avatar || '';
+      payloadData.characterAvatar = character.avatar || '';
+
+      metadata.selected_character = {
+        id: character.id,
+        name: character.name || '',
+        has_avatar: Boolean(character.avatar),
+      };
+    }
+
     const result = await createStoryboardJob({
       pipelineKey: parsed.pipelineKey,
       userId,
@@ -93,6 +122,8 @@ export async function POST(request: Request) {
       title: parsed.title,
       script: parsed.script,
       creativeTaskId: parsed.creativeTaskId,
+      characterId: parsed.characterId,
+      productId: parsed.productId,
       metadata,
       source: parsed.source || 'storyboard_jobs_api',
       statusOnCreate: 'ANALYZING',

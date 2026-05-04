@@ -32,7 +32,21 @@ Content Factory Web — Codex 的 Web 客户端项目，基于 Next.js + Prisma 
 **判定规则：**
 - 未完成 CDP 验证：**禁止提交**
 
-### 3) 数据库改动门禁（必须）
+### 3) 小程序开发门禁（必须使用 weapp-dev-mcp）
+
+涉及微信小程序开发、页面调试、组件联调、交互验证时，必须使用 `weapp-dev-mcp` 进行测试和联调：
+- 先用 `mp_ensureConnection` 确认微信开发者工具自动化会话可用
+- 用 `mp_currentPage` 确认当前页面路径与测试目标一致
+- 用 `mp_screenshot` 留存关键页面截图
+- 用 `mp_getLogs` 检查 Console/运行日志无异常
+- 按需使用 `element_tap`、`element_input`、`page_getData`、`page_callMethod` 等验证关键交互与页面数据
+- 响应式或机型相关改动需在微信开发者工具内切换对应设备/视口后复测
+
+**判定规则：**
+- 未完成 `weapp-dev-mcp` 联调验证：**禁止提交**
+- 微信开发者工具连接失败时，必须记录失败原因，不得以未验证状态提交
+
+### 4) 数据库改动门禁（必须）
 
 涉及 Prisma/Supabase schema、迁移、字段、约束、读写逻辑改动时，必须额外执行：
 - `npx prisma migrate status`
@@ -42,7 +56,7 @@ Content Factory Web — Codex 的 Web 客户端项目，基于 Next.js + Prisma 
 **判定规则：**
 - 迁移状态异常或一致性未确认：**禁止提交**
 
-### 4) 新增功能先调研（必须）
+### 5) 新增功能先调研（必须）
 
 新增功能或技术方案变更前，必须先完成最小调研结论：
 - 备选方案对比（至少 2 种）
@@ -53,7 +67,7 @@ Content Factory Web — Codex 的 Web 客户端项目，基于 Next.js + Prisma 
 **判定规则：**
 - 未完成调研直接编码：**禁止进入实现阶段**
 
-### 5) Worktree 隔离（必须）
+### 6) Worktree 隔离（必须）
 
 - 有 Worktree 时，所有改动仅允许发生在该 Worktree
 - 严禁跨 Worktree 提交
@@ -63,7 +77,7 @@ Content Factory Web — Codex 的 Web 客户端项目，基于 Next.js + Prisma 
 - 合并回主分支必须由用户发起
 - 合并前必须 `git status`，清理临时文件与调试残留
 
-### 6) Commit 信息规范（必须）
+### 7) Commit 信息规范（必须）
 
 - 标题：Conventional Commits（`feat`/`fix`/`refactor`/`chore`/`docs`/`test`）
 - Body 必须包含：
@@ -84,6 +98,7 @@ Content Factory Web — Codex 的 Web 客户端项目，基于 Next.js + Prisma 
 **按改动类型追加：**
 - 构建/部署/依赖/配置改动：`npm run build`
 - UI 改动：`npm run dev` + CDP 全流程验证
+- 小程序改动：`weapp-dev-mcp` 联调验证（连接、页面、截图、日志、关键交互）
 - 数据库改动：`npx prisma migrate status` + 最小读写回归
 - Worker/队列改动：`npm run workers:assets`（最小链路）
 
@@ -156,6 +171,7 @@ Validation:
 - [x] npm run typecheck
 - [x] npm run build（如适用）
 - [x] CDP 验证（如适用，附页面/交互说明）
+- [x] weapp-dev-mcp 联调验证（如适用，附页面/交互/日志说明）
 - [x] prisma migrate status（如适用）
 - [x] worker 最小链路（如适用）
 

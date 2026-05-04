@@ -20,6 +20,14 @@ const SORT_OPTIONS: Array<{ id: 'recent' | 'likes' | 'collects'; label: string }
 const SEARCH_HISTORY_KEY = 'HOT_SEARCH_HISTORY';
 const SEARCH_HISTORY_MAX = 10;
 const HOT_REMOVED_ITEMS_KEY = 'HOT_SQUARE_REMOVED_ITEMS';
+const SEARCH_SUGGESTIONS = [
+  'ai总是替我说话怎么办',
+  '小红书live图带货',
+  '微信推客的平台有哪些',
+  'stackchan机器人',
+  'ai做ppt的工作流',
+  'ar数字人技术介绍',
+];
 
 export default function HotSquarePage() {
   const [activeCategory, setActiveCategory] = useState('我的');
@@ -27,7 +35,7 @@ export default function HotSquarePage() {
   const [activeFilter, setActiveFilter] = useState<'all' | 'video' | 'image'>('all');
   const [activeSort, setActiveSort] = useState<'recent' | 'likes' | 'collects'>('recent');
   const [keyword, setKeyword] = useState('');
-  const [searchFocused, setSearchFocused] = useState(false);
+  const [searchMode, setSearchMode] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [list, setList] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -132,15 +140,41 @@ export default function HotSquarePage() {
     return `共 ${list.length} 条爆款内容`;
   }, [list.length, loading]);
 
-  const handleSearch = () => {
-    const nextKeyword = keyword.trim();
+  const runSearch = (rawKeyword: string) => {
+    const nextKeyword = rawKeyword.trim();
+    if (!nextKeyword) {
+      Taro.showToast({ title: '请输入搜索内容', icon: 'none' });
+      return;
+    }
+
     if (nextKeyword) {
       const nextHistory = updateSearchHistory(nextKeyword);
       setSearchHistory(nextHistory);
       setKeyword(nextKeyword);
     }
-    setSearchFocused(false);
+    setSearchMode(false);
+    Taro.hideKeyboard();
     void loadList(activeCategory, nextKeyword, activeFilter, activeSort);
+  };
+
+  const handleSearch = () => {
+    runSearch(keyword);
+  };
+
+  const handleCloseSearch = () => {
+    setSearchMode(false);
+    Taro.hideKeyboard();
+  };
+
+  const handleClearSearchHistory = () => {
+    Taro.removeStorageSync(SEARCH_HISTORY_KEY);
+    setSearchHistory([]);
+  };
+
+  const handleDeleteSearchHistory = (historyKeyword: string) => {
+    const nextHistory = searchHistory.filter((item) => item !== historyKeyword);
+    Taro.setStorageSync(SEARCH_HISTORY_KEY, JSON.stringify(nextHistory));
+    setSearchHistory(nextHistory);
   };
 
   const handleCategoryChange = (category: string) => {
@@ -177,9 +211,7 @@ export default function HotSquarePage() {
   };
 
   const handleHistoryClick = (historyKeyword: string) => {
-    setKeyword(historyKeyword);
-    setSearchFocused(false);
-    void loadList(activeCategory, historyKeyword, activeFilter, activeSort);
+    runSearch(historyKeyword);
   };
 
   const handleOpenDetail = (item: any) => {
@@ -278,27 +310,28 @@ export default function HotSquarePage() {
   };
 
   const categories = useMemo(() => [...BASE_CATEGORIES, ...dynamicCategories], [dynamicCategories]);
+  const hotColumns = useMemo(() => splitAlternatingColumns(list), [list]);
 
   return (
-    <View className={`hot-square-page ${searchFocused && searchHistory.length > 0 ? 'hot-square-page--with-hints' : ''}`}>
+    <View className={`hot-square-page ${searchMode ? 'hot-square-page--searching' : ''}`}>
       <View className='hot-header'>
-        <Text className='hot-title'>爆款广场</Text>
-        <View className='hot-search-row'>
+        {!searchMode && <Text className='hot-title'>爆款广场</Text>}
+        <View className={`hot-search-row ${searchMode ? 'hot-search-row--search-page' : ''}`}>
+          {searchMode && (
+            <View className='hot-search-back' onClick={handleCloseSearch}>
+              <Text className='hot-search-back-text'>‹</Text>
+            </View>
+          )}
           <Input
             className='hot-search-input'
             value={keyword}
-            placeholder='搜索爆款灵感...'
+            placeholder={searchMode ? 'ai总是替我说话怎么办' : '搜索爆款灵感...'}
             onInput={(e) => setKeyword(e.detail.value)}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => {
-              setTimeout(() => {
-                setSearchFocused(false);
-              }, 120);
-            }}
+            onFocus={() => setSearchMode(true)}
             confirmType='search'
             onConfirm={handleSearch}
           />
-          {searchFocused ? (
+          {searchMode ? (
             <View className='hot-search-btn' onClick={handleSearch}>
               <Text className='hot-search-btn-text'>搜索</Text>
             </View>
@@ -313,100 +346,146 @@ export default function HotSquarePage() {
             </View>
           )}
         </View>
-        {searchFocused && searchHistory.length > 0 && (
-          <ScrollView scrollX className='hot-hints-scroll'>
-            <View className='hot-hints-list'>
-              {searchHistory.map((historyKeyword) => (
-                <View key={historyKeyword} className='hot-hint-chip' onClick={() => handleHistoryClick(historyKeyword)}>
-                  <Text className='hot-hint-chip-text'>{historyKeyword}</Text>
+        {!searchMode && (
+          <ScrollView scrollX className='hot-category-scroll'>
+            <View className='hot-category-list'>
+              <View className='hot-type-chip' onClick={handleFilterChange}>
+                <Text className='hot-type-chip-text'>
+                  {TYPE_FILTER_OPTIONS.find((item) => item.id === activeFilter)?.label || '全部'}
+                </Text>
+              </View>
+              {categories.map((item) => (
+                <View
+                  key={item}
+                  className={`hot-category-chip ${activeCategory === item ? 'hot-category-chip--active' : ''}`}
+                  onClick={() => handleCategoryChange(item)}
+                >
+                  <Text className={`hot-category-text ${activeCategory === item ? 'hot-category-text--active' : ''}`}>
+                    {item}
+                  </Text>
                 </View>
               ))}
             </View>
           </ScrollView>
         )}
-        <ScrollView scrollX className='hot-category-scroll'>
-          <View className='hot-category-list'>
-            <View className='hot-type-chip' onClick={handleFilterChange}>
-              <Text className='hot-type-chip-text'>
-                {TYPE_FILTER_OPTIONS.find((item) => item.id === activeFilter)?.label || '全部'}
-              </Text>
+      </View>
+
+      {searchMode ? (
+        <View className='hot-search-page'>
+          <View className='hot-search-section'>
+            <View className='hot-search-section-head'>
+              <Text className='hot-search-section-title'>历史记录</Text>
+              {searchHistory.length > 0 && (
+                <View className='hot-history-clear' onClick={handleClearSearchHistory}>
+                  <Text className='hot-history-clear-text'>⌫</Text>
+                </View>
+              )}
             </View>
-            {categories.map((item) => (
-              <View
-                key={item}
-                className={`hot-category-chip ${activeCategory === item ? 'hot-category-chip--active' : ''}`}
-                onClick={() => handleCategoryChange(item)}
-              >
-                <Text className={`hot-category-text ${activeCategory === item ? 'hot-category-text--active' : ''}`}>
-                  {item}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </ScrollView>
-      </View>
-
-      <View className='hot-summary'>
-        <Text className='hot-summary-text'>{summaryText}</Text>
-      </View>
-
-      <ScrollView scrollY className='hot-list-scroll'>
-        {list.length > 0 ? (
-          <View className='hot-list-content'>
-            {list.map((item, index) => {
-              const itemId = String(item.id);
-              const rawCover = typeof item.coverUrl === 'string' ? item.coverUrl : null;
-              const shouldFallback = failedCoverIds.includes(itemId) || isBlockedCover(rawCover);
-              const coverSrc = shouldFallback ? HOT_COVER_FALLBACK_URL : (rawCover as string);
-              const isVideo = isVideoItem(item);
-
-              return (
-                <View
-                  key={item.id}
-                  className='hot-card'
-                  onClick={() => handleOpenDetail(item)}
-                >
-                  <View className={`hot-cover ${getCoverRatioClass(item, index)}`}>
-                    <Image
-                      className='hot-cover-image'
-                      src={coverSrc}
-                      mode='aspectFill'
-                      onError={() => {
-                        if (!failedCoverIds.includes(itemId)) {
-                          setFailedCoverIds((prev) => prev.concat(itemId));
-                        }
+            {searchHistory.length > 0 ? (
+              <View className='hot-history-list'>
+                {searchHistory.map((historyKeyword) => (
+                  <View key={historyKeyword} className='hot-history-chip' onClick={() => handleHistoryClick(historyKeyword)}>
+                    <Text className='hot-history-chip-text'>{historyKeyword}</Text>
+                    <View
+                      className='hot-history-delete'
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleDeleteSearchHistory(historyKeyword);
                       }}
-                    />
-                    {isVideo && (
-                      <View className='hot-video-icon'>
-                        <Text className='hot-video-icon-text'>▶</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  <View className='hot-body'>
-                    <Text className='hot-item-title'>{item.title}</Text>
-                    <View className='hot-meta-row'>
-                      <Text className='hot-meta-author'>{item.creatorName || '匿名作者'}</Text>
-                      <Text className='hot-meta-score'>♡ {formatLikes(item.likes)}</Text>
+                    >
+                      <Text className='hot-history-delete-text'>×</Text>
                     </View>
                   </View>
-                </View>
-              );
-            })}
+                ))}
+              </View>
+            ) : (
+              <Text className='hot-search-empty-text'>暂无搜索记录</Text>
+            )}
           </View>
-        ) : (
-          !loading && (
-            <View className='hot-empty'>
-              <Text className='hot-empty-text'>暂无内容，换个关键词试试</Text>
-            </View>
-          )
-        )}
-      </ScrollView>
 
-      <View className='hot-collect-fab' onClick={handleOpenCollect}>
-        <Text className='hot-collect-fab-text'>+</Text>
-      </View>
+          <View className='hot-search-section hot-search-section--guess'>
+            <View className='hot-search-section-head'>
+              <Text className='hot-search-section-title'>猜你想搜</Text>
+              <Text className='hot-search-more'>...</Text>
+            </View>
+            <View className='hot-guess-grid'>
+              {SEARCH_SUGGESTIONS.map((item) => (
+                <View key={item} className='hot-guess-item' onClick={() => runSearch(item)}>
+                  <Text className='hot-guess-text'>{item}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        </View>
+      ) : (
+        <>
+          <View className='hot-summary'>
+            <Text className='hot-summary-text'>{summaryText}</Text>
+          </View>
+
+          <ScrollView scrollY className='hot-list-scroll'>
+            {list.length > 0 ? (
+              <View className='hot-list-content'>
+                {hotColumns.map((column, columnIndex) => (
+                  <View key={`hot-column-${columnIndex}`} className='hot-list-column'>
+                    {column.map(({ item, index }) => {
+                      const itemId = String(item.id);
+                      const rawCover = typeof item.coverUrl === 'string' ? item.coverUrl : null;
+                      const shouldFallback = failedCoverIds.includes(itemId) || isBlockedCover(rawCover);
+                      const coverSrc = shouldFallback ? HOT_COVER_FALLBACK_URL : (rawCover as string);
+                      const isVideo = isVideoItem(item);
+
+                      return (
+                        <View
+                          key={item.id}
+                          className='hot-card'
+                          onClick={() => handleOpenDetail(item)}
+                        >
+                          <View className={`hot-cover ${getCoverRatioClass(item, index)}`}>
+                            <Image
+                              className='hot-cover-image'
+                              src={coverSrc}
+                              mode='aspectFill'
+                              onError={() => {
+                                if (!failedCoverIds.includes(itemId)) {
+                                  setFailedCoverIds((prev) => prev.concat(itemId));
+                                }
+                              }}
+                            />
+                            {isVideo && (
+                              <View className='hot-video-icon'>
+                                <Text className='hot-video-icon-text'>▶</Text>
+                              </View>
+                            )}
+                          </View>
+
+                          <View className='hot-body'>
+                            <Text className='hot-item-title'>{item.title}</Text>
+                            <View className='hot-meta-row'>
+                              <Text className='hot-meta-author'>{item.creatorName || '匿名作者'}</Text>
+                              <Text className='hot-meta-score'>♡ {formatLikes(item.likes)}</Text>
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ))}
+              </View>
+            ) : (
+              !loading && (
+                <View className='hot-empty'>
+                  <Text className='hot-empty-text'>暂无内容，换个关键词试试</Text>
+                </View>
+              )
+            )}
+          </ScrollView>
+
+          <View className='hot-collect-fab' onClick={handleOpenCollect}>
+            <Text className='hot-collect-fab-text'>+</Text>
+          </View>
+        </>
+      )}
 
       {collectVisible && (
         <View className='hot-collect-layer'>
@@ -483,4 +562,14 @@ function isRemovedHotItem(item: any): boolean {
     item?.sourceUrl,
   ].map((value) => String(value || '').trim()).filter(Boolean);
   return keys.some((key) => removed.has(key));
+}
+
+function splitAlternatingColumns<T>(items: T[]) {
+  return items.reduce<Array<Array<{ item: T; index: number }>>>(
+    (columns, item, index) => {
+      columns[index % 2].push({ item, index });
+      return columns;
+    },
+    [[], []],
+  );
 }

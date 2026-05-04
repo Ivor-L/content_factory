@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { toast } from 'react-hot-toast';
 import { cn } from '@/lib/utils';
 import { clampPosterCount, DEFAULT_POSTER_COUNT, POSTER_COUNT_MAX, POSTER_COUNT_MIN } from '@/lib/posterConfig';
+import { getStylePreviewImageUrl } from '@/lib/stylePreviewImage';
 import type { StylePresetLite } from '@/types/creative';
 import { useTenant } from '@/hooks/useTenant';
 
@@ -460,8 +461,14 @@ export function QuickPosterForm({ onClose, initialIdeaText = '' }: QuickPosterFo
                       : 'border-gray-200 dark:border-white/10 hover:border-gray-300 dark:hover:border-white/20 bg-white dark:bg-white/5',
                   )}
                 >
-                  {style.previewUrl ? (
-                    <img src={style.previewUrl} alt={style.name} className="h-10 w-10 rounded-lg object-cover" />
+                  {getStylePreviewImageUrl(style) ? (
+                    <img
+                      src={getStylePreviewImageUrl(style) ?? ""}
+                      alt={style.name}
+                      className="h-10 w-10 rounded-lg object-cover"
+                      loading="lazy"
+                      decoding="async"
+                    />
                   ) : (
                     <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100 dark:bg-white/10 text-xs font-semibold text-gray-500 dark:text-gray-400">
                       {(style.name || '').slice(0, 2)}

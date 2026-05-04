@@ -5,6 +5,9 @@
   box-sizing: border-box
   overflow-x: hidden
 
+.generate-page--with-composer
+  padding-bottom: calc(500rpx + env(safe-area-inset-bottom))
+
 .generate-header
   position: fixed
   top: 0
@@ -530,6 +533,68 @@
   right: 24rpx
   bottom: calc(24rpx + env(safe-area-inset-bottom))
   z-index: 40
+
+.bottom-composer
+  position: fixed
+  left: 24rpx
+  right: 24rpx
+  bottom: calc(20rpx + env(safe-area-inset-bottom))
+  z-index: 50
+  transition: transform 0.2s ease
+
+.bottom-composer-card
+  border-radius: 22rpx
+  background: #151515
+  border: 1rpx solid rgba(145, 175, 229, 0.28)
+  box-shadow: 0 -16rpx 40rpx rgba(0, 0, 0, 0.34)
+  padding: 18rpx 18rpx 18rpx
+  box-sizing: border-box
+
+.bottom-composer-title-row
+  display: flex
+  align-items: center
+  justify-content: space-between
+  gap: 16rpx
+  margin-bottom: 12rpx
+
+.bottom-composer-title
+  color: #dce7fb
+  font-size: 24rpx
+  font-weight: 700
+
+.bottom-composer-count
+  color: #6f84ad
+  font-size: 22rpx
+
+.bottom-composer-title-actions
+  display: flex
+  align-items: center
+  gap: 12rpx
+  flex-shrink: 0
+
+.bottom-composer-clear
+  color: #ecee9f
+  font-size: 24rpx
+  padding: 0 6rpx
+
+.bottom-composer-textarea
+  width: 100%
+  min-height: 180rpx
+  max-height: 340rpx
+  border-radius: 16rpx
+  background: #202020
+  border: 1rpx solid rgba(145, 175, 229, 0.2)
+  color: #dbe8ff
+  padding: 18rpx 20rpx
+  font-size: 26rpx
+  line-height: 1.55
+  box-sizing: border-box
+
+.bottom-composer-footer
+  margin-top: 14rpx
+
+.info-input-actions--composer
+  padding: 0 0 14rpx
 
 .btn-primary
   background: #ecee9f

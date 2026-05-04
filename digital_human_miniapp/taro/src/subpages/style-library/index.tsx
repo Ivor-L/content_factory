@@ -111,8 +111,13 @@ export default function StyleLibraryPage() {
             {styles.map((item, index) => (
               <View key={item.id} className='style-library-card'>
                 <View className='style-library-cover'>
-                  {item.previewUrl ? (
-                    <Image className='style-library-cover-image' src={item.previewUrl} mode='aspectFill' />
+                  {item.thumbnailUrl || item.previewUrl ? (
+                    <Image
+                      className='style-library-cover-image'
+                      src={item.thumbnailUrl || item.previewUrl || ''}
+                      mode='aspectFill'
+                      lazyLoad
+                    />
                   ) : (
                     <View className='style-library-cover-placeholder'>
                       <Text className='style-library-cover-placeholder-text'>风格 {index + 1}</Text>

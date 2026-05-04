@@ -57,6 +57,7 @@ export interface HotItem {
   referenceId?: string | null;
   isCollected?: boolean;
   source?: 'all' | 'mine';
+  createdAt?: string | null;
 }
 
 export interface MyNoteImageTextItem {
@@ -94,6 +95,26 @@ export interface MyNoteTaskDetail {
       title: string;
       body: string;
       imageTexts: string[];
+      titleFormula?: {
+        topic: string;
+        industry: string;
+        candidates: Array<{
+          title: string;
+          formulaId: number;
+          triggerType: string;
+          formulaTemplate: string;
+          originalExample: string;
+          reason: string;
+        }>;
+        top3: Array<{
+          title: string;
+          formulaId: number;
+          triggerType: string;
+          formulaTemplate: string;
+          originalExample: string;
+          reason: string;
+        }>;
+      } | null;
     } | null;
   };
   generatedCopy?: string | null;
@@ -106,6 +127,7 @@ export interface WorkItem {
   type: 'video' | 'image-text' | 'copy' | 'task';
   status: TaskStatus;
   taskType?: string;
+  taskId?: string;
   createdAt: string;
   preview?: string | null;
   thumbnailUrl?: string | null;
@@ -121,6 +143,7 @@ export interface CreateStoryboardJobInput {
   script?: string;
   creativeTaskId?: string;
   productId?: string;
+  characterId?: string;
   metadata?: Record<string, unknown>;
   source?: string;
 }
@@ -143,6 +166,14 @@ export interface StoryboardSegmentItem {
   generatedVideo: string | null;
   status: string;
   originalScript: string | null;
+  generationParams?: Record<string, unknown> | null;
+}
+
+export interface StoryboardReferenceItem {
+  id: string;
+  type: 'product' | 'character';
+  name: string;
+  imageUrl: string | null;
 }
 
 export interface StoryboardTaskStatusResult {
@@ -152,6 +183,7 @@ export interface StoryboardTaskStatusResult {
   imageModel?: string | null;
   videoModel?: string | null;
   finalVideoUrl: string | null;
+  references: StoryboardReferenceItem[];
   segments: StoryboardSegmentItem[];
 }
 
@@ -177,6 +209,14 @@ export interface ProductSummary {
   id: string;
   name: string;
   images: string[];
+  description?: string;
+  sellingPoints?: string;
+  sellingPointsText?: string | null;
+  analysisResult?: string | null;
+  status?: string;
+  progress?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface XhsNormalizedMarkdown {
@@ -196,6 +236,7 @@ export interface StylePresetSummary {
   name: string;
   type: string;
   previewUrl?: string | null;
+  thumbnailUrl?: string | null;
   status?: string | null;
 }
 
@@ -643,7 +684,7 @@ function getApiKey(): string | null {
 async function request<T = unknown>(
   path: string,
   options: {
-    method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+    method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
     data?: Record<string, unknown>;
   } = {},
 ): Promise<T> {
@@ -692,6 +733,120 @@ function normalizeStatus(value: unknown): TaskStatus {
   if (status.includes('FAIL') || status.includes('ERROR')) return 'FAILED';
   if (status.includes('PEND') || status.includes('QUEUE') || status.includes('WAIT')) return 'PENDING';
   return status || 'PENDING';
+}
+
+function getCreatedAtTime(value: { createdAt?: string | null }): number {
+  const time = new Date(value.createdAt || '').getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function sortByCreatedAtDesc<T extends { createdAt?: string | null }>(items: T[]): T[] {
+  return items.slice().sort((a, b) => getCreatedAtTime(b) - getCreatedAtTime(a));
+}
+
+function collectStringUrls(value: unknown, depth = 0): string[] {
+  if (depth > 4 || value == null) return [];
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        return collectStringUrls(JSON.parse(trimmed), depth + 1);
+      } catch {
+        return [trimmed];
+      }
+    }
+    return [trimmed];
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectStringUrls(item, depth + 1));
+  }
+  if (typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).flatMap((item) => collectStringUrls(item, depth + 1));
+  }
+  return [];
+}
+
+function resolveStoryboardCover(raw: Record<string, unknown>, metadata: Record<string, unknown> | null): string | null {
+  const candidates = [
+    raw.thumbnailUrl,
+    raw.thumbnail_url,
+    raw.storyboardImageUrl,
+    raw.storyboard_image_url,
+    raw.coverImage,
+    raw.cover_image,
+    metadata?.storyboardImageUrl,
+    metadata?.storyboard_image_url,
+    metadata?.gridImageUrl,
+    metadata?.coverImage,
+    metadata?.storyboardImages,
+  ];
+  for (const candidate of candidates) {
+    const first = collectStringUrls(candidate).find((url) => /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(url) || /^https?:\/\//i.test(url));
+    if (first) return first;
+  }
+  return null;
+}
+
+function dedupeWorks(items: WorkItem[]): WorkItem[] {
+  const byKey = new Map<string, WorkItem>();
+  for (const item of sortByCreatedAtDesc(items)) {
+    const taskType = String(item.taskType || '').toLowerCase();
+    const taskId = String(item.taskId || item.id || '').trim();
+    const key =
+      taskType === 'digitalhuman' || item.source === 'digitalHuman'
+        ? `digitalHuman:${taskId}`
+        : `${item.source}:${item.id}`;
+    const existing = byKey.get(key);
+    if (!existing || (item.source === 'digitalHuman' && existing.source !== 'digitalHuman')) {
+      byKey.set(key, item);
+    }
+  }
+  return sortByCreatedAtDesc(Array.from(byKey.values()));
+}
+
+function parseProductImages(raw: unknown): string[] {
+  const urls = collectUrlsFromUnknown(raw);
+  return uniqueUrls(urls);
+}
+
+function toProductSummary(raw: {
+  id?: unknown;
+  name?: unknown;
+  description?: unknown;
+  sellingPoints?: unknown;
+  sellingPointsText?: unknown;
+  analysisResult?: unknown;
+  images?: unknown;
+  status?: unknown;
+  progress?: unknown;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+} | null | undefined): ProductSummary | null {
+  const id = String(raw?.id || '').trim();
+  const name = String(raw?.name || '').trim();
+  if (!id || !name) return null;
+
+  const progress =
+    typeof raw?.progress === 'number' && Number.isFinite(raw.progress)
+      ? raw.progress
+      : Number.isFinite(Number(raw?.progress))
+        ? Number(raw?.progress)
+        : undefined;
+
+  return {
+    id,
+    name,
+    description: typeof raw?.description === 'string' ? raw.description : '',
+    sellingPoints: typeof raw?.sellingPoints === 'string' ? raw.sellingPoints : '',
+    sellingPointsText: typeof raw?.sellingPointsText === 'string' ? raw.sellingPointsText : null,
+    analysisResult: typeof raw?.analysisResult === 'string' ? raw.analysisResult : null,
+    images: parseProductImages(raw?.images),
+    status: typeof raw?.status === 'string' ? raw.status : 'PENDING',
+    progress,
+    createdAt: typeof raw?.createdAt === 'string' ? raw.createdAt : undefined,
+    updatedAt: typeof raw?.updatedAt === 'string' ? raw.updatedAt : undefined,
+  };
 }
 
 export const miniappApi = {
@@ -781,6 +936,7 @@ export const miniappApi = {
           creatorAvatarUrl: creator.avatarUrl,
           myTaskId: String(item.id || ''),
           source: 'mine',
+          createdAt: typeof item.createdAt === 'string' ? item.createdAt : null,
         } as HotItem;
       }).filter((item) => item.id);
 
@@ -827,6 +983,7 @@ export const miniappApi = {
             referenceId: String(item.id || ''),
             isCollected: true,
             source: 'mine',
+            createdAt: typeof item.createdAt === 'string' ? item.createdAt : null,
           } as HotItem;
         }).filter((item) => item.id);
       } catch {
@@ -842,7 +999,7 @@ export const miniappApi = {
         return true;
       });
 
-      return merged;
+      return params?.sort && params.sort !== 'recent' ? merged : sortByCreatedAtDesc(merged);
     }
 
     const query = buildQuery({
@@ -884,6 +1041,7 @@ export const miniappApi = {
         sourceUrl: (item.sourceUrl as string | null) ?? null,
         scriptText: (item.scriptText as string | null) ?? null,
         source: 'all',
+        createdAt: typeof item.createdAt === 'string' ? item.createdAt : null,
       };
     });
   },
@@ -903,6 +1061,10 @@ export const miniappApi = {
         rawPayload: {
           creatorName: item.creatorName || null,
           creatorAvatarUrl: item.creatorAvatarUrl || null,
+          media: {
+            videoUrl: item.videoUrl || null,
+            sourceType: item.sourceType || (item.videoUrl ? 'video' : 'image'),
+          },
           stats: {
             likes: item.likes ?? null,
             collects: item.collects ?? null,
@@ -979,6 +1141,26 @@ export const miniappApi = {
     const rewriteRaw = analysisRaw.rewriteResult && typeof analysisRaw.rewriteResult === 'object'
       ? analysisRaw.rewriteResult as Record<string, unknown>
       : null;
+    const formulaRaw = rewriteRaw?.titleFormula && typeof rewriteRaw.titleFormula === 'object'
+      ? rewriteRaw.titleFormula as Record<string, unknown>
+      : null;
+    const normalizeFormulaCandidates = (value: unknown) => Array.isArray(value)
+      ? value.map((item) => {
+        if (!item || typeof item !== 'object') return null;
+        const obj = item as Record<string, unknown>;
+        const formulaId = Number(obj.formulaId);
+        const title = String(obj.title || '').trim();
+        if (!title || !Number.isFinite(formulaId)) return null;
+        return {
+          title,
+          formulaId: Math.floor(formulaId),
+          triggerType: String(obj.triggerType || ''),
+          formulaTemplate: String(obj.formulaTemplate || ''),
+          originalExample: String(obj.originalExample || ''),
+          reason: String(obj.reason || ''),
+        };
+      }).filter((item): item is NonNullable<typeof item> => Boolean(item))
+      : [];
 
     return {
       id: String(task.id || taskId),
@@ -1015,6 +1197,14 @@ export const miniappApi = {
               imageTexts: Array.isArray(rewriteRaw.imageTexts)
                 ? rewriteRaw.imageTexts.map((text) => String(text || '').trim()).filter(Boolean)
                 : [],
+              titleFormula: formulaRaw
+                ? {
+                    topic: String(formulaRaw.topic || ''),
+                    industry: String(formulaRaw.industry || ''),
+                    candidates: normalizeFormulaCandidates(formulaRaw.candidates),
+                    top3: normalizeFormulaCandidates(formulaRaw.top3),
+                  }
+                : null,
             }
           : null,
       },
@@ -1060,6 +1250,7 @@ export const miniappApi = {
         script: input.script || '',
         creativeTaskId: input.creativeTaskId || '',
         product_id: input.productId || '',
+        character_id: input.characterId || '',
         metadata: input.metadata || {},
         source: input.source || 'miniapp',
       },
@@ -1075,31 +1266,10 @@ export const miniappApi = {
   },
 
   async getProducts(): Promise<ProductSummary[]> {
-    const payload = await request<{ success?: boolean; data?: Array<{ id?: string; name?: string; images?: string }> }>('/api/products');
+    const payload = await request<{ success?: boolean; data?: Array<Record<string, unknown>> }>('/api/products');
     const list = Array.isArray(payload?.data) ? payload.data : [];
     return list
-      .map((item) => {
-        const id = String(item?.id || '').trim();
-        const name = String(item?.name || '').trim();
-        const rawImages = String(item?.images || '').trim();
-        if (!id || !name) return null;
-
-        let images: string[] = [];
-        if (rawImages) {
-          try {
-            const parsed = JSON.parse(rawImages);
-            if (Array.isArray(parsed)) {
-              images = parsed.map((img) => String(img || '').trim()).filter(Boolean);
-            } else if (typeof parsed === 'string' && parsed.trim()) {
-              images = [parsed.trim()];
-            }
-          } catch {
-            images = rawImages.split(',').map((img) => img.trim()).filter(Boolean);
-          }
-        }
-
-        return { id, name, images };
-      })
+      .map((item) => toProductSummary(item))
       .filter((item): item is ProductSummary => Boolean(item));
   },
 
@@ -1112,7 +1282,7 @@ export const miniappApi = {
   }): Promise<ProductSummary> {
     const payload = await request<{
       success?: boolean;
-      data?: { id?: string; name?: string; images?: string };
+      data?: Record<string, unknown>;
     }>('/api/products', {
       method: 'POST',
       data: {
@@ -1124,29 +1294,39 @@ export const miniappApi = {
       },
     });
 
-    const data = payload?.data;
-    const id = String(data?.id || '').trim();
-    const name = String(data?.name || '').trim();
-    const rawImages = String(data?.images || '').trim();
-    if (!id || !name) {
+    const product = toProductSummary(payload?.data);
+    if (!product) {
       throw new Error('产品创建失败');
     }
 
-    let images: string[] = [];
-    if (rawImages) {
-      try {
-        const parsed = JSON.parse(rawImages);
-        if (Array.isArray(parsed)) {
-          images = parsed.map((img) => String(img || '').trim()).filter(Boolean);
-        } else if (typeof parsed === 'string' && parsed.trim()) {
-          images = [parsed.trim()];
-        }
-      } catch {
-        images = rawImages.split(',').map((img) => img.trim()).filter(Boolean);
-      }
+    try {
+      await request('/api/products/analyze', {
+        method: 'POST',
+        data: {
+          productId: product.id,
+          name: product.name,
+          description: input.description ?? '',
+          images: input.images ?? [],
+        },
+      });
+    } catch (error) {
+      console.warn('[miniappApi.createProduct] product analysis trigger failed:', error);
+      return {
+        ...product,
+        status: 'FAILED',
+        analysisResult: JSON.stringify({
+          status: 'FAILED',
+          message: error instanceof Error ? error.message : '产品分析触发失败',
+        }),
+      };
     }
 
-    return { id, name, images };
+    return {
+      ...product,
+      status: 'PROCESSING',
+      progress: 0,
+      analysisResult: JSON.stringify({ status: 'ANALYZING' }),
+    };
   },
 
   async getWorkList(limit = 50): Promise<WorkItem[]> {
@@ -1160,22 +1340,29 @@ export const miniappApi = {
     if (tasksRes.status === 'fulfilled') {
       const tasks = Array.isArray(tasksRes.value?.data) ? tasksRes.value.data : [];
       for (const item of tasks) {
+        const metadata =
+          item.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata)
+            ? (item.metadata as Record<string, unknown>)
+            : null;
+        const taskType = typeof item.taskType === 'string' ? item.taskType : '';
+        const storyboardCover = taskType === 'storyboard' || taskType === 'grid'
+          ? resolveStoryboardCover(item, metadata)
+          : null;
         works.push({
           id: String(item.id),
           title: String(item.title ?? '未命名任务'),
           type: detectWorkType(item),
           status: normalizeStatus(item.status),
-          taskType: typeof item.taskType === 'string' ? item.taskType : '',
+          taskType,
+          taskId: String(item.taskId ?? item.task_id ?? item.id),
           createdAt: String(item.createdAt ?? new Date().toISOString()),
           preview: (item.preview as string | null) ?? null,
           thumbnailUrl:
+            storyboardCover ??
             (item.thumbnailUrl as string | null) ??
             (item.thumbnail_url as string | null) ??
             null,
-          metadata:
-            item.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata)
-              ? (item.metadata as Record<string, unknown>)
-              : null,
+          metadata,
           source: 'task',
         });
       }
@@ -1184,23 +1371,34 @@ export const miniappApi = {
     if (videosRes.status === 'fulfilled') {
       const videos = Array.isArray(videosRes.value?.data) ? videosRes.value.data : [];
       for (const item of videos) {
+        const resultUrl = typeof item.resultUrl === 'string' ? item.resultUrl : null;
+        const scriptContent = typeof item.scriptContent === 'string' ? item.scriptContent : '';
         works.push({
           id: String(item.id),
           title: item.type === 'VOICE_CLONE' ? '数字人文字驱动视频' : '数字人口型驱动视频',
           type: 'video',
           status: normalizeStatus(item.status),
           taskType: 'digitalHuman',
+          taskId: String(item.id),
           createdAt: String(item.createdAt ?? new Date().toISOString()),
-          preview: (item.resultUrl as string | null) ?? null,
-          thumbnailUrl: (item.coverUrl as string | null) ?? null,
-          metadata: null,
+          preview: scriptContent || null,
+          thumbnailUrl:
+            (item.coverUrl as string | null) ??
+            (item.imageUrl as string | null) ??
+            null,
+          metadata: {
+            type: typeof item.type === 'string' ? item.type : '',
+            scriptContent,
+            resultUrl,
+            videoUrl: resultUrl,
+            sourceType: typeof item.sourceType === 'string' ? item.sourceType : '',
+          },
           source: 'digitalHuman',
         });
       }
     }
 
-    works.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    return works.slice(0, limit);
+    return dedupeWorks(works).slice(0, limit);
   },
 
   async getStoryboardStatus(taskId: string): Promise<StoryboardTaskStatusResult> {
@@ -1215,6 +1413,16 @@ export const miniappApi = {
       imageModel: typeof data.imageModel === 'string' ? data.imageModel : null,
       videoModel: typeof data.videoModel === 'string' ? data.videoModel : null,
       finalVideoUrl: typeof data.finalVideoUrl === 'string' ? data.finalVideoUrl : null,
+      references: Array.isArray(data.references)
+        ? data.references
+          .map((item: any) => ({
+            id: String(item?.id || ''),
+            type: String(item?.type || '') === 'character' ? 'character' as const : 'product' as const,
+            name: String(item?.name || ''),
+            imageUrl: typeof item?.imageUrl === 'string' && item.imageUrl.trim() ? item.imageUrl.trim() : null,
+          }))
+          .filter((item) => item.id && item.name)
+        : [],
       segments: rawSegments.map((segment: any) => ({
         id: String(segment.id || ''),
         order: typeof segment.order === 'number' ? segment.order : 0,
@@ -1226,6 +1434,10 @@ export const miniappApi = {
         generatedVideo: typeof segment.generatedVideo === 'string' ? segment.generatedVideo : null,
         status: String(segment.status || 'PENDING'),
         originalScript: typeof segment.originalScript === 'string' ? segment.originalScript : null,
+        generationParams:
+          segment.generationParams && typeof segment.generationParams === 'object' && !Array.isArray(segment.generationParams)
+            ? segment.generationParams as Record<string, unknown>
+            : null,
       })),
     };
   },
@@ -1279,6 +1491,10 @@ export const miniappApi = {
     });
   },
 
+  async deleteStoryboardTask(taskId: string): Promise<void> {
+    await request(`/api/storyboard/${encodeURIComponent(taskId)}`, { method: 'DELETE' });
+  },
+
   async getAssetOverview(): Promise<AssetOverview> {
     const [charactersRes, productsRes, stylesRes, knowledgeRes] = await Promise.allSettled([
       request<unknown>('/api/characters'),
@@ -1311,6 +1527,12 @@ export const miniappApi = {
   async deleteWorkItem(item: WorkItem): Promise<void> {
     if (item.source === 'digitalHuman') {
       await request(`/api/digital-human/videos/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
+      return;
+    }
+    const taskType = String(item.taskType || '').toLowerCase();
+    if (taskType === 'storyboard' || taskType === 'grid') {
+      const storyboardId = String(item.taskId || item.id || '').trim();
+      await request(`/api/storyboard/${encodeURIComponent(storyboardId)}`, { method: 'DELETE' });
       return;
     }
     await request(`/api/tasks/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
@@ -1360,6 +1582,7 @@ export const miniappApi = {
       name: String(item.name || '未命名模板'),
       type: String(item.type || type),
       previewUrl: typeof item.previewUrl === 'string' ? item.previewUrl : null,
+      thumbnailUrl: typeof item.thumbnailUrl === 'string' ? item.thumbnailUrl : null,
       status: typeof item.status === 'string' ? item.status : null,
     })).filter((item) => item.id);
   },
@@ -1391,6 +1614,7 @@ export const miniappApi = {
       name: String(data.name || input.name),
       type: String(data.type || input.type || 'xhs-visual'),
       previewUrl: typeof data.previewUrl === 'string' ? data.previewUrl : (input.previewUrl ?? null),
+      thumbnailUrl: typeof data.thumbnailUrl === 'string' ? data.thumbnailUrl : null,
       status: typeof data.status === 'string' ? data.status : null,
     };
   },

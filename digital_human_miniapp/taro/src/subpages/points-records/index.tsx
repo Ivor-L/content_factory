@@ -18,40 +18,80 @@ type UsageEvent = {
 export default function PointsRecordsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [needsApiKey, setNeedsApiKey] = useState(false);
   const [events, setEvents] = useState<UsageEvent[]>([]);
 
+  const loadEvents = async () => {
+    try {
+      setLoading(true);
+      setNeedsApiKey(false);
+      const profile = await miniappApi.getProfile();
+      const apiKey = profile?.apiKey || Taro.getStorageSync('API_KEY') || '';
+      if (!apiKey) {
+        setNeedsApiKey(true);
+        setError('请先绑定 API Key');
+        return;
+      }
+      const res = await Taro.request({
+        url: `${__API_BASE_URL__}/api/integration/usage?page=1&size=50`,
+        method: 'GET',
+        header: {
+          'Content-Type': 'application/json',
+          'X-User-Api-Key': apiKey,
+        },
+      });
+
+      if (res.statusCode === 401) {
+        setNeedsApiKey(true);
+        throw new Error('请先绑定有效的 API Key');
+      }
+
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        throw new Error('加载失败');
+      }
+
+      const payload = res.data as { events?: UsageEvent[] };
+      setEvents(Array.isArray(payload?.events) ? payload.events : []);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '算力值记录加载失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useLoad(() => {
+    void loadEvents();
+  });
+
+  const handleBindApiKey = async () => {
+    const modal = await Taro.showModal({
+      title: '绑定 API Key',
+      editable: true,
+      placeholderText: '请输入你的 API Key',
+      content: '',
+      confirmText: '绑定',
+      cancelText: '取消',
+    });
+
+    if (!modal.confirm) return;
+    const apiKey = (modal.content || '').trim();
+    if (!apiKey) {
+      Taro.showToast({ title: 'API Key 不能为空', icon: 'none' });
+      return;
+    }
+
     void (async () => {
       try {
-        setLoading(true);
-        const profile = await miniappApi.getProfile();
-        const apiKey = profile?.apiKey || Taro.getStorageSync('API_KEY') || '';
-        if (!apiKey) {
-          throw new Error('未绑定API Key');
-        }
-        const res = await Taro.request({
-          url: `${__API_BASE_URL__}/api/integration/usage?page=1&size=50`,
-          method: 'GET',
-          header: {
-            'Content-Type': 'application/json',
-            'X-User-Api-Key': apiKey,
-          },
-        });
-
-        if (res.statusCode < 200 || res.statusCode >= 300) {
-          throw new Error('加载失败');
-        }
-
-        const payload = res.data as { events?: UsageEvent[] };
-        setEvents(Array.isArray(payload?.events) ? payload.events : []);
-        setError(null);
+        Taro.setStorageSync('API_KEY', apiKey);
+        setNeedsApiKey(false);
+        Taro.showToast({ title: '已绑定 API Key', icon: 'success' });
+        await loadEvents();
       } catch {
-        setError('算力值记录加载失败');
-      } finally {
-        setLoading(false);
+        Taro.showToast({ title: '绑定失败，请重试', icon: 'none' });
       }
     })();
-  });
+  };
 
   const handleBack = () => {
     const pages = Taro.getCurrentPages();
@@ -94,7 +134,14 @@ export default function PointsRecordsPage() {
       </View>
 
       {loading && <Text className='points-helper'>加载中...</Text>}
-      {!loading && error && <Text className='points-helper'>{error}</Text>}
+      {!loading && error && (
+        <View className='points-state-card'>
+          <Text className='points-helper'>{error}</Text>
+          <View className='points-action-btn' onClick={needsApiKey ? handleBindApiKey : loadEvents}>
+            <Text className='points-action-btn-text'>{needsApiKey ? '去绑定' : '重试'}</Text>
+          </View>
+        </View>
+      )}
       {!loading && !error && events.length === 0 && <Text className='points-helper'>暂无算力值记录</Text>}
 
       {!loading && !error && events.map((event) => (

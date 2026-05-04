@@ -7,6 +7,7 @@ import { AlertTriangle, Check, ChevronRight, Copy, FolderDown, Loader2, RotateCc
 import { toast } from "react-hot-toast";
 import { supabase } from "@/lib/supabaseClient";
 import { IMAGE_UNDERSTANDING_PROMPT_EXACT_TEXT } from "@/lib/imageUnderstandingPrompts";
+import { getStylePreviewImageUrl } from "@/lib/stylePreviewImage";
 
 function hashString(input: string): string {
   let hash = 0;
@@ -25,6 +26,7 @@ type StylePreset = {
   type: string;
   description?: string | null;
   previewUrl?: string | null;
+  thumbnailUrl?: string | null;
   spec?: unknown;
   metadata?: unknown;
   status?: string | null;
@@ -1684,11 +1686,13 @@ function StylePickerView({
                     : "border-gray-200 dark:border-gray-700 hover:border-gray-300"
                 }`}
               >
-                {preset.previewUrl ? (
+                {getStylePreviewImageUrl(preset) ? (
                   <img
-                    src={preset.previewUrl}
+                    src={getStylePreviewImageUrl(preset) ?? ""}
                     alt={preset.name}
                     className="w-8 h-8 rounded-lg object-cover flex-shrink-0"
+                    loading="lazy"
+                    decoding="async"
                   />
                 ) : (
                   <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-yellow-300 to-orange-400 flex-shrink-0" />

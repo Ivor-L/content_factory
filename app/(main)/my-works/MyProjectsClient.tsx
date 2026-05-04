@@ -14,6 +14,7 @@ import { Modal } from "@/components/Modal";
 import { QuickPosterForm } from "@/app/(main)/dashboard/components/QuickActionForms";
 import { cn } from "@/lib/utils";
 import { toForcedProxyUrl, toProxyImgUrl } from "@/lib/mediaProxy";
+import { getStylePreviewImageUrl } from "@/lib/stylePreviewImage";
 import {
   Loader2,
   RefreshCcw,
@@ -3497,8 +3498,14 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
                         : "border-gray-100 bg-white hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-600"
                     )}
                   >
-                    {style.previewUrl ? (
-                      <img src={style.previewUrl} alt={style.name} className="h-16 w-full rounded-xl object-cover" />
+                    {getStylePreviewImageUrl(style) ? (
+                      <img
+                        src={getStylePreviewImageUrl(style) ?? ""}
+                        alt={style.name}
+                        className="h-16 w-full rounded-xl object-cover"
+                        loading="lazy"
+                        decoding="async"
+                      />
                     ) : (
                       <div className="flex h-16 w-full items-center justify-center rounded-xl bg-gray-100 text-sm font-semibold text-gray-500 dark:bg-gray-800">
                         {(style.name || '').slice(0, 2)}

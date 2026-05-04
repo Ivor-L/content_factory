@@ -26,7 +26,8 @@ function isParsingStatus(status?: string | null) {
 }
 
 function canRewriteStatus(status?: string | null) {
-  return normalizeStatus(status).includes('BREAKDOWN_COMPLETED');
+  const key = normalizeStatus(status);
+  return key.includes('BREAKDOWN_COMPLETED') || key.includes('VIDEO_COPY_COMPLETED');
 }
 
 function formatMyTaskStatus(status: string) {
@@ -65,14 +66,16 @@ function rememberRemovedHotItem(...ids: Array<string | null | undefined>) {
 
 function getTitleOptions(title: string): string[] {
   const clean = title.trim() || '仿写标题';
-  const compact = clean.replace(/[？?。！!，,]/g, '').slice(0, 24) || clean;
-  return [
-    clean,
-    `${compact}，普通人也能直接套用`,
-    `我把这条爆款拆开看了，关键在这里`,
-    `${compact}的高赞表达法`,
-    `别急着发，先看懂这条为什么能爆`,
-  ].filter(Boolean).slice(0, 5);
+  return [clean].filter(Boolean);
+}
+
+function getFormulaTitleOptions(rewrite: MyNoteTaskDetail['analysisResult']['rewriteResult'] | null): string[] {
+  const titles = [
+    ...(rewrite?.titleFormula?.top3 || []).map((item) => item.title),
+    ...(rewrite?.titleFormula?.candidates || []).map((item) => item.title),
+    rewrite?.title || '',
+  ].map((title) => title.trim()).filter(Boolean);
+  return Array.from(new Set(titles)).slice(0, 8);
 }
 
 export default function HotDetailPage() {
@@ -187,7 +190,10 @@ export default function HotDetailPage() {
   const activeTask = mode === 'my' ? myTask : inlineTask;
   const activeTaskId = mode === 'my' ? myTaskId : inlineTaskId;
   const rewrite = activeTask?.analysisResult?.rewriteResult || null;
-  const rewriteTitleOptions = useMemo(() => getTitleOptions(rewrite?.title || ''), [rewrite?.title]);
+  const rewriteTitleOptions = useMemo(() => {
+    const formulaOptions = getFormulaTitleOptions(rewrite);
+    return formulaOptions.length > 0 ? formulaOptions : getTitleOptions(rewrite?.title || '');
+  }, [rewrite]);
   const taskCanRewrite = Boolean(activeTask && canRewriteStatus(activeTask.status));
   const hasRewriteResult = Boolean(rewrite);
   const isParsing = Boolean(activeTask && isParsingStatus(activeTask.status));
@@ -195,6 +201,7 @@ export default function HotDetailPage() {
     ? (myTask?.source.videoUrl || '')
     : (inlineTask?.source.videoUrl || item?.videoUrl || '');
   const isVideoNote = Boolean(activeVideoUrl || item?.sourceType === 'video' || myTask?.source.sourceType === 'video');
+  const videoCanRewrite = Boolean(isVideoNote && activeTask && (taskCanRewrite || hasRewriteResult));
 
   const coverUrl = useMemo(() => {
     const raw = typeof item?.coverUrl === 'string' ? item.coverUrl.trim() : '';
@@ -248,15 +255,26 @@ export default function HotDetailPage() {
     setRemoving(true);
     try {
       if (mode === 'my' && myTaskId) {
-        await miniappApi.removeHotMyNote({ id: myTaskId });
+        await miniappApi.removeHotMyNote({
+          id: myTaskId,
+          sourceId: myTask?.source.sourceId || undefined,
+          sourceUrl: myTask?.source.sourceUrl || undefined,
+        });
         rememberRemovedHotItem(myTaskId, myTask?.source.sourceId, myTask?.source.sourceUrl);
+        clearPoll();
+        setMyTask(null);
+        setCollected(false);
         Taro.showToast({ title: '已取消收藏', icon: 'none' });
         setTimeout(() => Taro.navigateBack({ delta: 1 }), 300);
         return;
       }
 
       if (inlineTaskId) {
-        await miniappApi.removeHotMyNote({ id: inlineTaskId });
+        await miniappApi.removeHotMyNote({
+          id: inlineTaskId,
+          sourceId: inlineTask?.source.sourceId || undefined,
+          sourceUrl: inlineTask?.source.sourceUrl || undefined,
+        });
         rememberRemovedHotItem(inlineTaskId, item?.id, item?.sourceUrl);
         setInlineTaskId('');
         setInlineTask(null);
@@ -323,7 +341,24 @@ export default function HotDetailPage() {
   };
 
   const handleExtractVideoCopy = async () => {
-    const taskId = activeTaskId || myTaskId || inlineTaskId;
+    let taskId = activeTaskId || myTaskId || inlineTaskId;
+    if (!taskId && mode === 'hot' && item) {
+      try {
+        setCreating(true);
+        const result = await miniappApi.startOneClickCreate(item);
+        taskId = result.taskId;
+        setInlineTaskId(result.taskId);
+        setCollected(true);
+        const detail = await miniappApi.getImageTextMyNoteTask(result.taskId);
+        setInlineTask(detail);
+      } catch (error) {
+        Taro.showToast({ title: error instanceof Error ? error.message : '加入我的失败', icon: 'none' });
+        setCreating(false);
+        return;
+      } finally {
+        setCreating(false);
+      }
+    }
     if (!taskId || extractingVideoCopy) return;
     setExtractingVideoCopy(true);
     try {
@@ -438,9 +473,14 @@ export default function HotDetailPage() {
     if (!rewrite || !rewriteDrawerVisible) return null;
     const activeTitle = selectedRewriteTitle || rewrite.title || rewriteTitleOptions[0] || '';
     return (
-      <View className='hot-rewrite-layer'>
-        <View className='hot-rewrite-mask' onClick={() => setRewriteDrawerVisible(false)} />
-        <View className='hot-rewrite-drawer'>
+      <View className='hot-rewrite-layer' onClick={() => setRewriteDrawerVisible(false)}>
+        <View className='hot-rewrite-mask' />
+        <View
+          className='hot-rewrite-drawer'
+          onClick={(event) => {
+            event.stopPropagation();
+          }}
+        >
           <View className='hot-rewrite-handle' />
           <Text className='hot-rewrite-kicker'>仿写结果</Text>
           <Text className='hot-rewrite-main-title'>{activeTitle}</Text>
@@ -487,9 +527,13 @@ export default function HotDetailPage() {
       <View className='hot-video-actions-panel'>
         <Text className='hot-video-actions-title'>视频笔记能力</Text>
         <View className='hot-video-actions-grid'>
-          <View className={`hot-video-action ${extractingVideoCopy ? 'hot-video-action--disabled' : ''}`} onClick={handleExtractVideoCopy}>
+          <View className={`hot-video-action ${extractingVideoCopy || creating ? 'hot-video-action--disabled' : ''}`} onClick={handleExtractVideoCopy}>
             <Text className='hot-video-action-icon'>≡</Text>
-            <Text className='hot-video-action-text'>{extractingVideoCopy ? '提取中...' : '提取文案'}</Text>
+            <Text className='hot-video-action-text'>{extractingVideoCopy || creating ? '提取中...' : '提取文案'}</Text>
+          </View>
+          <View className={`hot-video-action ${(!videoCanRewrite && !hasRewriteResult) || rewriting ? 'hot-video-action--disabled' : ''}`} onClick={hasRewriteResult ? handleOpenRewriteDrawer : (!videoCanRewrite || rewriting ? undefined : handleRewrite)}>
+            <Text className='hot-video-action-icon'>✎</Text>
+            <Text className='hot-video-action-text'>{hasRewriteResult ? '仿写结果' : (rewriting ? '仿写中...' : (videoCanRewrite ? '一键仿写' : '先提文案'))}</Text>
           </View>
           <View className={`hot-video-action ${downloadingVideo ? 'hot-video-action--disabled' : ''}`} onClick={handleDownloadVideo}>
             <Text className='hot-video-action-icon'>↓</Text>

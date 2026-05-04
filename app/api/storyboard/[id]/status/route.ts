@@ -1,6 +1,67 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
+function extractFirstProductImage(images: string | null | undefined): string | null {
+  if (!images) return null;
+  try {
+    const parsed = JSON.parse(images);
+    if (Array.isArray(parsed)) {
+      const first = parsed.find((item) => typeof item === "string" && item.trim());
+      return typeof first === "string" ? first.trim() : null;
+    }
+    if (typeof parsed === "string" && parsed.trim()) return parsed.trim();
+  } catch {
+    const first = images.split(",").map((item) => item.trim()).find(Boolean);
+    if (first) return first;
+  }
+  return images.trim() || null;
+}
+
+async function findStoryboardTask(id: string) {
+  const task = await prisma.storyboardTask.findFirst({
+    where: {
+      OR: [
+        { id },
+        { taskId: id },
+      ],
+    },
+    include: {
+      product: true,
+      character: true,
+      segments: {
+        orderBy: { order: "asc" },
+      },
+    },
+  });
+
+  if (task) return task;
+
+  const summary = await prisma.taskSummary.findFirst({
+    where: {
+      id,
+      taskType: "storyboard",
+    },
+    select: { taskId: true },
+  });
+  if (!summary?.taskId) return null;
+
+  return prisma.storyboardTask.findFirst({
+    where: {
+      OR: [
+        { id: summary.taskId },
+        { taskId: summary.taskId },
+      ],
+    },
+    include: {
+      product: true,
+      character: true,
+      segments: {
+        orderBy: { order: "asc" },
+      },
+    },
+  });
+}
+
 /**
  * GET /api/storyboard/[id]/status
  * Poll storyboard task status and segments for ViralCloneStoryboardPage
@@ -12,14 +73,7 @@ export async function GET(
   try {
     const { id } = await params;
 
-    const task = await prisma.storyboardTask.findUnique({
-      where: { id },
-      include: {
-        segments: {
-          orderBy: { order: "asc" },
-        },
-      },
-    });
+    const task = await findStoryboardTask(id);
 
     if (!task) {
       return NextResponse.json({ error: "Task not found" }, { status: 404 });
@@ -34,6 +88,24 @@ export async function GET(
         imageModel: (task as any).imageModel,
         videoModel: (task as any).videoModel,
         finalVideoUrl: (task as any).finalVideoUrl,
+        references: [
+          task.product
+            ? {
+                id: task.product.id,
+                type: "product",
+                name: task.product.name,
+                imageUrl: extractFirstProductImage(task.product.images),
+              }
+            : null,
+          task.character
+            ? {
+                id: task.character.id,
+                type: "character",
+                name: task.character.name,
+                imageUrl: task.character.avatar || null,
+              }
+            : null,
+        ].filter(Boolean),
         segments: task.segments.map((s) => ({
           id: s.id,
           order: s.order,

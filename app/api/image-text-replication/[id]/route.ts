@@ -92,6 +92,22 @@ function normalizeMyNoteAnalysis(value: unknown) {
     .filter(Boolean);
 
   const rewrite = parseObject(data.rewriteResult);
+  const titleFormula = parseObject(rewrite?.titleFormula);
+  const mapTitleFormulaCandidate = (item: unknown) => {
+    const obj = parseObject(item);
+    if (!obj) return null;
+    const title = typeof obj.title === 'string' ? obj.title : '';
+    const formulaId = Number(obj.formulaId);
+    if (!title || !Number.isInteger(formulaId)) return null;
+    return {
+      title,
+      formulaId,
+      triggerType: typeof obj.triggerType === 'string' ? obj.triggerType : '',
+      formulaTemplate: typeof obj.formulaTemplate === 'string' ? obj.formulaTemplate : '',
+      originalExample: typeof obj.originalExample === 'string' ? obj.originalExample : '',
+      reason: typeof obj.reason === 'string' ? obj.reason : '',
+    };
+  };
   const rewriteResult = rewrite
     ? {
         title: typeof rewrite.title === 'string' ? rewrite.title : '',
@@ -99,6 +115,18 @@ function normalizeMyNoteAnalysis(value: unknown) {
         imageTexts: Array.isArray(rewrite.imageTexts)
           ? rewrite.imageTexts.map((item) => String(item || '').trim()).filter(Boolean)
           : [],
+        titleFormula: titleFormula
+          ? {
+              topic: typeof titleFormula.topic === 'string' ? titleFormula.topic : '',
+              industry: typeof titleFormula.industry === 'string' ? titleFormula.industry : '',
+              candidates: Array.isArray(titleFormula.candidates)
+                ? titleFormula.candidates.map(mapTitleFormulaCandidate).filter(Boolean)
+                : [],
+              top3: Array.isArray(titleFormula.top3)
+                ? titleFormula.top3.map(mapTitleFormulaCandidate).filter(Boolean)
+                : [],
+            }
+          : null,
       }
     : null;
 

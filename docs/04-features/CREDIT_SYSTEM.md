@@ -25,7 +25,7 @@
 ### 2.1 余额查询（UI -> 代理 -> 外部系统）
 
 1. 前端（设置页/侧边栏）调用：`GET /api/integration/credits`
-2. 代理层验证 Supabase 登录态：从请求头 `Authorization: Bearer <access_token>` 获取当前用户
+2. 代理层验证身份：Web 端从 `Authorization: Bearer <access_token>` 获取当前用户；小程序可用 `X-User-Api-Key`
 3. 代理层读取 `profiles.api_key`
 4. 代理层请求外部积分系统获取余额
 5. 前端拿到 `balance` 后渲染 UI
@@ -51,10 +51,10 @@
 
 ### 3.2 `GET /api/integration/credits`（查询余额）
 
-- 鉴权：必须携带 `Authorization: Bearer <supabase_access_token>`
+- 鉴权：Web 端携带 `Authorization: Bearer <supabase_access_token>`；小程序可携带 `X-User-Api-Key`
 - 用户 `api_key` 获取优先级：
-  1) 从 Supabase `profiles.api_key` 读取
-  2) 兜底：从请求头 `X-User-Api-Key` 读取（主要用于设置页刚保存但 profiles 读取受限/延迟时）
+  1) 从登录态解析当前用户并读取 `profiles.api_key`
+  2) 兜底：从请求头 `X-User-Api-Key` 读取（主要用于小程序和设置页刚保存但 profiles 读取受限/延迟时）
 
 - 外部请求策略（按顺序尝试）：
   1) `GET /api/balance/check?api_key=<key>&amount=0`
@@ -85,7 +85,7 @@
 
 ### 3.3 `POST /api/integration/credits`（扣费）
 
-- 鉴权：必须携带 `Authorization: Bearer <supabase_access_token>`
+- 鉴权：Web 端携带 `Authorization: Bearer <supabase_access_token>`；小程序可携带 `X-User-Api-Key`
 - 请求体：
   ```json
   {

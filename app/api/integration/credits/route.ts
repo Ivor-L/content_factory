@@ -3,13 +3,11 @@ import {
   POINTS_API_BASES,
   readTextSafe,
   looksLikeHtml,
-  getStoredUserApiKey
+  resolveRequestApiKey
 } from '@/lib/points-server';
 
 export async function GET(request: Request) {
-  const storedApiKey = await getStoredUserApiKey(request);
-  const headerApiKey = request.headers.get('x-user-api-key');
-  const apiKey = storedApiKey || headerApiKey;
+  const apiKey = await resolveRequestApiKey(request);
 
   if (!apiKey) {
     return NextResponse.json({ error: 'Unauthorized or no API key linked' }, { status: 401 });
@@ -41,7 +39,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const apiKey = await getStoredUserApiKey(request);
+    const apiKey = await resolveRequestApiKey(request);
 
     if (!apiKey) {
       return NextResponse.json({ error: 'Unauthorized or no API key linked' }, { status: 401 });

@@ -10,6 +10,7 @@ const PRODUCT_ANALYSIS_WORKFLOW_ID = 'flow_product_dna';
 const PRODUCT_ANALYSIS_WORKFLOW_NAME = '产品分析';
 
 export async function POST(request: Request) {
+  let verifiedProductIdForFailure: string | null = null;
   try {
     const body = await request.json();
     const { name, description, images, productId } = body;
@@ -34,6 +35,25 @@ export async function POST(request: Request) {
     const imageList = Array.isArray(images) ? images : [];
 
     if (productId) {
+        if (!context.userId) {
+          return NextResponse.json(
+            { error: 'Unauthorized' },
+            { status: 401 }
+          );
+        }
+
+        const product = await prisma.product.findFirst({
+            where: { id: productId, userId: context.userId },
+            select: { id: true },
+        });
+        if (!product) {
+          return NextResponse.json(
+            { error: 'Product not found' },
+            { status: 404 }
+          );
+        }
+        verifiedProductIdForFailure = productId;
+
         await prisma.product.update({
             where: { id: productId },
             data: {
@@ -63,6 +83,26 @@ export async function POST(request: Request) {
         }).catch((e) => console.error('[product/analyze] deduct credits failed:', e));
         logCreditUsage({ featureKey: 'product_analysis', userId: context.userId, amount, success: true });
 
+        const sellingPoints = analysis.workflowData ?? { selling_points: analysis.sellingPoints };
+        const hasWorkflowData = Boolean(analysis.workflowData);
+        const hasDetailedText = Boolean(analysis.detailedDescription);
+        const hasSellingPoints = Array.isArray(analysis.sellingPoints) && analysis.sellingPoints.length > 0;
+        if (hasWorkflowData || hasDetailedText || hasSellingPoints) {
+          await prisma.product.update({
+            where: { id: productId },
+            data: {
+              status: 'COMPLETED',
+              progress: 100,
+              sellingPoints: JSON.stringify(sellingPoints),
+              sellingPointsText: analysis.detailedDescription || null,
+              analysisResult: JSON.stringify({
+                status: 'COMPLETED',
+                data: analysis.workflowData ?? null,
+              }),
+            } as any,
+          });
+        }
+
         return NextResponse.json(analysis);
     }
 
@@ -87,6 +127,20 @@ export async function POST(request: Request) {
     return NextResponse.json(analysis);
   } catch (error) {
     console.error('Error analyzing product:', error);
+    if (verifiedProductIdForFailure) {
+      await prisma.product.update({
+        where: { id: verifiedProductIdForFailure },
+        data: {
+          status: 'FAILED',
+          analysisResult: JSON.stringify({
+            status: 'FAILED',
+            message: error instanceof Error ? error.message : 'Failed to analyze product',
+          }),
+        } as any,
+      }).catch((updateError) => {
+        console.error('[product/analyze] failed to mark product as failed:', updateError);
+      });
+    }
     logCreditUsage({ featureKey: 'product_analysis', success: false, errorMessage: error instanceof Error ? error.message : 'Unknown error' });
     return NextResponse.json(
       { error: 'Failed to analyze product' },

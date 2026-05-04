@@ -132,15 +132,37 @@ export async function POST(
     return NextResponse.json({ error: '未找到可提取的视频地址' }, { status: 400 });
   }
 
+  const callbackBase = (process.env.N8N_CALLBACK_BASE_URL || '').replace(/\/+$/, '');
+  let callbackUrl: string | null = null;
+  if (callbackBase) {
+    try {
+      const callback = new URL(`${callbackBase}/api/replication/copy/extract/callback`);
+      callback.searchParams.set('my_note_id', id);
+      callbackUrl = callback.toString();
+    } catch (error) {
+      console.error('[image-text-replication/extract-video-copy] invalid callback base url', {
+        callbackBase,
+        error,
+      });
+      callbackUrl = null;
+    }
+  }
+
   const payload: Record<string, unknown> = {
     video_url: videoUrl,
+    videoUrl,
     user_id: userId,
+    userId,
+    my_note_id: id,
+    myNoteId: id,
     extract_type: 'subtitle',
     content_hint: 'video_subtitle_only',
     source_platform: note.sourcePlatform || 'miniapp-my',
     note_description: note.sourceText || null,
     language: 'zh-CN',
     target_language: 'zh-CN',
+    callback_url: callbackUrl,
+    callbackUrl,
   };
 
   await prisma.imageTextReplicationTask.update({
@@ -152,6 +174,59 @@ export async function POST(
   });
 
   try {
+    if (callbackUrl) {
+      fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+        .then(async (res) => {
+          const rawData = await res.json().catch(() => null);
+          if (!res.ok) {
+            console.error('[image-text-replication/extract-video-copy] background fetch failed', {
+              status: res.status,
+              body: rawData,
+            });
+            return;
+          }
+
+          const envelope = normalizeWebhookEnvelope(rawData);
+          const extractedText = extractTextFromEnvelope(envelope);
+          if (!extractedText) return;
+
+          const rawMeta = parseObject(note.generatedImages) ?? {};
+          const videoMeta = parseObject(rawMeta.video) ?? {};
+          const nextMeta = {
+            ...rawMeta,
+            video: {
+              ...videoMeta,
+              extractedCopy: extractedText,
+              extractedAt: new Date().toISOString(),
+            },
+          };
+
+          await prisma.imageTextReplicationTask.update({
+            where: { id },
+            data: {
+              status: 'VIDEO_COPY_COMPLETED',
+              sourceText: extractedText,
+              generatedImages: toInputJson(nextMeta),
+              errorMessage: null,
+            },
+          });
+        })
+        .catch((error) => {
+          console.error('[image-text-replication/extract-video-copy] background fetch error', error);
+        });
+
+      return NextResponse.json({
+        data: {
+          status: 'pending',
+          videoUrl,
+        },
+      });
+    }
+
     const res = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

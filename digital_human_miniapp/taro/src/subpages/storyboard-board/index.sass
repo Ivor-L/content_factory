@@ -59,6 +59,71 @@
   font-weight: 800
   margin-bottom: 0
 
+.storyboard-reference-section
+  margin: 0 24rpx 16rpx
+
+.storyboard-reference-title
+  display: block
+  font-size: 22rpx
+  color: #8ea2c8
+  font-weight: 700
+  margin-bottom: 10rpx
+
+.storyboard-reference-list
+  display: flex
+  gap: 12rpx
+  overflow-x: auto
+
+.storyboard-reference-card
+  min-width: 300rpx
+  max-width: 360rpx
+  padding: 12rpx
+  border-radius: 14rpx
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+  background: #141414
+  display: flex
+  align-items: center
+  gap: 12rpx
+
+.storyboard-reference-image-wrap
+  width: 86rpx
+  height: 86rpx
+  border-radius: 12rpx
+  overflow: hidden
+  background: #050505
+  display: flex
+  align-items: center
+  justify-content: center
+  flex-shrink: 0
+
+.storyboard-reference-image
+  width: 100%
+  height: 100%
+
+.storyboard-reference-placeholder
+  color: #8ea2c8
+  font-size: 20rpx
+  font-weight: 800
+
+.storyboard-reference-info
+  min-width: 0
+  display: flex
+  flex-direction: column
+  gap: 5rpx
+
+.storyboard-reference-label
+  color: #ecee9f
+  font-size: 20rpx
+  font-weight: 700
+
+.storyboard-reference-name
+  color: #d7e5ff
+  font-size: 23rpx
+  font-weight: 800
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap
+
 .storyboard-board-state
   margin: 20rpx 24rpx
   padding: 30rpx 20rpx
@@ -71,6 +136,73 @@
   font-size: 24rpx
   color: #9cb1d8
   line-height: 1.6
+
+.storyboard-board-pending
+  min-height: calc(100vh - env(safe-area-inset-top) - 260rpx)
+  padding: 120rpx 48rpx 40rpx
+  box-sizing: border-box
+  display: flex
+  flex-direction: column
+  align-items: center
+  justify-content: center
+  text-align: center
+
+.storyboard-board-spinner
+  width: 132rpx
+  height: 132rpx
+  border-radius: 999rpx
+  border: 4rpx solid rgba(236, 238, 159, 0.16)
+  border-top-color: #ecee9f
+  display: flex
+  align-items: center
+  justify-content: center
+  animation: storyboardSpin 1s linear infinite
+  margin-bottom: 30rpx
+
+.storyboard-board-spinner-core
+  width: 72rpx
+  height: 72rpx
+  border-radius: 999rpx
+  background: rgba(236, 238, 159, 0.12)
+  box-shadow: 0 0 34rpx rgba(236, 238, 159, 0.22)
+
+.storyboard-board-pending-title
+  display: block
+  color: #e8f2ff
+  font-size: 32rpx
+  font-weight: 800
+  margin-bottom: 12rpx
+
+.storyboard-board-pending-text
+  display: block
+  max-width: 560rpx
+  color: #8ea2c8
+  font-size: 23rpx
+  line-height: 1.55
+
+.storyboard-board-cancel-btn
+  margin-top: 30rpx
+  height: 64rpx
+  min-width: 190rpx
+  padding: 0 28rpx
+  border-radius: 999rpx
+  border: 1rpx solid rgba(255, 90, 95, 0.45)
+  background: rgba(255, 90, 95, 0.1)
+  display: flex
+  align-items: center
+  justify-content: center
+  box-sizing: border-box
+
+.storyboard-board-cancel-text
+  color: #ff8a8e
+  font-size: 24rpx
+  font-weight: 800
+
+@keyframes storyboardSpin
+  from
+    transform: rotate(0deg)
+  to
+    transform: rotate(360deg)
 
 .storyboard-board-list
   margin: 0 24rpx 24rpx
@@ -284,6 +416,7 @@
   height: calc(470rpx + env(safe-area-inset-bottom))
 
 .storyboard-edit-preview-stage
+  position: relative
   width: 100%
   aspect-ratio: 16 / 9
   border-radius: 16rpx
@@ -294,6 +427,119 @@
   align-items: center
   justify-content: center
   margin-bottom: 16rpx
+
+.storyboard-edit-detail-btn
+  position: absolute
+  right: 14rpx
+  bottom: 14rpx
+  height: 48rpx
+  padding: 0 18rpx
+  border-radius: 999rpx
+  background: rgba(0, 0, 0, 0.68)
+  border: 1rpx solid rgba(255, 255, 255, 0.22)
+  display: flex
+  align-items: center
+  justify-content: center
+  z-index: 3
+
+.storyboard-edit-detail-text
+  color: #f6f8ff
+  font-size: 21rpx
+  font-weight: 800
+
+.storyboard-edit-assets-section
+  margin-bottom: 18rpx
+
+.storyboard-edit-assets-head
+  display: flex
+  align-items: center
+  justify-content: space-between
+  gap: 12rpx
+  margin-bottom: 10rpx
+
+.storyboard-edit-assets-title
+  color: #e8f2ff
+  font-size: 23rpx
+  font-weight: 800
+
+.storyboard-edit-assets-tip
+  color: #7f8da8
+  font-size: 19rpx
+  flex: 1
+  text-align: right
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap
+
+.storyboard-edit-assets-scroll
+  width: 100%
+  white-space: nowrap
+
+.storyboard-edit-assets-row
+  display: flex
+  gap: 10rpx
+  padding-bottom: 4rpx
+
+.storyboard-edit-asset-add
+  width: 128rpx
+  height: 92rpx
+  border-radius: 10rpx
+  border: 1rpx dashed rgba(255, 255, 255, 0.32)
+  background: #101010
+  display: flex
+  align-items: center
+  justify-content: center
+  flex-shrink: 0
+  box-sizing: border-box
+
+.storyboard-edit-asset-add-text
+  color: #a9b3c6
+  font-size: 36rpx
+  line-height: 1
+  font-weight: 700
+
+.storyboard-edit-asset-item
+  position: relative
+  width: 128rpx
+  height: 92rpx
+  border-radius: 10rpx
+  border: 2rpx solid rgba(255, 255, 255, 0.12)
+  background: #050505
+  overflow: hidden
+  flex-shrink: 0
+  box-sizing: border-box
+
+.storyboard-edit-asset-item--active
+  border-color: #ecee9f
+  box-shadow: 0 0 0 2rpx rgba(236, 238, 159, 0.2)
+
+.storyboard-edit-asset-thumb
+  width: 100%
+  height: 100%
+  display: block
+
+.storyboard-edit-asset-video-icon
+  width: 60rpx
+  height: 60rpx
+  margin: 16rpx auto 0
+  opacity: 0.9
+
+.storyboard-edit-asset-video-badge
+  position: absolute
+  left: 8rpx
+  bottom: 8rpx
+  height: 30rpx
+  padding: 0 10rpx
+  border-radius: 999rpx
+  background: rgba(0, 0, 0, 0.72)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.storyboard-edit-asset-video-badge-text
+  color: #fff
+  font-size: 18rpx
+  font-weight: 800
 
 .storyboard-edit-composer
   position: absolute
@@ -439,9 +685,11 @@
   justify-content: center
   flex-shrink: 0
 
-.storyboard-edit-submit-icon
-  width: 36rpx
-  height: 36rpx
+.storyboard-edit-submit-arrow
+  color: #141414
+  font-size: 38rpx
+  font-weight: 900
+  line-height: 1
 
 .storyboard-edit-submit-loading
   color: #141414
@@ -565,4 +813,19 @@
 .storyboard-sheet-confirm-text
   font-size: 24rpx
   color: #151515
+  font-weight: 800
+
+.storyboard-sheet-danger
+  margin-top: 14rpx
+  height: 68rpx
+  border-radius: 14rpx
+  border: 1rpx solid rgba(255, 90, 95, 0.4)
+  background: rgba(255, 90, 95, 0.08)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.storyboard-sheet-danger-text
+  font-size: 24rpx
+  color: #ff8a8e
   font-weight: 800

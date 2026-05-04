@@ -12,7 +12,7 @@ function firstNonEmptyString(...values: unknown[]): string {
  * n8n calls this endpoint after async video subtitle extraction.
  * Expected body (array or object):
  *   { success: true, transcript: "...", words_estimate: N, language: "...",
- *     script_id?: "...", reference_item_id?: "..." }
+ *     script_id?: "...", reference_item_id?: "...", my_note_id?: "..." }
  */
 export async function POST(request: NextRequest) {
   let body: any;
@@ -67,8 +67,23 @@ export async function POST(request: NextRequest) {
     request.nextUrl.searchParams.get("referenceItemId"),
   ) || undefined;
 
+  const myNoteId = firstNonEmptyString(
+    data?.my_note_id,
+    data?.myNoteId,
+    data?.note_id,
+    data?.noteId,
+    nested?.my_note_id,
+    nested?.myNoteId,
+    nested?.note_id,
+    nested?.noteId,
+    request.nextUrl.searchParams.get("my_note_id"),
+    request.nextUrl.searchParams.get("myNoteId"),
+    request.nextUrl.searchParams.get("note_id"),
+    request.nextUrl.searchParams.get("noteId"),
+  ) || undefined;
+
   try {
-    await persistExtractedText({ scriptId, referenceItemId, extractedText });
+    await persistExtractedText({ scriptId, referenceItemId, myNoteId, extractedText });
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[extract/callback] persist error", error);

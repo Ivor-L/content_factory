@@ -10,9 +10,6 @@ import styleLibIcon from '../../assets/icons/profile-lib-style.png';
 import knowledgeLibIcon from '../../assets/icons/profile-lib-knowledge.png';
 import promoShareIcon from '../../assets/icons/promo-share.png';
 import promoPointsIcon from '../../assets/icons/promo-points.png';
-import menuFavoriteIcon from '../../assets/icons/profile-menu/favorite.svg';
-import menuAboutIcon from '../../assets/icons/profile-menu/about.svg';
-import menuKeyIcon from '../../assets/icons/profile-menu/key.svg';
 import './index.sass';
 
 export default function ProfilePage() {
@@ -40,22 +37,6 @@ export default function ProfilePage() {
       }
     })();
   });
-
-  const handleUnlock = () => {
-    Taro.showToast({ title: '会员功能开发中', icon: 'none' });
-  };
-
-  const handlePromo = (title: string) => {
-    if (title === '算力消耗') {
-      Taro.navigateTo({ url: '/subpages/points-records/index' });
-      return;
-    }
-    if (title === '分享赚钱') {
-      Taro.navigateTo({ url: '/subpages/referrals/index' });
-      return;
-    }
-    Taro.showToast({ title: `${title} 开发中`, icon: 'none' });
-  };
 
   const handleOpenLibrary = (title: string) => {
     const openLibraryPage = async (url: string) => {
@@ -195,11 +176,11 @@ export default function ProfilePage() {
       cancelText: '取消',
     });
 
-    if (!modal.confirm) return;
+    if (!modal.confirm) return false;
     const apiKey = (modal.content || '').trim();
     if (!apiKey) {
       Taro.showToast({ title: 'API Key 不能为空', icon: 'none' });
-      return;
+      return false;
     }
 
     try {
@@ -208,7 +189,7 @@ export default function ProfilePage() {
         Taro.setStorageSync('API_KEY', apiKey);
         setProfile((prev) => ({ ...(prev || {}), apiKey }));
         Taro.showToast({ title: '已绑定 API Key', icon: 'success' });
-        return;
+        return true;
       }
 
       const res = await Taro.request({
@@ -229,15 +210,57 @@ export default function ProfilePage() {
       if (!payload?.valid) {
         const reason = payload?.reason === 'already_bound' ? '该 Key 已被其他账号绑定' : '无效的 API Key';
         Taro.showToast({ title: reason, icon: 'none' });
-        return;
+        return false;
       }
 
       Taro.setStorageSync('API_KEY', apiKey);
       setProfile((prev) => ({ ...(prev || {}), apiKey }));
       Taro.showToast({ title: '已绑定 API Key', icon: 'success' });
+      return true;
     } catch {
       Taro.showToast({ title: '绑定失败，请重试', icon: 'none' });
+      return false;
     }
+  };
+
+  const openSubpageSafely = async (url: string) => {
+    const pages = Taro.getCurrentPages();
+    const shouldRedirect = pages.length >= 9;
+    try {
+      if (shouldRedirect) {
+        await Taro.redirectTo({ url });
+        return;
+      }
+      await Taro.navigateTo({ url });
+    } catch {
+      try {
+        await Taro.redirectTo({ url });
+      } catch {
+        Taro.showToast({ title: '页面打开失败，请稍后重试', icon: 'none' });
+      }
+    }
+  };
+
+  const ensureApiKey = async () => {
+    const apiKey = profile?.apiKey || Taro.getStorageSync('API_KEY') || '';
+    if (apiKey) return true;
+    return handleBindApiKey();
+  };
+
+  const handlePromo = async (title: string) => {
+    if (title === '算力消耗') {
+      if (await ensureApiKey()) {
+        await openSubpageSafely('/subpages/points-records/index');
+      }
+      return;
+    }
+    if (title === '分享有礼') {
+      if (await ensureApiKey()) {
+        await openSubpageSafely('/subpages/referrals/index');
+      }
+      return;
+    }
+    Taro.showToast({ title: `${title} 开发中`, icon: 'none' });
   };
 
   const handleSwitchLogin = () => {
@@ -279,7 +302,7 @@ export default function ProfilePage() {
         <Text className='profile-hero-points-label'>当前算力值</Text>
         <Text className='profile-hero-points-value'>{typeof profile?.points === 'number' ? profile.points : '--'}</Text>
         <View className='profile-hero-actions'>
-          <View className='profile-hero-btn profile-hero-btn--primary' onClick={handleUnlock}>
+          <View className='profile-hero-btn profile-hero-btn--primary' onClick={handleBindApiKey}>
             <Text className='profile-hero-btn-text profile-hero-btn-text--primary'>立即解锁</Text>
           </View>
           <View className='profile-hero-btn' onClick={() => Taro.showToast({ title: '客服功能开发中', icon: 'none' })}>
@@ -312,9 +335,9 @@ export default function ProfilePage() {
       </View>
 
       <View className='profile-promo-grid'>
-        <View className='profile-promo-card' onClick={() => handlePromo('分享赚钱')}>
+        <View className='profile-promo-card' onClick={() => handlePromo('分享有礼')}>
           <View>
-            <Text className='profile-promo-title'>分享赚钱</Text>
+            <Text className='profile-promo-title'>分享有礼</Text>
             <Text className='profile-promo-desc'>分享内容赚算力值</Text>
           </View>
           <Image className='profile-promo-icon' src={promoShareIcon} mode='aspectFit' />
@@ -326,30 +349,6 @@ export default function ProfilePage() {
             <Text className='profile-promo-desc'>算力扣除换权益</Text>
           </View>
           <Image className='profile-promo-icon' src={promoPointsIcon} mode='aspectFit' />
-        </View>
-      </View>
-
-      <View className='profile-menu-card'>
-        <View className='profile-menu-row' onClick={() => Taro.navigateTo({ url: '/subpages/favorites/index' })}>
-          <View className='profile-menu-main'>
-            <Image className='profile-menu-icon' src={menuFavoriteIcon} mode='aspectFit' />
-            <Text className='profile-menu-left'>我的收藏</Text>
-          </View>
-          <Text className='profile-menu-arrow'>›</Text>
-        </View>
-        <View className='profile-menu-row'>
-          <View className='profile-menu-main'>
-            <Image className='profile-menu-icon' src={menuAboutIcon} mode='aspectFit' />
-            <Text className='profile-menu-left'>关于我们</Text>
-          </View>
-          <Text className='profile-menu-arrow'>›</Text>
-        </View>
-        <View className='profile-menu-row' onClick={handleBindApiKey}>
-          <View className='profile-menu-main'>
-            <Image className='profile-menu-icon' src={menuKeyIcon} mode='aspectFit' />
-            <Text className='profile-menu-left'>绑定 API Key</Text>
-          </View>
-          <Text className='profile-menu-arrow'>›</Text>
         </View>
       </View>
     </View>

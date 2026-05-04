@@ -1,10 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestUserContext } from "@/lib/authServer";
-import {
-  buildCanvasUpstreamHeaders,
-  resolveCanvasUpstreamApiKey,
-  resolveCanvasUpstreamEndpoint,
-} from "@/lib/canvasUpstream";
 
 type NormalizePayload = {
   markdown: string;
@@ -14,6 +9,29 @@ type NormalizePayload = {
 
 const MODEL = process.env.CLOUD_WRITING_MODEL || process.env.CLOUD_DEFAULT_MODEL || "gpt-4o-mini";
 const MAX_SOURCE_LENGTH = 16000;
+
+function readEnv(name: string) {
+  return (process.env[name] || "").trim();
+}
+
+function normalizeBaseUrl(baseUrl: string) {
+  return baseUrl.replace(/\/+$/, "");
+}
+
+function resolveSystemChatEndpoint() {
+  const explicit = readEnv("CLOUD_CHAT_COMPLETIONS_URL");
+  if (explicit) return explicit;
+  const baseUrl = readEnv("CLOUD_API_BASE_URL");
+  if (!baseUrl) return "";
+  const normalized = normalizeBaseUrl(baseUrl);
+  return normalized.endsWith("/chat/completions")
+    ? normalized
+    : `${normalized}/chat/completions`;
+}
+
+function resolveSystemApiKey() {
+  return readEnv("CLOUD_API_KEY");
+}
 
 function sanitizeInput(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -90,15 +108,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // AI 一键优化固定走系统 key，不使用用户个人 API key。
-  const upstreamApiKey = resolveCanvasUpstreamApiKey(null);
-  if (!upstreamApiKey) {
-    return NextResponse.json({ error: "画布服务尚未配置，请联系管理员处理。" }, { status: 400 });
+  // AI 排版固定走系统云模型 key，不经过画布 upstream/invite token 通道。
+  const systemApiKey = resolveSystemApiKey();
+  if (!systemApiKey) {
+    return NextResponse.json({ error: "系统 AI 服务尚未配置，请联系管理员处理。" }, { status: 500 });
   }
 
-  const endpoint = resolveCanvasUpstreamEndpoint("chat");
+  const endpoint = resolveSystemChatEndpoint();
   if (!endpoint) {
-    return NextResponse.json({ error: "缺少画布对话接口配置" }, { status: 501 });
+    return NextResponse.json({ error: "缺少系统 AI 对话接口配置" }, { status: 501 });
   }
 
   const body = await request.json().catch(() => null);
@@ -111,7 +129,10 @@ export async function POST(request: NextRequest) {
   try {
     const upstream = await fetch(endpoint, {
       method: "POST",
-      headers: buildCanvasUpstreamHeaders({ userId, apiKey: upstreamApiKey }),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${systemApiKey}`,
+      },
       body: JSON.stringify({
         model: MODEL,
         stream: false,

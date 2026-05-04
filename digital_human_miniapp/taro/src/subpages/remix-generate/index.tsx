@@ -165,6 +165,7 @@ export default function RemixGeneratePage() {
         title: `爆款复刻-${durationSeconds}s`,
         script: strategy === 'STORYBOARD' ? `参考视频复刻，目标时长${durationSeconds}秒` : '',
         productId: selectedProductId || undefined,
+        characterId: selectedCharacter.id,
         source: 'miniapp_remix_generate_page',
         metadata: {
           entry: 'remix_generate_page',

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getRequestUserContext } from "@/lib/authServer";
+import { toInputJson } from "@/lib/jsonUtils";
 
 const webhookUrl =
   process.env.N8N_EXTRACT_VIDEO_TEXT_WEBHOOK ||
@@ -235,11 +236,13 @@ export async function POST(request: NextRequest) {
 export async function persistExtractedText({
   scriptId,
   referenceItemId,
+  myNoteId,
   extractedText,
   script,
 }: {
   scriptId?: string;
   referenceItemId?: string;
+  myNoteId?: string;
   extractedText: string;
   script?: { id: string; breakdown: string | null } | null;
 }) {
@@ -282,6 +285,42 @@ export async function persistExtractedText({
             ...existingPayload,
             scriptText: extractedText,
           },
+        },
+      });
+    }
+  }
+
+  // Persist to miniapp-collected my note.
+  if (myNoteId) {
+    const myNote = await prisma.imageTextReplicationTask.findUnique({
+      where: { id: myNoteId },
+      select: { generatedImages: true },
+    });
+
+    if (myNote) {
+      const existingPayload =
+        myNote.generatedImages && typeof myNote.generatedImages === "object" && !Array.isArray(myNote.generatedImages)
+          ? (myNote.generatedImages as Record<string, unknown>)
+          : {};
+      const videoPayload =
+        existingPayload.video && typeof existingPayload.video === "object" && !Array.isArray(existingPayload.video)
+          ? (existingPayload.video as Record<string, unknown>)
+          : {};
+
+      await prisma.imageTextReplicationTask.update({
+        where: { id: myNoteId },
+        data: {
+          status: "VIDEO_COPY_COMPLETED",
+          sourceText: extractedText,
+          generatedImages: toInputJson({
+            ...existingPayload,
+            video: {
+              ...videoPayload,
+              extractedCopy: extractedText,
+              extractedAt: new Date().toISOString(),
+            },
+          }),
+          errorMessage: null,
         },
       });
     }

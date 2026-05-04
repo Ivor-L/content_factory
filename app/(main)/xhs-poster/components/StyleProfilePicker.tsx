@@ -4,6 +4,7 @@
 
 import { useMemo, useState } from 'react';
 import type { StylePresetSummary } from '@/types/xhs-text2image';
+import { getStylePreviewImageUrl } from '@/lib/stylePreviewImage';
 import { CheckCircle2, RefreshCw, Search } from 'lucide-react';
 
 interface StyleProfilePickerProps {
@@ -75,8 +76,14 @@ export function StyleProfilePicker({
                 isActive ? 'border-primary ring-2 ring-primary/30 shadow-lg' : 'border-gray-100 hover:border-primary/40'
               }`}
             >
-              {style.previewUrl ? (
-                <img src={style.previewUrl} alt={style.name} className="h-40 w-full rounded-t-2xl object-cover" />
+              {getStylePreviewImageUrl(style) ? (
+                <img
+                  src={getStylePreviewImageUrl(style) ?? ""}
+                  alt={style.name}
+                  className="h-40 w-full rounded-t-2xl object-cover"
+                  loading="lazy"
+                  decoding="async"
+                />
               ) : (
                 <div className="h-40 w-full rounded-t-2xl bg-gradient-to-br from-amber-50 to-rose-50" />
               )}

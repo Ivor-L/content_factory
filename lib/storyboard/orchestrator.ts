@@ -21,6 +21,8 @@ export interface StoryboardJobRequest {
   title?: string;
   script?: string;
   creativeTaskId?: string;
+  characterId?: string;
+  productId?: string;
   metadata?: Record<string, unknown>;
   source?: string;
   statusOnCreate?: string;
@@ -46,6 +48,7 @@ export function parseStoryboardJobBody(body: unknown): {
   script: string;
   creativeTaskId: string;
   productId: string;
+  characterId: string;
   metadata: Record<string, unknown>;
   source: string;
 } | null {
@@ -60,12 +63,13 @@ export function parseStoryboardJobBody(body: unknown): {
   const script = readString(input.script || input.script_content || input.scriptContent);
   const creativeTaskId = readString(input.creativeTaskId || input.creative_task_id);
   const productId = readString(input.product_id || input.productId);
+  const characterId = readString(input.character_id || input.characterId);
   const source = readString(input.source);
   const metadata = input.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata)
     ? (input.metadata as Record<string, unknown>)
     : {};
 
-  return { pipelineKey, title, script, creativeTaskId, productId, metadata, source };
+  return { pipelineKey, title, script, creativeTaskId, productId, characterId, metadata, source };
 }
 
 function buildN8nPayload(input: {
@@ -108,6 +112,35 @@ function buildN8nPayload(input: {
   };
 }
 
+async function triggerStoryboardWorkflow(input: {
+  taskId: string;
+  webhookUrl: string;
+  payload: Record<string, unknown>;
+}) {
+  const { taskId, webhookUrl, payload } = input;
+
+  try {
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => response.statusText);
+      throw new Error(`n8n webhook failed: ${response.status} ${text}`);
+    }
+  } catch (error) {
+    console.error('[storyboard-orchestrator] Failed to trigger n8n workflow', error);
+    const failedTask = await prisma.storyboardTask.update({
+      where: { id: taskId },
+      data: { status: 'FAILED', progress: 0 },
+    });
+    await syncTaskToSummary({ taskType: 'storyboard', taskId, operation: 'update' });
+    emitStoryboardTaskUpsert(failedTask);
+  }
+}
+
 export async function createStoryboardJob(request: StoryboardJobRequest): Promise<StoryboardJobResult> {
   const profile = getStoryboardWorkflowProfile(request.pipelineKey);
 
@@ -144,25 +177,11 @@ export async function createStoryboardJob(request: StoryboardJobRequest): Promis
     workflowName: profile.workflowName,
   });
 
-  try {
-    const response = await fetch(profile.webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => response.statusText);
-      throw new Error(`n8n webhook failed: ${response.status} ${text}`);
-    }
-  } catch (error) {
-    const failedTask = await prisma.storyboardTask.update({
-      where: { id: task.id },
-      data: { status: 'FAILED', progress: 0 },
-    });
-    emitStoryboardTaskUpsert(failedTask);
-    throw error;
-  }
+  void triggerStoryboardWorkflow({
+    taskId: task.id,
+    webhookUrl: profile.webhookUrl,
+    payload,
+  });
 
   return {
     taskId: syncedTask.id,

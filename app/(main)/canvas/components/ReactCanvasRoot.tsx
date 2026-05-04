@@ -111,6 +111,7 @@ import {
 import type { CanvasProjectRecord } from "../types";
 import type { RuntimeCanvasNode } from "../lib/canvasDataAdapters";
 import { toForcedProxyUrl, toProxyImgUrl } from "@/lib/mediaProxy";
+import { getStylePreviewImageUrl } from "@/lib/stylePreviewImage";
 
 const CANVAS_PERF_TRACING = process.env.NODE_ENV !== "production";
 const PERF_LOG_THROTTLE_MS = 2000;
@@ -4080,7 +4081,7 @@ function ImageTextGroupNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
 
   // ── Smart Create state ───────────────────────────────────────────────────────
   const [scAuthToken, setScAuthToken] = useState<string | null>(null);
-  const [scStyles, setScStyles] = useState<{ id: string; name: string; previewUrl?: string | null }[]>([]);
+  const [scStyles, setScStyles] = useState<{ id: string; name: string; previewUrl?: string | null; thumbnailUrl?: string | null }[]>([]);
   const [scStylesLoading, setScStylesLoading] = useState(false);
   const [scSelectedStyleId, setScSelectedStyleId] = useState<string | null>(null);
   const [scCount, setScCount] = useState(3);
@@ -4108,7 +4109,7 @@ function ImageTextGroupNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
       .then((r) => r.json())
       .then((p) => {
         if (cancelled) return;
-        const rows = Array.isArray(p?.data) ? p.data as { id: string; name: string; previewUrl?: string | null }[] : [];
+        const rows = Array.isArray(p?.data) ? p.data as { id: string; name: string; previewUrl?: string | null; thumbnailUrl?: string | null }[] : [];
         setScStyles(rows);
         if (rows.length > 0 && !scSelectedStyleId) setScSelectedStyleId(rows[0].id);
       })
@@ -4405,38 +4406,42 @@ function ImageTextGroupNodeCard(props: NodeProps<Node<MinimalFlowNodeData>>) {
               </div>
             ) : (
               <div className="mb-3 flex gap-2 overflow-x-auto pb-1 nopan">
-                {scStyles.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setScSelectedStyleId(s.id); }}
-                    className={clsx(
-                      "flex-shrink-0 flex flex-col items-center gap-1 rounded-xl border-2 overflow-hidden transition",
-                      scSelectedStyleId === s.id
-                        ? "border-[var(--tenant-primary)]"
-                        : "border-transparent hover:border-[var(--canvas-border-md)]",
-                    )}
-                  >
-                    <div className="relative h-14 w-14 overflow-hidden bg-[var(--canvas-hover)]">
-                      <div className="flex h-full w-full items-center justify-center px-1 text-center text-[10px] leading-tight text-[var(--canvas-text-30)]">
-                        {s.name}
+                {scStyles.map((s) => {
+                  const previewImageUrl = getStylePreviewImageUrl(s);
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setScSelectedStyleId(s.id); }}
+                      className={clsx(
+                        "flex-shrink-0 flex flex-col items-center gap-1 rounded-xl border-2 overflow-hidden transition",
+                        scSelectedStyleId === s.id
+                          ? "border-[var(--tenant-primary)]"
+                          : "border-transparent hover:border-[var(--canvas-border-md)]",
+                      )}
+                    >
+                      <div className="relative h-14 w-14 overflow-hidden bg-[var(--canvas-hover)]">
+                        <div className="flex h-full w-full items-center justify-center px-1 text-center text-[10px] leading-tight text-[var(--canvas-text-30)]">
+                          {s.name}
+                        </div>
+                        {previewImageUrl ? (
+                          <img
+                            src={toProxyImgUrl(previewImageUrl)}
+                            alt={s.name}
+                            className="absolute inset-0 h-full w-full object-cover"
+                            loading="lazy"
+                            decoding="async"
+                            onError={(e) => {
+                              // Fall back to text tile when remote preview is blocked.
+                              e.currentTarget.style.display = "none";
+                            }}
+                          />
+                        ) : null}
                       </div>
-                      {s.previewUrl ? (
-                        <img
-                          src={toProxyImgUrl(s.previewUrl)}
-                          alt={s.name}
-                          className="absolute inset-0 h-full w-full object-cover"
-                          loading="lazy"
-                          onError={(e) => {
-                            // Fall back to text tile when remote preview is blocked.
-                            e.currentTarget.style.display = "none";
-                          }}
-                        />
-                      ) : null}
-                    </div>
-                    <span className="w-14 truncate px-0.5 pb-0.5 text-center text-[10px] text-[var(--canvas-text-50)]">{s.name}</span>
-                  </button>
-                ))}
+                      <span className="w-14 truncate px-0.5 pb-0.5 text-center text-[10px] text-[var(--canvas-text-50)]">{s.name}</span>
+                    </button>
+                  );
+                })}
                 {scStyles.length === 0 && !scStylesLoading && (
                   <p className="text-[11px] text-[var(--canvas-text-30)]">暂无风格预设</p>
                 )}

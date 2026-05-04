@@ -168,8 +168,8 @@ function resolveDefaultCanvasApiKey() {
   const candidates = [
     readEnv("CANVAS_UPSTREAM_DEFAULT_API_KEY"),
     readEnv("CANVAS_CREDITS_DEFAULT_API_KEY"),
-    readEnv("DEFAULT_USER_API_KEY"),
     readEnv("CLOUD_API_KEY"),
+    readEnv("DEFAULT_USER_API_KEY"),
   ];
   for (const candidate of candidates) {
     if (candidate) {

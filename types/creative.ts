@@ -109,6 +109,7 @@ export interface StylePresetLite {
   description?: string | null;
   spec?: Record<string, any> | null;
   previewUrl?: string | null;
+  thumbnailUrl?: string | null;
 }
 
 export interface VoiceProfileLite {

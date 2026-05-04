@@ -35,6 +35,10 @@ export function stylePreviewPath(userId: string, filename: string) {
   return composePath("styles", userId, filename);
 }
 
+export function stylePreviewThumbnailPath(userId: string, filename: string) {
+  return composePath("styles", userId, `thumb-${filename}`);
+}
+
 export function writingStyleAssetPath(userId: string, filename: string) {
   return composePath("writing-styles", userId, filename);
 }

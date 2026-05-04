@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import {
   POINTS_API_BASES,
-  getStoredUserApiKey,
+  resolveRequestApiKey,
   readTextSafe,
   looksLikeHtml
 } from '@/lib/points-server';
@@ -247,7 +247,7 @@ function shouldIncludeRaw(searchParams: URLSearchParams) {
 }
 
 export async function GET(request: Request) {
-  const apiKey = await getStoredUserApiKey(request);
+  const apiKey = await resolveRequestApiKey(request);
 
   if (!apiKey) {
     return NextResponse.json({ error: 'Unauthorized or no API key linked' }, { status: 401 });

@@ -81,18 +81,26 @@
   margin-top: calc(env(safe-area-inset-top) + 272rpx)
 
 .works-masonry
-  column-count: 2
-  column-gap: 16rpx
+  display: flex
+  gap: 16rpx
   padding: 14rpx 24rpx 130rpx
   box-sizing: border-box
 
+.works-column
+  flex: 1
+  min-width: 0
+  display: flex
+  flex-direction: column
+  gap: 16rpx
+
 .works-card
-  break-inside: avoid
   background: #141414
   border-radius: 24rpx
   border: 1rpx solid rgba(145, 175, 229, 0.18)
   overflow: hidden
-  margin-bottom: 16rpx
+
+.works-card--processing
+  border-color: rgba(236, 238, 159, 0.34)
 
 .works-cover
   position: relative
@@ -109,7 +117,8 @@
 .works-cover--ratio-3x4
   aspect-ratio: 3 / 4
 
-.works-cover-image
+.works-cover-image,
+.works-cover-video
   width: 100%
   height: 100%
   display: block
@@ -232,6 +241,37 @@
   font-weight: 700
   line-height: 1
 
+.works-processing-overlay
+  position: absolute
+  inset: 0
+  display: flex
+  flex-direction: column
+  align-items: center
+  justify-content: center
+  gap: 14rpx
+  background: linear-gradient(180deg, rgba(5, 5, 5, 0.18), rgba(5, 5, 5, 0.56))
+  z-index: 4
+
+.works-processing-spinner
+  width: 54rpx
+  height: 54rpx
+  border-radius: 999rpx
+  border: 5rpx solid rgba(255, 255, 255, 0.28)
+  border-top-color: #ecee9f
+  animation: worksSpin 0.9s linear infinite
+
+.works-processing-text
+  color: #fff
+  font-size: 23rpx
+  font-weight: 800
+  text-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.5)
+
+@keyframes worksSpin
+  from
+    transform: rotate(0deg)
+  to
+    transform: rotate(360deg)
+
 .works-card-body
   padding: 18rpx
 
@@ -247,10 +287,33 @@
   line-height: 1.42
   margin-bottom: 10rpx
 
+.works-card-preview
+  display: -webkit-box
+  -webkit-box-orient: vertical
+  -webkit-line-clamp: 3
+  overflow: hidden
+  text-overflow: ellipsis
+  color: #aebfdd
+  font-size: 22rpx
+  line-height: 1.48
+  margin-bottom: 12rpx
+  white-space: pre-wrap
+
 .works-card-bottom
   display: flex
   align-items: center
-  justify-content: flex-end
+  justify-content: space-between
+  gap: 12rpx
+
+.works-card-status
+  height: 34rpx
+  padding: 0 12rpx
+  border-radius: 999rpx
+  background: rgba(236, 238, 159, 0.14)
+  color: #ecee9f
+  font-size: 19rpx
+  font-weight: 700
+  line-height: 34rpx
 
 .works-card-date
   font-size: 21rpx

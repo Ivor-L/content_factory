@@ -18,7 +18,7 @@ export async function PATCH(
 
     const { segmentId } = await params;
     const body = await req.json();
-    const { subject_refs, video_refs, imagePrompt, videoPrompt, originalScript, rewrittenScript, push_image_url, generatedImage, generatedVideo, status } = body;
+    const { subject_refs, video_refs, imagePrompt, videoPrompt, originalScript, rewrittenScript, push_image_url, push_video_url, generatedImage, generatedVideo, status } = body;
 
     // Verify segment belongs to user's task
     const segment = await prisma.storyboardSegment.findFirst({
@@ -55,6 +55,16 @@ export async function PATCH(
         history.unshift(segment.generatedImage);
       }
       updatedParams.image_history = history.slice(0, 20); // keep max 20
+    }
+
+    if (push_video_url) {
+      const history: string[] = Array.isArray(currentParams.video_history)
+        ? currentParams.video_history
+        : [];
+      if (segment.generatedVideo && !history.includes(segment.generatedVideo)) {
+        history.unshift(segment.generatedVideo);
+      }
+      updatedParams.video_history = history.slice(0, 20);
     }
 
     const updateData: Record<string, any> = {
@@ -136,4 +146,3 @@ export async function DELETE(
     );
   }
 }
-

@@ -17,6 +17,7 @@
     "postinstall": "prisma generate",
     "workers:assets": "tsx workers/assetProcessor.ts",
     "styles:previews": "tsx scripts/generate-style-previews.ts",
+    "styles:thumbs": "tsx scripts/generate-system-style-thumbnails.ts",
     "layouts:previews": "tsx scripts/regenerate-layout-previews.ts",
     "build:extensions": "tsx scripts/build-extension-packages.ts",
     "build:nexapi:apifox": "tsx scripts/nexapi/build-apifox.ts",

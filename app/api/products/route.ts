@@ -2,6 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRequestUserContext } from "@/lib/authServer";
 import prisma from "@/lib/prisma";
 
+const productSummarySelect = {
+  id: true,
+  name: true,
+  description: true,
+  sellingPoints: true,
+  sellingPointsText: true,
+  images: true,
+  analysisResult: true,
+  status: true,
+  progress: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
 export async function GET(request: NextRequest) {
   try {
     const { userId } = await getRequestUserContext(request);
@@ -11,11 +25,7 @@ export async function GET(request: NextRequest) {
 
     const products = await prisma.product.findMany({
       where: { userId },
-      select: {
-        id: true,
-        name: true,
-        images: true,
-      },
+      select: productSummarySelect,
       orderBy: { createdAt: "desc" },
     });
 
@@ -69,11 +79,7 @@ export async function POST(request: NextRequest) {
         status: "PENDING",
         progress: 0,
       } as any,
-      select: {
-        id: true,
-        name: true,
-        images: true,
-      },
+      select: productSummarySelect,
     });
 
     return NextResponse.json({ success: true, data: product }, { status: 201 });

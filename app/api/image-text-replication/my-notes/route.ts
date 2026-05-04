@@ -185,6 +185,18 @@ async function removeMyNotes(request: NextRequest, body: Record<string, unknown>
     },
   });
 
+  if (sourceId || sourceUrl) {
+    await prisma.viralReferenceItem.deleteMany({
+      where: {
+        ingestedBy: userId,
+        OR: [
+          ...(sourceId ? [{ id: sourceId }] : []),
+          ...(sourceUrl ? [{ sourceUrl }] : []),
+        ],
+      },
+    });
+  }
+
   return NextResponse.json({
     success: true,
     deleted: result.count,

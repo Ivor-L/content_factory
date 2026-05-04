@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getRequestUserContext } from '@/lib/authServer';
 import { emitStoryboardTaskUpsert } from '@/lib/storyboardEvents';
+import { deleteStoryboardTaskForRequest, findStoryboardTaskForUser } from '../_taskRoute';
 
 export async function PATCH(
   req: NextRequest,
@@ -23,10 +24,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
   }
 
-  const task = await prisma.storyboardTask.findUnique({
-    where: { id },
-    select: { id: true, userId: true },
-  });
+  const task = await findStoryboardTaskForUser(id, userId);
 
   if (!task) {
     return NextResponse.json({ error: 'Storyboard task not found' }, { status: 404 });
@@ -37,7 +35,7 @@ export async function PATCH(
   }
 
   const updated = await prisma.storyboardTask.update({
-    where: { id },
+    where: { id: task.id },
     data: {
       scenePrompt: trimmedTitle || null,
     },
@@ -47,3 +45,5 @@ export async function PATCH(
 
   return NextResponse.json({ success: true, task: { id: updated.id, scenePrompt: updated.scenePrompt } });
 }
+
+export const DELETE = deleteStoryboardTaskForRequest;

@@ -1,6 +1,7 @@
 import prisma from '@/lib/prisma';
 import { toInputJson } from '@/lib/jsonUtils';
 import { IMAGE_UNDERSTANDING_PROMPT_EXACT_TEXT } from '@/lib/imageUnderstandingPrompts';
+import { XHS_TITLE_FORMULA_PROMPT } from '@/lib/xhsTitleFormulaPrompt';
 import { randomUUID } from 'node:crypto';
 
 const MAX_RECOGNIZE_CONCURRENCY = 3;
@@ -68,6 +69,45 @@ function extractJsonObject(raw: string): Record<string, unknown> | null {
   }
 }
 
+function parseStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => normalizeText(item)).filter(Boolean);
+}
+
+function parseTitleFormulaCandidates(value: unknown): TitleFormulaCandidate[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      const obj = parseObject(item);
+      if (!obj) return null;
+      const title = normalizeText(obj.title);
+      const formulaId = Number(obj.formulaId);
+      const triggerType = normalizeText(obj.triggerType);
+      const formulaTemplate = normalizeText(obj.formulaTemplate);
+      const originalExample = normalizeText(obj.originalExample);
+      const reason = normalizeText(obj.reason);
+      if (!title || !Number.isInteger(formulaId) || formulaId < 1 || formulaId > 75) return null;
+      return {
+        title,
+        formulaId,
+        triggerType,
+        formulaTemplate,
+        originalExample,
+        reason,
+      };
+    })
+    .filter((item): item is TitleFormulaCandidate => Boolean(item));
+}
+
+type TitleFormulaCandidate = {
+  title: string;
+  formulaId: number;
+  triggerType: string;
+  formulaTemplate: string;
+  originalExample: string;
+  reason: string;
+};
+
 async function imageUrlToDataUrl(imageUrl: string): Promise<string> {
   if (imageUrl.startsWith('data:')) return imageUrl;
   const res = await fetch(imageUrl, { cache: 'no-store' });
@@ -133,7 +173,17 @@ async function callRewriteModel(params: {
   title: string;
   body: string;
   imageTexts: string[];
-}): Promise<{ title: string; body: string; imageTexts: string[] }> {
+}): Promise<{
+  title: string;
+  body: string;
+  imageTexts: string[];
+  titleFormula: {
+    topic: string;
+    industry: string;
+    candidates: TitleFormulaCandidate[];
+    top3: TitleFormulaCandidate[];
+  };
+}> {
   const baseUrl = getBaseUrl();
   const apiKey = getSystemApiKey();
   if (!baseUrl || !apiKey) {
@@ -141,15 +191,49 @@ async function callRewriteModel(params: {
   }
 
   const prompt = [
-    '你是一个小红书图文内容改写助手。请在保留原意和事实信息的前提下，进行二创改写。',
+    '你是一个小红书图文/视频笔记仿写助手。请在保留原意和事实信息的前提下，进行二创改写。',
+    '',
+    '标题必须严格使用下面的小红书标题公式工具规则：',
+    XHS_TITLE_FORMULA_PROMPT,
+    '',
     '改写要求：',
-    '1. 标题更有吸引力，但不夸张。',
+    '1. 标题必须从 75 个公式中匹配生成，不能自由发挥。',
     '2. 正文结构更清晰，可读性更好。',
-    '3. 图片文案逐条改写，保持与原图语义一致。',
-    '4. 输出 JSON，不要输出任何额外说明。',
+    '3. 图片文案或视频字幕逐条改写，保持与原内容语义一致。',
+    '4. 如果是视频笔记，imageTexts 可以为空，但 body 必须基于视频文案仿写。',
+    '5. 输出 JSON，不要输出任何额外说明。',
+    '6. title 字段必须等于 top3[0].title。',
     '',
     '输出格式：',
-    '{"title":"...","body":"...","imageTexts":["...", "..."]}',
+    [
+      '{',
+      '  "topic": "提取的话题",',
+      '  "industry": "提取的行业/领域",',
+      '  "title": "Top 1 标题，必须等于 top3[0].title",',
+      '  "titleCandidates": [',
+      '    {',
+      '      "title": "≤20字标题",',
+      '      "formulaId": 7,',
+      '      "triggerType": "好奇缺口",',
+      '      "formulaTemplate": "[一群人] 不会告诉你的建议",',
+      '      "originalExample": "会赚钱的博主不会告诉你的建议",',
+      '      "reason": "一句话解释为什么适合"',
+      '    }',
+      '  ],',
+      '  "top3": [',
+      '    {',
+      '      "title": "≤20字标题",',
+      '      "formulaId": 7,',
+      '      "triggerType": "好奇缺口",',
+      '      "formulaTemplate": "[一群人] 不会告诉你的建议",',
+      '      "originalExample": "会赚钱的博主不会告诉你的建议",',
+      '      "reason": "一句话解释为什么最推荐"',
+      '    }',
+      '  ],',
+      '  "body": "...",',
+      '  "imageTexts": ["...", "..."]',
+      '}',
+    ].join('\n'),
     '',
     `原标题：${params.title || '未命名标题'}`,
     `原正文：${params.body || '暂无正文'}`,
@@ -188,17 +272,24 @@ async function callRewriteModel(params: {
   );
 
   const parsed = extractJsonObject(raw);
-  const title = normalizeText(parsed?.title) || clipText(params.title || '仿写标题', 60);
+  const candidates = parseTitleFormulaCandidates(parsed?.titleCandidates);
+  const top3Raw = parseTitleFormulaCandidates(parsed?.top3);
+  const top3 = top3Raw.length > 0 ? top3Raw.slice(0, 3) : candidates.slice(0, 3);
+  const formulaTitle = normalizeText(top3[0]?.title || candidates[0]?.title);
+  const title = formulaTitle || normalizeText(parsed?.title) || clipText(params.title || '仿写标题', 60);
   const body = normalizeText(parsed?.body) || params.body;
-  const imageTextsRaw = Array.isArray(parsed?.imageTexts) ? parsed?.imageTexts : [];
-  const imageTexts = imageTextsRaw
-    .map((item) => normalizeText(item))
-    .filter(Boolean);
+  const imageTexts = parseStringArray(parsed?.imageTexts);
 
   return {
     title,
     body,
     imageTexts: imageTexts.length > 0 ? imageTexts : params.imageTexts,
+    titleFormula: {
+      topic: normalizeText(parsed?.topic),
+      industry: normalizeText(parsed?.industry),
+      candidates,
+      top3,
+    },
   };
 }
 
@@ -324,7 +415,8 @@ export async function rewriteMyNoteAndCreateWork(noteId: string): Promise<{ work
     })
     .filter(Boolean);
 
-  if (note.status !== 'BREAKDOWN_COMPLETED') {
+  const normalizedStatus = normalizeText(note.status).toUpperCase();
+  if (!['BREAKDOWN_COMPLETED', 'VIDEO_COPY_COMPLETED'].includes(normalizedStatus)) {
     throw new Error('请先等待解析完成再仿写');
   }
 
@@ -347,6 +439,7 @@ export async function rewriteMyNoteAndCreateWork(noteId: string): Promise<{ work
       title: rewritten.title,
       body: rewritten.body,
       imageTexts: rewritten.imageTexts,
+      titleFormula: rewritten.titleFormula,
       rewrittenAt: new Date().toISOString(),
     };
 

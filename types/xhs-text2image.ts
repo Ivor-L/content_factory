@@ -75,6 +75,7 @@ export interface StylePresetSummary {
   name: string;
   description?: string | null;
   previewUrl?: string | null;
+  thumbnailUrl?: string | null;
   metadata?: Record<string, any> | null;
   spec?: Record<string, any> | null;
   status?: string | null;

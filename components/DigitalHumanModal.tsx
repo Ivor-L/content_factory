@@ -989,7 +989,11 @@ export function DigitalHumanModal({
       maxWidth="max-w-xl"
       zIndex={nestedModalZIndex}
     >
-      <CharacterForm onSuccess={handleCharacterModalSuccess} key={Number(isCharacterModalOpen)} />
+      <CharacterForm
+        onSuccess={handleCharacterModalSuccess}
+        onCancel={() => setIsCharacterModalOpen(false)}
+        key={Number(isCharacterModalOpen)}
+      />
     </Modal>
     </>
   );

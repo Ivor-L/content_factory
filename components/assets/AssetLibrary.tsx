@@ -139,6 +139,7 @@ type StylePreset = {
   userId?: string | null;
   description?: string | null;
   previewUrl?: string | null;
+  thumbnailUrl?: string | null;
   metadata?: Record<string, any> | null;
   spec?: Record<string, any> | null;
   createdAt?: string | null;
@@ -313,6 +314,16 @@ const getChipColorClass = (value: string, index: number) => {
   }
   const hash = Math.abs(hashString(value));
   return chipColorClasses[hash % chipColorClasses.length];
+};
+
+const getStyleListImageUrl = (style: Pick<StylePreset, "thumbnailUrl" | "previewUrl" | "metadata">) => {
+  const meta = parseMetadata(style.metadata);
+  return (
+    style.thumbnailUrl ||
+    (typeof meta.thumbnailUrl === "string" && meta.thumbnailUrl.trim() ? meta.thumbnailUrl : null) ||
+    style.previewUrl ||
+    null
+  );
 };
 
 type AssetLibraryProps = {
@@ -2502,6 +2513,7 @@ function StyleCard({
     onDelete?.(style);
   };
   const deletable = Boolean(isDeletable && onDelete);
+  const imageUrl = getStyleListImageUrl(style);
 
   return (
     <div
@@ -2512,12 +2524,14 @@ function StyleCard({
       className="rounded-2xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm overflow-hidden flex flex-col transition-shadow hover:border-gray-300 dark:hover:border-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900/60 dark:focus-visible:ring-white/60 text-left cursor-pointer"
     >
       <div className="relative w-full aspect-[4/5] bg-gray-100 dark:bg-gray-800 overflow-hidden">
-        {style.previewUrl ? (
+        {imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={style.previewUrl}
+            src={imageUrl}
             alt={displayName || style.name}
             className="w-full h-full object-cover"
+            loading="lazy"
+            decoding="async"
           />
         ) : (
           <StylePreviewPlaceholder spec={style.spec} />

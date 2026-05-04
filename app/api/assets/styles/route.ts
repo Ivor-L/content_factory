@@ -3,6 +3,26 @@ import prisma from "@/lib/prisma";
 import { getRequestUserContext } from "@/lib/authServer";
 import { ensureSystemStylePresetsSeeded } from "@/lib/systemStylePresets";
 
+const readMetadata = (value: unknown): Record<string, any> =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, any>)
+    : {};
+
+const readThumbnailUrl = (meta: Record<string, any>) =>
+  typeof meta.thumbnailUrl === "string" && meta.thumbnailUrl.trim()
+    ? meta.thumbnailUrl
+    : null;
+
+const readSystemThumbnailUrl = (previewUrl?: string | null) => {
+  if (!previewUrl) return null;
+  const match = previewUrl.match(/^(.*\/system-style-previews\/)([^/?#]+)\.(?:png|jpe?g|webp)([?#].*)?$/i);
+  if (!match) return null;
+  return `${match[1]}thumbs/${match[2]}.webp${match[3] ?? ""}`;
+};
+
+const resolveThumbnailUrl = (previewUrl: string | null | undefined, meta: Record<string, any>) =>
+  readThumbnailUrl(meta) ?? readSystemThumbnailUrl(previewUrl);
+
 export async function GET(request: NextRequest) {
   const { userId } = await getRequestUserContext(request);
   if (!userId) {
@@ -39,16 +59,15 @@ export async function GET(request: NextRequest) {
     });
 
     const normalized = styles.map((style) => {
-      const meta =
-        style.metadata && typeof style.metadata === "object" && !Array.isArray(style.metadata)
-          ? (style.metadata as Record<string, any>)
-          : {};
+      const meta = readMetadata(style.metadata);
       const status = meta.processingStatus ?? null;
+      const thumbnailUrl = resolveThumbnailUrl(style.previewUrl, meta);
       return {
         id: style.id,
         name: style.name,
         type: style.type,
         previewUrl: style.previewUrl,
+        thumbnailUrl,
         status,
       };
     });
@@ -65,11 +84,9 @@ export async function GET(request: NextRequest) {
   });
 
   const normalized = styles.map((style) => {
-    const meta = (style.metadata && typeof style.metadata === "object" && !Array.isArray(style.metadata))
-      ? (style.metadata as Record<string, any>)
-      : {};
+    const meta = readMetadata(style.metadata);
     const status = (style as any).status ?? meta.processingStatus ?? null;
-    return { ...style, status };
+    return { ...style, thumbnailUrl: resolveThumbnailUrl(style.previewUrl, meta), status };
   });
 
   return NextResponse.json({ data: normalized });

@@ -60,38 +60,66 @@ function normalizePosterSummaryStatus(rawStatus: string | null | undefined): str
   return status;
 }
 
-function extractFirstImageUrl(generatedImagesJson: unknown): string | null {
-  if (!generatedImagesJson) return null;
+function extractImageUrls(generatedImagesJson: unknown): string[] {
+  if (!generatedImagesJson) return [];
 
   let parsed: unknown = generatedImagesJson;
   if (typeof generatedImagesJson === 'string') {
     try {
       parsed = JSON.parse(generatedImagesJson);
     } catch {
-      return null;
+      return [];
     }
   }
 
-  if (!Array.isArray(parsed) || parsed.length === 0) return null;
+  if (!Array.isArray(parsed) || parsed.length === 0) return [];
 
-  const first = parsed[0];
-  if (typeof first === 'string') return first;
-  if (first && typeof first === 'object' && 'url' in first) {
-    const url = (first as { url?: unknown }).url;
-    return typeof url === 'string' && url.trim() ? url : null;
+  return parsed
+    .map((item) => {
+      if (typeof item === 'string') return item.trim();
+      if (item && typeof item === 'object' && 'url' in item) {
+        const url = (item as { url?: unknown }).url;
+        return typeof url === 'string' ? url.trim() : '';
+      }
+      return '';
+    })
+    .filter(Boolean);
+}
+
+function extractFirstImageUrl(generatedImagesJson: unknown): string | null {
+  return extractImageUrls(generatedImagesJson)[0] ?? null;
+}
+
+function attachPosterImagesToMetadata(
+  metadata: Prisma.JsonValue | null,
+  generatedImagesJson: unknown,
+): Prisma.JsonValue | null {
+  const images = extractImageUrls(generatedImagesJson);
+  if (images.length === 0) return metadata;
+
+  const metadataRecord = toMetadataRecord(metadata);
+  const currentLayout = metadataRecord.xhsLayout && typeof metadataRecord.xhsLayout === 'object' && !Array.isArray(metadataRecord.xhsLayout)
+    ? metadataRecord.xhsLayout as Record<string, unknown>
+    : {};
+  const existingImages = Array.isArray(currentLayout.images)
+    ? currentLayout.images.filter((url): url is string => typeof url === 'string' && url.trim().length > 0)
+    : [];
+
+  if (existingImages.length >= images.length) {
+    return Object.keys(metadataRecord).length > 0 ? (metadataRecord as Prisma.JsonValue) : metadata;
   }
-  return null;
+
+  return {
+    ...metadataRecord,
+    xhsLayout: {
+      ...currentLayout,
+      images,
+    },
+  } as Prisma.JsonValue;
 }
 
 async function reconcilePosterSummaries(
-  tasks: Array<{
-    id: string;
-    taskType: string;
-    taskId: string;
-    status: string;
-    thumbnailUrl: string | null;
-    progress: number | null;
-  }> & TaskSummaryRecord[]
+  tasks: TaskSummaryRecord[]
 ) {
   const posterTasks = tasks.filter(
     (task) => task.taskType === 'poster' && typeof task.taskId === 'string' && task.taskId,
@@ -127,9 +155,16 @@ async function reconcilePosterSummaries(
     const fallbackThumbnail = extractFirstImageUrl(source.generatedImagesJson);
     const hasMissingThumbnail = !task.thumbnailUrl && Boolean(fallbackThumbnail);
     const hasStatusMismatch = expectedStatus !== currentStatus;
+    const metadataWithImages = attachPosterImagesToMetadata(task.metadata, source.generatedImagesJson);
+    const hasMissingPosterImages = metadataWithImages !== task.metadata;
 
     if (!hasMissingThumbnail && !hasStatusMismatch) {
-      return task;
+      return hasMissingPosterImages
+        ? {
+            ...task,
+            metadata: metadataWithImages,
+          }
+        : task;
     }
 
     const updateData: {
@@ -160,6 +195,7 @@ async function reconcilePosterSummaries(
       status: hasStatusMismatch ? expectedStatus : task.status,
       progress: hasStatusMismatch && expectedStatus === 'COMPLETED' ? 100 : task.progress,
       thumbnailUrl: hasMissingThumbnail && fallbackThumbnail ? fallbackThumbnail : task.thumbnailUrl,
+      metadata: hasMissingPosterImages ? metadataWithImages : task.metadata,
     };
   });
 

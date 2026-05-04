@@ -1,6 +1,6 @@
 import { View, Text, ScrollView, Textarea, Image } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../utils/api';
 import { miniappApi } from '../../utils/miniapp-api';
 import './index.sass';
@@ -37,6 +37,8 @@ export default function GeneratePage() {
   const [uploadingAudio, setUploadingAudio] = useState(false);
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const submitLockRef = useRef(false);
 
   useLoad((options) => {
     const feature = String(options?.feature || '').trim().toLowerCase();
@@ -48,10 +50,14 @@ export default function GeneratePage() {
       if (category === 'skeleton-3d') setVideoCategory('SKELETON_3D');
       void (async () => {
         try {
-          const list = await miniappApi.getProducts();
-          setProducts(list);
+          const [roleList, productList] = await Promise.all([
+            api.getDigitalHumans(),
+            miniappApi.getProducts(),
+          ]);
+          setCharacters(roleList);
+          setProducts(productList);
         } catch {
-          // 产品为可选项，拉取失败不阻断功能
+          Taro.showToast({ title: '加载数据失败', icon: 'none' });
         }
       })();
       return;
@@ -70,7 +76,21 @@ export default function GeneratePage() {
 
   const selectedChar = characters[selectedCharIdx];
 
+  useEffect(() => {
+    const onKeyboard = (result: { height?: number }) => {
+      setKeyboardHeight(Math.max(0, Number(result?.height || 0)));
+    };
+    Taro.onKeyboardHeightChange(onKeyboard);
+    return () => {
+      Taro.offKeyboardHeightChange(onKeyboard);
+    };
+  }, []);
+
   const handleSubmitSkeletonStoryboard = async () => {
+    if (!selectedChar) {
+      Taro.showToast({ title: '请先选择数字人角色', icon: 'none' });
+      return;
+    }
     if (!skeletonScript.trim()) {
       Taro.showToast({ title: '请输入分镜脚本文案', icon: 'none' });
       return;
@@ -82,11 +102,14 @@ export default function GeneratePage() {
         title: '小程序骷髅分镜视频',
         script: skeletonScript.trim(),
         productId: selectedProductId || undefined,
+        characterId: selectedChar.id,
         source: 'miniapp_generate_page',
         metadata: {
           entry: 'generate_page',
           feature: 'skeleton_storyboard',
           selected_product_id: selectedProductId || null,
+          character_id: selectedChar.id,
+          character_name: selectedChar.name || '',
         },
       });
       Taro.showToast({ title: '分镜任务已创建', icon: 'success' });
@@ -108,10 +131,14 @@ export default function GeneratePage() {
   };
 
   const ensureProductsLoaded = async () => {
-    if (products.length > 0) return;
+    if (products.length > 0 && characters.length > 0) return;
     try {
-      const list = await miniappApi.getProducts();
-      setProducts(list);
+      const [roleList, productList] = await Promise.all([
+        api.getDigitalHumans(),
+        miniappApi.getProducts(),
+      ]);
+      setCharacters(roleList);
+      setProducts(productList);
     } catch {
       // ignore
     }
@@ -161,6 +188,7 @@ export default function GeneratePage() {
   };
 
   const handleSubmit = async () => {
+    if (submitLockRef.current || submitting) return;
     if (!selectedChar) {
       Taro.showToast({ title: '请先在形象库添加数字人', icon: 'none' });
       return;
@@ -182,6 +210,7 @@ export default function GeneratePage() {
       return;
     }
 
+    submitLockRef.current = true;
     setSubmitting(true);
     try {
       const requestPayload =
@@ -211,6 +240,7 @@ export default function GeneratePage() {
     } catch (err) {
       Taro.showToast({ title: (err as Error).message || '提交失败', icon: 'none' });
     } finally {
+      submitLockRef.current = false;
       setSubmitting(false);
     }
   };
@@ -255,10 +285,42 @@ export default function GeneratePage() {
     </View>
   );
 
+  const renderCharacterPicker = () => (
+    <View className='section'>
+      {renderSectionTitle('role', '选择数字人角色')}
+      <ScrollView scrollX className='character-scroll'>
+        <View className='character-list'>
+          <View className='character-item character-item--add' onClick={handleGoRoleLibrary}>
+            <View className='character-add-plus'>+</View>
+            <Text className='character-add-name'>添加角色</Text>
+          </View>
+          {characters.map((char, idx) => (
+            <View
+              key={char.id ?? idx}
+              className={`character-item ${idx === selectedCharIdx ? 'character-item--active' : ''}`}
+              onClick={() => setSelectedCharIdx(idx)}
+            >
+              <Image className='character-avatar' src={char.imageUrl} mode='aspectFill' />
+              <Text className='character-name'>{char.name || `形象 ${idx + 1}`}</Text>
+            </View>
+          ))}
+        </View>
+      </ScrollView>
+      {characters.length === 0 && <Text className='empty-hint'>暂无形象，请先在「形象库」添加</Text>}
+    </View>
+  );
+
   const showFixedSubmit = pageMode === 'digital-human' || (pageMode === 'video-generate' && videoCategory === 'SKELETON_3D');
+  const showScriptComposer =
+    (pageMode === 'digital-human' && mode === 'VOICE_CLONE') ||
+    (pageMode === 'video-generate' && videoCategory === 'SKELETON_3D');
   const fixedSubmitLabel = pageMode === 'video-generate' && videoCategory === 'SKELETON_3D'
     ? (submitting ? '提交中...' : '开始生成分镜视频')
     : (submitting ? '提交中...' : '开始生成');
+  const composerStyle = useMemo(
+    () => (keyboardHeight > 0 ? { transform: `translateY(-${keyboardHeight}px)` } : undefined),
+    [keyboardHeight],
+  );
 
   const handleFixedSubmit = () => {
     if (submitting) return;
@@ -271,7 +333,7 @@ export default function GeneratePage() {
 
   return (
     <>
-      <ScrollView scrollY className='generate-page'>
+      <ScrollView scrollY className={`generate-page ${showScriptComposer ? 'generate-page--with-composer' : ''}`}>
         <View className='generate-header'>
           <View className='generate-topbar'>
             <View className='generate-back' onClick={handleBack}>
@@ -319,17 +381,7 @@ export default function GeneratePage() {
           <>
             {videoCategory === 'SKELETON_3D' ? (
               <>
-                <View className='section'>
-                  {renderSectionTitle('script', '3D骨骼分镜脚本文案')}
-                  <Textarea
-                    className='script-input'
-                    value={skeletonScript}
-                    onInput={(e) => setSkeletonScript(e.detail.value)}
-                    placeholder='输入产品描述、卖点或参考脚本，系统会自动生成骷髅分镜与提示词...'
-                    maxlength={3000}
-                  />
-                  <Text className='char-count'>{skeletonScript.length}/3000</Text>
-                </View>
+                {renderCharacterPicker()}
 
                 <View className='section'>
                   {renderSectionTitle('product', '产品（可选）')}
@@ -379,28 +431,7 @@ export default function GeneratePage() {
 
         {pageMode === 'digital-human' && (
           <>
-            <View className='section'>
-              {renderSectionTitle('role', '选择数字人角色')}
-              <ScrollView scrollX className='character-scroll'>
-                <View className='character-list'>
-                  <View className='character-item character-item--add' onClick={handleGoRoleLibrary}>
-                    <View className='character-add-plus'>+</View>
-                    <Text className='character-add-name'>添加角色</Text>
-                  </View>
-                  {characters.map((char, idx) => (
-                    <View
-                      key={char.id ?? idx}
-                      className={`character-item ${idx === selectedCharIdx ? 'character-item--active' : ''}`}
-                      onClick={() => setSelectedCharIdx(idx)}
-                    >
-                      <Image className='character-avatar' src={char.imageUrl} mode='aspectFill' />
-                      <Text className='character-name'>{char.name || `形象 ${idx + 1}`}</Text>
-                    </View>
-                  ))}
-                </View>
-              </ScrollView>
-              {characters.length === 0 && <Text className='empty-hint'>暂无形象，请先在「形象库」添加</Text>}
-            </View>
+            {renderCharacterPicker()}
 
             {sourceType === 'VIDEO' && (
               <View className='section'>
@@ -431,30 +462,6 @@ export default function GeneratePage() {
               <Text className='mode-desc'>{MODES.find((m) => m.key === mode)?.desc}</Text>
             </View>
 
-            {mode === 'VOICE_CLONE' && (
-              <View className='section'>
-                {renderSectionTitle('text', '脚本内容')}
-                <View className='script-input-box'>
-                  <Textarea
-                    className='script-input script-input--flat'
-                    value={script}
-                    onInput={(e) => setScript(e.detail.value)}
-                    placeholder='在此输入你想让数字人说的文字...'
-                    maxlength={500}
-                  />
-                  <View className='info-input-actions'>
-                    <View className='input-action-btn' onClick={handleFindInspiration}>
-                      <Text className='input-action-btn-text'>没有文案？去找灵感</Text>
-                    </View>
-                    <View className='input-action-btn input-action-btn--ghost' onClick={handlePasteScript}>
-                      <Text className='input-action-btn-text input-action-btn-text--ghost'>粘贴</Text>
-                    </View>
-                  </View>
-                </View>
-                <Text className='char-count'>{script.length}/500</Text>
-              </View>
-            )}
-
             {mode === 'LIP_SYNC' && (
               <View className='section'>
                 {renderSectionTitle('audio', '驱动音频')}
@@ -472,7 +479,71 @@ export default function GeneratePage() {
         )}
       </ScrollView>
 
-      {showFixedSubmit && (
+      {showScriptComposer ? (
+        <View className='bottom-composer' style={composerStyle}>
+          <View className='bottom-composer-card'>
+            <View className='bottom-composer-title-row'>
+              <Text className='bottom-composer-title'>
+                {pageMode === 'video-generate' ? '3D骨骼分镜脚本文案' : '脚本内容'}
+              </Text>
+              <View className='bottom-composer-title-actions'>
+                <Text
+                  className='bottom-composer-clear'
+                  onClick={() => {
+                    if (pageMode === 'video-generate') {
+                      setSkeletonScript('');
+                      return;
+                    }
+                    setScript('');
+                  }}
+                >
+                  清空
+                </Text>
+                <Text className='bottom-composer-count'>
+                  {pageMode === 'video-generate' ? `${skeletonScript.length}/3000` : `${script.length}/500`}
+                </Text>
+              </View>
+            </View>
+            <Textarea
+              className='bottom-composer-textarea'
+              value={pageMode === 'video-generate' ? skeletonScript : script}
+              onInput={(e) => {
+                if (pageMode === 'video-generate') {
+                  setSkeletonScript(e.detail.value);
+                  return;
+                }
+                setScript(e.detail.value);
+              }}
+              placeholder={pageMode === 'video-generate'
+                ? '输入产品描述、卖点或参考脚本，系统会自动生成骷髅分镜与提示词...'
+                : '在此输入你想让数字人说的文字...'}
+              maxlength={pageMode === 'video-generate' ? 3000 : 500}
+              fixed
+              autoHeight
+              adjustPosition={false}
+              cursorSpacing={20}
+            />
+            <View className='bottom-composer-footer'>
+              {pageMode === 'digital-human' && (
+                <View className='info-input-actions info-input-actions--composer'>
+                  <View className='input-action-btn' onClick={handleFindInspiration}>
+                    <Text className='input-action-btn-text'>没有文案？去找灵感</Text>
+                  </View>
+                  <View className='input-action-btn input-action-btn--ghost' onClick={handlePasteScript}>
+                    <Text className='input-action-btn-text input-action-btn-text--ghost'>粘贴</Text>
+                  </View>
+                </View>
+              )}
+              <View
+                className={`btn-primary ${submitting ? 'btn-disabled' : ''}`}
+                onClick={handleFixedSubmit}
+              >
+                <Text className='btn-text'>{fixedSubmitLabel}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      ) : showFixedSubmit && (
         <View className='fixed-submit-area'>
           <View
             className={`btn-primary ${submitting ? 'btn-disabled' : ''}`}
