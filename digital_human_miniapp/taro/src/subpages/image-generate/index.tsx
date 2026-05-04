@@ -1395,6 +1395,31 @@ function escapeAttr(text: string): string {
   return escapeHtml(text).replace(/"/g, '&quot;');
 }
 
+function isGeneratedCardNoiseLine(line: string): boolean {
+  const normalized = line
+    .replace(/^#{1,6}\s*/, '')
+    .replace(/^[>-\s*]+/, '')
+    .replace(/^\d+[.、)\s]+/, '')
+    .replace(/[:：\s]+$/g, '')
+    .trim();
+  return /^(图片|图文)(文案|正文)?要点$/.test(normalized);
+}
+
+function cleanMyNoteCardText(input: string): string {
+  const withoutNoiseLines = (input || '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => !isGeneratedCardNoiseLine(line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return withoutNoiseLines
+    .replace(/\n{2,}(?=\d+\.\s+)/g, '\n')
+    .replace(/(\d+\.\s+[^\n]+)\n{2,}(?=\S)/g, '$1\n')
+    .trim();
+}
+
 function parseInlineMarkdown(line: string): string {
   const escaped = escapeHtml(line);
   let html = escaped;
@@ -1603,7 +1628,7 @@ function renderMiniMarkdown(markdown: string, previewStyle: PreviewRenderStyle):
       continue;
     }
 
-    const olMatch = trimmed.match(/^\d+\.\s+(.+)$/);
+    const olMatch = trimmed.match(/^(\d+)\.\s+(.+)$/);
     if (olMatch) {
       if (inUl) {
         blocks.push('</ul>');
@@ -1611,9 +1636,9 @@ function renderMiniMarkdown(markdown: string, previewStyle: PreviewRenderStyle):
       }
       if (!inOl) {
         inOl = true;
-        blocks.push(`<ol style="${ulStyle}">`);
+        blocks.push(`<ol start="${escapeAttr(olMatch[1])}" style="${ulStyle}">`);
       }
-      blocks.push(`<li style="${liStyle}">${applyInlineTokenStyles(parseInlineMarkdown(olMatch[1]), textColor, accentColor, accentSoftColor)}</li>`);
+      blocks.push(`<li style="${liStyle}">${applyInlineTokenStyles(parseInlineMarkdown(olMatch[2]), textColor, accentColor, accentSoftColor)}</li>`);
       index += 1;
       continue;
     }
@@ -2307,16 +2332,15 @@ export default function ImageGeneratePage() {
           imageTexts?: string[];
         };
         const target = payload.targetFeature === 'infographic' ? 'infographic' : 'card-layout';
-        const title = String(payload.title || '').trim();
-        const body = String(payload.body || '').trim();
+        const title = cleanMyNoteCardText(String(payload.title || ''));
+        const body = cleanMyNoteCardText(String(payload.body || ''));
         const imageTexts = Array.isArray(payload.imageTexts)
-          ? payload.imageTexts.map((item) => String(item || '').trim()).filter(Boolean)
+          ? payload.imageTexts.map((item) => cleanMyNoteCardText(String(item || ''))).filter(Boolean)
           : [];
         const lines = [
           title ? `# ${title}` : '',
           body,
-          imageTexts.length > 0 ? '## 图片文案要点' : '',
-          ...imageTexts.map((item, idx) => `${idx + 1}. ${item}`),
+          ...imageTexts,
         ].filter(Boolean);
 
         const mergedText = lines.join('\n\n');
@@ -2378,42 +2402,43 @@ export default function ImageGeneratePage() {
 
   const cardPreviewPages = useMemo(() => {
     try {
-    const styleLayout = CARD_STYLE_LAYOUT_PARAMS[selectedCardStylePreset.id];
-    const styleThemeSpec = CARD_PREVIEW_THEME_SPEC_MAP[selectedCardStylePreset.id];
-    const modeId = selectedCardStyleModePreset?.id || '';
-    const textColor = styleThemeSpec?.modeTextColor?.[modeId]
-      || styleThemeSpec?.textColor
-      || selectedCardStyleModePreset?.textColor
-      || selectedCardStylePreset.textColor;
-    const accentColorByTheme = CARD_THEME_ACCENT_MAP[cardThemeColor] || CARD_THEME_ACCENT_MAP.amber;
-    const accentColor = selectedCardStyleModePreset?.accentColor || selectedCardStylePreset.accentColor || accentColorByTheme;
-    const pageMarkdown = paginatePreviewMarkdown(
-      cardMarkdown,
-      cardMaxPages,
-      cardDensity,
-      cardH1FontScale,
-      cardH2FontScale,
-      cardH3FontScale,
-      cardBodyFontScale,
-      cardPadding,
-      selectedCardStylePreset.id,
-      styleLayout,
-      windowWidthPx,
-    );
-    const previewStyle: PreviewRenderStyle = {
-      textColor: textColor || '#1f2937',
-      accentColor,
-      accentSoftColor: CARD_THEME_ACCENT_SOFT_MAP[cardThemeColor] || CARD_THEME_ACCENT_SOFT_MAP.amber,
-      density: cardDensity,
-      h1FontScale: cardH1FontScale,
-      h2FontScale: cardH2FontScale,
-      h3FontScale: cardH3FontScale,
-      bodyFontScale: cardBodyFontScale,
-      headingSpacing: cardHeadingSpacing,
-      padding: cardPadding,
-      fontFamily: cardFontFamily,
-      spacingScale: styleLayout.spacing,
-    };
+      const renderSourceMarkdown = cleanMyNoteCardText(cardMarkdown);
+      const styleLayout = CARD_STYLE_LAYOUT_PARAMS[selectedCardStylePreset.id];
+      const styleThemeSpec = CARD_PREVIEW_THEME_SPEC_MAP[selectedCardStylePreset.id];
+      const modeId = selectedCardStyleModePreset?.id || '';
+      const textColor = styleThemeSpec?.modeTextColor?.[modeId]
+        || styleThemeSpec?.textColor
+        || selectedCardStyleModePreset?.textColor
+        || selectedCardStylePreset.textColor;
+      const accentColorByTheme = CARD_THEME_ACCENT_MAP[cardThemeColor] || CARD_THEME_ACCENT_MAP.amber;
+      const accentColor = selectedCardStyleModePreset?.accentColor || selectedCardStylePreset.accentColor || accentColorByTheme;
+      const pageMarkdown = paginatePreviewMarkdown(
+        renderSourceMarkdown,
+        cardMaxPages,
+        cardDensity,
+        cardH1FontScale,
+        cardH2FontScale,
+        cardH3FontScale,
+        cardBodyFontScale,
+        cardPadding,
+        selectedCardStylePreset.id,
+        styleLayout,
+        windowWidthPx,
+      );
+      const previewStyle: PreviewRenderStyle = {
+        textColor: textColor || '#1f2937',
+        accentColor,
+        accentSoftColor: CARD_THEME_ACCENT_SOFT_MAP[cardThemeColor] || CARD_THEME_ACCENT_SOFT_MAP.amber,
+        density: cardDensity,
+        h1FontScale: cardH1FontScale,
+        h2FontScale: cardH2FontScale,
+        h3FontScale: cardH3FontScale,
+        bodyFontScale: cardBodyFontScale,
+        headingSpacing: cardHeadingSpacing,
+        padding: cardPadding,
+        fontFamily: cardFontFamily,
+        spacingScale: styleLayout.spacing,
+      };
       const pages = pageMarkdown.map((md) => renderMiniMarkdown(md, previewStyle)).filter(Boolean);
       if (cardIncludeCover) {
         pages.unshift(renderMiniCoverPreview(
@@ -2796,7 +2821,7 @@ export default function ImageGeneratePage() {
       }
 
       const start = await miniappApi.startImageTextReplication({
-        sourceTitle: `信息图-${pickedTemplate.title}`,
+        sourceTitle: '信息图',
         sourceText: infoContent.trim(),
         sourceImages: [],
         sourcePlatform: 'miniapp',
@@ -2804,7 +2829,6 @@ export default function ImageGeneratePage() {
 
       const generated = await miniappApi.triggerImageTextReplicationGenerate(start.taskId, {
         stylePresetId: pickedTemplate.id,
-        topicHint: pickedTemplate.title || '信息图',
         imageCount: infographicCount,
       });
 
@@ -2821,7 +2845,8 @@ export default function ImageGeneratePage() {
   };
 
   const handleCreateCard = async () => {
-    if (!cardMarkdown.trim()) {
+    const cleanCardMarkdown = cleanMyNoteCardText(cardMarkdown);
+    if (!cleanCardMarkdown.trim()) {
       Taro.showToast({ title: '请先粘贴或输入内容', icon: 'none' });
       return;
     }
@@ -2829,8 +2854,8 @@ export default function ImageGeneratePage() {
 
     setCardSubmitting(true);
     try {
-      const normalized = await miniappApi.normalizeXhsMarkdown(cardMarkdown.trim());
-      const normalizedMarkdown = normalized.standardizedMarkdown || normalized.markdown || cardMarkdown.trim();
+      const normalized = await miniappApi.normalizeXhsMarkdown(cleanCardMarkdown.trim());
+      const normalizedMarkdown = normalized.standardizedMarkdown || normalized.markdown || cleanCardMarkdown.trim();
       const meta = await miniappApi.generateXhsMeta(normalizedMarkdown, 'miniapp-card.md');
 
       const tagsText = Array.isArray(meta.tags) && meta.tags.length > 0
@@ -3012,7 +3037,7 @@ export default function ImageGeneratePage() {
   };
 
   const buildCardRenderPayload = () => {
-    const sourceMarkdown = cardMarkdown.trim();
+    const sourceMarkdown = cleanMyNoteCardText(cardMarkdown).trim();
     const densifyMarkdown = (source: string): string => {
       if (cardDensity === 'balanced') return source;
       const lines = source
@@ -3110,66 +3135,74 @@ export default function ImageGeneratePage() {
 
   const handleExportCardImages = async () => {
     if (cardExporting) return;
-    let exportImages = cardPreviewImages;
 
-    if (exportImages.length === 0) {
-      if (!cardMarkdown.trim()) {
-        Taro.showToast({ title: '请先输入内容', icon: 'none' });
+    if (!cardMarkdown.trim()) {
+      Taro.showToast({ title: '请先输入内容', icon: 'none' });
+      return;
+    }
+
+    let exportImages: string[] = [];
+
+    try {
+      setCardExporting(true);
+      Taro.showLoading({ title: '正在准备导出图', mask: true });
+      const renderPayload = buildCardRenderPayload();
+      const renderResult = await miniappApi.renderXhsLayout({
+        markdown: renderPayload.withCoverFrontmatter,
+        styleKey: renderPayload.styleKey,
+        templateId: renderPayload.templateId,
+        title: renderPayload.renderTitle || '图文卡片',
+        includeCover: cardIncludeCover,
+        maxPages: cardMaxPages,
+        preview: {
+          pages: cardPreviewPages,
+          cardClassName: `preview-card ${cardPreviewThemeClass}`,
+          cardStyle: cardPreviewThemeInlineStyle,
+          contentClassName: cardPreviewContentShellClass,
+          contentStyle: cardPreviewContentInlineStyle,
+          richTextClassName: cardPreviewRichtextClass,
+          selectedCardStyle,
+        },
+        cover: {
+          coverStyleId: cardCoverStyleId,
+          coverImage: cardCoverImage,
+          coverTitle: cardCoverTitle,
+          coverSubtitle: cardCoverSubtitle,
+          coverTextColor: cardCoverTextColor,
+          coverHighlightColor: cardCoverHighlightColor,
+          coverCardRadius: cardCoverCardRadius,
+          coverShowStickers: cardCoverShowStickers,
+          coverFontFamily: CARD_FONT_FAMILY_STACK_MAP[cardCoverFontFamily] || CARD_FONT_FAMILY_STACK_MAP.system,
+          coverTitleAlignX: cardCoverTitleAlignX,
+          coverTitleAlignY: cardCoverTitleAlignY,
+          coverFontSize: cardCoverFontSize,
+          coverSubtitleFontSize: cardCoverSubtitleFontSize,
+          coverLineHeight: cardCoverLineHeight,
+        },
+      });
+      exportImages = Array.isArray(renderResult.images) ? renderResult.images.filter(Boolean) : [];
+      if (exportImages.length === 0) {
+        Taro.showToast({ title: '生成导出图失败', icon: 'none' });
         return;
       }
-      try {
-        setCardExporting(true);
-        Taro.showLoading({ title: '正在准备导出图', mask: true });
-        const renderPayload = buildCardRenderPayload();
-        const renderResult = await miniappApi.renderXhsLayout({
-          markdown: renderPayload.withCoverFrontmatter,
-          styleKey: renderPayload.styleKey,
-          templateId: renderPayload.templateId,
-          title: renderPayload.renderTitle || '图文卡片',
-          includeCover: cardIncludeCover,
-          maxPages: cardMaxPages,
-          cover: {
-            coverStyleId: cardCoverStyleId,
-            coverImage: cardCoverImage,
-            coverTitle: cardCoverTitle,
-            coverSubtitle: cardCoverSubtitle,
-            coverTextColor: cardCoverTextColor,
-            coverHighlightColor: cardCoverHighlightColor,
-            coverCardRadius: cardCoverCardRadius,
-            coverShowStickers: cardCoverShowStickers,
-            coverFontFamily: CARD_FONT_FAMILY_STACK_MAP[cardCoverFontFamily] || CARD_FONT_FAMILY_STACK_MAP.system,
-            coverTitleAlignX: cardCoverTitleAlignX,
-            coverTitleAlignY: cardCoverTitleAlignY,
-            coverFontSize: cardCoverFontSize,
-            coverSubtitleFontSize: cardCoverSubtitleFontSize,
-            coverLineHeight: cardCoverLineHeight,
-          },
-        });
-        exportImages = Array.isArray(renderResult.images) ? renderResult.images.filter(Boolean) : [];
-        if (exportImages.length === 0) {
-          Taro.showToast({ title: '生成导出图失败', icon: 'none' });
-          return;
-        }
-        setCardPreviewImages(exportImages);
-      } catch (error) {
-        Taro.showToast({
-          title: error instanceof Error ? error.message : '生成导出图失败',
-          icon: 'none',
-        });
-        return;
-      } finally {
-        Taro.hideLoading();
-        setCardExporting(false);
-      }
+      setCardPreviewImages(exportImages);
+    } catch (error) {
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '生成导出图失败',
+        icon: 'none',
+      });
+      return;
+    } finally {
+      Taro.hideLoading();
     }
 
     const hasPermission = await ensureAlbumPermission();
     if (!hasPermission) {
       Taro.showToast({ title: '未获得相册权限', icon: 'none' });
+      setCardExporting(false);
       return;
     }
 
-    setCardExporting(true);
     let successCount = 0;
     let failCount = 0;
 
@@ -3917,13 +3950,14 @@ export default function ImageGeneratePage() {
                   <Textarea
                     className='textarea textarea--info textarea--card-editor'
                     value={cardMarkdown}
+                    autoHeight
                     onInput={(e) => {
                       const value = e.detail.value;
                       setCardUserCleared(!value.trim());
                       setCardMarkdown(value);
                     }}
                     placeholder='粘贴网页端的小红书 Markdown，自动转卡片布局。'
-                    maxlength={2400}
+                    maxlength={8000}
                   />
                   <View className='info-input-actions'>
                     <View className='input-action-btn' onClick={handleFindInspiration}>

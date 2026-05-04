@@ -33,9 +33,16 @@
   line-height: 1
 
 .storyboard-board-nav-title
+  position: absolute
+  left: 120rpx
+  right: 120rpx
   font-size: 30rpx
   color: #e8f2ff
   font-weight: 800
+  text-align: center
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap
 
 .storyboard-board-nav-spacer
   width: 56rpx
@@ -44,6 +51,9 @@
   flex: 1
   margin-top: calc(env(safe-area-inset-top) + 74rpx)
   padding-bottom: calc(env(safe-area-inset-bottom) + 252rpx)
+
+.storyboard-board-scroll--review
+  padding-bottom: calc(env(safe-area-inset-bottom) + 176rpx)
 
 .storyboard-board-header
   margin: 20rpx 24rpx 14rpx
@@ -60,11 +70,10 @@
   margin-bottom: 0
 
 .remix-stage-section
-  margin: 0 24rpx 18rpx
-  padding: 18rpx 16rpx
-  border-radius: 16rpx
-  background: #141414
-  border: 1rpx solid rgba(145, 175, 229, 0.18)
+  margin: 22rpx 24rpx 28rpx
+  padding: 0
+  background: transparent
+  border: 0
 
 .remix-stage-track
   display: grid
@@ -78,7 +87,7 @@
   flex-direction: column
   align-items: center
   text-align: center
-  padding-top: 4rpx
+  padding-top: 0
 
 .remix-stage-dot
   width: 48rpx
@@ -129,7 +138,7 @@
   width: 100%
   margin-top: 12rpx
   color: #9badcf
-  font-size: 22rpx
+  font-size: 21rpx
   line-height: 1.25
   font-weight: 900
   overflow: hidden
@@ -139,14 +148,6 @@
 .remix-stage-name--done,
 .remix-stage-name--active
   color: #ecee9f
-
-.remix-stage-desc
-  display: block
-  margin-top: 6rpx
-  width: 100%
-  color: #7f8fae
-  font-size: 18rpx
-  line-height: 1.36
 
 .storyboard-section-title
   display: block
@@ -160,6 +161,110 @@
 .storyboard-clone-section
   margin: 0 24rpx 16rpx
 
+.remix-review-section
+  margin: 0 24rpx 18rpx
+  padding: 18rpx
+  border-radius: 18rpx
+  background: #141414
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+  box-sizing: border-box
+
+.remix-review-section-head
+  display: flex
+  align-items: center
+  justify-content: space-between
+  gap: 14rpx
+  margin-bottom: 10rpx
+
+.remix-review-section-head .storyboard-section-title
+  margin-bottom: 0
+
+.remix-review-section-note
+  color: #7889aa
+  font-size: 20rpx
+  flex-shrink: 0
+
+.remix-review-shot
+  padding: 16rpx 0
+  border-top: 1rpx solid rgba(145, 175, 229, 0.12)
+
+.remix-review-shot:first-of-type
+  border-top: 0
+  padding-top: 4rpx
+
+.remix-review-shot-head
+  display: flex
+  align-items: center
+  justify-content: space-between
+  gap: 12rpx
+  margin-bottom: 8rpx
+
+.remix-review-shot-title
+  color: #ecee9f
+  font-size: 25rpx
+  font-weight: 900
+
+.remix-review-shot-time
+  color: #8ea2c8
+  font-size: 21rpx
+
+.remix-review-shot-text
+  display: block
+  color: #d7e5ff
+  font-size: 22rpx
+  line-height: 1.58
+  white-space: pre-wrap
+  margin-top: 6rpx
+
+.remix-review-footer-space
+  height: 24rpx
+
+.remix-review-action-bar
+  position: fixed
+  left: 0
+  right: 0
+  bottom: 0
+  z-index: 45
+  padding: 16rpx 24rpx calc(env(safe-area-inset-bottom) + 18rpx)
+  background: #050505
+  border-top: 1rpx solid rgba(137, 165, 215, 0.2)
+  display: flex
+  align-items: center
+  gap: 14rpx
+  box-sizing: border-box
+
+.remix-review-bottom-btn
+  flex: 1
+  height: 78rpx
+  border-radius: 16rpx
+  display: flex
+  align-items: center
+  justify-content: center
+  box-sizing: border-box
+
+.remix-review-bottom-btn--ghost
+  border: 1rpx solid rgba(236, 238, 159, 0.35)
+  background: rgba(236, 238, 159, 0.08)
+
+.remix-review-bottom-btn--danger
+  flex: 0 0 132rpx
+  border: 1rpx solid rgba(255, 90, 95, 0.42)
+  background: rgba(255, 90, 95, 0.1)
+
+.remix-review-bottom-btn--primary
+  background: #ecee9f
+
+.remix-review-bottom-btn-text
+  color: #111
+  font-size: 26rpx
+  font-weight: 900
+
+.remix-review-bottom-btn-text--ghost
+  color: #ecee9f
+
+.remix-review-bottom-btn-text--danger
+  color: #ff8a8e
+
 .storyboard-grid-image
   width: 100%
   border-radius: 14rpx
@@ -167,7 +272,24 @@
   border: 1rpx solid rgba(145, 175, 229, 0.18)
   box-sizing: border-box
 
+.storyboard-grid-board
+  margin-top: 12rpx
+
+.storyboard-grid-board:first-of-type
+  margin-top: 0
+
+.storyboard-grid-board-title
+  display: block
+  color: #ecee9f
+  font-size: 22rpx
+  font-weight: 800
+  margin-bottom: 8rpx
+
 .storyboard-structure-section,
+.storyboard-analysis-section,
+.storyboard-beat-section,
+.storyboard-script-section,
+.storyboard-mechanism-section,
 .storyboard-clone-section
   padding: 16rpx
   border-radius: 16rpx
@@ -176,16 +298,27 @@
   box-sizing: border-box
 
 .storyboard-structure-item,
+.storyboard-beat-item,
+.storyboard-script-block,
+.storyboard-mechanism-block,
+.storyboard-clone-rule,
 .storyboard-clone-item
   padding: 14rpx 0
   border-top: 1rpx solid rgba(145, 175, 229, 0.12)
 
 .storyboard-structure-item:first-of-type,
+.storyboard-beat-item:first-of-type,
+.storyboard-script-block:first-of-type,
+.storyboard-mechanism-block:first-of-type,
+.storyboard-clone-rule:first-of-type,
 .storyboard-clone-item:first-of-type
   border-top: 0
   padding-top: 0
 
 .storyboard-structure-title,
+.storyboard-beat-title,
+.storyboard-script-title,
+.storyboard-mechanism-title,
 .storyboard-clone-title
   display: block
   color: #ecee9f
@@ -196,6 +329,10 @@
 
 .storyboard-structure-text,
 .storyboard-structure-note,
+.storyboard-beat-text,
+.storyboard-beat-note,
+.storyboard-script-line,
+.storyboard-mechanism-text,
 .storyboard-clone-prompt
   display: block
   color: #d7e5ff
@@ -206,6 +343,59 @@
 .storyboard-structure-note
   color: #8ea2c8
   margin-top: 4rpx
+
+.storyboard-analysis-grid
+  display: flex
+  flex-direction: column
+  gap: 10rpx
+
+.storyboard-analysis-item
+  display: flex
+  align-items: flex-start
+  gap: 14rpx
+
+.storyboard-analysis-label
+  width: 132rpx
+  flex-shrink: 0
+  color: #8ea2c8
+  font-size: 21rpx
+  line-height: 1.5
+  font-weight: 700
+
+.storyboard-analysis-value
+  flex: 1
+  color: #d7e5ff
+  font-size: 22rpx
+  line-height: 1.5
+
+.storyboard-beat-note
+  color: #8ea2c8
+  margin-top: 4rpx
+
+.storyboard-script-line
+  margin-top: 6rpx
+  flex: 1
+
+.storyboard-script-line-row
+  display: flex
+  align-items: flex-start
+  gap: 10rpx
+  margin-top: 8rpx
+
+.storyboard-script-time
+  flex-shrink: 0
+  margin-top: 2rpx
+  padding: 3rpx 8rpx
+  border-radius: 6rpx
+  background: rgba(236, 238, 159, 0.12)
+  border: 1rpx solid rgba(236, 238, 159, 0.24)
+  color: #ecee9f
+  font-size: 19rpx
+  line-height: 1.25
+  font-weight: 800
+
+.storyboard-script-line--muted
+  color: #8ea2c8
 
 .storyboard-clone-prompt
   color: #c7d6f2
@@ -504,6 +694,22 @@
 .storyboard-setting-icon
   font-size: 33rpx
   color: #ecee9f
+
+.storyboard-delete-bottom-btn
+  flex: 0 0 132rpx
+  height: 78rpx
+  border-radius: 16rpx
+  border: 1rpx solid rgba(255, 90, 95, 0.42)
+  background: rgba(255, 90, 95, 0.1)
+  display: flex
+  align-items: center
+  justify-content: center
+  box-sizing: border-box
+
+.storyboard-delete-bottom-btn-text
+  color: #ff8a8e
+  font-size: 26rpx
+  font-weight: 800
 
 .storyboard-action-btn
   flex: 1

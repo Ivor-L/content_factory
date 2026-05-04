@@ -28,12 +28,29 @@ interface AdminMonetizationResp {
 type EditorMode = 'visual' | 'json';
 
 const ROUTE_OPTIONS = [
-  { label: '图文生成', value: '/pages/image-generate/index' },
-  { label: '视频生成', value: '/pages/generate/index' },
-  { label: '爆款复刻', value: '/pages/remix-generate/index' },
-  { label: '爆款广场', value: '/pages/hot-square/index' },
   { label: '首页', value: '/pages/home/index' },
+  { label: '爆款广场', value: '/pages/hot-square/index' },
   { label: '作品页', value: '/pages/works/index' },
+  { label: '我的', value: '/pages/profile/index' },
+  { label: '收藏页', value: '/subpages/favorites/index' },
+  { label: '爆款详情', value: '/subpages/hot-detail/index' },
+  { label: '素材中心', value: '/subpages/asset-center/index' },
+  { label: '作品详情', value: '/subpages/work-detail/index' },
+  { label: '分镜工作台', value: '/subpages/storyboard-board/index' },
+  { label: '登录', value: '/subpages/login/index' },
+  { label: '手机号登录', value: '/subpages/login-phone/index' },
+  { label: '邮箱登录', value: '/subpages/login-email/index' },
+  { label: '密码登录', value: '/subpages/login-password/index' },
+  { label: '仓库', value: '/subpages/warehouse/index' },
+  { label: '产品库', value: '/subpages/product-library/index' },
+  { label: '风格库', value: '/subpages/style-library/index' },
+  { label: '爆款复刻', value: '/subpages/remix-generate/index' },
+  { label: '视频生成', value: '/subpages/generate/index' },
+  { label: '变现广场', value: '/subpages/monetization-square/index' },
+  { label: '图文生成', value: '/subpages/image-generate/index' },
+  { label: '生成记录', value: '/subpages/records/index' },
+  { label: '积分记录', value: '/subpages/points-records/index' },
+  { label: '分享赚钱', value: '/subpages/referrals/index' },
 ];
 
 function isShareCategory(id: string, name: string): boolean {
@@ -82,7 +99,7 @@ function queryToParams(text: string): Record<string, string> | undefined {
 function createDefaultAction(): MonetizationActionConfig {
   return {
     type: 'route',
-    route: '/pages/generate/index',
+    route: '/subpages/generate/index',
     params: undefined,
   };
 }
@@ -524,7 +541,7 @@ export default function AdminMonetizationSquarePage() {
           ? { ...demo, coverImageUrl: url }
           : { ...demo, demoVideoUrl: url }
       ));
-      setMessage(kind === 'image' ? '图片上传成功。' : '视频上传成功。');
+      setMessage(kind === 'image' ? '图片上传成功，保存并发布后小程序生效。' : '视频上传成功，保存并发布后小程序生效。');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '上传失败');
     } finally {

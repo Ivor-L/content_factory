@@ -331,6 +331,27 @@ export async function getApiKeyForUser(userId: string): Promise<string | null> {
   return process.env.DEFAULT_USER_API_KEY || null;
 }
 
+export async function getProfileApiKeyForUser(userId: string): Promise<string | null> {
+  if (!userId) return null;
+  try {
+    const client = supabaseAdminClient ?? supabaseAnonClient;
+    const { data, error } = await client
+      .from('profiles')
+      .select('api_key')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Failed to read profile api_key', error);
+      return null;
+    }
+    return data?.api_key || null;
+  } catch (error) {
+    console.error('Failed to fetch profile api key for user', error);
+    return null;
+  }
+}
+
 function decodeSupabaseUserId(token: string): string | null {
   try {
     const secret = process.env.SUPABASE_JWT_SECRET;

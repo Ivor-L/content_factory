@@ -111,8 +111,8 @@ return {
     productName: pick(body.product_name, body.productName, data.product_name, data.productName, metadata.product_name, metadata.productName),
     productDescription: pick(body.product_description, body.productDescription, data.product_description, data.productDescription, metadata.product_description, metadata.productDescription),
     productSellingPoints: pick(body.product_selling_points, body.productSellingPoints, data.product_selling_points, data.productSellingPoints, metadata.product_selling_points, metadata.productSellingPoints),
-    targetLanguage: pick(body.target_language, body.targetLanguage, data.target_language, data.targetLanguage, metadata.target_language, metadata.targetLanguage, '中文'),
-    targetCountry: pick(body.target_country, body.targetCountry, data.target_country, data.targetCountry, metadata.target_country, metadata.targetCountry, '中国'),
+    targetLanguage: pick(body.target_language, body.targetLanguage, data.target_language, data.targetLanguage, metadata.target_language, metadata.targetLanguage, 'source'),
+    targetCountry: pick(body.target_country, body.targetCountry, data.target_country, data.targetCountry, metadata.target_country, metadata.targetCountry, 'auto'),
     workflowId: pick(body.workflow_id, body.workflowId, data.workflow_id, data.workflowId, 'flow_miniapp_viral_breakdown'),
     workflowName: pick(body.workflow_name, body.workflowName, data.workflow_name, data.workflowName, '小程序首页爆款拆解'),
     pipelineKey: 'miniapp_viral_breakdown_grid',
@@ -257,21 +257,44 @@ function safeTs(sec) {
   if (!Number.isFinite(duration) || duration <= 0) return Math.max(0, Number(sec) || 0);
   return Math.min(Math.max(0, Number(sec) || 0), Math.max(0, duration - 0.05));
 }
-function makeGrid({ start, len, kind, clipIndex }) {
-  const expected = Math.max(1, Math.ceil(len / configuredInterval));
-  const frameCount = kind === 'full' ? Math.min(maxOverview, expected) : Math.min(15, expected);
-  const interval = Math.max(0.25, len / frameCount);
+function arcadsFrameCount(totalSec) {
+  if (totalSec < 10) return 8;
+  if (totalSec < 20) return 12;
+  if (totalSec < 30) return 16;
+  return 20;
+}
+function panelsForRange(panels, start, end) {
+  const selected = panels.filter((panel) => panel.time_sec >= start - 0.001 && panel.time_sec <= end + 0.001);
+  if (selected.length) return selected;
+  const startPanel = panels.reduce((best, panel) => Math.abs(panel.time_sec - start) < Math.abs(best.time_sec - start) ? panel : best, panels[0]);
+  const endPanel = panels.reduce((best, panel) => Math.abs(panel.time_sec - end) < Math.abs(best.time_sec - end) ? panel : best, panels[panels.length - 1]);
+  const a = Math.min(startPanel.panel, endPanel.panel);
+  const b = Math.max(startPanel.panel, endPanel.panel);
+  return panels.filter((panel) => panel.panel >= a && panel.panel <= b);
+}
+function makeGlobalGrid() {
+  const expected = Math.max(1, Math.ceil(duration / configuredInterval));
+  const frameCount = Math.min(maxOverview, Math.max(arcadsFrameCount(duration), Math.min(expected, maxOverview)));
+  const interval = Math.max(0.25, duration / frameCount);
   const rows = ceil(frameCount / 5);
-  const frameDir = path.join(workDir, 'grids', `${kind}_${String(clipIndex).padStart(2, '0')}_frames`);
-  const out = path.join(workDir, 'grids', `${kind}_${String(clipIndex).padStart(2, '0')}.jpg`);
+  const frameDir = path.join(workDir, 'grids', 'global_frames');
+  const out = path.join(workDir, 'grids', 'global_storyboard.jpg');
   fs.rmSync(frameDir, { recursive: true, force: true });
   fs.mkdirSync(frameDir, { recursive: true });
 
+  const panels = [];
   for (let i = 0; i < frameCount; i += 1) {
-    const offset = Math.min(Math.max(0, len - 0.05), i * interval);
-    const ts = safeTs(start + offset);
+    const offset = Math.min(Math.max(0, duration - 0.05), i * interval);
+    const ts = safeTs(offset);
     const framePath = path.join(frameDir, `frame_${String(i + 1).padStart(3, '0')}.jpg`);
-    const label = `${kind === 'full' ? 'FULL' : 'CLIP ' + clipIndex}  #${i + 1}  ${fmt(ts)}`;
+    const panel = {
+      panel: i + 1,
+      label: `Panel ${i + 1}`,
+      time_sec: Number(ts.toFixed(3)),
+      timestamp: fmt(ts),
+    };
+    panels.push(panel);
+    const label = `${panel.label}  ${panel.timestamp}`;
     const vf = [
       'scale=360:-2',
       `drawtext=text='${escapeDrawtext(label)}':x=10:y=10:fontsize=22:fontcolor=yellow:borderw=3:bordercolor=black`
@@ -299,32 +322,54 @@ function makeGrid({ start, len, kind, clipIndex }) {
   const stat = fs.statSync(out);
   if (!stat.size) throw new Error(`grid output empty: ${out}`);
 
+  const totalClips = Math.max(1, Math.ceil(duration / clipMax));
+  const clipPlan = [];
+  for (let i = 0; i < totalClips; i += 1) {
+    const start = i * clipMax;
+    const end = Math.min(duration, start + clipMax);
+    const selectedPanels = panelsForRange(panels, start, end);
+    const firstPanel = selectedPanels[0] || panels[0];
+    const lastPanel = selectedPanels[selectedPanels.length - 1] || firstPanel;
+    clipPlan.push({
+      clip_index: i + 1,
+      time_range: `${fmt(start)}-${fmt(end)}`,
+      duration: Number(Math.max(0.2, end - start).toFixed(3)),
+      start_sec: Number(start.toFixed(3)),
+      end_sec: Number(end.toFixed(3)),
+      panel_start: firstPanel.panel,
+      panel_end: lastPanel.panel,
+      panel_range: `Panel ${firstPanel.panel} to Panel ${lastPanel.panel}`,
+      frame_count: selectedPanels.length,
+      notes: 'Suggested max-15s clip window. Gemini may move the boundary to the nearest natural beat as long as each clip remains <=15s, clips stay continuous, and panel_range is updated from the same global storyboard grid.'
+    });
+  }
+
   return {
-    kind,
-    clip_index: clipIndex,
+    kind: 'full',
+    clip_index: 0,
     filePath: out,
-    fileName: `${taskId}_${kind}_${String(clipIndex).padStart(2, '0')}.jpg`,
-    start_sec: Number(start.toFixed(3)),
-    end_sec: Number(Math.min(duration, start + len).toFixed(3)),
-    duration: Number(len.toFixed(3)),
-    time_range: `${fmt(start)}-${fmt(Math.min(duration, start + len))}`,
+    fileName: `${taskId}_global_storyboard.jpg`,
+    start_sec: 0,
+    end_sec: Number(duration.toFixed(3)),
+    duration: Number(duration.toFixed(3)),
+    time_range: `${fmt(0)}-${fmt(duration)}`,
     columns: 5,
     rows,
-    frame_count: frameCount
+    frame_count: frameCount,
+    panels,
+    clip_plan: clipPlan
   };
 }
 
-const grids = [];
-grids.push(makeGrid({ start: 0, len: duration, kind: 'full', clipIndex: 0 }));
-
-const totalClips = Math.max(1, Math.ceil(duration / clipMax));
-for (let i = 0; i < totalClips; i += 1) {
-  const start = i * clipMax;
-  const len = Math.max(0.2, Math.min(clipMax, duration - start));
-  grids.push(makeGrid({ start, len, kind: 'clip', clipIndex: i + 1 }));
-}
-
-process.stdout.write(JSON.stringify({ taskId, duration, total_clips: totalClips, grids }) + '\n');
+const globalGrid = makeGlobalGrid();
+process.stdout.write(JSON.stringify({
+  taskId,
+  duration,
+  total_clips: globalGrid.clip_plan.length,
+  grids: [globalGrid],
+  storyboard_grid: globalGrid,
+  clip_plan: globalGrid.clip_plan
+}) + '\n');
 NODE"""
 
 
@@ -336,7 +381,15 @@ try { parsed = JSON.parse(raw); } catch (e) {
 }
 if (!Array.isArray(parsed.grids) || !parsed.grids.length) throw new Error('未生成任何分镜网格');
 const base = $('解析视频时长').first().json;
-return parsed.grids.map((grid) => ({ json: { ...base, ...grid, gridCount: parsed.grids.length, totalClipBoards: parsed.total_clips } }));"""
+return parsed.grids.map((grid) => ({
+  json: {
+    ...base,
+    ...grid,
+    gridCount: parsed.grids.length,
+    totalClipBoards: parsed.total_clips,
+    clip_plan: Array.isArray(parsed.clip_plan) ? parsed.clip_plan : (Array.isArray(grid.clip_plan) ? grid.clip_plan : [])
+  }
+}));"""
 
 
 CODE_ATTACH_OSS = r"""const uploads = $input.all();
@@ -355,26 +408,39 @@ return uploads.map((item, index) => {
 CODE_AGGREGATE_BOARDS = r"""const boards = $input.all().map(i => i.json || {});
 const base = $('解析视频时长').first().json;
 const full = boards.find(b => b.kind === 'full');
-const clips = boards
-  .filter(b => b.kind === 'clip')
-  .sort((a, b) => Number(a.clip_index || 0) - Number(b.clip_index || 0));
 if (!full?.oss_url) throw new Error('缺少全片分镜网格 OSS URL');
+const clipPlan = (Array.isArray(full.clip_plan) ? full.clip_plan : []).map(c => ({
+  clip_index: c.clip_index,
+  time_range: c.time_range,
+  duration: c.duration,
+  start_sec: c.start_sec,
+  end_sec: c.end_sec,
+  panel_start: c.panel_start,
+  panel_end: c.panel_end,
+  panel_range: c.panel_range,
+  frame_count: c.frame_count,
+  notes: c.notes || ''
+}));
+const storyboardGrid = {
+  kind: 'full',
+  grid_url: full.oss_url,
+  url: full.oss_url,
+  time_range: full.time_range,
+  duration: full.duration,
+  start_sec: full.start_sec,
+  end_sec: full.end_sec,
+  rows: full.rows,
+  columns: full.columns,
+  frame_count: full.frame_count,
+  panels: Array.isArray(full.panels) ? full.panels : []
+};
 return [{
   json: {
     ...base,
     storyboard_grid_url: full.oss_url,
-    storyboard_grid: full,
-    clip_boards: clips.map(c => ({
-      clip_index: c.clip_index,
-      time_range: c.time_range,
-      duration: c.duration,
-      start_sec: c.start_sec,
-      end_sec: c.end_sec,
-      grid_url: c.oss_url,
-      rows: c.rows,
-      columns: c.columns,
-      frame_count: c.frame_count
-    }))
+    storyboard_grid: storyboardGrid,
+    clip_plan: clipPlan,
+    clip_boards: clipPlan
   }
 }];"""
 
@@ -397,14 +463,19 @@ if (!binaryKey) throw new Error('读取视频文件后缺少 binary data');
 const buffer = await this.helpers.getBinaryDataBuffer(0, binaryKey);
 if (!buffer?.length) throw new Error('视频 binary 为空');
 
-const clipBoards = Array.isArray(j.clip_boards) ? j.clip_boards : [];
+const clipPlan = Array.isArray(j.clip_plan) ? j.clip_plan : (Array.isArray(j.clip_boards) ? j.clip_boards : []);
+const storyboardGrid = j.storyboard_grid && typeof j.storyboard_grid === 'object' ? j.storyboard_grid : {};
+const panels = Array.isArray(storyboardGrid.panels) ? storyboardGrid.panels : [];
+const suggestedClipRanges = clipPlan.length
+  ? clipPlan.map(c => `${c.clip_index}: ${c.time_range} (${c.duration}s, ${c.panel_range})`).join('; ')
+  : 'Use the minimum number of sequential clips; every clip must be <=15s.';
 
 const instruction = `
 你是一个爆款短视频拆解与复刻提示词专家。你正在为“小程序首页-爆款复刻”的第一步“爆款拆解”生成结构化结果。
 
-你会收到完整视频。n8n 已经用 ffmpeg 生成了分镜网格图：
-- 全片总览分镜图：${j.storyboard_grid_url}
-- 分段分镜板：${JSON.stringify(clipBoards)}
+你会收到完整视频。n8n 已经用 ffmpeg 生成了唯一一张 5xN 全局 storyboard contact sheet。
+- 全局分镜元数据：${JSON.stringify(storyboardGrid)}
+- 预估 15s 上限分段，仅供参考：${suggestedClipRanges}
 
 你必须严格参考 Arcads clone-ad / analyze-video skill 的拆解方式：
 1. 先做 source video analysis：识别总时长、核心风格、镜头数量、对白词数、叙事类型。
@@ -414,36 +485,64 @@ const instruction = `
    - transfers：节奏、镜头语法、构图、情绪曲线、产品出现方式、转场、信任机制、CTA方式。
    - swapped：原产品、原品牌、原卖点、原人物身份、原场景中不可复用的信息。
 5. 改写复刻提示词时复制“广告语法”，不要复制原品牌名或原素材本身。
+6. 对超过 15s 的视频，学习 Arcads 的切分逻辑：先从 beat map 找自然断点，再受生成模型 15s 上限约束拆成最少数量的连续 clip；不能机械按 00:15 硬切，除非 15s 正好落在自然节拍边界。
 
 任务：
 1. 先理解完整视频的爆款机制，不要只做画面描述。
 2. 输出中文内容结构：开头钩子、中间铺垫、高潮、结尾CTA。
 3. 输出可复刻提示词。
 4. 如果视频总时长超过15秒，clone_prompt.clips 必须拆成多个 <=15秒 clip，按顺序生成；不要输出一个超长提示词。
-5. 每个 clip 都要有 start_state、end_state、handoff_to_next，方便后续按顺序生成和拼接。
+5. 每个 clip 都要有 start_state、end_state、handoff_to_next，形成 Arcads chained multi-clip 的连续状态交接。
 6. 输出 scenes，用于兼容现有分镜表和后续首帧/视频生成。
+7. 必须输出完整口播：full_original_script 为原视频按时间顺序拼接的完整口播；full_rewritten_script 为面向用户新产品的完整改写口播。
+8. beat_map 每一项都必须有 rewritten_dialogue_or_text，scenes 每一项都必须有 rewritten_script；不要把 rewritten_script 原样复制 original_script。
+9. clone_prompt.clips 的数量通常等于 ceil(total_duration/15)，但切点必须尽量靠近 HOOK/SHOW/DEMO/PROOF/CTA 的自然节拍边界；每段 duration <= 15，连续覆盖 00:00 到 total_duration，不得遗漏最后一段。
+10. 每个 clip 必须输出 panel_start、panel_end、panel_range。Panel 范围来自同一张全局 storyboard_grid，不得虚构第二张、第三张分镜板。
 
 硬性要求：
 - 输出 ONLY JSON，不要 markdown，不要解释。
-- 中文字段用中文。
-- image_prompt 和 video_prompt 用英文，适合后续视频/图片模型。
-- clone_prompt.global_prompt 可以中英混合，但 clip.prompt 必须是英文模型提示词。
-- 每个 clone_prompt.clips[].duration 必须 <= 15。
+- 给人看的字段必须全部用中文，包括 source_video_analysis、beat_map、defining_traits、what_transfers、what_gets_swapped、content_structure、viral_mechanism、scenes、full_original_script、full_rewritten_script、beat_map.rewritten_dialogue_or_text、scenes.rewritten_script、clone_prompt 的 rules/role/start_state/end_state/handoff_to_next。
+- 只有给 AI 模型直接使用的字段可以用英文：scenes.image_prompt、scenes.video_prompt、clone_prompt.clips[].prompt。
+- clone_prompt.global_style_rules、global_negative_rules、dialogue_adaptation_rules 是页面给人看的规则摘要，必须中文。
+- 每个 clone_prompt.clips[].duration 必须 <= 15，并且所有 clips 的 time_range 必须连续覆盖 00:00 到 total_duration。
 - 如果总时长 <= 15，也至少输出 1 个 clip。
+- clip_boards/clip_plan 只需要表达分段元数据和 Panel 范围。
+- clip_plan 每项必须包含 clip_index、time_range、duration、start_sec、end_sec、panel_start、panel_end、panel_range；不要只输出 panels: "1-5"。
+- scenes 必须覆盖 beat_map 的所有关键节拍，不能只给 1-2 条示例。至少每个 HOOK/SHOW/DEMO/PROOF/CTA 都要有一条 scene，除非原视频确实没有该节拍。
 - 保留原视频的广告语法：镜头节奏、画面顺序、情绪推进、CTA方式、字幕/贴纸/口播结构、产品出现方式。
 - 不要照抄具体品牌名，除非它是用户提供的新产品。
+- 如果 product_name 未提供，不要自造具体品牌名（例如 New Pet Health Bites）；改写口播中使用中性占位 "[user product]" 或 "the new product"。
 - 生成提示词遵循 Subject + Action + Camera + Style + Constraints 的顺序。
 - UGC/广告复刻提示词必须包含真实拍摄缺陷：手机质感、轻微手持抖动、自然光/环境声/轻微过曝或虚焦等，除非原视频不是 UGC。
 - 如果有对白或字幕，必须提取 dialogue_pattern：句式结构、语气、停顿、爆点词，而不是照抄原句。
-- 每个 clip.prompt 必须是可直接用于视频生成的英文提示词；超过15秒时，后续 clip 必须写明承接上一个 clip 的结尾状态。
+- 改写口播必须保留原视频句式节奏和宠物/人物视角，但替换成适合用户新产品的中文/目标语言表达；不能只返回第一句。
+- 每个 clip.prompt 必须是可直接用于视频生成的英文详细复刻提示词；不能是一句话摘要。
+- 每个 clip.prompt 必须使用用户要求的分段提示词格式，且用英文显式标注这些块：
+  1) "### Clip X"
+  2) "Clip info and SRT:"
+  3) "Timeline:"
+  4) "Storyboard panels: Panel X to Panel Y"
+  5) "Matched SRT:"
+  6) "Visual audit:"
+  7) "Generation Prompt:"
+  8) "[Sequence Details: Panel X ... -> Panel Y ...]"
+  9) "[Global Visual Anchor: @Image2 is the single full-video storyboard contact sheet; follow only Panel X to Panel Y for composition, shot order, and rhythm.]"
+  10) "[Audio/Action Cues: Voice Profile ... Timed Voiceover ... Ambient Foley ... ABSOLUTELY NO BGM, NO BACKGROUND MUSIC. Pure voice/dialogue and ambient foley only.]"
+- 音频硬规则：不要 BGM。所有 scene.audio_bgm 必须为空字符串；所有 video_prompt 与 clone_prompt.clips[].prompt 必须明确写入 "ABSOLUTELY NO BGM, NO BACKGROUND MUSIC. Pure voice/dialogue and ambient foley only."。
+- 如果后续使用全能参考，多参考图约定为：@Image1 是当前片段首帧/产品替换后的参考图，@Image2 是全片分镜网格图。clip.prompt 必须说明 @Image2 只是 storyboard contact sheet，只参考对应 Panel 范围的构图/节奏，不要生成拼贴、九宫格、边框、分镜编号或分屏画面。
+- 每个 clip.prompt 建议 100-260 英文词，必须覆盖该 clip 内所有 beat，超过15秒时后续 clip 必须写明承接上一个 clip 的结尾状态。
+- 避免视频模型容易跑偏词：cinematic, professional, stunning, 8k, studio, perfect。用 documentary / photorealistic / handheld / phone quality 替代。
 
 输出 JSON schema：
 {
   "pipeline_key": "miniapp_viral_breakdown_grid",
-  "analysis_model": "gemini-3.1-flash-lite-preview",
+  "analysis_model": "gemini-3-flash-preview",
   "total_duration": ${Number(j.videoDurationSec || 0)},
-  "storyboard_grid_url": "${j.storyboard_grid_url}",
-  "clip_boards": ${JSON.stringify(clipBoards)},
+  "storyboard_grid": ${JSON.stringify(storyboardGrid)},
+  "clip_plan": ${JSON.stringify(clipPlan)},
+  "clip_boards": ${JSON.stringify(clipPlan)},
+  "full_original_script": "",
+  "full_rewritten_script": "",
   "source_video_analysis": {
     "duration": 0,
     "style_name": "",
@@ -463,6 +562,7 @@ const instruction = `
       "beat": "HOOK",
       "visual": "",
       "dialogue_or_text": "",
+      "rewritten_dialogue_or_text": "",
       "function": "",
       "replication_note": ""
     }
@@ -493,9 +593,12 @@ const instruction = `
         "clip_index": 1,
         "time_range": "00:00-00:15",
         "duration": 15,
+        "panel_start": 1,
+        "panel_end": 8,
+        "panel_range": "Panel 1 to Panel 8",
         "role": "hook/setup/climax/cta",
         "start_state": "",
-        "prompt": "English model-ready prompt for this <=15s clip, with timestamp beats if useful.",
+        "prompt": "### Clip 1\\nClip info and SRT: ...\\nTimeline: 00:00-00:15\\nStoryboard panels: Panel 1 to Panel 8\\nMatched SRT: ...\\nVisual audit: ...\\nGeneration Prompt: ...\\n[Sequence Details: Panel 1 ... -> Panel 8 ...]\\n[Global Visual Anchor: @Image2 is the single full-video storyboard contact sheet; follow only Panel 1 to Panel 8 for composition, shot order, and rhythm.]\\n[Audio/Action Cues: Voice Profile ... Timed Voiceover ... Ambient Foley ... ABSOLUTELY NO BGM, NO BACKGROUND MUSIC. Pure voice/dialogue and ambient foley only.]",
         "end_state": "",
         "handoff_to_next": ""
       }
@@ -550,8 +653,15 @@ const instruction = `
 - product_selling_points: ${text(j.productSellingPoints, '未提供')}
 
 目标语言/地区：
-- language: ${text(j.targetLanguage, '中文')}
-- country: ${text(j.targetCountry, '中国')}
+- language: ${text(j.targetLanguage, 'source')}
+- country: ${text(j.targetCountry, 'auto')}
+
+语言规则：
+- 如果 language 是 source / auto / 跟随原视频：原始口播 full_original_script 保持原视频语言；改写口播 full_rewritten_script、beat_map.rewritten_dialogue_or_text、scenes.rewritten_script 默认使用中文，除非用户显式选择其他目标语言。
+- 如果 language 是 en / English：改写口播必须输出英文。
+- 如果 language 是 zh-CN / 中文：改写口播必须输出中文。
+- 如果 language 是 ja / ko / es 等：改写口播必须输出对应语言。
+- clone_prompt.clips[].prompt 仍然使用英文视频生成提示词，但其中引用的口播文本可以保持目标语言原文。
 `.trim();
 
 return [{
@@ -606,23 +716,295 @@ function toNumber(v, fallback = 0) {
 function text(v) {
   return v == null ? '' : String(v).trim();
 }
+function url(v) {
+  const s = text(v);
+  if (!s || /^(undefined|null|nan)$/i.test(s)) return '';
+  return /^https?:\/\//i.test(s) ? s : '';
+}
+function toRecordArray(value) {
+  return Array.isArray(value)
+    ? value.filter((item) => item && typeof item === 'object' && !Array.isArray(item))
+    : [];
+}
+function toTime(sec) {
+  const value = Math.max(0, Number(sec) || 0);
+  const mm = Math.floor(value / 60);
+  const ss = Math.floor(value % 60);
+  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+}
+function timeToSeconds(value) {
+  const raw = text(value);
+  const matched = raw.match(/^(\d{1,2}):(\d{2})$/);
+  if (!matched) return NaN;
+  return Number(matched[1]) * 60 + Number(matched[2]);
+}
+function rangeToSeconds(range) {
+  const raw = text(range);
+  const matched = raw.match(/(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})/);
+  if (!matched) return null;
+  return {
+    start: Number(matched[1]) * 60 + Number(matched[2]),
+    end: Number(matched[3]) * 60 + Number(matched[4]),
+  };
+}
+function parsePanelRange(value) {
+  const raw = text(value);
+  const matched = raw.match(/(?:Panel\s*)?(\d+)\s*(?:-|to|到|至|~|–)\s*(?:Panel\s*)?(\d+)/i);
+  if (!matched) return null;
+  const start = Number(matched[1]);
+  const end = Number(matched[2]);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  return {
+    start: Math.min(start, end),
+    end: Math.max(start, end),
+    range: `Panel ${Math.min(start, end)} to Panel ${Math.max(start, end)}`,
+  };
+}
+function panelForSecond(sec) {
+  const panels = Array.isArray(base.storyboard_grid?.panels) ? base.storyboard_grid.panels : [];
+  if (!panels.length) return 0;
+  return panels.reduce((best, panel) => Math.abs(toNumber(panel.time_sec, 0) - sec) < Math.abs(toNumber(best.time_sec, 0) - sec) ? panel : best, panels[0]).panel || 0;
+}
+function normalizeClipPlanItem(clip, idx, basePlan = {}) {
+  const range = rangeToSeconds(clip.time_range || basePlan.time_range || '');
+  const start = toNumber(clip.start_sec ?? basePlan.start_sec, range?.start ?? 0);
+  const durationValue = toNumber(clip.duration ?? basePlan.duration, NaN);
+  const end = toNumber(clip.end_sec ?? basePlan.end_sec, range?.end ?? (Number.isFinite(durationValue) ? start + durationValue : start + 15));
+  const parsedPanels = parsePanelRange(clip.panel_range || clip.panels || clip.panelRange || basePlan.panel_range || basePlan.panels);
+  const panelStart = toNumber(clip.panel_start ?? clip.panelStart ?? basePlan.panel_start ?? basePlan.panelStart, parsedPanels?.start ?? panelForSecond(start));
+  const panelEnd = toNumber(clip.panel_end ?? clip.panelEnd ?? basePlan.panel_end ?? basePlan.panelEnd, parsedPanels?.end ?? panelForSecond(end));
+  return {
+    clip_index: toNumber(clip.clip_index ?? clip.clipIndex, idx + 1),
+    time_range: text(clip.time_range || basePlan.time_range || `${toTime(start)}-${toTime(end)}`),
+    duration: Math.min(15, Math.max(0.2, toNumber(clip.duration ?? basePlan.duration, end - start))),
+    start_sec: start,
+    end_sec: end,
+    panel_start: panelStart,
+    panel_end: panelEnd,
+    panel_range: text(clip.panel_range || parsedPanels?.range || basePlan.panel_range || (panelStart ? `Panel ${panelStart} to Panel ${panelEnd || panelStart}` : '')),
+    frame_count: toNumber(clip.frame_count ?? clip.frameCount ?? basePlan.frame_count, Math.max(0, panelEnd - panelStart + 1)),
+    notes: text(clip.notes || basePlan.notes),
+  };
+}
+function deriveClipPlanFromClips(clips) {
+  return clips.map((clip, idx) => normalizeClipPlanItem(clip, idx));
+}
+function overlapSeconds(a, b) {
+  if (!a || !b) return 0;
+  return Math.max(0, Math.min(a.end, b.end) - Math.max(a.start, b.start));
+}
+function pickRowsInRange(rows, range) {
+  const target = rangeToSeconds(range);
+  if (!target) return rows;
+  const selected = rows.filter((row) => overlapSeconds(target, rangeToSeconds(row.time_range || row.timeRange || '')) > 0);
+  return selected.length ? selected : rows;
+}
+function ensureFullScript(parsed, scenes) {
+  if (!text(parsed.full_original_script)) {
+    parsed.full_original_script = scenes
+      .map((scene) => text(scene.original_script || scene.dialogue_or_text || scene.on_screen_text_graphics))
+      .filter(Boolean)
+      .join(' ');
+  }
+  if (!text(parsed.full_rewritten_script)) {
+    parsed.full_rewritten_script = scenes
+      .map((scene) => text(scene.rewritten_script || scene.rewritten_text))
+      .filter(Boolean)
+      .join(' ');
+  }
+}
+function ensureSceneCoverage(parsed, scenes) {
+  const rows = Array.isArray(scenes) ? scenes : [];
+  const beats = toRecordArray(parsed.beat_map || parsed.beatMap);
+  if (!beats.length || rows.length >= beats.length) return rows;
+  return beats.map((beat, idx) => {
+    const existing = pickRowsInRange(rows, beat.time_range || '')[0] || rows[idx] || {};
+    const range = rangeToSeconds(beat.time_range || '') || { start: idx * 3, end: idx * 3 + 3 };
+    return {
+      ...existing,
+      order: toNumber(existing.order, idx + 1),
+      time_range: text(existing.time_range || beat.time_range),
+      duration: toNumber(existing.duration, Math.max(0.2, range.end - range.start)),
+      start_time: text(existing.start_time || toTime(range.start)),
+      shot_goal: text(existing.shot_goal || beat.function || beat.beat),
+      visual_content_description: text(existing.visual_content_description || existing.visual_description || beat.visual),
+      location_setting: text(existing.location_setting),
+      character_desc: text(existing.character_desc),
+      emotion_state: text(existing.emotion_state),
+      action_blocking: text(existing.action_blocking || beat.replication_note),
+      product_desc: text(existing.product_desc || parsed.source_video_analysis?.product_role),
+      must_show: text(existing.must_show || beat.visual),
+      on_screen_text_graphics: text(existing.on_screen_text_graphics || beat.dialogue_or_text),
+      camera_shot_size: text(existing.camera_shot_size),
+      camera_angle: text(existing.camera_angle),
+      camera_movement: text(existing.camera_movement || parsed.source_video_analysis?.camera_language),
+      composition_notes: text(existing.composition_notes || beat.replication_note),
+      lighting_atmosphere: text(existing.lighting_atmosphere || parsed.source_video_analysis?.technical_texture),
+      color_grading: text(existing.color_grading),
+      original_script: text(existing.original_script || beat.dialogue_or_text),
+      rewritten_script: text(existing.rewritten_script || beat.rewritten_dialogue_or_text),
+      language_style: text(existing.language_style || parsed.source_video_analysis?.dialogue_pattern),
+      emphasis_notes: text(existing.emphasis_notes || beat.function),
+      audio_bgm: '',
+      audio_sfx: text(existing.audio_sfx),
+      ambient_sound: text(existing.ambient_sound),
+      editing_transition: text(existing.editing_transition || 'Hard cut.'),
+      pacing_notes: text(existing.pacing_notes || parsed.source_video_analysis?.edit_rhythm),
+      constraints_real_shoot: text(existing.constraints_real_shoot),
+      constraints_compliance: text(existing.constraints_compliance),
+      image_prompt: text(existing.image_prompt || `A vertical phone photo matching this ad beat: ${beat.visual || ''}`),
+      video_prompt: ensureNoBgmPrompt(existing.video_prompt || `Vertical handheld phone video matching this ad beat: ${beat.visual || ''}.`),
+      visual_description: text(existing.visual_description || existing.visual_content_description || beat.visual),
+      camera_notes: text(existing.camera_notes || existing.camera_movement || parsed.source_video_analysis?.camera_language),
+      lighting_notes: text(existing.lighting_notes || existing.lighting_atmosphere || parsed.source_video_analysis?.technical_texture),
+      has_person: existing.has_person !== false,
+      has_product: existing.has_product !== false,
+    };
+  });
+}
+function ensureNoBgmPrompt(value) {
+  const rule = 'ABSOLUTELY NO BGM, NO BACKGROUND MUSIC. Pure voice/dialogue and ambient foley only.';
+  const prompt = text(value);
+  if (!prompt) return rule;
+  return /no\s+(bgm|background music)|without\s+(bgm|background music)/i.test(prompt)
+    ? prompt
+    : `${prompt}\n${rule}`;
+}
+function clipPlans() {
+  return Array.isArray(base.clip_plan) && base.clip_plan.length
+    ? base.clip_plan
+    : (Array.isArray(base.clip_boards) ? base.clip_boards : []);
+}
+function buildFallbackPrompt(clip, idx, parsed, scenes, beats, totalDuration) {
+  const plan = clipPlans()[idx] || {};
+  const clipRange = text(clip.time_range || plan.time_range || `${toTime(idx * 15)}-${toTime(Math.min(totalDuration, (idx + 1) * 15))}`);
+  const duration = Math.min(15, Math.max(0.2, toNumber(clip.duration || plan.duration, 15)));
+  const panelRange = text(clip.panel_range || plan.panel_range || `Panel ${toNumber(clip.panel_start || plan.panel_start, 1)} to Panel ${toNumber(clip.panel_end || plan.panel_end, 1)}`);
+  const relatedBeats = pickRowsInRange(beats, clipRange);
+  const relatedScenes = pickRowsInRange(scenes, clipRange);
+  const firstScene = relatedScenes[0] || {};
+  const lastScene = relatedScenes[relatedScenes.length - 1] || firstScene;
+  const beatText = relatedBeats.slice(0, 4).map((beat, beatIdx) => {
+    const localStart = Math.min(Math.floor((duration / Math.max(3, relatedBeats.length)) * beatIdx), Math.max(0, duration - 1));
+    const localEnd = beatIdx === relatedBeats.length - 1
+      ? duration
+      : Math.min(duration, Math.floor((duration / Math.max(3, relatedBeats.length)) * (beatIdx + 1)));
+    return `${localStart}-${localEnd}s ${text(beat.beat || `Beat ${beatIdx + 1}`)}: ${text(beat.visual || beat.function || '')}; ${text(beat.rewritten_dialogue_or_text || beat.dialogue_or_text || '')}`;
+  });
+  while (beatText.length < 3) {
+    const n = beatText.length;
+    beatText.push(`${Math.floor((duration / 3) * n)}-${Math.floor((duration / 3) * (n + 1))}s beat ${n + 1}: continue the same ad grammar with clear product action and viewer-facing payoff.`);
+  }
+  const product = text(firstScene.product_desc || parsed.source_video_analysis?.product_role || base.productName || 'the user product');
+  const setting = text(firstScene.location_setting || 'a real everyday environment matching the source ad');
+  const character = text(firstScene.character_desc || 'the same type of believable subject from the source video');
+  const visual = text(firstScene.visual_content_description || firstScene.visual_description || relatedBeats[0]?.visual || 'a social ad scene');
+  const finalVisual = text(lastScene.visual_content_description || lastScene.visual_description || relatedBeats[relatedBeats.length - 1]?.visual || visual);
+  const camera = text(firstScene.camera_notes || [firstScene.camera_shot_size, firstScene.camera_angle, firstScene.camera_movement].filter(Boolean).join(', ') || parsed.source_video_analysis?.camera_language || 'handheld phone camera with quick social cuts');
+  const lighting = text(firstScene.lighting_notes || firstScene.lighting_atmosphere || parsed.source_video_analysis?.technical_texture || 'natural available light with small real-world imperfections');
+  const originalScript = relatedScenes.map((scene) => text(scene.original_script)).filter(Boolean).join(' ');
+  const rewrittenScript = relatedScenes.map((scene) => text(scene.rewritten_script)).filter(Boolean).join(' ');
+  const dialogue = text(rewrittenScript || clip.rewritten_script || parsed.full_rewritten_script || 'Use short natural subtitles matching the source pacing and adapted to the user product.');
+  const handoff = idx > 0
+    ? `This clip begins from the previous clip ending state: ${text(clip.start_state || visual)}.`
+    : 'This is the first clip and must establish the hook immediately.';
+
+  return [
+    `### Clip ${idx + 1}`,
+    `Clip info and SRT: ${duration} seconds vertical social ad segment. Source/adapted script rhythm: ${text(originalScript || parsed.source_video_analysis?.dialogue_pattern || 'short hook, product proof, and CTA')} -> "${dialogue}".`,
+    `Timeline: ${clipRange}`,
+    `Storyboard panels: ${panelRange}`,
+    `Matched SRT: ${beatText.join(' | ')}`,
+    `Visual audit: subject is ${character}; product is ${product}; setting is ${setting}; start with ${visual}; end with ${finalVisual}; camera uses ${camera}; lighting/texture is ${lighting}.`,
+    `Generation Prompt: ${duration} seconds vertical UGC-style ad, filmed on smartphone. ${handoff} Keep one primary action per beat, visible product handling, natural jump cuts matching the source ad grammar, and clear continuity into the next clip. Photorealistic documentary phone quality, handheld, slight shake, soft focus on fast movement, natural phone mic ambience, no filters, no color-graded look. The product must remain visually unchanged if a product reference is supplied.`,
+    `[Sequence Details: ${panelRange}; ${beatText.join(' -> ')}]`,
+    `[Global Visual Anchor: @Image2 is the single full-video storyboard contact sheet; follow only ${panelRange} for composition, shot order, and rhythm. Do not output a collage, grid, split-screen, border, panel number, or frame label.]`,
+    `[Audio/Action Cues: Voice Profile natural phone-recorded social ad voice. Timed Voiceover "${dialogue}". Ambient Foley from the real setting only. ABSOLUTELY NO BGM, NO BACKGROUND MUSIC. Pure voice/dialogue and ambient foley only. No watermark, no distorted hands, no extra products, no cinematic, no professional, no studio, no 8k.]`
+  ].join('\n');
+}
+function repairClonePrompt(clonePrompt, parsed, scenes, totalDuration) {
+  const boards = clipPlans();
+  const expected = boards.length || (totalDuration > 15 ? Math.ceil(totalDuration / 15) : 1);
+  const sourceClips = Array.isArray(clonePrompt?.clips) ? clonePrompt.clips : [];
+  const beats = toRecordArray(parsed.beat_map || parsed.beatMap);
+  const clips = [];
+  for (let idx = 0; idx < expected; idx += 1) {
+    const board = normalizeClipPlanItem(boards[idx] || {}, idx);
+    const original = sourceClips[idx] || {};
+    const duration = Math.min(15, Math.max(0.2, toNumber(original.duration ?? board.duration, Math.min(15, totalDuration || 15))));
+    const timeRange = text(original.time_range || board.time_range || `${toTime(idx * 15)}-${toTime(Math.min(totalDuration || duration, idx * 15 + duration))}`);
+    const normalizedOriginal = normalizeClipPlanItem(original, idx, board);
+    const panelStart = normalizedOriginal.panel_start;
+    const panelEnd = normalizedOriginal.panel_end;
+    const panelRange = normalizedOriginal.panel_range;
+    const prompt = ensureNoBgmPrompt(original.prompt);
+    const hasMarkers = ['### Clip', 'Storyboard panels:', '[Sequence Details:', '[Global Visual Anchor:', '[Audio/Action Cues:'].every((marker) => prompt.includes(marker));
+    clips.push({
+      clip_index: toNumber(original.clip_index, idx + 1),
+      time_range: timeRange,
+      duration,
+      panel_start: panelStart,
+      panel_end: panelEnd,
+      panel_range: panelRange,
+      role: text(original.role || (idx === 0 ? 'hook/setup' : idx === expected - 1 ? 'climax/cta' : 'demo/proof')),
+      start_state: text(original.start_state || pickRowsInRange(scenes, timeRange)[0]?.visual_content_description || ''),
+      prompt: hasMarkers && prompt.length >= 360
+        ? prompt
+        : buildFallbackPrompt({ ...original, time_range: timeRange, duration, panel_start: panelStart, panel_end: panelEnd, panel_range: panelRange }, idx, parsed, scenes, beats, totalDuration),
+      end_state: text(original.end_state || pickRowsInRange(scenes, timeRange).slice(-1)[0]?.visual_content_description || ''),
+      handoff_to_next: text(original.handoff_to_next || (idx < expected - 1 ? `Continue into clip ${idx + 2} from this exact final action and visual state.` : 'Final CTA frame.')),
+    });
+  }
+  return {
+    ...clonePrompt,
+    generation_strategy: totalDuration > 15 ? 'multi_clip_sequential' : 'single_clip',
+    global_style_rules: text(clonePrompt?.global_style_rules || clonePrompt?.globalStyleRules || '保留源视频广告语法：节拍顺序、镜头节奏、产品露出方式、情绪推进和 CTA 结构。'),
+    global_negative_rules: ensureNoBgmPrompt(clonePrompt?.global_negative_rules || clonePrompt?.globalNegativeRules || '不要复制原品牌、原标签、原人物身份、水印、平台 UI 或背景音乐；避免棚拍和过度精修质感。'),
+    dialogue_adaptation_rules: text(clonePrompt?.dialogue_adaptation_rules || clonePrompt?.dialogueAdaptationRules || '保留原视频句式、行数、停顿和能量曲线，只替换产品卖点与行动号召。'),
+    clips,
+  };
+}
 function normalizeClipDurations(clonePrompt, totalDuration) {
   const clips = Array.isArray(clonePrompt?.clips) ? clonePrompt.clips : [];
   if (!clips.length) return clonePrompt;
   clonePrompt.clips = clips.map((clip, idx) => {
-    const duration = Math.min(15, Math.max(0.2, toNumber(clip.duration, 15)));
+    const board = clipPlans()[idx] || null;
+    const duration = Math.min(15, Math.max(0.2, toNumber(clip.duration ?? board?.duration, 15)));
     return {
       clip_index: toNumber(clip.clip_index, idx + 1),
-      time_range: text(clip.time_range),
+      time_range: text(clip.time_range || board?.time_range),
       duration,
+      panel_start: toNumber(clip.panel_start ?? board?.panel_start, 0),
+      panel_end: toNumber(clip.panel_end ?? board?.panel_end, 0),
+      panel_range: text(clip.panel_range || board?.panel_range),
       role: text(clip.role),
       start_state: text(clip.start_state),
-      prompt: text(clip.prompt),
+      prompt: ensureNoBgmPrompt(clip.prompt),
       end_state: text(clip.end_state),
       handoff_to_next: text(clip.handoff_to_next),
     };
   });
   clonePrompt.generation_strategy = totalDuration > 15 ? 'multi_clip_sequential' : (clonePrompt.generation_strategy || 'single_clip');
+  return clonePrompt;
+}
+function validateClonePrompt(clonePrompt) {
+  const clips = Array.isArray(clonePrompt?.clips) ? clonePrompt.clips : [];
+  const expected = clipPlans().length ? clipPlans().length : (totalDuration > 15 ? Math.ceil(totalDuration / 15) : 1);
+  if (clips.length !== expected) {
+    throw new Error(`clone_prompt.clips 数量不对：expected=${expected}, got=${clips.length}`);
+  }
+  clips.forEach((clip, idx) => {
+    const prompt = text(clip.prompt);
+    if (prompt.length < 360) {
+      throw new Error(`clip ${idx + 1} prompt 太短：${prompt.length} chars，必须输出 Arcads 级详细复刻提示词`);
+    }
+    for (const marker of ['### Clip', 'Storyboard panels:', '[Sequence Details:', '[Global Visual Anchor:', '[Audio/Action Cues:']) {
+      if (!prompt.includes(marker)) {
+        throw new Error(`clip ${idx + 1} prompt 缺少 ${marker}`);
+      }
+    }
+    if (!text(clip.panel_range)) throw new Error(`clip ${idx + 1} 缺少 panel_range`);
+  });
   return clonePrompt;
 }
 
@@ -637,20 +1019,34 @@ try { parsed = parseJson(rawText); } catch (e) {
 const totalDuration = toNumber(parsed.total_duration, base.videoDurationSec || 0);
 const scenes = Array.isArray(parsed.scenes) ? parsed.scenes : [];
 if (!scenes.length) throw new Error('Gemini 未返回 scenes 数组');
+ensureFullScript(parsed, scenes);
+const storyboardGridUrl = url(base.storyboard_grid_url);
+if (!storyboardGridUrl) throw new Error('上游缺少 storyboard_grid_url，不能使用 Gemini 返回值兜底');
+const parsedClips = Array.isArray(parsed.clone_prompt?.clips) ? parsed.clone_prompt.clips : [];
+const clipPlan = Array.isArray(parsed.clip_plan) && parsed.clip_plan.length
+  ? parsed.clip_plan
+  : (Array.isArray(parsed.clip_boards) && parsed.clip_boards.length
+      ? parsed.clip_boards
+      : (parsedClips.length ? deriveClipPlanFromClips(parsedClips) : clipPlans()));
+const cleanClipPlan = clipPlan.map((clip, idx) => normalizeClipPlanItem(clip, idx, clipPlans()[idx] || {}));
+const repairedClonePrompt = repairClonePrompt(parsed.clone_prompt || {}, parsed, scenes, totalDuration);
+const coveredScenes = ensureSceneCoverage(parsed, scenes);
 
 const normalized = {
   ...parsed,
   pipeline_key: parsed.pipeline_key || base.pipelineKey,
-  analysis_model: 'gemini-3.1-flash-lite-preview',
+  analysis_model: 'gemini-3-flash-preview',
   total_duration: totalDuration,
   scene_count: scenes.length,
-  storyboard_grid_url: parsed.storyboard_grid_url || base.storyboard_grid_url,
-  clip_boards: Array.isArray(parsed.clip_boards) && parsed.clip_boards.length ? parsed.clip_boards : base.clip_boards,
-  clone_prompt: normalizeClipDurations(parsed.clone_prompt || {}, totalDuration),
-  scenes,
+  storyboard_grid_url: storyboardGridUrl,
+  storyboard_grid: parsed.storyboard_grid || base.storyboard_grid || {},
+  clip_plan: cleanClipPlan,
+  clip_boards: cleanClipPlan,
+  clone_prompt: validateClonePrompt(normalizeClipDurations(repairedClonePrompt, totalDuration)),
+  scenes: coveredScenes,
 };
 
-const segments = scenes.map((scene, idx) => ({
+const segments = coveredScenes.map((scene, idx) => ({
   ...scene,
   order: toNumber(scene.order, idx + 1),
   duration: toNumber(scene.duration, 8),
@@ -662,6 +1058,7 @@ const segments = scenes.map((scene, idx) => ({
   lighting_notes: text(scene.lighting_notes || scene.lighting_atmosphere),
   image_prompt: text(scene.image_prompt),
   video_prompt: text(scene.video_prompt),
+  audio_bgm: '',
   has_person: scene.has_person !== false,
   has_product: scene.has_product !== false,
 }));
@@ -680,13 +1077,18 @@ return {
 
 CODE_CALLBACK_PAYLOAD = r"""const data = $json || {};
 const workflowData = data.workflow_data || {};
+function cleanUrl(v) {
+  const s = v == null ? '' : String(v).trim();
+  if (!s || /^(undefined|null|nan)$/i.test(s)) return '';
+  return /^https?:\/\//i.test(s) ? s : '';
+}
 return {
   json: {
     task_id: data.taskId,
     taskId: data.taskId,
     record_id: data.taskId,
     status: 'completed',
-    storyboard_grid_url: workflowData.storyboard_grid_url || data.storyboard_grid_url,
+    storyboard_grid_url: cleanUrl(workflowData.storyboard_grid_url) || cleanUrl(data.storyboard_grid_url),
     segments: data.segments || [],
     workflow_data: workflowData,
     api_key: data.apiKey || ''
@@ -761,7 +1163,7 @@ workflow = {
         }, node_id="miniapp-viral-build-gemini"),
         node("Gemini爆款拆解", "n8n-nodes-base.httpRequest", [1536, 0], {
             "method": "POST",
-            "url": "https://yunwu.ai/v1beta/models/gemini-3.1-flash-lite-preview:generateContent",
+            "url": "https://yunwu.ai/v1beta/models/gemini-3-flash-preview:generateContent",
             "authentication": "genericCredentialType",
             "genericAuthType": "httpHeaderAuth",
             "sendHeaders": True,

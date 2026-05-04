@@ -12,6 +12,13 @@ type JsonRecord = Record<string, unknown>;
 const toText = (value: unknown): string =>
   typeof value === "string" ? value.trim() : "";
 
+const toUrl = (value: unknown): string => {
+  const text = toText(value);
+  if (!text || /^(undefined|null|nan)$/i.test(text)) return "";
+  if (text.startsWith("//")) return `https:${text}`;
+  return /^https?:\/\//i.test(text) ? text : "";
+};
+
 const toNumber = (value: unknown): number | null => {
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
@@ -93,10 +100,10 @@ const pickWorkflowData = (body: JsonRecord, eventData: JsonRecord | null): JsonR
 };
 
 const pickStoryboardGridUrl = (body: JsonRecord, workflowData: JsonRecord | null): string =>
-  toText(body?.storyboard_grid_url) ||
-  toText(body?.storyboardGridUrl) ||
-  toText(workflowData?.storyboard_grid_url) ||
-  toText(workflowData?.storyboardGridUrl) ||
+  toUrl(body?.storyboard_grid_url) ||
+  toUrl(body?.storyboardGridUrl) ||
+  toUrl(workflowData?.storyboard_grid_url) ||
+  toUrl(workflowData?.storyboardGridUrl) ||
   "";
 
 const pickSegments = (
@@ -115,6 +122,7 @@ const pickSegments = (
     eventData?.data,
     workflowData?.segments,
     workflowData?.results,
+    workflowData?.scenes,
     workflowData?.scene_breakdown,
     workflowData?.shots,
   ];
@@ -279,6 +287,29 @@ export async function POST(req: NextRequest) {
     // 2. Update storyboard task status
     const isCompleted = isCompletedStatus(status) || (segments.length > 0 && !isFailedStatus(status) && !errorMessage);
     const isFailed = isFailedStatus(status) || Boolean(errorMessage);
+    const existingTask = await prisma.storyboardTask.findUnique({
+      where: { id: taskId },
+      select: { detailedBreakdown: true },
+    });
+    const existingDetailed = existingTask?.detailedBreakdown &&
+      typeof existingTask.detailedBreakdown === "object" &&
+      !Array.isArray(existingTask.detailedBreakdown)
+      ? existingTask.detailedBreakdown as Record<string, unknown>
+      : {};
+    const existingMetadata = existingDetailed.metadata &&
+      typeof existingDetailed.metadata === "object" &&
+      !Array.isArray(existingDetailed.metadata)
+      ? existingDetailed.metadata as Record<string, unknown>
+      : {};
+    const nextDetailed = workflowData && typeof workflowData === "object" && !Array.isArray(workflowData)
+      ? workflowData as Record<string, unknown>
+      : { segments };
+    const nextMetadata = nextDetailed.metadata &&
+      typeof nextDetailed.metadata === "object" &&
+      !Array.isArray(nextDetailed.metadata)
+      ? nextDetailed.metadata as Record<string, unknown>
+      : {};
+
     const updateData: any = {
       progress: isCompleted ? 30 : 0,
       updatedAt: new Date(),
@@ -286,7 +317,14 @@ export async function POST(req: NextRequest) {
 
     if (isCompleted) {
       updateData.status = "BREAKDOWN_COMPLETED";
-      updateData.detailedBreakdown = workflowData || { segments };
+      updateData.detailedBreakdown = {
+        ...existingDetailed,
+        ...nextDetailed,
+        metadata: {
+          ...existingMetadata,
+          ...nextMetadata,
+        },
+      };
       if (storyboardGridUrl) {
         updateData.storyboardImageUrl = storyboardGridUrl;
         updateData.coverImage = storyboardGridUrl;

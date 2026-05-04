@@ -181,6 +181,7 @@
   overflow: hidden
 
 .monetization-card-media
+  position: relative
   height: 434rpx
   background: #0f0f0f
 
@@ -188,6 +189,29 @@
   width: 100%
   height: 100%
   display: block
+
+.monetization-card-video
+  width: 100%
+  height: 100%
+  display: block
+
+.monetization-card-video-badge
+  position: absolute
+  left: 14rpx
+  top: 14rpx
+  height: 38rpx
+  padding: 0 16rpx
+  border-radius: 999rpx
+  background: rgba(0, 0, 0, 0.58)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.monetization-card-video-badge-text
+  font-size: 20rpx
+  line-height: 1
+  color: #ffffff
+  font-weight: 800
 
 .monetization-card-fallback
   width: 100%
@@ -305,3 +329,74 @@
   color: rgba(255, 255, 255, 0.96)
   font-size: 30rpx
   font-weight: 500
+
+.monetization-video-modal
+  position: fixed
+  left: 0
+  right: 0
+  top: 0
+  bottom: 0
+  z-index: 120
+  display: flex
+  align-items: center
+  justify-content: center
+  padding: calc(env(safe-area-inset-top) + 36rpx) 28rpx calc(env(safe-area-inset-bottom) + 36rpx)
+  box-sizing: border-box
+
+.monetization-video-backdrop
+  position: absolute
+  left: 0
+  right: 0
+  top: 0
+  bottom: 0
+  background: rgba(0, 0, 0, 0.82)
+
+.monetization-video-panel
+  position: relative
+  z-index: 1
+  width: 100%
+  max-height: 100%
+  border-radius: 24rpx
+  overflow: hidden
+  background: #101010
+  border: 1rpx solid rgba(255, 255, 255, 0.16)
+
+.monetization-video-head
+  height: 84rpx
+  padding: 0 18rpx 0 24rpx
+  display: flex
+  align-items: center
+  justify-content: space-between
+  gap: 18rpx
+  box-sizing: border-box
+
+.monetization-video-title
+  color: #ffffff
+  font-size: 28rpx
+  font-weight: 800
+  flex: 1
+  min-width: 0
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap
+
+.monetization-video-close
+  width: 56rpx
+  height: 56rpx
+  border-radius: 999rpx
+  background: rgba(255, 255, 255, 0.1)
+  display: flex
+  align-items: center
+  justify-content: center
+  flex-shrink: 0
+
+.monetization-video-close-text
+  color: #ffffff
+  font-size: 40rpx
+  line-height: 1
+
+.monetization-video-player
+  width: 100%
+  height: 74vh
+  display: block
+  background: #000000

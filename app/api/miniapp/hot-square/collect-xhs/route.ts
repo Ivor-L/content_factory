@@ -19,7 +19,20 @@ function normalizeText(value: unknown): string {
 }
 
 function parseObject(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  if (!value) return null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed || (!trimmed.startsWith('{') && !trimmed.startsWith('['))) return null;
+    try {
+      const parsed = JSON.parse(trimmed);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value !== 'object' || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
 }
 
@@ -75,6 +88,80 @@ function pickText(payload: Record<string, unknown>, keys: string[]): string | nu
   return null;
 }
 
+function sanitizeUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.startsWith('blob:')) return null;
+  if (trimmed.startsWith('//')) return `https:${trimmed}`;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return null;
+}
+
+function extractUrl(value: unknown): string | null {
+  const direct = sanitizeUrl(value);
+  if (direct) return direct;
+
+  if (typeof value === 'string') {
+    const parsed = parseObject(value);
+    return parsed ? extractUrl(parsed) : null;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const url = extractUrl(item);
+      if (url) return url;
+    }
+    return null;
+  }
+
+  const obj = parseObject(value);
+  if (!obj) return null;
+
+  const candidates = [
+    obj.url,
+    obj.urlDefault,
+    obj.url_default,
+    obj.src,
+    obj.href,
+    obj.imageUrl,
+    obj.image_url,
+    obj.avatarUrl,
+    obj.avatar_url,
+    obj.coverUrl,
+    obj.cover_url,
+    obj.displayUrl,
+    obj.display_url,
+    obj.thumbnail,
+  ];
+  for (const candidate of candidates) {
+    const url = extractUrl(candidate);
+    if (url) return url;
+  }
+  return null;
+}
+
+function pickUrlAtPaths(payload: Record<string, unknown>, paths: string[]): string | null {
+  for (const path of paths) {
+    const url = extractUrl(getByPath(payload, path));
+    if (url) return url;
+  }
+  return null;
+}
+
+function pickUrl(payload: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = extractUrl(payload[key]);
+    if (value) return value;
+  }
+  for (const obj of collectObjects(payload).slice(1)) {
+    for (const key of keys) {
+      const value = extractUrl(obj[key]);
+      if (value) return value;
+    }
+  }
+  return null;
+}
+
 function parseMetric(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) return Math.round(value);
   if (typeof value !== 'string') return null;
@@ -113,6 +200,18 @@ function pickNumber(payload: Record<string, unknown>, keys: string[]): number | 
   return null;
 }
 
+function pickNumberAtPaths(payload: Record<string, unknown>, paths: string[]): number | null {
+  for (const path of paths) {
+    const value = parseMetric(getByPath(payload, path));
+    if (value != null) return value;
+  }
+  return null;
+}
+
+function pickMetric(payload: Record<string, unknown>, paths: string[], keys: string[]): number | null {
+  return pickNumberAtPaths(payload, paths) ?? pickNumber(payload, keys);
+}
+
 function parseArrayOfString(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.map((item) => normalizeText(item)).filter(Boolean);
@@ -124,6 +223,204 @@ function parseArrayOfString(value: unknown): string[] {
       .filter(Boolean);
   }
   return [];
+}
+
+function normalizeAuthor(payload: Record<string, unknown>) {
+  const name = pickTextAtPaths(payload, [
+    '作者昵称',
+    '作者名称',
+    '用户昵称',
+    '用户名称',
+    '博主昵称',
+    '博主',
+    '作者',
+    'author.name',
+    'author.nickname',
+    'author.nickName',
+    'author.nick_name',
+    'author.username',
+    'user.name',
+    'user.nickname',
+    'user.nickName',
+    'user.nick_name',
+    'user.username',
+    'user_info.name',
+    'user_info.nickname',
+    'userInfo.name',
+    'userInfo.nickname',
+    'note.user.name',
+    'note.user.nickname',
+    'note.userInfo.nickname',
+    'note.user_info.nickname',
+    'note.note_card.user.nickname',
+    'note.note_card.user_info.nickname',
+    'note_card.user.nickname',
+    'note_card.user_info.nickname',
+    'data.user.nickname',
+    'data.user_info.nickname',
+    'data.note_card.user.nickname',
+    'data.note_card.user_info.nickname',
+    'result.user.nickname',
+    'result.user_info.nickname',
+  ]) || pickText(payload, [
+    'nickname',
+    'nickName',
+    'nick_name',
+    'authorName',
+    'author_name',
+    'userName',
+    'username',
+    'name',
+  ]);
+
+  const avatar = pickUrlAtPaths(payload, [
+    '作者头像',
+    '用户头像',
+    '博主头像',
+    '头像',
+    'author.avatar',
+    'author.avatarUrl',
+    'author.avatar_url',
+    'author.image',
+    'author.imageUrl',
+    'author.image_url',
+    'user.avatar',
+    'user.avatarUrl',
+    'user.avatar_url',
+    'user.image',
+    'user.imageUrl',
+    'user.image_url',
+    'user_info.avatar',
+    'user_info.avatarUrl',
+    'user_info.avatar_url',
+    'user_info.image',
+    'user_info.imageUrl',
+    'user_info.image_url',
+    'userInfo.avatar',
+    'userInfo.avatarUrl',
+    'userInfo.avatar_url',
+    'note.user.avatar',
+    'note.user.avatarUrl',
+    'note.user_info.avatar',
+    'note.userInfo.avatar',
+    'note.note_card.user.avatar',
+    'note.note_card.user_info.avatar',
+    'note_card.user.avatar',
+    'note_card.user.avatarUrl',
+    'note_card.user_info.avatar',
+    'data.user.avatar',
+    'data.user_info.avatar',
+    'data.note_card.user.avatar',
+    'data.note_card.user_info.avatar',
+    'result.user.avatar',
+    'result.user_info.avatar',
+  ]) || pickUrl(payload, [
+    'avatar',
+    'avatarUrl',
+    'avatar_url',
+    'authorAvatar',
+    'author_avatar',
+    'userAvatar',
+    'user_avatar',
+    'image',
+    'imageUrl',
+    'image_url',
+  ]);
+
+  return { name, avatar };
+}
+
+function normalizeStats(payload: Record<string, unknown>) {
+  return {
+    likes: pickMetric(payload, [
+      'stats.likes',
+      'stats.likeCount',
+      'stats.like_count',
+      'stats.likedCount',
+      'stats.liked_count',
+      'interactInfo.likedCount',
+      'interactInfo.liked_count',
+      'interact_info.likedCount',
+      'interact_info.liked_count',
+      'interactionInfo.likedCount',
+      'interaction_info.liked_count',
+      'note.stats.likes',
+      'note.interactInfo.likedCount',
+      'note.interact_info.liked_count',
+      'note.note_card.interact_info.liked_count',
+      'note_card.interact_info.liked_count',
+      'data.stats.likes',
+      'data.interactInfo.likedCount',
+      'data.interact_info.liked_count',
+      'data.note_card.interact_info.liked_count',
+      'result.stats.likes',
+    ], ['点赞数', '点赞', '赞数', 'liked_count', 'like_count', 'likeCount', 'likedCount', 'likes']),
+    collects: pickMetric(payload, [
+      'stats.collects',
+      'stats.collectCount',
+      'stats.collect_count',
+      'stats.collectedCount',
+      'stats.collected_count',
+      'interactInfo.collectedCount',
+      'interactInfo.collected_count',
+      'interact_info.collectedCount',
+      'interact_info.collected_count',
+      'interactionInfo.collectedCount',
+      'interaction_info.collected_count',
+      'note.stats.collects',
+      'note.interactInfo.collectedCount',
+      'note.interact_info.collected_count',
+      'note.note_card.interact_info.collected_count',
+      'note_card.interact_info.collected_count',
+      'data.stats.collects',
+      'data.interactInfo.collectedCount',
+      'data.interact_info.collected_count',
+      'data.note_card.interact_info.collected_count',
+      'result.stats.collects',
+    ], ['收藏数', '收藏', 'collected_count', 'collect_count', 'collectCount', 'collectedCount', 'collects']),
+    comments: pickMetric(payload, [
+      'stats.comments',
+      'stats.commentCount',
+      'stats.comment_count',
+      'interactInfo.commentCount',
+      'interactInfo.comment_count',
+      'interact_info.commentCount',
+      'interact_info.comment_count',
+      'interactionInfo.commentCount',
+      'interaction_info.comment_count',
+      'note.stats.comments',
+      'note.interactInfo.commentCount',
+      'note.interact_info.comment_count',
+      'note.note_card.interact_info.comment_count',
+      'note_card.interact_info.comment_count',
+      'data.stats.comments',
+      'data.interactInfo.commentCount',
+      'data.interact_info.comment_count',
+      'data.note_card.interact_info.comment_count',
+      'result.stats.comments',
+    ], ['评论数', '评论', 'comment_count', 'commentCount', 'comments']),
+    shares: pickMetric(payload, [
+      'stats.shares',
+      'stats.shareCount',
+      'stats.share_count',
+      'interactInfo.shareCount',
+      'interactInfo.share_count',
+      'interact_info.shareCount',
+      'interact_info.share_count',
+      'interactionInfo.shareCount',
+      'interaction_info.share_count',
+      'note.stats.shares',
+      'note.interactInfo.shareCount',
+      'note.interact_info.share_count',
+      'note.note_card.interact_info.share_count',
+      'note_card.interact_info.share_count',
+      'data.stats.shares',
+      'data.interactInfo.shareCount',
+      'data.interact_info.share_count',
+      'data.note_card.interact_info.share_count',
+      'result.stats.shares',
+    ], ['分享数', '分享', 'share_count', 'shareCount', 'shares']),
+  };
 }
 
 function normalizeUrls(raw: string[]): string[] {
@@ -471,17 +768,13 @@ export async function POST(request: NextRequest) {
     null;
   const mediaUrls = mediaCandidates.filter((url) => !isVideoUrl(url));
   const isVideoNote = Boolean(videoUrl);
+  const author = normalizeAuthor(payload);
+  const stats = normalizeStats(payload);
   const rawPayload = {
-    author: {
-      name: pickText(payload, ['作者昵称', '作者名称', '用户昵称', '用户名称', '博主昵称', '博主', '作者', 'nickname', 'nickName', 'nick_name', 'authorName', 'author_name', 'userName', 'username', 'name']),
-      avatar: pickText(payload, ['作者头像', '用户头像', '博主头像', '头像', 'avatar', 'avatarUrl', 'avatar_url', 'authorAvatar', 'author_avatar', 'userAvatar', 'user_avatar', 'image']),
-    },
-    stats: {
-      likes: pickNumber(payload, ['点赞数', '点赞', '赞数', 'liked_count', 'like_count', 'likeCount', 'likedCount', 'likes']),
-      collects: pickNumber(payload, ['收藏数', '收藏', 'collected_count', 'collect_count', 'collectCount', 'collectedCount', 'collects']),
-      comments: pickNumber(payload, ['评论数', '评论', 'comment_count', 'commentCount', 'comments']),
-      shares: pickNumber(payload, ['分享数', '分享', 'share_count', 'shareCount', 'shares']),
-    },
+    raw: payload,
+    originalPayload: payload,
+    author,
+    stats,
     media: {
       videoUrl,
       mediaUrls,
@@ -546,8 +839,8 @@ export async function POST(request: NextRequest) {
       mediaUrls,
       videoUrl,
       sourceType: isVideoNote ? 'video' : 'note',
-      author: rawPayload.author,
-      stats: rawPayload.stats,
+      author,
+      stats,
       rawPayload,
     });
 

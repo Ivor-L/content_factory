@@ -7,6 +7,113 @@ import { deductCredits } from "@/lib/credits";
 import { getCreditCost } from "@/lib/creditCosts";
 import { logCreditUsage } from "@/lib/logCreditUsage";
 
+const NO_BGM_RULE =
+  "ABSOLUTELY NO BGM, NO BACKGROUND MUSIC. Pure voice/dialogue and ambient foley only.";
+
+function cleanUrl(value: unknown): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text || /^(undefined|null|nan)$/i.test(text)) return "";
+  if (text.startsWith("//")) return `https:${text}`;
+  return /^https?:\/\//i.test(text) ? text : "";
+}
+
+function ensureNoBgmPrompt(prompt: string): string {
+  const text = prompt.trim();
+  if (!text) return NO_BGM_RULE;
+  return /no\s+(bgm|background music)|without\s+(bgm|background music)/i.test(text)
+    ? text
+    : `${text}\n\n${NO_BGM_RULE}`;
+}
+
+function isSeedanceModel(model: unknown): boolean {
+  return /seedance/i.test(String(model || ""));
+}
+
+function isSeedanceFastModel(model: unknown): boolean {
+  return /seedance.*fast|fast.*seedance/i.test(String(model || ""));
+}
+
+function getStoryboardGridUrl(task: Record<string, unknown>, breakdown: Record<string, unknown> | null): string {
+  return (
+    cleanUrl(task.storyboardImageUrl) ||
+    cleanUrl(task.coverImage) ||
+    cleanUrl(breakdown?.storyboard_grid_url) ||
+    cleanUrl(breakdown?.storyboardGridUrl) ||
+    cleanUrl((breakdown?.workflow_data as Record<string, unknown> | undefined)?.storyboard_grid_url)
+  );
+}
+
+function withSeedanceStoryboardReference(prompt: string, params: Record<string, unknown>, storyboardGridUrl: string): string {
+  if (!storyboardGridUrl) return prompt;
+  const panelRange =
+    typeof params.panel_range === "string"
+      ? params.panel_range
+      : typeof params.panelRange === "string"
+        ? params.panelRange
+        : "";
+  const timeRange =
+    typeof params.time_range === "string"
+      ? params.time_range
+      : typeof params.timeRange === "string"
+        ? params.timeRange
+        : "";
+
+  return [
+    prompt,
+    "",
+    "Seedance 2.0 reference protocol:",
+    "- @Image1 is the current clip first frame or product-replaced reference frame.",
+    "- @Image2 is the full storyboard contact sheet for the source video.",
+    "- Additional reference images may follow as @Image3-@Image9; use them only for product/detail consistency if supplied.",
+    `- Use only the matching storyboard area${panelRange ? ` (${panelRange})` : ""}${timeRange ? ` for ${timeRange}` : ""} as composition, camera rhythm, action order, and pacing reference.`,
+    "- Do not generate a collage, grid, split-screen, border, panel number, frame label, or storyboard layout. The final output must be one normal full-screen 9:16 video clip.",
+  ].join("\n");
+}
+
+function toProviderModel(model: unknown): string {
+  if (!isSeedanceModel(model)) return String(model || "veo3.1-fast");
+  return isSeedanceFastModel(model) ? "bytedance/seedance-2-fast" : "bytedance/seedance-2";
+}
+
+function resolveSeedanceProviderApiKey(): string {
+  return (
+    process.env.SEEDANCE_KIE_API_KEY?.trim() ||
+    process.env.KIE_SEEDANCE_API_KEY?.trim() ||
+    process.env.KIE_API_KEY?.trim() ||
+    ""
+  );
+}
+
+function getReferenceImageUrls(
+  firstFrameUrl: string,
+  storyboardGridUrl: string,
+  params: Record<string, unknown>,
+): string[] {
+  const urls: string[] = [];
+  const push = (value: unknown) => {
+    const url = cleanUrl(value);
+    if (url && !urls.includes(url) && urls.length < 9) urls.push(url);
+  };
+
+  push(firstFrameUrl);
+  push(storyboardGridUrl);
+
+  const subjectRefs = Array.isArray(params.subject_refs) ? params.subject_refs : [];
+  for (const ref of subjectRefs) {
+    if (!ref || typeof ref !== "object") continue;
+    push((ref as Record<string, unknown>).url);
+  }
+
+  const extraRefs = Array.isArray(params.reference_image_urls)
+    ? params.reference_image_urls
+    : Array.isArray(params.referenceImageUrls)
+      ? params.referenceImageUrls
+      : [];
+  for (const url of extraRefs) push(url);
+
+  return urls;
+}
+
 /**
  * Batch trigger video generation for storyboard segments
  * POST /api/storyboard/[id]/generate-videos
@@ -84,6 +191,16 @@ export async function POST(
         { status: 400 }
       );
     }
+    const seedanceProviderApiKey = isSeedanceModel(model) ? resolveSeedanceProviderApiKey() : "";
+    if (isSeedanceModel(model) && !seedanceProviderApiKey) {
+      return NextResponse.json(
+        {
+          error: "Seedance provider key not configured",
+          message: "Seedance 2.0 需要配置 KIE_API_KEY 或 SEEDANCE_KIE_API_KEY 后才能发起。",
+        },
+        { status: 400 }
+      );
+    }
 
     // 4. Resolve webhook + callback URLs
     const webhookUrl =
@@ -120,6 +237,7 @@ export async function POST(
     // 5. Fire n8n for each segment
     const breakdown = task.detailedBreakdown as Record<string, unknown> | null;
     const style = (breakdown?.style as Record<string, unknown>) ?? {};
+    const storyboardGridUrl = getStoryboardGridUrl(task as unknown as Record<string, unknown>, breakdown);
 
     const styleProfileRaw = (style.styleProfileText as string) ?? "";
     let styleProfileJson: unknown = null;
@@ -132,15 +250,38 @@ export async function POST(
     }
 
     const triggers = targetSegments.map(async (segment) => {
+      const generationParams = segment.generationParams &&
+        typeof segment.generationParams === "object" &&
+        !Array.isArray(segment.generationParams)
+        ? segment.generationParams as Record<string, unknown>
+        : {};
+      const basePrompt = ensureNoBgmPrompt(segment.videoPrompt || segment.visualDescription || "");
+      const firstFrameUrl = cleanUrl(segment.generatedImage) || cleanUrl(generationParams.reference_frame_url);
+      const finalPrompt = isSeedanceModel(model) && firstFrameUrl && storyboardGridUrl
+        ? withSeedanceStoryboardReference(basePrompt, generationParams, storyboardGridUrl)
+        : basePrompt;
+
       const payload = {
         segment_id: segment.id,
         task_id: id,
-        prompt: segment.videoPrompt || segment.visualDescription || "",
-        image_url: segment.generatedImage || null,
-        model,
+        prompt: finalPrompt,
+        image_url: firstFrameUrl || null,
+        first_frame_url: firstFrameUrl || null,
+        storyboard_grid_url: storyboardGridUrl || null,
+        storyboardGridUrl: storyboardGridUrl || null,
+        reference_image_urls: isSeedanceModel(model)
+          ? getReferenceImageUrls(firstFrameUrl, storyboardGridUrl, generationParams)
+          : [],
+        time_range: segment.timeRange || null,
+        duration: segment.duration || 8,
+        model: toProviderModel(model),
+        requested_model: model,
+        requestedModel: model,
         aspect_ratio: "9:16",
         callback_url: callbackUrl,
         api_key: apiKey,
+        provider_api_key: seedanceProviderApiKey || undefined,
+        providerApiKey: seedanceProviderApiKey || undefined,
         admin_token: process.env.ADMIN_TOKEN,
         creative_style_raw: (style.creativeStyleRaw as string) ?? "",
         creative_style_norm: (style.creativeStyleNorm as string) ?? "写实",
@@ -186,7 +327,7 @@ export async function POST(
     if (successCount > 0) {
       await prisma.storyboardTask.update({
         where: { id },
-        data: { status: "VIDEO_GENERATING", progress: 65 },
+        data: { status: "VIDEO_GENERATING", progress: 65, videoModel: model },
       });
     }
 

@@ -4,7 +4,7 @@ const uploadBodySizeLimit = (process.env.NEXT_UPLOAD_SIZE_LIMIT ?? "150mb") as S
 
 const nextConfig: NextConfig = {
   output: 'standalone',
-  serverExternalPackages: ['ali-oss'],
+  serverExternalPackages: ['ali-oss', 'playwright', 'playwright-core'],
   typescript: {
     // Pre-existing type errors in canvas + nexapi modules don't affect runtime
     ignoreBuildErrors: true,

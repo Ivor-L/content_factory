@@ -9,6 +9,8 @@ const DEFAULT_PATHS: Record<CanvasEndpointKind, string> = {
   videoTask: "/video/query?id={taskId}",
 };
 
+const DEFAULT_IMAGE_GENERATIONS_URL = "https://yunwu.ai/v1/images/generations";
+
 const SPECIFIC_URL_ENV: Record<CanvasEndpointKind, string> = {
   chat: "CANVAS_CHAT_COMPLETIONS_URL",
   image: "CANVAS_IMAGE_GENERATIONS_URL",
@@ -36,8 +38,19 @@ function readEnv(name: string) {
   return (process.env[name] || "").trim();
 }
 
+function isConfiguredUrl(value: string) {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return /^https?:$/i.test(url.protocol) && !/\.example(?:\/|$)/i.test(url.hostname + url.pathname);
+  } catch {
+    return false;
+  }
+}
+
 function resolveCanvasBaseUrl() {
-  return readEnv("CANVAS_API_BASE_URL") || readEnv("CLOUD_API_BASE_URL");
+  const candidates = [readEnv("CANVAS_API_BASE_URL"), readEnv("CLOUD_API_BASE_URL")];
+  return candidates.find(isConfiguredUrl) || "";
 }
 
 export function resolveCanvasUpstreamEndpoint(
@@ -52,11 +65,14 @@ export function resolveCanvasUpstreamEndpoint(
     endpoint = specificUrl;
   } else {
     const baseUrl = resolveCanvasBaseUrl();
-    if (!baseUrl) {
+    if (baseUrl) {
+      const path = readEnv(PATH_ENV[kind]) || DEFAULT_PATHS[kind];
+      endpoint = joinBaseAndPath(baseUrl, path);
+    } else if (kind === "image") {
+      endpoint = DEFAULT_IMAGE_GENERATIONS_URL;
+    } else {
       return null;
     }
-    const path = readEnv(PATH_ENV[kind]) || DEFAULT_PATHS[kind];
-    endpoint = joinBaseAndPath(baseUrl, path);
   }
 
   if (kind === "videoTask") {
@@ -100,11 +116,14 @@ export function buildCanvasUpstreamHeaders({
 }
 
 export function resolveCanvasUpstreamApiKey(fallbackApiKey?: string | null) {
+  const defaultKey = resolveDefaultCanvasApiKey();
+  if (defaultKey) {
+    return defaultKey;
+  }
   if (fallbackApiKey?.trim()) {
     return fallbackApiKey.trim();
   }
-  const defaultKey = resolveDefaultCanvasApiKey();
-  return defaultKey || null;
+  return null;
 }
 
 export function canvasMissingEndpointResponse(kind: CanvasEndpointKind) {
@@ -167,7 +186,6 @@ export async function relayUpstreamResponse(upstream: Response) {
 function resolveDefaultCanvasApiKey() {
   const candidates = [
     readEnv("CANVAS_UPSTREAM_DEFAULT_API_KEY"),
-    readEnv("CANVAS_CREDITS_DEFAULT_API_KEY"),
     readEnv("CLOUD_API_KEY"),
     readEnv("DEFAULT_USER_API_KEY"),
   ];

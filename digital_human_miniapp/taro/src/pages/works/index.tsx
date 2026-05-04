@@ -8,6 +8,7 @@ import './index.sass';
 const TABS = [
   { id: 'all', label: '全部' },
   { id: 'image-text', label: '图文' },
+  { id: 'remix', label: '复刻' },
   { id: 'video', label: '视频' },
   { id: 'copy', label: '文案' },
 ];
@@ -17,7 +18,7 @@ const RETENTION_MS = WORK_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 export default function WorksPage() {
   const [activeTab, setActiveTab] = useState('all');
-  const [works, setWorks] = useState<any[]>([]);
+  const [works, setWorks] = useState<WorkItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [scrollTop, setScrollTop] = useState(0);
   const currentScrollTopRef = useRef(0);
@@ -114,8 +115,9 @@ export default function WorksPage() {
     const taskType = String(item?.taskType || '').toLowerCase();
     if (item?.source === 'task' && taskType === 'storyboard') {
       const storyboardTaskId = String(item?.taskId || item?.id || '').trim();
+      const isRemix = isRemixWork(item);
       Taro.navigateTo({
-        url: `/subpages/storyboard-board/index?id=${encodeURIComponent(storyboardTaskId)}&title=${encodeURIComponent(payload.title)}`,
+        url: `/subpages/storyboard-board/index?id=${encodeURIComponent(storyboardTaskId)}&title=${encodeURIComponent(payload.title)}${isRemix ? '&mode=remix' : ''}`,
       });
       return;
     }
@@ -164,16 +166,18 @@ export default function WorksPage() {
                   const placeholderKind = getPlaceholderKind(item.type);
                   const posterPageCount = getPosterPageCount(item);
                   const isProcessing = isWorkProcessing(item);
-                  const videoPreviewUrl = item.type === 'video' ? resolveWorkVideoUrl(item) : '';
+                  const isRemix = isRemixWork(item);
+                  const videoPreviewUrl = isRemix ? resolveRemixReferenceVideoUrl(item) : item.type === 'video' ? resolveWorkVideoUrl(item) : '';
+                  const cardStatus = getWorkStatusLabel(item);
 
                   return (
                     <View
                       key={`${item.type}-${item.id}`}
-                      className={`works-card ${isProcessing ? 'works-card--processing' : ''}`}
+                      className={`works-card ${isProcessing ? 'works-card--processing' : ''} ${isRemix ? 'works-card--remix' : ''}`}
                       onClick={() => handleOpenDetail(item)}
                     >
                       <View className={`works-cover ${coverRatioClass}`}>
-                        {videoPreviewUrl && !isProcessing ? (
+                        {videoPreviewUrl ? (
                           <Video
                             className='works-cover-video'
                             src={videoPreviewUrl}
@@ -196,7 +200,12 @@ export default function WorksPage() {
                             {renderWorksPlaceholderIcon(placeholderKind)}
                           </View>
                         )}
-                        {item.type === 'video' && (
+                        {isRemix && (
+                          <View className='works-remix-badge'>
+                            <Text className='works-remix-badge-text'>智能复刻</Text>
+                          </View>
+                        )}
+                        {item.type === 'video' && !isRemix && (
                           <View className='works-video-icon'>
                             <Text className='works-video-icon-text'>▶</Text>
                           </View>
@@ -216,11 +225,14 @@ export default function WorksPage() {
 
                       <View className='works-card-body'>
                         <Text className='works-card-title'>{item.title}</Text>
+                        {isRemix && (
+                          <Text className='works-card-preview'>{getRemixStageText(item)}</Text>
+                        )}
                         {item.taskType === 'digitalHuman' && item.preview && (
                           <Text className='works-card-preview'>{item.preview}</Text>
                         )}
                         <View className='works-card-bottom'>
-                          {isProcessing && <Text className='works-card-status'>生成中</Text>}
+                          {cardStatus && <Text className='works-card-status'>{cardStatus}</Text>}
                           <Text className='works-card-date'>{formatDate(item.createdAt)}</Text>
                         </View>
                       </View>
@@ -275,6 +287,54 @@ function resolveWorkVideoUrl(item: any): string {
     if (url) return url;
   }
   return '';
+}
+
+function resolveRemixReferenceVideoUrl(item: any): string {
+  const metadata = item?.metadata && typeof item.metadata === 'object'
+    ? item.metadata as Record<string, unknown>
+    : null;
+  const candidates = [
+    metadata?.referenceVideoUrl,
+    metadata?.reference_video_url,
+    metadata?.videoUrl,
+    metadata?.video_url,
+    item?.videoUrl,
+    item?.preview,
+  ];
+  for (const candidate of candidates) {
+    const url = typeof candidate === 'string' ? candidate.trim() : '';
+    if (url && /^https?:\/\//i.test(url)) return url;
+  }
+  return '';
+}
+
+function isRemixWork(item: any): boolean {
+  const metadata = item?.metadata && typeof item.metadata === 'object'
+    ? item.metadata as Record<string, unknown>
+    : null;
+  return item?.type === 'remix' || metadata?.feature === 'viral_remix';
+}
+
+function getRemixStageText(item: any): string {
+  const metadata = item?.metadata && typeof item.metadata === 'object'
+    ? item.metadata as Record<string, unknown>
+    : null;
+  const status = String(item?.status || '').toUpperCase();
+  if (status.includes('FAIL') || status.includes('ERROR')) return '智能复刻失败，可点开查看当前任务状态';
+  const progress = Number(item?.progress ?? 0);
+  if (Number.isFinite(progress) && progress >= 100) return '智能复刻已完成，可查看成片与分镜资产';
+  if (Number.isFinite(progress) && progress >= 60) return '正在生成替换图和视频片段';
+  if (Number.isFinite(progress) && progress >= 20) return '已完成爆款拆解，等待产品/角色替换';
+  const strategy = String(metadata?.strategy || '').toUpperCase();
+  return strategy === 'STORYBOARD' ? '正在生成智能复刻分镜板' : '正在拆解参考视频';
+}
+
+function getWorkStatusLabel(item: any): string {
+  const status = String(item?.status || '').toUpperCase();
+  if (status.includes('FAIL') || status.includes('ERROR')) return '失败';
+  if (status.includes('COMPLETE') || status === 'DONE' || status === 'SUCCESS') return '已完成';
+  if (isRemixWork(item)) return '复刻中';
+  return isWorkProcessing(item) ? '生成中' : '';
 }
 
 function getPosterImages(item: any): string[] {
@@ -351,6 +411,8 @@ function collectImageUrls(value: unknown, depth = 0): string[] {
       obj.src,
       obj.publicUrl,
       obj.public_url,
+      obj.fileUrl,
+      obj.file_url,
       obj.thumbnailUrl,
       obj.thumbnail_url,
       obj.coverUrl,
@@ -374,6 +436,7 @@ function getPosterPageCount(item: any): number {
 }
 
 function getCoverRatioClass(index: number, type: string) {
+  if (type === 'remix') return 'works-cover--ratio-4x5';
   if (type === 'video') return 'works-cover--ratio-4x5';
   if (index % 3 === 0) return 'works-cover--ratio-1x1';
   if (index % 3 === 1) return 'works-cover--ratio-4x5';
@@ -412,15 +475,24 @@ function splitAlternatingColumns<T>(items: T[]) {
   );
 }
 
-type PlaceholderKind = 'video' | 'image' | 'copy';
+type PlaceholderKind = 'video' | 'image' | 'copy' | 'remix';
 
 function getPlaceholderKind(type?: string): PlaceholderKind {
+  if (type === 'remix') return 'remix';
   if (type === 'video') return 'video';
   if (type === 'image-text') return 'image';
   return 'copy';
 }
 
 function renderWorksPlaceholderIcon(kind: PlaceholderKind) {
+  if (kind === 'remix') {
+    return (
+      <View className='works-placeholder-icon works-placeholder-icon--remix'>
+        <Text className='works-placeholder-remix-text'>AI</Text>
+      </View>
+    );
+  }
+
   if (kind === 'video') {
     return (
       <View className='works-placeholder-icon'>

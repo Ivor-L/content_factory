@@ -66,8 +66,9 @@ ENV NEXT_TELEMETRY_DISABLED 1
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# Install openssl for Prisma and prisma CLI for migrations
-RUN apk add --no-cache openssl
+# Install runtime binaries for Prisma and preview-image exports
+RUN apk add --no-cache openssl chromium font-noto-cjk
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
 # Install prisma globally to ensure the CLI is available for migrations in entrypoint
 RUN npm install -g prisma --registry=https://registry.npmmirror.com
 

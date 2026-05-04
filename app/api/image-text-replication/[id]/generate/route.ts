@@ -319,7 +319,7 @@ export async function POST(
   try {
     rewritten = await rewriteXhsNote({
       title: sourceTitle,
-      body: topicHint ? `${topicHint}\n\n${sourceText}` : sourceText,
+      body: sourceText,
       imageTexts: sourceImageTexts,
     });
   } catch (error) {

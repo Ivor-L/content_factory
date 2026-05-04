@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
-import { getApiKeyForUser, getRequestUserContext } from "@/lib/authServer";
+import { getProfileApiKeyForUser, getRequestUserContext } from "@/lib/authServer";
 import {
   CanvasCreditCharge,
   CanvasCreditsError,
   deductCanvasCredits,
   ensureCanvasCreditsAvailable,
-  resolveCanvasCreditsApiKey,
 } from "@/lib/canvasCredits";
 import {
   buildCanvasUpstreamHeaders,
@@ -269,7 +268,7 @@ export async function POST(request: NextRequest) {
   }
   const requestBody = body as Record<string, unknown>;
   const modelName = resolveModelName(requestBody);
-  const creditsApiKey = (await getApiKeyForUser(effectiveUserId)) || resolveCanvasCreditsApiKey(null);
+  const creditsApiKey = await getProfileApiKeyForUser(effectiveUserId);
   if (!creditsApiKey) {
     return NextResponse.json(
       {

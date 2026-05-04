@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, Image } from '@tarojs/components';
+import { View, Text, ScrollView, Image, Video } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { useMemo, useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
@@ -21,6 +21,13 @@ const MONETIZATION_TABS = [
   { id: 'share', label: '分享变现' },
 ] as const;
 
+const TAB_BAR_ROUTES = new Set([
+  '/pages/home/index',
+  '/pages/hot-square/index',
+  '/pages/works/index',
+  '/pages/profile/index',
+]);
+
 type MonetizationTabId = (typeof MONETIZATION_TABS)[number]['id'];
 
 type ShareVideoItem = {
@@ -38,6 +45,12 @@ type ShareVideoSection = {
   items: ShareVideoItem[];
 };
 
+type PreviewVideoState = {
+  title: string;
+  videoUrl: string;
+  poster?: string;
+} | null;
+
 function isShareCategory(id: string, name: string): boolean {
   const normalizedId = String(id || '').trim().toLowerCase();
   const normalizedName = String(name || '').trim();
@@ -45,7 +58,13 @@ function isShareCategory(id: string, name: string): boolean {
 }
 
 function buildRoute(route: string, params?: Record<string, string | number | boolean | null>): string {
-  const cleanRoute = String(route || '').trim();
+  const rawRoute = String(route || '').trim();
+  const legacyRouteMap: Record<string, string> = {
+    '/pages/generate/index': '/subpages/generate/index',
+    '/pages/remix-generate/index': '/subpages/remix-generate/index',
+    '/pages/image-generate/index': '/subpages/image-generate/index',
+  };
+  const cleanRoute = legacyRouteMap[rawRoute] || rawRoute;
   if (!cleanRoute) return '';
   if (!params || Object.keys(params).length === 0) return cleanRoute;
   const qs = Object.entries(params)
@@ -56,12 +75,17 @@ function buildRoute(route: string, params?: Record<string, string | number | boo
   return cleanRoute.includes('?') ? `${cleanRoute}&${qs}` : `${cleanRoute}?${qs}`;
 }
 
+function getRoutePath(url: string): string {
+  return String(url || '').split('?')[0] || '';
+}
+
 export default function MonetizationSquarePage() {
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState('');
   const [config, setConfig] = useState<MonetizationSquareConfigPayload | null>(null);
   const [activeCategoryId, setActiveCategoryId] = useState('');
   const [activeTab, setActiveTab] = useState<MonetizationTabId>('creation');
+  const [previewVideo, setPreviewVideo] = useState<PreviewVideoState>(null);
 
   useDidShow(() => {
     void (async () => {
@@ -147,6 +171,34 @@ export default function MonetizationSquarePage() {
     Taro.switchTab({ url: '/pages/home/index' });
   };
 
+  const navigateToConfiguredRoute = (targetUrl: string) => {
+    const routePath = getRoutePath(targetUrl);
+    if (TAB_BAR_ROUTES.has(routePath)) {
+      Taro.switchTab({
+        url: routePath,
+        fail: (error) => {
+          console.error('[monetization-square] switchTab failed', { targetUrl, routePath, error });
+          Taro.showToast({ title: '页面跳转失败', icon: 'none' });
+        },
+      });
+      return;
+    }
+
+    Taro.navigateTo({
+      url: targetUrl,
+      fail: (error) => {
+        console.error('[monetization-square] navigateTo failed, retry redirectTo', { targetUrl, error });
+        Taro.redirectTo({
+          url: targetUrl,
+          fail: (redirectError) => {
+            console.error('[monetization-square] redirectTo failed', { targetUrl, redirectError });
+            Taro.showToast({ title: '页面跳转失败', icon: 'none' });
+          },
+        });
+      },
+    });
+  };
+
   const handleOpenItem = (item: MonetizationItemConfig) => {
     const action = item.action;
     if (action.type !== 'route') {
@@ -160,12 +212,21 @@ export default function MonetizationSquarePage() {
       return;
     }
 
-    Taro.navigateTo({
-      url: targetUrl,
-      fail: () => {
-        Taro.showToast({ title: '页面跳转失败', icon: 'none' });
-      },
-    });
+    navigateToConfiguredRoute(targetUrl);
+  };
+
+  const handleOpenCreationCard = (item: MonetizationItemConfig) => {
+    const videoUrl = String(item.demoVideoUrl || '').trim();
+    if (videoUrl) {
+      setPreviewVideo({
+        title: item.title || '视频预览',
+        videoUrl,
+        poster: item.coverImageUrl,
+      });
+      return;
+    }
+
+    handleOpenItem(item);
   };
 
   const handleOpenShareVideo = (item: ShareVideoItem) => {
@@ -292,39 +353,70 @@ export default function MonetizationSquarePage() {
 
                         <ScrollView scrollX className='monetization-demo-scroll' showScrollbar={false}>
                           <View className='monetization-demo-list'>
-                            {group.demos.map((demo) => (
-                              <View
-                                key={`${group.id}-${demo.id}`}
-                                className='monetization-card'
-                                onClick={() => handleOpenItem({
-                                  id: demo.id,
-                                  title: demo.title,
-                                  subtitle: demo.subtitle,
-                                  coverImageUrl: demo.coverImageUrl,
-                                  demoVideoUrl: demo.demoVideoUrl,
-                                  tags: demo.tags,
-                                  action: demo.action,
-                                })}
-                              >
-                                <View className='monetization-card-media'>
-                                  {!!demo.coverImageUrl ? (
-                                    <Image className='monetization-card-cover' src={demo.coverImageUrl} mode='aspectFill' />
-                                  ) : (
-                                    <View className='monetization-card-fallback'>
-                                      <Text className='monetization-card-fallback-text'>{demo.title.slice(0, 4)}</Text>
-                                    </View>
-                                  )}
-                                </View>
-                                <View className='monetization-card-body'>
-                                  <View className='monetization-card-footer'>
-                                    <Text className='monetization-card-title'>{demo.title}</Text>
-                                    <View className='monetization-card-btn'>
-                                      <Text className='monetization-card-btn-text'>做同款</Text>
+                            {group.demos.map((demo) => {
+                              const demoItem: MonetizationItemConfig = {
+                                id: demo.id,
+                                title: demo.title,
+                                subtitle: demo.subtitle,
+                                coverImageUrl: demo.coverImageUrl,
+                                demoVideoUrl: demo.demoVideoUrl,
+                                tags: demo.tags,
+                                action: demo.action,
+                              };
+
+                              return (
+                                <View
+                                  key={`${group.id}-${demo.id}`}
+                                  className='monetization-card'
+                                  onClick={() => handleOpenCreationCard(demoItem)}
+                                >
+                                  <View className='monetization-card-media'>
+                                    {!!demo.demoVideoUrl ? (
+                                      <>
+                                        <Video
+                                          className='monetization-card-video'
+                                          src={demo.demoVideoUrl}
+                                          poster={demo.coverImageUrl || undefined}
+                                          controls={false}
+                                          autoplay={false}
+                                          muted
+                                          showCenterPlayBtn={false}
+                                          showFullscreenBtn={false}
+                                          objectFit='cover'
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            handleOpenCreationCard(demoItem);
+                                          }}
+                                        />
+                                        <View className='monetization-card-video-badge'>
+                                          <Text className='monetization-card-video-badge-text'>视频</Text>
+                                        </View>
+                                      </>
+                                    ) : !!demo.coverImageUrl ? (
+                                      <Image className='monetization-card-cover' src={demo.coverImageUrl} mode='aspectFill' />
+                                    ) : (
+                                      <View className='monetization-card-fallback'>
+                                        <Text className='monetization-card-fallback-text'>{demo.title.slice(0, 4)}</Text>
+                                      </View>
+                                    )}
+                                  </View>
+                                  <View className='monetization-card-body'>
+                                    <View className='monetization-card-footer'>
+                                      <Text className='monetization-card-title'>{demo.title}</Text>
+                                      <View
+                                        className='monetization-card-btn'
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          handleOpenItem(demoItem);
+                                        }}
+                                      >
+                                        <Text className='monetization-card-btn-text'>做同款</Text>
+                                      </View>
                                     </View>
                                   </View>
                                 </View>
-                              </View>
-                            ))}
+                              );
+                            })}
                           </View>
                         </ScrollView>
                       </View>
@@ -380,6 +472,31 @@ export default function MonetizationSquarePage() {
           </ScrollView>
         )}
       </View>
+
+      {!!previewVideo && (
+        <View className='monetization-video-modal'>
+          <View className='monetization-video-backdrop' onClick={() => setPreviewVideo(null)} />
+          <View className='monetization-video-panel'>
+            <View className='monetization-video-head'>
+              <Text className='monetization-video-title'>{previewVideo.title}</Text>
+              <View className='monetization-video-close' onClick={() => setPreviewVideo(null)}>
+                <Text className='monetization-video-close-text'>×</Text>
+              </View>
+            </View>
+            <Video
+              className='monetization-video-player'
+              src={previewVideo.videoUrl}
+              poster={previewVideo.poster}
+              controls
+              autoplay
+              muted={false}
+              showCenterPlayBtn
+              showFullscreenBtn
+              objectFit='contain'
+            />
+          </View>
+        </View>
+      )}
     </View>
   );
 }

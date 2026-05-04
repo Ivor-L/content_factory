@@ -234,6 +234,8 @@ type SvgTableRow = {
 
 type SvgPageItem = SvgTextItem | SvgTableRow;
 
+const SVG_CJK_FONT_FAMILY = "PingFang SC, Heiti SC, Arial Unicode MS, Hiragino Sans GB, sans-serif";
+
 function normalizeMetaKey(raw: string): string {
   return raw.trim().toLowerCase().replace(/\s+/g, "_").replace(/-/g, "_");
 }
@@ -727,7 +729,7 @@ export function renderCardPageSvg(params: {
     const coverSubtitle = escapeXml((cover.coverSubtitle || "").trim());
     const coverTextColor = (cover.coverTextColor || template.defaultTextColor || "#1a1a1a").trim();
     const coverAccentColor = (cover.coverHighlightColor || template.defaultAccentColor || "#d4af37").trim();
-    const coverFontFamily = cover.coverFontFamily || "'PingFang SC','Microsoft YaHei',sans-serif";
+    const coverFontFamily = SVG_CJK_FONT_FAMILY;
     const coverRadius = Math.max(0, Math.min(64, Math.round(cover.coverCardRadius ?? 42)));
     const titleSize = Math.max(28, Math.min(220, Math.round(cover.coverFontSize ?? 92)));
     const subtitleSize = Math.max(22, Math.min(180, Math.round(cover.coverSubtitleFontSize ?? 46)));
@@ -760,7 +762,7 @@ export function renderCardPageSvg(params: {
   <rect x="0" y="0" width="${width}" height="${height}" fill="${background.fill}"/>
   <rect x="88" y="116" width="1066" height="1424" rx="${coverRadius}" fill="url(#cover-bg)" />
   ${coverImageSvg}
-  <rect x="88" y="116" width="1066" height="1424" rx="${coverRadius}" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.16)" stroke-width="2"/>
+  <rect x="88" y="116" width="1066" height="1424" rx="${coverRadius}" fill="#ffffff" fill-opacity="0.08" stroke="#ffffff" stroke-opacity="0.16" stroke-width="2"/>
   ${stickerSvg}
   <text x="120" y="220" font-size="40" fill="${coverAccentColor}" font-family="${coverFontFamily}">${escapeXml(template.nameZh)}</text>
   <text x="${x}" y="${baseY}" font-size="${titleSize}" font-weight="700" fill="${coverTextColor}" text-anchor="${textAnchor}" font-family="${coverFontFamily}" line-height="${lineHeight}">${coverTitle}</text>
@@ -773,7 +775,7 @@ export function renderCardPageSvg(params: {
   const contentBlocks = pageItems
     .map((item) => {
       if (item.kind === "text") {
-        const block = `<text x="120" y="${cursorY}" font-size="42" fill="${template.defaultTextColor}" font-family="'PingFang SC','Microsoft YaHei',sans-serif">${escapeXml(item.text)}</text>`;
+        const block = `<text x="120" y="${cursorY}" font-size="42" fill="${template.defaultTextColor}" font-family="${SVG_CJK_FONT_FAMILY}">${escapeXml(item.text)}</text>`;
         cursorY += 72;
         return block;
       }
@@ -791,7 +793,7 @@ export function renderCardPageSvg(params: {
             ? `<line x1="${x}" y1="${tableY}" x2="${x}" y2="${tableY + item.height}" stroke="${borderColor}" stroke-opacity="0.24" stroke-width="2"/>`
             : "";
           const textSvg = cellLines
-            .map((cellLine, lineIndex) => `<text x="${x + 22}" y="${tableY + 42 + lineIndex * 44}" font-size="34" font-weight="${item.header ? 700 : 500}" fill="${template.defaultTextColor}" font-family="'PingFang SC','Microsoft YaHei',sans-serif">${escapeXml(cellLine)}</text>`)
+            .map((cellLine, lineIndex) => `<text x="${x + 22}" y="${tableY + 42 + lineIndex * 44}" font-size="34" font-weight="${item.header ? 700 : 500}" fill="${template.defaultTextColor}" font-family="${SVG_CJK_FONT_FAMILY}">${escapeXml(cellLine)}</text>`)
             .join("\n");
           return `${divider}\n${textSvg}`;
         })
@@ -811,10 +813,10 @@ export function renderCardPageSvg(params: {
     ${background.defs}
   </defs>
   <rect x="0" y="0" width="${width}" height="${height}" fill="${background.fill}"/>
-  <rect x="84" y="84" width="1074" height="1488" rx="30" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.12)" stroke-width="2"/>
-  <text x="120" y="176" font-size="56" font-weight="700" fill="${template.defaultAccentColor}" font-family="'PingFang SC','Microsoft YaHei',sans-serif">${title}</text>
+  <rect x="84" y="84" width="1074" height="1488" rx="30" fill="#ffffff" fill-opacity="0.04" stroke="#ffffff" stroke-opacity="0.12" stroke-width="2"/>
+  <text x="120" y="176" font-size="56" font-weight="700" fill="${template.defaultAccentColor}" font-family="${SVG_CJK_FONT_FAMILY}">${title}</text>
   ${contentBlocks}
-  <text x="1110" y="1540" text-anchor="end" font-size="30" fill="${template.defaultTextColor}" opacity="0.72" font-family="'PingFang SC','Microsoft YaHei',sans-serif">${escapeXml(pageLabel)}</text>
+  <text x="1110" y="1540" text-anchor="end" font-size="30" fill="${template.defaultTextColor}" opacity="0.72" font-family="${SVG_CJK_FONT_FAMILY}">${escapeXml(pageLabel)}</text>
 </svg>`;
 }
 

@@ -99,7 +99,7 @@ export interface ProfilePayload {
 interface UploadMediaOptions {
   direct?: boolean;
   type?: string;
-  onProgress?: (progress: number) => void;
+  onProgress?: (progress: number, phase?: 'uploading' | 'confirming' | 'processing' | 'done') => void;
 }
 
 interface PresignUploadPayload {
@@ -109,6 +109,77 @@ interface PresignUploadPayload {
   postUploadUrl?: string;
   postFormData?: Record<string, string>;
   postMaxBytes?: number;
+}
+
+function clampUploadProgress(value: number): number {
+  return Math.max(0, Math.min(99, Number(value) || 0));
+}
+
+function isUploadBytesComplete(progress: {
+  progress?: number;
+  totalBytesExpectedToSend?: number;
+  totalBytesSent?: number;
+}): boolean {
+  const percent = Number(progress.progress) || 0;
+  const expected = Number(progress.totalBytesExpectedToSend) || 0;
+  const sent = Number(progress.totalBytesSent) || 0;
+  return percent >= 100 || (expected > 0 && sent >= expected);
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function confirmPublicUrlReady(url: string): Promise<void> {
+  const target = String(url || '').trim();
+  if (!target) throw new Error('Missing uploaded file URL');
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      const res = await Taro.request({
+        url: target,
+        method: 'HEAD' as 'GET',
+        timeout: 3000,
+      });
+      if (res.statusCode >= 200 && res.statusCode < 400) return;
+    } catch {
+      // The upload task result remains the final fallback if HEAD is unavailable.
+    }
+    await wait(450);
+  }
+
+  throw new Error('Uploaded file URL is not ready yet');
+}
+
+async function notifyUploadServerSide(
+  publicUrl: string,
+  name: string,
+  mimeType: string,
+): Promise<void> {
+  try {
+    const apiKey = getApiKey();
+    const accessToken = getAccessToken();
+    const header: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (apiKey) header['X-User-Api-Key'] = apiKey;
+    if (accessToken) header.Authorization = `Bearer ${accessToken}`;
+    const res = await Taro.request({
+      url: resolveUrl('/api/upload/confirm'),
+      method: 'POST',
+      data: { url: publicUrl, filename: name, contentType: mimeType },
+      header,
+      timeout: 15000,
+    });
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw new ApiError(res.statusCode, `Upload confirm failed: HTTP ${res.statusCode}`, res.data);
+    }
+  } catch (error) {
+    void reportClientLog('miniapp_upload_oss_confirm_notify_failed', {
+      name,
+      mimeType,
+      publicUrl,
+      error: toLoggableError(error),
+    });
+  }
 }
 
 function getApiKey(): string | null {
@@ -148,6 +219,57 @@ function shouldUseAuthApi(path: string): boolean {
 function resolveUrl(path: string): string {
   const base = shouldUseAuthApi(path) ? AUTH_API_BASE_URL : API_BASE_URL;
   return base ? `${base}${path}` : path;
+}
+
+function getCurrentPageRoute(): string {
+  try {
+    const pages = Taro.getCurrentPages();
+    const current = pages[pages.length - 1] as { route?: string; options?: Record<string, unknown> } | undefined;
+    return current?.route || '';
+  } catch {
+    return '';
+  }
+}
+
+function toLoggableError(error: unknown): Record<string, unknown> {
+  if (error instanceof ApiError) {
+    return {
+      name: error.name,
+      message: error.message,
+      status: error.status,
+      payload: error.payload,
+    };
+  }
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+    };
+  }
+  return {
+    message: String(error || 'Unknown error'),
+  };
+}
+
+export async function reportClientLog(event: string, payload: Record<string, unknown> = {}): Promise<void> {
+  try {
+    await Taro.request({
+      url: resolveUrl('/api/client-logs'),
+      method: 'POST',
+      data: {
+        event,
+        payload,
+        client: 'weapp',
+        route: getCurrentPageRoute(),
+        hasApiKey: Boolean(getApiKey()),
+        createdAt: new Date().toISOString(),
+      },
+      header: { 'Content-Type': 'application/json' },
+      timeout: 5000,
+    });
+  } catch {
+    // Best-effort diagnostics only.
+  }
 }
 
 async function request<T = unknown>(
@@ -195,6 +317,12 @@ async function uploadFile(
   mimeType: string,
   options: UploadMediaOptions = {},
 ): Promise<string> {
+  void reportClientLog('miniapp_upload_server_start', {
+    name,
+    mimeType,
+    type: options.type || null,
+  });
+
   const apiKey = getApiKey();
   const header: Record<string, string> = {};
   if (apiKey) {
@@ -209,12 +337,32 @@ async function uploadFile(
     formData: { filename: name, contentType: mimeType },
   });
   uploadTask.progress((progress) => {
-    options.onProgress?.(Math.max(0, Math.min(99, Number(progress.progress) || 0)));
+    options.onProgress?.(
+      clampUploadProgress(progress.progress),
+      isUploadBytesComplete(progress) ? 'confirming' : 'uploading',
+    );
   });
   const res = await uploadTask;
 
   if (res.statusCode < 200 || res.statusCode >= 300) {
-    throw new ApiError(res.statusCode, 'Upload failed');
+    let payload: unknown = null;
+    try {
+      payload = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+    } catch {
+      payload = res.data;
+    }
+    const message =
+      payload && typeof payload === 'object' && typeof (payload as Record<string, unknown>).error === 'string'
+        ? String((payload as Record<string, unknown>).error)
+        : `Upload failed: HTTP ${res.statusCode}`;
+    void reportClientLog('miniapp_upload_server_failed', {
+      name,
+      mimeType,
+      statusCode: res.statusCode,
+      payload,
+      message,
+    });
+    throw new ApiError(res.statusCode, message, payload);
   }
 
   const data = typeof res.data === 'string'
@@ -222,7 +370,12 @@ async function uploadFile(
     : (res.data as Record<string, unknown>);
 
   if (!data?.url) throw new ApiError(500, 'No URL returned from upload');
-  options.onProgress?.(100);
+  options.onProgress?.(100, 'done');
+  void reportClientLog('miniapp_upload_server_success', {
+    name,
+    mimeType,
+    url: data.url,
+  });
   return data.url as string;
 }
 
@@ -239,10 +392,52 @@ async function uploadFileDirectToOss(
   mimeType: string,
   options: UploadMediaOptions,
 ): Promise<string> {
+  void reportClientLog('miniapp_upload_oss_presign_start', {
+    name,
+    mimeType,
+    type: options.type || null,
+  });
   const presign = await requestUploadPresign(name, mimeType, options.type);
+  void reportClientLog('miniapp_upload_oss_presign_success', {
+    name,
+    mimeType,
+    type: options.type || null,
+    hasPostUploadUrl: Boolean(presign.postUploadUrl),
+    hasPostFormData: Boolean(presign.postFormData),
+    publicUrl: presign.publicUrl || null,
+    postMaxBytes: presign.postMaxBytes || null,
+  });
   if (!presign.postUploadUrl || !presign.postFormData || !presign.publicUrl) {
     throw new ApiError(503, 'Direct upload unavailable');
   }
+
+  let resolveConfirmed: ((res: { statusCode: number; data: string }) => void) | null = null;
+  let confirmStarted = false;
+  const confirmedByPublicUrl = new Promise<{ statusCode: number; data: string }>((resolve) => {
+    resolveConfirmed = resolve;
+  });
+
+  const startPublicUrlConfirm = () => {
+    if (confirmStarted) return;
+    confirmStarted = true;
+    void confirmPublicUrlReady(presign.publicUrl)
+      .then(() => {
+        void reportClientLog('miniapp_upload_oss_public_url_confirmed', {
+          name,
+          mimeType,
+          publicUrl: presign.publicUrl,
+        });
+        resolveConfirmed?.({ statusCode: 200, data: '' });
+      })
+      .catch((error) => {
+        void reportClientLog('miniapp_upload_oss_public_url_confirm_failed', {
+          name,
+          mimeType,
+          publicUrl: presign.publicUrl,
+          error: toLoggableError(error),
+        });
+      });
+  };
 
   const uploadTask = Taro.uploadFile({
     url: presign.postUploadUrl,
@@ -252,15 +447,41 @@ async function uploadFileDirectToOss(
     timeout: 10 * 60 * 1000,
   });
   uploadTask.progress((progress) => {
-    options.onProgress?.(Math.max(0, Math.min(99, Number(progress.progress) || 0)));
+    if (isUploadBytesComplete(progress)) {
+      options.onProgress?.(99, 'confirming');
+      startPublicUrlConfirm();
+      return;
+    }
+    options.onProgress?.(clampUploadProgress(progress.progress), 'uploading');
   });
-  const res = await uploadTask;
+  uploadTask.catch((error) => {
+    void reportClientLog('miniapp_upload_oss_task_late_failed', {
+      name,
+      mimeType,
+      error: toLoggableError(error),
+    });
+  });
+  const res = await Promise.race([uploadTask, confirmedByPublicUrl]);
 
   if (res.statusCode < 200 || res.statusCode >= 300) {
-    throw new ApiError(res.statusCode, 'Direct upload failed');
+    void reportClientLog('miniapp_upload_oss_failed', {
+      name,
+      mimeType,
+      statusCode: res.statusCode,
+      data: res.data || null,
+    });
+    throw new ApiError(res.statusCode, `Direct upload failed: HTTP ${res.statusCode}`, res.data);
   }
 
-  options.onProgress?.(100);
+  options.onProgress?.(99, 'processing');
+  void notifyUploadServerSide(presign.publicUrl, name, mimeType);
+  options.onProgress?.(100, 'done');
+  void reportClientLog('miniapp_upload_oss_success', {
+    name,
+    mimeType,
+    publicUrl: presign.publicUrl,
+    statusCode: res.statusCode,
+  });
   return presign.publicUrl;
 }
 
@@ -275,6 +496,12 @@ async function uploadMediaFile(
       return await uploadFileDirectToOss(file, name, mimeType, options);
     } catch (error) {
       console.warn('[upload] direct OSS upload failed, falling back to server upload:', error);
+      void reportClientLog('miniapp_upload_oss_fallback_to_server', {
+        name,
+        mimeType,
+        type: options.type || null,
+        error: toLoggableError(error),
+      });
       options.onProgress?.(0);
     }
   }

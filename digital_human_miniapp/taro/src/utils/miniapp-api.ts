@@ -125,13 +125,14 @@ export interface MyNoteTaskDetail {
 export interface WorkItem {
   id: string;
   title: string;
-  type: 'video' | 'image-text' | 'copy' | 'task';
+  type: 'video' | 'image-text' | 'copy' | 'remix' | 'task';
   status: TaskStatus;
   taskType?: string;
   taskId?: string;
   createdAt: string;
   preview?: string | null;
   thumbnailUrl?: string | null;
+  progress?: number | null;
   metadata?: Record<string, unknown> | null;
   source: 'task' | 'digitalHuman';
 }
@@ -168,6 +169,7 @@ export interface StoryboardSegmentItem {
   generatedVideo: string | null;
   status: string;
   originalScript: string | null;
+  rewrittenScript?: string | null;
   generationParams?: Record<string, unknown> | null;
 }
 
@@ -185,6 +187,8 @@ export interface StoryboardTaskStatusResult {
   imageModel?: string | null;
   videoModel?: string | null;
   finalVideoUrl: string | null;
+  storyboardImageUrl?: string | null;
+  coverImage?: string | null;
   detailedBreakdown?: Record<string, unknown> | null;
   references: StoryboardReferenceItem[];
   segments: StoryboardSegmentItem[];
@@ -822,11 +826,23 @@ function isHttpStatusError(error: unknown, statusCode: number): boolean {
 
 function detectWorkType(item: any): WorkItem['type'] {
   const taskType = String(item?.taskType ?? '').toLowerCase();
+  const metadata = item?.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata)
+    ? item.metadata as Record<string, unknown>
+    : null;
+  if (taskType === 'storyboard' && metadata?.feature === 'viral_remix') return 'remix';
   if (taskType === 'storyboard') return 'video';
   if (taskType.includes('video') || taskType.includes('digital') || taskType === 't2v') return 'video';
   if (taskType.includes('poster') || taskType.includes('image')) return 'image-text';
   if (taskType.includes('script') || taskType.includes('copy') || taskType.includes('writing')) return 'copy';
   return 'task';
+}
+
+function isViralRemixTask(item: any): boolean {
+  const taskType = String(item?.taskType ?? '').toLowerCase();
+  const metadata = item?.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata)
+    ? item.metadata as Record<string, unknown>
+    : null;
+  return taskType === 'storyboard' && metadata?.feature === 'viral_remix';
 }
 
 function normalizeStatus(value: unknown): TaskStatus {
@@ -872,6 +888,8 @@ function collectStringUrls(value: unknown, depth = 0): string[] {
 
 function resolveStoryboardCover(raw: Record<string, unknown>, metadata: Record<string, unknown> | null): string | null {
   const candidates = [
+    metadata?.referencePoster,
+    metadata?.reference_video_poster,
     raw.thumbnailUrl,
     raw.thumbnail_url,
     raw.storyboardImageUrl,
@@ -883,6 +901,9 @@ function resolveStoryboardCover(raw: Record<string, unknown>, metadata: Record<s
     metadata?.gridImageUrl,
     metadata?.coverImage,
     metadata?.storyboardImages,
+    metadata?.referenceVideoUrl,
+    metadata?.reference_video_url,
+    metadata?.videoUrl,
   ];
   for (const candidate of candidates) {
     const first = collectStringUrls(candidate).find((url) => /\.(jpg|jpeg|png|webp|gif)(\?|$)/i.test(url) || /^https?:\/\//i.test(url));
@@ -1464,14 +1485,7 @@ export const miniappApi = {
       });
     } catch (error) {
       console.warn('[miniappApi.createProduct] product analysis trigger failed:', error);
-      return {
-        ...product,
-        status: 'FAILED',
-        analysisResult: JSON.stringify({
-          status: 'FAILED',
-          message: error instanceof Error ? error.message : '产品分析触发失败',
-        }),
-      };
+      throw new Error(error instanceof Error ? error.message : '产品分析触发失败');
     }
 
     return {
@@ -1503,7 +1517,7 @@ export const miniappApi = {
           : null;
         works.push({
           id: String(item.id),
-          title: String(item.title ?? '未命名任务'),
+          title: isViralRemixTask(item) ? '一键复刻' : String(item.title ?? '未命名任务'),
           type: detectWorkType(item),
           status: normalizeStatus(item.status),
           taskType,
@@ -1515,6 +1529,7 @@ export const miniappApi = {
             (item.thumbnailUrl as string | null) ??
             (item.thumbnail_url as string | null) ??
             null,
+          progress: typeof item.progress === 'number' ? item.progress : null,
           metadata,
           source: 'task',
         });
@@ -1571,6 +1586,8 @@ export const miniappApi = {
       imageModel: typeof data.imageModel === 'string' ? data.imageModel : null,
       videoModel: typeof data.videoModel === 'string' ? data.videoModel : null,
       finalVideoUrl: typeof data.finalVideoUrl === 'string' ? data.finalVideoUrl : null,
+      storyboardImageUrl: typeof data.storyboardImageUrl === 'string' ? data.storyboardImageUrl : null,
+      coverImage: typeof data.coverImage === 'string' ? data.coverImage : null,
       detailedBreakdown:
         data.detailedBreakdown && typeof data.detailedBreakdown === 'object' && !Array.isArray(data.detailedBreakdown)
           ? data.detailedBreakdown as Record<string, unknown>
@@ -1596,6 +1613,7 @@ export const miniappApi = {
         generatedVideo: typeof segment.generatedVideo === 'string' ? segment.generatedVideo : null,
         status: String(segment.status || 'PENDING'),
         originalScript: typeof segment.originalScript === 'string' ? segment.originalScript : null,
+        rewrittenScript: typeof segment.rewrittenScript === 'string' ? segment.rewrittenScript : null,
         generationParams:
           segment.generationParams && typeof segment.generationParams === 'object' && !Array.isArray(segment.generationParams)
             ? segment.generationParams as Record<string, unknown>
@@ -1906,6 +1924,16 @@ export const miniappApi = {
     title?: string;
     includeCover?: boolean;
     maxPages?: number;
+    persist?: boolean;
+    preview?: {
+      pages: string[];
+      cardClassName?: string;
+      cardStyle?: Record<string, string | number>;
+      contentClassName?: string;
+      contentStyle?: Record<string, string | number>;
+      richTextClassName?: string;
+      selectedCardStyle?: string;
+    };
     cover?: {
       coverStyleId?: string;
       coverTitle?: string;
@@ -1932,6 +1960,8 @@ export const miniappApi = {
         title: params.title || '',
         includeCover: params.includeCover !== false,
         maxPages: params.maxPages ?? 8,
+        persist: params.persist === true,
+        preview: params.preview || undefined,
         cover: params.cover || undefined,
       },
     });

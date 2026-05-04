@@ -126,3 +126,4 @@
 | [20260504-xhs-markdown-table-render-plan.md](./20260504-xhs-markdown-table-render-plan.md) | 小红书卡片 Markdown 表格渲染：Web/小程序预览、后端导出与 AI 排版对齐 |
 | [20260504-xhs-rewrite-prompt-unification-plan.md](./20260504-xhs-rewrite-prompt-unification-plan.md) | 小红书一键仿写 Prompt 统一：Web/小程序共用标题公式、正文改写与 Gemini generateContent 模型 |
 | [20260504-miniapp-remix-upload-optimization-plan.md](./20260504-miniapp-remix-upload-optimization-plan.md) | 小程序爆款复刻视频上传优化：OSS 表单直传、进度显示与服务端上传兜底 |
+| [20260504-miniapp-infographic-text-and-swiper-plan.md](./20260504-miniapp-infographic-text-and-swiper-plan.md) | 小程序信息图正文入参与多图滑动页码展示修复 |

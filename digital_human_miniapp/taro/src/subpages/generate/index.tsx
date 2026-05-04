@@ -307,6 +307,7 @@ export default function GeneratePage() {
         setRecordedAudioUrl('');
         resetVideoUpload();
       }
+      Taro.switchTab({ url: '/pages/works/index' });
     } catch (err) {
       Taro.showToast({ title: (err as Error).message || '提交失败', icon: 'none' });
     } finally {

@@ -340,12 +340,18 @@ function extractSummaryData(taskType: TaskType, taskData: any): any {
       const referencePoster = typeof detailedMetadata?.reference_video_poster === 'string'
         ? detailedMetadata.reference_video_poster
         : undefined;
+      const thumbnailUrl = firstHttpUrl([
+        taskData.coverImage,
+        taskData.storyboardImageUrl,
+        referencePoster,
+        referenceVideoUrl,
+      ]);
       return {
         ...base,
         title,
         status: taskData.status,
         preview: taskData.scriptContent?.substring(0, 100),
-        thumbnailUrl: taskData.coverImage || taskData.storyboardImageUrl || referencePoster || referenceVideoUrl,
+        thumbnailUrl,
         progress: taskData.progress,
         metadata: isViralRemix
           ? {
@@ -374,14 +380,14 @@ function extractSummaryData(taskType: TaskType, taskData: any): any {
         metadata.splitStoryboardId = detailed.splitStoryboardTaskId;
       }
       if (taskData.storyboardImageUrl || taskData.coverImage) {
-        metadata.gridImageUrl = taskData.storyboardImageUrl || taskData.coverImage;
+        metadata.gridImageUrl = firstHttpUrl([taskData.storyboardImageUrl, taskData.coverImage]);
       }
       return {
         ...base,
         title: '九宫格任务',
         status: taskData.status,
         preview: taskData.scriptContent?.substring(0, 100),
-        thumbnailUrl: taskData.storyboardImageUrl || taskData.coverImage,
+        thumbnailUrl: firstHttpUrl([taskData.storyboardImageUrl, taskData.coverImage]),
         progress: taskData.progress,
         metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
       };
@@ -466,6 +472,14 @@ function extractImageFromLayoutResult(layoutJson?: any): string | null {
     console.warn('Failed to extract image from layout_result_json:', error);
     return null;
   }
+}
+
+function firstHttpUrl(values: unknown[]): string | null {
+  for (const value of values) {
+    const url = typeof value === 'string' ? value.trim() : '';
+    if (/^https?:\/\//i.test(url)) return url;
+  }
+  return null;
 }
 
 function normalizeJsonRecord(value: unknown): Record<string, unknown> | null {

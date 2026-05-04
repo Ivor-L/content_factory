@@ -127,6 +127,7 @@ export async function POST(request: Request) {
     return NextResponse.json(analysis);
   } catch (error) {
     console.error('Error analyzing product:', error);
+    const message = error instanceof Error ? error.message : 'Failed to analyze product';
     if (verifiedProductIdForFailure) {
       await prisma.product.update({
         where: { id: verifiedProductIdForFailure },
@@ -134,16 +135,16 @@ export async function POST(request: Request) {
           status: 'FAILED',
           analysisResult: JSON.stringify({
             status: 'FAILED',
-            message: error instanceof Error ? error.message : 'Failed to analyze product',
+            message,
           }),
         } as any,
       }).catch((updateError) => {
         console.error('[product/analyze] failed to mark product as failed:', updateError);
       });
     }
-    logCreditUsage({ featureKey: 'product_analysis', success: false, errorMessage: error instanceof Error ? error.message : 'Unknown error' });
+    logCreditUsage({ featureKey: 'product_analysis', success: false, errorMessage: message });
     return NextResponse.json(
-      { error: 'Failed to analyze product' },
+      { error: message },
       { status: 500 }
     );
   }

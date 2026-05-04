@@ -18,17 +18,7 @@ export async function analyzeProduct(productData: ProductData): Promise<Analysis
   const webhookUrl = process.env.N8N_PRODUCT_ANALYSIS_WEBHOOK;
 
   if (!webhookUrl) {
-    console.warn("N8N_PRODUCT_ANALYSIS_WEBHOOK not set, returning mock data");
-    // Simulate delay
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    
-    return {
-      sellingPoints: [
-        "High quality material (Mock)",
-        "Durable and long-lasting (Mock)",
-      ],
-      detailedDescription: `[Mock] Analysis result for ${productData.name}.`,
-    };
+    throw new Error("N8N_PRODUCT_ANALYSIS_WEBHOOK is not configured");
   }
 
   try {
@@ -99,6 +89,21 @@ export async function analyzeProduct(productData: ProductData): Promise<Analysis
       return { sellingPoints: [], detailedDescription: '', workflowData: null };
     }
 
+    const responseStatus = String(item?.status ?? item?.code ?? '').toLowerCase();
+    const responseOk = item?.ok ?? item?.success;
+    if (
+      responseOk === false ||
+      ['error', 'failed', 'failure', 'apikey_invalid', 'insufficient_points'].includes(responseStatus)
+    ) {
+      const message =
+        typeof item?.error === 'string'
+          ? item.error
+          : typeof item?.message === 'string'
+            ? item.message
+            : `N8N workflow rejected product analysis${responseStatus ? `: ${responseStatus}` : ''}`;
+      throw new Error(message);
+    }
+
     // Check if the response matches the workflow data structure
     let sellingPoints: string[] = [];
     let detailedDescription = "";
@@ -120,10 +125,13 @@ export async function analyzeProduct(productData: ProductData): Promise<Analysis
 
     console.log('[analyzeProduct] n8n response item keys:', item ? Object.keys(item) : 'null', '| detailedDescription length:', detailedDescription.length);
 
+    const hasWorkflowPayload =
+      item && typeof item === 'object' && !Array.isArray(item) && Object.keys(item).length > 0;
+
     return {
       sellingPoints,
       detailedDescription,
-      workflowData: item  // Store unwrapped item, not raw data
+      workflowData: hasWorkflowPayload ? item : null  // Store unwrapped item, not raw data
     };
   } catch (error) {
     console.error("Error calling N8N webhook:", error);

@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { NextRequest, NextResponse } from "next/server";
 import sharp from "sharp";
 import prisma from "@/lib/prisma";
@@ -21,6 +22,16 @@ type RenderRequestBody = {
   title?: string;
   includeCover?: boolean;
   maxPages?: number;
+  persist?: boolean;
+  preview?: {
+    pages?: unknown;
+    cardClassName?: unknown;
+    cardStyle?: unknown;
+    contentClassName?: unknown;
+    contentStyle?: unknown;
+    richTextClassName?: unknown;
+    selectedCardStyle?: unknown;
+  };
   cover?: {
     coverStyleId?: string;
     coverTitle?: string;
@@ -38,6 +49,8 @@ type RenderRequestBody = {
     coverLineHeight?: number;
   };
 };
+
+export const runtime = "nodejs";
 
 function sanitizeText(value: unknown, maxLength: number): string {
   if (typeof value !== "string") return "";
@@ -86,9 +99,196 @@ function buildMetadata(input: {
 }
 
 async function svgToPngBuffer(svg: string): Promise<Buffer> {
-  return sharp(Buffer.from(svg, "utf8"))
+  const png = await sharp(Buffer.from(svg, "utf8"))
     .png({ quality: 100 })
     .toBuffer();
+  const stats = await sharp(png).stats();
+  const opaqueChannels = stats.channels.filter((channel) => channel.max > 0);
+  if (png.length < 1024 || opaqueChannels.length === 0) {
+    throw new Error("blank_png_rendered");
+  }
+  return png;
+}
+
+function sanitizeClassName(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter((part) => /^[A-Za-z0-9_-]+$/.test(part))
+    .slice(0, 12)
+    .join(" ");
+}
+
+function sanitizePreviewHtml(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
+    .replace(/<object[\s\S]*?<\/object>/gi, "")
+    .replace(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .slice(0, 120000);
+}
+
+function normalizeCssValue(value: string): string {
+  return value
+    .replace(/url\((['"]?)(?!https?:|data:|\/)([^'")]+)\1\)/gi, "none")
+    .replace(/(-?\d+(?:\.\d+)?)rpx\b/g, (_, raw: string) => `${Number(raw) * 0.5}px`);
+}
+
+function toCssPropertyName(key: string): string {
+  if (key.startsWith("--")) return key;
+  return key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+}
+
+function sanitizeStyleObject(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+  return Object.entries(value as Record<string, unknown>)
+    .filter(([key, raw]) => (
+      /^[A-Za-z_-][A-Za-z0-9_-]*$/.test(key)
+      && (typeof raw === "string" || typeof raw === "number")
+    ))
+    .slice(0, 48)
+    .map(([key, raw]) => `${toCssPropertyName(key)}:${normalizeCssValue(String(raw)).replace(/[<>{}]/g, "")}`)
+    .join(";");
+}
+
+function hasPreviewPayload(preview: RenderRequestBody["preview"]): boolean {
+  return Array.isArray(preview?.pages)
+    && preview.pages.some((page) => typeof page === "string" && page.trim().length > 0);
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function buildPreviewExportHtml(input: {
+  pageHtml: string;
+  cardClassName: string;
+  cardStyle: string;
+  contentClassName: string;
+  contentStyle: string;
+  richTextClassName: string;
+  selectedCardStyle: string;
+}): string {
+  const isAppleNotes = input.selectedCardStyle === "apple-notes";
+  const appleHeader = isAppleNotes
+    ? `<div class="preview-apple-header"><div class="preview-apple-header-left"><span class="preview-apple-header-icon">‹</span><span class="preview-apple-header-title">备忘录</span></div><div class="preview-apple-header-right"><span class="preview-apple-header-icon">↥</span><span class="preview-apple-header-icon">◌</span></div></div>`
+    : "";
+
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:345px;height:490px;overflow:hidden;background:transparent}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
+.preview-card{--preview-accent:#ecee9f;--preview-accent-soft:rgba(236,238,159,.18);--preview-title-gap:4px;width:345px;height:490px;border-radius:8px;border:.5px solid rgba(144,165,200,.2);padding:11px;box-sizing:border-box;overflow:hidden;position:relative}
+.preview-card .preview-richtext,.preview-card .preview-apple-header,.preview-card .preview-content-shell{position:relative;z-index:1}
+.preview-content-shell{width:100%;height:100%;border-radius:7px;padding:9px 10px;box-sizing:border-box;overflow:hidden;background:transparent}
+.preview-content-shell--apple-notes{padding:0;border-radius:0;height:calc(100% - 23px)}
+.preview-content-shell--instagram{border:.5px solid rgba(255,255,255,.32);box-shadow:inset 0 .5px 0 rgba(255,255,255,.2)}
+.preview-content-shell--coil-notebook{border:.5px solid rgba(38,56,110,.12)}
+.preview-content-shell--pop-art{border:1px solid rgba(16,16,21,.22)}
+.preview-content-shell--business{border:.5px solid rgba(37,99,235,.14)}
+.preview-content-shell--cyberpunk{border:.5px solid rgba(0,245,255,.34);box-shadow:inset 0 0 0 .5px rgba(255,0,170,.2)}
+.preview-content-shell--meadow-dawn{border:.5px solid rgba(106,134,94,.2)}
+.preview-card--style-apple-notes{border-color:rgba(207,178,91,.36)}
+.preview-card--style-coil-notebook{border-color:rgba(255,255,255,.4);padding-left:20px}
+.preview-card--style-coil-notebook::before{content:"";position:absolute;left:7px;top:15px;bottom:15px;width:5px;border-radius:999px;background-image:radial-gradient(circle,rgba(255,255,255,.8) 0 1.5px,transparent 1.75px);background-size:5px 17px;background-repeat:repeat-y;pointer-events:none}
+.preview-card--style-pop-art{border-color:rgba(17,24,39,.44)}
+.preview-card--style-bytedance{border-color:rgba(0,102,255,.28)}
+.preview-card--style-art-deco{border-color:rgba(212,175,55,.52)}
+.preview-card--style-glassmorphism{border-color:rgba(140,180,255,.44);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.16)}
+.preview-card--style-minimal,.preview-card--style-minimalist,.preview-card--style-business,.preview-card--style-japanese-magazine{border-color:rgba(120,134,156,.24)}
+.preview-card--style-cyberpunk{border-color:rgba(0,245,255,.42)}
+.preview-card--mode-light-mode{box-shadow:inset 0 0 0 .5px rgba(255,255,255,.2)}
+.preview-card--mode-dark-mode,.preview-card--mode-night-mode,.preview-card--mode-black-mode,.preview-card--mode-purple-mode{box-shadow:inset 0 0 0 .5px rgba(255,255,255,.08)}
+.preview-apple-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;color:#f8c744;font-size:11px}
+.preview-apple-header-left,.preview-apple-header-right{display:flex;align-items:center;gap:4px}
+.preview-apple-header-right{gap:8px}
+.preview-apple-header-title{font-size:11px;font-weight:400}
+.preview-apple-header-icon{font-size:12px;line-height:1}
+.preview-richtext{display:block;height:100%;overflow:visible;padding-bottom:5px}
+.preview-richtext--apple-notes{display:block;height:100%;box-sizing:border-box;padding-bottom:4px}
+img{max-width:100%}
+table{border-collapse:collapse}
+</style>
+</head>
+<body>
+  <div class="preview-card ${escapeHtml(input.cardClassName)}" style="${input.cardStyle}">
+    ${appleHeader}
+    <div class="${escapeHtml(input.contentClassName || "preview-content-shell")}" style="${input.contentStyle}">
+      <div class="${escapeHtml(input.richTextClassName || "preview-richtext")}">${input.pageHtml}</div>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+async function renderPreviewPagesToPngs(preview: NonNullable<RenderRequestBody["preview"]>): Promise<Buffer[]> {
+  const pages = Array.isArray(preview.pages)
+    ? preview.pages.map(sanitizePreviewHtml).filter(Boolean).slice(0, 12)
+    : [];
+  if (pages.length === 0) return [];
+
+  const { chromium } = await import("playwright");
+  const chromiumExecutableCandidates = [
+    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+    process.env.CHROMIUM_EXECUTABLE_PATH,
+    process.platform === "linux" ? "/usr/bin/chromium-browser" : undefined,
+    process.platform === "linux" ? "/usr/bin/chromium" : undefined,
+  ].filter((candidate): candidate is string => !!candidate);
+  const executablePath = chromiumExecutableCandidates.find((candidate) => existsSync(candidate));
+  const browser = await chromium.launch({
+    headless: true,
+    executablePath,
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  });
+
+  try {
+    const context = await browser.newContext({
+      viewport: { width: 345, height: 490 },
+      deviceScaleFactor: 3,
+    });
+    const page = await context.newPage();
+    const cardClassName = sanitizeClassName(preview.cardClassName);
+    const contentClassName = sanitizeClassName(preview.contentClassName) || "preview-content-shell";
+    const richTextClassName = sanitizeClassName(preview.richTextClassName) || "preview-richtext";
+    const selectedCardStyle = sanitizeClassName(preview.selectedCardStyle).split(/\s+/)[0] || "";
+    const cardStyle = sanitizeStyleObject(preview.cardStyle);
+    const contentStyle = sanitizeStyleObject(preview.contentStyle);
+    const pngs: Buffer[] = [];
+
+    for (const pageHtml of pages) {
+      await page.setContent(buildPreviewExportHtml({
+        pageHtml,
+        cardClassName,
+        cardStyle,
+        contentClassName,
+        contentStyle,
+        richTextClassName,
+        selectedCardStyle,
+      }), { waitUntil: "networkidle" });
+      await page.evaluate(() => document.fonts?.ready);
+      pngs.push(Buffer.from(await page.screenshot({
+        type: "png",
+        clip: { x: 0, y: 0, width: 345, height: 490 },
+        omitBackground: false,
+      })));
+    }
+    await context.close();
+    return pngs;
+  } finally {
+    await browser.close();
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -108,33 +308,42 @@ export async function POST(request: NextRequest) {
   const renderTitle = requestedTitle || buildRenderTitle(markdown, "图文卡片");
   const includeCover = body?.includeCover !== false;
   const maxPages = normalizeMaxPages(body?.maxPages);
-  const taskId = randomUUID();
+  const renderId = randomUUID();
+  const shouldPersist = body?.persist === true;
 
   try {
-    const svgs = buildRenderSvgs({
-      markdown,
-      templateId,
-      title: renderTitle,
-      includeCover,
-      maxPages,
-      cover: body?.cover,
-    });
+    const pngs = hasPreviewPayload(body?.preview)
+      ? await renderPreviewPagesToPngs(body?.preview as NonNullable<RenderRequestBody["preview"]>)
+      : [];
+    if (pngs.length === 0) {
+      const svgs = buildRenderSvgs({
+        markdown,
+        templateId,
+        title: renderTitle,
+        includeCover,
+        maxPages,
+        cover: body?.cover,
+      });
 
-    if (svgs.length === 0) {
-      return NextResponse.json({ error: "模板渲染失败，请稍后重试" }, { status: 500 });
+      if (svgs.length === 0) {
+        return NextResponse.json({ error: "模板渲染失败，请稍后重试" }, { status: 500 });
+      }
+
+      for (const svg of svgs) {
+        pngs.push(await svgToPngBuffer(svg));
+      }
     }
 
-    const folder = `xhs-layout/${userId}/${taskId}`;
+    const folder = `xhs-layout/${userId}/${renderId}`;
     const bucket = getAssetBucket();
     const uploadedUrls: string[] = [];
 
-    for (let i = 0; i < svgs.length; i += 1) {
-      const png = await svgToPngBuffer(svgs[i]);
+    for (let i = 0; i < pngs.length; i += 1) {
       const path = `${folder}/page-${String(i + 1).padStart(2, "0")}.png`;
       const uploadResult = await uploadToStorage({
         bucket,
         path,
-        body: png,
+        body: pngs[i],
         contentType: "image/png",
         accessToken: token,
       });
@@ -148,52 +357,54 @@ export async function POST(request: NextRequest) {
       publishTitle: renderTitle,
     });
 
-    await prisma.$transaction(async (tx) => {
-      await tx.creativeTask.create({
-        data: {
-          id: taskId,
-          userId,
-          title: renderTitle,
-          channel: "xhs",
-          targetOutput: "poster",
-          ideaText: markdown,
-          status: "COMPLETED",
-          progress: 100,
-          generatedImagesJson: toInputJson(uploadedUrls) ?? undefined,
-          metadata: toInputJson({
-            custom: metadata,
-          }) ?? undefined,
-        },
-      });
+    if (shouldPersist) {
+      await prisma.$transaction(async (tx) => {
+        await tx.creativeTask.create({
+          data: {
+            id: renderId,
+            userId,
+            title: renderTitle,
+            channel: "xhs",
+            targetOutput: "poster",
+            ideaText: markdown,
+            status: "COMPLETED",
+            progress: 100,
+            generatedImagesJson: toInputJson(uploadedUrls) ?? undefined,
+            metadata: toInputJson({
+              custom: metadata,
+            }) ?? undefined,
+          },
+        });
 
-      await tx.taskSummary.upsert({
-        where: { taskType_taskId: { taskType: "poster", taskId } },
-        create: {
-          userId,
-          taskType: "poster",
-          taskId,
-          title: renderTitle,
-          status: "COMPLETED",
-          preview: pickPreview(markdown),
-          thumbnailUrl: uploadedUrls[0] || null,
-          progress: 100,
-          metadata: toInputJson(metadata) ?? undefined,
-        },
-        update: {
-          title: renderTitle,
-          status: "COMPLETED",
-          preview: pickPreview(markdown),
-          thumbnailUrl: uploadedUrls[0] || null,
-          progress: 100,
-          metadata: toInputJson(metadata) ?? undefined,
-          updatedAt: new Date(),
-        },
+        await tx.taskSummary.upsert({
+          where: { taskType_taskId: { taskType: "poster", taskId: renderId } },
+          create: {
+            userId,
+            taskType: "poster",
+            taskId: renderId,
+            title: renderTitle,
+            status: "COMPLETED",
+            preview: pickPreview(markdown),
+            thumbnailUrl: uploadedUrls[0] || null,
+            progress: 100,
+            metadata: toInputJson(metadata) ?? undefined,
+          },
+          update: {
+            title: renderTitle,
+            status: "COMPLETED",
+            preview: pickPreview(markdown),
+            thumbnailUrl: uploadedUrls[0] || null,
+            progress: 100,
+            metadata: toInputJson(metadata) ?? undefined,
+            updatedAt: new Date(),
+          },
+        });
       });
-    });
+    }
 
     return NextResponse.json({
       data: {
-        taskId,
+        taskId: shouldPersist ? renderId : "",
         title: renderTitle,
         templateId,
         images: uploadedUrls,

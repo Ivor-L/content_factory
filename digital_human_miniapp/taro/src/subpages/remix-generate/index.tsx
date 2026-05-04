@@ -1,12 +1,22 @@
-import { View, Text, ScrollView, Image, Video } from '@tarojs/components';
+import { View, Text, ScrollView, Image, Video, Picker } from '@tarojs/components';
 import Taro, { useDidShow, useLoad } from '@tarojs/taro';
 import { useMemo, useState } from 'react';
-import { api } from '../../utils/api';
+import { api, reportClientLog } from '../../utils/api';
 import { miniappApi } from '../../utils/miniapp-api';
 import './index.sass';
 
 type DurationBucket = 'SHORT' | 'LONG';
 type RemixMode = 'SMART' | 'ACTION';
+type UploadPhase = 'uploading' | 'confirming' | 'processing' | 'done';
+
+const VIDEO_LANGUAGE_OPTIONS = [
+  { label: '跟随原视频', value: 'source', country: 'auto', hint: '保留原视频口播语言' },
+  { label: 'English', value: 'en', country: 'US', hint: '改写口播生成英文' },
+  { label: '中文', value: 'zh-CN', country: 'CN', hint: '改写口播生成中文' },
+  { label: '日本語', value: 'ja', country: 'JP', hint: '改写口播生成日语' },
+  { label: '한국어', value: 'ko', country: 'KR', hint: '改写口播生成韩语' },
+  { label: 'Español', value: 'es', country: 'ES', hint: '改写口播生成西语' },
+];
 
 function clampDuration(value: number): number {
   return Math.max(5, Math.min(60, value));
@@ -23,11 +33,13 @@ export default function RemixGeneratePage() {
   const [referenceDurationSeconds, setReferenceDurationSeconds] = useState<number | null>(null);
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [videoUploadProgress, setVideoUploadProgress] = useState(0);
+  const [videoUploadPhase, setVideoUploadPhase] = useState<UploadPhase>('uploading');
   const [sourceImageUrl, setSourceImageUrl] = useState('');
   const [sourceImagePreviewPath, setSourceImagePreviewPath] = useState('');
   const [sourceImageFileName, setSourceImageFileName] = useState('');
   const [uploadingImage, setUploadingImage] = useState(false);
   const [durationSeconds, setDurationSeconds] = useState(15);
+  const [targetLanguageIndex, setTargetLanguageIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
   useLoad((query) => {
@@ -88,6 +100,19 @@ export default function RemixGeneratePage() {
     setDurationSeconds((prev) => clampDuration(prev + delta));
   };
 
+  const updateVideoUploadProgress = (progress: number, phase: UploadPhase = 'uploading') => {
+    setVideoUploadProgress(progress);
+    setVideoUploadPhase(phase);
+  };
+
+  const videoUploadStatusText = videoUploadPhase === 'confirming'
+    ? '上传完成，正在确认'
+    : videoUploadPhase === 'processing'
+      ? '上传完成，正在创建任务'
+    : videoUploadPhase === 'done'
+      ? '上传完成'
+      : `上传中 ${videoUploadProgress}%`;
+
   const handleChooseReferenceVideo = async () => {
     const chooseRes = await Taro.chooseVideo({
       sourceType: ['album'],
@@ -120,20 +145,39 @@ export default function RemixGeneratePage() {
     setReferenceVideoUrl('');
     setUploadingVideo(true);
     setVideoUploadProgress(0);
+    setVideoUploadPhase('uploading');
     try {
+      void reportClientLog('miniapp_remix_reference_video_upload_start', {
+        filename,
+        mimeType,
+        duration: chooseRes.duration || null,
+        size: (chooseRes as { size?: number }).size || null,
+      });
       const url = await api.uploadMedia(filePath, filename, mimeType, {
         direct: true,
         type: 'viral-remix-video',
-        onProgress: setVideoUploadProgress,
+        onProgress: updateVideoUploadProgress,
       });
       setReferenceVideoUrl(url);
-    } catch {
+      void reportClientLog('miniapp_remix_reference_video_upload_success', {
+        filename,
+        mimeType,
+        url,
+      });
+    } catch (error) {
       setReferencePreviewPath('');
       setReferencePosterPath('');
       setReferenceFileName('');
       setReferenceDurationSeconds(null);
       setVideoUploadProgress(0);
-      Taro.showToast({ title: '视频上传失败', icon: 'none' });
+      setVideoUploadPhase('uploading');
+      const message = error instanceof Error && error.message ? error.message : '视频上传失败';
+      void reportClientLog('miniapp_remix_reference_video_upload_failed', {
+        filename,
+        mimeType,
+        message,
+      });
+      Taro.showToast({ title: message.slice(0, 30), icon: 'none' });
     } finally {
       setUploadingVideo(false);
     }
@@ -184,28 +228,49 @@ export default function RemixGeneratePage() {
     const durationBucket: DurationBucket = durationSeconds > 15 ? 'LONG' : 'SHORT';
     return durationBucket === 'SHORT' ? '预计扣除算力值 280' : '预计扣除算力值 520';
   }, [remixMode, durationSeconds]);
+  const targetLanguage = VIDEO_LANGUAGE_OPTIONS[targetLanguageIndex] || VIDEO_LANGUAGE_OPTIONS[0];
 
   const handleSubmit = async () => {
     if (remixMode === 'ACTION') {
       if (!sourceImageUrl) {
+        void reportClientLog('miniapp_remix_action_submit_blocked', {
+          reason: 'missing_source_image_url',
+          hasReferenceVideoUrl: Boolean(referenceVideoUrl),
+        });
         Taro.showToast({ title: '请先上传图片', icon: 'none' });
         return;
       }
       if (!referenceVideoUrl) {
+        void reportClientLog('miniapp_remix_action_submit_blocked', {
+          reason: 'missing_reference_video_url',
+          hasSourceImageUrl: Boolean(sourceImageUrl),
+        });
         Taro.showToast({ title: '请先上传参考视频', icon: 'none' });
         return;
       }
 
       setSubmitting(true);
       try {
+        void reportClientLog('miniapp_remix_action_submit_start', {
+          referenceVideoUrl,
+          sourceImageUrl,
+          durationSeconds: referenceDurationSeconds,
+        });
         const result = await api.createActionTransferTask({
           imageUrl: sourceImageUrl,
           videoUrl: referenceVideoUrl,
           durationSeconds: referenceDurationSeconds,
         });
+        void reportClientLog('miniapp_remix_action_submit_success', {
+          taskId: result.id,
+          status: result.status,
+        });
         Taro.showToast({ title: '动作复刻任务已创建', icon: 'success' });
-        Taro.navigateTo({ url: `/subpages/records/index?id=${encodeURIComponent(result.id)}` });
+        Taro.switchTab({ url: '/pages/works/index' });
       } catch (error) {
+        void reportClientLog('miniapp_remix_action_submit_failed', {
+          message: error instanceof Error ? error.message : String(error || '提交失败'),
+        });
         Taro.showToast({ title: (error as Error).message || '提交失败', icon: 'none' });
       } finally {
         setSubmitting(false);
@@ -214,12 +279,24 @@ export default function RemixGeneratePage() {
     }
 
     if (!referenceVideoUrl) {
+      void reportClientLog('miniapp_remix_smart_submit_blocked', {
+        reason: 'missing_reference_video_url',
+        uploadingVideo,
+        hasPreviewPath: Boolean(referencePreviewPath),
+        videoUploadProgress,
+      });
       Taro.showToast({ title: '请先上传参考视频', icon: 'none' });
       return;
     }
 
     setSubmitting(true);
     try {
+      void reportClientLog('miniapp_remix_smart_submit_start', {
+        referenceVideoUrl,
+        selectedProductId: selectedProductId || null,
+        durationSeconds,
+        targetLanguage: targetLanguage.value,
+      });
       const result = await miniappApi.createStoryboardJob({
         pipelineKey: 'viral_clone',
         title: `一键复刻-${durationSeconds}s`,
@@ -233,6 +310,11 @@ export default function RemixGeneratePage() {
           remix_scene: 'one_click_remix',
           duration_bucket: durationSeconds > 15 ? 'LONG' : 'SHORT',
           duration_seconds: durationSeconds,
+          target_language: targetLanguage.value,
+          targetLanguage: targetLanguage.value,
+          target_language_label: targetLanguage.label,
+          target_country: targetLanguage.country,
+          targetCountry: targetLanguage.country,
           person_reference_imported: false,
           reference_video_url: referenceVideoUrl,
           reference_video_poster: referencePosterPath || null,
@@ -245,11 +327,23 @@ export default function RemixGeneratePage() {
         throw new Error('任务创建失败，请稍后重试');
       }
 
+      void reportClientLog('miniapp_remix_smart_submit_success', {
+        taskId: result.taskId,
+        status: result.status,
+        workflowId: result.workflowId,
+        workflowTriggered: result.workflowTriggered === true,
+        targetLanguage: targetLanguage.value,
+      });
       Taro.showToast({ title: '复刻任务已创建', icon: 'success' });
       Taro.navigateTo({
-        url: `/subpages/storyboard-board/index?id=${encodeURIComponent(result.taskId)}&title=${encodeURIComponent('一键复刻')}`,
+        url: `/subpages/storyboard-board/index?id=${encodeURIComponent(result.taskId)}&title=${encodeURIComponent('一键复刻')}&mode=remix`,
       });
     } catch (error) {
+      void reportClientLog('miniapp_remix_smart_submit_failed', {
+        message: error instanceof Error ? error.message : String(error || '提交失败'),
+        referenceVideoUrl,
+        targetLanguage: targetLanguage.value,
+      });
       Taro.showToast({ title: (error as Error).message || '提交失败', icon: 'none' });
     } finally {
       setSubmitting(false);
@@ -351,7 +445,7 @@ export default function RemixGeneratePage() {
                 {uploadingVideo && (
                   <View className='upload-preview-overlay'>
                     <View className='upload-spinner' />
-                    <Text className='upload-preview-status'>上传中 {videoUploadProgress}%</Text>
+                    <Text className='upload-preview-status'>{videoUploadStatusText}</Text>
                   </View>
                 )}
               </View>
@@ -366,7 +460,7 @@ export default function RemixGeneratePage() {
               onClick={handleChooseReferenceVideo}
             >
               {uploadingVideo ? <View className='upload-spinner upload-spinner--box' /> : <Text className='upload-plus'>+</Text>}
-              <Text className='upload-text'>{uploadingVideo ? `上传中 ${videoUploadProgress}%` : '添加视频'}</Text>
+              <Text className='upload-text'>{uploadingVideo ? videoUploadStatusText : '添加视频'}</Text>
             </View>
           )}
         </View>
@@ -409,6 +503,32 @@ export default function RemixGeneratePage() {
                 ))}
               </View>
             </ScrollView>
+          </View>
+        )}
+
+        {remixMode === 'SMART' && (
+          <View className='section'>
+            <View className='section-title-row'>
+              <View className='section-title-icon section-title-icon--language' />
+              <Text className='section-title'>视频语言</Text>
+            </View>
+            <Picker
+              mode='selector'
+              range={VIDEO_LANGUAGE_OPTIONS.map((item) => item.label)}
+              value={targetLanguageIndex}
+              onChange={(event) => {
+                const next = Number(event.detail.value);
+                if (Number.isFinite(next)) setTargetLanguageIndex(next);
+              }}
+            >
+              <View className='language-picker'>
+                <View className='language-picker-main'>
+                  <Text className='language-picker-value'>{targetLanguage.label}</Text>
+                  <Text className='language-picker-hint'>{targetLanguage.hint}</Text>
+                </View>
+                <Text className='language-picker-arrow'>›</Text>
+              </View>
+            </Picker>
           </View>
         )}
 

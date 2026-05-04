@@ -39,6 +39,16 @@ export interface MonetizationSquareConfigPayload {
 
 export const DEFAULT_MONETIZATION_SQUARE_KEY = 'default';
 
+function normalizeMiniappRoute(route: unknown): string {
+  const cleanRoute = String(route || '').trim();
+  const legacyRouteMap: Record<string, string> = {
+    '/pages/generate/index': '/subpages/generate/index',
+    '/pages/remix-generate/index': '/subpages/remix-generate/index',
+    '/pages/image-generate/index': '/subpages/image-generate/index',
+  };
+  return legacyRouteMap[cleanRoute] || cleanRoute;
+}
+
 export const DEFAULT_MONETIZATION_SQUARE_CONFIG: MonetizationSquareConfigPayload = {
   title: '变现广场',
   subtitle: '把内容能力变成稳定变现路径',
@@ -54,7 +64,7 @@ export const DEFAULT_MONETIZATION_SQUARE_CONFIG: MonetizationSquareConfigPayload
           tags: ['引流', '自动文案'],
           action: {
             type: 'route',
-            route: '/pages/image-generate/index',
+            route: '/subpages/image-generate/index',
             params: { mode: 'ai-tool-leads' },
             featureKey: 'monetization_ai_tool_leads_video',
             promptTemplate: '请基于{{platform}}生成标题、正文和视频口播文案，产品是{{product_name}}，卖点是{{selling_points}}。',
@@ -67,7 +77,7 @@ export const DEFAULT_MONETIZATION_SQUARE_CONFIG: MonetizationSquareConfigPayload
           tags: ['动作迁移', '服装带货'],
           action: {
             type: 'route',
-            route: '/pages/remix-generate/index',
+            route: '/subpages/remix-generate/index',
             params: { mode: 'action-swap' },
             featureKey: 'monetization_fashion_video',
             promptTemplate: '角色保持服装细节，严格参考视频动作节奏，输出竖版带货视频。',
@@ -80,7 +90,7 @@ export const DEFAULT_MONETIZATION_SQUARE_CONFIG: MonetizationSquareConfigPayload
           tags: ['爆款复刻', '剧情'],
           action: {
             type: 'route',
-            route: '/pages/remix-generate/index',
+            route: '/subpages/remix-generate/index',
             featureKey: 'monetization_story_leads',
             promptTemplate: '根据产品{{product_name}}与参考视频，生成高转化剧情引流短视频。',
           },
@@ -92,7 +102,7 @@ export const DEFAULT_MONETIZATION_SQUARE_CONFIG: MonetizationSquareConfigPayload
           tags: ['营销视频'],
           action: {
             type: 'route',
-            route: '/pages/generate/index',
+            route: '/subpages/generate/index',
             params: { feature: 'video-generate', category: 'marketing' },
             featureKey: 'monetization_sell_video',
           },
@@ -110,7 +120,7 @@ export const DEFAULT_MONETIZATION_SQUARE_CONFIG: MonetizationSquareConfigPayload
           tags: ['3D骨骼', '中视频'],
           action: {
             type: 'route',
-            route: '/pages/generate/index',
+            route: '/subpages/generate/index',
             params: { feature: 'video-generate', category: 'skeleton-3d' },
             featureKey: 'monetization_tk_3d_skeleton',
           },
@@ -122,7 +132,7 @@ export const DEFAULT_MONETIZATION_SQUARE_CONFIG: MonetizationSquareConfigPayload
           tags: ['电影解说'],
           action: {
             type: 'route',
-            route: '/pages/generate/index',
+            route: '/subpages/generate/index',
             params: { feature: 'video-generate', category: 'short-drama' },
             featureKey: 'monetization_movie_commentary',
           },
@@ -139,7 +149,7 @@ export const DEFAULT_MONETIZATION_SQUARE_CONFIG: MonetizationSquareConfigPayload
           tags: ['知识卡片'],
           action: {
             type: 'route',
-            route: '/pages/image-generate/index',
+            route: '/subpages/image-generate/index',
             params: { mode: 'knowledge-card' },
             featureKey: 'monetization_ai_knowledge_card',
           },
@@ -150,7 +160,7 @@ export const DEFAULT_MONETIZATION_SQUARE_CONFIG: MonetizationSquareConfigPayload
           tags: ['长文'],
           action: {
             type: 'route',
-            route: '/pages/image-generate/index',
+            route: '/subpages/image-generate/index',
             params: { mode: 'startup-longform' },
             featureKey: 'monetization_startup_longform',
           },
@@ -161,7 +171,7 @@ export const DEFAULT_MONETIZATION_SQUARE_CONFIG: MonetizationSquareConfigPayload
           tags: ['养生'],
           action: {
             type: 'route',
-            route: '/pages/image-generate/index',
+            route: '/subpages/image-generate/index',
             params: { mode: 'wellness-graphic' },
             featureKey: 'monetization_wellness_graphic',
           },
@@ -172,7 +182,7 @@ export const DEFAULT_MONETIZATION_SQUARE_CONFIG: MonetizationSquareConfigPayload
           tags: ['理财'],
           action: {
             type: 'route',
-            route: '/pages/image-generate/index',
+            route: '/subpages/image-generate/index',
             params: { mode: 'finance-card' },
             featureKey: 'monetization_finance_card',
           },
@@ -183,7 +193,7 @@ export const DEFAULT_MONETIZATION_SQUARE_CONFIG: MonetizationSquareConfigPayload
           tags: ['引流'],
           action: {
             type: 'route',
-            route: '/pages/image-generate/index',
+            route: '/subpages/image-generate/index',
             params: { mode: 'ai-tool-leads' },
             featureKey: 'monetization_ai_tool_leads_graphic',
           },
@@ -292,7 +302,7 @@ export function normalizeMonetizationConfig(raw: unknown): MonetizationSquareCon
                     && String(demoAction.route || '').trim()
                     ? {
                       type: 'route' as const,
-                      route: String(demoAction.route || '').trim(),
+                      route: normalizeMiniappRoute(demoAction.route),
                       params: demoAction.params && typeof demoAction.params === 'object'
                         ? demoAction.params as Record<string, string | number | boolean | null>
                         : undefined,
@@ -322,7 +332,7 @@ export function normalizeMonetizationConfig(raw: unknown): MonetizationSquareCon
               : undefined,
             action: {
               type: 'route',
-              route: actionRoute,
+              route: normalizeMiniappRoute(actionRoute),
               params: action?.params && typeof action.params === 'object' ? action.params as Record<string, string | number | boolean | null> : undefined,
               featureKey: action?.featureKey ? String(action.featureKey) : undefined,
               promptTemplate: action?.promptTemplate ? String(action.promptTemplate) : undefined,

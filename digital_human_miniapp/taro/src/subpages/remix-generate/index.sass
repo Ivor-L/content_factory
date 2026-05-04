@@ -188,6 +188,27 @@
   height: 2rpx
   background: #ecee9f
 
+.section-title-icon--language
+  border-radius: 50%
+
+.section-title-icon--language::before
+  content: ''
+  position: absolute
+  left: 3rpx
+  top: 8rpx
+  width: 12rpx
+  height: 2rpx
+  background: #ecee9f
+
+.section-title-icon--language::after
+  content: ''
+  position: absolute
+  left: 8rpx
+  top: 3rpx
+  width: 2rpx
+  height: 12rpx
+  background: #ecee9f
+
 .section-title
   color: #ecf6ff
   font-size: 34rpx
@@ -277,6 +298,39 @@
   margin-top: 10rpx
   font-size: 22rpx
   color: #7f93b8
+
+.language-picker
+  min-height: 104rpx
+  border-radius: 22rpx
+  background: #1d2026
+  border: 1rpx solid rgba(145, 175, 229, 0.22)
+  padding: 0 24rpx
+  box-sizing: border-box
+  display: flex
+  align-items: center
+  justify-content: space-between
+  gap: 20rpx
+
+.language-picker-main
+  min-width: 0
+  display: flex
+  flex-direction: column
+  gap: 8rpx
+
+.language-picker-value
+  color: #eef6ff
+  font-size: 32rpx
+  font-weight: 800
+
+.language-picker-hint
+  color: #8fa3c9
+  font-size: 22rpx
+
+.language-picker-arrow
+  color: #ecee9f
+  font-size: 42rpx
+  line-height: 1
+  flex-shrink: 0
 
 .tip-bullet
   display: block

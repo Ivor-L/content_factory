@@ -14,6 +14,8 @@ const IMAGE_MODELS = [
   { id: 'nanoBanana2', label: 'Nano Banana 2' },
 ];
 const VIDEO_MODELS = [
+  { id: 'bytedance/seedance-2', label: 'Seedance 2.0' },
+  { id: 'bytedance/seedance-2-fast', label: 'Seedance 2.0 Fast' },
   { id: 'veo3.1-fast', label: 'Veo 3.1 Fast' },
   { id: 'veo_3_1-fast', label: 'Veo 3.1 Fast(兼容)' },
 ];
@@ -32,6 +34,7 @@ function decodeQueryText(value: string): string {
 export default function StoryboardBoardPage() {
   const [taskId, setTaskId] = useState('');
   const [title, setTitle] = useState('3D骨骼分镜板');
+  const [routeMode, setRouteMode] = useState('');
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState('');
   const [task, setTask] = useState<StoryboardTaskStatusResult | null>(null);
@@ -97,6 +100,8 @@ export default function StoryboardBoardPage() {
   useLoad((query) => {
     const id = String(query?.id || '').trim();
     const incomingTitle = decodeQueryText(String(query?.title || ''));
+    const incomingMode = String(query?.mode || '').trim().toLowerCase();
+    setRouteMode(incomingMode);
     if (!id) {
       setErrorText('缺少任务ID');
       setLoading(false);
@@ -243,7 +248,7 @@ export default function StoryboardBoardPage() {
       success: () => {
         Taro.setStorageSync('WORK_DETAIL_ITEM', {
           id: `${segment.id}:video`,
-          title: `镜头 ${segment.order + 1} 视频预览`,
+          title: `镜头 ${getSegmentDisplayOrder(segment, segments.findIndex((item) => item.id === segment.id))} 视频预览`,
           type: 'video',
           status: segment.status,
           createdAt: new Date().toISOString(),
@@ -606,13 +611,34 @@ export default function StoryboardBoardPage() {
   const references = (task?.references || []).filter((ref) => ref.type === 'product');
   const taskMetadata = getTaskMetadata(task);
   const workflowData = getWorkflowData(task);
-  const storyboardGridUrl = getStoryboardGridUrl(task);
+  const storyboardGridBoards = getStoryboardGridBoards(task);
+  const storyboardGridUrl = storyboardGridBoards[0]?.url || '';
   const contentStructure = getContentStructure(workflowData);
-  const cloneClips = getCloneClips(workflowData);
+  const scriptSummary = getScriptSummary(workflowData, segments);
+  const clonePromptSummary = getClonePromptSummary(workflowData, segments);
+  const sourceAnalysisItems = getSourceAnalysisItems(workflowData);
+  const beatMapItems = getBeatMapItems(workflowData);
+  const mechanismSections = getMechanismSections(workflowData);
+  const sceneDetailItems = getSceneDetailItems(workflowData, segments);
   const isViralRemix = taskMetadata.feature === 'viral_remix';
-  const remixStageItems = isViralRemix ? buildRemixStages(task, segments, taskMetadata) : [];
-  const isPreparingStoryboard = !errorText && segments.length === 0;
-  const canShowActionBar = !loading && !errorText && segments.length > 0;
+  const isRemixRoute = isViralRemix || routeMode.includes('remix');
+  const isRemixReviewMode = isRemixRoute && !routeMode.includes('board');
+  const remixOriginalVideoUrl = getRemixReferenceVideoUrl(taskMetadata, task);
+  const remixStageItems = isRemixRoute ? buildRemixStages(task, segments, taskMetadata) : [];
+  const hasRemixBreakdownResult = isRemixRoute && (
+    Boolean(storyboardGridUrl) ||
+    contentStructure.length > 0 ||
+    scriptSummary.original.length > 0 ||
+    scriptSummary.rewritten.length > 0 ||
+    clonePromptSummary.rules.length > 0 ||
+    clonePromptSummary.clips.length > 0 ||
+    sourceAnalysisItems.length > 0 ||
+    beatMapItems.length > 0 ||
+    mechanismSections.length > 0 ||
+    sceneDetailItems.length > 0
+  );
+  const isPreparingStoryboard = !errorText && segments.length === 0 && !hasRemixBreakdownResult;
+  const canShowActionBar = !isRemixReviewMode && !loading && !errorText && segments.length > 0;
 
   const editingSegment = useMemo(
     () => segments.find((item) => item.id === editingSegmentId) || null,
@@ -630,16 +656,16 @@ export default function StoryboardBoardPage() {
         <View className='storyboard-board-back' onClick={handleBack}>
           <Text className='storyboard-board-back-text'>‹</Text>
         </View>
-        <Text className='storyboard-board-nav-title'>{isViralRemix ? '爆款复刻' : '分镜板'}</Text>
+        <Text className='storyboard-board-nav-title'>{isRemixRoute ? '一键复刻' : '分镜板'}</Text>
         <View className='storyboard-board-nav-spacer' />
       </View>
 
-      <ScrollView scrollY className='storyboard-board-scroll'>
-        <View className='storyboard-board-header'>
-          <Text className='storyboard-board-title'>{isViralRemix ? '一键复刻' : (title || '分镜任务')}</Text>
-        </View>
+      <ScrollView scrollY className={`storyboard-board-scroll ${isRemixReviewMode ? 'storyboard-board-scroll--review' : ''}`}>
+        {!isRemixRoute && <View className='storyboard-board-header'>
+          <Text className='storyboard-board-title'>{isRemixRoute ? '一键复刻' : (title || '分镜任务')}</Text>
+        </View>}
 
-        {!loading && !errorText && isViralRemix && (
+        {!loading && !errorText && isRemixRoute && (
           <View className='remix-stage-section'>
             <View className='remix-stage-track'>
               {remixStageItems.map((stage, index) => (
@@ -649,28 +675,43 @@ export default function StoryboardBoardPage() {
                   </View>
                   {index < remixStageItems.length - 1 && <View className={`remix-stage-line remix-stage-line--${stage.state}`} />}
                   <Text className={`remix-stage-name remix-stage-name--${stage.state}`}>{stage.title}</Text>
-                  <Text className='remix-stage-desc'>{stage.desc}</Text>
                 </View>
               ))}
             </View>
           </View>
         )}
 
-        {!loading && !errorText && isViralRemix && storyboardGridUrl && (
-          <View className='storyboard-grid-section'>
-            <Text className='storyboard-section-title'>分镜网格图</Text>
-            <Image
-              className='storyboard-grid-image'
-              src={storyboardGridUrl}
-              mode='widthFix'
-              onClick={() => Taro.previewImage({ current: storyboardGridUrl, urls: [storyboardGridUrl] })}
-            />
+        {!loading && !errorText && isRemixRoute && storyboardGridBoards.length > 0 && (
+          <View className={isRemixReviewMode ? 'remix-review-section' : 'storyboard-grid-section'}>
+            <View className='remix-review-section-head'>
+              <Text className='storyboard-section-title'>分镜网格图</Text>
+              <Text className='remix-review-section-note'>点击可放大查看关键帧</Text>
+            </View>
+            {storyboardGridBoards.map((board, index) => {
+              return (
+                <View key={`${board.url}-${index}`} className='storyboard-grid-board'>
+                  {storyboardGridBoards.length > 1 && (
+                    <Text className='storyboard-grid-board-title'>
+                      分镜板 {index + 1}{board.timeRange ? ` · ${board.timeRange}` : ''}
+                    </Text>
+                  )}
+                  <Image
+                    className='storyboard-grid-image'
+                    src={board.url}
+                    mode='widthFix'
+                    onClick={() => {
+                      Taro.previewImage({ current: board.url, urls: storyboardGridBoards.map((item) => item.url) });
+                    }}
+                  />
+                </View>
+              );
+            })}
           </View>
         )}
 
-        {!loading && !errorText && isViralRemix && contentStructure.length > 0 && (
-          <View className='storyboard-structure-section'>
-            <Text className='storyboard-section-title'>中文内容结构</Text>
+        {!loading && !errorText && isRemixRoute && contentStructure.length > 0 && (
+          <View className={isRemixReviewMode ? 'remix-review-section' : 'storyboard-structure-section'}>
+            <Text className='storyboard-section-title'>拆解总结</Text>
             {contentStructure.map((item) => (
               <View key={item.key} className='storyboard-structure-item'>
                 <Text className='storyboard-structure-title'>{item.label}{item.timeRange ? ` · ${item.timeRange}` : ''}</Text>
@@ -681,19 +722,122 @@ export default function StoryboardBoardPage() {
           </View>
         )}
 
-        {!loading && !errorText && isViralRemix && cloneClips.length > 0 && (
-          <View className='storyboard-clone-section'>
-            <Text className='storyboard-section-title'>可重复生成脚本</Text>
-            {cloneClips.map((clip, index) => (
-              <View key={`${clip.clipIndex}-${index}`} className='storyboard-clone-item'>
-                <Text className='storyboard-clone-title'>Clip {clip.clipIndex} · {clip.duration}s {clip.timeRange ? `· ${clip.timeRange}` : ''}</Text>
-                <Text className='storyboard-clone-prompt'>{clip.prompt}</Text>
+        {!loading && !errorText && isRemixRoute && sourceAnalysisItems.length > 0 && (
+          <View className={isRemixReviewMode ? 'remix-review-section' : 'storyboard-analysis-section'}>
+            <Text className='storyboard-section-title'>源视频分析</Text>
+            <View className='storyboard-analysis-grid'>
+              {sourceAnalysisItems.map((item) => (
+                <View key={item.key} className='storyboard-analysis-item'>
+                  <Text className='storyboard-analysis-label'>{item.label}</Text>
+                  <Text className='storyboard-analysis-value'>{item.value}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {!loading && !errorText && isRemixRoute && beatMapItems.length > 0 && (
+          <View className={isRemixReviewMode ? 'remix-review-section' : 'storyboard-beat-section'}>
+            <Text className='storyboard-section-title'>节奏拆解</Text>
+            {beatMapItems.map((beat, index) => (
+              <View key={`${beat.beat}-${index}`} className='storyboard-beat-item'>
+                  <Text className='storyboard-beat-title'>{beat.beat}{beat.timeRange ? ` · ${beat.timeRange}` : ''}</Text>
+                  {!!beat.visual && <Text className='storyboard-beat-text'>画面：{beat.visual}</Text>}
+                  {!!beat.dialogue && <Text className='storyboard-beat-text'>口播/字幕：{beat.dialogue}</Text>}
+                  {!!beat.rewrittenDialogue && <Text className='storyboard-beat-text'>改写：{beat.rewrittenDialogue}</Text>}
+                  {!!beat.functionText && <Text className='storyboard-beat-note'>作用：{beat.functionText}</Text>}
+                  {!!beat.replicationNote && <Text className='storyboard-beat-note'>复刻要点：{beat.replicationNote}</Text>}
+                </View>
+            ))}
+          </View>
+        )}
+
+        {!loading && !errorText && isRemixRoute && (scriptSummary.original.length > 0 || scriptSummary.rewritten.length > 0) && (
+          <View className={isRemixReviewMode ? 'remix-review-section' : 'storyboard-script-section'}>
+            <Text className='storyboard-section-title'>口播文案</Text>
+            {scriptSummary.original.length > 0 && (
+              <View className='storyboard-script-block'>
+                <Text className='storyboard-script-title'>原始口播</Text>
+                {scriptSummary.original.map((line, index) => (
+                  <View key={`${line.timeRange}-${index}`} className='storyboard-script-line-row'>
+                    {shouldShowScriptTime(line.timeRange) && <Text className='storyboard-script-time'>{line.timeRange}</Text>}
+                    <Text className='storyboard-script-line'>{line.text}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            {scriptSummary.rewritten.length > 0 && (
+              <View className='storyboard-script-block'>
+                <Text className='storyboard-script-title'>改写口播</Text>
+                {scriptSummary.rewritten.map((line, index) => (
+                  <View key={`${line.timeRange}-${index}`} className='storyboard-script-line-row'>
+                    {shouldShowScriptTime(line.timeRange) && <Text className='storyboard-script-time'>{line.timeRange}</Text>}
+                    <Text className='storyboard-script-line'>{line.text}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            {scriptSummary.rewritten.length === 0 && (
+              <View className='storyboard-script-block'>
+                <Text className='storyboard-script-title'>改写口播</Text>
+                <Text className='storyboard-script-line storyboard-script-line--muted'>暂无完整改写口播，请重新运行更新后的拆解工作流。</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {!loading && !errorText && isRemixRoute && mechanismSections.length > 0 && (
+          <View className={isRemixReviewMode ? 'remix-review-section' : 'storyboard-mechanism-section'}>
+            <Text className='storyboard-section-title'>爆款机制</Text>
+            {mechanismSections.map((section) => (
+              <View key={section.key} className='storyboard-mechanism-block'>
+                <Text className='storyboard-mechanism-title'>{section.label}</Text>
+                <Text className='storyboard-mechanism-text'>{section.items.join(' / ')}</Text>
               </View>
             ))}
           </View>
         )}
 
-        {!loading && !errorText && references.length > 0 && (
+        {!loading && !errorText && isRemixRoute && (clonePromptSummary.rules.length > 0 || clonePromptSummary.clips.length > 0) && (
+          <View className={isRemixReviewMode ? 'remix-review-section' : 'storyboard-clone-section'}>
+            <Text className='storyboard-section-title'>提示词汇总</Text>
+            {clonePromptSummary.rules.map((rule) => (
+              <View key={rule.key} className='storyboard-clone-rule'>
+                <Text className='storyboard-clone-title'>{rule.label}</Text>
+                <Text className='storyboard-clone-prompt'>{rule.text}</Text>
+              </View>
+            ))}
+            {clonePromptSummary.clips.map((clip, index) => (
+              <View key={`${clip.clipIndex}-${index}`} className='storyboard-clone-item'>
+                <Text className='storyboard-clone-title'>Clip {clip.clipIndex}{clip.duration ? ` · ${clip.duration}s` : ''}{clip.timeRange ? ` · ${clip.timeRange}` : ''}</Text>
+                {!!clip.imagePrompt && <Text className='storyboard-clone-prompt'>首帧提示词：{clip.imagePrompt}</Text>}
+                {!!clip.videoPrompt && <Text className='storyboard-clone-prompt'>视频提示词：{clip.videoPrompt}</Text>}
+              </View>
+            ))}
+          </View>
+        )}
+
+        {!loading && !errorText && isRemixReviewMode && sceneDetailItems.length > 0 && (
+          <View className='remix-review-section'>
+            <Text className='storyboard-section-title'>镜头拆解明细</Text>
+            {sceneDetailItems.map((scene, index) => (
+              <View key={`${scene.order}-${index}`} className='remix-review-shot'>
+                <View className='remix-review-shot-head'>
+                  <Text className='remix-review-shot-title'>镜头 {scene.order}</Text>
+                  <Text className='remix-review-shot-time'>{scene.duration || 0}s {scene.timeRange ? `| ${scene.timeRange}` : ''}</Text>
+                </View>
+                {!!scene.goal && <Text className='remix-review-shot-text'>目标：{scene.goal}</Text>}
+                {!!scene.visual && <Text className='remix-review-shot-text'>画面：{scene.visual}</Text>}
+                {!!scene.camera && <Text className='remix-review-shot-text'>镜头：{scene.camera}</Text>}
+                {!!scene.lighting && <Text className='remix-review-shot-text'>光线：{scene.lighting}</Text>}
+                {!!scene.action && <Text className='remix-review-shot-text'>动作：{scene.action}</Text>}
+                {!!scene.product && <Text className='remix-review-shot-text'>产品：{scene.product}</Text>}
+              </View>
+            ))}
+          </View>
+        )}
+
+        {!loading && !errorText && !isRemixReviewMode && references.length > 0 && (
           <View className='storyboard-reference-section'>
             <Text className='storyboard-reference-title'>主体参考</Text>
             <View className='storyboard-reference-list'>
@@ -716,13 +860,43 @@ export default function StoryboardBoardPage() {
           </View>
         )}
 
+        {!loading && !errorText && isRemixReviewMode && segments.length > 0 && clonePromptSummary.clips.length === 0 && sceneDetailItems.length === 0 && (
+          <View className='remix-review-section'>
+            <Text className='storyboard-section-title'>分镜拆解明细</Text>
+            {segments.map((segment, index) => (
+              <View key={segment.id} className='remix-review-shot'>
+                <View className='remix-review-shot-head'>
+                  <Text className='remix-review-shot-title'>镜头 {getSegmentDisplayOrder(segment, index)}</Text>
+                  <Text className='remix-review-shot-time'>{segment.duration || 0}s {segment.timeRange ? `| ${segment.timeRange}` : ''}</Text>
+                </View>
+                {!!normalizeText(segment.originalScript) && (
+                  <Text className='remix-review-shot-text'>脚本：{normalizeText(segment.originalScript)}</Text>
+                )}
+                {!!normalizeText(segment.rewrittenScript || '') && (
+                  <Text className='remix-review-shot-text'>改写：{normalizeText(segment.rewrittenScript || '')}</Text>
+                )}
+                {!!normalizeText(segment.imagePrompt) && (
+                  <Text className='remix-review-shot-text'>首帧提示词：{normalizeText(segment.imagePrompt)}</Text>
+                )}
+                {!!normalizeText(segment.videoPrompt) && (
+                  <Text className='remix-review-shot-text'>视频提示词：{normalizeText(segment.videoPrompt)}</Text>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
+
+        {isRemixReviewMode && !loading && !errorText && (
+          <View className='remix-review-footer-space' />
+        )}
+
         {(loading || isPreparingStoryboard) && (
             <View className='storyboard-board-pending'>
               <View className='storyboard-board-spinner'>
                 <View className='storyboard-board-spinner-core' />
               </View>
-            <Text className='storyboard-board-pending-title'>{isViralRemix ? getPendingTitle(taskMetadata) : '正在生成分镜'}</Text>
-            <Text className='storyboard-board-pending-text'>任务已在后端运行，退出页面后也会继续处理</Text>
+            <Text className='storyboard-board-pending-title'>{isRemixRoute ? getPendingTitle(taskMetadata) : '正在生成分镜'}</Text>
+            {!isRemixRoute && <Text className='storyboard-board-pending-text'>任务已在后端运行，退出页面后也会继续处理</Text>}
             <View className='storyboard-board-cancel-btn' onClick={() => void handleDeleteTask('cancel')}>
               <Text className='storyboard-board-cancel-text'>{deleting ? '取消中...' : '取消生成'}</Text>
             </View>
@@ -735,9 +909,9 @@ export default function StoryboardBoardPage() {
           </View>
         )}
 
-        {!loading && !errorText && segments.length > 0 && (
+        {!isRemixReviewMode && !loading && !errorText && segments.length > 0 && (
           <View className='storyboard-board-list'>
-            {segments.map((segment) => (
+            {segments.map((segment, index) => (
               <View key={segment.id} className='storyboard-segment-card'>
                 {(() => {
                   const imageUrl = normalizeMediaUrl(segment.generatedImage);
@@ -747,12 +921,15 @@ export default function StoryboardBoardPage() {
                   return (
                     <>
                 <View className='storyboard-segment-head'>
-                  <Text className='storyboard-segment-order'>镜头 {segment.order + 1}</Text>
+                  <Text className='storyboard-segment-order'>镜头 {getSegmentDisplayOrder(segment, index)}</Text>
                   <Text className='storyboard-segment-status'>{toStatusText(segment.status || '')}</Text>
                 </View>
                 <Text className='storyboard-segment-meta'>时长：{segment.duration || 0}s {segment.timeRange ? `| ${segment.timeRange}` : ''}</Text>
                 {!!normalizeText(segment.originalScript) && (
                   <Text className='storyboard-segment-text'>脚本：{normalizeText(segment.originalScript)}</Text>
+                )}
+                {!!normalizeText(segment.rewrittenScript || '') && (
+                  <Text className='storyboard-segment-text'>改写：{normalizeText(segment.rewrittenScript || '')}</Text>
                 )}
                 {!!normalizeText(segment.imagePrompt) && (
                   <Text className='storyboard-segment-text'>首帧提示词：{normalizeText(segment.imagePrompt)}</Text>
@@ -806,9 +983,63 @@ export default function StoryboardBoardPage() {
         )}
       </ScrollView>
 
+      {isRemixReviewMode && !loading && !errorText && (
+        <View className='remix-review-action-bar'>
+          <View
+            className='remix-review-bottom-btn remix-review-bottom-btn--danger'
+            onClick={() => void handleDeleteTask('delete')}
+          >
+            <Text className='remix-review-bottom-btn-text remix-review-bottom-btn-text--danger'>
+              {deleting ? '删除中' : '删除'}
+            </Text>
+          </View>
+          {remixOriginalVideoUrl && (
+            <View
+              className='remix-review-bottom-btn remix-review-bottom-btn--ghost'
+              onClick={() => Taro.navigateTo({
+                url: `/subpages/work-detail/index?id=${encodeURIComponent(`${task?.id || taskId}:reference-video`)}`,
+                success: () => {
+                  Taro.setStorageSync('WORK_DETAIL_ITEM', {
+                    id: `${task?.id || taskId}:reference-video`,
+                    title: '参考视频',
+                    type: 'video',
+                    status: task?.status || 'BREAKDOWN_COMPLETED',
+                    createdAt: new Date().toISOString(),
+                    preview: remixOriginalVideoUrl,
+                    thumbnailUrl: taskMetadata.referencePoster || taskMetadata.reference_video_poster || storyboardGridUrl || null,
+                    metadata: null,
+                    source: 'task',
+                  });
+                },
+              })}
+            >
+              <Text className='remix-review-bottom-btn-text remix-review-bottom-btn-text--ghost'>查看原视频</Text>
+            </View>
+          )}
+          <View
+            className='remix-review-bottom-btn remix-review-bottom-btn--primary'
+            onClick={() => {
+              Taro.redirectTo({
+                url: `/subpages/storyboard-board/index?id=${encodeURIComponent(taskId)}&title=${encodeURIComponent(title || '一键复刻')}&mode=remix-board`,
+              });
+            }}
+          >
+            <Text className='remix-review-bottom-btn-text'>进入生成阶段</Text>
+          </View>
+        </View>
+      )}
+
       {canShowActionBar && (
       <View className='storyboard-action-bar'>
         <View className='storyboard-action-row storyboard-action-row--primary'>
+          {isRemixRoute && (
+            <View
+              className='storyboard-delete-bottom-btn'
+              onClick={() => void handleDeleteTask('delete')}
+            >
+              <Text className='storyboard-delete-bottom-btn-text'>{deleting ? '删除中' : '删除'}</Text>
+            </View>
+          )}
           <View className='storyboard-action-btn storyboard-bottom-btn storyboard-bottom-btn--ghost' onClick={() => void handleGenerateAllImages()}>
             <Text className='storyboard-bottom-btn-text storyboard-bottom-btn-text--ghost'>
               {isActioning('batch-image') ? '生图中...' : '一键生图'}
@@ -889,7 +1120,7 @@ export default function StoryboardBoardPage() {
       {editingSegment && (
         <View className='storyboard-edit-mask' onClick={closeEditPrompt}>
           <View className='storyboard-edit-panel' onClick={(e) => e.stopPropagation()}>
-            <Text className='storyboard-edit-title'>镜头 {editingSegment.order + 1} · {editingType === 'image' ? '图片' : '视频'}</Text>
+            <Text className='storyboard-edit-title'>镜头 {getSegmentDisplayOrder(editingSegment, segments.findIndex((item) => item.id === editingSegment.id))} · {editingType === 'image' ? '图片' : '视频'}</Text>
             <ScrollView scrollY className='storyboard-edit-content'>
               <View className='storyboard-edit-scroll-inner'>
                 <View className='storyboard-edit-preview-stage'>
@@ -1072,7 +1303,9 @@ function toStatusText(status: string): string {
 function normalizeMediaUrl(value: string | null | undefined): string {
   const raw = typeof value === 'string' ? value.trim() : '';
   if (!raw) return '';
+  if (/^(undefined|null|nan)$/i.test(raw)) return '';
   if (raw.startsWith('//')) return `https:${raw}`;
+  if (!/^https?:\/\//i.test(raw) && !raw.startsWith('/')) return '';
   return raw;
 }
 
@@ -1110,15 +1343,65 @@ function getWorkflowData(task: StoryboardTaskStatusResult | null): Record<string
   return nested || detailed || {};
 }
 
-function getStoryboardGridUrl(task: StoryboardTaskStatusResult | null): string {
+function getStoryboardGridBoards(task: StoryboardTaskStatusResult | null): Array<{ url: string; timeRange: string; kind: 'full' | 'clip' }> {
+  const detailed = asRecord(task?.detailedBreakdown);
+  const workflowData = getWorkflowData(task);
+  const clipBoards: Array<{ url: string; timeRange: string; kind: 'full' | 'clip' }> = [];
+  const fullBoards: Array<{ url: string; timeRange: string; kind: 'full' | 'clip' }> = [];
+
+  const primaryUrl = normalizeMediaUrl(
+    String(
+      task?.storyboardImageUrl ||
+      task?.coverImage ||
+      detailed?.storyboard_grid_url ||
+      detailed?.storyboardGridUrl ||
+      workflowData.storyboard_grid_url ||
+      workflowData.storyboardGridUrl ||
+      '',
+    ),
+  );
+  if (primaryUrl) fullBoards.push({ url: primaryUrl, timeRange: '总览', kind: 'full' });
+
+  for (const board of toRecordArray(workflowData.clip_boards)) {
+    const url = normalizeMediaUrl(String(board.grid_url || board.gridUrl || board.oss_url || board.url || ''));
+    if (!url) continue;
+    clipBoards.push({
+      url,
+      timeRange: normalizeText(String(board.time_range || board.timeRange || '')),
+      kind: 'clip',
+    });
+  }
+
+  const seen = new Set<string>();
+  return [...(clipBoards.length > 0 ? clipBoards : fullBoards)].filter((board) => {
+    if (seen.has(board.url)) return false;
+    seen.add(board.url);
+    return true;
+  });
+}
+
+function getSegmentDisplayOrder(segment: StoryboardSegmentItem, index: number): number {
+  const raw = Number(segment.order);
+  if (Number.isFinite(raw) && raw > 0) return Math.floor(raw);
+  return index >= 0 ? index + 1 : 1;
+}
+
+function getRemixReferenceVideoUrl(
+  metadata: Record<string, unknown>,
+  task: StoryboardTaskStatusResult | null,
+): string {
   const detailed = asRecord(task?.detailedBreakdown);
   const workflowData = getWorkflowData(task);
   return normalizeMediaUrl(
     String(
-      detailed?.storyboard_grid_url ||
-        detailed?.storyboardGridUrl ||
-        workflowData.storyboard_grid_url ||
-        workflowData.storyboardGridUrl ||
+      metadata.referenceVideoUrl ||
+        metadata.reference_video_url ||
+        metadata.videoUrl ||
+        metadata.video_url ||
+        detailed?.reference_video_url ||
+        detailed?.referenceVideoUrl ||
+        workflowData.reference_video_url ||
+        workflowData.referenceVideoUrl ||
         '',
     ),
   );
@@ -1166,33 +1449,338 @@ function getContentStructure(workflowData: Record<string, unknown>): Array<{
     } => Boolean(item));
 }
 
-function getCloneClips(workflowData: Record<string, unknown>): Array<{
-  clipIndex: number;
+function getSourceAnalysisItems(workflowData: Record<string, unknown>): Array<{ key: string; label: string; value: string }> {
+  const analysis = asRecord(workflowData.source_video_analysis) || asRecord(workflowData.sourceVideoAnalysis);
+  if (!analysis) return [];
+  const fields = [
+    ['style_name', '风格'],
+    ['format', '形式'],
+    ['duration', '时长'],
+    ['aspect_ratio', '画幅'],
+    ['shot_count', '镜头数'],
+    ['dialogue_word_count', '对白词数'],
+    ['dialogue_pattern', '口播结构'],
+    ['edit_rhythm', '剪辑节奏'],
+    ['camera_language', '镜头语言'],
+    ['technical_texture', '技术质感'],
+    ['product_role', '产品角色'],
+  ] as const;
+  return fields
+    .map(([key, label]) => {
+      const value = normalizeText(String(analysis[key] || analysis[toCamelKey(key)] || ''));
+      return value ? { key, label, value } : null;
+    })
+    .filter((item): item is { key: string; label: string; value: string } => Boolean(item));
+}
+
+function getBeatMapItems(workflowData: Record<string, unknown>): Array<{
+  timeRange: string;
+  beat: string;
+  visual: string;
+  dialogue: string;
+  rewrittenDialogue: string;
+  functionText: string;
+  replicationNote: string;
+}> {
+  return toRecordArray(workflowData.beat_map || workflowData.beatMap)
+    .map((row, index) => ({
+      timeRange: normalizeText(String(row.time_range || row.timeRange || '')),
+      beat: normalizeText(String(row.beat || `Beat ${index + 1}`)),
+      visual: normalizeText(String(row.visual || '')),
+      dialogue: normalizeText(String(row.dialogue_or_text || row.dialogue || row.text || '')),
+      rewrittenDialogue: normalizeText(String(row.rewritten_dialogue_or_text || row.rewrittenDialogueOrText || row.rewritten_dialogue || '')),
+      functionText: normalizeText(String(row.function || row.functionText || '')),
+      replicationNote: normalizeText(String(row.replication_note || row.replicationNote || row.note || '')),
+    }))
+    .filter((item) => item.beat || item.visual || item.dialogue || item.rewrittenDialogue || item.functionText || item.replicationNote);
+}
+
+function getMechanismSections(workflowData: Record<string, unknown>): Array<{ key: string; label: string; items: string[] }> {
+  const viralMechanism = asRecord(workflowData.viral_mechanism) || asRecord(workflowData.viralMechanism) || {};
+  const sectionDefs: Array<[string, string, unknown]> = [
+    ['core_idea', '核心机制', viralMechanism.core_idea || viralMechanism.coreIdea],
+    ['attention_triggers', '注意力触发', viralMechanism.attention_triggers || viralMechanism.attentionTriggers],
+    ['retention_devices', '留存手段', viralMechanism.retention_devices || viralMechanism.retentionDevices],
+    ['trust_devices', '信任手段', viralMechanism.trust_devices || viralMechanism.trustDevices],
+    ['conversion_devices', '转化手段', viralMechanism.conversion_devices || viralMechanism.conversionDevices],
+    ['defining_traits', '差异化特征', workflowData.defining_traits || workflowData.definingTraits],
+    ['what_transfers', '可迁移元素', workflowData.what_transfers || workflowData.whatTransfers],
+    ['what_gets_swapped', '需要替换元素', workflowData.what_gets_swapped || workflowData.whatGetsSwapped],
+  ];
+  return sectionDefs
+    .map(([key, label, value]) => {
+      const items = toTextList(value);
+      return items.length > 0 ? { key, label, items } : null;
+    })
+    .filter((item): item is { key: string; label: string; items: string[] } => Boolean(item));
+}
+
+function getSceneDetailItems(
+  workflowData: Record<string, unknown>,
+  segments: StoryboardSegmentItem[],
+): Array<{
+  order: number;
   timeRange: string;
   duration: number;
-  prompt: string;
+  goal: string;
+  visual: string;
+  camera: string;
+  lighting: string;
+  action: string;
+  product: string;
 }> {
+  const rows = [
+    ...toRecordArray(workflowData.scenes),
+    ...toRecordArray(workflowData.scene_breakdown),
+    ...toRecordArray(workflowData.shots),
+  ];
+  const beatRows = toRecordArray(workflowData.beat_map);
+  if (rows.length > 0) {
+    const detailRows = rows.map((row, index) => ({
+      order: Number(row.order || row.shot_no || row.shotNo || index + 1) || index + 1,
+      timeRange: normalizeText(String(row.time_range || row.timeRange || '')),
+      duration: Number(row.duration || row.duration_sec || row.durationSec || 0) || 0,
+      goal: normalizeText(String(row.shot_goal || row.shotGoal || '')),
+      visual: normalizeText(String(row.visual_content_description || row.visualDescription || row.visual_description || '')),
+      camera: normalizeText(String(
+        row.camera_notes ||
+        [row.camera_shot_size, row.camera_angle, row.camera_movement].filter(Boolean).join(' / ') ||
+        '',
+      )),
+      lighting: normalizeText(String(row.lighting_notes || row.lighting_atmosphere || row.lightingAtmosphere || '')),
+      action: normalizeText(String(row.action_blocking || row.actionBlocking || '')),
+      product: normalizeText(String(row.product_desc || row.productDesc || '')),
+    }));
+    if (beatRows.length <= detailRows.length) return detailRows;
+    return beatRows.map((beat, index) => {
+      const matched = detailRows.find((scene) => scene.timeRange && scene.timeRange === normalizeText(String(beat.time_range || beat.timeRange || ''))) || detailRows[index];
+      return {
+        order: Number(beat.order || index + 1) || index + 1,
+        timeRange: normalizeText(String(beat.time_range || beat.timeRange || matched?.timeRange || '')),
+        duration: matched?.duration || 0,
+        goal: matched?.goal || normalizeText(String(beat.function || beat.functionText || beat.beat || '')),
+        visual: matched?.visual || normalizeText(String(beat.visual || '')),
+        camera: matched?.camera || normalizeText(String(beat.replication_note || beat.replicationNote || '')),
+        lighting: matched?.lighting || '',
+        action: matched?.action || normalizeText(String(beat.replication_note || beat.replicationNote || '')),
+        product: matched?.product || '',
+      };
+    });
+  }
+
+  if (beatRows.length > 0) {
+    return beatRows.map((beat, index) => ({
+      order: Number(beat.order || index + 1) || index + 1,
+      timeRange: normalizeText(String(beat.time_range || beat.timeRange || '')),
+      duration: 0,
+      goal: normalizeText(String(beat.function || beat.functionText || beat.beat || '')),
+      visual: normalizeText(String(beat.visual || '')),
+      camera: normalizeText(String(beat.replication_note || beat.replicationNote || '')),
+      lighting: '',
+      action: normalizeText(String(beat.replication_note || beat.replicationNote || '')),
+      product: '',
+    }));
+  }
+
+  return segments.map((segment, index) => ({
+    order: getSegmentDisplayOrder(segment, index),
+    timeRange: normalizeText(segment.timeRange || ''),
+    duration: Number(segment.duration || 0) || 0,
+    goal: '',
+    visual: normalizeText(String(segment.generationParams?.visual_description || '')),
+    camera: '',
+    lighting: '',
+    action: '',
+    product: '',
+  }));
+}
+
+function toTextList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeText(String(item || ''))).filter(Boolean);
+  }
+  const text = normalizeText(String(value || ''));
+  return text ? [text] : [];
+}
+
+function getScriptSummary(
+  workflowData: Record<string, unknown>,
+  segments: StoryboardSegmentItem[],
+): {
+  original: Array<{ timeRange: string; text: string }>;
+  rewritten: Array<{ timeRange: string; text: string }>;
+} {
+  const original: Array<{ timeRange: string; text: string }> = [];
+  const rewritten: Array<{ timeRange: string; text: string }> = [];
+  const beatOriginal: Array<{ timeRange: string; text: string }> = [];
+  const beatRewritten: Array<{ timeRange: string; text: string }> = [];
+  const fullOriginal = normalizeText(String(workflowData.full_original_script || workflowData.fullOriginalScript || ''));
+  const fullRewritten = normalizeText(String(workflowData.full_rewritten_script || workflowData.fullRewrittenScript || ''));
+
+  for (const segment of segments) {
+    const timeRange = normalizeText(segment.timeRange || '');
+    const originalText = normalizeText(segment.originalScript || '');
+    const rewrittenText = normalizeText(segment.rewrittenScript || '');
+    if (originalText) original.push({ timeRange, text: originalText });
+    if (rewrittenText) rewritten.push({ timeRange, text: rewrittenText });
+  }
+
+  const sceneRows = [
+    ...toRecordArray(workflowData.scenes),
+    ...toRecordArray(workflowData.scene_breakdown),
+    ...toRecordArray(workflowData.shots),
+  ];
+  for (const row of sceneRows) {
+    const timeRange = normalizeText(String(row.time_range || row.timeRange || ''));
+    const originalText = normalizeText(String(
+      row.original_script ||
+        row.dialogue_vo_original ||
+        row.dialogue_or_text ||
+        row.on_screen_text_graphics ||
+        row.text ||
+        '',
+    ));
+    const rewrittenText = normalizeText(String(
+      row.rewritten_script ||
+        row.rewrite_vo_zh_translation ||
+        row.rewrite_vo_target_language ||
+        row.rewritten_text ||
+        '',
+    ));
+    if (originalText) original.push({ timeRange, text: originalText });
+    if (rewrittenText) rewritten.push({ timeRange, text: rewrittenText });
+  }
+
+  for (const row of toRecordArray(workflowData.beat_map)) {
+    const text = normalizeText(String(row.dialogue_or_text || row.dialogue || row.text || ''));
+    const rewrittenText = normalizeText(String(row.rewritten_dialogue_or_text || row.rewrittenDialogueOrText || ''));
+    const timeRange = normalizeText(String(row.time_range || row.timeRange || ''));
+    if (text) beatOriginal.push({ timeRange, text });
+    if (rewrittenText) beatRewritten.push({ timeRange, text: rewrittenText });
+  }
+
+  const originalSource = fullOriginal
+    ? [{ timeRange: '全文', text: fullOriginal }]
+    : (beatOriginal.length > 0 ? beatOriginal : original);
+  const rewrittenSource = fullRewritten
+    ? [{ timeRange: '全文', text: fullRewritten }]
+    : (beatRewritten.length > 0 ? beatRewritten : rewritten);
+  const originalLines = uniqueScriptLines(originalSource);
+  const rewrittenLines = uniqueScriptLines(rewrittenSource)
+    .filter((line) => !originalLines.some((item) => normalizeComparableText(item.text) === normalizeComparableText(line.text)));
+
+  return { original: originalLines, rewritten: rewrittenLines };
+}
+
+function shouldShowScriptTime(value: string): boolean {
+  const text = normalizeText(value);
+  return Boolean(text && text !== '全文' && text !== '完整');
+}
+
+function toRecordArray(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => asRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item));
+}
+
+function uniqueScriptLines(lines: Array<{ timeRange: string; text: string }>): Array<{ timeRange: string; text: string }> {
+  const seen = new Set<string>();
+  const result: Array<{ timeRange: string; text: string }> = [];
+  for (const line of lines) {
+    const text = normalizeText(line.text);
+    if (!text) continue;
+    const key = normalizeComparableText(text);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push({ timeRange: line.timeRange, text });
+  }
+  return result;
+}
+
+function normalizeComparableText(value: string): string {
+  return normalizeText(value).toLowerCase().replace(/\s+/g, ' ');
+}
+
+function getClonePromptSummary(
+  workflowData: Record<string, unknown>,
+  segments: StoryboardSegmentItem[],
+): {
+  rules: Array<{ key: string; label: string; text: string }>;
+  clips: Array<{
+    clipIndex: number;
+    timeRange: string;
+    duration: number;
+    imagePrompt: string;
+    videoPrompt: string;
+  }>;
+} {
   const clonePrompt = asRecord(workflowData.clone_prompt) || asRecord(workflowData.clonePrompt);
+  const ruleFields = [
+    ['generation_strategy', '生成策略'],
+    ['global_style_rules', '全局风格规则'],
+    ['global_negative_rules', '全局负面规则'],
+    ['dialogue_adaptation_rules', '口播改写规则'],
+  ] as const;
+  const rules = ruleFields
+    .map(([key, label]) => {
+      const text = normalizeText(String(clonePrompt?.[key] || clonePrompt?.[toCamelKey(key)] || ''));
+      return text ? { key, label, text } : null;
+    })
+    .filter((item): item is { key: string; label: string; text: string } => Boolean(item));
+
   const clips = Array.isArray(clonePrompt?.clips) ? clonePrompt.clips : [];
-  return clips
+  const promptClips = clips
     .map((item, index) => {
       const record = asRecord(item);
       if (!record) return null;
-      const prompt = normalizeText(String(record.prompt || ''));
-      if (!prompt) return null;
+      const videoPrompt = normalizeText(String(record.prompt || record.video_prompt || record.videoPrompt || ''));
+      const imagePrompt = normalizeText(String(record.image_prompt || record.imagePrompt || record.first_frame_prompt || ''));
+      if (!videoPrompt && !imagePrompt) return null;
       return {
         clipIndex: Number(record.clip_index || record.clipIndex || index + 1) || index + 1,
         timeRange: normalizeText(String(record.time_range || record.timeRange || '')),
         duration: Number(record.duration || 0) || 0,
-        prompt,
+        imagePrompt,
+        videoPrompt,
       };
     })
     .filter((item): item is {
       clipIndex: number;
       timeRange: string;
       duration: number;
-      prompt: string;
+      imagePrompt: string;
+      videoPrompt: string;
     } => Boolean(item));
+
+  if (promptClips.length > 0) return { rules, clips: promptClips };
+
+  const segmentClips = segments
+    .map((segment, index) => {
+      const imagePrompt = normalizeText(segment.imagePrompt || '');
+      const videoPrompt = normalizeText(segment.videoPrompt || '');
+      if (!imagePrompt && !videoPrompt) return null;
+      return {
+        clipIndex: getSegmentDisplayOrder(segment, index),
+        timeRange: normalizeText(segment.timeRange || ''),
+        duration: Number(segment.duration || 0) || 0,
+        imagePrompt,
+        videoPrompt,
+      };
+    })
+    .filter((item): item is {
+      clipIndex: number;
+      timeRange: string;
+      duration: number;
+      imagePrompt: string;
+      videoPrompt: string;
+    } => Boolean(item));
+
+  return { rules, clips: segmentClips };
+}
+
+function toCamelKey(value: string): string {
+  return value.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
 }
 
 function buildRemixStages(

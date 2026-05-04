@@ -406,15 +406,22 @@
 
 .hot-rewrite-layer
   position: fixed
-  inset: 0
-  z-index: 140
+  top: 0
+  right: 0
+  bottom: 0
+  left: 0
+  z-index: 900
   display: flex
   align-items: flex-end
+  height: 100vh
   overflow: hidden
 
 .hot-rewrite-mask
   position: absolute
-  inset: 0
+  top: 0
+  right: 0
+  bottom: 0
+  left: 0
   background: rgba(0, 0, 0, 0.58)
   animation: hotRewriteMaskFadeIn 0.2s ease-out
 
@@ -422,8 +429,8 @@
   position: relative
   z-index: 1
   width: 100%
-  max-height: 82vh
-  padding: 14rpx 24rpx calc(env(safe-area-inset-bottom) + 22rpx)
+  height: 72vh
+  padding: 14rpx 24rpx 0
   box-sizing: border-box
   border-radius: 30rpx 30rpx 0 0
   background: #111111
@@ -494,9 +501,28 @@
   font-weight: 700
 
 .hot-rewrite-content
-  flex: 1
+  height: 100%
   min-height: 0
-  margin-bottom: 16rpx
+  overflow: hidden
+
+.hot-rewrite-content-shell
+  flex: 1
+  height: 0
+  min-height: 0
+  overflow: hidden
+
+.hot-rewrite-content-inner
+  padding-bottom: 20rpx
+
+.hot-rewrite-footer
+  flex-shrink: 0
+  margin: 0 -24rpx
+  padding: 10rpx 24rpx 14rpx
+  box-sizing: border-box
+  background: #111111
+  border-top: 1rpx solid rgba(145, 175, 229, 0.14)
+  position: relative
+  z-index: 5
 
 .hot-rewrite-section-title
   display: block
@@ -528,7 +554,7 @@
 
 .hot-rewrite-action
   flex: 1
-  height: 74rpx
+  height: 64rpx
   border-radius: 16rpx
   background: #ecee9f
   display: flex
@@ -547,9 +573,8 @@
   font-weight: 800
 
 .hot-rewrite-close
-  height: 68rpx
-  margin-top: 12rpx
-  margin-bottom: 2rpx
+  height: 54rpx
+  margin-top: 8rpx
   border-radius: 16rpx
   background: rgba(145, 175, 229, 0.08)
   border: 1rpx solid rgba(145, 175, 229, 0.18)
@@ -565,14 +590,20 @@
 
 .hot-remix-layer
   position: fixed
-  inset: 0
+  top: 0
+  right: 0
+  bottom: 0
+  left: 0
   z-index: 145
   display: flex
   align-items: flex-end
 
 .hot-remix-mask
   position: absolute
-  inset: 0
+  top: 0
+  right: 0
+  bottom: 0
+  left: 0
   background: rgba(0, 0, 0, 0.6)
 
 .hot-remix-drawer

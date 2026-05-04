@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { after, NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getRequestUserContext } from "@/lib/authServer";
+import { CanvasImageGenerationError, generateCanvasImageOnServer } from "@/lib/canvasImageGenerationServer";
 import { toInputJson } from "@/lib/jsonUtils";
 import { getAssetBucket, posterImagePath } from "@/lib/storagePaths";
 import { uploadToStorage } from "@/lib/storageUpload";
@@ -15,9 +16,76 @@ type ImageJobBody = {
   images?: unknown;
 };
 
+const MINIAPP_GEMINI_IMAGE_MODELS = new Set([
+  "nano-banana",
+  "nano-banana-pro",
+  "gemini-3.1-pro-preview",
+  "nano-banana-2",
+  "gemini-3-pro-image-preview",
+  "gemini-3.1-flash-image-preview",
+]);
+
 function sanitizeText(value: unknown, maxLength: number): string {
   if (typeof value !== "string") return "";
   return value.trim().slice(0, maxLength);
+}
+
+function normalizeJobErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error || "");
+  if (!message) return "AI作图失败";
+  if (/fetch failed|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|network/i.test(message)) {
+    return "生图服务连接失败，请稍后重试或联系管理员检查上游配置";
+  }
+  return message;
+}
+
+function readEnv(name: string): string {
+  return String(process.env[name] || "").trim();
+}
+
+function isConfiguredUrl(value: string): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return /^https?:$/i.test(url.protocol) && !/\.example(?:\/|$)/i.test(url.hostname + url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function hasCanvasUpstreamAuth(apiKey?: string | null): boolean {
+  return Boolean(
+    readEnv("CANVAS_UPSTREAM_BEARER_TOKEN") ||
+    readEnv("CANVAS_UPSTREAM_DEFAULT_API_KEY") ||
+    readEnv("CLOUD_API_KEY") ||
+    readEnv("DEFAULT_USER_API_KEY") ||
+    apiKey?.trim(),
+  );
+}
+
+function validateImageUpstreamConfig(model: string, apiKey?: string | null): string | null {
+  const normalizedModel = model.trim().toLowerCase();
+  const isGeminiModel = MINIAPP_GEMINI_IMAGE_MODELS.has(normalizedModel);
+  const hasAuth = hasCanvasUpstreamAuth(apiKey);
+
+  if (isGeminiModel) {
+    const geminiBase =
+      readEnv("CANVAS_GEMINI_BASE_URL") ||
+      readEnv("CANVAS_API_BASE_URL") ||
+      readEnv("CLOUD_API_BASE_URL");
+    if (!isConfiguredUrl(geminiBase)) {
+      return "生图上游未配置：请配置 CANVAS_GEMINI_BASE_URL（或 CANVAS_API_BASE_URL / CLOUD_API_BASE_URL）";
+    }
+    if (!hasAuth) {
+      return "生图上游未配置：请配置 CANVAS_UPSTREAM_BEARER_TOKEN 或默认 API Key";
+    }
+    return null;
+  }
+
+  if (!hasAuth) {
+    return "生图上游未配置：请配置 CANVAS_UPSTREAM_BEARER_TOKEN 或默认 API Key";
+  }
+  return null;
 }
 
 function sanitizeSize(value: unknown): "1024x1024" | "1536x1024" | "1024x1536" {
@@ -299,6 +367,10 @@ export async function POST(request: NextRequest) {
   const size = sanitizeSize(body?.size);
   const count = sanitizeCount(body?.n);
   const referenceImages = sanitizeImages(body?.image ?? body?.images);
+  const configError = validateImageUpstreamConfig(model, apiKey);
+  if (configError) {
+    return NextResponse.json({ error: configError }, { status: 503 });
+  }
   const taskId = randomUUID();
   const title = Array.from(prompt.replace(/\s+/g, " ").trim()).slice(0, 24).join("") || "AI作图";
   const initialMetadata = buildMetadata({ prompt, model, size, count, referenceImages });
@@ -340,43 +412,25 @@ export async function POST(request: NextRequest) {
     }),
   ]);
 
-  const origin = new URL(request.url).origin;
-  const headers = new Headers({
-    "Content-Type": "application/json",
-  });
-  if (apiKey) headers.set("X-User-Api-Key", apiKey);
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-  headers.set("x-canvas-user-id", userId);
-
   after(async () => {
     try {
-      const response = await fetch(`${origin}/api/canvas/images/generations`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
+      const result = await generateCanvasImageOnServer({
+        userId,
+        apiKey,
+        requestBody: {
           prompt,
           model,
           size,
           n: count,
           image: referenceImages,
-        }),
-        cache: "no-store",
+        },
       });
-      const contentType = response.headers.get("content-type") || "";
-      const rawText = await response.text();
-      let payload: unknown = rawText;
-      if (contentType.includes("application/json")) {
-        try {
-          payload = rawText ? JSON.parse(rawText) : {};
-        } catch {
-          payload = rawText;
-        }
-      }
-      if (!response.ok) {
+      const payload = result.parsedJson ?? result.bodyText;
+      if (result.status < 200 || result.status >= 300 || result.businessFailed) {
         const message = typeof payload === "object" && payload && "error" in payload
           ? JSON.stringify((payload as Record<string, unknown>).error).slice(0, 240)
-          : rawText.slice(0, 240);
-        throw new Error(message || `图片生成失败：HTTP ${response.status}`);
+          : result.bodyText.slice(0, 240);
+        throw new Error(message || `图片生成失败：HTTP ${result.status}`);
       }
       let generatedImages = extractImageUrls(payload);
       if (generatedImages.length === 0) {
@@ -402,6 +456,9 @@ export async function POST(request: NextRequest) {
         userId,
         error,
       });
+      const errorMessage = error instanceof CanvasImageGenerationError
+        ? error.message
+        : normalizeJobErrorMessage(error);
       await markJobFailed({
         taskId,
         userId,
@@ -410,7 +467,7 @@ export async function POST(request: NextRequest) {
         size,
         count,
         referenceImages,
-        errorMessage: error instanceof Error ? error.message : "AI作图失败",
+        errorMessage,
       });
     }
   });

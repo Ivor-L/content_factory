@@ -511,26 +511,32 @@ export default function HotDetailPage() {
               </View>
             ))}
           </View>
-          <ScrollView scrollY className='hot-rewrite-content'>
-            <Text className='hot-rewrite-section-title'>正文</Text>
-            <Text className='hot-rewrite-body'>{rewrite.body || '--'}</Text>
-            <Text className='hot-rewrite-section-title'>图片正文</Text>
-            {rewrite.imageTexts.length > 0 ? rewrite.imageTexts.map((text, index) => (
-              <Text key={`${index}-${text}`} className='hot-rewrite-image-text'>{text}</Text>
-            )) : <Text className='hot-rewrite-image-text'>暂无图片正文</Text>}
-          </ScrollView>
-          <View className='hot-rewrite-actions'>
-            <View className='hot-rewrite-action' onClick={() => handleRouteToCardLayout('infographic')}>
-              <Text className='hot-rewrite-action-icon'>▦</Text>
-              <Text className='hot-rewrite-action-text'>生成信息卡片</Text>
-            </View>
-            <View className='hot-rewrite-action' onClick={() => handleRouteToCardLayout('card-layout')}>
-              <Text className='hot-rewrite-action-icon'>▧</Text>
-              <Text className='hot-rewrite-action-text'>生成图文卡片</Text>
-            </View>
+          <View className='hot-rewrite-content-shell'>
+            <ScrollView scrollY className='hot-rewrite-content'>
+              <View className='hot-rewrite-content-inner'>
+                <Text className='hot-rewrite-section-title'>正文</Text>
+                <Text className='hot-rewrite-body'>{rewrite.body || '--'}</Text>
+                <Text className='hot-rewrite-section-title'>图片正文</Text>
+                {rewrite.imageTexts.length > 0 ? rewrite.imageTexts.map((text, index) => (
+                  <Text key={`${index}-${text}`} className='hot-rewrite-image-text'>{text}</Text>
+                )) : <Text className='hot-rewrite-image-text'>暂无图片正文</Text>}
+              </View>
+            </ScrollView>
           </View>
-          <View className='hot-rewrite-close' onClick={() => setRewriteDrawerVisible(false)}>
-            <Text className='hot-rewrite-close-text'>关闭</Text>
+          <View className='hot-rewrite-footer'>
+            <View className='hot-rewrite-actions'>
+              <View className='hot-rewrite-action' onClick={() => handleRouteToCardLayout('infographic')}>
+                <Text className='hot-rewrite-action-icon'>▦</Text>
+                <Text className='hot-rewrite-action-text'>生成信息卡片</Text>
+              </View>
+              <View className='hot-rewrite-action' onClick={() => handleRouteToCardLayout('card-layout')}>
+                <Text className='hot-rewrite-action-icon'>▧</Text>
+                <Text className='hot-rewrite-action-text'>生成图文卡片</Text>
+              </View>
+            </View>
+            <View className='hot-rewrite-close' onClick={() => setRewriteDrawerVisible(false)}>
+              <Text className='hot-rewrite-close-text'>关闭</Text>
+            </View>
           </View>
         </View>
       </View>

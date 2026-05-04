@@ -304,25 +304,7 @@ export default function WorkDetailPage() {
     }
   };
 
-  const handlePrevPoster = () => {
-    if (posterImages.length <= 1) return;
-    setCurrentPosterIndex((prev) => (prev - 1 + posterImages.length) % posterImages.length);
-  };
-
-  const handleNextPoster = () => {
-    if (posterImages.length <= 1) return;
-    setCurrentPosterIndex((prev) => (prev + 1) % posterImages.length);
-  };
-
-  const handlePreviewCurrentPoster = () => {
-    if (!currentPosterUrl) return;
-    Taro.previewImage({
-      urls: posterImages,
-      current: currentPosterUrl,
-    });
-  };
-
-  const downloadBtnText = posterImages.length > 1 ? '下载全部' : '下载';
+  const downloadBtnText = '下载';
 
   return (
     <View className='work-detail-page'>
@@ -357,7 +339,7 @@ export default function WorkDetailPage() {
                           <Image
                             className='work-detail-cover work-detail-swiper-image'
                             src={url}
-                            mode='aspectFill'
+                            mode='aspectFit'
                             onClick={() => handlePreviewImage(index)}
                           />
                         </SwiperItem>
@@ -436,27 +418,6 @@ export default function WorkDetailPage() {
                     <Text className='work-detail-preview'>{item.preview}</Text>
                   </View>
                 )}
-                {isImageText && posterImages.length > 0 && (
-                  <View className='work-detail-poster-ops'>
-                    <View className='work-detail-poster-op-btn' onClick={handlePrevPoster}>
-                      <Text className='work-detail-poster-op-btn-text'>上一页</Text>
-                    </View>
-                    <View className='work-detail-poster-op-btn' onClick={handleNextPoster}>
-                      <Text className='work-detail-poster-op-btn-text'>下一页</Text>
-                    </View>
-                    <View className='work-detail-poster-op-btn' onClick={handlePreviewCurrentPoster}>
-                      <Text className='work-detail-poster-op-btn-text'>预览</Text>
-                    </View>
-                    <View
-                      className={`work-detail-poster-op-btn work-detail-poster-op-btn--primary ${!canDownload ? 'work-detail-poster-op-btn--disabled' : ''}`}
-                      onClick={() => {
-                        void handleDownloadImage(currentPosterUrl);
-                      }}
-                    >
-                      <Text className='work-detail-poster-op-btn-text work-detail-poster-op-btn-text--primary'>下载本页</Text>
-                    </View>
-                  </View>
-                )}
                 {publishQrcode && (
                   <View className='work-detail-qrcode-card'>
                     <Text className='work-detail-qrcode-title'>小红书发布二维码</Text>
@@ -491,14 +452,16 @@ export default function WorkDetailPage() {
             >
               <Text className='work-detail-delete-btn-text'>{deleting ? '删除中...' : '删除'}</Text>
             </View>
-            <View
-              className={`work-detail-action-btn work-detail-download-btn ${downloading || !canDownload ? 'work-detail-action-btn--disabled' : ''}`}
-              onClick={() => {
-                void handleDownloadMain();
-              }}
-            >
-              <Text className='work-detail-download-btn-text'>{isProcessing ? '生成中不可下载' : downloading ? '下载中...' : downloadBtnText}</Text>
-            </View>
+            {!isImageText && (
+              <View
+                className={`work-detail-action-btn work-detail-download-btn ${downloading || !canDownload ? 'work-detail-action-btn--disabled' : ''}`}
+                onClick={() => {
+                  void handleDownloadMain();
+                }}
+              >
+                <Text className='work-detail-download-btn-text'>{isProcessing ? '生成中不可下载' : downloading ? '下载中...' : downloadBtnText}</Text>
+              </View>
+            )}
           </View>
         </View>
       )}
@@ -621,6 +584,8 @@ function collectImageUrls(value: unknown, depth = 0): string[] {
       obj.src,
       obj.publicUrl,
       obj.public_url,
+      obj.fileUrl,
+      obj.file_url,
       obj.thumbnailUrl,
       obj.thumbnail_url,
       obj.coverUrl,

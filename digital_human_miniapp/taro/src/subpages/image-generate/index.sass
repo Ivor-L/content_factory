@@ -439,6 +439,7 @@
   min-height: 980rpx
   display: flex
   flex-direction: column
+  overflow: visible
 
 .textarea--info
   border: none
@@ -450,13 +451,17 @@
 .textarea--card-editor
   min-height: 860rpx
   flex: 1
+  padding-bottom: 24rpx
+  box-sizing: border-box
 
 .info-input-actions
   display: flex
   justify-content: space-between
   align-items: center
-  padding: 0 16rpx 14rpx
+  padding: 14rpx 16rpx 16rpx
   flex-shrink: 0
+  flex-wrap: wrap
+  gap: 12rpx
 
 .input-action-btn
   height: 56rpx

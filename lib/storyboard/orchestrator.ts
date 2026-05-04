@@ -90,6 +90,16 @@ function buildN8nPayload(input: {
     readString(metadata.referenceVideoUrl) ||
     readString(metadata.video_url) ||
     readString(metadata.videoUrl);
+  const targetLanguage =
+    readString(metadata.target_language) ||
+    readString(metadata.targetLanguage) ||
+    readString((request.payloadData || {}).target_language) ||
+    readString((request.payloadData || {}).targetLanguage);
+  const targetCountry =
+    readString(metadata.target_country) ||
+    readString(metadata.targetCountry) ||
+    readString((request.payloadData || {}).target_country) ||
+    readString((request.payloadData || {}).targetCountry);
 
   return {
     task_id: taskId,
@@ -115,6 +125,18 @@ function buildN8nPayload(input: {
     source: source || undefined,
     metadata,
     pipeline_key: request.pipelineKey,
+    ...(targetLanguage
+      ? {
+        target_language: targetLanguage,
+        targetLanguage,
+      }
+      : {}),
+    ...(targetCountry
+      ? {
+        target_country: targetCountry,
+        targetCountry,
+      }
+      : {}),
     ...(referenceVideoUrl
       ? {
         video_url: referenceVideoUrl,

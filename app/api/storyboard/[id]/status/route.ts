@@ -86,6 +86,8 @@ export async function GET(
         imageModel: (task as any).imageModel,
         videoModel: (task as any).videoModel,
         finalVideoUrl: (task as any).finalVideoUrl,
+        storyboardImageUrl: (task as any).storyboardImageUrl,
+        coverImage: (task as any).coverImage,
         detailedBreakdown: (task as any).detailedBreakdown ?? null,
         references: [
           task.product

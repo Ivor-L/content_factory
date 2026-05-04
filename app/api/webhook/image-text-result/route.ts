@@ -14,6 +14,48 @@ function toGeneratedImageItems(images: string[]) {
   }));
 }
 
+function collectImageUrls(value: unknown, depth = 0): string[] {
+  if (depth > 5 || value == null) return [];
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        return collectImageUrls(JSON.parse(trimmed), depth + 1);
+      } catch {
+        return /^https?:\/\//i.test(trimmed) ? [trimmed] : [];
+      }
+    }
+    return /^https?:\/\//i.test(trimmed) ? [trimmed] : [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectImageUrls(item, depth + 1));
+  }
+
+  if (typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    const preferred = [
+      obj.url,
+      obj.imageUrl,
+      obj.image_url,
+      obj.publicUrl,
+      obj.public_url,
+      obj.src,
+    ].flatMap((item) => collectImageUrls(item, depth + 1));
+    if (preferred.length > 0) return preferred;
+    return Object.values(obj).flatMap((item) => collectImageUrls(item, depth + 1));
+  }
+
+  return [];
+}
+
+function normalizeGeneratedImages(...values: unknown[]): string[] {
+  const urls = values.flatMap((value) => collectImageUrls(value));
+  return Array.from(new Set(urls.filter(Boolean)));
+}
+
 function buildSummaryMetadata(
   value: unknown,
   images: string[],
@@ -53,8 +95,10 @@ export async function POST(request: NextRequest) {
     status?: string;
     generated_copy?: string;
     generatedCopy?: string;
-    generated_images?: string[];
-    generatedImages?: string[];
+    generated_images?: unknown;
+    generatedImages?: unknown;
+    generated_images_json?: unknown;
+    generatedImagesJson?: unknown;
     image_guidance?: Array<{ index: number; description: string }>;
     imageGuidance?: Array<{ index: number; description: string }>;
     error?: string;
@@ -68,7 +112,12 @@ export async function POST(request: NextRequest) {
   const taskId = body.task_id || body.taskId || body.id;
   const status = body.status;
   const generatedCopy = body.generated_copy ?? body.generatedCopy;
-  const generatedImages = body.generated_images ?? body.generatedImages;
+  const generatedImages = normalizeGeneratedImages(
+    body.generated_images,
+    body.generatedImages,
+    body.generated_images_json,
+    body.generatedImagesJson,
+  );
   const imageGuidance = body.image_guidance ?? body.imageGuidance;
   const error = body.error;
 
@@ -84,11 +133,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Task not found" }, { status: 404 });
   }
 
-  if (status === "completed" && (generatedCopy || (generatedImages ?? []).length > 0)) {
+  if (status === "completed" && (generatedCopy || generatedImages.length > 0)) {
     const metadata = parseObject(task.metadata) ?? {};
     const custom = parseObject(metadata.custom) ?? {};
     const replication = parseObject(custom.replication) ?? {};
-    const normalizedImages = (generatedImages ?? []).filter(Boolean);
+    const normalizedImages = generatedImages;
     const resolvedCopy = generatedCopy || task.ideaText || "";
     const imageItems = toGeneratedImageItems(normalizedImages);
     const summary = await prisma.taskSummary.findFirst({

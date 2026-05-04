@@ -72,18 +72,44 @@ function extractImageUrls(generatedImagesJson: unknown): string[] {
     }
   }
 
-  if (!Array.isArray(parsed) || parsed.length === 0) return [];
+  return collectImageUrls(parsed);
+}
 
-  return parsed
-    .map((item) => {
-      if (typeof item === 'string') return item.trim();
-      if (item && typeof item === 'object' && 'url' in item) {
-        const url = (item as { url?: unknown }).url;
-        return typeof url === 'string' ? url.trim() : '';
+function collectImageUrls(value: unknown, depth = 0): string[] {
+  if (depth > 5 || value == null) return [];
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        return collectImageUrls(JSON.parse(trimmed), depth + 1);
+      } catch {
+        return /^https?:\/\//i.test(trimmed) ? [trimmed] : [];
       }
-      return '';
-    })
-    .filter(Boolean);
+    }
+    return /^https?:\/\//i.test(trimmed) ? [trimmed] : [];
+  }
+
+  if (Array.isArray(value)) {
+    return Array.from(new Set(value.flatMap((item) => collectImageUrls(item, depth + 1))));
+  }
+
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    const preferred = [
+      obj.url,
+      obj.imageUrl,
+      obj.image_url,
+      obj.publicUrl,
+      obj.public_url,
+      obj.src,
+    ].flatMap((item) => collectImageUrls(item, depth + 1));
+    if (preferred.length > 0) return Array.from(new Set(preferred));
+    return Array.from(new Set(Object.values(obj).flatMap((item) => collectImageUrls(item, depth + 1))));
+  }
+
+  return [];
 }
 
 function extractFirstImageUrl(generatedImagesJson: unknown): string | null {
@@ -337,6 +363,16 @@ export async function fetchUserTaskSummaries({
   if (status) {
     where.status = status;
   }
+
+  where.NOT = [
+    {
+      taskType: 'poster',
+      metadata: {
+        path: ['source'],
+        equals: 'miniapp_xhs_layout',
+      },
+    },
+  ];
 
   const take = includeTotal ? limit : limit + 1;
   const tasksFetched = await prisma.taskSummary.findMany({

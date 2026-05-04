@@ -2,6 +2,39 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { isValidAdminWebhookRequest } from "@/lib/webhookAuth";
 
+function parseJsonSafe(value: unknown): Record<string, unknown> | null {
+  if (!value) return null;
+  if (typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function pickVideoUrl(body: Record<string, any>): string {
+  if (typeof body.video_url === "string" && body.video_url.trim()) return body.video_url.trim();
+  if (typeof body.videoUrl === "string" && body.videoUrl.trim()) return body.videoUrl.trim();
+  const data = body.data && typeof body.data === "object" ? body.data as Record<string, unknown> : null;
+  const resultJson = parseJsonSafe(data?.resultJson ?? body.resultJson);
+  const resultUrls = Array.isArray(resultJson?.resultUrls) ? resultJson.resultUrls : [];
+  const first = resultUrls.find((url) => typeof url === "string" && url.trim());
+  return typeof first === "string" ? first.trim() : "";
+}
+
+function normalizeStatus(body: Record<string, any>): string {
+  const raw = String(body.status || body.state || body.data?.state || "").toLowerCase();
+  if (["success", "succeeded", "completed", "done"].includes(raw)) return "success";
+  if (["fail", "failed", "error", "errored"].includes(raw)) return "failed";
+  return raw;
+}
+
 /**
  * Webhook endpoint for receiving video generation results.
  * Accepts callbacks from:
@@ -11,22 +44,27 @@ import { isValidAdminWebhookRequest } from "@/lib/webhookAuth";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    const querySegmentId = req.nextUrl.searchParams.get("segment_id") || "";
+    const queryTaskId = req.nextUrl.searchParams.get("task_id") || "";
+    const queryModel = req.nextUrl.searchParams.get("model") || "";
+    const queryAdminToken = req.nextUrl.searchParams.get("admin_token") || "";
 
     // Support poll-service callback format: segment_id lives in context
     const context = body.context && typeof body.context === "object" ? body.context : null;
     const isPollingCallback = Boolean(context?.segment_id);
+    const isQueryCallback = Boolean(querySegmentId && queryAdminToken && queryAdminToken === (process.env.ADMIN_TOKEN || "").trim());
 
     // Auth: accept admin token OR valid polling callback with segment_id in context
-    if (!isPollingCallback && !isValidAdminWebhookRequest(req)) {
+    if (!isPollingCallback && !isQueryCallback && !isValidAdminWebhookRequest(req)) {
       console.error("[storyboard-video] Unauthorized: Invalid admin token");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const segment_id = body.segment_id || context?.segment_id;
-    const video_url = body.video_url;
-    const status = body.status;
+    const segment_id = body.segment_id || context?.segment_id || querySegmentId;
+    const video_url = pickVideoUrl(body);
+    const status = normalizeStatus(body);
     const error = body.error || body.message;
-    const model = body.model || context?.model;
+    const model = body.model || context?.model || body.data?.model || queryModel;
     const generation_params = body.generation_params;
 
     console.log("[storyboard-video] Received webhook:", {

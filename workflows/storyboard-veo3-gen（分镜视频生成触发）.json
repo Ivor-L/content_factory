@@ -20,10 +20,10 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const body = $json.body || $json;\n\nconst safe = (v) => String(v ?? '').trim();\n\nconst segmentId = safe(body.segment_id);\nconst taskId = safe(body.task_id);\nconst prompt = safe(body.prompt);\nconst firstFrameUrl = safe(body.first_frame_url);\nconst duration = Number(body.duration) || 8;\nconst model = safe(body.model) || 'veo3-fast';\nconst aspectRatio = safe(body.aspect_ratio) || '9:16';\nconst callbackUrl = safe(body.callback_url);\nconst apiKey = safe(body.api_key);\nconst adminToken = safe(body.admin_token);\nconst workflowId = safe(body.workflow_id) || 'flow_storyboard_veo3';\n\nif (!segmentId) throw new Error('segment_id is required');\nif (!prompt) throw new Error('prompt is required');\nif (!callbackUrl) throw new Error('callback_url is required');\nif (!apiKey) throw new Error('api_key is required');\n\n// images will be injected as base64 by the next node\nconst requestBody = {\n  model,\n  prompt,\n  enhance_prompt: true,\n  enable_upsample: true,\n  aspect_ratio: aspectRatio,\n};\n\nreturn {\n  json: {\n    segment_id: segmentId,\n    task_id: taskId,\n    callback_url: callbackUrl,\n    api_key: apiKey,\n    admin_token: adminToken,\n    workflow_id: workflowId,\n    firstFrameUrl,\n    requestBody,\n  }\n};"
+        "jsCode": "const body = $json.body || $json;\n\nconst safe = (v) => String(v ?? '').trim();\nconst cleanUrl = (v) => {\n  const s = safe(v);\n  if (!s || /^(undefined|null|nan)$/i.test(s)) return '';\n  if (s.startsWith('//')) return 'https:' + s;\n  return s.startsWith('http://') || s.startsWith('https://') ? s : '';\n};\nconst ensureNoBgm = (value) => {\n  const prompt = safe(value);\n  const rule = 'ABSOLUTELY NO BGM, NO BACKGROUND MUSIC. Pure voice/dialogue and ambient foley only.';\n  if (!prompt) return rule;\n  return /no\\s+(bgm|background music)|without\\s+(bgm|background music)/i.test(prompt)\n    ? prompt\n    : prompt + '\\n\\n' + rule;\n};\nconst withQuery = (url, params) => {\n  const base = cleanUrl(url);\n  if (!base) return '';\n  const u = new URL(base);\n  for (const [k, v] of Object.entries(params)) {\n    const s = safe(v);\n    if (s) u.searchParams.set(k, s);\n  }\n  return u.toString();\n};\nconst clampDuration = (value) => {\n  const n = Math.round(Number(value) || 8);\n  return Math.max(4, Math.min(15, n));\n};\nconst dedupeUrls = (values) => {\n  const out = [];\n  for (const value of values) {\n    const url = cleanUrl(value);\n    if (url && !out.includes(url) && out.length < 9) out.push(url);\n  }\n  return out;\n};\n\nconst segmentId = safe(body.segment_id);\nconst taskId = safe(body.task_id);\nconst requestedModel = safe(body.requested_model || body.requestedModel || body.model);\nconst rawModel = safe(body.model) || requestedModel || 'veo3-fast';\nconst isSeedance = /seedance/i.test(rawModel);\nconst route = isSeedance ? 'seedance' : 'yunwu';\nconst kieModel = /fast/i.test(rawModel) ? 'bytedance/seedance-2-fast' : 'bytedance/seedance-2';\nconst firstFrameUrl = cleanUrl(body.first_frame_url || body.firstFrameUrl || body.image_url || body.imageUrl);\nconst storyboardGridUrl = cleanUrl(body.storyboard_grid_url || body.storyboardGridUrl);\nconst duration = clampDuration(body.duration);\nconst aspectRatio = safe(body.aspect_ratio) || '9:16';\nconst callbackUrl = cleanUrl(body.callback_url);\nconst apiKey = safe(body.api_key);\nconst providerApiKey = safe(body.provider_api_key || body.providerApiKey || body.kie_api_key || body.kieApiKey);\nconst adminToken = safe(body.admin_token);\nconst workflowId = safe(body.workflow_id) || 'flow_storyboard_veo3';\n\nlet prompt = ensureNoBgm(body.prompt);\nif (isSeedance && storyboardGridUrl && !/@Image2|@图片2|@图2/.test(prompt)) {\n  prompt += '\\n\\nSeedance 2.0 reference protocol: @Image1 is the current clip first frame or product-replaced reference frame. @Image2 is the full storyboard contact sheet. Additional images may appear as @Image3-@Image9 for product/detail consistency. Use @Image2 only as a timing/composition storyboard reference for this clip; do not generate collage, grid, split-screen, borders, panel numbers, frame labels, or storyboard layout. Final output must be one normal full-screen 9:16 video.';\n}\n\nif (!segmentId) throw new Error('segment_id is required');\nif (!prompt) throw new Error('prompt is required');\nif (!callbackUrl) throw new Error('callback_url is required');\nif (!apiKey) throw new Error('api_key is required');\nif (isSeedance && !providerApiKey) throw new Error('provider_api_key is required for KIE Seedance');\n\nconst incomingReferenceImages = Array.isArray(body.reference_image_urls)\n  ? body.reference_image_urls\n  : Array.isArray(body.referenceImageUrls)\n    ? body.referenceImageUrls\n    : [];\nconst referenceImageUrls = dedupeUrls([firstFrameUrl, storyboardGridUrl, ...incomingReferenceImages]);\nconst seedanceCallbackUrl = withQuery(callbackUrl, {\n  segment_id: segmentId,\n  task_id: taskId,\n  model: rawModel,\n  admin_token: adminToken,\n});\n\nconst yunwuRequestBody = {\n  model: rawModel,\n  prompt,\n  enhance_prompt: true,\n  enable_upsample: true,\n  aspect_ratio: aspectRatio,\n  duration,\n  ...(firstFrameUrl ? { images: [firstFrameUrl] } : {}),\n};\nconst seedanceRequestBody = {\n  model: kieModel,\n  input: {\n    prompt,\n    reference_image_urls: referenceImageUrls,\n    reference_video_urls: [],\n    reference_audio_urls: [],\n    generate_audio: false,\n    resolution: '720p',\n    aspect_ratio: aspectRatio,\n    duration,\n    web_search: false,\n    nsfw_checker: true,\n  },\n  callBackUrl: seedanceCallbackUrl,\n};\n\nreturn {\n  json: {\n    segment_id: segmentId,\n    task_id: taskId,\n    callback_url: callbackUrl,\n    api_key: apiKey,\n    provider_api_key: providerApiKey,\n    admin_token: adminToken,\n    workflow_id: workflowId,\n    model: requestedModel || rawModel,\n    provider: route,\n    route,\n    isSeedance,\n    kieModel,\n    firstFrameUrl,\n    storyboardGridUrl,\n    referenceImageUrls,\n    requestBody: isSeedance ? seedanceRequestBody : yunwuRequestBody,\n  }\n};"
       },
       "id": "93138b2c-ba06-4be8-94a5-73c1e59c3007",
-      "name": "准备Veo3参数",
+      "name": "准备视频参数",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -58,7 +58,7 @@
         }
       },
       "id": "073f6c16-1d76-4b65-b5da-bc1c3bcd400b",
-      "name": "提交Veo3请求",
+      "name": "提交Yunwu视频请求",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -77,10 +77,10 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const res = $json || {};\nconst prev = $('准备Veo3参数').first().json;\n\nconst id = res.id || res.data?.id;\nconst status = res.status || res.data?.status || 'pending';\n\nif (!id) {\n  throw new Error('Veo3 create 失败，未返回 task id: ' + JSON.stringify(res).slice(0, 300));\n}\n\nreturn {\n  json: {\n    veo3_task_id: id,\n    veo3_status: status,\n    segment_id: prev.segment_id,\n    task_id: prev.task_id,\n    callback_url: prev.callback_url,\n    api_key: prev.api_key,\n    admin_token: prev.admin_token,\n    workflow_id: prev.workflow_id,\n  }\n};"
+        "jsCode": "const res = $json || {};\nconst prev = $('准备视频参数').first().json;\n\nconst id = res.id || res.data?.id;\nconst status = res.status || res.data?.status || 'pending';\n\nif (!id) {\n  throw new Error('Yunwu video create 失败，未返回 task id: ' + JSON.stringify(res).slice(0, 300));\n}\n\nreturn {\n  json: {\n    video_task_id: id,\n    video_status: status,\n    segment_id: prev.segment_id,\n    task_id: prev.task_id,\n    callback_url: prev.callback_url,\n    api_key: prev.api_key,\n    admin_token: prev.admin_token,\n    workflow_id: prev.workflow_id,\n    model: prev.model,\n  }\n};"
       },
       "id": "ce78d642-9a24-4408-9a25-60c54e7766c6",
-      "name": "提取任务ID",
+      "name": "提取Yunwu任务ID",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -94,7 +94,7 @@
         "url": "https://api.atomx.top/tools/veo/poll/async",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"task_id\": \"{{ $json.veo3_task_id }}\",\n  \"api_key\": \"sk-ENL5z1YykFkIZMIsjnbJeh36iY82VvGYznRzEazg1DWe8fkV\",\n  \"webhook_url\": \"https://hooks.atomx.top/webhook/storyboard_veo3_callback\",\n  \"context\": {\n    \"segment_id\": \"{{ $json.segment_id }}\",\n    \"task_id\": \"{{ $json.task_id }}\",\n    \"callback_url\": \"{{ $json.callback_url }}\",\n    \"api_key\": \"{{ $json.api_key }}\",\n    \"admin_token\": \"{{ $json.admin_token }}\",\n    \"workflow_id_for_credits\": \"{{ $json.workflow_id }}\"\n  }\n}",
+        "jsonBody": "={\n  \"task_id\": \"{{ $json.video_task_id }}\",\n  \"api_key\": \"sk-ENL5z1YykFkIZMIsjnbJeh36iY82VvGYznRzEazg1DWe8fkV\",\n  \"webhook_url\": \"https://hooks.atomx.top/webhook/storyboard_veo3_callback\",\n  \"context\": {\n    \"segment_id\": \"{{ $json.segment_id }}\",\n    \"task_id\": \"{{ $json.task_id }}\",\n    \"callback_url\": \"{{ $json.callback_url }}\",\n    \"api_key\": \"{{ $json.api_key }}\",\n    \"admin_token\": \"{{ $json.admin_token }}\",\n    \"workflow_id_for_credits\": \"{{ $json.workflow_id }}\"\n  }\n}",
         "options": {}
       },
       "id": "314fbc57-1127-4742-861b-92472bce4d78",
@@ -107,42 +107,202 @@
       ]
     },
     {
-      "id": "download-first-frame-001",
-      "name": "下载首帧图片",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -928,
-        0
-      ],
-      "continueOnFail": true,
       "parameters": {
-        "method": "GET",
-        "url": "={{ $json.firstFrameUrl }}",
-        "sendHeaders": false,
+        "method": "POST",
+        "url": "https://api.kie.ai/api/v1/jobs/createTask",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $json.provider_api_key }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.requestBody }}",
         "options": {
           "response": {
             "response": {
-              "responseFormat": "file",
-              "outputPropertyName": "data"
+              "responseFormat": "json"
             }
           }
         }
-      }
+      },
+      "id": "submit-kie-seedance-001",
+      "name": "提交KIE-Seedance请求",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1152,
+        240
+      ],
+      "retryOnFail": true,
+      "waitBetweenTries": 3000
     },
     {
-      "id": "inject-base64-001",
-      "name": "注入图片Base64",
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "route-seedance-true",
+              "leftValue": "={{ $json.isSeedance === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "route-video-provider-001",
+      "name": "路由视频供应商",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1280,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const res = $json || {};\nconst prev = $('准备视频参数').first().json;\nconst taskId = res.data?.taskId || res.taskId || res.data?.id || '';\nif (!taskId) {\n  throw new Error('KIE Seedance createTask 失败，未返回 taskId: ' + JSON.stringify(res).slice(0, 500));\n}\nreturn {\n  json: {\n    video_task_id: taskId,\n    video_status: 'waiting',\n    segment_id: prev.segment_id,\n    task_id: prev.task_id,\n    callback_url: prev.callback_url,\n    api_key: prev.api_key,\n    provider_api_key: prev.provider_api_key,\n    admin_token: prev.admin_token,\n    workflow_id: prev.workflow_id,\n    model: prev.model,\n    provider: 'kie',\n  }\n};"
+      },
+      "id": "extract-kie-task-001",
+      "name": "提取KIE任务ID",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
+        -928,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.kie.ai/api/v1/jobs/recordInfo?taskId={{ encodeURIComponent($json.video_task_id) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $json.provider_api_key }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "query-kie-task-001",
+      "name": "查询KIE任务状态",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
         -704,
-        0
+        240
       ],
+      "retryOnFail": true,
+      "waitBetweenTries": 3000
+    },
+    {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const item = $input.item;\nconst requestBody = { ...item.json.requestBody };\n\nif (item.binary && item.binary.data && item.binary.data.data) {\n  const b = item.binary.data;\n  const mimeType = b.mimeType || 'image/jpeg';\n  const base64 = b.data;\n  requestBody.images = [`data:${mimeType};base64,${base64}`];\n}\n\nreturn {\n  json: {\n    ...item.json,\n    requestBody,\n  }\n};"
-      }
+        "jsCode": "const res = $json || {};\nconst prev = $('提取KIE任务ID').first().json;\nconst data = res.data && typeof res.data === 'object' ? res.data : {};\nconst state = String(data.state || res.state || '').toLowerCase();\nfunction parseResultUrl(value) {\n  if (!value) return '';\n  let parsed = value;\n  if (typeof value === 'string') {\n    try { parsed = JSON.parse(value); } catch { return ''; }\n  }\n  const urls = Array.isArray(parsed?.resultUrls) ? parsed.resultUrls : [];\n  return typeof urls[0] === 'string' ? urls[0].trim() : '';\n}\nconst videoUrl = parseResultUrl(data.resultJson || res.resultJson);\nreturn {\n  json: {\n    segment_id: prev.segment_id,\n    task_id: prev.task_id,\n    status: state === 'success' && videoUrl ? 'success' : state === 'fail' ? 'failed' : 'pending',\n    video_url: videoUrl,\n    model: prev.model,\n    provider: 'kie',\n    callback_url: prev.callback_url,\n    api_key: prev.api_key,\n    admin_token: prev.admin_token,\n    generation_params: {\n      provider: 'kie',\n      provider_task_id: prev.video_task_id,\n      provider_state: state || null,\n      provider_model: data.model || null,\n    },\n    raw_state: state,\n    raw_response: res,\n  }\n};"
+      },
+      "id": "normalize-kie-status-001",
+      "name": "整理KIE查询结果",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-admin-token",
+              "value": "={{ $json.admin_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "callback-app-kie-video-001",
+      "name": "回调App-KIE视频结果",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -144,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "kie-status-final",
+              "leftValue": "={{ $json.status === 'success' || $json.status === 'failed' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "kie-status-final-if-001",
+      "name": "KIE是否已完成",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -368,
+        240
+      ]
     }
   ],
   "pinData": {
@@ -191,36 +351,54 @@
       "main": [
         [
           {
-            "node": "准备Veo3参数",
+            "node": "准备视频参数",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "准备Veo3参数": {
+    "准备视频参数": {
       "main": [
         [
           {
-            "node": "下载首帧图片",
+            "node": "路由视频供应商",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "提交Veo3请求": {
+    "路由视频供应商": {
       "main": [
         [
           {
-            "node": "提取任务ID",
+            "node": "提交KIE-Seedance请求",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "提交Yunwu视频请求",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "提取任务ID": {
+    "提交Yunwu视频请求": {
+      "main": [
+        [
+          {
+            "node": "提取Yunwu任务ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "提取Yunwu任务ID": {
       "main": [
         [
           {
@@ -231,26 +409,60 @@
         ]
       ]
     },
-    "下载首帧图片": {
+    "提交KIE-Seedance请求": {
       "main": [
         [
           {
-            "node": "注入图片Base64",
+            "node": "提取KIE任务ID",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "注入图片Base64": {
+    "提取KIE任务ID": {
       "main": [
         [
           {
-            "node": "提交Veo3请求",
+            "node": "查询KIE任务状态",
             "type": "main",
             "index": 0
           }
         ]
+      ]
+    },
+    "查询KIE任务状态": {
+      "main": [
+        [
+          {
+            "node": "整理KIE查询结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "整理KIE查询结果": {
+      "main": [
+        [
+          {
+            "node": "KIE是否已完成",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "KIE是否已完成": {
+      "main": [
+        [
+          {
+            "node": "回调App-KIE视频结果",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
       ]
     }
   },
