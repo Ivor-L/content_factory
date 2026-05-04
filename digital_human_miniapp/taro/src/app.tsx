@@ -2,8 +2,7 @@ import './app.sass';
 import Taro from '@tarojs/taro';
 
 try {
-  // 开发态默认跳过微信登录，直接进入页面。
-  // 可通过 TARO_APP_API_KEY 注入真实 key。
+  // Enable only for local debugging with TARO_APP_BYPASS_LOGIN=true.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const shouldBypass = typeof __MINIAPP_BYPASS_LOGIN__ !== 'undefined' ? Boolean((__MINIAPP_BYPASS_LOGIN__ as any)) : false;
   if (shouldBypass) {

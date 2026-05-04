@@ -24,6 +24,7 @@ function getApiBaseUrl(): string {
 
 const API_BASE_URL = getApiBaseUrl();
 const ACCESS_TOKEN_STORAGE_KEY = 'MINIAPP_ACCESS_TOKEN';
+const REQUEST_TIMEOUT_MS = 30000;
 
 export type TaskStatus = 'PENDING' | 'GENERATING' | 'COMPLETED' | 'FAILED' | string;
 
@@ -771,6 +772,7 @@ async function request<T = unknown>(
     method: options.method ?? (options.data ? 'POST' : 'GET'),
     data: options.data,
     header: headers,
+    timeout: REQUEST_TIMEOUT_MS,
   });
 
   if (res.statusCode < 200 || res.statusCode >= 300) {

@@ -1,5 +1,4 @@
 import Taro from '@tarojs/taro';
-import { createClient } from '@supabase/supabase-js';
 
 function getApiBaseUrl(): string {
   try {
@@ -26,16 +25,7 @@ function getApiBaseUrl(): string {
 const API_BASE_URL = getApiBaseUrl();
 const AUTH_API_BASE_URL = 'https://auth.atomx.top';
 const ACCESS_TOKEN_STORAGE_KEY = 'MINIAPP_ACCESS_TOKEN';
-const SUPABASE_URL = (typeof __SUPABASE_URL__ !== 'undefined' ? String(__SUPABASE_URL__ || '') : '').trim();
-const SUPABASE_ANON_KEY = (typeof __SUPABASE_ANON_KEY__ !== 'undefined' ? String(__SUPABASE_ANON_KEY__ || '') : '').trim();
-const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-    })
-  : null;
+const REQUEST_TIMEOUT_MS = 30000;
 
 export type DigitalHumanMode = 'VOICE_CLONE' | 'LIP_SYNC' | 'ACTION_TRANSFER';
 export type DigitalHumanSourceType = 'IMAGE' | 'VIDEO' | 'ACTION_TRANSFER';
@@ -296,6 +286,7 @@ async function request<T = unknown>(
     method: options.method ?? (options.data ? 'POST' : 'GET'),
     data: options.data,
     header,
+    timeout: REQUEST_TIMEOUT_MS,
   });
 
   if (res.statusCode < 200 || res.statusCode >= 300) {
@@ -626,8 +617,6 @@ export const api = {
   },
 
   async signOutSupabaseClient() {
-    if (!supabase) return;
-    await supabase.auth.signOut().catch(() => {});
     setAccessToken(null);
   },
 

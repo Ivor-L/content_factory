@@ -2,6 +2,7 @@ import { defineConfig } from '@tarojs/cli';
 
 const API_BASE_URL = process.env.TARO_APP_API_BASE_URL || 'https://atomx.top';
 const DEV_API_KEY = process.env.TARO_APP_API_KEY || '';
+const BYPASS_LOGIN = process.env.TARO_APP_BYPASS_LOGIN === 'true';
 
 export default defineConfig({
   projectName: 'digital-human-miniapp',
@@ -18,7 +19,7 @@ export default defineConfig({
   plugins: [],
   defineConstants: {
     __API_BASE_URL__: JSON.stringify(API_BASE_URL),
-    __MINIAPP_BYPASS_LOGIN__: JSON.stringify(true),
+    __MINIAPP_BYPASS_LOGIN__: JSON.stringify(BYPASS_LOGIN),
     __MINIAPP_DEV_API_KEY__: JSON.stringify(DEV_API_KEY),
   },
   copy: { patterns: [], options: {} },

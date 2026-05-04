@@ -1,6 +1,6 @@
 import { View, Text, ScrollView, Image, Video } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
 import type { MonetizationSquareConfigPayload, MonetizationItemConfig } from '../../utils/miniapp-api';
 import channelsMarkIcon from '../../assets/icons/shipinhao.png';
@@ -86,6 +86,7 @@ export default function MonetizationSquarePage() {
   const [activeCategoryId, setActiveCategoryId] = useState('');
   const [activeTab, setActiveTab] = useState<MonetizationTabId>('creation');
   const [previewVideo, setPreviewVideo] = useState<PreviewVideoState>(null);
+  const navigatingUrlRef = useRef('');
 
   useDidShow(() => {
     void (async () => {
@@ -172,11 +173,18 @@ export default function MonetizationSquarePage() {
   };
 
   const navigateToConfiguredRoute = (targetUrl: string) => {
+    if (navigatingUrlRef.current === targetUrl) return;
+    navigatingUrlRef.current = targetUrl;
+    const clearNavigationLock = () => {
+      if (navigatingUrlRef.current === targetUrl) navigatingUrlRef.current = '';
+    };
     const routePath = getRoutePath(targetUrl);
     if (TAB_BAR_ROUTES.has(routePath)) {
       Taro.switchTab({
         url: routePath,
+        success: clearNavigationLock,
         fail: (error) => {
+          clearNavigationLock();
           console.error('[monetization-square] switchTab failed', { targetUrl, routePath, error });
           Taro.showToast({ title: '页面跳转失败', icon: 'none' });
         },
@@ -186,11 +194,13 @@ export default function MonetizationSquarePage() {
 
     Taro.navigateTo({
       url: targetUrl,
-      fail: (error) => {
-        console.error('[monetization-square] navigateTo failed, retry redirectTo', { targetUrl, error });
+      success: clearNavigationLock,
+      fail: () => {
         Taro.redirectTo({
           url: targetUrl,
+          success: clearNavigationLock,
           fail: (redirectError) => {
+            clearNavigationLock();
             console.error('[monetization-square] redirectTo failed', { targetUrl, redirectError });
             Taro.showToast({ title: '页面跳转失败', icon: 'none' });
           },
