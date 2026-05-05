@@ -63,7 +63,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "function unwrapRoot(x) {\n  if (x && typeof x === 'object' && x.body && typeof x.body === 'object') return x.body;\n  return x;\n}\n\nfunction s(v) { return v == null ? '' : String(v).trim(); }\nfunction stripDataPrefix(value) { return s(value).replace(/^data:.*;base64,/i, ''); }\nfunction extensionFromMimeType(mimeType) {\n  if (/webp/i.test(mimeType)) return 'webp';\n  if (/jpe?g/i.test(mimeType)) return 'jpg';\n  return 'png';\n}\nfunction findDirectImageUrl(root) {\n  const candidates = [\n    root?.image_url, root?.imageUrl, root?.url,\n    root?.data?.image_url, root?.data?.imageUrl, root?.data?.url,\n    root?.result?.image_url, root?.result?.url,\n  ];\n  for (const value of candidates) {\n    const url = s(value);\n    if (/^https?:\\/\\//i.test(url) && !/\\.(mp4|mov|m3u8)(\\?|$)/i.test(url)) return url;\n  }\n  const data = Array.isArray(root?.data) ? root.data : [];\n  for (const item of data) {\n    const url = s(item?.url || item?.image_url || item?.imageUrl);\n    if (/^https?:\\/\\//i.test(url) && !/\\.(mp4|mov|m3u8)(\\?|$)/i.test(url)) return url;\n  }\n  return '';\n}\nfunction collectInlineImages(value, depth = 0) {\n  if (depth > 6 || value == null) return [];\n  if (Array.isArray(value)) return value.flatMap((item) => collectInlineImages(item, depth + 1));\n  if (typeof value !== 'object') return [];\n\n  const obj = value;\n  const inline = obj.inline_data || obj.inlineData;\n  if (inline && typeof inline === 'object' && s(inline.data)) {\n    return [{ data: stripDataPrefix(inline.data), mimeType: s(inline.mime_type || inline.mimeType || 'image/png') }];\n  }\n  const b64 = obj.b64_json || obj.b64Json || obj.image_base64 || obj.imageBase64 || obj.base64 || obj.base64_json || obj.base64Json;\n  if (s(b64)) return [{ data: stripDataPrefix(b64), mimeType: s(obj.mime_type || obj.mimeType || 'image/png') }];\n\n  return Object.values(obj).flatMap((item) => collectInlineImages(item, depth + 1));\n}\nasync function fetchImageAsBinary(url) {\n  const response = await fetch(url);\n  if (!response.ok) throw new Error('生成图下载失败：HTTP ' + response.status);\n  const mimeType = response.headers.get('content-type') || 'image/png';\n  const buffer = Buffer.from(await response.arrayBuffer());\n  return { data: buffer.toString('base64'), mimeType };\n}\n\nconst root = unwrapRoot($json || {});\nlet image = collectInlineImages(root)[0] || null;\nlet sourceImageUrl = '';\n\nif (!image) {\n  sourceImageUrl = findDirectImageUrl(root);\n  if (!sourceImageUrl) throw new Error('未从生图响应中解析到图片 URL 或 inline/base64 图片，请检查上游 API 输出。');\n  image = await fetchImageAsBinary(sourceImageUrl);\n}\n\nconst mimeType = image.mimeType || 'image/png';\nconst extension = extensionFromMimeType(mimeType);\nconst fileName = 'storyboard-image-' + Date.now() + '.' + extension;\n\nreturn {\n  json: {\n    source_image_url: sourceImageUrl,\n    mimeType,\n    fileName\n  },\n  binary: {\n    data: {\n      data: stripDataPrefix(image.data),\n      mimeType,\n      fileName\n    }\n  }\n};"
+        "jsCode": "function unwrapRoot(x) {\n  if (x && typeof x === 'object' && x.body && typeof x.body === 'object') return x.body;\n  return x;\n}\n\nfunction s(v) { return v == null ? '' : String(v).trim(); }\nfunction stripDataPrefix(value) { return s(value).replace(/^data:.*;base64,/i, ''); }\nfunction extensionFromMimeType(mimeType) {\n  if (/webp/i.test(mimeType)) return 'webp';\n  if (/jpe?g/i.test(mimeType)) return 'jpg';\n  return 'png';\n}\nfunction findDirectImageUrl(root) {\n  const candidates = [\n    root?.image_url, root?.imageUrl, root?.url,\n    root?.data?.image_url, root?.data?.imageUrl, root?.data?.url,\n    root?.result?.image_url, root?.result?.url,\n  ];\n  for (const value of candidates) {\n    const url = s(value);\n    if (/^https?:\\/\\//i.test(url) && !/\\.(mp4|mov|m3u8)(\\?|$)/i.test(url)) return url;\n  }\n  const data = Array.isArray(root?.data) ? root.data : [];\n  for (const item of data) {\n    const url = s(item?.url || item?.image_url || item?.imageUrl);\n    if (/^https?:\\/\\//i.test(url) && !/\\.(mp4|mov|m3u8)(\\?|$)/i.test(url)) return url;\n  }\n  return '';\n}\nfunction collectInlineImages(value, depth = 0) {\n  if (depth > 6 || value == null) return [];\n  if (Array.isArray(value)) return value.flatMap((item) => collectInlineImages(item, depth + 1));\n  if (typeof value !== 'object') return [];\n\n  const obj = value;\n  const inline = obj.inline_data || obj.inlineData;\n  if (inline && typeof inline === 'object' && s(inline.data)) {\n    return [{ data: stripDataPrefix(inline.data), mimeType: s(inline.mime_type || inline.mimeType || 'image/png') }];\n  }\n  const b64 = obj.b64_json || obj.b64Json || obj.image_base64 || obj.imageBase64 || obj.base64 || obj.base64_json || obj.base64Json;\n  if (s(b64)) return [{ data: stripDataPrefix(b64), mimeType: s(obj.mime_type || obj.mimeType || 'image/png') }];\n\n  return Object.values(obj).flatMap((item) => collectInlineImages(item, depth + 1));\n}\n\nconst root = unwrapRoot($json || {});\nconst inlineImage = collectInlineImages(root)[0] || null;\n\nif (!inlineImage) {\n  const sourceImageUrl = findDirectImageUrl(root);\n  if (!sourceImageUrl) throw new Error('未从生图响应中解析到图片 URL 或 inline/base64 图片，请检查上游 API 输出。');\n  return {\n    json: {\n      source_image_url: sourceImageUrl,\n      needs_download: true\n    }\n  };\n}\n\nconst mimeType = inlineImage.mimeType || 'image/png';\nconst extension = extensionFromMimeType(mimeType);\nconst fileName = 'storyboard-image-' + Date.now() + '.' + extension;\n\nreturn {\n  json: {\n    source_image_url: '',\n    needs_download: false,\n    mimeType,\n    fileName\n  },\n  binary: {\n    data: {\n      data: stripDataPrefix(inlineImage.data),\n      mimeType,\n      fileName\n    }\n  }\n};"
       },
       "id": "74178484-41fc-4b0a-8fc5-7b297b307b48",
       "name": "转换为Binary",
@@ -84,7 +84,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        8928,
+        9152,
         528
       ]
     },
@@ -108,7 +108,7 @@
       "id": "6d48e1b7-1cd1-43c6-8441-848aa421866a",
       "name": "HTTP上传到SupabaseStorage",
       "position": [
-        8704,
+        8928,
         528
       ],
       "type": "n8n-nodes-base.httpRequest",
@@ -135,7 +135,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        9152,
+        9376,
         528
       ],
       "id": "9f9f6cb4-4951-42e9-9c3b-715b948c156c",
@@ -143,7 +143,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const body = item.json.body || item.json;\n\n  function s(v) { return v == null ? '' : String(v).trim(); }\n  function toList(v) {\n    if (Array.isArray(v)) return v.flatMap(toList);\n    if (v && typeof v === 'object') return toList(v.url || v.image_url || v.imageUrl || v.src || v.href);\n    if (typeof v === 'string') {\n      const t = v.trim();\n      if (!t) return [];\n      try {\n        const parsed = JSON.parse(t);\n        const list = toList(parsed);\n        return list.length ? list : [t];\n      } catch {\n        return [t];\n      }\n    }\n    return [];\n  }\n  function unique(vals) {\n    const seen = new Set();\n    const out = [];\n    for (const v of vals) {\n      const t = s(v);\n      if (!t || seen.has(t)) continue;\n      seen.add(t);\n      out.push(t);\n    }\n    return out;\n  }\n  function clampRef(v, fb) {\n    const n = Number(v);\n    if (!Number.isFinite(n)) return fb;\n    return Math.min(Math.max(Math.floor(n), 0), 8);\n  }\n  function normKey(v) { return s(v || 'image2'); }\n  function normProv(mk, cap) {\n    const p = s(cap.provider).toLowerCase();\n    const n = mk.toLowerCase();\n    if (p === 'image2' || n === 'image2' || n === 'gpt-image-2-all' || n.includes('gpt-image-2')) return 'image2';\n    return 'gemini-image';\n  }\n  function pickApi(mk, p) {\n    if (p === 'image2') return 'gpt-image-2-all';\n    const key = s(mk);\n    const map = {\n      nanoBananapro: 'gemini-3-pro-image-preview',\n      nanoBananaPro: 'gemini-3-pro-image-preview',\n      'nano-banana-pro': 'gemini-3-pro-image-preview',\n      nanoBanana2: 'gemini-3.1-flash-image-preview',\n      'nano-banana-2': 'gemini-3.1-flash-image-preview',\n      'gemini-3-pro-image-preview': 'gemini-3-pro-image-preview',\n      'gemini-3.1-flash-image-preview': 'gemini-3.1-flash-image-preview'\n    };\n    return map[key] || key || 'gemini-3-pro-image-preview';\n  }\n  function normalizeAspectRatio(value) {\n    const raw = s(value).toLowerCase();\n    if (!raw) return '';\n    if (['portrait', 'vertical', '竖屏', '竖版', '手机竖屏'].includes(raw)) return '9:16';\n    if (['landscape', 'horizontal', '横屏', '横版'].includes(raw)) return '16:9';\n    if (['square', '方图', '1/1', '1:1'].includes(raw)) return '1:1';\n    if (raw === '3/4' || raw === '3:4') return '3:4';\n    if (raw === '4/3' || raw === '4:3') return '4:3';\n    if (raw === '9/16' || raw === '9:16') return '9:16';\n    if (raw === '16/9' || raw === '16:9') return '16:9';\n    const sizeMatch = raw.match(/^(\\d{3,5})\\s*x\\s*(\\d{3,5})$/i);\n    if (sizeMatch) return aspectRatioFromSize(sizeMatch[1] + 'x' + sizeMatch[2]);\n    return '';\n  }\n  function aspectRatioFromSize(size) {\n    const match = s(size).match(/^(\\d{3,5})\\s*x\\s*(\\d{3,5})$/i);\n    if (!match) return '';\n    const w = Number(match[1]);\n    const h = Number(match[2]);\n    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return '';\n    const ratio = w / h;\n    if (ratio < 0.68) return '9:16';\n    if (ratio < 0.9) return '3:4';\n    if (ratio <= 1.12) return '1:1';\n    if (ratio <= 1.55) return '4:3';\n    return '16:9';\n  }\n  function promptAspectRatio(prompt) {\n    const text = s(prompt).toLowerCase();\n    if (!text) return '';\n    if (/\\b(vertical|portrait)\\b|竖屏|竖版|手机竖屏/.test(text)) return '9:16';\n    if (/\\b(horizontal|landscape|wide)\\b|横屏|横版|宽屏/.test(text)) return '16:9';\n    const explicit = text.match(/(?:^|[^\\d])(9\\s*[:/]\\s*16|16\\s*[:/]\\s*9|3\\s*[:/]\\s*4|4\\s*[:/]\\s*3|1\\s*[:/]\\s*1)(?:[^\\d]|$)/);\n    return explicit ? normalizeAspectRatio(explicit[1].replace(/\\s+/g, '')) : '';\n  }\n  function normalizeImage2Size(size, aspectRatio) {\n    const raw = s(size).toLowerCase().replace(/\\s+/g, '');\n    if (/^\\d{3,5}x\\d{3,5}$/.test(raw)) return raw;\n    if (aspectRatio === '16:9' || aspectRatio === '4:3') return '1536x1024';\n    if (aspectRatio === '9:16' || aspectRatio === '3:4') return '1024x1536';\n    return '1024x1024';\n  }\n\n  const prompt = s(body.prompt || body.raw_prompt);\n  if (!prompt) throw new Error('缺少 prompt');\n\n  const cap = body.model_capabilities && typeof body.model_capabilities === 'object' ? body.model_capabilities : {};\n  const mk = normKey(body.model || body.requested_model);\n  const prov = normProv(mk, cap);\n  const fbLimit = prov === 'image2' ? 8 : 5;\n  const maxRef = clampRef(cap.max_reference_images ?? body.max_reference_images ?? fbLimit, fbLimit);\n\n  const numUrls = Array.from({ length: 8 }, (_, i) => body['reference_image_url_' + (i + 1)]);\n  const refUrls = unique([\n    ...toList(body.reference_image_urls),\n    ...toList(body.images),\n    ...toList(body.image_urls),\n    ...toList(body.image),\n    ...toList(body.product_image_url),\n    ...toList(body.character_image_url),\n    ...toList(body.person_image_url),\n    ...toList(body.reference_frame_url),\n    ...numUrls\n  ]).filter((url) => /^https?:\\/\\//i.test(url)).slice(0, maxRef);\n\n  const refFields = {};\n  for (let i = 0; i < 8; i += 1) refFields['reference_image_url_' + (i + 1)] = refUrls[i] || '';\n\n  const refInst = s(body.reference_image_instructions || body.referenceImageInstructions);\n  const negPrompt = s(body.negative_prompt || body.negativePrompt);\n  const promptSec = [prompt];\n  if (refInst) promptSec.push('Reference image instructions:\\n' + refInst);\n  if (negPrompt) promptSec.push('Negative prompt / avoid:\\n' + negPrompt);\n  const promptText = promptSec.join('\\n\\n');\n\n  const bodyAspect = normalizeAspectRatio(body.aspect_ratio || body.aspectRatio || body.ratio);\n  const sizeAspect = aspectRatioFromSize(body.size);\n  const promptAspect = promptAspectRatio(prompt);\n  const aspectRatio = promptAspect || bodyAspect || sizeAspect || '1:1';\n  const image2Size = normalizeImage2Size(body.size, aspectRatio);\n  const apiModel = pickApi(mk, prov);\n\n  const baseData = {\n    segment_id: s(body.segment_id),\n    task_id: s(body.task_id || body.segment_id),\n    prompt,\n    raw_prompt: s(body.raw_prompt || body.prompt),\n    negative_prompt: negPrompt,\n    reference_image_instructions: refInst,\n    reference_image_urls: refUrls,\n    images: refUrls,\n    ...refFields,\n    max_reference_images: maxRef,\n    model: mk,\n    requested_model: normKey(body.requested_model || body.model),\n    model_capabilities: cap,\n    provider: prov,\n    model_used_by_workflow: mk,\n    api_model: apiModel,\n    aspect_ratio: aspectRatio,\n    original_aspect_ratio: s(body.aspect_ratio || body.aspectRatio || body.ratio),\n    image2_size: image2Size,\n    callback_url: s(body.callback_url),\n    api_key: s(body.api_key),\n    admin_token: s(body.admin_token),\n    workflow_id: s(body.workflow_id || 'flow_storyboard_image'),\n    source: s(body.source || 'miniapp_ai_image'),\n    promptText\n  };\n\n  // image2 only needs public image URLs. Gemini needs downloaded binary converted to base64.\n  if (refUrls.length === 0 || prov === 'image2') {\n    results.push({ json: { _baseData: baseData, downloadUrl: '' } });\n  } else {\n    refUrls.forEach((url, i) => results.push({ json: { _baseData: baseData, downloadUrl: url, imageIndex: i + 1 } }));\n  }\n}\n\nreturn results;"
+        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const body = item.json.body || item.json;\n\n  function s(v) { return v == null ? '' : String(v).trim(); }\n  function toList(v) {\n    if (Array.isArray(v)) return v.flatMap(toList);\n    if (v && typeof v === 'object') return toList(v.url || v.image_url || v.imageUrl || v.src || v.href);\n    if (typeof v === 'string') {\n      const t = v.trim();\n      if (!t) return [];\n      try {\n        const parsed = JSON.parse(t);\n        const list = toList(parsed);\n        return list.length ? list : [t];\n      } catch {\n        return [t];\n      }\n    }\n    return [];\n  }\n  function unique(vals) {\n    const seen = new Set();\n    const out = [];\n    for (const v of vals) {\n      const t = s(v);\n      if (!t || seen.has(t)) continue;\n      seen.add(t);\n      out.push(t);\n    }\n    return out;\n  }\n  function clampRef(v, fb) {\n    const n = Number(v);\n    if (!Number.isFinite(n)) return fb;\n    return Math.min(Math.max(Math.floor(n), 0), 8);\n  }\n  function normKey(v) { return s(v || 'image2'); }\n  function normProv(mk, cap) {\n    const p = s(cap.provider).toLowerCase();\n    const n = mk.toLowerCase();\n    if (p === 'image2' || n === 'image2' || n === 'gpt-image-2-all' || n.includes('gpt-image-2')) return 'image2';\n    return 'gemini-image';\n  }\n  function pickApi(mk, p) {\n    if (p === 'image2') return 'gpt-image-2-all';\n    const key = s(mk);\n    const map = {\n      nanoBananapro: 'gemini-3-pro-image-preview',\n      nanoBananaPro: 'gemini-3-pro-image-preview',\n      'nano-banana-pro': 'gemini-3-pro-image-preview',\n      nanoBanana2: 'gemini-3.1-flash-image-preview',\n      'nano-banana-2': 'gemini-3.1-flash-image-preview',\n      'gemini-3-pro-image-preview': 'gemini-3-pro-image-preview',\n      'gemini-3.1-flash-image-preview': 'gemini-3.1-flash-image-preview'\n    };\n    return map[key] || key || 'gemini-3-pro-image-preview';\n  }\n  function normalizeAspectRatio(value) {\n    const raw = s(value).toLowerCase();\n    if (!raw) return '';\n    if (['portrait', 'vertical', '竖屏', '竖版', '手机竖屏'].includes(raw)) return '9:16';\n    if (['landscape', 'horizontal', '横屏', '横版'].includes(raw)) return '16:9';\n    if (['square', '方图', '1/1', '1:1'].includes(raw)) return '1:1';\n    if (raw === '2/3' || raw === '2:3') return '9:16';\n    if (raw === '3/2' || raw === '3:2') return '16:9';\n    if (raw === '3/4' || raw === '3:4') return '3:4';\n    if (raw === '4/3' || raw === '4:3') return '4:3';\n    if (raw === '9/16' || raw === '9:16') return '9:16';\n    if (raw === '16/9' || raw === '16:9') return '16:9';\n    const sizeMatch = raw.match(/^(\\d{3,5})\\s*x\\s*(\\d{3,5})$/i);\n    if (sizeMatch) return aspectRatioFromSize(sizeMatch[1] + 'x' + sizeMatch[2]);\n    return '';\n  }\n  function aspectRatioFromSize(size) {\n    const match = s(size).match(/^(\\d{3,5})\\s*x\\s*(\\d{3,5})$/i);\n    if (!match) return '';\n    const w = Number(match[1]);\n    const h = Number(match[2]);\n    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return '';\n    const ratio = w / h;\n    if (ratio < 0.68) return '9:16';\n    if (ratio < 0.9) return '3:4';\n    if (ratio <= 1.12) return '1:1';\n    if (ratio <= 1.55) return '4:3';\n    return '16:9';\n  }\n  function promptAspectRatio(prompt) {\n    const text = s(prompt).toLowerCase();\n    if (!text) return '';\n    if (/\\b(vertical|portrait)\\b|竖屏|竖版|手机竖屏/.test(text)) return '9:16';\n    if (/\\b(horizontal|landscape|wide)\\b|横屏|横版|宽屏/.test(text)) return '16:9';\n    const explicit = text.match(/(?:^|[^\\d])(9\\s*[:/]\\s*16|16\\s*[:/]\\s*9|2\\s*[:/]\\s*3|3\\s*[:/]\\s*2|3\\s*[:/]\\s*4|4\\s*[:/]\\s*3|1\\s*[:/]\\s*1)(?:[^\\d]|$)/);\n    return explicit ? normalizeAspectRatio(explicit[1].replace(/\\s+/g, '')) : '';\n  }\n  function normalizeImage2Size(size, aspectRatio) {\n    const raw = s(size).toLowerCase().replace(/\\s+/g, '');\n    if (/^\\d{3,5}x\\d{3,5}$/.test(raw)) return raw;\n    if (aspectRatio === '16:9' || aspectRatio === '4:3') return '1536x1024';\n    if (aspectRatio === '9:16' || aspectRatio === '3:4') return '1024x1536';\n    return '1024x1024';\n  }\n\n  const prompt = s(body.prompt || body.raw_prompt);\n  if (!prompt) throw new Error('缺少 prompt');\n\n  const cap = body.model_capabilities && typeof body.model_capabilities === 'object' ? body.model_capabilities : {};\n  const mk = normKey(body.model || body.requested_model);\n  const prov = normProv(mk, cap);\n  const fbLimit = prov === 'image2' ? 8 : 5;\n  const maxRef = clampRef(cap.max_reference_images ?? body.max_reference_images ?? fbLimit, fbLimit);\n\n  const numUrls = Array.from({ length: 8 }, (_, i) => body['reference_image_url_' + (i + 1)]);\n  const refUrls = unique([\n    ...toList(body.reference_image_urls),\n    ...toList(body.images),\n    ...toList(body.image_urls),\n    ...toList(body.image),\n    ...toList(body.product_image_url),\n    ...toList(body.character_image_url),\n    ...toList(body.person_image_url),\n    ...toList(body.reference_frame_url),\n    ...numUrls\n  ]).filter((url) => /^https?:\\/\\//i.test(url)).slice(0, maxRef);\n\n  const refFields = {};\n  for (let i = 0; i < 8; i += 1) refFields['reference_image_url_' + (i + 1)] = refUrls[i] || '';\n\n  const refInst = s(body.reference_image_instructions || body.referenceImageInstructions);\n  const negPrompt = s(body.negative_prompt || body.negativePrompt);\n  const promptSec = [prompt];\n  if (refInst) promptSec.push('Reference image instructions:\\n' + refInst);\n  if (negPrompt) promptSec.push('Negative prompt / avoid:\\n' + negPrompt);\n  const promptText = promptSec.join('\\n\\n');\n\n  const bodyAspect = normalizeAspectRatio(body.aspect_ratio || body.aspectRatio || body.ratio);\n  const sizeAspect = aspectRatioFromSize(body.size);\n  const promptAspect = promptAspectRatio(prompt);\n  const aspectRatio = promptAspect || bodyAspect || sizeAspect || '1:1';\n  const image2Size = normalizeImage2Size(body.size, aspectRatio);\n  const apiModel = pickApi(mk, prov);\n\n  const baseData = {\n    segment_id: s(body.segment_id),\n    task_id: s(body.task_id || body.segment_id),\n    prompt,\n    raw_prompt: s(body.raw_prompt || body.prompt),\n    negative_prompt: negPrompt,\n    reference_image_instructions: refInst,\n    reference_image_urls: refUrls,\n    images: refUrls,\n    ...refFields,\n    max_reference_images: maxRef,\n    model: mk,\n    requested_model: normKey(body.requested_model || body.model),\n    model_capabilities: cap,\n    provider: prov,\n    model_used_by_workflow: mk,\n    api_model: apiModel,\n    aspect_ratio: aspectRatio,\n    original_aspect_ratio: s(body.aspect_ratio || body.aspectRatio || body.ratio),\n    image2_size: image2Size,\n    callback_url: s(body.callback_url),\n    api_key: s(body.api_key),\n    admin_token: s(body.admin_token),\n    workflow_id: s(body.workflow_id || 'flow_storyboard_image'),\n    source: s(body.source || 'miniapp_ai_image'),\n    promptText\n  };\n\n  // image2 only needs public image URLs. Gemini needs downloaded binary converted to base64.\n  if (refUrls.length === 0 || prov === 'image2') {\n    results.push({ json: { _baseData: baseData, downloadUrl: '' } });\n  } else {\n    refUrls.forEach((url, i) => results.push({ json: { _baseData: baseData, downloadUrl: url, imageIndex: i + 1 } }));\n  }\n}\n\nreturn results;"
       },
       "name": "1.提取并拆分图片URL",
       "type": "n8n-nodes-base.code",
@@ -206,6 +206,46 @@
         528
       ],
       "id": "940f2bca-5985-4089-b961-0a9660d63870"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.source_image_url }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "name": "是否需要下载生成图？",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        8480,
+        528
+      ],
+      "id": "1f8b2f56-9d6b-4a32-8a4b-e235fbbf6357"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.source_image_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "name": "下载生成图",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        8704,
+        432
+      ],
+      "id": "d6b2a4f1-6fb9-4bb1-a863-ef820d70a7b3"
     }
   ],
   "connections": {
@@ -235,7 +275,7 @@
       "main": [
         [
           {
-            "node": "HTTP上传到SupabaseStorage",
+            "node": "是否需要下载生成图？",
             "type": "main",
             "index": 0
           }
@@ -309,6 +349,35 @@
         [
           {
             "node": "生图请求",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "是否需要下载生成图？": {
+      "main": [
+        [
+          {
+            "node": "下载生成图",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP上传到SupabaseStorage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "下载生成图": {
+      "main": [
+        [
+          {
+            "node": "HTTP上传到SupabaseStorage",
             "type": "main",
             "index": 0
           }
