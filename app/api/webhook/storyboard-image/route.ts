@@ -42,6 +42,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const currentSegment = await prisma.storyboardSegment.findUnique({
+      where: { id: segment_id },
+      select: { generationParams: true },
+    });
+    const currentParams =
+      currentSegment?.generationParams &&
+      typeof currentSegment.generationParams === "object" &&
+      !Array.isArray(currentSegment.generationParams)
+        ? currentSegment.generationParams as Record<string, unknown>
+        : {};
+    const incomingParams =
+      generation_params &&
+      typeof generation_params === "object" &&
+      !Array.isArray(generation_params)
+        ? generation_params as Record<string, unknown>
+        : null;
+
     // 2. Update segment with generated image
     const updateData: any = {
       updatedAt: new Date(),
@@ -51,13 +68,23 @@ export async function POST(req: NextRequest) {
       updateData.generatedImage = image_url;
       updateData.status = "IMAGE_READY";
       updateData.imageGenerationModel = model || null;
-      if (generation_params) {
-        updateData.generationParams = generation_params;
+      if (incomingParams) {
+        updateData.generationParams = {
+          ...currentParams,
+          ...incomingParams,
+          image_history: incomingParams.image_history ?? currentParams.image_history,
+        };
       }
     } else if (status === "failed") {
       updateData.status = "IMAGE_FAILED";
       updateData.retryCount = {
         increment: 1,
+      };
+      updateData.generationParams = {
+        ...currentParams,
+        ...(incomingParams || {}),
+        image_error: typeof error === "string" && error.trim() ? error.trim() : "图片生成失败",
+        image_error_at: new Date().toISOString(),
       };
     }
 

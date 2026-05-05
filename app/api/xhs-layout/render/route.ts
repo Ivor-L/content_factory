@@ -200,11 +200,11 @@ function buildPreviewExportHtml(input: {
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
 *{box-sizing:border-box}
-html,body{margin:0;width:345px;height:490px;overflow:hidden;background:transparent}
+html,body{margin:0;width:345px;height:490px;overflow:hidden;background:#101010}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
-.preview-card{--preview-accent:#ecee9f;--preview-accent-soft:rgba(236,238,159,.18);--preview-title-gap:4px;width:345px;height:490px;border-radius:8px;border:.5px solid rgba(144,165,200,.2);padding:11px;box-sizing:border-box;overflow:hidden;position:relative}
+.preview-card{--preview-accent:#ecee9f;--preview-accent-soft:rgba(236,238,159,.18);--preview-title-gap:4px;width:345px;height:490px;border-radius:0!important;border:.5px solid rgba(144,165,200,.2);padding:11px;box-sizing:border-box;overflow:hidden;position:relative}
 .preview-card .preview-richtext,.preview-card .preview-apple-header,.preview-card .preview-content-shell{position:relative;z-index:1}
-.preview-content-shell{width:100%;height:100%;border-radius:7px;padding:9px 10px;box-sizing:border-box;overflow:hidden;background:transparent}
+.preview-content-shell{width:100%;height:100%;border-radius:0!important;padding:9px 10px;box-sizing:border-box;overflow:hidden;background:transparent}
 .preview-content-shell--apple-notes{padding:0;border-radius:0;height:calc(100% - 23px)}
 .preview-content-shell--instagram{border:.5px solid rgba(255,255,255,.32);box-shadow:inset 0 .5px 0 rgba(255,255,255,.2)}
 .preview-content-shell--coil-notebook{border:.5px solid rgba(38,56,110,.12)}
@@ -230,12 +230,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,"Pi
 .preview-apple-header-icon{font-size:12px;line-height:1}
 .preview-richtext{display:block;height:100%;overflow:visible;padding-bottom:5px}
 .preview-richtext--apple-notes{display:block;height:100%;box-sizing:border-box;padding-bottom:4px}
+.preview-card--radius-sm,.preview-card--radius-md,.preview-card--radius-lg{border-radius:0!important}
+.preview-card--export-fit .preview-richtext{transform-origin:top left}
 img{max-width:100%}
 table{border-collapse:collapse}
 </style>
 </head>
 <body>
-  <div class="preview-card ${escapeHtml(appendPreviewCardClasses(input.cardClassName))}" style="${input.cardStyle}">
+  <div class="preview-card preview-card--export-fit ${escapeHtml(appendPreviewCardClasses(input.cardClassName))}" style="${input.cardStyle}">
     ${appleHeader}
     <div class="${escapeHtml(input.contentClassName || "preview-content-shell")}" style="${input.contentStyle}">
       <div class="${escapeHtml(input.richTextClassName || "preview-richtext")}">${input.pageHtml}</div>
@@ -290,6 +292,20 @@ async function renderPreviewPagesToPngs(preview: NonNullable<RenderRequestBody["
         selectedCardStyle,
       }), { waitUntil: "networkidle" });
       await page.evaluate(() => document.fonts?.ready);
+      await page.evaluate(() => {
+        const richText = document.querySelector<HTMLElement>(".preview-richtext");
+        const shell = document.querySelector<HTMLElement>(".preview-content-shell");
+        if (!richText || !shell) return;
+        richText.style.transform = "";
+        richText.style.width = "";
+        const availableHeight = shell.clientHeight - 8;
+        const availableWidth = shell.clientWidth;
+        const scrollHeight = richText.scrollHeight;
+        if (availableHeight <= 0 || scrollHeight <= availableHeight) return;
+        const scale = Math.max(0.9, Math.min(1, availableHeight / scrollHeight));
+        richText.style.transform = `scale(${scale})`;
+        richText.style.width = `${availableWidth / scale}px`;
+      });
       pngs.push(Buffer.from(await page.screenshot({
         type: "png",
         clip: { x: 0, y: 0, width: 345, height: 490 },

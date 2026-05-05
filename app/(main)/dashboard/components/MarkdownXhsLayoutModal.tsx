@@ -9,6 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useTranslation } from "@/hooks/useTranslation";
 import { splitMarkdownDocument, type MarkdownFrontmatterValue } from "@/lib/markdown-frontmatter";
+import { cn } from "@/lib/utils";
+import {
+  MD2CARD_COMMON_CSS,
+  MD2CARD_DEFAULT_HTML,
+  MD2CARD_THEMES,
+  type Md2CardTheme,
+} from "./Md2CardThemes";
 
 type ExportFormat = "png" | "jpeg";
 type BgMode = "solid" | "gradient";
@@ -190,7 +197,7 @@ type PageLine = PageTextLine | PageTableRow;
 
 type CardPage =
   | { type: "cover" }
-  | { type: "content"; lines: PageLine[] };
+  | { type: "content"; lines: PageLine[]; markdown?: string };
 
 type TemplateSpec = {
   id: CardTemplateId;
@@ -217,6 +224,7 @@ type CardStyleMode = {
   previewBackground: string;
   textColor: string;
   accentColor?: string;
+  className?: string;
 };
 
 type CardStylePreset = {
@@ -230,6 +238,7 @@ type CardStylePreset = {
   textColor: string;
   accentColor: string;
   backendTemplateId: CardTemplateId;
+  md2CardTheme?: Md2CardTheme;
   modes?: CardStyleMode[];
 };
 
@@ -301,6 +310,11 @@ type CardConfig = {
 const CARD_WIDTH = 1242;
 const CARD_HEIGHT = 1656;
 const BASE_TEXT_PADDING = 40;
+const MD2CARD_PREVIEW_WIDTH = 340;
+const MD2CARD_PREVIEW_HEIGHT = (MD2CARD_PREVIEW_WIDTH * 4) / 3;
+const MD2CARD_EXPORT_WIDTH = 900;
+const MD2CARD_EXPORT_HEIGHT = 1200;
+const MD2CARD_COIL_BG_DATA_URL = "data:image/png;base64,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";
 
 const FONT_OPTIONS = [
   { labelZh: "苹方 / 系统默认", labelEn: "System / PingFang", value: "'SF Pro Text', 'PingFang SC', -apple-system, BlinkMacSystemFont, sans-serif" },
@@ -655,99 +669,61 @@ const TEMPLATE_INDEX = new Map(TEMPLATE_SPECS.map((it) => [it.id, it]));
 const COVER_STYLE_INDEX = new Map(COVER_STYLE_SPECS.map((it) => [it.id, it]));
 const SOCIAL_ICON_ID_SET = new Set<SocialIconId>(SOCIAL_ICON_OPTIONS.map((it) => it.id));
 
-const CARD_LAYOUT_STYLES: CardStylePreset[] = [
-  {
-    id: "apple-notes",
-    titleZh: "苹果备忘录",
-    titleEn: "Apple Notes",
-    descZh: "系统备忘录质感，适合轻量知识卡。",
-    descEn: "System notes look for lightweight cards.",
-    colors: ["#fff9dd", "#fef3c7", "#c99500"],
-    previewBackground: "linear-gradient(180deg,#fff9dd 0%,#fef3c7 100%)",
-    textColor: "#3f3a2a",
-    accentColor: "#c99500",
-    backendTemplateId: "ios-memo",
-    modes: [
-      {
-        id: "light-mode",
-        titleZh: "浅色",
-        titleEn: "Light",
-        descZh: "白底清爽",
-        descEn: "Clean white",
-        colors: ["#ffffff", "#f5f5f5"],
-        previewBackground: "linear-gradient(180deg,#ffffff 0%,#f5f5f5 100%)",
-        textColor: "#1f2937",
-      },
-      {
-        id: "dark-mode",
-        titleZh: "深色",
-        titleEn: "Dark",
-        descZh: "黑底高对比",
-        descEn: "High contrast dark",
-        colors: ["#000000", "#1a1a1a"],
-        previewBackground: "linear-gradient(180deg,#000000 0%,#1a1a1a 100%)",
-        textColor: "#f4f5f7",
-      },
-    ],
-  },
-  {
-    id: "instagram",
-    titleZh: "Instagram风格",
-    titleEn: "Instagram Style",
-    descZh: "社媒渐变封面感。",
-    descEn: "Social gradient cards.",
-    colors: ["#833ab4", "#fd1d1d", "#fcb045"],
-    previewBackground: "linear-gradient(135deg,#833ab4 0%,#fd1d1d 50%,#fcb045 100%)",
-    textColor: "#ffffff",
-    accentColor: "#ffe08c",
-    backendTemplateId: "aura-gradient",
-    modes: [
-      { id: "classic-mode", titleZh: "经典渐变", titleEn: "Classic", descZh: "紫红橙", descEn: "Purple red orange", colors: ["#833ab4", "#fd1d1d", "#fcb045"], previewBackground: "linear-gradient(135deg,#833ab4 0%,#fd1d1d 50%,#fcb045 100%)", textColor: "#ffffff" },
-      { id: "purple-pink-mode", titleZh: "粉紫梦幻", titleEn: "Purple Pink", descZh: "柔和粉紫", descEn: "Soft purple pink", colors: ["#667eea", "#764ba2", "#f093fb"], previewBackground: "linear-gradient(135deg,#667eea 0%,#764ba2 50%,#f093fb 100%)", textColor: "#ffffff" },
-      { id: "sunset-mode", titleZh: "日落橙", titleEn: "Sunset", descZh: "暖橙日落", descEn: "Warm sunset", colors: ["#ff6b35", "#f7931e", "#ffb347"], previewBackground: "linear-gradient(135deg,#ff6b35 0%,#f7931e 50%,#ffb347 100%)", textColor: "#ffffff" },
-      { id: "night-mode", titleZh: "深蓝夜空", titleEn: "Night", descZh: "深蓝沉静", descEn: "Deep blue night", colors: ["#2c3e50", "#34495e", "#4a69bd"], previewBackground: "linear-gradient(135deg,#2c3e50 0%,#34495e 50%,#4a69bd 100%)", textColor: "#f3f6ff" },
-      { id: "aurora-mode", titleZh: "极光模式", titleEn: "Aurora", descZh: "蓝绿极光", descEn: "Blue green aurora", colors: ["#00c9ff", "#92fe9d", "#00d2ff"], previewBackground: "linear-gradient(135deg,#00c9ff 0%,#92fe9d 50%,#00d2ff 100%)", textColor: "#07394a" },
-      { id: "coral-mode", titleZh: "珊瑚模式", titleEn: "Coral", descZh: "珊瑚粉橙", descEn: "Coral pink orange", colors: ["#ff7675", "#fd79a8", "#fdcb6e"], previewBackground: "linear-gradient(135deg,#ff7675 0%,#fd79a8 50%,#fdcb6e 100%)", textColor: "#ffffff" },
-      { id: "mint-mode", titleZh: "薄荷模式", titleEn: "Mint", descZh: "清爽薄荷", descEn: "Fresh mint", colors: ["#00b894", "#00cec9", "#55efc4"], previewBackground: "linear-gradient(135deg,#00b894 0%,#00cec9 50%,#55efc4 100%)", textColor: "#003329" },
-      { id: "luxury-mode", titleZh: "金色奢华", titleEn: "Luxury Gold", descZh: "金色高亮", descEn: "Luxury gold", colors: ["#d4af37", "#ffd700", "#ffed4e"], previewBackground: "linear-gradient(135deg,#d4af37 0%,#ffd700 50%,#ffed4e 100%)", textColor: "#3a2900" },
-      { id: "dark-mode", titleZh: "暗黑模式", titleEn: "Dark", descZh: "低调暗色", descEn: "Subtle dark", colors: ["#1a1a1a", "#2d2d2d", "#404040"], previewBackground: "linear-gradient(135deg,#1a1a1a 0%,#2d2d2d 50%,#404040 100%)", textColor: "#f4f4f4" },
-      { id: "black-mode", titleZh: "纯黑模式", titleEn: "Black", descZh: "纯黑卡片", descEn: "Pure black", colors: ["#000000", "#1a1a1a", "#2d2d2d"], previewBackground: "linear-gradient(135deg,#000000 0%,#1a1a1a 50%,#2d2d2d 100%)", textColor: "#f6f6f6" },
-      { id: "white-mode", titleZh: "纯白模式", titleEn: "White", descZh: "纯白卡片", descEn: "Pure white", colors: ["#ffffff", "#f8f9fa", "#e9ecef"], previewBackground: "linear-gradient(135deg,#ffffff 0%,#f8f9fa 50%,#e9ecef 100%)", textColor: "#1f2937" },
-    ],
-  },
-  { id: "coil-notebook", titleZh: "线圈笔记本", titleEn: "Coil Notebook", descZh: "线圈笔记纸张感。", descEn: "Coil notebook paper.", colors: ["#5271ff", "#ffffff", "#d7def9"], previewBackground: "linear-gradient(180deg,#5271ff 0%,#7790ff 100%)", textColor: "#ffffff", accentColor: "#d6e3ff", backendTemplateId: "notion-style", modes: [
-    { id: "blue-mode", titleZh: "默认蓝", titleEn: "Blue", descZh: "蓝色线圈", descEn: "Blue coil", colors: ["#5271ff", "#7790ff"], previewBackground: "linear-gradient(180deg,#5271ff 0%,#7790ff 100%)", textColor: "#ffffff" },
-    { id: "pink-mode", titleZh: "小红书粉", titleEn: "Pink", descZh: "粉色线圈", descEn: "Pink coil", colors: ["#ff7eb6", "#ffa4cd"], previewBackground: "linear-gradient(180deg,#ff7eb6 0%,#ffa4cd 100%)", textColor: "#ffffff" },
-    { id: "mint-mode", titleZh: "薄荷绿", titleEn: "Mint", descZh: "薄荷线圈", descEn: "Mint coil", colors: ["#7be495", "#a6efba"], previewBackground: "linear-gradient(180deg,#7be495 0%,#a6efba 100%)", textColor: "#11431f" },
-    { id: "yellow-mode", titleZh: "暖黄", titleEn: "Yellow", descZh: "暖黄线圈", descEn: "Warm yellow", colors: ["#ffd66b", "#ffe59d"], previewBackground: "linear-gradient(180deg,#ffd66b 0%,#ffe59d 100%)", textColor: "#4d3a00" },
-  ] },
-  { id: "pop-art", titleZh: "波普艺术", titleEn: "Pop Art", descZh: "高对比波点视觉。", descEn: "High contrast dot style.", colors: ["#fde041", "#2f5dff", "#101015"], previewBackground: "linear-gradient(150deg,#fde041 0%,#ffd43b 100%)", textColor: "#111827", accentColor: "#2f5dff", backendTemplateId: "aura-gradient", modes: [
-    { id: "default-mode", titleZh: "默认", titleEn: "Default", descZh: "黄色波普", descEn: "Yellow pop", colors: ["#fde041", "#ffd43b"], previewBackground: "linear-gradient(150deg,#fde041 0%,#ffd43b 100%)", textColor: "#111827" },
-    { id: "pink-blue-mode", titleZh: "粉蓝", titleEn: "Pink & Blue", descZh: "粉蓝撞色", descEn: "Pink blue", colors: ["#a6dcef", "#ff8ac5"], previewBackground: "linear-gradient(150deg,#a6dcef 0%,#ff8ac5 100%)", textColor: "#10143b" },
-    { id: "mint-mode", titleZh: "薄荷糖", titleEn: "Mint", descZh: "清新薄荷", descEn: "Fresh mint", colors: ["#7fd1ae", "#b5e8d4"], previewBackground: "linear-gradient(150deg,#7fd1ae 0%,#b5e8d4 100%)", textColor: "#163528" },
-    { id: "purple-mode", titleZh: "紫色星空", titleEn: "Purple", descZh: "暗紫星空", descEn: "Dark purple", colors: ["#1a1042", "#33206f"], previewBackground: "linear-gradient(150deg,#1a1042 0%,#33206f 100%)", textColor: "#f5f3ff" },
-  ] },
-  { id: "bytedance", titleZh: "字节范", titleEn: "ByteDance", descZh: "明亮产品文档感。", descEn: "Bright product-doc style.", colors: ["#ffffff", "#0066ff", "#fa2c19"], previewBackground: "linear-gradient(155deg,#ffffff 0%,#f3f7ff 100%)", textColor: "#1f2937", accentColor: "#0066ff", backendTemplateId: "pro-doc" },
-  { id: "alibaba", titleZh: "阿里橙", titleEn: "Alibaba", descZh: "橙色商业提案感。", descEn: "Orange business style.", colors: ["#ffffff", "#ff6a00", "#ff8c00"], previewBackground: "linear-gradient(145deg,#ffffff 0%,#fff1e8 100%)", textColor: "#2c2118", accentColor: "#ff6a00", backendTemplateId: "pro-doc" },
-  { id: "art-deco", titleZh: "艺术装饰", titleEn: "Art Deco", descZh: "黑金复古装饰。", descEn: "Black gold deco.", colors: ["#0a0a0a", "#d4af37", "#f5e7bc"], previewBackground: "linear-gradient(145deg,#0a0a0a 0%,#1a1a1a 60%,#2a2518 100%)", textColor: "#f5e7bc", accentColor: "#d4af37", backendTemplateId: "deep-night" },
-  { id: "glassmorphism", titleZh: "玻璃拟态", titleEn: "Glass Morphism", descZh: "暗色玻璃质感。", descEn: "Dark glass style.", colors: ["#161616", "#4f7cff", "#ffffff"], previewBackground: "linear-gradient(145deg,#161616 0%,#242a38 60%,#2f466f 100%)", textColor: "#eaf0ff", accentColor: "#8cc6ff", backendTemplateId: "deep-night" },
-  { id: "warm", titleZh: "温暖柔和", titleEn: "Warm & Soft", descZh: "暖色柔光。", descEn: "Warm soft light.", colors: ["#fff8f5", "#ffeae0", "#f08b58"], previewBackground: "linear-gradient(135deg,#fff8f5 0%,#ffeae0 100%)", textColor: "#4b2e24", accentColor: "#f08b58", backendTemplateId: "elegant-book" },
-  { id: "minimal", titleZh: "简约高级灰", titleEn: "Minimal Gray", descZh: "清爽灰阶。", descEn: "Clean gray scale.", colors: ["#ffffff", "#f3f4f6", "#6b7280"], previewBackground: "linear-gradient(180deg,#ffffff 0%,#f3f4f6 100%)", textColor: "#374151", accentColor: "#6b7280", backendTemplateId: "swiss-studio" },
-  { id: "minimalist", titleZh: "极简黑白", titleEn: "Minimalist B&W", descZh: "黑白极简。", descEn: "Black and white.", colors: ["#ffffff", "#f5f5f5", "#111111"], previewBackground: "linear-gradient(180deg,#ffffff 0%,#f5f5f5 100%)", textColor: "#111111", accentColor: "#111111", backendTemplateId: "minimalist-magazine" },
-  { id: "dreamy", titleZh: "梦幻渐变", titleEn: "Dreamy Gradient", descZh: "浅色梦幻渐变。", descEn: "Light dreamy gradient.", colors: ["#f5f7ff", "#e8f0ff", "#a855f7"], previewBackground: "linear-gradient(135deg,#f5f7ff 0%,#e8f0ff 100%)", textColor: "#3b2c53", accentColor: "#a855f7", backendTemplateId: "aura-gradient" },
-  { id: "nature", titleZh: "清新自然", titleEn: "Fresh Nature", descZh: "自然绿意。", descEn: "Fresh natural green.", colors: ["#f9fcf7", "#e6f5df", "#3f7f4c"], previewBackground: "linear-gradient(135deg,#f9fcf7 0%,#e6f5df 100%)", textColor: "#1f3d29", accentColor: "#3f7f4c", backendTemplateId: "notion-style" },
-  { id: "xiaohongshu", titleZh: "紫色小红书", titleEn: "Purple Social", descZh: "小红书风格紫调。", descEn: "Purple social style.", colors: ["#8863cf", "#b692ff", "#ffffff"], previewBackground: "linear-gradient(135deg,#8863cf 0%,#b692ff 100%)", textColor: "#ffffff", accentColor: "#ffe7ff", backendTemplateId: "aura-gradient" },
-  { id: "notebook", titleZh: "笔记本", titleEn: "Notebook", descZh: "轻文档笔记。", descEn: "Light notebook doc.", colors: ["#f5f5f5", "#e5e7eb", "#6b7280"], previewBackground: "linear-gradient(180deg,#f5f5f5 0%,#eceff3 100%)", textColor: "#374151", accentColor: "#6b7280", backendTemplateId: "notion-style" },
-  { id: "business", titleZh: "商务简报", titleEn: "Business Brief", descZh: "蓝色商务简报。", descEn: "Blue business brief.", colors: ["#ffffff", "#f3f6fb", "#2563eb"], previewBackground: "linear-gradient(180deg,#ffffff 0%,#f3f6fb 100%)", textColor: "#1f2937", accentColor: "#2563eb", backendTemplateId: "pro-doc" },
-  { id: "japanese-magazine", titleZh: "日本杂志", titleEn: "Japanese Magazine", descZh: "日杂留白排版。", descEn: "Japanese magazine layout.", colors: ["#ffffff", "#f4f0ea", "#2e2a25"], previewBackground: "linear-gradient(180deg,#ffffff 0%,#f4f0ea 100%)", textColor: "#2e2a25", accentColor: "#8b5e3c", backendTemplateId: "minimalist-magazine" },
-  { id: "darktech", titleZh: "暗黑科技", titleEn: "Dark Tech", descZh: "科技暗色蓝光。", descEn: "Dark tech glow.", colors: ["#0f1218", "#1b2436", "#00d4ff"], previewBackground: "linear-gradient(145deg,#0f1218 0%,#1b2436 100%)", textColor: "#d9f2ff", accentColor: "#00d4ff", backendTemplateId: "deep-night" },
-  { id: "typewriter", titleZh: "复古打字机", titleEn: "Vintage Typewriter", descZh: "旧纸打字机。", descEn: "Old paper typewriter.", colors: ["#f8f3e3", "#efe2c3", "#6a5d45"], previewBackground: "linear-gradient(145deg,#f8f3e3 0%,#efe2c3 100%)", textColor: "#473d2d", accentColor: "#6a5d45", backendTemplateId: "elegant-book" },
-  { id: "watercolor", titleZh: "水彩艺术", titleEn: "Watercolor Art", descZh: "柔和水彩渐变。", descEn: "Soft watercolor.", colors: ["#ffffff", "#dbeafe", "#fbcfe8"], previewBackground: "linear-gradient(145deg,#ffffff 0%,#dbeafe 48%,#fbcfe8 100%)", textColor: "#3a3f51", accentColor: "#6f4ee6", backendTemplateId: "aura-gradient" },
-  { id: "traditional-chinese", titleZh: "中国传统", titleEn: "Traditional Chinese", descZh: "传统纸张暖色。", descEn: "Traditional warm paper.", colors: ["#f8f0e0", "#eadbc0", "#8c3a3a"], previewBackground: "linear-gradient(145deg,#f8f0e0 0%,#eadbc0 100%)", textColor: "#3b2a1f", accentColor: "#8c3a3a", backendTemplateId: "elegant-book" },
-  { id: "fairytale", titleZh: "儿童童话", titleEn: "Fairy Tale", descZh: "粉色童话感。", descEn: "Pink fairy tale.", colors: ["#fff9f9", "#ffe4ef", "#f472b6"], previewBackground: "linear-gradient(145deg,#fff9f9 0%,#ffe4ef 100%)", textColor: "#5b2c44", accentColor: "#f472b6", backendTemplateId: "aura-gradient" },
-  { id: "cyberpunk", titleZh: "赛博朋克", titleEn: "Cyberpunk", descZh: "霓虹赛博暗色。", descEn: "Neon cyber dark.", colors: ["#0d0e19", "#301b5e", "#00f5ff"], previewBackground: "linear-gradient(145deg,#0d0e19 0%,#301b5e 60%,#571089 100%)", textColor: "#e7f9ff", accentColor: "#00f5ff", backendTemplateId: "deep-night" },
-  { id: "meadow-dawn", titleZh: "青野晨光", titleEn: "Meadow Dawn", descZh: "草地晨光自然感。", descEn: "Meadow dawn natural.", colors: ["#8b9a7a", "#c4d6ac", "#ffffff"], previewBackground: "linear-gradient(145deg,#8b9a7a 0%,#c4d6ac 100%)", textColor: "#1f2f24", accentColor: "#5f7a4a", backendTemplateId: "notion-style" },
-];
+const XHS_RENDER_TEMPLATE_BY_ID: Record<string, CardTemplateId> = {
+  "apple-notes": "ios-memo",
+  instagram: "aura-gradient",
+  "coil-notebook": "notion-style",
+  "pop-art": "aura-gradient",
+  bytedance: "pro-doc",
+  alibaba: "pro-doc",
+  "art-deco": "deep-night",
+  glassmorphism: "deep-night",
+  warm: "elegant-book",
+  minimal: "swiss-studio",
+  minimalist: "minimalist-magazine",
+  dreamy: "aura-gradient",
+  nature: "notion-style",
+  xiaohongshu: "aura-gradient",
+  notebook: "notion-style",
+  business: "pro-doc",
+  "japanese-magazine": "minimalist-magazine",
+  darktech: "deep-night",
+  typewriter: "elegant-book",
+  watercolor: "aura-gradient",
+  "traditional-chinese": "elegant-book",
+  fairytale: "aura-gradient",
+  cyberpunk: "deep-night",
+  "meadow-dawn": "notion-style",
+};
+
+const CARD_LAYOUT_STYLES: CardStylePreset[] = MD2CARD_THEMES.map((theme) => {
+  const colors = extractMd2CardThemeColors(theme);
+  return {
+    id: theme.id as CardStyleId,
+    titleZh: theme.name,
+    titleEn: theme.enName || theme.name,
+    descZh: theme.enName || theme.name,
+    descEn: theme.enName || theme.name,
+    colors: colors.swatches,
+    previewBackground: theme.modes?.[0]?.background || colors.previewBackground,
+    textColor: colors.textColor,
+    accentColor: colors.accentColor,
+    backendTemplateId: XHS_RENDER_TEMPLATE_BY_ID[theme.id] ?? "aura-gradient",
+    md2CardTheme: theme,
+    modes: theme.modes?.map((mode) => ({
+      id: mode.id,
+      titleZh: mode.name,
+      titleEn: mode.enName || mode.name,
+      descZh: mode.enName || mode.name,
+      descEn: mode.enName || mode.name,
+      colors: extractColorSwatches(mode.background || theme.css),
+      previewBackground: mode.background || colors.previewBackground,
+      textColor: colors.textColor,
+      accentColor: colors.accentColor,
+      className: mode.className,
+    })),
+  };
+});
 
 const CARD_STYLE_INDEX = new Map<CardStyleId, CardStylePreset>(CARD_LAYOUT_STYLES.map((item) => [item.id, item]));
 
@@ -855,6 +831,15 @@ function getMarkdownParser(): MarkdownIt {
   markPlugin(md);
   _markdownParser = md;
   return md;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function getDefaultTitle(filePath: string): string {
@@ -1177,6 +1162,18 @@ function dedupeTags(tags: string[]): string[] {
   return result;
 }
 
+function markdownToPlainText(markdown: string): string {
+  return stripHtmlTagsPreservingBreaks(getMarkdownParser().render(markdown ?? ""))
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function truncateXhsTitle(raw: string): string {
   return Array.from(raw.trim()).slice(0, 20).join("");
 }
@@ -1338,6 +1335,18 @@ function findCoverStyle(id: CoverStyleId): CoverStyleSpec {
   return COVER_STYLE_INDEX.get(id) || COVER_STYLE_SPECS[0];
 }
 
+function isCoilNotebookStyle(cardStyleId?: CardStyleId): boolean {
+  return cardStyleId === "coil-notebook";
+}
+
+function getCoilNotebookRenderConfig(config: CardConfig): CardConfig {
+  return {
+    ...config,
+    textColor: "#24292e",
+    accentColor: "#24292e",
+  };
+}
+
 function applyTemplateDefaults(previous: CardConfig, tpl: TemplateSpec): CardConfig {
   return {
     ...previous,
@@ -1355,6 +1364,26 @@ function applyCardStyleDefaults(previous: CardConfig, style: CardStylePreset, mo
   const background = parseLinearGradientPreset(mode?.previewBackground || style.previewBackground);
   const textColor = mode?.textColor || style.textColor;
   const accentColor = mode?.accentColor || style.accentColor;
+  if (style.id === "coil-notebook") {
+    const modeColor = mode?.colors?.[0] || style.colors[0] || background.bgColor;
+    return {
+      ...previous,
+      bgMode: "solid",
+      bgColor: modeColor,
+      gradientStart: modeColor,
+      gradientEnd: mode?.colors?.[1] || style.colors[1] || modeColor,
+      gradientAngle: 180,
+      textColor: "#24292e",
+      accentColor: "#24292e",
+      fontSize: 52,
+      lineHeight: 1.5,
+      letterSpacing: 0,
+      textPadding: 40,
+      h1Scale: 1.35,
+      h2Scale: 1.18,
+      h3Scale: 1.08,
+    };
+  }
   return {
     ...previous,
     ...background,
@@ -1400,6 +1429,41 @@ function createInitialConfig(templateId: CardTemplateId): CardConfig {
     ),
     findCoverStyle(DEFAULT_CONFIG.coverStyleId)
   );
+}
+
+function extractColorSwatches(source: string): string[] {
+  const colors = Array.from(source.matchAll(/#[0-9a-fA-F]{6}/g)).map((match) => match[0]);
+  return Array.from(new Set(colors)).slice(0, 3);
+}
+
+function extractMd2CardThemeColors(theme: Md2CardTheme): {
+  bgMode: BgMode;
+  bgColor: string;
+  gradientStart: string;
+  gradientEnd: string;
+  textColor: string;
+  accentColor: string;
+  previewBackground: string;
+  swatches: string[];
+} {
+  const css = theme.css;
+  const modeBackground = theme.modes?.[0]?.background || "";
+  const gradientMatch = (modeBackground || css).match(/linear-gradient\((?:[^()]|\([^)]*\))*\)/);
+  const swatches = extractColorSwatches(`${modeBackground}\n${css}`);
+  const bgColor = swatches[0] || "#ffffff";
+  const textColor = swatches[1] || "#1f2937";
+  const accentColor = swatches[2] || textColor;
+  const gradientColors = gradientMatch?.[0].match(/#[0-9a-fA-F]{6}/g) || [];
+  return {
+    bgMode: gradientMatch ? "gradient" : "solid",
+    bgColor,
+    gradientStart: gradientColors[0] || bgColor,
+    gradientEnd: gradientColors[gradientColors.length - 1] || bgColor,
+    textColor,
+    accentColor,
+    previewBackground: modeBackground || gradientMatch?.[0] || bgColor,
+    swatches: swatches.length > 0 ? swatches : [bgColor, textColor, accentColor],
+  };
 }
 
 type PersistedTextCardSettings = {
@@ -2022,7 +2086,16 @@ function buildLinearGradient(ctx: CanvasRenderingContext2D, angleDeg: number, c1
   return grad;
 }
 
-function getLayoutMetrics(templateId: CardTemplateId, config: CardConfig): LayoutMetrics {
+function getLayoutMetrics(templateId: CardTemplateId, config: CardConfig, cardStyleId?: CardStyleId): LayoutMetrics {
+  if (isCoilNotebookStyle(cardStyleId)) {
+    return {
+      x: 210,
+      y: 168,
+      width: CARD_WIDTH - 310,
+      bottom: CARD_HEIGHT - 170,
+    };
+  }
+
   let base: LayoutMetrics;
   if (templateId === "polaroid") {
     base = { x: 156, y: 248, width: CARD_WIDTH - 312, bottom: CARD_HEIGHT - 210 };
@@ -2043,6 +2116,12 @@ function getLayoutMetrics(templateId: CardTemplateId, config: CardConfig): Layou
     width,
     bottom: base.bottom,
   };
+}
+
+function getCoilGridColor(config: CardConfig): string {
+  const bg = config.bgColor.toLowerCase();
+  if (bg === "#ffd66b" || bg === "#ffe59d") return "rgba(0,0,0,0.1)";
+  return "rgba(255,255,255,0.2)";
 }
 
 function seededRandom(seed: number): () => number {
@@ -2105,9 +2184,72 @@ function drawTemplateBackground(
   template: CardTemplateId,
   pageIndex: number,
   metrics: LayoutMetrics,
-  config: CardConfig
+  config: CardConfig,
+  cardStyleId?: CardStyleId
 ) {
   drawBaseBackground(ctx, config);
+
+  if (isCoilNotebookStyle(cardStyleId)) {
+    const gridColor = getCoilGridColor(config);
+    ctx.save();
+    ctx.strokeStyle = gridColor;
+    ctx.lineWidth = 2;
+    for (let x = -12; x <= CARD_WIDTH + 20; x += 48) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, CARD_HEIGHT);
+      ctx.stroke();
+    }
+    for (let y = -12; y <= CARD_HEIGHT + 20; y += 48) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(CARD_WIDTH, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    const paperX = 105;
+    const paperY = 73;
+    const paperW = CARD_WIDTH - 210;
+    const paperH = CARD_HEIGHT - 146;
+    const coilW = 76;
+    const holeRadius = 23;
+    const holeStep = 104;
+    const firstHoleY = paperY + 82;
+
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,0.12)";
+    ctx.shadowBlur = 16;
+    ctx.shadowOffsetY = 4;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(paperX, paperY, paperW, paperH);
+    ctx.restore();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(paperX, paperY, coilW, paperH);
+
+    ctx.save();
+    ctx.strokeStyle = "rgba(36,41,46,0.62)";
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
+    ctx.fillStyle = config.bgColor;
+    for (let y = firstHoleY; y <= paperY + paperH - 44; y += holeStep) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(paperX, y - 12, 54, 24);
+      ctx.beginPath();
+      ctx.moveTo(paperX, y - 23);
+      ctx.lineTo(paperX + 50, y - 23);
+      ctx.quadraticCurveTo(paperX + 70, y - 23, paperX + 70, y);
+      ctx.stroke();
+      ctx.fillStyle = config.bgColor;
+      ctx.beginPath();
+      ctx.arc(paperX + coilW - 12, y, holeRadius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    return;
+  }
 
   if (template === "blank") return;
 
@@ -2454,6 +2596,13 @@ function stripHtmlTagsPreservingBreaks(input: string): string {
     .trim();
 }
 
+function splitMarkdownBlocks(markdown: string): string[] {
+  return (markdown ?? "")
+    .split(/\n{2,}/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function parseMarkdownBlocks(markdown: string): ParsedBlock[] {
   const md = getMarkdownParser();
   const tokens = md.parse(markdown ?? "", {});
@@ -2704,12 +2853,13 @@ function wrapInlineChunks(
   return lines;
 }
 
-function buildLayoutBlocks(markdown: string, templateId: CardTemplateId, config: CardConfig): Array<LayoutBlock | { kind: "hr" }> {
+function buildLayoutBlocks(markdown: string, templateId: CardTemplateId, config: CardConfig, cardStyleId?: CardStyleId): Array<LayoutBlock | { kind: "hr" }> {
   if (typeof document === "undefined") return [];
 
   const parsed = parseMarkdownBlocks(markdown);
   const template = findTemplate(templateId);
-  const metrics = getLayoutMetrics(templateId, config);
+  const effectiveConfig = isCoilNotebookStyle(cardStyleId) ? getCoilNotebookRenderConfig(config) : config;
+  const metrics = getLayoutMetrics(templateId, effectiveConfig, cardStyleId);
 
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
@@ -2724,7 +2874,7 @@ function buildLayoutBlocks(markdown: string, templateId: CardTemplateId, config:
     }
 
     if (block.kind === "table") {
-      const tableTypography = getTypography("paragraph", config.accentColor || template.defaultAccentColor, config.textColor || template.defaultTextColor, config);
+      const tableTypography = getTypography("paragraph", effectiveConfig.accentColor || template.defaultAccentColor, effectiveConfig.textColor || template.defaultTextColor, effectiveConfig);
       const tableHeaderTypography: Typography = {
         ...tableTypography,
         fontWeight: "700",
@@ -2747,9 +2897,9 @@ function buildLayoutBlocks(markdown: string, templateId: CardTemplateId, config:
             ctx,
             cellChunks,
             row.header ? tableHeaderTypography : tableTypography,
-            config.accentColor || template.defaultAccentColor,
-            `rgba(${parseInt((config.accentColor || template.defaultAccentColor).slice(1, 3), 16)}, ${parseInt((config.accentColor || template.defaultAccentColor).slice(3, 5), 16)}, ${parseInt((config.accentColor || template.defaultAccentColor).slice(5, 7), 16)}, 0.2)`,
-            config,
+            effectiveConfig.accentColor || template.defaultAccentColor,
+            `rgba(${parseInt((effectiveConfig.accentColor || template.defaultAccentColor).slice(1, 3), 16)}, ${parseInt((effectiveConfig.accentColor || template.defaultAccentColor).slice(3, 5), 16)}, ${parseInt((effectiveConfig.accentColor || template.defaultAccentColor).slice(5, 7), 16)}, 0.2)`,
+            effectiveConfig,
             Math.max(40, columnWidth - cellPaddingX * 2)
           );
           const contentHeight = lines.length > 0
@@ -2778,14 +2928,14 @@ function buildLayoutBlocks(markdown: string, templateId: CardTemplateId, config:
       continue;
     }
 
-    const typography = getTypography(block.kind, config.accentColor || template.defaultAccentColor, config.textColor || template.defaultTextColor, config);
+    const typography = getTypography(block.kind, effectiveConfig.accentColor || template.defaultAccentColor, effectiveConfig.textColor || template.defaultTextColor, effectiveConfig);
     const wrappedLines = wrapInlineChunks(
       ctx,
       block.chunks,
       typography,
-      config.accentColor || template.defaultAccentColor,
-      `rgba(${parseInt((config.accentColor || template.defaultAccentColor).slice(1, 3), 16)}, ${parseInt((config.accentColor || template.defaultAccentColor).slice(3, 5), 16)}, ${parseInt((config.accentColor || template.defaultAccentColor).slice(5, 7), 16)}, 0.2)`,
-      config,
+      effectiveConfig.accentColor || template.defaultAccentColor,
+      `rgba(${parseInt((effectiveConfig.accentColor || template.defaultAccentColor).slice(1, 3), 16)}, ${parseInt((effectiveConfig.accentColor || template.defaultAccentColor).slice(3, 5), 16)}, ${parseInt((effectiveConfig.accentColor || template.defaultAccentColor).slice(5, 7), 16)}, 0.2)`,
+      effectiveConfig,
       metrics.width - block.indent
     );
     if (wrappedLines.length === 0) continue;
@@ -2802,85 +2952,71 @@ function buildLayoutBlocks(markdown: string, templateId: CardTemplateId, config:
   return output;
 }
 
-function paginateMarkdown(markdown: string, templateId: CardTemplateId, config: CardConfig): CardPage[] {
-  const metrics = getLayoutMetrics(templateId, config);
-  const blocks = buildLayoutBlocks(markdown, templateId, config);
+function estimateMarkdownBlockUnits(markdown: string): number {
+  const plain = markdownToPlainText(markdown) || markdown.replace(/[#>*_`~\-[\]()]/g, "");
+  const tableLines = markdown.split(/\n/).filter((line) => line.includes("|")).length;
+  const codeLines = markdown.split(/\n/).filter((line) => line.trim().startsWith("```")).length;
+  return Array.from(plain).reduce((sum, char) => sum + (/[A-Za-z0-9]/.test(char) ? 0.58 : /\s/.test(char) ? 0.25 : 1), 0)
+    + tableLines * 14
+    + codeLines * 10;
+}
 
+function splitOversizedMarkdownBlock(markdown: string, maxUnits: number): string[] {
+  const plain = markdownToPlainText(markdown);
+  if (!plain || estimateMarkdownBlockUnits(markdown) <= maxUnits) return [markdown];
+  const chunks: string[] = [];
+  let current = "";
+  let units = 0;
+  for (const char of Array.from(plain)) {
+    const nextUnit = /[A-Za-z0-9]/.test(char) ? 0.58 : /\s/.test(char) ? 0.25 : 1;
+    if (current && units + nextUnit > maxUnits) {
+      chunks.push(current.trim());
+      current = char;
+      units = nextUnit;
+    } else {
+      current += char;
+      units += nextUnit;
+    }
+  }
+  if (current.trim()) chunks.push(current.trim());
+  return chunks.length > 0 ? chunks : [markdown];
+}
+
+function paginateMarkdown(markdown: string, templateId: CardTemplateId, config: CardConfig, cardStyleId?: CardStyleId): CardPage[] {
+  void templateId;
+  void cardStyleId;
   const pages: CardPage[] = [];
   if (config.hasCover) pages.push({ type: "cover" });
-
-  let currentPage: PageLine[] = [];
-  let y = metrics.y;
+  const bodyFontSize = Math.max(12, config.fontSize / 2);
+  const maxUnits = Math.max(86, Math.round(5400 / (bodyFontSize * config.lineHeight)));
+  const blocks = splitMarkdownBlocks(markdown).filter((block) => !isHorizontalRuleLine(block.trim()));
+  let currentMarkdown: string[] = [];
+  let currentUnits = 0;
 
   const flushPage = () => {
-    if (currentPage.length > 0) {
-      pages.push({ type: "content", lines: currentPage });
-      currentPage = [];
+    if (currentMarkdown.length > 0) {
+      pages.push({ type: "content", lines: [], markdown: currentMarkdown.join("\n\n") });
+      currentMarkdown = [];
+      currentUnits = 0;
     }
-    y = metrics.y;
   };
 
-  for (const block of blocks) {
-    if (block.kind === "hr") {
-      flushPage();
-      continue;
-    }
-
-    // Secondary heading starts a fresh card page to keep section boundaries clear.
-    if (block.kind === "heading2" && currentPage.length > 0) {
-      flushPage();
-    }
-
-    if (block.kind === "table") {
-      for (let i = 0; i < block.rows.length; i += 1) {
-        const row = block.rows[i];
-        const marginTop = i === 0 ? block.marginTop : 0;
-        const marginBottom = i === block.rows.length - 1 ? block.marginBottom : 0;
-        const needed = marginTop + row.height + marginBottom;
-
-        if (y + needed > metrics.bottom && currentPage.length > 0) {
-          flushPage();
-        }
-
-        currentPage.push({
-          kind: "table",
-          cells: row.cells,
-          header: row.header,
-          rowHeight: row.height,
-          columnCount: block.columnCount,
-          columnWidth: block.columnWidth,
-          indent: block.indent,
-          marginTop,
-          marginBottom,
-        });
-        y += needed;
-      }
-      continue;
-    }
-
-    for (let i = 0; i < block.lines.length; i += 1) {
-      const line = block.lines[i];
-      const marginTop = i === 0 ? block.marginTop : 0;
-      const marginBottom = i === block.lines.length - 1 ? block.marginBottom : 0;
-      const needed = marginTop + line.height + marginBottom;
-
-      if (y + needed > metrics.bottom && currentPage.length > 0) {
+  for (const block of blocks.length > 0 ? blocks : [""]) {
+    const expandedBlocks = splitOversizedMarkdownBlock(block, maxUnits);
+    for (const part of expandedBlocks) {
+      const units = estimateMarkdownBlockUnits(part) + 16;
+      if (/^##\s+/.test(part.trim()) && currentMarkdown.length > 0) flushPage();
+      if (currentMarkdown.length > 0 && currentUnits + units > maxUnits) flushPage();
+      currentMarkdown.push(part);
+      currentUnits += units;
+      if (currentUnits >= maxUnits) {
         flushPage();
       }
-
-      currentPage.push({
-        kind: block.kind,
-        line,
-        indent: block.indent,
-        marginTop,
-        marginBottom,
-      });
-      y += needed;
     }
   }
 
   flushPage();
-  return pages;
+  return pages.length > 0 ? pages : [{ type: "content", lines: [], markdown: "" }];
 }
 
 function drawWatermark(ctx: CanvasRenderingContext2D, config: CardConfig) {
@@ -2991,6 +3127,7 @@ function renderPageCanvas(
   subtitle: string,
   templateId: CardTemplateId,
   config: CardConfig,
+  cardStyleId: CardStyleId,
   pageIndex: number,
   totalPages: number,
   coverImage: HTMLImageElement | null,
@@ -3003,16 +3140,17 @@ function renderPageCanvas(
   const ctx = canvas.getContext("2d");
   if (!ctx) return canvas;
 
-  const metrics = getLayoutMetrics(templateId, config);
-  drawTemplateBackground(ctx, templateId, pageIndex, metrics, config);
-  drawWatermark(ctx, config);
+  const effectiveConfig = isCoilNotebookStyle(cardStyleId) ? getCoilNotebookRenderConfig(config) : config;
+  const metrics = getLayoutMetrics(templateId, effectiveConfig, cardStyleId);
+  drawTemplateBackground(ctx, templateId, pageIndex, metrics, config, cardStyleId);
+  drawWatermark(ctx, effectiveConfig);
 
   if (page.type === "cover") {
-    drawCoverPage(ctx, title, subtitle, templateId, config, coverImage, stickerImages);
-    drawSocialIcons(ctx, config, socialIconImages);
+    drawCoverPage(ctx, title, subtitle, templateId, effectiveConfig, coverImage, stickerImages);
+    drawSocialIcons(ctx, effectiveConfig, socialIconImages);
     return canvas;
   }
-  const mutedColor = config.textColor.startsWith("#") ? `${config.textColor}AA` : "rgba(20,20,20,0.56)";
+  const mutedColor = effectiveConfig.textColor.startsWith("#") ? `${effectiveConfig.textColor}AA` : "rgba(20,20,20,0.56)";
 
   let y = metrics.y;
 
@@ -3085,7 +3223,7 @@ function renderPageCanvas(
     const blockX = metrics.x + lineEntry.indent;
 
     if (lineEntry.kind === "quote") {
-      drawRoundedRect(ctx, metrics.x, textY + 6, 6, Math.max(10, lineEntry.line.height - 12), 3, config.accentColor);
+      drawRoundedRect(ctx, metrics.x, textY + 6, 6, Math.max(10, lineEntry.line.height - 12), 3, effectiveConfig.accentColor);
     }
 
     let x = blockX;
@@ -3127,30 +3265,186 @@ function renderPageCanvas(
     y += lineEntry.marginBottom;
   }
 
-  if (config.hasSignature && config.signatureText.trim()) {
-    ctx.fillStyle = config.signatureColor;
-    ctx.font = `600 24px ${config.fontFamily}`;
+  if (effectiveConfig.hasSignature && effectiveConfig.signatureText.trim()) {
+    ctx.fillStyle = effectiveConfig.signatureColor;
+    ctx.font = `600 24px ${effectiveConfig.fontFamily}`;
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.fillText(config.signatureText, metrics.x, CARD_HEIGHT - 60);
+    ctx.fillText(effectiveConfig.signatureText, metrics.x, CARD_HEIGHT - 60);
   }
 
-  if (config.showPageNumber) {
-    const hasCover = config.hasCover && totalPages > 1;
+  if (effectiveConfig.showPageNumber) {
+    const hasCover = effectiveConfig.hasCover && totalPages > 1;
     const displayTotal = hasCover ? Math.max(1, totalPages - 1) : totalPages;
     const displayPage = hasCover ? Math.max(1, pageIndex) : pageIndex + 1;
     ctx.fillStyle = mutedColor;
-    ctx.font = `500 22px ${config.fontFamily}`;
+    ctx.font = `500 22px ${effectiveConfig.fontFamily}`;
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
     ctx.fillText(`${displayPage} / ${displayTotal}`, CARD_WIDTH - metrics.x, CARD_HEIGHT - 60);
   }
 
-  if (config.showGrid) {
+  if (effectiveConfig.showGrid) {
     drawGridOverlay(ctx, metrics);
   }
 
   return canvas;
+}
+
+function getMd2CardTheme(id: string): Md2CardTheme {
+  return MD2CARD_THEMES.find((theme) => theme.id === id) ?? MD2CARD_THEMES[0];
+}
+
+function getMd2CardClassName(cardStyleId: CardStyleId, modeId: CardStyleModeId): string {
+  const theme = getMd2CardTheme(cardStyleId);
+  const mode = theme.modes?.find((item) => item.id === modeId);
+  return cn("card markdown-body", theme.className.startsWith("card-") ? theme.className : `card-${theme.className}`, mode?.className);
+}
+
+function rewriteMd2CardAssetUrls(css: string): string {
+  return css.replace(/url\((['"]?)\/img\/assets\/([^'")]+)\1\)/g, (_match, quote: string, path: string) => {
+    const mark = quote || "\"";
+    if (path === "img/coil-bg.png") {
+      return `url(${mark}${MD2CARD_COIL_BG_DATA_URL}${mark})`;
+    }
+    return `url(${mark}https://md2card.com/img/assets/${path}${mark})`;
+  });
+}
+
+function buildMd2CardCss(config: CardConfig, cardStyleId: CardStyleId, scale: number): string {
+  const theme = getMd2CardTheme(cardStyleId);
+  const width = MD2CARD_PREVIEW_WIDTH * scale;
+  const height = MD2CARD_PREVIEW_HEIGHT * scale;
+  const bodyFontSize = config.fontSize / 2;
+  const spacing = Math.max(2, (bodyFontSize / 5) * scale);
+  const themeCss = rewriteMd2CardAssetUrls(theme.css);
+  return `
+    ${MD2CARD_COMMON_CSS}
+    ${themeCss}
+    .md2card-preview-shell { width: ${width}px; height: ${height}px; }
+    .md2card-preview-shell .card {
+      width: ${width}px;
+      height: ${height}px;
+      --card-height: ${height}px;
+      --spacing: ${spacing}px;
+      box-sizing: border-box;
+      overflow: hidden;
+      font-family: ${config.fontFamily};
+    }
+    .md2card-preview-shell .card-content,
+    .md2card-preview-shell .card-content-inner {
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+    .md2card-preview-shell .card h1 { font-size: ${bodyFontSize * config.h1Scale * scale}px; }
+    .md2card-preview-shell .card h2 { font-size: ${bodyFontSize * config.h2Scale * scale}px; }
+    .md2card-preview-shell .card h3 { font-size: ${bodyFontSize * config.h3Scale * scale}px; }
+    .md2card-preview-shell .card-content-inner {
+      font-size: ${bodyFontSize * scale}px;
+      line-height: ${config.lineHeight};
+      letter-spacing: ${config.letterSpacing * scale}px;
+    }
+    .md2card-preview-shell .card-content-inner > p,
+    .md2card-preview-shell .card-content-inner li {
+      line-height: ${config.lineHeight};
+      letter-spacing: ${config.letterSpacing * scale}px;
+    }
+    .md2card-preview-shell .card-footer .page {
+      visibility: ${config.showPageNumber ? "visible" : "hidden"};
+    }
+  `;
+}
+
+function renderMd2CardContent(markdown: string): string {
+  const html = getMarkdownParser().render(markdown ?? "");
+  return `<section class="card-content-inner">${html}</section>`;
+}
+
+function renderMd2CardHtml(
+  page: CardPage,
+  index: number,
+  total: number,
+  config: CardConfig,
+  cardStyleId: CardStyleId,
+  cardStyleModeId: CardStyleModeId
+): string {
+  const theme = getMd2CardTheme(cardStyleId);
+  const content = page.type === "content" ? renderMd2CardContent(page.markdown || "") : "";
+  const template = theme.html || MD2CARD_DEFAULT_HTML;
+  const pageText = config.showPageNumber ? `${index + 1} / ${total}` : "";
+  const className = getMd2CardClassName(cardStyleId, cardStyleModeId);
+  const body = template
+    .replace(/{{content}}/g, content)
+    .replace(/{{page}}/g, pageText)
+    .replace(/{{date}}/g, new Date().toLocaleDateString("zh-CN"))
+    .replace(/{{title}}/g, "");
+  return `<section class="${className}">${body}</section>`;
+}
+
+async function renderMd2CardPageToDataUrl(
+  page: CardPage,
+  config: CardConfig,
+  cardStyleId: CardStyleId,
+  cardStyleModeId: CardStyleModeId,
+  index: number,
+  total: number,
+  format: ExportFormat = "png"
+): Promise<string> {
+  if (page.type === "cover") return "";
+  const width = MD2CARD_EXPORT_WIDTH;
+  const height = MD2CARD_EXPORT_HEIGHT;
+  const scale = width / MD2CARD_PREVIEW_WIDTH;
+  const html = renderMd2CardHtml(page, index, total, config, cardStyleId, cardStyleModeId);
+  const css = buildMd2CardCss(config, cardStyleId, scale);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml"><style>${escapeStyleForSvg(css)}</style><div class="md2card-preview-shell" style="width:${width}px;height:${height}px;overflow:hidden;">${html}</div></div></foreignObject></svg>`;
+  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
+  try {
+    const image = await loadImage(url);
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas not available");
+    ctx.drawImage(image, 0, 0, width, height);
+    return canvas.toDataURL(format === "jpeg" ? "image/jpeg" : "image/png", 0.94);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function Md2CardPreview({
+  page,
+  index,
+  total,
+  config,
+  cardStyleId,
+  cardStyleModeId,
+}: {
+  page: CardPage;
+  index: number;
+  total: number;
+  config: CardConfig;
+  cardStyleId: CardStyleId;
+  cardStyleModeId: CardStyleModeId;
+}) {
+  if (page.type !== "content") return null;
+  const html = renderMd2CardHtml(page, index, total, config, cardStyleId, cardStyleModeId);
+  const styleText = buildMd2CardCss(config, cardStyleId, 1);
+  return (
+    <div
+      className="h-auto w-auto rounded-md border border-border/40 shadow-sm"
+      style={{
+        width: MD2CARD_PREVIEW_WIDTH,
+        height: MD2CARD_PREVIEW_HEIGHT,
+      }}
+    >
+      <style dangerouslySetInnerHTML={{ __html: styleText }} />
+      <div
+        className="md2card-preview-shell overflow-hidden"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </div>
+  );
 }
 
 function canvasToBlob(canvas: HTMLCanvasElement, format: ExportFormat): Promise<Blob> {
@@ -3167,6 +3461,30 @@ function canvasToBlob(canvas: HTMLCanvasElement, format: ExportFormat): Promise<
       0.94
     );
   });
+}
+
+function dataUrlToBlob(dataUrl: string): Blob {
+  const [meta, payload] = dataUrl.split(",");
+  const mime = meta.match(/^data:([^;]+)/)?.[1] || "image/png";
+  const binary = window.atob(payload || "");
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: mime });
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("图片渲染失败"));
+    image.src = src;
+  });
+}
+
+function escapeStyleForSvg(value: string): string {
+  return value.replace(/<\/style/gi, "<\\/style");
 }
 
 function triggerDownload(blob: Blob, fileName: string) {
@@ -3231,7 +3549,7 @@ export function MarkdownTextCardDialog({
     [config.coverTitle, config.coverSubtitle, inferredCoverTitle, title]
   );
   const cardMarkdown = useMemo(() => preprocessMarkdownForCard(markdown), [markdown]);
-  const pages = useMemo(() => paginateMarkdown(cardMarkdown, templateId, config), [cardMarkdown, templateId, config]);
+  const pages = useMemo(() => paginateMarkdown(cardMarkdown, templateId, config, cardStyleId), [cardMarkdown, templateId, config, cardStyleId]);
 
   useEffect(() => {
     const firstMode = getFirstCardStyleMode(currentCardStyle);
@@ -3375,16 +3693,18 @@ export function MarkdownTextCardDialog({
     };
   }, []);
 
-  const previewDataUrl = useMemo(() => {
+  const coverPreviewDataUrl = useMemo(() => {
     if (!isBrowser) return "";
     if (pages.length === 0) return "";
     const idx = Math.max(0, Math.min(pageIndex, pages.length - 1));
+    if (pages[idx]?.type !== "cover") return "";
     const canvas = renderPageCanvas(
       pages[idx],
       resolvedCoverText.title,
       resolvedCoverText.subtitle,
       templateId,
       config,
+      cardStyleId,
       idx,
       pages.length,
       coverImageEl,
@@ -3392,7 +3712,7 @@ export function MarkdownTextCardDialog({
       coverStickerImages
     );
     return canvas.toDataURL("image/png");
-  }, [isBrowser, pageIndex, pages, resolvedCoverText, templateId, config, coverImageEl, socialIconImages, coverStickerImages]);
+  }, [isBrowser, pageIndex, pages, resolvedCoverText, templateId, config, cardStyleId, coverImageEl, socialIconImages, coverStickerImages]);
 
   const publishTitle = useMemo(() => {
     const fallback = sanitizeCoverTitleCandidate(resolvedCoverText.title || title);
@@ -3439,6 +3759,7 @@ export function MarkdownTextCardDialog({
         resolvedCoverText.subtitle,
         templateId,
         nextConfig,
+        cardStyleId,
         0,
         Math.max(1, pages.length),
         coverImageEl,
@@ -3447,7 +3768,7 @@ export function MarkdownTextCardDialog({
       );
       return { id: style.id, dataUrl: canvas.toDataURL("image/png"), label: isZh ? style.nameZh : style.nameEn };
     });
-  }, [isBrowser, config, pages, resolvedCoverText, templateId, coverImageEl, socialIconImages, coverStickerImages, isZh]);
+  }, [isBrowser, config, pages, resolvedCoverText, templateId, cardStyleId, coverImageEl, socialIconImages, coverStickerImages, isZh]);
 
   const canExport = pages.length > 0 && !exporting;
   const safePageIndex = Math.max(0, Math.min(pageIndex, Math.max(0, pages.length - 1)));
@@ -3496,24 +3817,33 @@ export function MarkdownTextCardDialog({
     });
   };
 
-  const handleExportCurrent = async () => {
-    if (!canExport) return;
-    setExporting(true);
-    try {
-      const idx = Math.max(0, Math.min(pageIndex, pages.length - 1));
+  const renderPageForOutput = async (page: CardPage, index: number, outputFormat: ExportFormat): Promise<Blob> => {
+    if (page.type === "cover") {
       const canvas = renderPageCanvas(
-        pages[idx],
+        page,
         resolvedCoverText.title,
         resolvedCoverText.subtitle,
         templateId,
         config,
-        idx,
+        cardStyleId,
+        index,
         pages.length,
         coverImageEl,
         socialIconImages,
         coverStickerImages
       );
-      const blob = await canvasToBlob(canvas, format);
+      return canvasToBlob(canvas, outputFormat);
+    }
+    const dataUrl = await renderMd2CardPageToDataUrl(page, config, cardStyleId, cardStyleModeId, index, pages.length, outputFormat);
+    return dataUrlToBlob(dataUrl);
+  };
+
+  const handleExportCurrent = async () => {
+    if (!canExport) return;
+    setExporting(true);
+    try {
+      const idx = Math.max(0, Math.min(pageIndex, pages.length - 1));
+      const blob = await renderPageForOutput(pages[idx], idx, format);
       const base = sanitizeFileName(title);
       triggerDownload(blob, `${base}-${String(idx + 1).padStart(2, "0")}.${format === "jpeg" ? "jpg" : "png"}`);
     } finally {
@@ -3527,19 +3857,7 @@ export function MarkdownTextCardDialog({
     try {
       const base = sanitizeFileName(title);
       for (let i = 0; i < pages.length; i += 1) {
-        const canvas = renderPageCanvas(
-          pages[i],
-          resolvedCoverText.title,
-          resolvedCoverText.subtitle,
-          templateId,
-          config,
-          i,
-          pages.length,
-          coverImageEl,
-          socialIconImages,
-          coverStickerImages
-        );
-        const blob = await canvasToBlob(canvas, format);
+        const blob = await renderPageForOutput(pages[i], i, format);
         triggerDownload(blob, `${base}-${String(i + 1).padStart(2, "0")}.${format === "jpeg" ? "jpg" : "png"}`);
         await sleep(80);
       }
@@ -3564,19 +3882,7 @@ export function MarkdownTextCardDialog({
       const imageUrls: string[] = [];
 
       for (let i = 0; i < pagesToPublish.length; i += 1) {
-        const canvas = renderPageCanvas(
-          pagesToPublish[i],
-          resolvedCoverText.title,
-          resolvedCoverText.subtitle,
-          templateId,
-          config,
-          i,
-          pages.length,
-          coverImageEl,
-          socialIconImages,
-          coverStickerImages
-        );
-        const blob = await canvasToBlob(canvas, "png");
+        const blob = await renderPageForOutput(pagesToPublish[i], i, "png");
         const file = new File([blob], `${baseName}-${String(i + 1).padStart(2, "0")}.png`, { type: "image/png" });
         const formData = new FormData();
         formData.append("file", file);
@@ -4311,10 +4617,26 @@ export function MarkdownTextCardDialog({
 
           <div className="min-h-0 min-w-0 flex flex-col">
             <div className="relative flex-1 min-h-0 overflow-hidden rounded-lg border border-border/60 bg-muted/10 p-3 sm:p-4 flex items-center justify-center">
-              {previewDataUrl ? (
+              {pages[safePageIndex]?.type === "content" ? (
+                <div
+                  style={{
+                    transform: `scale(${Math.min(previewScale, 160) / 100})`,
+                    transformOrigin: "center",
+                  }}
+                >
+                  <Md2CardPreview
+                    page={pages[safePageIndex]}
+                    index={safePageIndex}
+                    total={pages.length}
+                    config={config}
+                    cardStyleId={cardStyleId}
+                    cardStyleModeId={cardStyleModeId}
+                  />
+                </div>
+              ) : coverPreviewDataUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={previewDataUrl}
+                  src={coverPreviewDataUrl}
                   alt="text-card-preview"
                   className="h-auto w-auto rounded-md border border-border/40 shadow-sm object-contain"
                   style={{ maxWidth: `${Math.min(previewScale, 85)}%`, maxHeight: `${Math.min(previewScale, 88)}%` }}

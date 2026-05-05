@@ -49,6 +49,33 @@ interface UsageSummary {
   lastEventAt: string | null;
 }
 
+type ReferralBindingRow = {
+  id: string;
+  referrer_id: string;
+  invitee_id: string;
+  created_at: string;
+  source: string | null;
+};
+
+type ReferralWarning = {
+  code: string;
+  message: string;
+};
+
+function buildFallbackPayload(userId: string, warnings: ReferralWarning[]) {
+  return {
+    ok: true,
+    shareCode: userId,
+    warnings,
+    boundTo: null,
+    summary: {
+      inviteeCount: 0,
+      totalConsumed: 0
+    },
+    invitees: []
+  };
+}
+
 function ensureAdminClient() {
   if (!supabaseAdmin) {
     throw new Error('SUPABASE_SERVICE_ROLE_KEY is required for referral operations');
@@ -256,7 +283,18 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const admin = ensureAdminClient();
+    const warnings: ReferralWarning[] = [];
+
+    if (!supabaseAdmin) {
+      console.error('SUPABASE_SERVICE_ROLE_KEY is missing; referral details are unavailable');
+      warnings.push({
+        code: 'REFERRAL_ADMIN_UNAVAILABLE',
+        message: 'Referral details are unavailable because admin credentials are missing'
+      });
+      return NextResponse.json(buildFallbackPayload(userId, warnings));
+    }
+
+    const admin = supabaseAdmin;
 
     const { data: bindingRows, error: bindingError } = await admin
       .from('user_referrals')
@@ -266,7 +304,10 @@ export async function GET(request: Request) {
 
     if (bindingError) {
       console.error('Failed to load referral bindings', bindingError);
-      return NextResponse.json({ error: 'Failed to load referrals' }, { status: 500 });
+      warnings.push({
+        code: 'REFERRAL_BINDINGS_UNAVAILABLE',
+        message: 'Failed to load referral invitees'
+      });
     }
 
     const { data: boundRow, error: boundError } = await admin
@@ -277,10 +318,15 @@ export async function GET(request: Request) {
 
     if (boundError) {
       console.error('Failed to check existing referral binding', boundError);
+      warnings.push({
+        code: 'REFERRAL_BOUND_STATUS_UNAVAILABLE',
+        message: 'Failed to load current referral binding'
+      });
     }
 
     const profileIds = new Set<string>();
-    bindingRows?.forEach((row) => profileIds.add(row.invitee_id));
+    const invitees = (bindingError ? [] : (bindingRows ?? [])) as ReferralBindingRow[];
+    invitees.forEach((row) => profileIds.add(row.invitee_id));
     if (boundRow?.referrer_id) {
       profileIds.add(boundRow.referrer_id);
     }
@@ -304,7 +350,6 @@ export async function GET(request: Request) {
       return acc;
     }, {});
 
-    const invitees = bindingRows ?? [];
     const inviteeSummaries = await mapWithLimit(invitees, 3, async (row) => {
       const profile = profileMap[row.invitee_id];
       const usage = profile?.api_key ? await fetchUsageSummary(profile.api_key) : null;
@@ -339,6 +384,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       ok: true,
       shareCode: userId,
+      warnings,
       boundTo: boundRow
         ? {
             referrerId: boundRow.referrer_id,

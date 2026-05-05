@@ -23,6 +23,7 @@ export default defineAppConfig({
         'product-detail/index',
         'style-library/index',
         'remix-generate/index',
+        'remix-video-generate/index',
         'generate/index',
         'monetization-square/index',
         'image-generate/index',

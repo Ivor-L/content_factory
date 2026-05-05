@@ -30,13 +30,13 @@ const VIDEO_CATEGORIES = [
 const SKELETON_DURATION_OPTIONS = [32, 64, 96] as const;
 const DEFAULT_SKELETON_DURATION_SECONDS = 64;
 const SKELETON_LANGUAGE_OPTIONS = [
-  { label: '跟随脚本', value: 'auto', hint: '按输入文案自动判断语言' },
   { label: '中文', value: 'zh-CN', hint: '生成中文口播与镜头脚本' },
   { label: 'English', value: 'en', hint: 'Generate English voiceover and prompts' },
   { label: '日本語', value: 'ja', hint: '日本語の台本と映像指示を生成' },
   { label: '한국어', value: 'ko', hint: '한국어 대사와 장면 프롬프트 생성' },
   { label: 'Español', value: 'es', hint: 'Generar guion y prompts en español' },
 ] as const;
+const DEFAULT_SKELETON_LANGUAGE_INDEX = SKELETON_LANGUAGE_OPTIONS.findIndex((item) => item.value === 'en');
 
 export default function GeneratePage() {
   const [pageMode, setPageMode] = useState<'digital-human' | 'video-generate'>('digital-human');
@@ -55,7 +55,9 @@ export default function GeneratePage() {
   const [videoFileName, setVideoFileName] = useState('');
   const [skeletonScript, setSkeletonScript] = useState('');
   const [skeletonDurationSeconds, setSkeletonDurationSeconds] = useState<number>(DEFAULT_SKELETON_DURATION_SECONDS);
-  const [skeletonLanguageIndex, setSkeletonLanguageIndex] = useState(0);
+  const [skeletonLanguageIndex, setSkeletonLanguageIndex] = useState(
+    DEFAULT_SKELETON_LANGUAGE_INDEX >= 0 ? DEFAULT_SKELETON_LANGUAGE_INDEX : 0,
+  );
   const [products, setProducts] = useState<Array<{ id: string; name: string; images: string[] }>>([]);
   const [selectedProductId, setSelectedProductId] = useState('');
   const [uploadingAudio, setUploadingAudio] = useState(false);

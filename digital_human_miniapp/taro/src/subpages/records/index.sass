@@ -35,13 +35,56 @@
   border: 1rpx solid rgba(145, 175, 229, 0.18)
   overflow: hidden
   margin-bottom: 14rpx
+  display: flex
+  min-height: 188rpx
 
-.record-video
-  width: 100%
-  height: 320rpx
+.record-cover
+  position: relative
+  width: 150rpx
+  min-height: 188rpx
+  flex-shrink: 0
+  background: #202020
+
+.record-cover-image
+  width: 150rpx
+  height: 188rpx
+
+.record-cover-placeholder
+  width: 150rpx
+  height: 188rpx
+  display: flex
+  align-items: center
+  justify-content: center
+  background: linear-gradient(145deg, rgba(240, 236, 175, 0.14), rgba(145, 175, 229, 0.12))
+
+.record-cover-placeholder-text
+  color: #f0ecaf
+  font-size: 24rpx
+  font-weight: 800
+
+.record-play-badge
+  position: absolute
+  left: 50%
+  top: 50%
+  transform: translate(-50%, -50%)
+  width: 54rpx
+  height: 54rpx
+  border-radius: 50%
+  background: rgba(5, 5, 5, 0.72)
+  border: 1rpx solid rgba(240, 236, 175, 0.55)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.record-play-badge-text
+  color: #f0ecaf
+  font-size: 22rpx
+  line-height: 1
 
 .record-info
   padding: 18rpx
+  flex: 1
+  min-width: 0
 
 .record-row
   display: flex
@@ -53,10 +96,14 @@
   font-size: 24rpx
   font-weight: 700
   color: #e8f2ff
+  flex: 1
+  min-width: 0
 
 .record-status
   font-size: 22rpx
   font-weight: 700
+  margin-left: 16rpx
+  flex-shrink: 0
 
 .record-script
   font-size: 23rpx
@@ -67,6 +114,12 @@
 .record-date
   font-size: 20rpx
   color: #7f93b8
+
+.record-action
+  display: block
+  margin-top: 8rpx
+  font-size: 21rpx
+  color: #f0ecaf
 
 .empty-text
   display: block

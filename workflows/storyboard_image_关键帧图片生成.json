@@ -7,258 +7,20 @@
         "path": "storyboard-image-generate",
         "options": {}
       },
-      "id": "fce580a8-e2af-43a7-a05a-5436ed4d6c9e",
+      "id": "1a115267-24b9-4a7a-b8ca-d1524d4d07bc",
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        1648,
-        -48
+        6912,
+        528
       ],
       "webhookId": "storyboard-image-generate"
     },
     {
       "parameters": {
-        "mode": "runOnceForEachItem",
-        "jsCode": "const body = $json.body || $json;\n\nfunction s(v) {\n  return v == null ? '' : String(v).trim();\n}\n\nfunction arr(v) {\n  if (Array.isArray(v)) return v.map(x => s(x)).filter(Boolean);\n  if (typeof v === 'string' && v.trim()) {\n    try {\n      const parsed = JSON.parse(v);\n      return arr(parsed);\n    } catch {\n      return [s(v)];\n    }\n  }\n  return [];\n}\n\nconst subjectRefs = Array.isArray(body.subject_refs) ? body.subject_refs : [];\nconst referenceImageUrls = arr(body.reference_image_urls || body.image_urls || body.images);\nconst productUrl = s(body.product_image_url) || s(subjectRefs.find(r => r?.type === 'product')?.url) || referenceImageUrls[0] || '';\nconst characterUrl = s(body.character_image_url || body.person_image_url) || s(subjectRefs.find(r => r?.type === 'character')?.url) || '';\nconst frameUrl = s(body.reference_frame_url) || referenceImageUrls.find(url => url !== productUrl && url !== characterUrl) || '';\n\nreturn {\n  json: {\n    segment_id: s(body.segment_id),\n    task_id: s(body.task_id),\n    prompt: s(body.prompt),\n    raw_prompt: s(body.raw_prompt),\n    product_image_url: productUrl,\n    character_image_url: characterUrl,\n    reference_frame_url: frameUrl,\n    subject_refs: subjectRefs,\n    subject_replace_mode: s(body.subject_replace_mode || body.image_edit_mode),\n    reference_image_urls: referenceImageUrls,\n    images: referenceImageUrls,\n    model: s(body.model || body.requested_model || 'image2'),\n    requested_model: s(body.requested_model || body.model || 'image2'),\n    model_capabilities: body.model_capabilities || {},\n    aspect_ratio: s(body.aspect_ratio || '9:16'),\n    callback_url: s(body.callback_url),\n    api_key: s(body.api_key),\n    admin_token: s(body.admin_token),\n    workflow_id: s(body.workflow_id || 'flow_storyboard_image')\n  }\n};"
-      },
-      "id": "41c33ab9-72d7-4c1c-8496-79389e89790d",
-      "name": "准备所有数据",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1872,
-        -48
-      ]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "id": "has_character_url",
-              "leftValue": "={{ $json.character_image_url }}",
-              "rightValue": "",
-              "operator": {
-                "type": "string",
-                "operation": "notEmpty",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "99a01445-85e0-4b46-806d-e28b4794f6a8",
-      "name": "IF-有角色图",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        2096,
-        -192
-      ]
-    },
-    {
-      "parameters": {
-        "url": "={{ $json.character_image_url }}",
-        "options": {
-          "response": {
-            "response": {
-              "responseFormat": "file",
-              "outputPropertyName": "person_file"
-            }
-          }
-        }
-      },
-      "id": "bfed0b14-9552-4092-bd53-bc5f78e7f551",
-      "name": "下载角色图",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        2320,
-        -208
-      ]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "id": "has_product_url",
-              "leftValue": "={{ $json.product_image_url }}",
-              "rightValue": "",
-              "operator": {
-                "type": "string",
-                "operation": "notEmpty",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "46c642b8-fb21-469f-a905-94b2910a5b7a",
-      "name": "IF-有产品图",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        2320,
-        112
-      ]
-    },
-    {
-      "parameters": {
-        "url": "={{ $json.product_image_url }}",
-        "options": {
-          "response": {
-            "response": {
-              "responseFormat": "file",
-              "outputPropertyName": "product_file"
-            }
-          }
-        }
-      },
-      "id": "095c1de0-55fa-4407-b710-b59cf65c7607",
-      "name": "下载产品图",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        2544,
-        208
-      ]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "id": "has_reference_url",
-              "leftValue": "={{ $json.reference_frame_url }}",
-              "rightValue": "",
-              "operator": {
-                "type": "string",
-                "operation": "notEmpty",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "c073887a-bd80-45a6-954b-60431bc72db6",
-      "name": "IF-有参考图",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        2544,
-        416
-      ]
-    },
-    {
-      "parameters": {
-        "url": "={{ $json.reference_frame_url }}",
-        "options": {
-          "response": {
-            "response": {
-              "responseFormat": "file",
-              "outputPropertyName": "reference_file"
-            }
-          }
-        }
-      },
-      "id": "cb18b1b5-5985-43e3-a322-c2e432abc61a",
-      "name": "下载参考图",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        2768,
-        496
-      ]
-    },
-    {
-      "parameters": {
-        "mode": "combine",
-        "combineBy": "combineAll",
-        "options": {}
-      },
-      "id": "a52e9e97-dc67-4243-9bbe-2bf6131b59d5",
-      "name": "合并角色图",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3.2,
-      "position": [
-        2544,
-        -208
-      ]
-    },
-    {
-      "parameters": {
-        "mode": "combine",
-        "combineBy": "combineAll",
-        "options": {}
-      },
-      "id": "e3b1520c-43e4-4d6d-b6a2-d2daaabee849",
-      "name": "合并产品图",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3.2,
-      "position": [
-        2768,
-        64
-      ]
-    },
-    {
-      "parameters": {
-        "mode": "combine",
-        "combineBy": "combineAll",
-        "options": {}
-      },
-      "id": "a0082115-d1d5-4767-9d97-5658150dea2f",
-      "name": "合并参考图",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3.2,
-      "position": [
-        2992,
-        352
-      ]
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForEachItem",
-        "jsCode": "const j = $json || {};\n\nfunction s(v) {\n  return v == null ? '' : String(v).trim();\n}\n\nfunction unique(values) {\n  const seen = new Set();\n  const out = [];\n  for (const value of values) {\n    const text = s(value);\n    if (!text || seen.has(text)) continue;\n    seen.add(text);\n    out.push(text);\n  }\n  return out;\n}\n\nconst rawPrompt = s(j.prompt);\nconst modelKey = s(j.model || j.requested_model || 'image2');\nconst provider = s(j.model_capabilities?.provider || '').toLowerCase();\nconst referenceUrls = unique([\n  ...(Array.isArray(j.reference_image_urls) ? j.reference_image_urls : []),\n  ...(Array.isArray(j.images) ? j.images : []),\n  j.product_image_url,\n  j.character_image_url,\n  j.reference_frame_url,\n]);\n\n// =========================================================\n// 1. Prompt 预处理 (信息图去文字专用)\n// =========================================================\nlet cleanPrompt = rawPrompt;\ncleanPrompt = cleanPrompt.replace(/(手写体|无衬线字体|手写风格)/g, '手绘线条和纹理');\ncleanPrompt = cleanPrompt.replace(/(用手写风格展示手稿)/g, '用抽象线条模拟手稿');\ncleanPrompt = cleanPrompt.replace(/(搭配无衬线字体的标题)/g, '搭配模块化的图形标题色块');\n\nconst parts = [];\n\nparts.push({ \n  text: `PRIMARY VISUAL INSTRUCTION: \n  Create a pure visual graphic based on this modified prompt: \"${cleanPrompt}\". \n  \n  STRICT NEGATIVE CONSTRAINT (HIGHEST PRIORITY): \n  - ABSOLUTELY NO TEXT, NO LETTERS, NO NUMBERS, NO ALPHABETS, NO WORDS, NO TYPOGRAPHY.\n  - The image must contain ONLY visual elements, illustrations, graphics, icons, and textures.\n  - If the prompt mentions \"manuscripts\" or \"titles\", represent them as abstract shapes, lines, dots, or color blocks, NOT as readable text.` \n});\n\nif (j.person_image_b64) {\n  parts.push({ text: 'CHARACTER IDENTITY: Use this person as the consistent subject.' });\n  parts.push({ inline_data: { mime_type: s(j.person_mime_type || 'image/jpeg'), data: j.person_image_b64 } });\n}\n\nif (j.product_image_b64) {\n  parts.push({ text: 'PRODUCT IDENTITY: Use this specific product, maintaining branding.' });\n  parts.push({ inline_data: { mime_type: s(j.product_mime_type || 'image/jpeg'), data: j.product_image_b64 } });\n}\n\nif (j.reference_frame_b64) {\n  parts.push({ text: 'LAYOUT REFERENCE: Use this as a guide for composition only. Ignore text.' });\n  parts.push({ inline_data: { mime_type: s(j.reference_frame_mime || 'image/jpeg'), data: j.reference_frame_b64 } });\n}\n\nconst systemCommand = `You are a world-class graphic designer. \nYour goal is to produce a CLEAN, HIGH-END visual image.\nRULE #1: NEVER include any text, letters, numbers, or typography. This is the absolute rule.\nRULE #2: Translate all prompt descriptions (like 'notes' or 'structure') into pure visual graphics or icons.\nPriority: NO TEXT > Layout > Style.`;\n\nparts.push({ text: systemCommand });\n\nconst request_body = {\n  contents: [{ role: 'user', parts }],\n  generationConfig: {\n    responseModalities: ['IMAGE'],\n    imageConfig: { aspectRatio: s(j.aspect_ratio || '9:16') }\n  }\n};\n\nconst modelMap = {\n  image2: 'gemini-3-pro-image-preview',\n  nanoBananapro: 'gemini-3-pro-image-preview',\n  nanoBanana2: 'gemini-3.1-flash-image-preview'\n};\n\nreturn {\n  json: {\n    ...j,\n    request_body,\n    reference_image_urls: referenceUrls,\n    images: referenceUrls,\n    api_model: modelMap[modelKey] || (provider === 'gemini-image' ? modelKey : 'gemini-3-pro-image-preview'),\n    model_used_by_workflow: modelKey\n  }\n};"
-      },
-      "id": "4050b78e-52cb-4472-a448-f19cdd0de61a",
-      "name": "组装生图请求体",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        3440,
-        352
-      ]
-    },
-    {
-      "parameters": {
         "method": "POST",
-        "url": "=https://yunwu.ai/v1beta/models/{{ $json.api_model }}:generateContent",
+        "url": "={{ $json.request_url }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
@@ -281,13 +43,13 @@
           }
         }
       },
-      "id": "fd4e4c14-a297-461a-bb88-a5d349963a1d",
+      "id": "a1bcd750-57cb-41ef-8cd3-80b9f5461d39",
       "name": "生图请求",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3664,
-        352
+        8032,
+        528
       ],
       "retryOnFail": true,
       "waitBetweenTries": 3000,
@@ -301,44 +63,30 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "function unwrapRoot(x) {\n  if (x && typeof x === 'object' && x.body && typeof x.body === 'object') return x.body;\n  return x;\n}\n\nfunction findInlineImageParts(root) {\n  const candidates = root?.candidates;\n  if (!Array.isArray(candidates) || !candidates.length) return [];\n  const parts = candidates?.[0]?.content?.parts;\n  if (!Array.isArray(parts)) return [];\n  const imgs = [];\n  for (const p of parts) {\n    const inline = p?.inline_data || p?.inlineData;\n    if (inline?.data) {\n      imgs.push({ b64: inline.data, mimeType: inline.mime_type || inline.mimeType || 'image/png' });\n      continue;\n    }\n    const fd = p?.fileData;\n    if (fd?.fileUri) {\n      imgs.push({ fileUri: fd.fileUri, mimeType: fd.mimeType || 'image/png' });\n    }\n  }\n  return imgs;\n}\n\nfunction stripDataPrefix(b64) {\n  return String(b64 || '').replace(/^data:.*;base64,/, '').trim();\n}\n\nconst raw = $json || {};\nconst root = unwrapRoot(raw);\nconst imgs = findInlineImageParts(root);\nconst first = imgs[0];\nif (!first || !first.b64) throw new Error('未从生图响应中解析到 inline image');\n\nconst mimeType = first.mimeType || 'image/png';\nconst ext = /png/i.test(mimeType) ? 'png' : (/webp/i.test(mimeType) ? 'webp' : 'jpg');\nconst b64 = stripDataPrefix(first.b64);\nif (!b64) throw new Error('图片 base64 为空');\n\nreturn {\n  json: {\n    mimeType,\n    fileName: `storyboard_segment_${Date.now()}.${ext}`\n  },\n  binary: {\n    data: {\n      data: b64,\n      mimeType,\n      fileName: `storyboard_segment_${Date.now()}.${ext}`\n    }\n  }\n};"
+        "jsCode": "function unwrapRoot(x) {\n  if (x && typeof x === 'object' && x.body && typeof x.body === 'object') return x.body;\n  return x;\n}\n\nfunction s(v) { return v == null ? '' : String(v).trim(); }\nfunction stripDataPrefix(value) { return s(value).replace(/^data:.*;base64,/i, ''); }\nfunction extensionFromMimeType(mimeType) {\n  if (/webp/i.test(mimeType)) return 'webp';\n  if (/jpe?g/i.test(mimeType)) return 'jpg';\n  return 'png';\n}\nfunction findDirectImageUrl(root) {\n  const candidates = [\n    root?.image_url, root?.imageUrl, root?.url,\n    root?.data?.image_url, root?.data?.imageUrl, root?.data?.url,\n    root?.result?.image_url, root?.result?.url,\n  ];\n  for (const value of candidates) {\n    const url = s(value);\n    if (/^https?:\\/\\//i.test(url) && !/\\.(mp4|mov|m3u8)(\\?|$)/i.test(url)) return url;\n  }\n  const data = Array.isArray(root?.data) ? root.data : [];\n  for (const item of data) {\n    const url = s(item?.url || item?.image_url || item?.imageUrl);\n    if (/^https?:\\/\\//i.test(url) && !/\\.(mp4|mov|m3u8)(\\?|$)/i.test(url)) return url;\n  }\n  return '';\n}\nfunction collectInlineImages(value, depth = 0) {\n  if (depth > 6 || value == null) return [];\n  if (Array.isArray(value)) return value.flatMap((item) => collectInlineImages(item, depth + 1));\n  if (typeof value !== 'object') return [];\n\n  const obj = value;\n  const inline = obj.inline_data || obj.inlineData;\n  if (inline && typeof inline === 'object' && s(inline.data)) {\n    return [{ data: stripDataPrefix(inline.data), mimeType: s(inline.mime_type || inline.mimeType || 'image/png') }];\n  }\n  const b64 = obj.b64_json || obj.b64Json || obj.image_base64 || obj.imageBase64 || obj.base64 || obj.base64_json || obj.base64Json;\n  if (s(b64)) return [{ data: stripDataPrefix(b64), mimeType: s(obj.mime_type || obj.mimeType || 'image/png') }];\n\n  return Object.values(obj).flatMap((item) => collectInlineImages(item, depth + 1));\n}\nasync function fetchImageAsBinary(url) {\n  const response = await fetch(url);\n  if (!response.ok) throw new Error('生成图下载失败：HTTP ' + response.status);\n  const mimeType = response.headers.get('content-type') || 'image/png';\n  const buffer = Buffer.from(await response.arrayBuffer());\n  return { data: buffer.toString('base64'), mimeType };\n}\n\nconst root = unwrapRoot($json || {});\nlet image = collectInlineImages(root)[0] || null;\nlet sourceImageUrl = '';\n\nif (!image) {\n  sourceImageUrl = findDirectImageUrl(root);\n  if (!sourceImageUrl) throw new Error('未从生图响应中解析到图片 URL 或 inline/base64 图片，请检查上游 API 输出。');\n  image = await fetchImageAsBinary(sourceImageUrl);\n}\n\nconst mimeType = image.mimeType || 'image/png';\nconst extension = extensionFromMimeType(mimeType);\nconst fileName = 'storyboard-image-' + Date.now() + '.' + extension;\n\nreturn {\n  json: {\n    source_image_url: sourceImageUrl,\n    mimeType,\n    fileName\n  },\n  binary: {\n    data: {\n      data: stripDataPrefix(image.data),\n      mimeType,\n      fileName\n    }\n  }\n};"
       },
-      "id": "faab861d-eaaf-4675-ac91-37a93edd7baa",
+      "id": "74178484-41fc-4b0a-8fc5-7b297b307b48",
       "name": "转换为Binary",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3888,
-        352
+        8256,
+        528
       ]
     },
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const uploadResp = $input.item.json;\nconst imageUrl = uploadResp.url || '';\n\nreturn {\n  json: {\n    image_url: imageUrl\n  }\n};"
+        "jsCode": "const current = $input.item.json || {};\nif (current.image_url) {\n  return { json: { image_url: current.image_url } };\n}\nconst uploadResp = current;\nconst imageUrl = uploadResp.url || uploadResp.image_url || uploadResp.data?.url || '';\nreturn { json: { image_url: imageUrl } };"
       },
-      "id": "76783a61-080d-4038-a6c6-2ba2d95d6267",
+      "id": "c72e7d61-3d0b-4685-a4dd-deff78bbbfae",
       "name": "生成URL",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4336,
-        352
+        8928,
+        528
       ]
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForEachItem",
-        "jsCode": "const j = $json || {};\n\nfunction s(v) {\n  return v == null ? '' : String(v);\n}\n\nasync function readBinaryBase64(keyCandidates) {\n  const keys = Object.keys($binary || {});\n  let hitKey = '';\n\n  for (const k of keyCandidates) {\n    if (keys.includes(k)) {\n      hitKey = k;\n      break;\n    }\n  }\n\n  if (!hitKey) return { ok: false, b64: '', mime: '' };\n\n  try {\n    const buf = await this.helpers.getBinaryDataBuffer(0, hitKey);\n    const meta = $binary[hitKey] || {};\n    return {\n      ok: true,\n      b64: buf.toString('base64'),\n      mime: s(meta.mimeType || 'image/jpeg')\n    };\n  } catch (e) {\n    return { ok: false, b64: '', mime: '' };\n  }\n}\n\nconst personImg = await readBinaryBase64(['person_file', 'character_file']);\nconst productImg = await readBinaryBase64(['product_file']);\nconst referenceImg = await readBinaryBase64(['reference_file', 'frame_file']);\n\nreturn {\n  json: {\n    ...j,\n    person_image_b64: personImg.b64,\n    person_mime_type: personImg.mime,\n    product_image_b64: productImg.b64,\n    product_mime_type: productImg.mime,\n    reference_frame_b64: referenceImg.b64,\n    reference_frame_mime: referenceImg.mime\n  },\n  binary: $binary\n};"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        3216,
-        352
-      ],
-      "id": "ccfe6d92-23ca-4848-9323-16e2a7d38411",
-      "name": "图片转Base64"
     },
     {
       "parameters": {
@@ -357,11 +105,11 @@
         },
         "options": {}
       },
-      "id": "761060e5-a1c6-4511-a95c-ea3f7434a325",
+      "id": "6d48e1b7-1cd1-43c6-8441-848aa421866a",
       "name": "HTTP上传到SupabaseStorage",
       "position": [
-        4112,
-        352
+        8704,
+        528
       ],
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2
@@ -387,221 +135,85 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        4560,
-        352
+        9152,
+        528
       ],
-      "id": "f6da02bc-6e40-401b-b542-e9f34350731a",
+      "id": "9f9f6cb4-4951-42e9-9c3b-715b948c156c",
       "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const body = item.json.body || item.json;\n\n  function s(v) { return v == null ? '' : String(v).trim(); }\n  function toList(v) {\n    if (Array.isArray(v)) return v.flatMap(toList);\n    if (v && typeof v === 'object') return toList(v.url || v.image_url || v.imageUrl || v.src || v.href);\n    if (typeof v === 'string') {\n      const t = v.trim();\n      if (!t) return [];\n      try {\n        const parsed = JSON.parse(t);\n        const list = toList(parsed);\n        return list.length ? list : [t];\n      } catch {\n        return [t];\n      }\n    }\n    return [];\n  }\n  function unique(vals) {\n    const seen = new Set();\n    const out = [];\n    for (const v of vals) {\n      const t = s(v);\n      if (!t || seen.has(t)) continue;\n      seen.add(t);\n      out.push(t);\n    }\n    return out;\n  }\n  function clampRef(v, fb) {\n    const n = Number(v);\n    if (!Number.isFinite(n)) return fb;\n    return Math.min(Math.max(Math.floor(n), 0), 8);\n  }\n  function normKey(v) { return s(v || 'image2'); }\n  function normProv(mk, cap) {\n    const p = s(cap.provider).toLowerCase();\n    const n = mk.toLowerCase();\n    if (p === 'image2' || n === 'image2' || n === 'gpt-image-2-all' || n.includes('gpt-image-2')) return 'image2';\n    return 'gemini-image';\n  }\n  function pickApi(mk, p) {\n    if (p === 'image2') return 'gpt-image-2-all';\n    const key = s(mk);\n    const map = {\n      nanoBananapro: 'gemini-3-pro-image-preview',\n      nanoBananaPro: 'gemini-3-pro-image-preview',\n      'nano-banana-pro': 'gemini-3-pro-image-preview',\n      nanoBanana2: 'gemini-3.1-flash-image-preview',\n      'nano-banana-2': 'gemini-3.1-flash-image-preview',\n      'gemini-3-pro-image-preview': 'gemini-3-pro-image-preview',\n      'gemini-3.1-flash-image-preview': 'gemini-3.1-flash-image-preview'\n    };\n    return map[key] || key || 'gemini-3-pro-image-preview';\n  }\n  function normalizeAspectRatio(value) {\n    const raw = s(value).toLowerCase();\n    if (!raw) return '';\n    if (['portrait', 'vertical', '竖屏', '竖版', '手机竖屏'].includes(raw)) return '9:16';\n    if (['landscape', 'horizontal', '横屏', '横版'].includes(raw)) return '16:9';\n    if (['square', '方图', '1/1', '1:1'].includes(raw)) return '1:1';\n    if (raw === '3/4' || raw === '3:4') return '3:4';\n    if (raw === '4/3' || raw === '4:3') return '4:3';\n    if (raw === '9/16' || raw === '9:16') return '9:16';\n    if (raw === '16/9' || raw === '16:9') return '16:9';\n    const sizeMatch = raw.match(/^(\\d{3,5})\\s*x\\s*(\\d{3,5})$/i);\n    if (sizeMatch) return aspectRatioFromSize(sizeMatch[1] + 'x' + sizeMatch[2]);\n    return '';\n  }\n  function aspectRatioFromSize(size) {\n    const match = s(size).match(/^(\\d{3,5})\\s*x\\s*(\\d{3,5})$/i);\n    if (!match) return '';\n    const w = Number(match[1]);\n    const h = Number(match[2]);\n    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return '';\n    const ratio = w / h;\n    if (ratio < 0.68) return '9:16';\n    if (ratio < 0.9) return '3:4';\n    if (ratio <= 1.12) return '1:1';\n    if (ratio <= 1.55) return '4:3';\n    return '16:9';\n  }\n  function promptAspectRatio(prompt) {\n    const text = s(prompt).toLowerCase();\n    if (!text) return '';\n    if (/\\b(vertical|portrait)\\b|竖屏|竖版|手机竖屏/.test(text)) return '9:16';\n    if (/\\b(horizontal|landscape|wide)\\b|横屏|横版|宽屏/.test(text)) return '16:9';\n    const explicit = text.match(/(?:^|[^\\d])(9\\s*[:/]\\s*16|16\\s*[:/]\\s*9|3\\s*[:/]\\s*4|4\\s*[:/]\\s*3|1\\s*[:/]\\s*1)(?:[^\\d]|$)/);\n    return explicit ? normalizeAspectRatio(explicit[1].replace(/\\s+/g, '')) : '';\n  }\n  function normalizeImage2Size(size, aspectRatio) {\n    const raw = s(size).toLowerCase().replace(/\\s+/g, '');\n    if (/^\\d{3,5}x\\d{3,5}$/.test(raw)) return raw;\n    if (aspectRatio === '16:9' || aspectRatio === '4:3') return '1536x1024';\n    if (aspectRatio === '9:16' || aspectRatio === '3:4') return '1024x1536';\n    return '1024x1024';\n  }\n\n  const prompt = s(body.prompt || body.raw_prompt);\n  if (!prompt) throw new Error('缺少 prompt');\n\n  const cap = body.model_capabilities && typeof body.model_capabilities === 'object' ? body.model_capabilities : {};\n  const mk = normKey(body.model || body.requested_model);\n  const prov = normProv(mk, cap);\n  const fbLimit = prov === 'image2' ? 8 : 5;\n  const maxRef = clampRef(cap.max_reference_images ?? body.max_reference_images ?? fbLimit, fbLimit);\n\n  const numUrls = Array.from({ length: 8 }, (_, i) => body['reference_image_url_' + (i + 1)]);\n  const refUrls = unique([\n    ...toList(body.reference_image_urls),\n    ...toList(body.images),\n    ...toList(body.image_urls),\n    ...toList(body.image),\n    ...toList(body.product_image_url),\n    ...toList(body.character_image_url),\n    ...toList(body.person_image_url),\n    ...toList(body.reference_frame_url),\n    ...numUrls\n  ]).filter((url) => /^https?:\\/\\//i.test(url)).slice(0, maxRef);\n\n  const refFields = {};\n  for (let i = 0; i < 8; i += 1) refFields['reference_image_url_' + (i + 1)] = refUrls[i] || '';\n\n  const refInst = s(body.reference_image_instructions || body.referenceImageInstructions);\n  const negPrompt = s(body.negative_prompt || body.negativePrompt);\n  const promptSec = [prompt];\n  if (refInst) promptSec.push('Reference image instructions:\\n' + refInst);\n  if (negPrompt) promptSec.push('Negative prompt / avoid:\\n' + negPrompt);\n  const promptText = promptSec.join('\\n\\n');\n\n  const bodyAspect = normalizeAspectRatio(body.aspect_ratio || body.aspectRatio || body.ratio);\n  const sizeAspect = aspectRatioFromSize(body.size);\n  const promptAspect = promptAspectRatio(prompt);\n  const aspectRatio = promptAspect || bodyAspect || sizeAspect || '1:1';\n  const image2Size = normalizeImage2Size(body.size, aspectRatio);\n  const apiModel = pickApi(mk, prov);\n\n  const baseData = {\n    segment_id: s(body.segment_id),\n    task_id: s(body.task_id || body.segment_id),\n    prompt,\n    raw_prompt: s(body.raw_prompt || body.prompt),\n    negative_prompt: negPrompt,\n    reference_image_instructions: refInst,\n    reference_image_urls: refUrls,\n    images: refUrls,\n    ...refFields,\n    max_reference_images: maxRef,\n    model: mk,\n    requested_model: normKey(body.requested_model || body.model),\n    model_capabilities: cap,\n    provider: prov,\n    model_used_by_workflow: mk,\n    api_model: apiModel,\n    aspect_ratio: aspectRatio,\n    original_aspect_ratio: s(body.aspect_ratio || body.aspectRatio || body.ratio),\n    image2_size: image2Size,\n    callback_url: s(body.callback_url),\n    api_key: s(body.api_key),\n    admin_token: s(body.admin_token),\n    workflow_id: s(body.workflow_id || 'flow_storyboard_image'),\n    source: s(body.source || 'miniapp_ai_image'),\n    promptText\n  };\n\n  // image2 only needs public image URLs. Gemini needs downloaded binary converted to base64.\n  if (refUrls.length === 0 || prov === 'image2') {\n    results.push({ json: { _baseData: baseData, downloadUrl: '' } });\n  } else {\n    refUrls.forEach((url, i) => results.push({ json: { _baseData: baseData, downloadUrl: url, imageIndex: i + 1 } }));\n  }\n}\n\nreturn results;"
+      },
+      "name": "1.提取并拆分图片URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7136,
+        528
+      ],
+      "id": "91f3cea6-a044-45b8-8b4c-c32bbe89db72"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.downloadUrl }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "name": "是否需要下载？",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        7360,
+        528
+      ],
+      "id": "36bb5e63-865a-48f2-b481-76ba79b7dffe"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.downloadUrl }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "name": "2.原生节点下载图片",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        7584,
+        448
+      ],
+      "id": "05ad912e-bd3a-4f5b-a73c-84ea95cfd64a"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nif (!items || items.length === 0) throw new Error('没有接收到数据');\n\nconst baseData = items[0].json._baseData;\nif (!baseData || typeof baseData !== 'object') throw new Error('缺少标准化后的 _baseData');\n\nconst provider = baseData.provider;\nlet requestUrl = '';\nlet requestBody = {};\nlet refCount = 0;\n\nfunction s(v) { return v == null ? '' : String(v).trim(); }\nasync function binaryToInlineData(itemIndex, item) {\n  const binary = item.binary || {};\n  const key = binary.data ? 'data' : Object.keys(binary)[0];\n  if (!key) return null;\n  const meta = binary[key] || {};\n  let data = '';\n  try {\n    const buffer = await this.helpers.getBinaryDataBuffer(itemIndex, key);\n    data = buffer.toString('base64');\n  } catch (error) {\n    data = s(meta.data).replace(/^data:.*;base64,/i, '');\n  }\n  if (!data) return null;\n  return {\n    mime_type: s(meta.mimeType || meta.mime_type || 'image/jpeg'),\n    data\n  };\n}\n\nif (provider === 'image2') {\n  requestUrl = 'https://yunwu.ai/v1/images/generations';\n  const imageUrls = Array.isArray(baseData.reference_image_urls) ? baseData.reference_image_urls.filter(Boolean) : [];\n  requestBody = {\n    model: baseData.api_model,\n    size: baseData.image2_size || '1024x1024',\n    n: 1,\n    prompt: baseData.promptText\n  };\n  if (imageUrls.length === 1) requestBody.image = imageUrls[0];\n  if (imageUrls.length > 1) requestBody.image = imageUrls;\n  refCount = imageUrls.length;\n} else {\n  requestUrl = 'https://yunwu.ai/v1beta/models/' + baseData.api_model + ':generateContent';\n  const parts = [{ text: baseData.promptText }];\n  for (let i = 0; i < items.length; i += 1) {\n    const inlineData = await binaryToInlineData.call(this, i, items[i]);\n    if (!inlineData) continue;\n    refCount += 1;\n    parts.push({ text: 'Reference image ' + refCount });\n    parts.push({ inline_data: inlineData });\n  }\n  requestBody = {\n    contents: [{ role: 'user', parts }],\n    generationConfig: {\n      responseModalities: ['IMAGE'],\n      response_modalities: ['IMAGE'],\n      imageConfig: { aspectRatio: baseData.aspect_ratio || '1:1' }\n    }\n  };\n}\n\nconst outputJson = {\n  ...baseData,\n  reference_image_count: refCount,\n  request_url: requestUrl,\n  request_body: requestBody\n};\ndelete outputJson.promptText;\nreturn [{ json: outputJson }];"
+      },
+      "name": "3.组装最终生图请求",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7808,
+        528
+      ],
+      "id": "940f2bca-5985-4089-b961-0a9660d63870"
     }
   ],
-  "pinData": {
-    "Webhook": [
-      {
-        "json": {
-          "headers": {
-            "host": "hooks.atomx.top",
-            "x-real-ip": "47.107.158.233",
-            "x-forwarded-for": "47.107.158.233",
-            "x-forwarded-proto": "https",
-            "connection": "close",
-            "content-length": "1387",
-            "content-type": "application/json",
-            "accept": "*/*",
-            "accept-language": "*",
-            "sec-fetch-mode": "cors",
-            "user-agent": "node",
-            "accept-encoding": "br, gzip, deflate"
-          },
-          "params": {},
-          "query": {},
-          "body": {
-            "segment_id": "cmo88ze4t002t01rspj7uaua4",
-            "task_id": "cmo88ze4c002s01rsi1d77s6r",
-            "prompt": "【统一风格】使用柔和的纸张质感背景，搭配手写体与无衬线字体交替排列的模块化布局；整体色调以#FFE2E6为主辅以#A4D7E1和#F6C9A7，整体呈现简约笔记氛围。，风格类型：简约笔记风，使用温暖色调；搭配手绘元素；布局需模块化；字体以手写体和无衬线体为主；背景呈现纸张质感；光效需柔和。\n【当前镜头内容】以柔和的纸张质感背景为基底，主背景呈现温暖的#FFE2E6色块，画面左侧一个打开的书本，书本边缘手绘箭头指向某处，隐喻正在找寻安全感。构图模块化，书本用手写风格展示手稿，搭配无衬线字体的标题。光线柔和，整体笔记氛围简约。\n【负面约束】禁止复杂背景；避免过于鲜艳的颜色；不得使用传统排版。，禁止人物直视镜头说话，禁止小孩、未成年人、婴儿、儿童，禁止风格跳变",
-            "reference_frame_url": null,
-            "has_person": true,
-            "has_product": true,
-            "product_image_url": null,
-            "character_image_url": null,
-            "model": "nanoBananapro",
-            "aspect_ratio": "9:16",
-            "callback_url": "https://atomx.top/api/webhook/storyboard-image",
-            "api_key": "sk_an2HlGA-RG-r31Lzv8wepEpq0uAL8JqKGYjfKjqsxas",
-            "admin_token": "dev-sync-token-1774007442",
-            "workflow_id": "YPzVxDvKVKPVmPuo"
-          },
-          "webhookUrl": "http://localhost:5678/webhook/storyboard-image-generate",
-          "executionMode": "production"
-        },
-        "pairedItem": {
-          "item": 0
-        }
-      }
-    ]
-  },
   "connections": {
     "Webhook": {
       "main": [
         [
           {
-            "node": "准备所有数据",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "准备所有数据": {
-      "main": [
-        [
-          {
-            "node": "IF-有角色图",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "IF-有产品图",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "IF-有参考图",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "合并角色图",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF-有角色图": {
-      "main": [
-        [
-          {
-            "node": "下载角色图",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "合并角色图",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "下载角色图": {
-      "main": [
-        [
-          {
-            "node": "合并角色图",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "合并角色图": {
-      "main": [
-        [
-          {
-            "node": "合并产品图",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF-有产品图": {
-      "main": [
-        [
-          {
-            "node": "下载产品图",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "合并产品图",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "下载产品图": {
-      "main": [
-        [
-          {
-            "node": "合并产品图",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "合并产品图": {
-      "main": [
-        [
-          {
-            "node": "合并参考图",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF-有参考图": {
-      "main": [
-        [
-          {
-            "node": "下载参考图",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "合并参考图",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "下载参考图": {
-      "main": [
-        [
-          {
-            "node": "合并参考图",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "合并参考图": {
-      "main": [
-        [
-          {
-            "node": "图片转Base64",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "组装生图请求体": {
-      "main": [
-        [
-          {
-            "node": "生图请求",
+            "node": "1.提取并拆分图片URL",
             "type": "main",
             "index": 0
           }
@@ -630,6 +242,17 @@
         ]
       ]
     },
+    "HTTP上传到SupabaseStorage": {
+      "main": [
+        [
+          {
+            "node": "生成URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "生成URL": {
       "main": [
         [
@@ -641,22 +264,51 @@
         ]
       ]
     },
-    "图片转Base64": {
+    "1.提取并拆分图片URL": {
       "main": [
         [
           {
-            "node": "组装生图请求体",
+            "node": "是否需要下载？",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "HTTP上传到SupabaseStorage": {
+    "是否需要下载？": {
       "main": [
         [
           {
-            "node": "生成URL",
+            "node": "2.原生节点下载图片",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "3.组装最终生图请求",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2.原生节点下载图片": {
+      "main": [
+        [
+          {
+            "node": "3.组装最终生图请求",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3.组装最终生图请求": {
+      "main": [
+        [
+          {
+            "node": "生图请求",
             "type": "main",
             "index": 0
           }
@@ -670,7 +322,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "availableInMCP": false
   },
-  "versionId": "cd9f0532-12dc-4c54-b67b-81ce8c4bf9d5",
+  "versionId": "6c3dc878-f582-4537-9f18-dcf104ec7a7a",
   "meta": {
     "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
   },

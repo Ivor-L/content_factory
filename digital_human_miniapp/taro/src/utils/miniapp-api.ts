@@ -25,6 +25,7 @@ function getApiBaseUrl(): string {
 const API_BASE_URL = getApiBaseUrl();
 const ACCESS_TOKEN_STORAGE_KEY = 'MINIAPP_ACCESS_TOKEN';
 const REQUEST_TIMEOUT_MS = 30000;
+const DEFAULT_CANVAS_IMAGE_REFERENCE_LIMIT = 8;
 
 export type TaskStatus = 'PENDING' | 'GENERATING' | 'COMPLETED' | 'FAILED' | string;
 
@@ -1713,6 +1714,16 @@ export const miniappApi = {
     });
   },
 
+  async updateStoryboardTask(
+    taskId: string,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    await request(`/api/storyboard/${encodeURIComponent(taskId)}`, {
+      method: 'PATCH',
+      data,
+    });
+  },
+
   async generateStoryboardImages(params: {
     taskId: string;
     segmentIds: string[];
@@ -1734,6 +1745,7 @@ export const miniappApi = {
     segmentIds: string[];
     model: string;
     allowTextVideo?: boolean;
+    aspectRatio?: string;
   }): Promise<StoryboardGenerateResult> {
     return request<StoryboardGenerateResult>(`/api/storyboard/${encodeURIComponent(params.taskId)}/generate-videos`, {
       method: 'POST',
@@ -1741,6 +1753,7 @@ export const miniappApi = {
         segmentIds: params.segmentIds,
         model: params.model,
         allowTextVideo: Boolean(params.allowTextVideo),
+        aspectRatio: params.aspectRatio || '9:16',
       },
     });
   },
@@ -1920,6 +1933,9 @@ export const miniappApi = {
     prompt: string;
     model: string;
     size?: '1024x1024' | '1536x1024' | '1024x1536';
+    aspectRatio?: string;
+    negativePrompt?: string;
+    referenceImageInstructions?: string;
     n?: number;
     image?: string[];
     images?: string[];
@@ -1934,8 +1950,12 @@ export const miniappApi = {
         prompt: params.prompt,
         model: params.model,
         size: params.size ?? '1024x1024',
+        aspect_ratio: params.aspectRatio,
+        aspectRatio: params.aspectRatio,
+        negative_prompt: params.negativePrompt,
+        reference_image_instructions: params.referenceImageInstructions,
         n: typeof params.n === 'number' ? params.n : 1,
-        image: imageInput.slice(0, 5),
+        image: imageInput.slice(0, DEFAULT_CANVAS_IMAGE_REFERENCE_LIMIT),
       },
     });
     return {
@@ -1948,6 +1968,9 @@ export const miniappApi = {
     prompt: string;
     model: string;
     size?: '1024x1024' | '1536x1024' | '1024x1536';
+    aspectRatio?: string;
+    negativePrompt?: string;
+    referenceImageInstructions?: string;
     n?: number;
     image?: string[];
     images?: string[];
@@ -1962,8 +1985,12 @@ export const miniappApi = {
         prompt: params.prompt,
         model: params.model,
         size: params.size ?? '1024x1024',
+        aspect_ratio: params.aspectRatio,
+        aspectRatio: params.aspectRatio,
+        negative_prompt: params.negativePrompt,
+        reference_image_instructions: params.referenceImageInstructions,
         n: typeof params.n === 'number' ? params.n : 1,
-        image: imageInput.slice(0, 5),
+        image: imageInput.slice(0, DEFAULT_CANVAS_IMAGE_REFERENCE_LIMIT),
       },
     });
     const resultData = payload?.data || {};

@@ -9,6 +9,8 @@ const HTTP_URL_RE = /^https?:\/\//i;
 const API_BASE_URL = getApiBaseUrl();
 const ACTION_TRANSFER_IMAGE_RETURN_KEY = 'REMIX_ACTION_SOURCE_IMAGE_URL';
 const WORK_SELECT_TARGET_STORAGE_KEY = 'WORK_SELECT_TARGET';
+const DETAIL_IMAGE_WIDTH_RPX = 702;
+const DETAIL_IMAGE_FALLBACK_HEIGHT_RPX = 936;
 
 type WorkSelectTarget = {
   target: 'action-transfer';
@@ -22,6 +24,7 @@ export default function WorkDetailPage() {
   const [downloading, setDownloading] = useState(false);
   const [currentPosterIndex, setCurrentPosterIndex] = useState(0);
   const [selectTarget, setSelectTarget] = useState<WorkSelectTarget | null>(null);
+  const [posterRatioMap, setPosterRatioMap] = useState<Record<string, number>>({});
 
   useLoad((query) => {
     const cached = Taro.getStorageSync('WORK_DETAIL_ITEM');
@@ -127,6 +130,21 @@ export default function WorkDetailPage() {
       urls: posterImages,
       current: posterImages[Math.max(0, Math.min(index, posterImages.length - 1))],
     });
+  };
+
+  const rememberPosterRatio = (url: string, width?: number, height?: number) => {
+    if (!url || !width || !height || width <= 0 || height <= 0) return;
+    const ratio = height / width;
+    setPosterRatioMap((prev) => {
+      if (Math.abs((prev[url] || 0) - ratio) < 0.001) return prev;
+      return { ...prev, [url]: ratio };
+    });
+  };
+
+  const getPosterDisplayHeight = (url: string) => {
+    const ratio = posterRatioMap[url];
+    if (!ratio || ratio <= 0) return DETAIL_IMAGE_FALLBACK_HEIGHT_RPX;
+    return Math.round(DETAIL_IMAGE_WIDTH_RPX * ratio);
   };
 
   const ensureAlbumPermission = async () => {
@@ -326,9 +344,10 @@ export default function WorkDetailPage() {
             <View className='work-detail-card'>
               <View className='work-detail-cover-wrap'>
                 {isImageText && posterImages.length > 0 ? (
-                  <View className='work-detail-swiper-wrap'>
+                  <View className='work-detail-swiper-wrap' style={{ height: `${getPosterDisplayHeight(currentPosterUrl)}rpx` }}>
                     <Swiper
                       className='work-detail-swiper'
+                      style={{ height: `${getPosterDisplayHeight(currentPosterUrl)}rpx` }}
                       indicatorDots={false}
                       circular={false}
                       current={currentPosterIndex}
@@ -339,7 +358,8 @@ export default function WorkDetailPage() {
                           <Image
                             className='work-detail-cover work-detail-swiper-image'
                             src={url}
-                            mode='aspectFit'
+                            mode='widthFix'
+                            onLoad={(event) => rememberPosterRatio(url, event.detail.width, event.detail.height)}
                             onClick={() => handlePreviewImage(index)}
                           />
                         </SwiperItem>

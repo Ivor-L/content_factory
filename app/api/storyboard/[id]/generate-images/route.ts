@@ -27,7 +27,6 @@ export async function POST(
     const {
       segmentIds,
       model = "image2",
-      aspectRatio = "9:16",
     } = body;
     const requestedModel = String(model || "image2").trim() || "image2";
 
@@ -158,6 +157,11 @@ export async function POST(
       return result;
     }
 
+    function toStringArray(value: unknown): string[] {
+      if (!Array.isArray(value)) return [];
+      return value.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean);
+    }
+
     function normalizeSubjectRefs(value: unknown): Array<{ type: string; url: string; label?: string }> {
       if (!Array.isArray(value)) return [];
       return value
@@ -170,6 +174,87 @@ export async function POST(
           };
         })
         .filter((item) => item.url);
+    }
+
+    function asRecord(value: unknown): Record<string, unknown> | null {
+      return value && typeof value === "object" && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : null;
+    }
+
+    function readBooleanFlag(value: unknown): boolean | null {
+      if (typeof value === "boolean") return value;
+      if (typeof value === "number") return value !== 0;
+      if (typeof value !== "string") return null;
+      const normalized = value.trim().toLowerCase();
+      if (!normalized) return null;
+      if (["1", "true", "yes", "y", "是", "有"].includes(normalized)) return true;
+      if (["0", "false", "no", "n", "否", "无"].includes(normalized)) return false;
+      return null;
+    }
+
+    function normalizeAspectRatio(value: unknown): "1:1" | "3:4" | "4:3" | "9:16" | "16:9" | "" {
+      const raw = String(value || "").trim().toLowerCase();
+      if (!raw) return "";
+      if (raw === "portrait" || raw === "vertical" || raw === "竖屏" || raw === "竖版") return "9:16";
+      if (raw === "landscape" || raw === "horizontal" || raw === "横屏" || raw === "横版") return "16:9";
+      if (raw === "square" || raw === "方图" || raw === "1/1" || raw === "1:1") return "1:1";
+      if (raw === "3/4" || raw === "3:4") return "3:4";
+      if (raw === "4/3" || raw === "4:3") return "4:3";
+      if (raw === "9/16" || raw === "9:16") return "9:16";
+      if (raw === "16/9" || raw === "16:9") return "16:9";
+      return "";
+    }
+
+    function aspectRatioFromDimensions(width: unknown, height: unknown): "1:1" | "3:4" | "4:3" | "9:16" | "16:9" | "" {
+      const w = Number(width);
+      const h = Number(height);
+      if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return "";
+      const ratio = w / h;
+      if (ratio < 0.68) return "9:16";
+      if (ratio < 0.9) return "3:4";
+      if (ratio <= 1.12) return "1:1";
+      if (ratio <= 1.55) return "4:3";
+      return "16:9";
+    }
+
+    function pickAspectRatioFromRecord(record: Record<string, unknown> | null | undefined): "1:1" | "3:4" | "4:3" | "9:16" | "16:9" | "" {
+      if (!record) return "";
+      const directKeys = [
+        "image_aspect_ratio",
+        "imageAspectRatio",
+        "aspect_ratio",
+        "aspectRatio",
+        "source_aspect_ratio",
+        "sourceAspectRatio",
+        "reference_aspect_ratio",
+        "referenceAspectRatio",
+        "format",
+      ];
+      for (const key of directKeys) {
+        const value = normalizeAspectRatio(record[key]);
+        if (value) return value;
+      }
+      const dimensionPairs = [
+        ["source_width", "source_height"],
+        ["sourceWidth", "sourceHeight"],
+        ["reference_width", "reference_height"],
+        ["referenceWidth", "referenceHeight"],
+        ["video_width", "video_height"],
+        ["videoWidth", "videoHeight"],
+        ["width", "height"],
+      ] as const;
+      for (const [widthKey, heightKey] of dimensionPairs) {
+        const value = aspectRatioFromDimensions(record[widthKey], record[heightKey]);
+        if (value) return value;
+      }
+      return "";
+    }
+
+    function sizeFromAspectRatio(value: string): "1024x1024" | "1536x1024" | "1024x1536" {
+      if (value === "16:9" || value === "4:3") return "1536x1024";
+      if (value === "9:16" || value === "3:4") return "1024x1536";
+      return "1024x1024";
     }
 
     function getModelCapabilities(value: unknown): Record<string, unknown> {
@@ -209,6 +294,16 @@ export async function POST(
         ? task.detailedBreakdown as Record<string, unknown>
         : {};
     const pipelineKey = String(taskDetailedBreakdown.pipeline_key || taskDetailedBreakdown.pipelineKey || "");
+    const taskMetadata = asRecord(taskDetailedBreakdown.metadata);
+    const workflowData = asRecord(taskDetailedBreakdown.workflow_data) || asRecord(taskDetailedBreakdown.workflowData) || taskDetailedBreakdown;
+    const sourceAnalysis = asRecord(workflowData.source_video_analysis) || asRecord(workflowData.sourceVideoAnalysis);
+    const inferredAspectRatio =
+      pickAspectRatioFromRecord(taskMetadata) ||
+      pickAspectRatioFromRecord(sourceAnalysis) ||
+      pickAspectRatioFromRecord(workflowData) ||
+      pickAspectRatioFromRecord(taskDetailedBreakdown);
+    const requestAspectRatio = normalizeAspectRatio(body.aspectRatio || body.aspect_ratio || body.ratio);
+    const aspectRatio = requestAspectRatio || inferredAspectRatio || (pipelineKey === "viral_clone" ? "9:16" : "16:9");
     const allowCharacterReference = pipelineKey === "skeleton_video";
     const modelCapabilities = getModelCapabilities(requestedModel);
     const maxReferenceImages = Number(modelCapabilities.max_reference_images || 5) || 5;
@@ -222,14 +317,23 @@ export async function POST(
 
       // Extract per-segment refs from generationParams, fall back to task-level
       const generationParams = segment.generationParams as Record<string, any> | null;
+      const generationParamsPatch = { ...(generationParams || {}) };
+      const currentImageUrl = typeof segment.generatedImage === "string" ? segment.generatedImage.trim() : "";
+      if (currentImageUrl) {
+        generationParamsPatch.image_history = uniqueUrls([
+          currentImageUrl,
+          ...toStringArray(generationParamsPatch.image_history),
+        ], 20);
+      }
       const referenceFrameUrl = generationParams?.reference_frame_url || null;
       const subjectRefs = normalizeSubjectRefs(generationParams?.subject_refs);
       const productRef = subjectRefs.find((r) => r.type === "product");
       const characterRef = subjectRefs.find((r) => r.type === "character");
       const hasPersonFlag = generationParams?.has_person ?? true;
-      const hasProductFlag = generationParams?.has_product ?? true;
+      const hasProductFlag = readBooleanFlag(generationParams?.has_product ?? generationParams?.hasProduct);
+      const shouldUseProductImage = pipelineKey === "skeleton_video" ? hasProductFlag === true : hasProductFlag !== false;
       const subjectReplaceMode = String(generationParams?.subject_replace_mode || generationParams?.subjectReplaceMode || "").trim();
-      const productImageUrl = hasProductFlag ? (productRef?.url || taskLevelProductImage || null) : null;
+      const productImageUrl = shouldUseProductImage ? (productRef?.url || taskLevelProductImage || null) : null;
       const characterImageUrl = allowCharacterReference && hasPersonFlag !== false
         ? (characterRef?.url || taskLevelCharacterImage || null)
         : null;
@@ -237,7 +341,7 @@ export async function POST(
       const referenceImageUrls = uniqueUrls([
         ...(subjectReplaceMode === "product" ? [productImageUrl] : []),
         ...(subjectReplaceMode === "character" ? [editingCharacterImageUrl] : []),
-        ...subjectRefs.map((ref) => ref.url),
+        ...subjectRefs.filter((ref) => shouldUseProductImage || ref.type !== "product").map((ref) => ref.url),
         productImageUrl,
         allowCharacterReference ? characterImageUrl : null,
         referenceFrameUrl,
@@ -271,10 +375,11 @@ export async function POST(
         reference_frame_url: referenceFrameUrl,
         has_person: hasPersonFlag,
         has_product: hasProductFlag,
+        use_product_image: shouldUseProductImage,
         product_image_url: productImageUrl,
         character_image_url: characterImageUrl,
         person_image_url: characterImageUrl,
-        subject_refs: subjectRefs,
+        subject_refs: subjectRefs.filter((ref) => shouldUseProductImage || ref.type !== "product"),
         subject_replace_mode: subjectReplaceMode || (allowCharacterReference ? "character_product_reference" : "product_replace"),
         reference_image_urls: referenceImageUrls,
         images: referenceImageUrls,
@@ -284,6 +389,8 @@ export async function POST(
         requested_model: requestedModel,
         model_capabilities: modelCapabilities,
         aspect_ratio: aspectRatio,
+        size: sizeFromAspectRatio(aspectRatio),
+        n: 1,
         callback_url: callbackUrl,
         api_key: apiKey,
         admin_token: process.env.ADMIN_TOKEN,
@@ -323,6 +430,7 @@ export async function POST(
               generatedImage: imageUrl,
               status: "IMAGE_READY",
               imageGenerationModel: requestedModel,
+              generationParams: generationParamsPatch,
             },
           });
           return { segment_id: segment.id, success: true, image_url: imageUrl, immediate: true };
@@ -331,22 +439,32 @@ export async function POST(
           await prisma.storyboardSegment.update({
             where: { id: segment.id },
             data: {
+              generatedImage: null,
               status: "IMAGE_GENERATING",
               imageGenerationModel: requestedModel,
+              generationParams: generationParamsPatch,
             },
           });
           return { segment_id: segment.id, success: true, immediate: false };
         }
       } catch (error) {
         console.error(`[generate-images] Failed for segment ${segment.id}:`, error);
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
         await prisma.storyboardSegment.update({
           where: { id: segment.id },
-          data: { status: "IMAGE_FAILED" },
+          data: {
+            status: "IMAGE_FAILED",
+            generationParams: {
+              ...generationParamsPatch,
+              image_error: errorMessage,
+              image_error_at: new Date().toISOString(),
+            },
+          },
         }).catch(() => {});
         return {
           segment_id: segment.id,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: errorMessage,
         };
       }
     });
@@ -374,6 +492,7 @@ export async function POST(
         data: {
           status: allReady ? "IMAGE_GENERATION_COMPLETED" : "IMAGE_GENERATING",
           progress,
+          imageModel: requestedModel,
         },
       });
     }
@@ -389,6 +508,8 @@ export async function POST(
       success: failureCount === 0,
       partial: successCount > 0 && failureCount > 0,
       task_id: id,
+      model: requestedModel,
+      aspect_ratio: aspectRatio,
       total: segments.length,
       triggered: successCount,
       failed: failureCount,

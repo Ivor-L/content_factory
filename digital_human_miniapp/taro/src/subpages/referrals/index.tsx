@@ -14,6 +14,7 @@ type Invitee = {
 
 type ReferralsPayload = {
   shareCode?: string;
+  warnings?: Array<{ code?: string; message?: string }>;
   summary?: {
     inviteeCount?: number;
     totalConsumed?: number;
@@ -28,10 +29,12 @@ export default function ReferralsPage() {
   const [payload, setPayload] = useState<ReferralsPayload | null>(null);
 
   const loadReferrals = async () => {
+    let profile: Awaited<ReturnType<typeof miniappApi.getProfile>> | null = null;
+    let lastStatusCode: number | null = null;
     try {
       setLoading(true);
       setNeedsApiKey(false);
-      const profile = await miniappApi.getProfile();
+      profile = await miniappApi.getProfile();
       const apiKey = profile?.apiKey || Taro.getStorageSync('API_KEY') || '';
       if (!apiKey) {
         setNeedsApiKey(true);
@@ -47,6 +50,7 @@ export default function ReferralsPage() {
           'X-User-Api-Key': apiKey,
         },
       });
+      lastStatusCode = res.statusCode;
 
       if (res.statusCode === 401) {
         setNeedsApiKey(true);
@@ -60,6 +64,16 @@ export default function ReferralsPage() {
       setPayload((res.data || {}) as ReferralsPayload);
       setError(null);
     } catch (err) {
+      if (lastStatusCode !== 401 && profile?.id) {
+        setPayload({
+          shareCode: profile.id,
+          warnings: [{ code: 'REFERRAL_API_UNAVAILABLE', message: 'Referral details are temporarily unavailable' }],
+          summary: { inviteeCount: 0, totalConsumed: 0 },
+          invitees: [],
+        });
+        setError(null);
+        return;
+      }
       setError(err instanceof Error ? err.message : '分享有礼加载失败');
     } finally {
       setLoading(false);
@@ -104,6 +118,11 @@ export default function ReferralsPage() {
     if (!code) return '';
     return `${__API_BASE_URL__}/register?ref=${encodeURIComponent(code)}`;
   }, [payload?.shareCode]);
+
+  const warningText = useMemo(() => {
+    if (!payload?.warnings?.length) return '';
+    return '邀请明细暂时不可用，专属链接仍可正常分享。';
+  }, [payload?.warnings?.length]);
 
   const handleBack = () => {
     const pages = Taro.getCurrentPages();
@@ -155,6 +174,7 @@ export default function ReferralsPage() {
           <View className='ref-link-card'>
             <Text className='ref-link-label'>专属链接</Text>
             <Text className='ref-link-value'>{shareLink || '暂无链接'}</Text>
+            {!!warningText && <Text className='ref-warning'>{warningText}</Text>}
             <View className='ref-copy-btn' onClick={handleCopy}>
               <Text className='ref-copy-btn-text'>复制链接</Text>
             </View>

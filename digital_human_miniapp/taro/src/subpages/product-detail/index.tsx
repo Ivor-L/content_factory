@@ -73,18 +73,19 @@ function getStatusMeta(product: ProductSummary): ProductStatusMeta {
   const effectiveStatus = analysisStatus || status;
 
   if (effectiveStatus.includes('FAIL')) return { label: '分析失败', className: 'failed' };
+  if (
+    (typeof product.progress === 'number' && product.progress >= 100) ||
+    effectiveStatus.includes('COMPLETE') ||
+    Boolean(product.sellingPointsText) ||
+    collectTextLines(parseJsonValue(product.sellingPoints), 1).length > 0
+  ) {
+    return { label: '已完成', className: 'completed' };
+  }
   if (effectiveStatus.includes('PROCESS') || effectiveStatus.includes('ANALYZ')) {
     return {
       label: product.progress && product.progress > 0 ? `分析中 ${product.progress}%` : '分析中',
       className: 'processing',
     };
-  }
-  if (
-    effectiveStatus.includes('COMPLETE') ||
-    Boolean(product.sellingPointsText) ||
-    collectTextLines(parseJsonValue(product.sellingPoints), 1).length > 0
-  ) {
-    return { label: '分析完成', className: 'completed' };
   }
   return { label: '未分析', className: 'pending' };
 }
@@ -253,6 +254,18 @@ export default function ProductDetailPage() {
 
     const imageUrls = imageDrafts.map((item) => item.url.trim()).filter(Boolean);
     setSubmitting(true);
+    const optimisticProduct: ProductSummary = {
+      ...product,
+      name: trimmedName,
+      description: description.trim(),
+      images: imageUrls,
+      status: 'PROCESSING',
+      progress: 0,
+      analysisResult: JSON.stringify({ status: 'ANALYZING' }),
+    };
+    setProduct(optimisticProduct);
+    setEditOpen(false);
+    Taro.showToast({ title: '正在分析', icon: 'success' });
     try {
       const saved = await miniappApi.updateProduct(product.id, {
         name: trimmedName,
@@ -260,9 +273,8 @@ export default function ProductDetailPage() {
         images: imageUrls,
       });
       setProduct(saved);
-      setEditOpen(false);
-      Taro.showToast({ title: '已保存，分析中', icon: 'success' });
     } catch (error) {
+      setProduct(product);
       Taro.showToast({
         title: error instanceof Error ? error.message : '保存失败',
         icon: 'none',
@@ -299,6 +311,12 @@ export default function ProductDetailPage() {
     }
   };
 
+  const previewProductImage = (current: string) => {
+    const urls = product?.images?.filter(Boolean) || [];
+    if (urls.length === 0) return;
+    Taro.previewImage({ current, urls });
+  };
+
   const statusMeta = product ? getStatusMeta(product) : null;
   const cover = product?.images?.[0] || '';
   const analysisLines = product ? getAnalysisLines(product) : [];
@@ -322,7 +340,12 @@ export default function ProductDetailPage() {
           <View className='product-detail-content'>
             <View className='product-detail-photo-panel'>
               {cover ? (
-                <Image className='product-detail-hero-image' src={cover} mode='aspectFill' />
+                <Image
+                  className='product-detail-hero-image'
+                  src={cover}
+                  mode='aspectFit'
+                  onClick={() => previewProductImage(cover)}
+                />
               ) : (
                 <View className='product-detail-photo-placeholder'>
                   <Text className='product-detail-photo-placeholder-text'>产品照片</Text>
@@ -333,8 +356,12 @@ export default function ProductDetailPage() {
             {product.images.length > 1 ? (
               <ScrollView scrollX className='product-detail-thumbs'>
                 {product.images.map((url, index) => (
-                  <View key={`${url}-${index}`} className='product-detail-thumb'>
-                    <Image className='product-detail-thumb-img' src={url} mode='aspectFill' />
+                  <View
+                    key={`${url}-${index}`}
+                    className='product-detail-thumb'
+                    onClick={() => previewProductImage(url)}
+                  >
+                    <Image className='product-detail-thumb-img' src={url} mode='aspectFit' />
                   </View>
                 ))}
               </ScrollView>
@@ -386,11 +413,11 @@ export default function ProductDetailPage() {
 
       {product ? (
         <View className='product-detail-bottom-actions'>
-          <View className='product-detail-bottom-edit' onClick={openEdit}>
-            <Text>编辑产品</Text>
-          </View>
           <View className='product-detail-bottom-delete' onClick={handleDelete}>
             <Text>删除产品</Text>
+          </View>
+          <View className='product-detail-bottom-edit' onClick={openEdit}>
+            <Text>编辑产品</Text>
           </View>
         </View>
       ) : null}

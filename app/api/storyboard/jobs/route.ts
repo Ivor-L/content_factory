@@ -18,6 +18,30 @@ function safeParseImages(images: string | null | undefined): string[] {
   return [];
 }
 
+function safeParseJson(value: string | null | undefined): unknown | null {
+  if (!value) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function safeReadString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function stringifyRawProductAnalysis(product: {
+  sellingPoints?: string | null;
+  analysisResult?: string | null;
+}): string {
+  const parsedSellingPoints = safeParseJson(product.sellingPoints);
+  if (parsedSellingPoints) return JSON.stringify(parsedSellingPoints, null, 2);
+  const parsedAnalysis = safeParseJson(product.analysisResult);
+  if (parsedAnalysis) return JSON.stringify(parsedAnalysis, null, 2);
+  return product.sellingPoints || product.analysisResult || '';
+}
+
 export async function POST(request: Request) {
   try {
     const { userId, apiKey } = await getRequestUserContext(request);
@@ -54,6 +78,7 @@ export async function POST(request: Request) {
           description: true,
           sellingPoints: true,
           sellingPointsText: true,
+          analysisResult: true,
           images: true,
         },
       });
@@ -64,6 +89,13 @@ export async function POST(request: Request) {
 
       const imageList = safeParseImages(product.images);
       const primaryImage = imageList[0] || '';
+      const productRawAnalysis = stringifyRawProductAnalysis(product);
+      const productSellingPointsJson = product.sellingPoints || '[]';
+      const productSellingPointsText = product.sellingPointsText || '';
+      const productSellingPointsData = safeParseJson(productSellingPointsJson);
+      const productSellingPointsForWorkflow = parsed.pipelineKey === 'skeleton_video'
+        ? productRawAnalysis
+        : productSellingPointsText || productSellingPointsJson;
 
       taskData.productId = product.id;
       payloadData.product_id = product.id;
@@ -72,8 +104,20 @@ export async function POST(request: Request) {
       payloadData.productName = product.name || '';
       payloadData.product_description = product.description || '';
       payloadData.productDescription = product.description || '';
-      payloadData.product_selling_points = product.sellingPointsText || product.sellingPoints || '';
-      payloadData.productSellingPoints = product.sellingPointsText || product.sellingPoints || '';
+      payloadData.product_selling_points = productSellingPointsForWorkflow;
+      payloadData.productSellingPoints = productSellingPointsForWorkflow;
+      payloadData.product_selling_points_json = productSellingPointsJson;
+      payloadData.productSellingPointsJson = productSellingPointsJson;
+      payloadData.product_selling_points_text = productSellingPointsText;
+      payloadData.productSellingPointsText = productSellingPointsText;
+      payloadData.product_raw_analysis = productRawAnalysis;
+      payloadData.productRawAnalysis = productRawAnalysis;
+      payloadData.product_analysis_result = product.analysisResult || '';
+      payloadData.productAnalysisResult = product.analysisResult || '';
+      if (productSellingPointsData !== null) {
+        payloadData.product_selling_points_data = productSellingPointsData;
+        payloadData.productSellingPointsData = productSellingPointsData;
+      }
       payloadData.product_images = imageList;
       payloadData.productImages = imageList;
       payloadData.product_image_url = primaryImage;
@@ -84,6 +128,25 @@ export async function POST(request: Request) {
         name: product.name || '',
         image_count: imageList.length,
       };
+    }
+
+    const targetLanguage =
+      safeReadString(metadata.target_language) ||
+      safeReadString(metadata.targetLanguage) ||
+      safeReadString(metadata.language);
+    const targetLanguageLabel = safeReadString(metadata.target_language_label) || safeReadString(metadata.targetLanguageLabel);
+    if (targetLanguage) {
+      payloadData.target_language = targetLanguage;
+      payloadData.targetLanguage = targetLanguage;
+      payloadData.language = targetLanguage;
+      payloadData.video_language = targetLanguage;
+      payloadData.videoLanguage = targetLanguage;
+    }
+    if (targetLanguageLabel) {
+      payloadData.target_language_label = targetLanguageLabel;
+      payloadData.targetLanguageLabel = targetLanguageLabel;
+      payloadData.language_label = targetLanguageLabel;
+      payloadData.languageLabel = targetLanguageLabel;
     }
 
     const allowCharacterReference = parsed.pipelineKey !== 'viral_clone';

@@ -273,6 +273,7 @@ export async function POST(request: Request) {
       const segmentInputs = shots.map((shot, index) => {
         const hasProduct = readBool(shot['是否有产品'] ?? shot.has_product ?? shot.hasProduct);
         const hasPerson = readBool(shot.has_person ?? shot.hasPerson);
+        const includeProductRef = pipelineKey === 'skeleton_video' ? hasProduct === true : hasProduct !== false;
         const startSec = readNumber(shot.start_sec ?? shot.startSec);
         const endSec = readNumber(shot.end_sec ?? shot.endSec);
         const durationFromRange =
@@ -292,7 +293,7 @@ export async function POST(request: Request) {
           readString(shot.ref_frame_image) ||
           readString(shot.ref_frame_url);
         const subjectRefs = [
-          hasProduct !== false && productImageUrl
+          includeProductRef && productImageUrl
             ? { type: 'product', url: productImageUrl, label: '产品图' }
             : null,
           allowCharacterReference && hasPerson !== false && characterImageUrl

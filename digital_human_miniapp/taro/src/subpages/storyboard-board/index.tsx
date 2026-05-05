@@ -20,13 +20,31 @@ const VIDEO_MODELS = [
   { id: 'veo3.1-fast', label: 'Veo 3.1 Fast' },
   { id: 'veo_3_1-fast', label: 'Veo 3.1 Fast(兼容)' },
 ];
+const ASPECT_RATIO_OPTIONS = [
+  { id: '9:16', label: '竖屏', hint: '9:16' },
+  { id: '16:9', label: '横屏', hint: '16:9' },
+] as const;
+type StoryboardAspectRatio = typeof ASPECT_RATIO_OPTIONS[number]['id'];
 type StoryboardRef = { type: string; url: string; label?: string };
 type RemixStageKey = 'breakdown' | 'replace' | 'video';
 type RemixReplaceMode = '' | 'product' | 'character';
+type EditingAssetItem = {
+  id: string;
+  url: string;
+  kind: 'asset' | 'generating';
+  label?: string;
+};
+type LocalGeneratingEntry = {
+  type: 'image' | 'video';
+  startedAt: number;
+  history?: string[];
+  keepUrl?: string;
+};
 
 const DEFAULT_IMAGE_MODEL = 'image2';
 const PRODUCT_REPLACE_PROMPT = '请将分镜故事板的产品换成图1';
 const CHARACTER_REPLACE_PROMPT = '请替换分镜故事板中的角色';
+const LOCAL_GENERATING_TTL = 30 * 60 * 1000;
 
 function decodeQueryText(value: string): string {
   const text = String(value || '').trim();
@@ -48,6 +66,7 @@ export default function StoryboardBoardPage() {
   const [task, setTask] = useState<StoryboardTaskStatusResult | null>(null);
   const [imageModel, setImageModel] = useState(DEFAULT_IMAGE_MODEL);
   const [videoModel, setVideoModel] = useState('veo3.1-fast');
+  const [selectedAspectRatio, setSelectedAspectRatio] = useState<StoryboardAspectRatio | ''>('');
   const [editingSegmentId, setEditingSegmentId] = useState('');
   const [editingType, setEditingType] = useState<'image' | 'video'>('image');
   const [editingPrompt, setEditingPrompt] = useState('');
@@ -68,6 +87,31 @@ export default function StoryboardBoardPage() {
   const [videoErrorMap, setVideoErrorMap] = useState<Record<string, boolean>>({});
   const [deleting, setDeleting] = useState(false);
   const timerRef = useRef<number | null>(null);
+  const keyboardFocusedRef = useRef(false);
+  const imageModelRef = useRef(DEFAULT_IMAGE_MODEL);
+  const videoModelRef = useRef('veo3.1-fast');
+  const userSelectedImageModelRef = useRef(false);
+  const userSelectedVideoModelRef = useRef(false);
+  const userSelectedAspectRatioRef = useRef(false);
+  const notifiedImageFailuresRef = useRef<Set<string>>(new Set());
+  const localGeneratingRef = useRef<Record<string, LocalGeneratingEntry>>({});
+
+  const updateImageModel = (model: string, source: 'server' | 'user' = 'user') => {
+    if (source === 'user') userSelectedImageModelRef.current = true;
+    imageModelRef.current = model || DEFAULT_IMAGE_MODEL;
+    setImageModel(imageModelRef.current);
+  };
+
+  const updateVideoModel = (model: string, source: 'server' | 'user' = 'user') => {
+    if (source === 'user') userSelectedVideoModelRef.current = true;
+    videoModelRef.current = model || 'veo3.1-fast';
+    setVideoModel(videoModelRef.current);
+  };
+
+  const updateAspectRatio = (ratio: StoryboardAspectRatio, source: 'server' | 'user' = 'user') => {
+    if (source === 'user') userSelectedAspectRatioRef.current = true;
+    setSelectedAspectRatio(ratio);
+  };
 
   const clearTimer = () => {
     if (timerRef.current != null) {
@@ -96,10 +140,31 @@ export default function StoryboardBoardPage() {
     if (!taskId) return;
     if (!silent) setLoading(true);
     try {
-      const data = await miniappApi.getStoryboardStatus(taskId);
+      const data = applyLocalGeneratingState(await miniappApi.getStoryboardStatus(taskId));
+      const nextFailedImageSegments = data.segments.filter((segment) => {
+        const statusText = String(segment.status || '').toUpperCase();
+        return statusText.includes('IMAGE') && (statusText.includes('FAIL') || statusText.includes('ERROR'));
+      });
+      const freshFailure = nextFailedImageSegments.find((segment) => !notifiedImageFailuresRef.current.has(segment.id));
       setTask(data);
-      if (data.imageModel) setImageModel(data.imageModel);
-      if (data.videoModel) setVideoModel(data.videoModel);
+      if (data.imageModel && !userSelectedImageModelRef.current) {
+        updateImageModel(data.imageModel, 'server');
+      }
+      if (data.videoModel && !userSelectedVideoModelRef.current) {
+        updateVideoModel(data.videoModel, 'server');
+      }
+      const inferredRatio = resolveStoryboardImageAspectRatio(data, isRemixRoute);
+      if (!userSelectedAspectRatioRef.current) {
+        updateAspectRatio(inferredRatio, 'server');
+      }
+      nextFailedImageSegments.forEach((segment) => notifiedImageFailuresRef.current.add(segment.id));
+      if (freshFailure) {
+        Taro.showToast({
+          title: `图片生成失败：${getSegmentImageError(freshFailure)}`,
+          icon: 'none',
+          duration: 3200,
+        });
+      }
       setErrorText('');
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : '分镜任务加载失败');
@@ -155,7 +220,9 @@ export default function StoryboardBoardPage() {
   useEffect(() => {
     const onKeyboard = (result: { height?: number }) => {
       const nextHeight = Math.max(0, Number(result?.height || 0));
-      setKeyboardHeight(nextHeight);
+      if (nextHeight > 0 || !keyboardFocusedRef.current) {
+        setKeyboardHeight(nextHeight);
+      }
     };
     Taro.onKeyboardHeightChange(onKeyboard);
     return () => {
@@ -177,6 +244,68 @@ export default function StoryboardBoardPage() {
   };
 
   const isActioning = (key: string) => Boolean(actioningMap[key]);
+
+  const markLocalGenerating = (segmentId: string, entry: Omit<LocalGeneratingEntry, 'startedAt'>) => {
+    localGeneratingRef.current = {
+      ...localGeneratingRef.current,
+      [segmentId]: {
+        ...entry,
+        startedAt: Date.now(),
+      },
+    };
+  };
+
+  const clearLocalGenerating = (segmentId: string) => {
+    if (!localGeneratingRef.current[segmentId]) return;
+    const next = { ...localGeneratingRef.current };
+    delete next[segmentId];
+    localGeneratingRef.current = next;
+  };
+
+  const applyLocalGeneratingState = (data: StoryboardTaskStatusResult): StoryboardTaskStatusResult => {
+    const now = Date.now();
+    let changed = false;
+    const nextLocal = { ...localGeneratingRef.current };
+    const segmentsWithLocalState = data.segments.map((segment) => {
+      const local = nextLocal[segment.id];
+      if (!local) return segment;
+
+      const statusText = String(segment.status || '').toUpperCase();
+      const resultUrl = normalizeMediaUrl(local.type === 'image' ? segment.generatedImage : segment.generatedVideo);
+      const staleImageHistory = local.type === 'image'
+        ? new Set((local.history || []).map((url) => normalizeMediaUrl(url)).filter(Boolean))
+        : null;
+      const hasResult = Boolean(resultUrl) && !(staleImageHistory && staleImageHistory.has(resultUrl));
+      const hasFailed = statusText.includes(local.type === 'image' ? 'IMAGE' : 'VIDEO') &&
+        (statusText.includes('FAIL') || statusText.includes('ERROR'));
+      const expired = now - local.startedAt > LOCAL_GENERATING_TTL;
+
+      if (hasResult || hasFailed || expired) {
+        delete nextLocal[segment.id];
+        return segment;
+      }
+
+      changed = true;
+      const params = getSegmentParams(segment);
+      return {
+        ...segment,
+        generatedImage: local.type === 'image' ? (local.keepUrl || segment.generatedImage) : segment.generatedImage,
+        generatedVideo: local.type === 'video' ? null : segment.generatedVideo,
+        status: local.type === 'image' ? 'IMAGE_GENERATING' : 'VIDEO_GENERATING',
+        generationParams: local.type === 'image'
+          ? {
+            ...params,
+            image_history: uniqueStrings([
+              ...(local.history || []),
+              ...(Array.isArray(params.image_history) ? (params.image_history as unknown[]).map((item) => normalizeMediaUrl(typeof item === 'string' ? item : '')) : []),
+            ]).slice(0, 20),
+          }
+          : params,
+      };
+    });
+    localGeneratingRef.current = nextLocal;
+    return changed ? { ...data, segments: segmentsWithLocalState } : data;
+  };
 
   const setImageFailed = (segmentId: string, failed: boolean) => {
     setImageErrorMap((prev) => ({ ...prev, [segmentId]: failed }));
@@ -250,6 +379,12 @@ export default function StoryboardBoardPage() {
       : {}
   );
 
+  const getSegmentImageError = (segment: StoryboardSegmentItem): string => {
+    const params = getSegmentParams(segment);
+    const message = String(params.image_error || params.imageError || params.error_message || params.errorMessage || '').trim();
+    return message || '请稍后重试';
+  };
+
   const getSegmentRefs = (segment: StoryboardSegmentItem, type: 'image' | 'video'): StoryboardRef[] => {
     const rawParams = getSegmentParams(segment);
     const key = type === 'image' ? 'subject_refs' : 'video_refs';
@@ -289,7 +424,32 @@ export default function StoryboardBoardPage() {
         .map((item) => normalizeMediaUrl(typeof item === 'string' ? item : ''))
         .filter(Boolean)
       : [];
-    return uniqueStrings([current, ...history]);
+    return type === 'image'
+      ? uniqueStrings([...history, current])
+      : uniqueStrings([current, ...history]);
+  };
+
+  const getEditingAssetItems = (segment: StoryboardSegmentItem, type: 'image' | 'video'): EditingAssetItem[] => {
+    const assets = getSegmentAssets(segment, type).map((url) => ({
+      id: url,
+      url,
+      kind: 'asset' as const,
+    }));
+    const statusText = String(segment.status || '').toUpperCase();
+    const current = normalizeMediaUrl(type === 'image' ? segment.generatedImage : segment.generatedVideo);
+    const isGenerating = type === 'image'
+      ? statusText.includes('IMAGE_GENERATING')
+      : statusText.includes('VIDEO_GENERATING');
+    if (isGenerating) {
+      const generatingItem = {
+        id: `${segment.id}-${type}-generating`,
+        url: '',
+        kind: 'generating',
+        label: type === 'image' ? '图片生成中' : '视频生成中',
+      } as const;
+      return current ? [...assets, generatingItem] : [generatingItem, ...assets];
+    }
+    return assets;
   };
 
   const handleOpenAsset = (type: 'image' | 'video', segment: StoryboardSegmentItem) => {
@@ -338,12 +498,29 @@ export default function StoryboardBoardPage() {
     applyReplaceMode(mode, segment);
   };
 
+  const syncRemixGridFromEditingSegment = (segment: StoryboardSegmentItem | null) => {
+    if (!segment || editingType !== 'image' || !isRemixRoute) return;
+    const imageUrl = normalizeMediaUrl(segment.generatedImage);
+    if (!imageUrl) return;
+    const currentGridUrl = normalizeMediaUrl(task?.storyboardImageUrl || task?.coverImage || '');
+    if (imageUrl === currentGridUrl) return;
+    setTask((prev) => prev
+      ? {
+        ...prev,
+        storyboardImageUrl: imageUrl,
+        coverImage: imageUrl,
+      }
+      : prev);
+  };
+
   const closeEditPrompt = () => {
+    syncRemixGridFromEditingSegment(editingSegment);
     setEditingSegmentId('');
     setEditingPrompt('');
     setEditingRefs([]);
     setEditingReplaceMode('');
     setEditModelSheetOpen(false);
+    keyboardFocusedRef.current = false;
     setKeyboardHeight(0);
   };
 
@@ -386,9 +563,20 @@ export default function StoryboardBoardPage() {
         currentUrl,
         ...(Array.isArray(params[historyKey]) ? (params[historyKey] as unknown[]).map((item) => normalizeMediaUrl(typeof item === 'string' ? item : '')) : []),
       ]).slice(0, 20);
+      const localGenerating = localGeneratingRef.current[segment.id];
+      if (editingType === 'image' && localGenerating?.type === 'image') {
+        localGeneratingRef.current = {
+          ...localGeneratingRef.current,
+          [segment.id]: {
+            ...localGenerating,
+            keepUrl: assetUrl,
+            history: uniqueStrings([assetUrl, ...nextHistory, ...(localGenerating.history || [])]).slice(0, 20),
+          },
+        };
+      }
       upsertLocalSegment(segment.id, {
         ...(editingType === 'image'
-          ? { generatedImage: assetUrl, status: 'IMAGE_READY' }
+          ? { generatedImage: assetUrl, status: localGenerating?.type === 'image' ? 'IMAGE_GENERATING' : 'IMAGE_READY' }
           : { generatedVideo: assetUrl, status: 'VIDEO_READY' }),
         generationParams: { ...params, [historyKey]: nextHistory },
       });
@@ -453,14 +641,29 @@ export default function StoryboardBoardPage() {
           ...(editingReplaceMode ? { subject_replace_mode: editingReplaceMode } : {}),
         }
         : { videoPrompt: prompt, video_refs: editingRefs });
+      const segment = segments.find((item) => item.id === segmentId);
+      const params = segment ? getSegmentParams(segment) : {};
       upsertLocalSegment(segmentId, editingType === 'image'
-        ? { imagePrompt: prompt }
-        : { videoPrompt: prompt });
+        ? {
+          imagePrompt: prompt,
+          generationParams: {
+            ...params,
+            subject_refs: editingRefs,
+            ...(editingReplaceMode ? { subject_replace_mode: editingReplaceMode } : {}),
+          },
+        }
+        : {
+          videoPrompt: prompt,
+          generationParams: {
+            ...params,
+            video_refs: editingRefs,
+          },
+        });
 
       if (editingType === 'image') {
-        setImageModel(editingImageModel);
+        updateImageModel(editingImageModel);
       } else {
-        setVideoModel(editingVideoModel);
+        updateVideoModel(editingVideoModel);
       }
 
       if (!silent) {
@@ -475,23 +678,46 @@ export default function StoryboardBoardPage() {
     }
   };
 
-  const handleRegenerateImage = async (segment: StoryboardSegmentItem) => {
+  const handleRegenerateImage = async (segment: StoryboardSegmentItem, modelOverride?: string) => {
     const actionKey = `${segment.id}-regen-image`;
     if (isActioning(actionKey)) return;
     setActioning(actionKey, true);
+    const selectedModel = modelOverride || imageModelRef.current || imageModel || DEFAULT_IMAGE_MODEL;
+    const previousImage = normalizeMediaUrl(segment.generatedImage);
+    const previousParams = getSegmentParams(segment);
+    const previousStatus = segment.status;
     try {
+      const imageHistory = uniqueStrings([
+        previousImage,
+        ...(Array.isArray(previousParams.image_history) ? (previousParams.image_history as unknown[]).map((item) => normalizeMediaUrl(typeof item === 'string' ? item : '')) : []),
+      ]).slice(0, 20);
+      notifiedImageFailuresRef.current.delete(segment.id);
+      setImageFailed(segment.id, false);
+      markLocalGenerating(segment.id, { type: 'image', history: imageHistory, keepUrl: previousImage });
+      upsertLocalSegment(segment.id, {
+        generatedImage: previousImage || segment.generatedImage,
+        status: 'IMAGE_GENERATING',
+        generationParams: { ...previousParams, image_history: imageHistory },
+      });
       const result = await miniappApi.generateStoryboardImages({
         taskId,
         segmentIds: [segment.id],
-        model: editingImageModel || imageModel,
-        aspectRatio: '16:9',
+        model: selectedModel,
+        aspectRatio: effectiveAspectRatio,
       });
       if (result.triggered <= 0) {
         throw new Error(result.message || '触发生图失败');
       }
-      upsertLocalSegment(segment.id, { status: 'IMAGE_GENERATING' });
+      upsertLocalSegment(segment.id, { generatedImage: previousImage || segment.generatedImage, status: 'IMAGE_GENERATING' });
       Taro.showToast({ title: '已重新触发生图', icon: 'success' });
+      await loadStatus(true);
     } catch (error) {
+      clearLocalGenerating(segment.id);
+      upsertLocalSegment(segment.id, {
+        generatedImage: previousImage || segment.generatedImage,
+        status: previousStatus,
+        generationParams: previousParams,
+      });
       Taro.showToast({ title: error instanceof Error ? error.message : '触发生图失败', icon: 'none' });
     } finally {
       setActioning(actionKey, false);
@@ -502,19 +728,30 @@ export default function StoryboardBoardPage() {
     const actionKey = `${segment.id}-regen-video`;
     if (isActioning(actionKey)) return;
     setActioning(actionKey, true);
+    const previousVideo = normalizeMediaUrl(segment.generatedVideo);
+    const previousStatus = segment.status;
     try {
+      setVideoFailed(segment.id, false);
+      markLocalGenerating(segment.id, { type: 'video' });
+      upsertLocalSegment(segment.id, { generatedVideo: null, status: 'VIDEO_GENERATING' });
       const result = await miniappApi.generateStoryboardVideos({
         taskId,
         segmentIds: [segment.id],
         model: editingVideoModel || videoModel,
         allowTextVideo: true,
+        aspectRatio: effectiveAspectRatio,
       });
       if (result.triggered <= 0) {
         throw new Error(result.message || '触发生视频失败');
       }
-      upsertLocalSegment(segment.id, { status: 'VIDEO_GENERATING' });
+      upsertLocalSegment(segment.id, { generatedVideo: null, status: 'VIDEO_GENERATING' });
       Taro.showToast({ title: '已重新触发生视频', icon: 'success' });
     } catch (error) {
+      clearLocalGenerating(segment.id);
+      upsertLocalSegment(segment.id, {
+        generatedVideo: previousVideo || segment.generatedVideo,
+        status: previousStatus,
+      });
       Taro.showToast({ title: error instanceof Error ? error.message : '触发生视频失败', icon: 'none' });
     } finally {
       setActioning(actionKey, false);
@@ -546,13 +783,28 @@ export default function StoryboardBoardPage() {
       const result = await miniappApi.generateStoryboardImages({
         taskId,
         segmentIds: targetSegments.map((segment) => segment.id),
-        model: imageModel,
-        aspectRatio: '16:9',
+        model: imageModelRef.current || imageModel,
+        aspectRatio: effectiveAspectRatio,
       });
       if (result.triggered <= 0) {
         throw new Error(result.message || '一键生图失败');
       }
-      targetSegments.forEach((segment) => upsertLocalSegment(segment.id, { status: 'IMAGE_GENERATING' }));
+      targetSegments.forEach((segment) => {
+        const currentUrl = normalizeMediaUrl(segment.generatedImage);
+        const params = getSegmentParams(segment);
+        const imageHistory = uniqueStrings([
+          currentUrl,
+          ...(Array.isArray(params.image_history) ? (params.image_history as unknown[]).map((item) => normalizeMediaUrl(typeof item === 'string' ? item : '')) : []),
+        ]).slice(0, 20);
+        notifiedImageFailuresRef.current.delete(segment.id);
+        setImageFailed(segment.id, false);
+        markLocalGenerating(segment.id, { type: 'image', history: imageHistory, keepUrl: currentUrl });
+        upsertLocalSegment(segment.id, {
+          generatedImage: currentUrl || segment.generatedImage,
+          status: 'IMAGE_GENERATING',
+          generationParams: { ...params, image_history: imageHistory },
+        });
+      });
       Taro.showToast({ title: `已触发生图${result.triggered}个`, icon: 'success' });
       await loadStatus(true);
     } catch (error) {
@@ -587,13 +839,18 @@ export default function StoryboardBoardPage() {
       const result = await miniappApi.generateStoryboardVideos({
         taskId,
         segmentIds: targetSegments.map((segment) => segment.id),
-        model: videoModel,
+        model: videoModelRef.current || videoModel,
         allowTextVideo: true,
+        aspectRatio: effectiveAspectRatio,
       });
       if (result.triggered <= 0) {
         throw new Error(result.message || '一键生成视频失败');
       }
-      targetSegments.forEach((segment) => upsertLocalSegment(segment.id, { status: 'VIDEO_GENERATING' }));
+      targetSegments.forEach((segment) => {
+        setVideoFailed(segment.id, false);
+        markLocalGenerating(segment.id, { type: 'video' });
+        upsertLocalSegment(segment.id, { generatedVideo: null, status: 'VIDEO_GENERATING' });
+      });
       Taro.showToast({ title: `已触发视频${result.triggered}个`, icon: 'success' });
       await loadStatus(true);
     } catch (error) {
@@ -681,7 +938,8 @@ export default function StoryboardBoardPage() {
   const references = task?.references || [];
   const taskMetadata = getTaskMetadata(task);
   const workflowData = getWorkflowData(task);
-  const storyboardGridBoards = getStoryboardGridBoards(task);
+  const remixReplacedGridUrl = isRemixRoute ? getRemixReplacedGridUrl(segments) : '';
+  const storyboardGridBoards = getStoryboardGridBoards(task, remixReplacedGridUrl);
   const storyboardGridUrl = storyboardGridBoards[0]?.url || '';
   const contentStructure = getContentStructure(workflowData);
   const scriptSummary = getScriptSummary(workflowData, segments);
@@ -692,6 +950,8 @@ export default function StoryboardBoardPage() {
   const sceneDetailItems = getSceneDetailItems(workflowData, segments);
   const isViralRemix = taskMetadata.feature === 'viral_remix';
   const isRemixRoute = isViralRemix || routeMode.includes('remix');
+  const resolvedImageAspectRatio = resolveStoryboardImageAspectRatio(task, isRemixRoute);
+  const effectiveAspectRatio = selectedAspectRatio || resolvedImageAspectRatio;
   const isRemixReviewMode = isRemixRoute && !routeMode.includes('board');
   const remixOriginalVideoUrl = getRemixReferenceVideoUrl(taskMetadata, task);
   const remixOriginalPosterUrl = normalizeMediaUrl(String(
@@ -725,12 +985,11 @@ export default function StoryboardBoardPage() {
     () => segments.find((item) => item.id === editingSegmentId) || null,
     [segments, editingSegmentId],
   );
-  const editingAssets = editingSegment ? getSegmentAssets(editingSegment, editingType) : [];
+  const editingAssets = editingSegment ? getEditingAssetItems(editingSegment, editingType) : [];
   const composerStyle = useMemo(
-    () => (keyboardHeight > 0 ? { transform: `translateY(-${keyboardHeight}px)` } : undefined),
+    () => (keyboardHeight > 0 ? { bottom: `${keyboardHeight + 8}px` } : undefined),
     [keyboardHeight],
   );
-
   useEffect(() => {
     if (!autoOpenEdit || autoOpenedEdit || loading || errorText || !isRemixRoute || segments.length === 0) return;
     setAutoOpenedEdit(true);
@@ -742,21 +1001,47 @@ export default function StoryboardBoardPage() {
       Taro.showToast({ title: '暂无原视频', icon: 'none' });
       return;
     }
-    Taro.navigateTo({
-      url: `/subpages/work-detail/index?id=${encodeURIComponent(`${task?.id || taskId}:reference-video`)}`,
-      success: () => {
-        Taro.setStorageSync('WORK_DETAIL_ITEM', {
-          id: `${task?.id || taskId}:reference-video`,
-          title: '原视频',
-          type: 'video',
-          status: task?.status || 'BREAKDOWN_COMPLETED',
-          createdAt: new Date().toISOString(),
-          preview: remixOriginalVideoUrl,
-          thumbnailUrl: remixOriginalPosterUrl || null,
-          metadata: null,
-          source: 'task',
-        });
+    const detailItem = {
+      id: `${task?.id || taskId}:reference-video`,
+      title: '原视频',
+      type: 'video',
+      status: task?.status || 'BREAKDOWN_COMPLETED',
+      createdAt: new Date().toISOString(),
+      preview: remixOriginalVideoUrl,
+      videoUrl: remixOriginalVideoUrl,
+      thumbnailUrl: remixOriginalPosterUrl || null,
+      metadata: {
+        videoUrl: remixOriginalVideoUrl,
+        referenceVideoUrl: remixOriginalVideoUrl,
       },
+      source: 'task',
+    };
+    Taro.setStorageSync('WORK_DETAIL_ITEM', detailItem);
+    Taro.navigateTo({
+      url: `/subpages/work-detail/index?id=${encodeURIComponent(detailItem.id)}`,
+      fail: () => {
+        Taro.showToast({ title: '暂不支持此方式预览视频', icon: 'none' });
+      },
+    });
+  };
+
+  const handleOpenRemixEditor = () => {
+    if (!segments.length) {
+      Taro.showToast({ title: '拆解完成后才能替换', icon: 'none' });
+      return;
+    }
+    Taro.redirectTo({
+      url: `/subpages/storyboard-board/index?id=${encodeURIComponent(taskId)}&title=${encodeURIComponent(title || '一键复刻')}&mode=remix-board&openEdit=replace`,
+    });
+  };
+
+  const handleOpenRemixVideoGenerate = () => {
+    if (!segments.length) {
+      Taro.showToast({ title: '暂无可生成的视频提示词', icon: 'none' });
+      return;
+    }
+    Taro.navigateTo({
+      url: `/subpages/remix-video-generate/index?id=${encodeURIComponent(taskId)}&title=${encodeURIComponent(title || '一键复刻')}`,
     });
   };
 
@@ -795,7 +1080,7 @@ export default function StoryboardBoardPage() {
           </View>
         )}
 
-        {!loading && !errorText && isRemixRoute && activeRemixStage === 'breakdown' && (
+        {!loading && !errorText && !isPreparingStoryboard && isRemixRoute && activeRemixStage === 'breakdown' && (
           <View className={isRemixReviewMode ? 'remix-review-section remix-original-section' : 'remix-original-section remix-original-section--board'}>
             <View className='remix-review-section-head'>
               <Text className='storyboard-section-title'>原视频</Text>
@@ -1050,7 +1335,7 @@ export default function StoryboardBoardPage() {
           </View>
         )}
 
-        {!isRemixReviewMode && !loading && !errorText && segments.length > 0 && (
+        {!isRemixRoute && !isRemixReviewMode && !loading && !errorText && segments.length > 0 && (
           <View className='storyboard-board-list'>
             {segments.map((segment, index) => (
               <View key={segment.id} className='storyboard-segment-card'>
@@ -1108,6 +1393,7 @@ export default function StoryboardBoardPage() {
                             <>
                               <Image className='storyboard-asset-placeholder-icon storyboard-asset-placeholder-icon--image' src={imageIcon} mode='aspectFit' />
                               <Text className='storyboard-asset-placeholder-title'>图片生成失败</Text>
+                              <Text className='storyboard-asset-placeholder-sub storyboard-asset-placeholder-sub--error'>{getSegmentImageError(segment)}</Text>
                               <View
                                 className='storyboard-asset-retry'
                                 onClick={(event) => {
@@ -1177,7 +1463,7 @@ export default function StoryboardBoardPage() {
         )}
       </ScrollView>
 
-      {isRemixReviewMode && !loading && !errorText && (
+      {isRemixReviewMode && !loading && !errorText && !isPreparingStoryboard && (
         <View className='remix-review-action-bar'>
           <View
             className='remix-review-bottom-btn remix-review-bottom-btn--danger'
@@ -1187,38 +1473,49 @@ export default function StoryboardBoardPage() {
               {deleting ? '删除中' : '删除'}
             </Text>
           </View>
-          {remixOriginalVideoUrl && (
-            <View
-              className='remix-review-bottom-btn remix-review-bottom-btn--ghost'
-              onClick={handleOpenReferenceVideo}
-            >
-              <Text className='remix-review-bottom-btn-text remix-review-bottom-btn-text--ghost'>查看原视频</Text>
-            </View>
-          )}
+          <View
+            className='remix-review-bottom-btn remix-review-bottom-btn--ghost'
+            onClick={handleOpenRemixEditor}
+          >
+            <Text className='remix-review-bottom-btn-text remix-review-bottom-btn-text--ghost'>替换产品/角色</Text>
+          </View>
           <View
             className='remix-review-bottom-btn remix-review-bottom-btn--primary'
-            onClick={() => {
-              Taro.redirectTo({
-                url: `/subpages/storyboard-board/index?id=${encodeURIComponent(taskId)}&title=${encodeURIComponent(title || '一键复刻')}&mode=remix-board&openEdit=replace`,
-              });
-            }}
+            onClick={handleOpenRemixVideoGenerate}
           >
-            <Text className='remix-review-bottom-btn-text'>替换产品/角色</Text>
+            <Text className='remix-review-bottom-btn-text'>生成视频</Text>
           </View>
         </View>
       )}
 
-      {canShowActionBar && (
+      {canShowActionBar && isRemixRoute && (
+        <View className='remix-review-action-bar'>
+          <View
+            className='remix-review-bottom-btn remix-review-bottom-btn--danger'
+            onClick={() => void handleDeleteTask('delete')}
+          >
+            <Text className='remix-review-bottom-btn-text remix-review-bottom-btn-text--danger'>
+              {deleting ? '删除中' : '删除'}
+            </Text>
+          </View>
+          <View
+            className='remix-review-bottom-btn remix-review-bottom-btn--ghost'
+            onClick={handleOpenRemixEditor}
+          >
+            <Text className='remix-review-bottom-btn-text remix-review-bottom-btn-text--ghost'>替换产品/角色</Text>
+          </View>
+          <View
+            className='remix-review-bottom-btn remix-review-bottom-btn--primary'
+            onClick={handleOpenRemixVideoGenerate}
+          >
+            <Text className='remix-review-bottom-btn-text'>生成视频</Text>
+          </View>
+        </View>
+      )}
+
+      {canShowActionBar && !isRemixRoute && (
       <View className='storyboard-action-bar'>
         <View className='storyboard-action-row storyboard-action-row--primary'>
-          {isRemixRoute && (
-            <View
-              className='storyboard-delete-bottom-btn'
-              onClick={() => void handleDeleteTask('delete')}
-            >
-              <Text className='storyboard-delete-bottom-btn-text'>{deleting ? '删除中' : '删除'}</Text>
-            </View>
-          )}
           <View className='storyboard-action-btn storyboard-bottom-btn storyboard-bottom-btn--ghost' onClick={() => void handleGenerateAllImages()}>
             <Text className='storyboard-bottom-btn-text storyboard-bottom-btn-text--ghost'>
               {isActioning('batch-image') ? '生图中...' : '一键生图'}
@@ -1256,7 +1553,7 @@ export default function StoryboardBoardPage() {
                 <View
                   key={model.id}
                   className={`storyboard-sheet-tab ${imageModel === model.id ? 'storyboard-sheet-tab--active' : ''}`}
-                  onClick={() => setImageModel(model.id)}
+                  onClick={() => updateImageModel(model.id)}
                 >
                   <Text className={`storyboard-sheet-tab-text ${imageModel === model.id ? 'storyboard-sheet-tab-text--active' : ''}`}>
                     {model.label}
@@ -1271,10 +1568,28 @@ export default function StoryboardBoardPage() {
                 <View
                   key={model.id}
                   className={`storyboard-sheet-tab ${videoModel === model.id ? 'storyboard-sheet-tab--active' : ''}`}
-                  onClick={() => setVideoModel(model.id)}
+                  onClick={() => updateVideoModel(model.id)}
                 >
                   <Text className={`storyboard-sheet-tab-text ${videoModel === model.id ? 'storyboard-sheet-tab-text--active' : ''}`}>
                     {model.label}
+                  </Text>
+                </View>
+              ))}
+            </View>
+
+            <Text className='storyboard-sheet-label'>画幅</Text>
+            <View className='storyboard-sheet-tabs'>
+              {ASPECT_RATIO_OPTIONS.map((option) => (
+                <View
+                  key={option.id}
+                  className={`storyboard-sheet-tab storyboard-sheet-tab--ratio ${effectiveAspectRatio === option.id ? 'storyboard-sheet-tab--active' : ''}`}
+                  onClick={() => updateAspectRatio(option.id)}
+                >
+                  <Text className={`storyboard-sheet-tab-text ${effectiveAspectRatio === option.id ? 'storyboard-sheet-tab-text--active' : ''}`}>
+                    {option.label}
+                  </Text>
+                  <Text className={`storyboard-sheet-tab-hint ${effectiveAspectRatio === option.id ? 'storyboard-sheet-tab-hint--active' : ''}`}>
+                    {option.hint}
                   </Text>
                 </View>
               ))}
@@ -1311,7 +1626,12 @@ export default function StoryboardBoardPage() {
                 <View className='storyboard-edit-preview-stage'>
                   {editingType === 'image' ? (
                     normalizeMediaUrl(editingSegment.generatedImage) ? (
-                      <Image className='storyboard-edit-preview-image' src={normalizeMediaUrl(editingSegment.generatedImage)} mode='aspectFit' />
+                      <Image
+                        className='storyboard-edit-preview-image'
+                        src={normalizeMediaUrl(editingSegment.generatedImage)}
+                        mode='aspectFit'
+                        onClick={() => handleOpenAsset('image', editingSegment)}
+                      />
                     ) : (
                       <Image className='storyboard-edit-preview-icon' src={imageIcon} mode='aspectFit' />
                     )
@@ -1346,17 +1666,24 @@ export default function StoryboardBoardPage() {
                       <View className='storyboard-edit-asset-add' onClick={() => void handleUploadAsset()}>
                         <Text className='storyboard-edit-asset-add-text'>{uploadingAsset ? '...' : '+'}</Text>
                       </View>
-                      {editingAssets.map((assetUrl) => {
+                      {editingAssets.map((asset) => {
                         const activeUrl = normalizeMediaUrl(editingType === 'image' ? editingSegment.generatedImage : editingSegment.generatedVideo);
-                        const active = assetUrl === activeUrl;
+                        const active = asset.kind === 'asset' && asset.url && asset.url === activeUrl;
                         return (
                           <View
-                            key={assetUrl}
-                            className={`storyboard-edit-asset-item ${active ? 'storyboard-edit-asset-item--active' : ''}`}
-                            onClick={() => void handleSelectAsset(assetUrl)}
+                            key={asset.id}
+                            className={`storyboard-edit-asset-item ${active ? 'storyboard-edit-asset-item--active' : ''} ${asset.kind === 'generating' ? 'storyboard-edit-asset-item--generating' : ''}`}
+                            onClick={() => {
+                              if (asset.kind === 'asset') void handleSelectAsset(asset.url);
+                            }}
                           >
-                            {editingType === 'image' ? (
-                              <Image className='storyboard-edit-asset-thumb' src={assetUrl} mode='aspectFill' />
+                            {asset.kind === 'generating' ? (
+                              <>
+                                <View className='storyboard-edit-asset-spinner' />
+                                <Text className='storyboard-edit-asset-generating-text'>{asset.label || '生成中'}</Text>
+                              </>
+                            ) : editingType === 'image' ? (
+                              <Image className='storyboard-edit-asset-thumb' src={asset.url} mode='aspectFill' />
                             ) : (
                               <>
                                 {normalizeMediaUrl(editingSegment.generatedImage) ? (
@@ -1417,9 +1744,19 @@ export default function StoryboardBoardPage() {
                   onInput={(e) => setEditingPrompt(e.detail.value)}
                   maxlength={3000}
                   placeholder='请输入提示词'
+                  placeholderStyle='font-size: 28rpx; color: #7f8da8;'
                   fixed
                   adjustPosition={false}
                   cursorSpacing={20}
+                  onFocus={(event) => {
+                    keyboardFocusedRef.current = true;
+                    const nextHeight = Math.max(0, Number(event.detail.height || 0));
+                    if (nextHeight > 0) setKeyboardHeight(nextHeight);
+                  }}
+                  onBlur={() => {
+                    keyboardFocusedRef.current = false;
+                    setKeyboardHeight(0);
+                  }}
                 />
 
                 <View className='storyboard-edit-tool-row'>
@@ -1436,7 +1773,7 @@ export default function StoryboardBoardPage() {
                     onClick={() => {
                       void handleSavePrompt(true).then((ok) => {
                         if (!ok || !editingSegment) return;
-                        if (editingType === 'image') void handleRegenerateImage(editingSegment);
+                        if (editingType === 'image') void handleRegenerateImage(editingSegment, editingImageModel);
                         else void handleRegenerateVideo(editingSegment);
                       });
                     }}
@@ -1544,7 +1881,96 @@ function getWorkflowData(task: StoryboardTaskStatusResult | null): Record<string
   return nested || detailed || {};
 }
 
-function getStoryboardGridBoards(task: StoryboardTaskStatusResult | null): Array<{ url: string; timeRange: string; kind: 'full' | 'clip' }> {
+function normalizeImageAspectRatio(value: unknown): StoryboardAspectRatio | '' {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (raw === 'portrait' || raw === 'vertical' || raw === '竖屏' || raw === '竖版') return '9:16';
+  if (raw === 'landscape' || raw === 'horizontal' || raw === '横屏' || raw === '横版') return '16:9';
+  if (raw === 'square' || raw === '方图' || raw === '1/1' || raw === '1:1') return '9:16';
+  if (raw === '3/4' || raw === '3:4') return '9:16';
+  if (raw === '4/3' || raw === '4:3') return '16:9';
+  if (raw === '9/16' || raw === '9:16') return '9:16';
+  if (raw === '16/9' || raw === '16:9') return '16:9';
+  return '';
+}
+
+function aspectRatioFromDimensions(width: unknown, height: unknown): StoryboardAspectRatio | '' {
+  const w = Number(width);
+  const h = Number(height);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return '';
+  const ratio = w / h;
+  if (ratio <= 1.12) return '9:16';
+  return '16:9';
+}
+
+function pickImageAspectRatioFromRecord(record: Record<string, unknown> | null | undefined): StoryboardAspectRatio | '' {
+  if (!record) return '';
+  const directKeys = [
+    'image_aspect_ratio',
+    'imageAspectRatio',
+    'aspect_ratio',
+    'aspectRatio',
+    'source_aspect_ratio',
+    'sourceAspectRatio',
+    'reference_aspect_ratio',
+    'referenceAspectRatio',
+    'format',
+  ];
+  for (const key of directKeys) {
+    const value = normalizeImageAspectRatio(record[key]);
+    if (value) return value;
+  }
+
+  const dimensionPairs = [
+    ['source_width', 'source_height'],
+    ['sourceWidth', 'sourceHeight'],
+    ['reference_width', 'reference_height'],
+    ['referenceWidth', 'referenceHeight'],
+    ['video_width', 'video_height'],
+    ['videoWidth', 'videoHeight'],
+    ['width', 'height'],
+  ] as const;
+  for (const [widthKey, heightKey] of dimensionPairs) {
+    const value = aspectRatioFromDimensions(record[widthKey], record[heightKey]);
+    if (value) return value;
+  }
+
+  return '';
+}
+
+function resolveStoryboardImageAspectRatio(
+  task: StoryboardTaskStatusResult | null,
+  isRemixRoute: boolean,
+): StoryboardAspectRatio {
+  const detailed = asRecord(task?.detailedBreakdown);
+  const metadata = getTaskMetadata(task);
+  const workflowData = getWorkflowData(task);
+  const sourceAnalysis = asRecord(workflowData.source_video_analysis) || asRecord(workflowData.sourceVideoAnalysis);
+  const candidates = [
+    metadata,
+    sourceAnalysis,
+    workflowData,
+    detailed,
+  ];
+  for (const candidate of candidates) {
+    const value = pickImageAspectRatioFromRecord(candidate);
+    if (value) return value;
+  }
+  return isRemixRoute ? '9:16' : '16:9';
+}
+
+function getRemixReplacedGridUrl(segments: StoryboardSegmentItem[]): string {
+  for (const segment of segments) {
+    const url = normalizeMediaUrl(segment.generatedImage);
+    if (url) return url;
+  }
+  return '';
+}
+
+function getStoryboardGridBoards(
+  task: StoryboardTaskStatusResult | null,
+  preferredGridUrl = '',
+): Array<{ url: string; timeRange: string; kind: 'full' | 'clip' }> {
   const detailed = asRecord(task?.detailedBreakdown);
   const workflowData = getWorkflowData(task);
   const clipBoards: Array<{ url: string; timeRange: string; kind: 'full' | 'clip' }> = [];
@@ -1552,6 +1978,7 @@ function getStoryboardGridBoards(task: StoryboardTaskStatusResult | null): Array
 
   const primaryUrl = normalizeMediaUrl(
     String(
+      preferredGridUrl ||
       task?.storyboardImageUrl ||
       task?.coverImage ||
       detailed?.storyboard_grid_url ||
@@ -1593,16 +2020,44 @@ function getRemixReferenceVideoUrl(
 ): string {
   const detailed = asRecord(task?.detailedBreakdown);
   const workflowData = getWorkflowData(task);
+  const nestedMetadata = asRecord(workflowData.metadata) || asRecord(detailed?.metadata) || {};
+  const sourceVideo = asRecord(workflowData.source_video) || asRecord(workflowData.sourceVideo) || {};
+  const sourceVideoAnalysis = asRecord(workflowData.source_video_analysis) || asRecord(workflowData.sourceVideoAnalysis) || {};
   return normalizeMediaUrl(
     String(
       metadata.referenceVideoUrl ||
         metadata.reference_video_url ||
+        metadata.sourceVideoUrl ||
+        metadata.source_video_url ||
         metadata.videoUrl ||
         metadata.video_url ||
         detailed?.reference_video_url ||
         detailed?.referenceVideoUrl ||
+        detailed?.source_video_url ||
+        detailed?.sourceVideoUrl ||
+        detailed?.video_url ||
+        detailed?.videoUrl ||
+        nestedMetadata.referenceVideoUrl ||
+        nestedMetadata.reference_video_url ||
+        nestedMetadata.sourceVideoUrl ||
+        nestedMetadata.source_video_url ||
+        nestedMetadata.videoUrl ||
+        nestedMetadata.video_url ||
+        sourceVideo.url ||
+        sourceVideo.video_url ||
+        sourceVideo.videoUrl ||
+        sourceVideo.play_url ||
+        sourceVideo.playUrl ||
+        sourceVideoAnalysis.video_url ||
+        sourceVideoAnalysis.videoUrl ||
+        sourceVideoAnalysis.source_video_url ||
+        sourceVideoAnalysis.sourceVideoUrl ||
         workflowData.reference_video_url ||
         workflowData.referenceVideoUrl ||
+        workflowData.source_video_url ||
+        workflowData.sourceVideoUrl ||
+        workflowData.video_url ||
+        workflowData.videoUrl ||
         '',
     ),
   );

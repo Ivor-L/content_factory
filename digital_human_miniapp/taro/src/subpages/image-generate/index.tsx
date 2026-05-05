@@ -67,9 +67,32 @@ function buildCardExportDownloadHeaders(): Record<string, string> {
 }
 
 const IMAGE_MODELS = [
-  { key: 'image2', name: 'GPT-image2', desc: '细节表现优秀，适合精细创作', badge: '默认' },
-  { key: 'nano-banana-pro', name: 'nano-Banana-Pro-3', desc: '综合能力强，适合多种创意场景' },
+  { key: 'image2', name: 'GPT-image2', desc: '细节表现优秀，适合精细创作', badge: '默认', maxReferenceImages: 8 },
+  { key: 'nano-banana-pro', name: 'nano-Banana-Pro-3', desc: '综合能力强，适合多种创意场景', maxReferenceImages: 8 },
 ];
+
+type ImageAspectRatio = '1:1' | '3:4' | '4:3' | '9:16' | '16:9';
+
+const IMAGE_ASPECT_OPTIONS: Array<{
+  key: ImageAspectRatio;
+  label: string;
+  desc: string;
+  size: '1024x1024' | '1536x1024' | '1024x1536';
+}> = [
+  { key: '9:16', label: '手机屏', desc: '短视频封面', size: '1024x1536' },
+  { key: '16:9', label: '宽屏', desc: '横版场景', size: '1536x1024' },
+  { key: '1:1', label: '方图', desc: '头像 / 商品图', size: '1024x1024' },
+  { key: '3:4', label: '竖图', desc: '封面 / 海报', size: '1024x1536' },
+  { key: '4:3', label: '横图', desc: '配图 / 展示', size: '1536x1024' },
+];
+
+function getImageAspectOption(ratio: string | undefined | null) {
+  return IMAGE_ASPECT_OPTIONS.find((item) => item.key === ratio) || IMAGE_ASPECT_OPTIONS[0];
+}
+
+function getImageModelOption(modelKey: string) {
+  return IMAGE_MODELS.find((item) => item.key === modelKey) || IMAGE_MODELS[0];
+}
 
 const FALLBACK_INFOGRAPHIC_TEMPLATES: InfographicTemplate[] = [
   { id: 'product', title: '产品测评卡', tag: '示例模板', preview: tplImage1 },
@@ -855,6 +878,7 @@ const IMAGE_GENERATE_PREFS_KEY = 'IMAGE_GENERATE_PREFS_V1';
 type ImageGeneratePrefs = {
   activeFeature?: FeatureKey;
   selectedModel?: string;
+  selectedImageAspect?: ImageAspectRatio;
   selectedTemplate?: string;
   infographicCount?: number;
   selectedCardStyle?: CardStyleId;
@@ -2023,6 +2047,7 @@ export default function ImageGeneratePage() {
 
   const [refImages, setRefImages] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState(IMAGE_MODELS[0].key);
+  const [selectedImageAspect, setSelectedImageAspect] = useState<ImageAspectRatio>(IMAGE_ASPECT_OPTIONS[0].key);
   const [aiPrompt, setAiPrompt] = useState('');
 
   const [infographicTemplates, setInfographicTemplates] = useState<InfographicTemplate[]>(FALLBACK_INFOGRAPHIC_TEMPLATES);
@@ -2068,6 +2093,7 @@ export default function ImageGeneratePage() {
   const [cardSettingsOpen, setCardSettingsOpen] = useState(false);
   const [cardSubmitting, setCardSubmitting] = useState(false);
   const [cardOptimizing, setCardOptimizing] = useState(false);
+  const [cardPreviewRendering, setCardPreviewRendering] = useState(false);
   const [cardExporting, setCardExporting] = useState(false);
   const [cardPreviewImages, setCardPreviewImages] = useState<string[]>([]);
   const [cardPublishQrcode, setCardPublishQrcode] = useState('');
@@ -2114,6 +2140,8 @@ export default function ImageGeneratePage() {
     () => infographicTemplates.find((tpl) => tpl.id === selectedTemplate) || infographicTemplates[0] || null,
     [infographicTemplates, selectedTemplate],
   );
+  const selectedImageModelOption = useMemo(() => getImageModelOption(selectedModel), [selectedModel]);
+  const maxAiReferenceImages = selectedImageModelOption.maxReferenceImages;
 
   useLoad((query) => {
     const from = String(query?.from || '').trim();
@@ -2139,6 +2167,9 @@ export default function ImageGeneratePage() {
       }
       if (prefs.selectedModel && IMAGE_MODELS.some((item) => item.key === prefs.selectedModel)) {
         setSelectedModel(prefs.selectedModel);
+      }
+      if (prefs.selectedImageAspect && IMAGE_ASPECT_OPTIONS.some((item) => item.key === prefs.selectedImageAspect)) {
+        setSelectedImageAspect(prefs.selectedImageAspect);
       }
       if (prefs.selectedTemplate && typeof prefs.selectedTemplate === 'string') {
         setSelectedTemplate(prefs.selectedTemplate);
@@ -2263,6 +2294,7 @@ export default function ImageGeneratePage() {
     const prefs: ImageGeneratePrefs = {
       activeFeature,
       selectedModel,
+      selectedImageAspect,
       selectedTemplate,
       infographicCount,
       selectedCardStyle,
@@ -2300,6 +2332,7 @@ export default function ImageGeneratePage() {
   }, [
     activeFeature,
     selectedModel,
+    selectedImageAspect,
     selectedTemplate,
     infographicCount,
     selectedCardStyle,
@@ -2727,11 +2760,11 @@ export default function ImageGeneratePage() {
   const handleChooseImages = async () => {
     try {
       const result = await Taro.chooseImage({
-        count: Math.max(1, 9 - refImages.length),
+        count: Math.max(1, maxAiReferenceImages - refImages.length),
         sizeType: ['compressed'],
         sourceType: ['album', 'camera'],
       });
-      const next = [...refImages, ...(result.tempFilePaths || [])].slice(0, 9);
+      const next = [...refImages, ...(result.tempFilePaths || [])].slice(0, maxAiReferenceImages);
       setRefImages(next);
     } catch {
       // canceled
@@ -2816,16 +2849,18 @@ export default function ImageGeneratePage() {
       const localImages = refImages.filter((item) => !/^https?:\/\//i.test(item));
 
       const uploadedLocalImages = await Promise.all(
-        localImages.slice(0, 5).map((path, idx) =>
+        localImages.slice(0, maxAiReferenceImages).map((path, idx) =>
           api.uploadMedia(path, `image2-ref-${Date.now()}-${idx + 1}.jpg`, 'image/jpeg'),
         ),
       );
-      const imagePayload = [...remoteImages, ...uploadedLocalImages].slice(0, 5);
+      const imagePayload = [...remoteImages, ...uploadedLocalImages].slice(0, maxAiReferenceImages);
+      const aspectOption = getImageAspectOption(selectedImageAspect);
 
       const result = await miniappApi.startCanvasImageJob({
         prompt: aiPrompt.trim(),
         model: selectedModel,
-        size: '1024x1024',
+        size: aspectOption.size,
+        aspectRatio: aspectOption.key,
         n: 1,
         image: imagePayload,
       });
@@ -3200,6 +3235,71 @@ export default function ImageGeneratePage() {
     };
   };
 
+  const renderCardImagesForPreview = async () => {
+    const renderPayload = buildCardRenderPayload();
+    const renderResult = await miniappApi.renderXhsLayout({
+      markdown: renderPayload.withCoverFrontmatter,
+      styleKey: renderPayload.styleKey,
+      templateId: renderPayload.templateId,
+      title: renderPayload.renderTitle || '图文卡片',
+      includeCover: cardIncludeCover,
+      maxPages: cardMaxPages,
+      persist: false,
+      requirePreview: true,
+      preview: {
+        pages: cardPreviewPages,
+        cardClassName: `preview-card ${cardPreviewThemeClass}`,
+        cardStyle: cardPreviewThemeInlineStyle,
+        contentClassName: cardPreviewContentShellClass,
+        contentStyle: cardPreviewContentInlineStyle,
+        richTextClassName: cardPreviewRichtextClass,
+        selectedCardStyle,
+      },
+      cover: {
+        coverStyleId: cardCoverStyleId,
+        coverImage: cardCoverImage,
+        coverTitle: cardCoverTitle,
+        coverSubtitle: cardCoverSubtitle,
+        coverTextColor: cardCoverTextColor,
+        coverHighlightColor: cardCoverHighlightColor,
+        coverCardRadius: cardCoverCardRadius,
+        coverShowStickers: cardCoverShowStickers,
+        coverFontFamily: CARD_FONT_FAMILY_STACK_MAP[cardCoverFontFamily] || CARD_FONT_FAMILY_STACK_MAP.system,
+        coverTitleAlignX: cardCoverTitleAlignX,
+        coverTitleAlignY: cardCoverTitleAlignY,
+        coverFontSize: cardCoverFontSize,
+        coverSubtitleFontSize: cardCoverSubtitleFontSize,
+        coverLineHeight: cardCoverLineHeight,
+      },
+    });
+    const images = Array.isArray(renderResult.images) ? renderResult.images.filter(Boolean) : [];
+    if (images.length === 0) throw new Error('生成预览图失败');
+    return images;
+  };
+
+  const handleRenderCardPreviewImages = async () => {
+    if (cardPreviewRendering || cardExporting) return;
+    if (!cardMarkdown.trim()) {
+      Taro.showToast({ title: '请先输入内容', icon: 'none' });
+      return;
+    }
+    setCardPreviewRendering(true);
+    try {
+      Taro.showLoading({ title: '正在生成预览图', mask: true });
+      const images = await renderCardImagesForPreview();
+      setCardPreviewImages(images);
+      setCardPreviewPageIndex(0);
+    } catch (error) {
+      Taro.showToast({
+        title: error instanceof Error ? error.message : '生成预览图失败',
+        icon: 'none',
+      });
+    } finally {
+      Taro.hideLoading();
+      setCardPreviewRendering(false);
+    }
+  };
+
   const ensureAlbumPermission = async (): Promise<boolean> => {
     try {
       const setting = await Taro.getSetting();
@@ -3236,43 +3336,11 @@ export default function ImageGeneratePage() {
     try {
       setCardExporting(true);
       Taro.showLoading({ title: '正在准备导出图', mask: true });
-      const renderPayload = buildCardRenderPayload();
-      const renderResult = await miniappApi.renderXhsLayout({
-        markdown: renderPayload.withCoverFrontmatter,
-        styleKey: renderPayload.styleKey,
-        templateId: renderPayload.templateId,
-        title: renderPayload.renderTitle || '图文卡片',
-        includeCover: cardIncludeCover,
-        maxPages: cardMaxPages,
-        persist: false,
-        requirePreview: true,
-        preview: {
-          pages: cardPreviewPages,
-          cardClassName: `preview-card ${cardPreviewThemeClass}`,
-          cardStyle: cardPreviewThemeInlineStyle,
-          contentClassName: cardPreviewContentShellClass,
-          contentStyle: cardPreviewContentInlineStyle,
-          richTextClassName: cardPreviewRichtextClass,
-          selectedCardStyle,
-        },
-        cover: {
-          coverStyleId: cardCoverStyleId,
-          coverImage: cardCoverImage,
-          coverTitle: cardCoverTitle,
-          coverSubtitle: cardCoverSubtitle,
-          coverTextColor: cardCoverTextColor,
-          coverHighlightColor: cardCoverHighlightColor,
-          coverCardRadius: cardCoverCardRadius,
-          coverShowStickers: cardCoverShowStickers,
-          coverFontFamily: CARD_FONT_FAMILY_STACK_MAP[cardCoverFontFamily] || CARD_FONT_FAMILY_STACK_MAP.system,
-          coverTitleAlignX: cardCoverTitleAlignX,
-          coverTitleAlignY: cardCoverTitleAlignY,
-          coverFontSize: cardCoverFontSize,
-          coverSubtitleFontSize: cardCoverSubtitleFontSize,
-          coverLineHeight: cardCoverLineHeight,
-        },
-      });
-      exportImages = Array.isArray(renderResult.images) ? renderResult.images.filter(Boolean) : [];
+      exportImages = cardPreviewImages.length > 0 ? cardPreviewImages : await renderCardImagesForPreview();
+      if (cardPreviewImages.length === 0) {
+        setCardPreviewImages(exportImages);
+        setCardPreviewPageIndex(0);
+      }
       if (exportImages.length === 0) {
         Taro.showToast({ title: '生成导出图失败', icon: 'none' });
         return;
@@ -3903,6 +3971,7 @@ export default function ImageGeneratePage() {
     }
     setCardUserCleared(activeFeature === 'card-layout' && !value.trim());
     setCardMarkdown(value);
+    setCardPreviewImages([]);
   };
 
   const handleClearCardMarkdown = () => {
@@ -3937,8 +4006,8 @@ export default function ImageGeneratePage() {
 
         {activeFeature === 'ai-image' && (
           <View className='panel'>
-            {renderSectionTitle('upload', '添加参考图片')}
-            <Text className='section-hint'>可上传多图做风格参考、换脸、商品图优化与广告图生成。</Text>
+            {renderSectionTitle('upload', '添加参考图')}
+            <Text className='section-hint'>当前模型最多支持 {maxAiReferenceImages} 张参考图。</Text>
             <View className='image-grid'>
               {refImages.map((src, idx) => (
                 <View key={`${src}-${idx}`} className='thumb-wrap'>
@@ -3948,7 +4017,7 @@ export default function ImageGeneratePage() {
                   </View>
                 </View>
               ))}
-              {refImages.length < 9 && (
+              {refImages.length < maxAiReferenceImages && (
                 <View className='thumb-add' onClick={handleChooseImages}>
                   <Text className='thumb-add-plus'>+</Text>
                   <Text className='thumb-add-text'>添加图片</Text>
@@ -3970,6 +4039,32 @@ export default function ImageGeneratePage() {
                       {item.badge && <Text className='model-badge'>{item.badge}</Text>}
                     </View>
                     <Text className='model-desc'>{item.desc}</Text>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+
+            {renderSectionTitle('preview', '图片比例')}
+            <ScrollView scrollX className='aspect-scroll'>
+              <View className='aspect-option-list'>
+                {IMAGE_ASPECT_OPTIONS.map((item) => (
+                  <View
+                    key={item.key}
+                    className={`aspect-option ${selectedImageAspect === item.key ? 'aspect-option--active' : ''}`}
+                    onClick={() => setSelectedImageAspect(item.key)}
+                  >
+                    <View className='aspect-option-visual-wrap'>
+                      <View className={`aspect-option-visual aspect-option-visual--${item.key.replace(':', 'x')}`} />
+                    </View>
+                    <Text className={`aspect-option-label ${selectedImageAspect === item.key ? 'aspect-option-label--active' : ''}`}>
+                      {item.label}
+                    </Text>
+                    <Text className={`aspect-option-value ${selectedImageAspect === item.key ? 'aspect-option-value--active' : ''}`}>
+                      {item.key}
+                    </Text>
+                    <Text className={`aspect-option-desc ${selectedImageAspect === item.key ? 'aspect-option-desc--active' : ''}`}>
+                      {item.desc}
+                    </Text>
                   </View>
                 ))}
               </View>
@@ -4031,12 +4126,15 @@ export default function ImageGeneratePage() {
                 >
                   <Text className={`card-mode-btn-text ${cardEditorMode === 'edit' ? 'card-mode-btn-text--active' : ''}`}>编辑</Text>
                 </View>
-                <View
-                  className={`card-mode-btn ${cardEditorMode === 'preview' ? 'card-mode-btn--active' : ''}`}
-                  onClick={() => setCardEditorMode('preview')}
-                >
-                  <Text className={`card-mode-btn-text ${cardEditorMode === 'preview' ? 'card-mode-btn-text--active' : ''}`}>预览</Text>
-                </View>
+              <View
+                className={`card-mode-btn ${cardEditorMode === 'preview' ? 'card-mode-btn--active' : ''}`}
+                onClick={() => {
+                  setCardEditorMode('preview');
+                  void handleRenderCardPreviewImages();
+                }}
+              >
+                <Text className={`card-mode-btn-text ${cardEditorMode === 'preview' ? 'card-mode-btn-text--active' : ''}`}>预览</Text>
+              </View>
               </View>
               <View
                 className={`card-setting-trigger ${cardSettingsOpen ? 'card-setting-trigger--active' : ''}`}
@@ -4086,42 +4184,38 @@ export default function ImageGeneratePage() {
 
             {cardEditorMode === 'preview' && (
               <>
-                {renderSectionTitle('preview', '排版预览')}
-                <View className='preview-swiper-wrap'>
-                  <Swiper
-                    className='preview-swiper'
-                    indicatorDots={false}
-                    circular={false}
-                    current={cardPreviewPageIndex}
-                    onChange={(event) => setCardPreviewPageIndex(event.detail.current)}
-                  >
-                    {cardPreviewPages.map((html, idx) => (
-                      <SwiperItem key={`preview-page-${idx}`}>
-                        <View className='preview-swiper-item'>
-                          <View className={`preview-card ${cardPreviewThemeClass}`} style={cardPreviewThemeInlineStyle}>
-                            {selectedCardStyle === 'apple-notes' && (
-                              <View className='preview-apple-header'>
-                                <View className='preview-apple-header-left'>
-                                  <Text className='preview-apple-header-icon'>‹</Text>
-                                  <Text className='preview-apple-header-title'>备忘录</Text>
-                                </View>
-                                <View className='preview-apple-header-right'>
-                                  <Text className='preview-apple-header-icon'>↥</Text>
-                                  <Text className='preview-apple-header-icon'>◌</Text>
-                                </View>
-                              </View>
-                            )}
-                            <View className={cardPreviewContentShellClass} style={cardPreviewContentInlineStyle}>
-                              <RichText className={cardPreviewRichtextClass} nodes={html} />
-                            </View>
+                {renderSectionTitle('preview', '导出图预览')}
+                {cardPreviewImages.length > 0 ? (
+                  <View className='preview-swiper-wrap preview-swiper-wrap--image'>
+                    <Swiper
+                      className='preview-swiper preview-swiper--image'
+                      indicatorDots={false}
+                      circular={false}
+                      current={cardPreviewPageIndex}
+                      onChange={(event) => setCardPreviewPageIndex(event.detail.current)}
+                    >
+                      {cardPreviewImages.map((url, idx) => (
+                        <SwiperItem key={`preview-image-${idx}`}>
+                          <View className='preview-swiper-item preview-swiper-item--image'>
+                            <Image className='preview-export-image' src={url} mode='widthFix' />
                           </View>
-                        </View>
-                      </SwiperItem>
-                    ))}
-                  </Swiper>
-                  <View className='preview-swiper-indicator'>
-                    <Text className='preview-swiper-indicator-text'>{cardPreviewPageIndex + 1}/{cardPreviewPages.length}</Text>
+                        </SwiperItem>
+                      ))}
+                    </Swiper>
+                    <View className='preview-swiper-indicator'>
+                      <Text className='preview-swiper-indicator-text'>{cardPreviewPageIndex + 1}/{cardPreviewImages.length}</Text>
+                    </View>
                   </View>
+                ) : (
+                  <View className='preview-image-empty'>
+                    <Text className='preview-image-empty-text'>{cardPreviewRendering ? '正在生成预览图...' : '点击下方按钮生成导出图预览'}</Text>
+                  </View>
+                )}
+                <View
+                  className={`card-preview-render-btn ${cardPreviewRendering ? 'card-preview-render-btn--loading' : ''}`}
+                  onClick={() => void handleRenderCardPreviewImages()}
+                >
+                  <Text className='card-preview-render-btn-text'>{cardPreviewRendering ? '生成中...' : '刷新预览图'}</Text>
                 </View>
                 {renderCardPresetSwitcher()}
               </>

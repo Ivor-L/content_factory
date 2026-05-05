@@ -5,6 +5,8 @@ import { miniappApi, type HotItem, type MyNoteTaskDetail } from '../../utils/min
 import './index.sass';
 
 const HOT_COVER_FALLBACK_URL = 'https://oss.atomx.top/miniapp/hot-square/fallback-cover-1777628403821.jpg';
+const DETAIL_IMAGE_WIDTH_RPX = 750;
+const DETAIL_IMAGE_FALLBACK_HEIGHT_RPX = 1000;
 const POLL_MS = 2500;
 const HOT_REMOVED_ITEMS_KEY = 'HOT_SQUARE_REMOVED_ITEMS';
 
@@ -113,6 +115,7 @@ export default function HotDetailPage() {
   const [remixDrawerVisible, setRemixDrawerVisible] = useState(false);
   const [selectedRewriteTitle, setSelectedRewriteTitle] = useState('');
   const [retryingImageIndex, setRetryingImageIndex] = useState<number | null>(null);
+  const [imageRatioMap, setImageRatioMap] = useState<Record<string, number>>({});
   const [publishQrcode, setPublishQrcode] = useState('');
   const [publishUrl, setPublishUrl] = useState('');
   const [publishingRewrite, setPublishingRewrite] = useState(false);
@@ -515,6 +518,21 @@ export default function HotDetailPage() {
     }
   };
 
+  const rememberImageRatio = (url: string, width?: number, height?: number) => {
+    if (!url || !width || !height || width <= 0 || height <= 0) return;
+    const ratio = height / width;
+    setImageRatioMap((prev) => {
+      if (Math.abs((prev[url] || 0) - ratio) < 0.001) return prev;
+      return { ...prev, [url]: ratio };
+    });
+  };
+
+  const getImageDisplayHeight = (url: string) => {
+    const ratio = imageRatioMap[url];
+    if (!ratio || ratio <= 0) return DETAIL_IMAGE_FALLBACK_HEIGHT_RPX;
+    return Math.round(DETAIL_IMAGE_WIDTH_RPX * ratio);
+  };
+
   const renderMedia = (images: string[]) => {
     if (activeVideoUrl) {
       return (
@@ -533,12 +551,19 @@ export default function HotDetailPage() {
     }
     const safeImages = images.length > 0 ? images : [HOT_COVER_FALLBACK_URL];
     if (safeImages.length > 1) {
+      const activeImage = safeImages[Math.max(0, Math.min(currentSlide, safeImages.length - 1))] || safeImages[0];
+      const swiperHeight = `${getImageDisplayHeight(activeImage)}rpx`;
       return (
-        <View className='hot-detail-swiper-wrap'>
-          <Swiper className='hot-detail-swiper' indicatorDots={false} circular={false} current={currentSlide} onChange={(e) => setCurrentSlide(e.detail.current)}>
+        <View className='hot-detail-swiper-wrap' style={{ height: swiperHeight }}>
+          <Swiper className='hot-detail-swiper' style={{ height: swiperHeight }} indicatorDots={false} circular={false} current={currentSlide} onChange={(e) => setCurrentSlide(e.detail.current)}>
             {safeImages.map((url, index) => (
               <SwiperItem key={`${url}-${index}`}>
-                <Image className='hot-detail-cover' src={url} mode='aspectFill' />
+                <Image
+                  className='hot-detail-cover hot-detail-cover--natural'
+                  src={url}
+                  mode='widthFix'
+                  onLoad={(event) => rememberImageRatio(url, event.detail.width, event.detail.height)}
+                />
               </SwiperItem>
             ))}
           </Swiper>

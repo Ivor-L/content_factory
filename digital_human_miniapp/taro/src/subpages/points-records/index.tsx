@@ -8,12 +8,80 @@ type UsageEvent = {
   id: string;
   createdAt: string | null;
   description: string | null;
+  workflowId?: string | null;
   workflowName: string | null;
   reason: string | null;
   amount: number | null;
   delta: number | null;
   balanceAfter: number | null;
 };
+
+const FEATURE_NAME_MAP: Record<string, string> = {
+  action_transfer: '动作复刻视频',
+  action_transfer_video: '动作复刻视频',
+  canvas_image_generation: 'AI 作图',
+  canvas_image_understanding: '图片理解',
+  digital_human: '数字人视频',
+  image_text_replication: '图文复刻',
+  image_text_rewrite: '图文仿写',
+  infographic: '信息图生成',
+  keling_video: '视频生成',
+  kling_video: '视频生成',
+  miniapp_canvas_image: 'AI 作图',
+  nano_banana: 'AI 作图',
+  product_analysis: '产品分析',
+  remix_breakdown: '爆款拆解',
+  remix_video: '复刻视频生成',
+  storyboard_breakdown: '分镜拆解',
+  storyboard_image: '分镜图片生成',
+  storyboard_merge: '分镜成片合成',
+  storyboard_video: '分镜视频生成',
+  video_generation: '视频生成',
+  xhs_card: '图文卡片生成',
+  xhs_image: '小红书图片生成',
+  xhs_text2img: '小红书卡片生成',
+};
+
+const GENERIC_USAGE_KEYS = new Set([
+  'consume',
+  'consumed',
+  'credit',
+  'credit_consume',
+  'credit_consumed',
+  'credits',
+  'credits_consume',
+  'credits_consumed',
+  'deduct',
+  'deducted',
+  'deduction',
+  'points',
+  'usage',
+]);
+
+function normalizeFeatureKey(value: string | null | undefined) {
+  return String(value || '')
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[\s./:-]+/g, '_')
+    .replace(/_+/g, '_')
+    .toLowerCase();
+}
+
+function humanizeFeatureName(value: string | null | undefined) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const key = normalizeFeatureKey(raw);
+  if (FEATURE_NAME_MAP[key]) return FEATURE_NAME_MAP[key];
+  return raw
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function mappedFeatureName(value: string | null | undefined) {
+  const key = normalizeFeatureKey(value);
+  if (!key || GENERIC_USAGE_KEYS.has(key)) return '';
+  return FEATURE_NAME_MAP[key] || '';
+}
 
 export default function PointsRecordsPage() {
   const [loading, setLoading] = useState(true);
@@ -124,6 +192,24 @@ export default function PointsRecordsPage() {
     return '--';
   };
 
+  const getFeatureName = (event: UsageEvent) => {
+    const candidates = [
+      event.reason,
+      event.description,
+      event.workflowName,
+      event.workflowId,
+    ];
+    for (const candidate of candidates) {
+      const name = mappedFeatureName(candidate);
+      if (name) return name;
+    }
+    const workflowFallback = humanizeFeatureName(event.workflowName || event.workflowId);
+    if (workflowFallback) return workflowFallback;
+    const descriptionFallback = humanizeFeatureName(event.description || event.reason);
+    if (descriptionFallback) return descriptionFallback;
+    return '算力值变动';
+  };
+
   return (
     <ScrollView scrollY className='points-page'>
       <View className='points-topbar'>
@@ -147,7 +233,7 @@ export default function PointsRecordsPage() {
       {!loading && !error && events.map((event) => (
         <View key={event.id} className='points-card'>
           <View className='points-card-top'>
-            <Text className='points-card-title'>{event.reason || event.description || event.workflowName || '算力值变动'}</Text>
+            <Text className='points-card-title'>{getFeatureName(event)}</Text>
             <Text className={`points-card-delta ${(typeof event.delta === 'number' && event.delta < 0) || typeof event.amount === 'number' ? 'points-card-delta--minus' : 'points-card-delta--plus'}`}>
               {formatDelta(event)}
             </Text>

@@ -33,6 +33,29 @@ function isSeedanceFastModel(model: unknown): boolean {
   return /seedance.*fast|fast.*seedance/i.test(String(model || ""));
 }
 
+function normalizeVideoAspectRatio(value: unknown): "9:16" | "16:9" | "" {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+  if (raw === "portrait" || raw === "vertical" || raw === "竖屏" || raw === "竖版" || raw === "9/16" || raw === "9:16") {
+    return "9:16";
+  }
+  if (raw === "landscape" || raw === "horizontal" || raw === "横屏" || raw === "横版" || raw === "16/9" || raw === "16:9") {
+    return "16:9";
+  }
+  return "";
+}
+
+function readBooleanFlag(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return null;
+  if (["1", "true", "yes", "y", "是", "有"].includes(normalized)) return true;
+  if (["0", "false", "no", "n", "否", "无"].includes(normalized)) return false;
+  return null;
+}
+
 function getStoryboardGridUrl(task: Record<string, unknown>, breakdown: Record<string, unknown> | null): string {
   return (
     cleanUrl(task.storyboardImageUrl) ||
@@ -43,7 +66,12 @@ function getStoryboardGridUrl(task: Record<string, unknown>, breakdown: Record<s
   );
 }
 
-function withSeedanceStoryboardReference(prompt: string, params: Record<string, unknown>, storyboardGridUrl: string): string {
+function withSeedanceStoryboardReference(
+  prompt: string,
+  params: Record<string, unknown>,
+  storyboardGridUrl: string,
+  aspectRatio: "9:16" | "16:9",
+): string {
   if (!storyboardGridUrl) return prompt;
   const panelRange =
     typeof params.panel_range === "string"
@@ -66,7 +94,7 @@ function withSeedanceStoryboardReference(prompt: string, params: Record<string, 
     "- @Image2 is the full storyboard contact sheet for the source video.",
     "- Additional reference images may follow as @Image3-@Image9; use them only for product/detail consistency if supplied.",
     `- Use only the matching storyboard area${panelRange ? ` (${panelRange})` : ""}${timeRange ? ` for ${timeRange}` : ""} as composition, camera rhythm, action order, and pacing reference.`,
-    "- Do not generate a collage, grid, split-screen, border, panel number, frame label, or storyboard layout. The final output must be one normal full-screen 9:16 video clip.",
+    `- Do not generate a collage, grid, split-screen, border, panel number, frame label, or storyboard layout. The final output must be one normal full-screen ${aspectRatio} video clip.`,
   ].join("\n");
 }
 
@@ -88,10 +116,12 @@ function getReferenceImageUrls(
   firstFrameUrl: string,
   storyboardGridUrl: string,
   params: Record<string, unknown>,
+  options: { includeProductRefs: boolean; productImageUrl?: string | null },
 ): string[] {
   const urls: string[] = [];
   const push = (value: unknown) => {
     const url = cleanUrl(value);
+    if (!options.includeProductRefs && options.productImageUrl && url === options.productImageUrl) return;
     if (url && !urls.includes(url) && urls.length < 9) urls.push(url);
   };
 
@@ -101,7 +131,9 @@ function getReferenceImageUrls(
   const subjectRefs = Array.isArray(params.subject_refs) ? params.subject_refs : [];
   for (const ref of subjectRefs) {
     if (!ref || typeof ref !== "object") continue;
-    push((ref as Record<string, unknown>).url);
+    const record = ref as Record<string, unknown>;
+    if (!options.includeProductRefs && String(record.type || "").trim() === "product") continue;
+    push(record.url);
   }
 
   const extraRefs = Array.isArray(params.reference_image_urls)
@@ -140,6 +172,7 @@ export async function POST(
       model = "veo3.1-fast",
       allowTextVideo = false,
     } = body;
+    const requestedAspectRatio = normalizeVideoAspectRatio(body.aspectRatio || body.aspect_ratio || body.ratio) || "9:16";
 
     console.log("[generate-videos] Request:", { task_id: id, segmentIds, model, userId });
 
@@ -236,6 +269,7 @@ export async function POST(
 
     // 5. Fire n8n for each segment
     const breakdown = task.detailedBreakdown as Record<string, unknown> | null;
+    const pipelineKey = String(breakdown?.pipeline_key || breakdown?.pipelineKey || "");
     const style = (breakdown?.style as Record<string, unknown>) ?? {};
     const storyboardGridUrl = getStoryboardGridUrl(task as unknown as Record<string, unknown>, breakdown);
 
@@ -257,8 +291,15 @@ export async function POST(
         : {};
       const basePrompt = ensureNoBgmPrompt(segment.videoPrompt || segment.visualDescription || "");
       const firstFrameUrl = cleanUrl(segment.generatedImage) || cleanUrl(generationParams.reference_frame_url);
+      const hasProduct = readBooleanFlag(generationParams.has_product ?? generationParams.hasProduct);
+      const includeProductRefs = pipelineKey === "skeleton_video" ? hasProduct === true : hasProduct !== false;
+      const productImageUrl = Array.isArray(generationParams.subject_refs)
+        ? generationParams.subject_refs
+          .map((ref) => (ref && typeof ref === "object" ? ref as Record<string, unknown> : null))
+          .find((ref) => String(ref?.type || "").trim() === "product")?.url
+        : null;
       const finalPrompt = isSeedanceModel(model) && firstFrameUrl && storyboardGridUrl
-        ? withSeedanceStoryboardReference(basePrompt, generationParams, storyboardGridUrl)
+        ? withSeedanceStoryboardReference(basePrompt, generationParams, storyboardGridUrl, requestedAspectRatio)
         : basePrompt;
 
       const payload = {
@@ -270,14 +311,15 @@ export async function POST(
         storyboard_grid_url: storyboardGridUrl || null,
         storyboardGridUrl: storyboardGridUrl || null,
         reference_image_urls: isSeedanceModel(model)
-          ? getReferenceImageUrls(firstFrameUrl, storyboardGridUrl, generationParams)
+          ? getReferenceImageUrls(firstFrameUrl, storyboardGridUrl, generationParams, { includeProductRefs, productImageUrl: cleanUrl(productImageUrl) })
           : [],
         time_range: segment.timeRange || null,
         duration: segment.duration || 8,
         model: toProviderModel(model),
         requested_model: model,
         requestedModel: model,
-        aspect_ratio: "9:16",
+        aspect_ratio: requestedAspectRatio,
+        aspectRatio: requestedAspectRatio,
         callback_url: callbackUrl,
         api_key: apiKey,
         provider_api_key: seedanceProviderApiKey || undefined,

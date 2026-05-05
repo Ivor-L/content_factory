@@ -74,15 +74,16 @@ function getStatusMeta(product: ProductSummary): ProductStatusMeta {
   const effectiveStatus = analysisStatus || status;
 
   if (effectiveStatus.includes('FAIL')) return { label: '分析失败', className: 'failed' };
-  if (effectiveStatus.includes('PROCESS') || effectiveStatus.includes('ANALYZ')) {
-    return { label: product.progress && product.progress > 0 ? `分析中 ${product.progress}%` : '分析中', className: 'processing' };
-  }
   if (
+    (typeof product.progress === 'number' && product.progress >= 100) ||
     effectiveStatus.includes('COMPLETE') ||
     Boolean(product.sellingPointsText) ||
     collectTextLines(parseJsonValue(product.sellingPoints), 1).length > 0
   ) {
-    return { label: '分析完成', className: 'completed' };
+    return { label: '已完成', className: 'completed' };
+  }
+  if (effectiveStatus.includes('PROCESS') || effectiveStatus.includes('ANALYZ')) {
+    return { label: product.progress && product.progress > 0 ? `分析中 ${product.progress}%` : '分析中', className: 'processing' };
   }
   return { label: '未分析', className: 'pending' };
 }
@@ -135,6 +136,10 @@ export default function ProductLibraryPage() {
   };
 
   const openProductDetail = (productId: string) => {
+    if (productId.startsWith('optimistic-')) {
+      Taro.showToast({ title: '正在分析，稍后查看详情', icon: 'none' });
+      return;
+    }
     Taro.navigateTo({ url: `/subpages/product-detail/index?id=${encodeURIComponent(productId)}` });
   };
 
@@ -231,17 +236,31 @@ export default function ProductLibraryPage() {
       .filter(Boolean);
 
     setSubmitting(true);
+    const optimisticProduct: ProductSummary = {
+      id: `optimistic-${Date.now()}`,
+      name: trimmedName,
+      description: description.trim(),
+      images: imageUrls,
+      status: 'PROCESSING',
+      progress: 0,
+      analysisResult: JSON.stringify({ status: 'ANALYZING' }),
+    };
+    setModalOpen(false);
+    resetForm();
+    setProducts((prev) => [optimisticProduct, ...prev]);
+    Taro.showToast({ title: '正在分析', icon: 'success' });
     try {
-      await miniappApi.createProduct({
+      const created = await miniappApi.createProduct({
         name: trimmedName,
         description: description.trim(),
         images: imageUrls,
       });
-      Taro.showToast({ title: '已提交，分析中', icon: 'success' });
-      setModalOpen(false);
-      resetForm();
+      setProducts((prev) => prev.map((item) => (
+        item.id === optimisticProduct.id ? created : item
+      )));
       await loadProducts();
     } catch (error) {
+      setProducts((prev) => prev.filter((item) => item.id !== optimisticProduct.id));
       Taro.showToast({
         title: error instanceof Error ? error.message : '添加失败',
         icon: 'none',

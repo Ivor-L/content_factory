@@ -11,6 +11,13 @@ type ImageJobBody = {
   prompt?: unknown;
   model?: unknown;
   size?: unknown;
+  aspect_ratio?: unknown;
+  aspectRatio?: unknown;
+  ratio?: unknown;
+  negative_prompt?: unknown;
+  negativePrompt?: unknown;
+  reference_image_instructions?: unknown;
+  referenceImageInstructions?: unknown;
   n?: unknown;
   image?: unknown;
   images?: unknown;
@@ -98,6 +105,17 @@ function sanitizeSize(value: unknown): "1024x1024" | "1536x1024" | "1024x1536" {
   return "1024x1024";
 }
 
+function sanitizeAspectRatio(value: unknown): "1:1" | "3:4" | "4:3" | "9:16" | "16:9" {
+  if (value === "3:4" || value === "4:3" || value === "9:16" || value === "16:9") return value;
+  return "1:1";
+}
+
+function inferAspectRatioFromSize(size: string): "1:1" | "3:4" | "4:3" {
+  if (size === "1536x1024") return "4:3";
+  if (size === "1024x1536") return "3:4";
+  return "1:1";
+}
+
 function sanitizeCount(value: unknown): number {
   if (typeof value !== "number" || Number.isNaN(value)) return 1;
   return Math.min(Math.max(Math.round(value), 1), 4);
@@ -107,8 +125,14 @@ function sanitizeImages(value: unknown): string[] {
   const list = Array.isArray(value) ? value : value ? [value] : [];
   return list
     .map((item) => (typeof item === "string" ? item.trim() : ""))
-    .filter(Boolean)
-    .slice(0, 5);
+    .filter(Boolean);
+}
+
+function getModelMaxReferenceImages(model: string): number {
+  const normalized = model.trim().toLowerCase();
+  if (normalized === IMAGE2_WORKFLOW_MODEL) return 8;
+  if (normalized === "nano-banana-pro") return 8;
+  return 5;
 }
 
 function isImage2WorkflowModel(value: string): boolean {
@@ -344,6 +368,9 @@ function buildMetadata(input: {
   prompt: string;
   model: string;
   size: string;
+  aspectRatio: string;
+  negativePrompt: string;
+  referenceImageInstructions: string;
   count: number;
   referenceImages: string[];
   generatedImages?: string[];
@@ -358,6 +385,9 @@ function buildMetadata(input: {
       prompt: input.prompt,
       model: input.model,
       size: input.size,
+      aspectRatio: input.aspectRatio,
+      negativePrompt: input.negativePrompt,
+      referenceImageInstructions: input.referenceImageInstructions,
       count: input.count,
       referenceImages: input.referenceImages,
       images: input.generatedImages ?? [],
@@ -377,6 +407,9 @@ async function markJobCompleted(params: {
   prompt: string;
   model: string;
   size: string;
+  aspectRatio: string;
+  negativePrompt: string;
+  referenceImageInstructions: string;
   count: number;
   referenceImages: string[];
   generatedImages: string[];
@@ -412,6 +445,9 @@ async function markJobFailed(params: {
   prompt: string;
   model: string;
   size: string;
+  aspectRatio: string;
+  negativePrompt: string;
+  referenceImageInstructions: string;
   count: number;
   referenceImages: string[];
   errorMessage: string;
@@ -456,15 +492,33 @@ export async function POST(request: NextRequest) {
   const useImage2Workflow = isImage2WorkflowModel(rawModel);
   const model = useImage2Workflow ? IMAGE2_WORKFLOW_MODEL : (MODEL_ALIAS_MAP[rawModel.toLowerCase()] || rawModel);
   const size = sanitizeSize(body?.size);
+  const aspectRatio = body?.aspect_ratio || body?.aspectRatio || body?.ratio
+    ? sanitizeAspectRatio(body?.aspect_ratio ?? body?.aspectRatio ?? body?.ratio)
+    : inferAspectRatioFromSize(size);
+  const negativePrompt = sanitizeText(body?.negative_prompt ?? body?.negativePrompt, 500);
+  const referenceImageInstructions = sanitizeText(
+    body?.reference_image_instructions ?? body?.referenceImageInstructions,
+    500,
+  );
   const count = sanitizeCount(body?.n);
-  const referenceImages = sanitizeImages(body?.image ?? body?.images);
+  const maxReferenceImages = getModelMaxReferenceImages(rawModel);
+  const referenceImages = sanitizeImages(body?.image ?? body?.images).slice(0, maxReferenceImages);
   const configError = useImage2Workflow ? null : validateImageUpstreamConfig(model, apiKey);
   if (configError) {
     return NextResponse.json({ error: configError }, { status: 503 });
   }
   const taskId = randomUUID();
   const title = Array.from(prompt.replace(/\s+/g, " ").trim()).slice(0, 24).join("") || "AI作图";
-  const initialMetadata = buildMetadata({ prompt, model, size, count, referenceImages });
+  const initialMetadata = buildMetadata({
+    prompt,
+    model,
+    size,
+    aspectRatio,
+    negativePrompt,
+    referenceImageInstructions,
+    count,
+    referenceImages,
+  });
 
   await prisma.$transaction([
     prisma.creativeTask.create({
@@ -511,14 +565,18 @@ export async function POST(request: NextRequest) {
       raw_prompt: prompt,
       model: IMAGE2_WORKFLOW_MODEL,
       requested_model: IMAGE2_WORKFLOW_MODEL,
-      aspect_ratio: size === "1536x1024" ? "3:2" : size === "1024x1536" ? "2:3" : "1:1",
+      aspect_ratio: aspectRatio,
+      ratio: aspectRatio,
+      negative_prompt: negativePrompt,
+      reference_image_instructions: referenceImageInstructions,
       reference_image_urls: referenceImages,
       images: referenceImages,
       image_urls: referenceImages,
+      ...Object.fromEntries(referenceImages.map((url, index) => [`reference_image_url_${index + 1}`, url])),
       model_capabilities: {
         provider: "image2",
         supports_multi_image: true,
-        max_reference_images: 8,
+        max_reference_images: maxReferenceImages,
         preferred_input_field: "images",
       },
       callback_url: `${resolveCallbackBase(request)}/api/webhook/miniapp-canvas-image`,
@@ -554,6 +612,9 @@ export async function POST(request: NextRequest) {
           prompt,
           model,
           size,
+          aspectRatio,
+          negativePrompt,
+          referenceImageInstructions,
           count,
           referenceImages,
           generatedImages,
@@ -589,6 +650,9 @@ export async function POST(request: NextRequest) {
         prompt,
         model,
         size,
+        aspectRatio,
+        negativePrompt,
+        referenceImageInstructions,
         count,
         referenceImages,
         errorMessage,
@@ -615,6 +679,10 @@ export async function POST(request: NextRequest) {
           prompt,
           model,
           size,
+          aspect_ratio: aspectRatio,
+          aspectRatio,
+          negative_prompt: negativePrompt,
+          reference_image_instructions: referenceImageInstructions,
           n: count,
           image: referenceImages,
         },
@@ -639,6 +707,9 @@ export async function POST(request: NextRequest) {
         prompt,
         model,
         size,
+        aspectRatio,
+        negativePrompt,
+        referenceImageInstructions,
         count,
         referenceImages,
         generatedImages,
@@ -659,6 +730,9 @@ export async function POST(request: NextRequest) {
         prompt,
         model,
         size,
+        aspectRatio,
+        negativePrompt,
+        referenceImageInstructions,
         count,
         referenceImages,
         errorMessage,
