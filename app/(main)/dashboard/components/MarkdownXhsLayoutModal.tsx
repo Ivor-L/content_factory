@@ -34,6 +34,32 @@ type CardTemplateId =
   | "deep-night"
   | "pro-doc"
   | "blank";
+type CardStyleId =
+  | "apple-notes"
+  | "instagram"
+  | "coil-notebook"
+  | "pop-art"
+  | "bytedance"
+  | "alibaba"
+  | "art-deco"
+  | "glassmorphism"
+  | "warm"
+  | "minimal"
+  | "minimalist"
+  | "dreamy"
+  | "nature"
+  | "xiaohongshu"
+  | "notebook"
+  | "business"
+  | "japanese-magazine"
+  | "darktech"
+  | "typewriter"
+  | "watercolor"
+  | "traditional-chinese"
+  | "fairytale"
+  | "cyberpunk"
+  | "meadow-dawn";
+type CardStyleModeId = string;
 
 type SocialIconId = "gongzhonghao" | "shipinhao" | "xiaohongshu" | "zhihu" | "douyin" | "bilibili";
 type SocialIconPosition = "top-right" | "bottom-center";
@@ -179,6 +205,32 @@ type TemplateSpec = {
   defaultGradientAngle: number;
   defaultTextColor: string;
   defaultAccentColor: string;
+};
+
+type CardStyleMode = {
+  id: CardStyleModeId;
+  titleZh: string;
+  titleEn: string;
+  descZh: string;
+  descEn: string;
+  colors: string[];
+  previewBackground: string;
+  textColor: string;
+  accentColor?: string;
+};
+
+type CardStylePreset = {
+  id: CardStyleId;
+  titleZh: string;
+  titleEn: string;
+  descZh: string;
+  descEn: string;
+  colors: string[];
+  previewBackground: string;
+  textColor: string;
+  accentColor: string;
+  backendTemplateId: CardTemplateId;
+  modes?: CardStyleMode[];
 };
 
 type LayoutMetrics = {
@@ -602,6 +654,102 @@ const TEMPLATE_SPECS: TemplateSpec[] = [
 const TEMPLATE_INDEX = new Map(TEMPLATE_SPECS.map((it) => [it.id, it]));
 const COVER_STYLE_INDEX = new Map(COVER_STYLE_SPECS.map((it) => [it.id, it]));
 const SOCIAL_ICON_ID_SET = new Set<SocialIconId>(SOCIAL_ICON_OPTIONS.map((it) => it.id));
+
+const CARD_LAYOUT_STYLES: CardStylePreset[] = [
+  {
+    id: "apple-notes",
+    titleZh: "苹果备忘录",
+    titleEn: "Apple Notes",
+    descZh: "系统备忘录质感，适合轻量知识卡。",
+    descEn: "System notes look for lightweight cards.",
+    colors: ["#fff9dd", "#fef3c7", "#c99500"],
+    previewBackground: "linear-gradient(180deg,#fff9dd 0%,#fef3c7 100%)",
+    textColor: "#3f3a2a",
+    accentColor: "#c99500",
+    backendTemplateId: "ios-memo",
+    modes: [
+      {
+        id: "light-mode",
+        titleZh: "浅色",
+        titleEn: "Light",
+        descZh: "白底清爽",
+        descEn: "Clean white",
+        colors: ["#ffffff", "#f5f5f5"],
+        previewBackground: "linear-gradient(180deg,#ffffff 0%,#f5f5f5 100%)",
+        textColor: "#1f2937",
+      },
+      {
+        id: "dark-mode",
+        titleZh: "深色",
+        titleEn: "Dark",
+        descZh: "黑底高对比",
+        descEn: "High contrast dark",
+        colors: ["#000000", "#1a1a1a"],
+        previewBackground: "linear-gradient(180deg,#000000 0%,#1a1a1a 100%)",
+        textColor: "#f4f5f7",
+      },
+    ],
+  },
+  {
+    id: "instagram",
+    titleZh: "Instagram风格",
+    titleEn: "Instagram Style",
+    descZh: "社媒渐变封面感。",
+    descEn: "Social gradient cards.",
+    colors: ["#833ab4", "#fd1d1d", "#fcb045"],
+    previewBackground: "linear-gradient(135deg,#833ab4 0%,#fd1d1d 50%,#fcb045 100%)",
+    textColor: "#ffffff",
+    accentColor: "#ffe08c",
+    backendTemplateId: "aura-gradient",
+    modes: [
+      { id: "classic-mode", titleZh: "经典渐变", titleEn: "Classic", descZh: "紫红橙", descEn: "Purple red orange", colors: ["#833ab4", "#fd1d1d", "#fcb045"], previewBackground: "linear-gradient(135deg,#833ab4 0%,#fd1d1d 50%,#fcb045 100%)", textColor: "#ffffff" },
+      { id: "purple-pink-mode", titleZh: "粉紫梦幻", titleEn: "Purple Pink", descZh: "柔和粉紫", descEn: "Soft purple pink", colors: ["#667eea", "#764ba2", "#f093fb"], previewBackground: "linear-gradient(135deg,#667eea 0%,#764ba2 50%,#f093fb 100%)", textColor: "#ffffff" },
+      { id: "sunset-mode", titleZh: "日落橙", titleEn: "Sunset", descZh: "暖橙日落", descEn: "Warm sunset", colors: ["#ff6b35", "#f7931e", "#ffb347"], previewBackground: "linear-gradient(135deg,#ff6b35 0%,#f7931e 50%,#ffb347 100%)", textColor: "#ffffff" },
+      { id: "night-mode", titleZh: "深蓝夜空", titleEn: "Night", descZh: "深蓝沉静", descEn: "Deep blue night", colors: ["#2c3e50", "#34495e", "#4a69bd"], previewBackground: "linear-gradient(135deg,#2c3e50 0%,#34495e 50%,#4a69bd 100%)", textColor: "#f3f6ff" },
+      { id: "aurora-mode", titleZh: "极光模式", titleEn: "Aurora", descZh: "蓝绿极光", descEn: "Blue green aurora", colors: ["#00c9ff", "#92fe9d", "#00d2ff"], previewBackground: "linear-gradient(135deg,#00c9ff 0%,#92fe9d 50%,#00d2ff 100%)", textColor: "#07394a" },
+      { id: "coral-mode", titleZh: "珊瑚模式", titleEn: "Coral", descZh: "珊瑚粉橙", descEn: "Coral pink orange", colors: ["#ff7675", "#fd79a8", "#fdcb6e"], previewBackground: "linear-gradient(135deg,#ff7675 0%,#fd79a8 50%,#fdcb6e 100%)", textColor: "#ffffff" },
+      { id: "mint-mode", titleZh: "薄荷模式", titleEn: "Mint", descZh: "清爽薄荷", descEn: "Fresh mint", colors: ["#00b894", "#00cec9", "#55efc4"], previewBackground: "linear-gradient(135deg,#00b894 0%,#00cec9 50%,#55efc4 100%)", textColor: "#003329" },
+      { id: "luxury-mode", titleZh: "金色奢华", titleEn: "Luxury Gold", descZh: "金色高亮", descEn: "Luxury gold", colors: ["#d4af37", "#ffd700", "#ffed4e"], previewBackground: "linear-gradient(135deg,#d4af37 0%,#ffd700 50%,#ffed4e 100%)", textColor: "#3a2900" },
+      { id: "dark-mode", titleZh: "暗黑模式", titleEn: "Dark", descZh: "低调暗色", descEn: "Subtle dark", colors: ["#1a1a1a", "#2d2d2d", "#404040"], previewBackground: "linear-gradient(135deg,#1a1a1a 0%,#2d2d2d 50%,#404040 100%)", textColor: "#f4f4f4" },
+      { id: "black-mode", titleZh: "纯黑模式", titleEn: "Black", descZh: "纯黑卡片", descEn: "Pure black", colors: ["#000000", "#1a1a1a", "#2d2d2d"], previewBackground: "linear-gradient(135deg,#000000 0%,#1a1a1a 50%,#2d2d2d 100%)", textColor: "#f6f6f6" },
+      { id: "white-mode", titleZh: "纯白模式", titleEn: "White", descZh: "纯白卡片", descEn: "Pure white", colors: ["#ffffff", "#f8f9fa", "#e9ecef"], previewBackground: "linear-gradient(135deg,#ffffff 0%,#f8f9fa 50%,#e9ecef 100%)", textColor: "#1f2937" },
+    ],
+  },
+  { id: "coil-notebook", titleZh: "线圈笔记本", titleEn: "Coil Notebook", descZh: "线圈笔记纸张感。", descEn: "Coil notebook paper.", colors: ["#5271ff", "#ffffff", "#d7def9"], previewBackground: "linear-gradient(180deg,#5271ff 0%,#7790ff 100%)", textColor: "#ffffff", accentColor: "#d6e3ff", backendTemplateId: "notion-style", modes: [
+    { id: "blue-mode", titleZh: "默认蓝", titleEn: "Blue", descZh: "蓝色线圈", descEn: "Blue coil", colors: ["#5271ff", "#7790ff"], previewBackground: "linear-gradient(180deg,#5271ff 0%,#7790ff 100%)", textColor: "#ffffff" },
+    { id: "pink-mode", titleZh: "小红书粉", titleEn: "Pink", descZh: "粉色线圈", descEn: "Pink coil", colors: ["#ff7eb6", "#ffa4cd"], previewBackground: "linear-gradient(180deg,#ff7eb6 0%,#ffa4cd 100%)", textColor: "#ffffff" },
+    { id: "mint-mode", titleZh: "薄荷绿", titleEn: "Mint", descZh: "薄荷线圈", descEn: "Mint coil", colors: ["#7be495", "#a6efba"], previewBackground: "linear-gradient(180deg,#7be495 0%,#a6efba 100%)", textColor: "#11431f" },
+    { id: "yellow-mode", titleZh: "暖黄", titleEn: "Yellow", descZh: "暖黄线圈", descEn: "Warm yellow", colors: ["#ffd66b", "#ffe59d"], previewBackground: "linear-gradient(180deg,#ffd66b 0%,#ffe59d 100%)", textColor: "#4d3a00" },
+  ] },
+  { id: "pop-art", titleZh: "波普艺术", titleEn: "Pop Art", descZh: "高对比波点视觉。", descEn: "High contrast dot style.", colors: ["#fde041", "#2f5dff", "#101015"], previewBackground: "linear-gradient(150deg,#fde041 0%,#ffd43b 100%)", textColor: "#111827", accentColor: "#2f5dff", backendTemplateId: "aura-gradient", modes: [
+    { id: "default-mode", titleZh: "默认", titleEn: "Default", descZh: "黄色波普", descEn: "Yellow pop", colors: ["#fde041", "#ffd43b"], previewBackground: "linear-gradient(150deg,#fde041 0%,#ffd43b 100%)", textColor: "#111827" },
+    { id: "pink-blue-mode", titleZh: "粉蓝", titleEn: "Pink & Blue", descZh: "粉蓝撞色", descEn: "Pink blue", colors: ["#a6dcef", "#ff8ac5"], previewBackground: "linear-gradient(150deg,#a6dcef 0%,#ff8ac5 100%)", textColor: "#10143b" },
+    { id: "mint-mode", titleZh: "薄荷糖", titleEn: "Mint", descZh: "清新薄荷", descEn: "Fresh mint", colors: ["#7fd1ae", "#b5e8d4"], previewBackground: "linear-gradient(150deg,#7fd1ae 0%,#b5e8d4 100%)", textColor: "#163528" },
+    { id: "purple-mode", titleZh: "紫色星空", titleEn: "Purple", descZh: "暗紫星空", descEn: "Dark purple", colors: ["#1a1042", "#33206f"], previewBackground: "linear-gradient(150deg,#1a1042 0%,#33206f 100%)", textColor: "#f5f3ff" },
+  ] },
+  { id: "bytedance", titleZh: "字节范", titleEn: "ByteDance", descZh: "明亮产品文档感。", descEn: "Bright product-doc style.", colors: ["#ffffff", "#0066ff", "#fa2c19"], previewBackground: "linear-gradient(155deg,#ffffff 0%,#f3f7ff 100%)", textColor: "#1f2937", accentColor: "#0066ff", backendTemplateId: "pro-doc" },
+  { id: "alibaba", titleZh: "阿里橙", titleEn: "Alibaba", descZh: "橙色商业提案感。", descEn: "Orange business style.", colors: ["#ffffff", "#ff6a00", "#ff8c00"], previewBackground: "linear-gradient(145deg,#ffffff 0%,#fff1e8 100%)", textColor: "#2c2118", accentColor: "#ff6a00", backendTemplateId: "pro-doc" },
+  { id: "art-deco", titleZh: "艺术装饰", titleEn: "Art Deco", descZh: "黑金复古装饰。", descEn: "Black gold deco.", colors: ["#0a0a0a", "#d4af37", "#f5e7bc"], previewBackground: "linear-gradient(145deg,#0a0a0a 0%,#1a1a1a 60%,#2a2518 100%)", textColor: "#f5e7bc", accentColor: "#d4af37", backendTemplateId: "deep-night" },
+  { id: "glassmorphism", titleZh: "玻璃拟态", titleEn: "Glass Morphism", descZh: "暗色玻璃质感。", descEn: "Dark glass style.", colors: ["#161616", "#4f7cff", "#ffffff"], previewBackground: "linear-gradient(145deg,#161616 0%,#242a38 60%,#2f466f 100%)", textColor: "#eaf0ff", accentColor: "#8cc6ff", backendTemplateId: "deep-night" },
+  { id: "warm", titleZh: "温暖柔和", titleEn: "Warm & Soft", descZh: "暖色柔光。", descEn: "Warm soft light.", colors: ["#fff8f5", "#ffeae0", "#f08b58"], previewBackground: "linear-gradient(135deg,#fff8f5 0%,#ffeae0 100%)", textColor: "#4b2e24", accentColor: "#f08b58", backendTemplateId: "elegant-book" },
+  { id: "minimal", titleZh: "简约高级灰", titleEn: "Minimal Gray", descZh: "清爽灰阶。", descEn: "Clean gray scale.", colors: ["#ffffff", "#f3f4f6", "#6b7280"], previewBackground: "linear-gradient(180deg,#ffffff 0%,#f3f4f6 100%)", textColor: "#374151", accentColor: "#6b7280", backendTemplateId: "swiss-studio" },
+  { id: "minimalist", titleZh: "极简黑白", titleEn: "Minimalist B&W", descZh: "黑白极简。", descEn: "Black and white.", colors: ["#ffffff", "#f5f5f5", "#111111"], previewBackground: "linear-gradient(180deg,#ffffff 0%,#f5f5f5 100%)", textColor: "#111111", accentColor: "#111111", backendTemplateId: "minimalist-magazine" },
+  { id: "dreamy", titleZh: "梦幻渐变", titleEn: "Dreamy Gradient", descZh: "浅色梦幻渐变。", descEn: "Light dreamy gradient.", colors: ["#f5f7ff", "#e8f0ff", "#a855f7"], previewBackground: "linear-gradient(135deg,#f5f7ff 0%,#e8f0ff 100%)", textColor: "#3b2c53", accentColor: "#a855f7", backendTemplateId: "aura-gradient" },
+  { id: "nature", titleZh: "清新自然", titleEn: "Fresh Nature", descZh: "自然绿意。", descEn: "Fresh natural green.", colors: ["#f9fcf7", "#e6f5df", "#3f7f4c"], previewBackground: "linear-gradient(135deg,#f9fcf7 0%,#e6f5df 100%)", textColor: "#1f3d29", accentColor: "#3f7f4c", backendTemplateId: "notion-style" },
+  { id: "xiaohongshu", titleZh: "紫色小红书", titleEn: "Purple Social", descZh: "小红书风格紫调。", descEn: "Purple social style.", colors: ["#8863cf", "#b692ff", "#ffffff"], previewBackground: "linear-gradient(135deg,#8863cf 0%,#b692ff 100%)", textColor: "#ffffff", accentColor: "#ffe7ff", backendTemplateId: "aura-gradient" },
+  { id: "notebook", titleZh: "笔记本", titleEn: "Notebook", descZh: "轻文档笔记。", descEn: "Light notebook doc.", colors: ["#f5f5f5", "#e5e7eb", "#6b7280"], previewBackground: "linear-gradient(180deg,#f5f5f5 0%,#eceff3 100%)", textColor: "#374151", accentColor: "#6b7280", backendTemplateId: "notion-style" },
+  { id: "business", titleZh: "商务简报", titleEn: "Business Brief", descZh: "蓝色商务简报。", descEn: "Blue business brief.", colors: ["#ffffff", "#f3f6fb", "#2563eb"], previewBackground: "linear-gradient(180deg,#ffffff 0%,#f3f6fb 100%)", textColor: "#1f2937", accentColor: "#2563eb", backendTemplateId: "pro-doc" },
+  { id: "japanese-magazine", titleZh: "日本杂志", titleEn: "Japanese Magazine", descZh: "日杂留白排版。", descEn: "Japanese magazine layout.", colors: ["#ffffff", "#f4f0ea", "#2e2a25"], previewBackground: "linear-gradient(180deg,#ffffff 0%,#f4f0ea 100%)", textColor: "#2e2a25", accentColor: "#8b5e3c", backendTemplateId: "minimalist-magazine" },
+  { id: "darktech", titleZh: "暗黑科技", titleEn: "Dark Tech", descZh: "科技暗色蓝光。", descEn: "Dark tech glow.", colors: ["#0f1218", "#1b2436", "#00d4ff"], previewBackground: "linear-gradient(145deg,#0f1218 0%,#1b2436 100%)", textColor: "#d9f2ff", accentColor: "#00d4ff", backendTemplateId: "deep-night" },
+  { id: "typewriter", titleZh: "复古打字机", titleEn: "Vintage Typewriter", descZh: "旧纸打字机。", descEn: "Old paper typewriter.", colors: ["#f8f3e3", "#efe2c3", "#6a5d45"], previewBackground: "linear-gradient(145deg,#f8f3e3 0%,#efe2c3 100%)", textColor: "#473d2d", accentColor: "#6a5d45", backendTemplateId: "elegant-book" },
+  { id: "watercolor", titleZh: "水彩艺术", titleEn: "Watercolor Art", descZh: "柔和水彩渐变。", descEn: "Soft watercolor.", colors: ["#ffffff", "#dbeafe", "#fbcfe8"], previewBackground: "linear-gradient(145deg,#ffffff 0%,#dbeafe 48%,#fbcfe8 100%)", textColor: "#3a3f51", accentColor: "#6f4ee6", backendTemplateId: "aura-gradient" },
+  { id: "traditional-chinese", titleZh: "中国传统", titleEn: "Traditional Chinese", descZh: "传统纸张暖色。", descEn: "Traditional warm paper.", colors: ["#f8f0e0", "#eadbc0", "#8c3a3a"], previewBackground: "linear-gradient(145deg,#f8f0e0 0%,#eadbc0 100%)", textColor: "#3b2a1f", accentColor: "#8c3a3a", backendTemplateId: "elegant-book" },
+  { id: "fairytale", titleZh: "儿童童话", titleEn: "Fairy Tale", descZh: "粉色童话感。", descEn: "Pink fairy tale.", colors: ["#fff9f9", "#ffe4ef", "#f472b6"], previewBackground: "linear-gradient(145deg,#fff9f9 0%,#ffe4ef 100%)", textColor: "#5b2c44", accentColor: "#f472b6", backendTemplateId: "aura-gradient" },
+  { id: "cyberpunk", titleZh: "赛博朋克", titleEn: "Cyberpunk", descZh: "霓虹赛博暗色。", descEn: "Neon cyber dark.", colors: ["#0d0e19", "#301b5e", "#00f5ff"], previewBackground: "linear-gradient(145deg,#0d0e19 0%,#301b5e 60%,#571089 100%)", textColor: "#e7f9ff", accentColor: "#00f5ff", backendTemplateId: "deep-night" },
+  { id: "meadow-dawn", titleZh: "青野晨光", titleEn: "Meadow Dawn", descZh: "草地晨光自然感。", descEn: "Meadow dawn natural.", colors: ["#8b9a7a", "#c4d6ac", "#ffffff"], previewBackground: "linear-gradient(145deg,#8b9a7a 0%,#c4d6ac 100%)", textColor: "#1f2f24", accentColor: "#5f7a4a", backendTemplateId: "notion-style" },
+];
+
+const CARD_STYLE_INDEX = new Map<CardStyleId, CardStylePreset>(CARD_LAYOUT_STYLES.map((item) => [item.id, item]));
 
 const TEXT_CARD_STORAGE_KEY = "codepilot:markdown-text-card:settings:v1";
 const XHS_EDITOR_DRAFT_PREFIX = "codepilot:xhs-layout:editor-draft:v1:";
@@ -1136,6 +1284,56 @@ function findTemplate(id: CardTemplateId): TemplateSpec {
   return TEMPLATE_INDEX.get(id) || TEMPLATE_SPECS[0];
 }
 
+function findCardStyle(id: CardStyleId): CardStylePreset {
+  return CARD_STYLE_INDEX.get(id) || CARD_LAYOUT_STYLES[0];
+}
+
+function getFirstCardStyleMode(style: CardStylePreset): CardStyleMode | null {
+  return style.modes?.[0] || null;
+}
+
+function getCardStyleMode(style: CardStylePreset, modeId: CardStyleModeId): CardStyleMode | null {
+  if (!style.modes || style.modes.length === 0) return null;
+  return style.modes.find((mode) => mode.id === modeId) || style.modes[0] || null;
+}
+
+function parseLinearGradientPreset(background: string): {
+  bgMode: BgMode;
+  bgColor: string;
+  gradientStart: string;
+  gradientEnd: string;
+  gradientAngle: number;
+} {
+  const value = background.trim();
+  const gradientMatch = value.match(/linear-gradient\(\s*([0-9.]+)deg\s*,\s*(#[0-9a-fA-F]{3,8})[^,]*,\s*(#[0-9a-fA-F]{3,8})/);
+  if (gradientMatch) {
+    return {
+      bgMode: "gradient",
+      bgColor: gradientMatch[2],
+      gradientStart: gradientMatch[2],
+      gradientEnd: gradientMatch[3],
+      gradientAngle: Math.round(Number(gradientMatch[1])) || 180,
+    };
+  }
+  const colors = Array.from(value.matchAll(/#[0-9a-fA-F]{3,8}/g)).map((match) => match[0]);
+  if (colors.length >= 2) {
+    return {
+      bgMode: "gradient",
+      bgColor: colors[0],
+      gradientStart: colors[0],
+      gradientEnd: colors[1],
+      gradientAngle: 135,
+    };
+  }
+  return {
+    bgMode: "solid",
+    bgColor: colors[0] || "#ffffff",
+    gradientStart: colors[0] || "#ffffff",
+    gradientEnd: colors[1] || colors[0] || "#f5f5f5",
+    gradientAngle: 180,
+  };
+}
+
 function findCoverStyle(id: CoverStyleId): CoverStyleSpec {
   return COVER_STYLE_INDEX.get(id) || COVER_STYLE_SPECS[0];
 }
@@ -1150,6 +1348,25 @@ function applyTemplateDefaults(previous: CardConfig, tpl: TemplateSpec): CardCon
     gradientAngle: tpl.defaultGradientAngle,
     textColor: tpl.defaultTextColor,
     accentColor: tpl.defaultAccentColor,
+  };
+}
+
+function applyCardStyleDefaults(previous: CardConfig, style: CardStylePreset, mode: CardStyleMode | null): CardConfig {
+  const background = parseLinearGradientPreset(mode?.previewBackground || style.previewBackground);
+  const textColor = mode?.textColor || style.textColor;
+  const accentColor = mode?.accentColor || style.accentColor;
+  return {
+    ...previous,
+    ...background,
+    textColor,
+    accentColor,
+    fontSize: 40,
+    lineHeight: 1.58,
+    letterSpacing: 0,
+    textPadding: style.id === "minimalist" || style.id === "japanese-magazine" ? 34 : 40,
+    h1Scale: style.id === "minimalist" || style.id === "pop-art" ? 1.72 : 1.55,
+    h2Scale: 1.35,
+    h3Scale: 1.18,
   };
 }
 
@@ -1187,6 +1404,8 @@ function createInitialConfig(templateId: CardTemplateId): CardConfig {
 
 type PersistedTextCardSettings = {
   version: 1;
+  cardStyleId?: CardStyleId;
+  cardStyleModeId?: CardStyleModeId;
   templateId: CardTemplateId;
   config: CardConfig;
   format: ExportFormat;
@@ -1204,6 +1423,15 @@ function normalizePersistedCardSettings(raw: string | null): PersistedTextCardSe
 
     const persistedTemplate = parsed.templateId;
     if (!persistedTemplate || !TEMPLATE_INDEX.has(persistedTemplate)) return null;
+    const persistedStyle =
+      parsed.cardStyleId && CARD_STYLE_INDEX.has(parsed.cardStyleId)
+        ? parsed.cardStyleId
+        : CARD_LAYOUT_STYLES.find((style) => style.backendTemplateId === persistedTemplate)?.id || CARD_LAYOUT_STYLES[0].id;
+    const stylePreset = findCardStyle(persistedStyle);
+    const persistedStyleMode =
+      typeof parsed.cardStyleModeId === "string" && stylePreset.modes?.some((mode) => mode.id === parsed.cardStyleModeId)
+        ? parsed.cardStyleModeId
+        : getFirstCardStyleMode(stylePreset)?.id || "";
 
     const base = createInitialConfig(persistedTemplate);
     const cfg: Partial<CardConfig> = parsed.config ?? {};
@@ -1274,6 +1502,8 @@ function normalizePersistedCardSettings(raw: string | null): PersistedTextCardSe
 
     return {
       version: 1,
+      cardStyleId: persistedStyle,
+      cardStyleModeId: persistedStyleMode,
       templateId: persistedTemplate,
       config: nextConfig,
       format: nextFormat,
@@ -2965,8 +3195,10 @@ export function MarkdownTextCardDialog({
   const { t, locale } = useTranslation();
   const isZh = locale === "zh";
 
-  const [templateId, setTemplateId] = useState<CardTemplateId>("cinematic-film");
-  const [config, setConfig] = useState<CardConfig>(() => createInitialConfig("cinematic-film"));
+  const [cardStyleId, setCardStyleId] = useState<CardStyleId>("apple-notes");
+  const [cardStyleModeId, setCardStyleModeId] = useState<CardStyleModeId>("light-mode");
+  const [templateId, setTemplateId] = useState<CardTemplateId>("ios-memo");
+  const [config, setConfig] = useState<CardConfig>(() => applyCardStyleDefaults(createInitialConfig("ios-memo"), findCardStyle("apple-notes"), getFirstCardStyleMode(findCardStyle("apple-notes"))));
   const [format, setFormat] = useState<ExportFormat>("png");
   const [previewScale, setPreviewScale] = useState(100);
   const [pageIndex, setPageIndex] = useState(0);
@@ -2989,6 +3221,8 @@ export function MarkdownTextCardDialog({
   const publishRequestLockRef = useRef(false);
   const isBrowser = typeof window !== "undefined";
 
+  const currentCardStyle = useMemo(() => findCardStyle(cardStyleId), [cardStyleId]);
+  const currentCardStyleMode = useMemo(() => getCardStyleMode(currentCardStyle, cardStyleModeId), [cardStyleModeId, currentCardStyle]);
   const currentTemplate = useMemo(() => findTemplate(templateId), [templateId]);
   const title = useMemo(() => getDefaultTitle(filePath), [filePath]);
   const inferredCoverTitle = useMemo(() => deriveCoverTitleFromMarkdown(markdown, title), [markdown, title]);
@@ -3000,9 +3234,22 @@ export function MarkdownTextCardDialog({
   const pages = useMemo(() => paginateMarkdown(cardMarkdown, templateId, config), [cardMarkdown, templateId, config]);
 
   useEffect(() => {
+    const firstMode = getFirstCardStyleMode(currentCardStyle);
+    if (!firstMode) {
+      if (cardStyleModeId) setCardStyleModeId("");
+      return;
+    }
+    if (!currentCardStyle.modes?.some((mode) => mode.id === cardStyleModeId)) {
+      setCardStyleModeId(firstMode.id);
+    }
+  }, [cardStyleModeId, currentCardStyle]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const persisted = normalizePersistedCardSettings(window.localStorage.getItem(TEXT_CARD_STORAGE_KEY));
     if (persisted) {
+      setCardStyleId(persisted.cardStyleId || "apple-notes");
+      setCardStyleModeId(persisted.cardStyleModeId || getFirstCardStyleMode(findCardStyle(persisted.cardStyleId || "apple-notes"))?.id || "");
       setTemplateId(persisted.templateId);
       setConfig(persisted.config);
       setFormat(persisted.format);
@@ -3016,6 +3263,8 @@ export function MarkdownTextCardDialog({
     if (!persistedHydrated || typeof window === "undefined") return;
     const payload: PersistedTextCardSettings = {
       version: 1,
+      cardStyleId,
+      cardStyleModeId,
       templateId,
       config,
       format,
@@ -3027,7 +3276,7 @@ export function MarkdownTextCardDialog({
     } catch {
       // ignore localStorage failures
     }
-  }, [persistedHydrated, templateId, config, format, previewScale, coverImageName]);
+  }, [persistedHydrated, cardStyleId, cardStyleModeId, templateId, config, format, previewScale, coverImageName]);
 
   useEffect(() => {
     if (!open) return;
@@ -3203,9 +3452,20 @@ export function MarkdownTextCardDialog({
   const canExport = pages.length > 0 && !exporting;
   const safePageIndex = Math.max(0, Math.min(pageIndex, Math.max(0, pages.length - 1)));
 
-  const handleTemplateChange = (nextId: CardTemplateId) => {
-    setTemplateId(nextId);
-    setConfig((prev) => applyTemplateDefaults(prev, findTemplate(nextId)));
+  const handleCardStyleChange = (nextId: CardStyleId) => {
+    const style = findCardStyle(nextId);
+    const firstMode = getFirstCardStyleMode(style);
+    setCardStyleId(style.id);
+    setCardStyleModeId(firstMode?.id || "");
+    setTemplateId(style.backendTemplateId);
+    setConfig((prev) => applyCardStyleDefaults(prev, style, firstMode));
+    setPageIndex(0);
+  };
+
+  const handleCardStyleModeChange = (nextModeId: CardStyleModeId) => {
+    const mode = getCardStyleMode(currentCardStyle, nextModeId);
+    setCardStyleModeId(mode?.id || "");
+    setConfig((prev) => applyCardStyleDefaults(prev, currentCardStyle, mode));
     setPageIndex(0);
   };
 
@@ -3417,28 +3677,78 @@ export function MarkdownTextCardDialog({
         >
           <div className="rounded-lg border border-border/60 bg-muted/20 p-4 space-y-4 overflow-y-auto min-w-0">
             <div className="rounded-md border border-border/50 bg-background/80 p-3 text-xs">
-              <p className="font-medium text-foreground">{isZh ? currentTemplate.nameZh : currentTemplate.nameEn}</p>
-              <p className="mt-1 text-muted-foreground">{isZh ? currentTemplate.descZh : currentTemplate.descEn}</p>
+              <p className="font-medium text-foreground">{isZh ? currentCardStyle.titleZh : currentCardStyle.titleEn}</p>
+              <p className="mt-1 text-muted-foreground">
+                {isZh ? currentCardStyle.descZh : currentCardStyle.descEn}
+                {currentCardStyleMode ? ` · ${isZh ? currentCardStyleMode.titleZh : currentCardStyleMode.titleEn}` : ""}
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                {isZh ? "底层模板" : "Render template"}: {isZh ? currentTemplate.nameZh : currentTemplate.nameEn}
+              </p>
               <p className="mt-2 text-muted-foreground">{t("docPreview.textCardPageCount", { count: pages.length })}</p>
               <p className="text-muted-foreground">{t("docPreview.textCardResolution")}</p>
             </div>
 
             <div>
-              <p className="text-xs mb-2 text-muted-foreground">{t("docPreview.textCardTemplate")}</p>
+              <p className="text-xs mb-2 text-muted-foreground">{isZh ? "风格主题" : "Style Theme"}</p>
               <div className="grid grid-cols-2 gap-2">
-                {TEMPLATE_SPECS.map((tpl) => (
-                  <Button
-                    key={tpl.id}
-                    variant={templateId === tpl.id ? "default" : "outline"}
-                    size="sm"
-                    className="justify-start"
-                    onClick={() => handleTemplateChange(tpl.id)}
-                  >
-                    {isZh ? tpl.nameZh : tpl.nameEn}
-                  </Button>
-                ))}
+                {CARD_LAYOUT_STYLES.map((style) => {
+                  const active = cardStyleId === style.id;
+                  const displayMode = active ? getCardStyleMode(style, cardStyleModeId) : getFirstCardStyleMode(style);
+                  const previewBackground = displayMode?.previewBackground || style.previewBackground;
+                  const previewColors = displayMode?.colors || style.colors;
+                  return (
+                    <button
+                      key={style.id}
+                      type="button"
+                      onClick={() => handleCardStyleChange(style.id)}
+                      className={[
+                        "rounded-lg border p-2 text-left transition",
+                        active ? "border-primary bg-primary/10 ring-2 ring-primary/20" : "border-border/60 bg-background/80 hover:border-border",
+                      ].join(" ")}
+                    >
+                      <div className="h-12 rounded-md border border-border/40" style={{ background: previewBackground }} />
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <p className="min-w-0 truncate text-xs font-semibold text-foreground">{isZh ? style.titleZh : style.titleEn}</p>
+                        <div className="flex shrink-0 gap-1">
+                          {previewColors.slice(0, 3).map((color, index) => (
+                            <span
+                              key={`${style.id}-${color}-${index}`}
+                              className="h-3 w-3 rounded-full border border-black/10"
+                              style={{ backgroundColor: color }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <p className="mt-0.5 truncate text-[10px] text-muted-foreground">{isZh ? style.descZh : style.descEn}</p>
+                    </button>
+                  );
+                })}
               </div>
             </div>
+
+            {currentCardStyle.modes && currentCardStyle.modes.length > 0 ? (
+              <div className="rounded-lg border border-border/60 bg-background/80 p-3 space-y-2">
+                <p className="text-xs text-muted-foreground">{isZh ? "风格模式" : "Style Mode"}</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {currentCardStyle.modes.map((mode) => (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      onClick={() => handleCardStyleModeChange(mode.id)}
+                      className={[
+                        "rounded-md border px-2 py-2 text-left transition",
+                        currentCardStyleMode?.id === mode.id ? "border-primary bg-primary/10" : "border-border/60 hover:border-border",
+                      ].join(" ")}
+                    >
+                      <div className="mb-1 h-5 rounded" style={{ background: mode.previewBackground }} />
+                      <p className="truncate text-[11px] font-medium">{isZh ? mode.titleZh : mode.titleEn}</p>
+                      <p className="truncate text-[10px] text-muted-foreground">{isZh ? mode.descZh : mode.descEn}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div className="rounded-lg border border-border/60 bg-background/80 p-3 space-y-3">
               <p className="text-sm font-semibold">{isZh ? "基础配置" : "Basic Config"}</p>

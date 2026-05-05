@@ -19,6 +19,45 @@ interface CharacterFormProps {
   };
 }
 
+const ACCEPTED_AUDIO_EXTENSIONS = [
+  '.mp3',
+  '.mpeg',
+  '.mpga',
+  '.wav',
+  '.m4a',
+  '.mp4',
+  '.aac',
+  '.caf',
+  '.aif',
+  '.aiff',
+  '.ogg',
+  '.oga',
+  '.webm',
+] as const;
+
+const AUDIO_ACCEPT = [
+  'audio/*',
+  'audio/mpeg',
+  'audio/mp4',
+  'audio/x-m4a',
+  'audio/wav',
+  'audio/x-wav',
+  'audio/aac',
+  'audio/x-caf',
+  'audio/aiff',
+  'audio/ogg',
+  'audio/webm',
+  ...ACCEPTED_AUDIO_EXTENSIONS,
+].join(',');
+
+function isAcceptedAudioFile(file: File) {
+  const type = file.type.toLowerCase();
+  if (type.startsWith('audio/')) return true;
+
+  const name = file.name.toLowerCase();
+  return ACCEPTED_AUDIO_EXTENSIONS.some((extension) => name.endsWith(extension));
+}
+
 export function CharacterForm({ onSuccess, onCancel, initialData }: CharacterFormProps) {
   const { t } = useLanguage();
   const characterToast = t.characters?.toast || {};
@@ -110,6 +149,11 @@ export function CharacterForm({ onSuccess, onCancel, initialData }: CharacterFor
   const handleVoiceUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!isAcceptedAudioFile(file)) {
+      toast.error(characterToast.audioTypeError || 'Please upload an audio file');
+      e.target.value = '';
+      return;
+    }
     await uploadVoiceFile(file);
     e.target.value = '';
   };
@@ -224,7 +268,7 @@ export function CharacterForm({ onSuccess, onCancel, initialData }: CharacterFor
     
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
-      if (!file.type.startsWith('audio/')) {
+      if (!isAcceptedAudioFile(file)) {
         return toast.error(characterToast.audioTypeError || 'Please upload an audio file');
       }
       await uploadVoiceFile(file);
@@ -453,7 +497,7 @@ export function CharacterForm({ onSuccess, onCancel, initialData }: CharacterFor
                       <Mic className="h-5 w-5" />
                     </div>
                     <p className="text-sm text-gray-500 dark:text-gray-400">{t.characters.voicePlaceholder}</p>
-                    <p className="text-xs text-gray-400">MP3, WAV, etc.</p>
+                    <p className="text-xs text-gray-400">MP3, WAV, M4A, AAC, CAF</p>
                     <div className="grid w-full gap-2 sm:grid-cols-2">
                       <button
                         type="button"
@@ -478,7 +522,7 @@ export function CharacterForm({ onSuccess, onCancel, initialData }: CharacterFor
                 )}
               </div>
             )}
-            <input ref={voiceInputRef} type="file" className="hidden" onChange={handleVoiceUpload} accept="audio/*" disabled={uploadingVoice} />
+            <input ref={voiceInputRef} type="file" className="hidden" onChange={handleVoiceUpload} accept={AUDIO_ACCEPT} disabled={uploadingVoice} />
           </div>
         </div>
       </div>

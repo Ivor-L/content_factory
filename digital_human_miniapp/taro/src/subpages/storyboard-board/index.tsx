@@ -1380,28 +1380,23 @@ export default function StoryboardBoardPage() {
             </ScrollView>
 
             <View className='storyboard-edit-composer' style={composerStyle}>
-              <View className='storyboard-edit-input-card'>
-                {editingType === 'image' && isRemixRoute && (
-                  <View className='storyboard-edit-quick-row'>
-                    <Text className='storyboard-edit-quick-label'>快捷填充</Text>
-                    <View
-                      className='storyboard-edit-quick-btn'
-                      onClick={() => applyReplaceMode('product')}
-                    >
-                      <Text className='storyboard-edit-quick-btn-text'>
-                        换产品
-                      </Text>
-                    </View>
-                    <View
-                      className='storyboard-edit-quick-btn'
-                      onClick={() => applyReplaceMode('character')}
-                    >
-                      <Text className='storyboard-edit-quick-btn-text'>
-                        换角色
-                      </Text>
-                    </View>
+              {editingType === 'image' && isRemixRoute && (
+                <View className='storyboard-edit-quick-actions'>
+                  <View
+                    className='storyboard-edit-quick-btn'
+                    onClick={() => applyReplaceMode('product')}
+                  >
+                    <Text className='storyboard-edit-quick-btn-text'>换产品</Text>
                   </View>
-                )}
+                  <View
+                    className='storyboard-edit-quick-btn'
+                    onClick={() => applyReplaceMode('character')}
+                  >
+                    <Text className='storyboard-edit-quick-btn-text'>换角色</Text>
+                  </View>
+                </View>
+              )}
+              <View className='storyboard-edit-input-card'>
                 <View className='storyboard-edit-ref-row storyboard-edit-ref-row--top'>
                   <View className='storyboard-edit-ref-add' onClick={handleChooseRefImage}>
                     <Text className='storyboard-edit-ref-add-text'>{uploadingRef ? '...' : '+'}</Text>
@@ -1422,7 +1417,8 @@ export default function StoryboardBoardPage() {
                   onInput={(e) => setEditingPrompt(e.detail.value)}
                   maxlength={3000}
                   placeholder='请输入提示词'
-                  adjustPosition
+                  fixed
+                  adjustPosition={false}
                   cursorSpacing={20}
                 />
 
