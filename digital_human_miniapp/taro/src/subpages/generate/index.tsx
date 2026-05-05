@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, Textarea, Image, Video } from '@tarojs/components';
+import { View, Text, ScrollView, Textarea, Image, Video, Picker } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../utils/api';
@@ -29,6 +29,14 @@ const VIDEO_CATEGORIES = [
 
 const SKELETON_DURATION_OPTIONS = [32, 64, 96] as const;
 const DEFAULT_SKELETON_DURATION_SECONDS = 64;
+const SKELETON_LANGUAGE_OPTIONS = [
+  { label: '跟随脚本', value: 'auto', hint: '按输入文案自动判断语言' },
+  { label: '中文', value: 'zh-CN', hint: '生成中文口播与镜头脚本' },
+  { label: 'English', value: 'en', hint: 'Generate English voiceover and prompts' },
+  { label: '日本語', value: 'ja', hint: '日本語の台本と映像指示を生成' },
+  { label: '한국어', value: 'ko', hint: '한국어 대사와 장면 프롬프트 생성' },
+  { label: 'Español', value: 'es', hint: 'Generar guion y prompts en español' },
+] as const;
 
 export default function GeneratePage() {
   const [pageMode, setPageMode] = useState<'digital-human' | 'video-generate'>('digital-human');
@@ -47,6 +55,7 @@ export default function GeneratePage() {
   const [videoFileName, setVideoFileName] = useState('');
   const [skeletonScript, setSkeletonScript] = useState('');
   const [skeletonDurationSeconds, setSkeletonDurationSeconds] = useState<number>(DEFAULT_SKELETON_DURATION_SECONDS);
+  const [skeletonLanguageIndex, setSkeletonLanguageIndex] = useState(0);
   const [products, setProducts] = useState<Array<{ id: string; name: string; images: string[] }>>([]);
   const [selectedProductId, setSelectedProductId] = useState('');
   const [uploadingAudio, setUploadingAudio] = useState(false);
@@ -92,6 +101,7 @@ export default function GeneratePage() {
   });
 
   const selectedChar = characters[selectedCharIdx];
+  const skeletonLanguage = SKELETON_LANGUAGE_OPTIONS[skeletonLanguageIndex] || SKELETON_LANGUAGE_OPTIONS[0];
   const selectedRoleVoiceUrl = selectedChar?.voiceUrl || '';
   const videoVoiceUrl =
     videoVoiceSource === 'ROLE'
@@ -130,6 +140,17 @@ export default function GeneratePage() {
           feature: 'skeleton_storyboard',
           duration_seconds: skeletonDurationSeconds,
           duration_sec: skeletonDurationSeconds,
+          duration: skeletonDurationSeconds,
+          target_duration_seconds: skeletonDurationSeconds,
+          targetDurationSeconds: skeletonDurationSeconds,
+          video_duration_seconds: skeletonDurationSeconds,
+          videoDurationSeconds: skeletonDurationSeconds,
+          total_duration_seconds: skeletonDurationSeconds,
+          totalDurationSeconds: skeletonDurationSeconds,
+          target_language: skeletonLanguage.value,
+          targetLanguage: skeletonLanguage.value,
+          language: skeletonLanguage.value,
+          target_language_label: skeletonLanguage.label,
           script_optional: true,
           selected_product_id: selectedProductId || null,
           character_id: selectedChar.id,
@@ -616,6 +637,27 @@ export default function GeneratePage() {
                       </View>
                     ))}
                   </View>
+                </View>
+
+                <View className='section'>
+                  {renderSectionTitle('language', '视频语言')}
+                  <Picker
+                    mode='selector'
+                    range={SKELETON_LANGUAGE_OPTIONS.map((item) => item.label)}
+                    value={skeletonLanguageIndex}
+                    onChange={(event) => {
+                      const next = Number(event.detail.value);
+                      if (Number.isFinite(next)) setSkeletonLanguageIndex(next);
+                    }}
+                  >
+                    <View className='language-picker'>
+                      <View className='language-picker-main'>
+                        <Text className='language-picker-value'>{skeletonLanguage.label}</Text>
+                        <Text className='language-picker-hint'>{skeletonLanguage.hint}</Text>
+                      </View>
+                      <Text className='language-picker-arrow'>›</Text>
+                    </View>
+                  </Picker>
                 </View>
 
                 <View className='section'>

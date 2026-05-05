@@ -12,10 +12,61 @@ export interface AnalysisResult {
   sellingPoints: string[];
   detailedDescription: string;
   workflowData?: any; // Store the full structured data for workflow
+  triggered?: boolean;
+  status?: 'PROCESSING' | 'COMPLETED';
+}
+
+const DEFAULT_PRODUCT_ANALYSIS_WEBHOOK = 'https://hooks.atomx.top/webhook/product_dna_web';
+
+function isProductAnalysisPayload(item: any): boolean {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+  if (item.marketing_profile || item.marketingProfile) return true;
+  if (item.visual_description || item.visualDescription) return true;
+  if (item.detailedDescription || item.selling_points_text) return true;
+  if (Array.isArray(item.sellingPoints) || Array.isArray(item.selling_points)) return true;
+  const workflowData = item.workflowData ?? item.workflow_data;
+  return Boolean(workflowData && typeof workflowData === 'object');
+}
+
+function isProductAnalysisStartAck(item: any): boolean {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+  if (isProductAnalysisPayload(item)) return false;
+
+  const status = String(item.status ?? item.code ?? item.state ?? '').toLowerCase();
+  const message = String(item.message ?? item.msg ?? item.text ?? '').toLowerCase();
+  const ackStatuses = new Set([
+    'started',
+    'start',
+    'accepted',
+    'queued',
+    'queue',
+    'pending',
+    'processing',
+    'running',
+    'in_progress',
+    'analyzing',
+    'received',
+    'ok',
+  ]);
+
+  if (ackStatuses.has(status)) return true;
+  if (
+    message.includes('started') ||
+    message.includes('accepted') ||
+    message.includes('queued') ||
+    message.includes('triggered') ||
+    message.includes('received') ||
+    message.includes('submitted') ||
+    message.includes('workflow')
+  ) {
+    return true;
+  }
+
+  return item.ok === true || item.success === true;
 }
 
 export async function analyzeProduct(productData: ProductData): Promise<AnalysisResult> {
-  const webhookUrl = process.env.N8N_PRODUCT_ANALYSIS_WEBHOOK;
+  const webhookUrl = process.env.N8N_PRODUCT_ANALYSIS_WEBHOOK || DEFAULT_PRODUCT_ANALYSIS_WEBHOOK;
 
   if (!webhookUrl) {
     throw new Error("N8N_PRODUCT_ANALYSIS_WEBHOOK is not configured");
@@ -77,16 +128,23 @@ export async function analyzeProduct(productData: ProductData): Promise<Analysis
       const inner = item.data ?? item.output ?? item.result;
       if (inner) {
         const unwrapped = Array.isArray(inner) ? inner[0] : inner;
-        if (unwrapped && typeof unwrapped === 'object' && unwrapped.marketing_profile) {
+        if (isProductAnalysisPayload(unwrapped)) {
           item = unwrapped;
         }
       }
     }
 
-    // Detect async "workflow started" response — do not treat as real analysis data
-    if (item && item.status === 'started') {
-      console.log('[analyzeProduct] n8n returned async "started" response, skipping storage');
-      return { sellingPoints: [], detailedDescription: '', workflowData: null };
+    // Detect async "workflow started" responses — do not treat them as real analysis data.
+    // n8n often returns small acknowledgement payloads like { ok: true, message: "Workflow started" }.
+    if (isProductAnalysisStartAck(item)) {
+      console.log('[analyzeProduct] n8n returned async start acknowledgement, keeping product in PROCESSING');
+      return {
+        sellingPoints: [],
+        detailedDescription: '',
+        workflowData: null,
+        triggered: true,
+        status: 'PROCESSING',
+      };
     }
 
     const responseStatus = String(item?.status ?? item?.code ?? '').toLowerCase();
@@ -131,7 +189,9 @@ export async function analyzeProduct(productData: ProductData): Promise<Analysis
     return {
       sellingPoints,
       detailedDescription,
-      workflowData: hasWorkflowPayload ? item : null  // Store unwrapped item, not raw data
+      workflowData: hasWorkflowPayload ? item : null,  // Store unwrapped item, not raw data
+      triggered: true,
+      status: hasWorkflowPayload || detailedDescription || sellingPoints.length > 0 ? 'COMPLETED' : 'PROCESSING',
     };
   } catch (error) {
     console.error("Error calling N8N webhook:", error);

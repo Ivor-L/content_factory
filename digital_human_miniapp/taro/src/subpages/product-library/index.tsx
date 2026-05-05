@@ -87,30 +87,12 @@ function getStatusMeta(product: ProductSummary): ProductStatusMeta {
   return { label: '未分析', className: 'pending' };
 }
 
-function getAnalysisLines(product: ProductSummary): string[] {
-  if (product.sellingPointsText?.trim()) return [product.sellingPointsText.trim()];
-  const parsedSellingPoints = parseJsonValue(product.sellingPoints);
-  const pointLines = collectTextLines(parsedSellingPoints, 10);
-  if (pointLines.length > 0) return pointLines;
-  const parsedAnalysis = parseJsonValue(product.analysisResult);
-  return collectTextLines(parsedAnalysis, 10);
-}
-
-function stringifyRawAnalysis(product: ProductSummary): string {
-  const parsedSellingPoints = parseJsonValue(product.sellingPoints);
-  if (parsedSellingPoints) return JSON.stringify(parsedSellingPoints, null, 2);
-  const parsedAnalysis = parseJsonValue(product.analysisResult);
-  if (parsedAnalysis) return JSON.stringify(parsedAnalysis, null, 2);
-  return product.sellingPoints || product.analysisResult || '';
-}
-
 export default function ProductLibraryPage() {
   const [products, setProducts] = useState<ProductSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
-  const [detailProduct, setDetailProduct] = useState<ProductSummary | null>(null);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -152,6 +134,10 @@ export default function ProductLibraryPage() {
     setImageDrafts([]);
   };
 
+  const openProductDetail = (productId: string) => {
+    Taro.navigateTo({ url: `/subpages/product-detail/index?id=${encodeURIComponent(productId)}` });
+  };
+
   const handleCloseModal = () => {
     if (submitting || uploadingImages) return;
     setModalOpen(false);
@@ -165,19 +151,14 @@ export default function ProductLibraryPage() {
 
   const handleChooseImages = async () => {
     if (submitting || uploadingImages) return;
-    const remaining = Math.max(0, 6 - imageDrafts.length);
-    if (remaining === 0) {
-      Taro.showToast({ title: '最多上传 6 张图片', icon: 'none' });
-      return;
-    }
 
     try {
       const result = await Taro.chooseImage({
-        count: remaining,
+        count: 1,
         sizeType: ['compressed'],
         sourceType: ['album', 'camera'],
       });
-      const paths = (result.tempFilePaths || []).slice(0, remaining);
+      const paths = (result.tempFilePaths || []).slice(0, 1);
       if (paths.length === 0) return;
 
       const drafts = paths.map((localPath, index) => ({
@@ -187,7 +168,7 @@ export default function ProductLibraryPage() {
         status: 'uploading' as const,
       }));
 
-      setImageDrafts((prev) => [...prev, ...drafts]);
+      setImageDrafts(drafts);
       setUploadingImages(true);
 
       let failedUploads = 0;
@@ -256,7 +237,7 @@ export default function ProductLibraryPage() {
         description: description.trim(),
         images: imageUrls,
       });
-      Taro.showToast({ title: '产品已提交分析', icon: 'success' });
+      Taro.showToast({ title: '已提交，分析中', icon: 'success' });
       setModalOpen(false);
       resetForm();
       await loadProducts();
@@ -295,7 +276,7 @@ export default function ProductLibraryPage() {
               const cover = Array.isArray(item.images) && item.images.length > 0 ? item.images[0] : '';
               const statusMeta = getStatusMeta(item);
               return (
-                <View key={item.id} className='product-library-card' onClick={() => setDetailProduct(item)}>
+                <View key={item.id} className='product-library-card' onClick={() => openProductDetail(item.id)}>
                   <View className='product-library-cover'>
                     {cover ? (
                       <Image className='product-library-cover-image' src={cover} mode='aspectFill' />
@@ -351,36 +332,39 @@ export default function ProductLibraryPage() {
               className={`product-image-picker ${uploadingImages ? 'product-image-picker--disabled' : ''}`}
               onClick={handleChooseImages}
             >
-              <Text className='product-image-picker-plus'>+</Text>
-              <Text className='product-image-picker-text'>
-                {uploadingImages ? '图片上传中...' : '从手机相册选择或拍照'}
-              </Text>
-              <Text className='product-image-picker-meta'>{imageDrafts.length}/6</Text>
-            </View>
-
-            {imageDrafts.length > 0 && (
-              <View className='product-image-grid'>
-                {imageDrafts.map((item) => (
-                  <View key={item.id} className='product-image-thumb'>
-                    <Image
-                      className='product-image-thumb-img'
-                      src={item.localPath || item.url}
-                      mode='aspectFill'
-                    />
-                    {item.status !== 'uploaded' && (
-                      <View className={`product-image-thumb-mask product-image-thumb-mask--${item.status}`}>
-                        <Text className='product-image-thumb-status'>
-                          {item.status === 'uploading' ? '上传中' : '失败'}
-                        </Text>
-                      </View>
-                    )}
-                    <View className='product-image-remove' onClick={() => removeImageDraft(item.id)}>
-                      <Text className='product-image-remove-text'>×</Text>
+              {imageDrafts[0] ? (
+                <>
+                  <Image
+                    className='product-image-picker-img'
+                    src={imageDrafts[0].localPath || imageDrafts[0].url}
+                    mode='aspectFill'
+                  />
+                  {imageDrafts[0].status !== 'uploaded' && (
+                    <View className={`product-image-picker-mask product-image-picker-mask--${imageDrafts[0].status}`}>
+                      <Text className='product-image-picker-status'>
+                        {imageDrafts[0].status === 'uploading' ? '上传中' : '失败'}
+                      </Text>
                     </View>
+                  )}
+                  <View
+                    className='product-image-remove'
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      removeImageDraft(imageDrafts[0].id);
+                    }}
+                  >
+                    <Text className='product-image-remove-text'>×</Text>
                   </View>
-                ))}
-              </View>
-            )}
+                </>
+              ) : (
+                <>
+                  <Text className='product-image-picker-plus'>+</Text>
+                  <Text className='product-image-picker-text'>
+                    {uploadingImages ? '图片上传中...' : '从手机相册选择或拍照'}
+                  </Text>
+                </>
+              )}
+            </View>
 
             <View className='product-modal-actions'>
               <View className='product-modal-cancel' onClick={handleCloseModal}>
@@ -397,68 +381,6 @@ export default function ProductLibraryPage() {
         </View>
       )}
 
-      {detailProduct && (
-        <View className='product-modal-overlay' onClick={() => setDetailProduct(null)}>
-          <View className='product-detail-card' onClick={(event) => event.stopPropagation()}>
-            <View className='product-detail-header'>
-              <View>
-                <Text className='product-detail-title'>{detailProduct.name}</Text>
-                <Text className='product-detail-subtitle'>产品分析结果</Text>
-              </View>
-              <Text
-                className={`product-library-status product-library-status--${getStatusMeta(detailProduct).className}`}
-              >
-                {getStatusMeta(detailProduct).label}
-              </Text>
-            </View>
-
-            {detailProduct.description ? (
-              <View className='product-detail-section'>
-                <Text className='product-detail-label'>产品描述</Text>
-                <Text className='product-detail-text'>{detailProduct.description}</Text>
-              </View>
-            ) : null}
-
-            <View className='product-detail-section'>
-              <Text className='product-detail-label'>分析摘要</Text>
-              {getAnalysisLines(detailProduct).length > 0 ? (
-                getAnalysisLines(detailProduct).map((line, index) => (
-                  <Text key={`${line}-${index}`} className='product-detail-point'>
-                    {line}
-                  </Text>
-                ))
-              ) : (
-                <Text className='product-detail-empty'>暂无分析结果，稍后下拉刷新查看</Text>
-              )}
-            </View>
-
-            {stringifyRawAnalysis(detailProduct) ? (
-              <View className='product-detail-section'>
-                <Text className='product-detail-label'>原始分析内容</Text>
-                <ScrollView scrollY className='product-detail-raw'>
-                  <Text className='product-detail-raw-text'>{stringifyRawAnalysis(detailProduct)}</Text>
-                </ScrollView>
-              </View>
-            ) : null}
-
-            <View className='product-modal-actions'>
-              <View className='product-modal-cancel' onClick={() => setDetailProduct(null)}>
-                <Text>关闭</Text>
-              </View>
-              <View
-                className='product-modal-confirm'
-                onClick={async () => {
-                  const latestProducts = await loadProducts();
-                  const latest = latestProducts.find((item) => item.id === detailProduct.id);
-                  if (latest) setDetailProduct(latest);
-                }}
-              >
-                <Text>刷新结果</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-      )}
     </View>
   );
 }

@@ -49,6 +49,19 @@ function buildRewritePayload(rewrite: NonNullable<MyNoteTaskDetail['analysisResu
   };
 }
 
+function copyTextToClipboard(label: string, content: string) {
+  const text = String(content || '').trim();
+  if (!text) {
+    Taro.showToast({ title: `${label}为空`, icon: 'none' });
+    return;
+  }
+  Taro.setClipboardData({
+    data: text,
+    success: () => Taro.showToast({ title: `${label}已复制`, icon: 'success' }),
+    fail: () => Taro.showToast({ title: '复制失败', icon: 'none' }),
+  });
+}
+
 function rememberRemovedHotItem(...ids: Array<string | null | undefined>) {
   try {
     const raw = Taro.getStorageSync(HOT_REMOVED_ITEMS_KEY);
@@ -100,6 +113,9 @@ export default function HotDetailPage() {
   const [remixDrawerVisible, setRemixDrawerVisible] = useState(false);
   const [selectedRewriteTitle, setSelectedRewriteTitle] = useState('');
   const [retryingImageIndex, setRetryingImageIndex] = useState<number | null>(null);
+  const [publishQrcode, setPublishQrcode] = useState('');
+  const [publishUrl, setPublishUrl] = useState('');
+  const [publishingRewrite, setPublishingRewrite] = useState(false);
   const pollTimerRef = useRef<number | null>(null);
 
   const clearPoll = () => {
@@ -181,6 +197,17 @@ export default function HotDetailPage() {
         setInlineTask(detail);
         if (!pollTimerRef.current && isParsingStatus(detail.status)) pollTask(inlineTaskId, 'inline');
       })();
+    }
+    const returned = Taro.getStorageSync('HOT_REWRITE_RETURN_PAYLOAD');
+    if (returned && typeof returned === 'object') {
+      const payload = returned as { taskId?: string; qrcode?: string; url?: string };
+      const taskId = String(payload.taskId || '').trim();
+      if (!taskId || taskId === activeTaskId) {
+        setRewriteDrawerVisible(true);
+        setPublishQrcode(String(payload.qrcode || ''));
+        setPublishUrl(String(payload.url || ''));
+        Taro.removeStorageSync('HOT_REWRITE_RETURN_PAYLOAD');
+      }
     }
   });
 
@@ -332,7 +359,12 @@ export default function HotDetailPage() {
       ...rewrite,
       title: selectedRewriteTitle || rewrite.title,
     }, targetFeature));
-    Taro.navigateTo({ url: '/subpages/image-generate/index' });
+    const query = [
+      'origin=hot-rewrite',
+      activeTaskId ? `taskId=${encodeURIComponent(activeTaskId)}` : '',
+      `mode=${encodeURIComponent(mode)}`,
+    ].filter(Boolean).join('&');
+    Taro.navigateTo({ url: `/subpages/image-generate/index?${query}` });
   };
 
   const handleOpenRewriteDrawer = () => {
@@ -425,6 +457,49 @@ export default function HotDetailPage() {
     });
   };
 
+  const handlePublishRewrite = async () => {
+    if (!rewrite || publishingRewrite) return;
+    const activeTitle = selectedRewriteTitle || rewrite.title || rewriteTitleOptions[0] || '小红书图文';
+    const images = mode === 'my' ? myImages : detailImages;
+    const publishImages = images.filter(Boolean);
+    if (publishImages.length === 0) {
+      Taro.showToast({ title: '暂无可发布图片', icon: 'none' });
+      return;
+    }
+    setPublishingRewrite(true);
+    try {
+      const content = [
+        rewrite.body,
+        rewrite.imageTexts.join('\n\n'),
+      ].filter(Boolean).join('\n\n').slice(0, 1000);
+      const result = await miniappApi.publishXhsLayout({
+        title: activeTitle,
+        content,
+        images: publishImages,
+        taskId: activeTaskId,
+      });
+      setPublishQrcode(result.qrcode || '');
+      setPublishUrl(result.url || '');
+      if (result.qrcode) {
+        Taro.showModal({
+          title: '发布二维码已生成',
+          content: '请复制二维码链接或稍后在作品详情查看。',
+          cancelText: '关闭',
+          confirmText: '复制链接',
+          success: (res) => {
+            if (res.confirm) Taro.setClipboardData({ data: result.qrcode });
+          },
+        });
+      } else {
+        Taro.showToast({ title: '发布请求已提交', icon: 'success' });
+      }
+    } catch (error) {
+      Taro.showToast({ title: error instanceof Error ? error.message : '发布失败', icon: 'none' });
+    } finally {
+      setPublishingRewrite(false);
+    }
+  };
+
   const handleRetryImageText = async (imageIndex: number) => {
     if (!myTaskId || retryingImageIndex) return;
     setRetryingImageIndex(imageIndex);
@@ -499,6 +574,12 @@ export default function HotDetailPage() {
         >
           <View className='hot-rewrite-handle' />
           <Text className='hot-rewrite-kicker'>仿写结果</Text>
+          <View className='hot-rewrite-section-head'>
+            <Text className='hot-rewrite-section-title hot-rewrite-section-title--inline'>标题</Text>
+            <View className='hot-rewrite-copy' onClick={() => copyTextToClipboard('标题', activeTitle)}>
+              <Text className='hot-rewrite-copy-text'>复制</Text>
+            </View>
+          </View>
           <Text className='hot-rewrite-main-title'>{activeTitle}</Text>
           <View className='hot-rewrite-title-grid'>
             {rewriteTitleOptions.map((title) => (
@@ -514,12 +595,32 @@ export default function HotDetailPage() {
           <View className='hot-rewrite-content-shell'>
             <ScrollView scrollY className='hot-rewrite-content'>
               <View className='hot-rewrite-content-inner'>
-                <Text className='hot-rewrite-section-title'>正文</Text>
+                <View className='hot-rewrite-section-head'>
+                  <Text className='hot-rewrite-section-title'>正文</Text>
+                  <View className='hot-rewrite-copy' onClick={() => copyTextToClipboard('正文', rewrite.body || '')}>
+                    <Text className='hot-rewrite-copy-text'>复制</Text>
+                  </View>
+                </View>
                 <Text className='hot-rewrite-body'>{rewrite.body || '--'}</Text>
-                <Text className='hot-rewrite-section-title'>图片正文</Text>
+                <View className='hot-rewrite-section-head'>
+                  <Text className='hot-rewrite-section-title'>图文正文</Text>
+                  <View className='hot-rewrite-copy' onClick={() => copyTextToClipboard('图文正文', rewrite.imageTexts.join('\n\n'))}>
+                    <Text className='hot-rewrite-copy-text'>复制</Text>
+                  </View>
+                </View>
                 {rewrite.imageTexts.length > 0 ? rewrite.imageTexts.map((text, index) => (
                   <Text key={`${index}-${text}`} className='hot-rewrite-image-text'>{text}</Text>
                 )) : <Text className='hot-rewrite-image-text'>暂无图片正文</Text>}
+                {!!publishQrcode && (
+                  <View className='hot-rewrite-qrcode-card'>
+                    <Text className='hot-rewrite-qrcode-title'>小红书发布二维码</Text>
+                    <Text className='hot-rewrite-qrcode-link'>{publishQrcode}</Text>
+                    {!!publishUrl && <Text className='hot-rewrite-qrcode-link'>发布链接：{publishUrl}</Text>}
+                    <View className='hot-rewrite-qrcode-copy' onClick={() => copyTextToClipboard('二维码链接', publishQrcode)}>
+                      <Text className='hot-rewrite-qrcode-copy-text'>复制二维码链接</Text>
+                    </View>
+                  </View>
+                )}
               </View>
             </ScrollView>
           </View>
@@ -532,6 +633,10 @@ export default function HotDetailPage() {
               <View className='hot-rewrite-action' onClick={() => handleRouteToCardLayout('card-layout')}>
                 <Text className='hot-rewrite-action-icon'>▧</Text>
                 <Text className='hot-rewrite-action-text'>生成图文卡片</Text>
+              </View>
+              <View className={`hot-rewrite-action hot-rewrite-action--publish ${publishingRewrite ? 'hot-rewrite-action--disabled' : ''}`} onClick={publishingRewrite ? undefined : handlePublishRewrite}>
+                <Text className='hot-rewrite-action-icon'>↗</Text>
+                <Text className='hot-rewrite-action-text'>{publishingRewrite ? '发布中...' : '发布'}</Text>
               </View>
             </View>
             <View className='hot-rewrite-close' onClick={() => setRewriteDrawerVisible(false)}>

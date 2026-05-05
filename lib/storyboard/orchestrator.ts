@@ -129,6 +129,7 @@ function buildN8nPayload(input: {
       ? {
         target_language: targetLanguage,
         targetLanguage,
+        language: targetLanguage,
       }
       : {}),
     ...(targetCountry
@@ -192,9 +193,21 @@ export async function createStoryboardJob(request: StoryboardJobRequest): Promis
   const metadata = request.metadata || {};
   const profile = getStoryboardWorkflowProfile(request.pipelineKey);
   const payloadData = request.payloadData || {};
+  const durationKeys = [
+    'duration_seconds',
+    'duration_sec',
+    'durationSeconds',
+    'duration',
+    'target_duration_seconds',
+    'targetDurationSeconds',
+    'video_duration_seconds',
+    'videoDurationSeconds',
+    'total_duration_seconds',
+    'totalDurationSeconds',
+  ];
   const durationSeconds =
-    readPositiveIntFromRecord(payloadData, ['duration_seconds', 'duration_sec', 'durationSeconds', 'duration']) ??
-    readPositiveIntFromRecord(metadata, ['duration_seconds', 'duration_sec', 'durationSeconds', 'duration']);
+    readPositiveIntFromRecord(payloadData, durationKeys) ??
+    readPositiveIntFromRecord(metadata, durationKeys);
 
   const task = await prisma.storyboardTask.create({
     data: {
@@ -231,6 +244,12 @@ export async function createStoryboardJob(request: StoryboardJobRequest): Promis
         duration_sec: durationSeconds,
         duration_seconds: durationSeconds,
         duration: durationSeconds,
+        target_duration_seconds: durationSeconds,
+        targetDurationSeconds: durationSeconds,
+        video_duration_seconds: durationSeconds,
+        videoDurationSeconds: durationSeconds,
+        total_duration_seconds: durationSeconds,
+        totalDurationSeconds: durationSeconds,
       },
     }
     : request;

@@ -20,6 +20,7 @@ export default defineAppConfig({
         'login-password/index',
         'warehouse/index',
         'product-library/index',
+        'product-detail/index',
         'style-library/index',
         'remix-generate/index',
         'generate/index',

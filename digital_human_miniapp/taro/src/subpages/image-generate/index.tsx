@@ -31,8 +31,43 @@ const FEATURE_TABS: Array<{ key: FeatureKey; label: string }> = [
 const ACTION_TRANSFER_IMAGE_RETURN_KEY = 'REMIX_ACTION_SOURCE_IMAGE_URL';
 const WORK_SELECT_TARGET_STORAGE_KEY = 'WORK_SELECT_TARGET';
 
+function getApiBaseUrl(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fromDefine = typeof __API_BASE_URL__ !== 'undefined' ? String((__API_BASE_URL__ as any) || '').trim() : '';
+    if (fromDefine) return fromDefine.replace(/\/$/, '');
+  } catch {
+    // ignore
+  }
+  return '';
+}
+
+function buildCardExportDownloadUrl(url: string, index: number): string {
+  const filename = `xhs-card-${String(index + 1).padStart(2, '0')}.png`;
+  const path = `/api/proxy/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`;
+  const apiBaseUrl = getApiBaseUrl();
+  return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
+}
+
+function buildCardExportDownloadHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  try {
+    const apiKey = String(Taro.getStorageSync('API_KEY') || '').trim();
+    if (apiKey) headers['X-User-Api-Key'] = apiKey;
+  } catch {
+    // ignore
+  }
+  try {
+    const token = String(Taro.getStorageSync('MINIAPP_ACCESS_TOKEN') || '').trim();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  } catch {
+    // ignore
+  }
+  return headers;
+}
+
 const IMAGE_MODELS = [
-  { key: 'gpt-image-2-all', name: 'gpt-image-2', desc: '细节表现优秀，适合精细创作', badge: '推荐' },
+  { key: 'image2', name: 'GPT-image2', desc: '细节表现优秀，适合精细创作', badge: '默认' },
   { key: 'nano-banana-pro', name: 'nano-Banana-Pro-3', desc: '综合能力强，适合多种创意场景' },
 ];
 
@@ -1982,6 +2017,8 @@ function paginatePreviewMarkdown(
 export default function ImageGeneratePage() {
   const [activeFeature, setActiveFeature] = useState<FeatureKey>('ai-image');
   const [returnTarget, setReturnTarget] = useState('');
+  const [hotRewriteReturnTaskId, setHotRewriteReturnTaskId] = useState('');
+  const [hotRewriteReturnMode, setHotRewriteReturnMode] = useState('');
   const [windowWidthPx, setWindowWidthPx] = useState(375);
 
   const [refImages, setRefImages] = useState<string[]>([]);
@@ -2033,6 +2070,8 @@ export default function ImageGeneratePage() {
   const [cardOptimizing, setCardOptimizing] = useState(false);
   const [cardExporting, setCardExporting] = useState(false);
   const [cardPreviewImages, setCardPreviewImages] = useState<string[]>([]);
+  const [cardPublishQrcode, setCardPublishQrcode] = useState('');
+  const [cardPublishUrl, setCardPublishUrl] = useState('');
   const [cardPreviewPageIndex, setCardPreviewPageIndex] = useState(0);
   const [injectedFromMyNote, setInjectedFromMyNote] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -2081,6 +2120,11 @@ export default function ImageGeneratePage() {
     if (from === 'action-transfer') {
       setReturnTarget('action-transfer');
       setActiveFeature('ai-image');
+    }
+    const origin = String(query?.origin || '').trim();
+    if (origin === 'hot-rewrite') {
+      setHotRewriteReturnTaskId(String(query?.taskId || '').trim());
+      setHotRewriteReturnMode(String(query?.mode || '').trim());
     }
   });
 
@@ -2596,7 +2640,10 @@ export default function ImageGeneratePage() {
   const renderCardExportButton = () => (
     <View
       className={`card-topbar-export ${cardExporting ? 'card-topbar-export--loading' : ''}`}
-      onClick={() => void handleExportCardImages()}
+      onClick={(event) => {
+        event.stopPropagation();
+        void handleExportCardImages();
+      }}
     >
       <Text className='card-topbar-export-text'>
         {cardExporting ? '导出中...' : '一键导出全部'}
@@ -2661,6 +2708,20 @@ export default function ImageGeneratePage() {
       return;
     }
     Taro.switchTab({ url: '/pages/home/index' });
+  };
+
+  const returnToHotRewrite = (payload?: { qrcode?: string; url?: string }) => {
+    if (!hotRewriteReturnTaskId) {
+      handleBack();
+      return;
+    }
+    Taro.setStorageSync('HOT_REWRITE_RETURN_PAYLOAD', {
+      taskId: hotRewriteReturnTaskId,
+      mode: hotRewriteReturnMode,
+      qrcode: payload?.qrcode || cardPublishQrcode || '',
+      url: payload?.url || cardPublishUrl || '',
+    });
+    Taro.navigateBack({ delta: 1 });
   };
 
   const handleChooseImages = async () => {
@@ -2833,7 +2894,19 @@ export default function ImageGeneratePage() {
       });
 
       Taro.setStorageSync('INFOGRAPHIC_LAST_TASK_ID', generated.taskId || start.taskId);
-      Taro.showToast({ title: '信息图任务已提交', icon: 'success' });
+      if (hotRewriteReturnTaskId) {
+        Taro.showModal({
+          title: '信息图任务已提交',
+          content: '任务会在后台生成，可先返回仿写结果继续操作。',
+          cancelText: '留在本页',
+          confirmText: '返回仿写结果',
+          success: (res) => {
+            if (res.confirm) returnToHotRewrite();
+          },
+        });
+      } else {
+        Taro.showToast({ title: '信息图任务已提交', icon: 'success' });
+      }
     } catch (error) {
       Taro.showToast({
         title: error instanceof Error ? error.message : '信息图生成失败',
@@ -2963,6 +3036,17 @@ export default function ImageGeneratePage() {
         title: meta.title || '图文卡片',
         includeCover: cardIncludeCover,
         maxPages: cardMaxPages,
+        persist: true,
+        requirePreview: true,
+        preview: {
+          pages: cardPreviewPages,
+          cardClassName: `preview-card ${cardPreviewThemeClass}`,
+          cardStyle: cardPreviewThemeInlineStyle,
+          contentClassName: cardPreviewContentShellClass,
+          contentStyle: cardPreviewContentInlineStyle,
+          richTextClassName: cardPreviewRichtextClass,
+          selectedCardStyle,
+        },
         cover: {
           coverStyleId: cardCoverStyleId,
           coverImage: cardCoverImage,
@@ -2997,6 +3081,8 @@ export default function ImageGeneratePage() {
       setCardUserCleared(false);
       setCardMarkdown(renderMarkdown);
       setCardPreviewImages(publishImages);
+      setCardPublishQrcode(published.qrcode || '');
+      setCardPublishUrl(published.url || '');
       Taro.setStorageSync('CARD_LAYOUT_PREVIEW_MD', renderMarkdown);
       Taro.setStorageSync('CARD_LAYOUT_PUBLISH_TEXT', output);
       Taro.setStorageSync('CARD_LAYOUT_PUBLISH_QRCODE', published.qrcode || '');
@@ -3006,14 +3092,18 @@ export default function ImageGeneratePage() {
       if (published.qrcode) {
         Taro.showModal({
           title: '发布二维码已生成',
-          content: '已完成规范化、出图和发布，请在弹窗后查看二维码链接。',
-          cancelText: '关闭',
-          confirmText: '复制二维码链接',
+          content: hotRewriteReturnTaskId ? '已完成出图和发布，可返回仿写结果继续复制或发布。' : '已完成规范化、出图和发布，请在弹窗后查看二维码链接。',
+          cancelText: hotRewriteReturnTaskId ? '留在本页' : '关闭',
+          confirmText: hotRewriteReturnTaskId ? '返回仿写结果' : '复制二维码链接',
           success: (res) => {
             if (res.confirm) {
-              Taro.setClipboardData({
-                data: published.qrcode,
-              });
+              if (hotRewriteReturnTaskId) {
+                returnToHotRewrite({ qrcode: published.qrcode || '', url: published.url || '' });
+              } else {
+                Taro.setClipboardData({
+                  data: published.qrcode,
+                });
+              }
             }
           },
         });
@@ -3021,7 +3111,7 @@ export default function ImageGeneratePage() {
         Taro.showToast({ title: '卡片已生成并发布', icon: 'success' });
       }
 
-      if (renderResult.taskId) {
+      if (renderResult.taskId && !hotRewriteReturnTaskId) {
         setTimeout(() => {
           Taro.switchTab({ url: '/pages/works/index' });
         }, 600);
@@ -3154,6 +3244,8 @@ export default function ImageGeneratePage() {
         title: renderPayload.renderTitle || '图文卡片',
         includeCover: cardIncludeCover,
         maxPages: cardMaxPages,
+        persist: false,
+        requirePreview: true,
         preview: {
           pages: cardPreviewPages,
           cardClassName: `preview-card ${cardPreviewThemeClass}`,
@@ -3185,7 +3277,6 @@ export default function ImageGeneratePage() {
         Taro.showToast({ title: '生成导出图失败', icon: 'none' });
         return;
       }
-      setCardPreviewImages(exportImages);
     } catch (error) {
       Taro.showToast({
         title: error instanceof Error ? error.message : '生成导出图失败',
@@ -3215,13 +3306,18 @@ export default function ImageGeneratePage() {
           mask: true,
         });
         try {
-          let filePath = imageUrl;
+          let filePath = '';
           if (/^https?:\/\//i.test(imageUrl)) {
-            const download = await Taro.downloadFile({ url: imageUrl });
+            const download = await Taro.downloadFile({
+              url: buildCardExportDownloadUrl(imageUrl, index),
+              header: buildCardExportDownloadHeaders(),
+            });
             if (download.statusCode !== 200 || !download.tempFilePath) {
               throw new Error('download_failed');
             }
             filePath = download.tempFilePath;
+          } else {
+            filePath = imageUrl;
           }
           await Taro.saveImageToPhotosAlbum({ filePath });
           successCount += 1;
@@ -3234,15 +3330,23 @@ export default function ImageGeneratePage() {
         await Taro.showModal({
           title: '导出完成',
           content: `成功导出 ${successCount} 张图片到系统相册。`,
-          showCancel: false,
-          confirmText: '知道了',
+          showCancel: Boolean(hotRewriteReturnTaskId),
+          cancelText: '留在本页',
+          confirmText: hotRewriteReturnTaskId ? '返回仿写结果' : '知道了',
+          success: (res) => {
+            if (res.confirm && hotRewriteReturnTaskId) returnToHotRewrite();
+          },
         });
       } else if (successCount > 0) {
         await Taro.showModal({
           title: '部分导出成功',
           content: `成功 ${successCount} 张，失败 ${failCount} 张。可重试导出。`,
-          showCancel: false,
-          confirmText: '知道了',
+          showCancel: Boolean(hotRewriteReturnTaskId),
+          cancelText: '留在本页',
+          confirmText: hotRewriteReturnTaskId ? '返回仿写结果' : '知道了',
+          success: (res) => {
+            if (res.confirm && hotRewriteReturnTaskId) returnToHotRewrite();
+          },
         });
       } else {
         await Taro.showModal({
@@ -4024,6 +4128,14 @@ export default function ImageGeneratePage() {
             )}
             {cardPreviewImages.length > 0 && (
               <View className='card-preview-export-wrap'>
+                <View className='card-preview-export-row'>
+                  <Text className='card-preview-export-title'>已生成图片</Text>
+                  {hotRewriteReturnTaskId && (
+                    <View className='card-return-btn' onClick={() => returnToHotRewrite()}>
+                      <Text className='card-return-btn-text'>返回仿写结果</Text>
+                    </View>
+                  )}
+                </View>
                 <ScrollView scrollX className='card-preview-image-scroll'>
                   <View className='card-preview-image-list'>
                     {cardPreviewImages.map((url, idx) => (
@@ -4031,6 +4143,16 @@ export default function ImageGeneratePage() {
                     ))}
                   </View>
                 </ScrollView>
+                {!!cardPublishQrcode && (
+                  <View className='card-publish-qrcode-card'>
+                    <Text className='card-publish-qrcode-title'>小红书发布二维码</Text>
+                    <Text className='card-publish-qrcode-link'>{cardPublishQrcode}</Text>
+                    {!!cardPublishUrl && <Text className='card-publish-qrcode-link'>发布链接：{cardPublishUrl}</Text>}
+                    <View className='card-publish-qrcode-copy' onClick={() => Taro.setClipboardData({ data: cardPublishQrcode })}>
+                      <Text className='card-publish-qrcode-copy-text'>复制二维码链接</Text>
+                    </View>
+                  </View>
+                )}
               </View>
             )}
           </View>

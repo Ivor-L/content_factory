@@ -140,6 +140,11 @@ const extractFirstProductImage = (images: unknown): string | null => {
   return images.trim() || null;
 };
 
+const getPipelineKey = (task: { detailedBreakdown?: unknown }): string => {
+  const detailed = parseJsonMaybe(task.detailedBreakdown);
+  return readString(detailed?.pipeline_key || detailed?.pipelineKey);
+};
+
 const normalizeStatus = (input: string, hasShots: boolean): string => {
   const status = input.toLowerCase();
   if (['success', 'succeeded', 'completed', 'done', 'finished'].includes(status)) return 'COMPLETED';
@@ -254,14 +259,17 @@ export async function POST(request: Request) {
 
     const task = await prisma.storyboardTask.findUnique({
       where: { id: taskId },
-      include: { product: true },
+      include: { product: true, character: true },
     });
     if (!task) {
       return NextResponse.json({ success: true, ignored: true, reason: 'task_not_found', task_id: taskId });
     }
 
     if (shots.length > 0) {
+      const pipelineKey = getPipelineKey(task);
+      const allowCharacterReference = pipelineKey === 'skeleton_video';
       const productImageUrl = extractFirstProductImage(task.product?.images);
+      const characterImageUrl = allowCharacterReference ? readString(task.character?.avatar) : '';
       const segmentInputs = shots.map((shot, index) => {
         const hasProduct = readBool(shot['是否有产品'] ?? shot.has_product ?? shot.hasProduct);
         const hasPerson = readBool(shot.has_person ?? shot.hasPerson);
@@ -286,6 +294,9 @@ export async function POST(request: Request) {
         const subjectRefs = [
           hasProduct !== false && productImageUrl
             ? { type: 'product', url: productImageUrl, label: '产品图' }
+            : null,
+          allowCharacterReference && hasPerson !== false && characterImageUrl
+            ? { type: 'character', url: characterImageUrl, label: '角色图' }
             : null,
           referenceFrameUrl
             ? { type: 'reference_frame', url: referenceFrameUrl, label: '参考帧' }

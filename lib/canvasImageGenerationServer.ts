@@ -4,6 +4,7 @@ import {
   CanvasCreditsError,
   deductCanvasCredits,
   ensureCanvasCreditsAvailable,
+  resolveCanvasCreditsApiKey,
 } from "@/lib/canvasCredits";
 import {
   buildCanvasUpstreamHeaders,
@@ -19,6 +20,9 @@ const GEMINI_ENDPOINT_MAP: Record<string, string> = {
   "nano-banana-2": "/v1beta/models/gemini-3.1-flash-image-preview:generateContent",
   "gemini-3-pro-image-preview": "/v1beta/models/gemini-3.1-pro-image-preview:generateContent",
   "gemini-3.1-flash-image-preview": "/v1beta/models/gemini-3.1-flash-image-preview:generateContent",
+};
+const MODEL_ALIAS_MAP: Record<string, string> = {
+  image2: "gpt-image-2-all",
 };
 const DEFAULT_GEMINI_ENDPOINT = "/v1beta/models/gemini-3.1-flash-image-preview:generateContent";
 
@@ -77,11 +81,17 @@ function normalizeGeminiHost() {
 
 function resolveModelName(payload: Record<string, unknown>): string {
   const direct = payload.model;
-  if (typeof direct === "string" && direct.trim()) return direct.trim();
+  if (typeof direct === "string" && direct.trim()) {
+    const trimmed = direct.trim();
+    return MODEL_ALIAS_MAP[trimmed.toLowerCase()] || trimmed;
+  }
   const nested = payload.data;
   if (nested && typeof nested === "object") {
     const model = (nested as Record<string, unknown>).model;
-    if (typeof model === "string" && model.trim()) return model.trim();
+    if (typeof model === "string" && model.trim()) {
+      const trimmed = model.trim();
+      return MODEL_ALIAS_MAP[trimmed.toLowerCase()] || trimmed;
+    }
   }
   return "";
 }
@@ -238,7 +248,8 @@ export async function generateCanvasImageOnServer({
   }
 
   const modelName = resolveModelName(requestBody);
-  const creditsApiKey = await getProfileApiKeyForUser(effectiveUserId);
+  const profileApiKey = await getProfileApiKeyForUser(effectiveUserId);
+  const creditsApiKey = resolveCanvasCreditsApiKey(profileApiKey ?? apiKey ?? upstreamApiKey);
   if (!creditsApiKey) {
     throw new CanvasImageGenerationError(500, "积分服务未配置，请联系管理员。", {
       error: { code: "CANVAS_CREDITS_NOT_CONFIGURED", message: "积分服务未配置，请联系管理员。" },

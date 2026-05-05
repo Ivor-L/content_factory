@@ -18,7 +18,7 @@ export async function PATCH(
 
     const { segmentId } = await params;
     const body = await req.json();
-    const { subject_refs, video_refs, imagePrompt, videoPrompt, originalScript, rewrittenScript, push_image_url, push_video_url, generatedImage, generatedVideo, status } = body;
+    const { subject_refs, video_refs, subject_replace_mode, imagePrompt, videoPrompt, originalScript, rewrittenScript, push_image_url, push_video_url, generatedImage, generatedVideo, status } = body;
 
     // Verify segment belongs to user's task
     const segment = await prisma.storyboardSegment.findFirst({
@@ -40,6 +40,9 @@ export async function PATCH(
 
     if (subject_refs !== undefined) {
       updatedParams.subject_refs = subject_refs;
+    }
+    if (subject_replace_mode !== undefined) {
+      updatedParams.subject_replace_mode = subject_replace_mode;
     }
 
     if (video_refs !== undefined) {

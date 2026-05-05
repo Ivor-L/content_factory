@@ -1449,6 +1449,18 @@ export const miniappApi = {
       .filter((item): item is ProductSummary => Boolean(item));
   },
 
+  async getProduct(productId: string): Promise<ProductSummary> {
+    const payload = await request<{
+      success?: boolean;
+      data?: Record<string, unknown>;
+    }>(`/api/products/${encodeURIComponent(productId)}`);
+    const product = toProductSummary(payload?.data ?? (payload as Record<string, unknown>));
+    if (!product) {
+      throw new Error('产品不存在');
+    }
+    return product;
+  },
+
   async createProduct(input: {
     name: string;
     description?: string;
@@ -1476,7 +1488,11 @@ export const miniappApi = {
     }
 
     try {
-      await request('/api/products/analyze', {
+      const analysisPayload = await request<{
+        success?: boolean;
+        triggered?: boolean;
+        processing?: boolean;
+      }>('/api/products/analyze', {
         method: 'POST',
         data: {
           productId: product.id,
@@ -1485,6 +1501,9 @@ export const miniappApi = {
           images: input.images ?? [],
         },
       });
+      if (analysisPayload?.triggered !== true) {
+        throw new Error('产品分析未触发');
+      }
     } catch (error) {
       console.warn('[miniappApi.createProduct] product analysis trigger failed:', error);
       throw new Error(error instanceof Error ? error.message : '产品分析触发失败');
@@ -1496,6 +1515,66 @@ export const miniappApi = {
       progress: 0,
       analysisResult: JSON.stringify({ status: 'ANALYZING' }),
     };
+  },
+
+  async updateProduct(productId: string, input: {
+    name: string;
+    description?: string;
+    images?: string[];
+    sellingPoints?: string[];
+    sellingPointsText?: string;
+  }): Promise<ProductSummary> {
+    const payload = await request<{
+      success?: boolean;
+      data?: Record<string, unknown>;
+    }>(`/api/products/${encodeURIComponent(productId)}`, {
+      method: 'PATCH',
+      data: {
+        name: input.name,
+        description: input.description ?? '',
+        images: input.images ?? [],
+        sellingPoints: input.sellingPoints ?? [],
+        sellingPointsText: input.sellingPointsText ?? '',
+      },
+    });
+
+    const product = toProductSummary(payload?.data);
+    if (!product) {
+      throw new Error('产品更新失败');
+    }
+
+    try {
+      const analysisPayload = await request<{
+        success?: boolean;
+        triggered?: boolean;
+        processing?: boolean;
+      }>('/api/products/analyze', {
+        method: 'POST',
+        data: {
+          productId: product.id,
+          name: product.name,
+          description: input.description ?? '',
+          images: input.images ?? [],
+        },
+      });
+      if (analysisPayload?.triggered !== true) {
+        throw new Error('产品分析未触发');
+      }
+    } catch (error) {
+      console.warn('[miniappApi.updateProduct] product analysis trigger failed:', error);
+      throw new Error(error instanceof Error ? error.message : '产品分析触发失败');
+    }
+
+    return {
+      ...product,
+      status: 'PROCESSING',
+      progress: 0,
+      analysisResult: JSON.stringify({ status: 'ANALYZING' }),
+    };
+  },
+
+  async deleteProduct(productId: string): Promise<void> {
+    await request(`/api/products/${encodeURIComponent(productId)}`, { method: 'DELETE' });
   },
 
   async getWorkList(limit = 50): Promise<WorkItem[]> {
@@ -1927,6 +2006,7 @@ export const miniappApi = {
     includeCover?: boolean;
     maxPages?: number;
     persist?: boolean;
+    requirePreview?: boolean;
     preview?: {
       pages: string[];
       cardClassName?: string;
@@ -1963,6 +2043,7 @@ export const miniappApi = {
         includeCover: params.includeCover !== false,
         maxPages: params.maxPages ?? 8,
         persist: params.persist === true,
+        requirePreview: params.requirePreview === true,
         preview: params.preview || undefined,
         cover: params.cover || undefined,
       },

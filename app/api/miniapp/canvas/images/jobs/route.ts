@@ -24,6 +24,10 @@ const MINIAPP_GEMINI_IMAGE_MODELS = new Set([
   "gemini-3-pro-image-preview",
   "gemini-3.1-flash-image-preview",
 ]);
+const MODEL_ALIAS_MAP: Record<string, string> = {
+  image2: "gpt-image-2-all",
+};
+const IMAGE2_WORKFLOW_MODEL = "image2";
 
 function sanitizeText(value: unknown, maxLength: number): string {
   if (typeof value !== "string") return "";
@@ -33,6 +37,7 @@ function sanitizeText(value: unknown, maxLength: number): string {
 function normalizeJobErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error || "");
   if (!message) return "AI作图失败";
+  if (message.includes("image2 工作流触发失败")) return message;
   if (/fetch failed|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|network/i.test(message)) {
     return "生图服务连接失败，请稍后重试或联系管理员检查上游配置";
   }
@@ -104,6 +109,78 @@ function sanitizeImages(value: unknown): string[] {
     .map((item) => (typeof item === "string" ? item.trim() : ""))
     .filter(Boolean)
     .slice(0, 5);
+}
+
+function isImage2WorkflowModel(value: string): boolean {
+  return value.trim().toLowerCase() === IMAGE2_WORKFLOW_MODEL;
+}
+
+function pushUniqueUrl(urls: string[], value: string | undefined | null) {
+  const normalized = String(value || "").trim();
+  if (!normalized || urls.includes(normalized)) return;
+  urls.push(normalized);
+}
+
+function resolveStoryboardImageWebhookUrls(): string[] {
+  const urls: string[] = [];
+  pushUniqueUrl(urls, process.env.N8N_IMAGE_GEN_WEBHOOK);
+  pushUniqueUrl(urls, process.env.N8N_STORYBOARD_IMAGE_WEBHOOK);
+  pushUniqueUrl(urls, process.env.N8N_INTERNAL_IMAGE_GEN_WEBHOOK);
+  pushUniqueUrl(urls, process.env.N8N_INTERNAL_STORYBOARD_IMAGE_WEBHOOK);
+  pushUniqueUrl(urls, "https://hooks.atomx.top/webhook/storyboard-image-generate");
+  return urls;
+}
+
+function resolveCallbackBase(request: NextRequest): string {
+  return (
+    process.env.N8N_CALLBACK_BASE_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    request.nextUrl.origin
+  ).replace(/\/+$/, "");
+}
+
+function describeUrlForLog(value: string): string {
+  try {
+    const url = new URL(value);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return value ? "invalid-url" : "";
+  }
+}
+
+async function postStoryboardImageWorkflow(params: {
+  urls: string[];
+  payload: Record<string, unknown>;
+  logContext: Record<string, unknown>;
+}): Promise<{ response: Response; webhookUrl: string }> {
+  const errors: string[] = [];
+
+  for (const webhookUrl of params.urls) {
+    try {
+      console.log("[miniapp/canvas/images/jobs] triggering image2 workflow", {
+        ...params.logContext,
+        webhook: describeUrlForLog(webhookUrl),
+      });
+      const response = await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params.payload),
+      });
+      if (response.ok) {
+        return { response, webhookUrl };
+      }
+      const bodyText = await response.text().catch(() => "");
+      errors.push(
+        `${describeUrlForLog(webhookUrl)} HTTP ${response.status}${bodyText ? ` ${bodyText.slice(0, 180)}` : ""}`,
+      );
+    } catch (error) {
+      errors.push(
+        `${describeUrlForLog(webhookUrl)} ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  throw new Error(`image2 工作流触发失败：${errors.join("；") || "no webhook url"}`);
 }
 
 function collectUrls(value: unknown, depth = 0): string[] {
@@ -192,6 +269,18 @@ function collectInlineImages(value: unknown, depth = 0): InlineImage[] {
   if (typeof value !== "object") return [];
 
   const obj = value as Record<string, unknown>;
+  const b64Json =
+    obj.b64_json ||
+    obj.b64Json ||
+    obj.image_base64 ||
+    obj.imageBase64 ||
+    obj.base64 ||
+    obj.base64_json ||
+    obj.base64Json;
+  if (typeof b64Json === "string" && b64Json.trim()) {
+    return [{ data: b64Json.trim(), mimeType: "image/png" }];
+  }
+
   const inline = obj.inline_data || obj.inlineData || obj.inlineDataV1 || obj.inlineDataV2;
   const inlineObj = inline && typeof inline === "object" ? inline as Record<string, unknown> : null;
   const inlineData = inlineObj?.data;
@@ -363,11 +452,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "请先填写图片描述" }, { status: 400 });
   }
 
-  const model = sanitizeText(body?.model, 80) || "gpt-image-2-all";
+  const rawModel = sanitizeText(body?.model, 80) || IMAGE2_WORKFLOW_MODEL;
+  const useImage2Workflow = isImage2WorkflowModel(rawModel);
+  const model = useImage2Workflow ? IMAGE2_WORKFLOW_MODEL : (MODEL_ALIAS_MAP[rawModel.toLowerCase()] || rawModel);
   const size = sanitizeSize(body?.size);
   const count = sanitizeCount(body?.n);
   const referenceImages = sanitizeImages(body?.image ?? body?.images);
-  const configError = validateImageUpstreamConfig(model, apiKey);
+  const configError = useImage2Workflow ? null : validateImageUpstreamConfig(model, apiKey);
   if (configError) {
     return NextResponse.json({ error: configError }, { status: 503 });
   }
@@ -411,6 +502,109 @@ export async function POST(request: NextRequest) {
       },
     }),
   ]);
+
+  if (useImage2Workflow) {
+    const webhookPayload = {
+      segment_id: taskId,
+      task_id: taskId,
+      prompt,
+      raw_prompt: prompt,
+      model: IMAGE2_WORKFLOW_MODEL,
+      requested_model: IMAGE2_WORKFLOW_MODEL,
+      aspect_ratio: size === "1536x1024" ? "3:2" : size === "1024x1536" ? "2:3" : "1:1",
+      reference_image_urls: referenceImages,
+      images: referenceImages,
+      image_urls: referenceImages,
+      model_capabilities: {
+        provider: "image2",
+        supports_multi_image: true,
+        max_reference_images: 8,
+        preferred_input_field: "images",
+      },
+      callback_url: `${resolveCallbackBase(request)}/api/webhook/miniapp-canvas-image`,
+      api_key: apiKey || token || process.env.CANVAS_UPSTREAM_DEFAULT_API_KEY || process.env.DEFAULT_USER_API_KEY || "",
+      admin_token: process.env.ADMIN_TOKEN,
+      workflow_id: "flow_storyboard_image",
+      source: "miniapp_ai_image",
+    };
+
+    try {
+      const { response } = await postStoryboardImageWorkflow({
+        urls: resolveStoryboardImageWebhookUrls(),
+        payload: webhookPayload,
+        logContext: {
+          taskId,
+          model: IMAGE2_WORKFLOW_MODEL,
+          referenceCount: referenceImages.length,
+        },
+      });
+
+      let responsePayload: unknown = null;
+      try {
+        responsePayload = await response.json();
+      } catch {
+        responsePayload = null;
+      }
+      const immediateImages = extractImageUrls(responsePayload);
+      if (immediateImages.length > 0) {
+        const generatedImages = immediateImages.slice(0, count);
+        await markJobCompleted({
+          taskId,
+          userId,
+          prompt,
+          model,
+          size,
+          count,
+          referenceImages,
+          generatedImages,
+          rawResult: responsePayload,
+        });
+        return NextResponse.json({
+          data: {
+            taskId,
+            status: "COMPLETED",
+            images: generatedImages,
+            message: "图片生成完成",
+          },
+        });
+      }
+
+      return NextResponse.json({
+        data: {
+          taskId,
+          status: "PROCESSING",
+          message: "图片生产中，请在作品中查看生成结果",
+        },
+      });
+    } catch (error) {
+      console.error("[miniapp/canvas/images/jobs] image2 workflow trigger failed", {
+        taskId,
+        userId,
+        error,
+      });
+      const errorMessage = normalizeJobErrorMessage(error);
+      await markJobFailed({
+        taskId,
+        userId,
+        prompt,
+        model,
+        size,
+        count,
+        referenceImages,
+        errorMessage,
+      });
+      return NextResponse.json(
+        {
+          error: errorMessage,
+          data: {
+            taskId,
+            status: "FAILED",
+          },
+        },
+        { status: 502 },
+      );
+    }
+  }
 
   after(async () => {
     try {

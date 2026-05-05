@@ -109,6 +109,10 @@ export async function POST(request: Request) {
       payloadData.characterName = character.name || '';
       payloadData.character_avatar = character.avatar || '';
       payloadData.characterAvatar = character.avatar || '';
+      payloadData.character_image_url = character.avatar || '';
+      payloadData.characterImageUrl = character.avatar || '';
+      payloadData.person_image_url = character.avatar || '';
+      payloadData.personImageUrl = character.avatar || '';
 
       metadata.selected_character = {
         id: character.id,

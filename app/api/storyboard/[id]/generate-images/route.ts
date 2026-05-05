@@ -26,14 +26,15 @@ export async function POST(
     const body = await req.json();
     const {
       segmentIds,
-      model = "nanoBananapro",
+      model = "image2",
       aspectRatio = "9:16",
     } = body;
+    const requestedModel = String(model || "image2").trim() || "image2";
 
     console.log("[generate-images] Request:", {
       task_id: id,
       segmentIds,
-      model,
+      model: requestedModel,
       userId,
     });
 
@@ -42,6 +43,7 @@ export async function POST(
       where: { id },
       include: {
         product: true,
+        character: true,
       },
     });
 
@@ -74,7 +76,7 @@ export async function POST(
 
     console.log("[generate-images] Triggering generation for segments:", {
       count: segments.length,
-      model,
+      model: requestedModel,
     });
 
     // 3. Resolve webhook URL (env first, then stable fallback)
@@ -125,20 +127,91 @@ export async function POST(
       );
     }
 
-    // Helper: parse product images that may be stored as a JSON string
-    function extractFirstProductImage(images: unknown): string | null {
-      if (!images) return null;
-      if (Array.isArray(images)) return (images as string[])[0] || null;
+    // Helper: parse image fields that may be stored as JSON strings.
+    function extractImageUrls(images: unknown): string[] {
+      if (!images) return [];
+      if (Array.isArray(images)) {
+        return images.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean);
+      }
       if (typeof images === "string") {
         try {
           const parsed = JSON.parse(images);
-          return Array.isArray(parsed) ? parsed[0] : images;
-        } catch { return images; }
+          return extractImageUrls(parsed);
+        } catch {
+          const trimmed = images.trim();
+          return trimmed ? [trimmed] : [];
+        }
       }
-      return null;
+      return [];
     }
 
-    const taskLevelProductImage = extractFirstProductImage(task.product?.images);
+    function uniqueUrls(urls: Array<string | null | undefined>, limit: number): string[] {
+      const seen = new Set<string>();
+      const result: string[] = [];
+      for (const url of urls) {
+        const normalized = typeof url === "string" ? url.trim() : "";
+        if (!normalized || seen.has(normalized)) continue;
+        seen.add(normalized);
+        result.push(normalized);
+        if (result.length >= limit) break;
+      }
+      return result;
+    }
+
+    function normalizeSubjectRefs(value: unknown): Array<{ type: string; url: string; label?: string }> {
+      if (!Array.isArray(value)) return [];
+      return value
+        .map((item) => {
+          const record = item && typeof item === "object" ? item as Record<string, unknown> : {};
+          return {
+            type: String(record.type || "custom"),
+            url: String(record.url || "").trim(),
+            label: typeof record.label === "string" ? record.label : undefined,
+          };
+        })
+        .filter((item) => item.url);
+    }
+
+    function getModelCapabilities(value: unknown): Record<string, unknown> {
+      const normalized = String(value || "").trim().toLowerCase();
+      if (normalized === "image2" || normalized.includes("gpt-image-2")) {
+        return {
+          provider: "image2",
+          supports_multi_image: true,
+          max_reference_images: 8,
+          preferred_input_field: "images",
+        };
+      }
+      if (normalized.includes("banana") || normalized.includes("gemini")) {
+        return {
+          provider: "gemini-image",
+          supports_multi_image: true,
+          max_reference_images: 5,
+          preferred_input_field: "contents.parts.inline_data",
+        };
+      }
+      return {
+        provider: "generic-image",
+        supports_multi_image: true,
+        max_reference_images: 5,
+        preferred_input_field: "images",
+      };
+    }
+
+    const taskLevelProductImages = extractImageUrls(task.product?.images);
+    const taskLevelProductImage = taskLevelProductImages[0] || null;
+    const taskLevelCharacterImage =
+      typeof task.character?.avatar === "string" && task.character.avatar.trim()
+        ? task.character.avatar.trim()
+        : null;
+    const taskDetailedBreakdown =
+      task.detailedBreakdown && typeof task.detailedBreakdown === "object" && !Array.isArray(task.detailedBreakdown)
+        ? task.detailedBreakdown as Record<string, unknown>
+        : {};
+    const pipelineKey = String(taskDetailedBreakdown.pipeline_key || taskDetailedBreakdown.pipelineKey || "");
+    const allowCharacterReference = pipelineKey === "skeleton_video";
+    const modelCapabilities = getModelCapabilities(requestedModel);
+    const maxReferenceImages = Number(modelCapabilities.max_reference_images || 5) || 5;
 
     const triggers = segments.map(async (segment) => {
       // Replace [PRODUCT] placeholder in prompt
@@ -150,35 +223,66 @@ export async function POST(
       // Extract per-segment refs from generationParams, fall back to task-level
       const generationParams = segment.generationParams as Record<string, any> | null;
       const referenceFrameUrl = generationParams?.reference_frame_url || null;
-      const subjectRefs: Array<{ type: string; url: string }> = Array.isArray(generationParams?.subject_refs)
-        ? generationParams.subject_refs
-        : [];
+      const subjectRefs = normalizeSubjectRefs(generationParams?.subject_refs);
       const productRef = subjectRefs.find((r) => r.type === "product");
+      const characterRef = subjectRefs.find((r) => r.type === "character");
       const hasPersonFlag = generationParams?.has_person ?? true;
       const hasProductFlag = generationParams?.has_product ?? true;
+      const subjectReplaceMode = String(generationParams?.subject_replace_mode || generationParams?.subjectReplaceMode || "").trim();
       const productImageUrl = hasProductFlag ? (productRef?.url || taskLevelProductImage || null) : null;
-      const image2Prompt = [
-        prompt,
-        "",
-        "Product replacement mode:",
-        "- Use the reference frame as the composition, camera, lighting, pose, layout, and scene anchor.",
-        "- Use the product reference image only to replace the original product with the selected product.",
-        "- Do not use or import any person, face, model, celebrity, or character identity reference.",
-        "- Keep people in the reference frame generic and natural if they appear; do not preserve or copy a real person's identity.",
-        "- Preserve the viral ad shot grammar while swapping only the product identity where applicable.",
-      ].join("\n");
+      const characterImageUrl = allowCharacterReference && hasPersonFlag !== false
+        ? (characterRef?.url || taskLevelCharacterImage || null)
+        : null;
+      const editingCharacterImageUrl = characterRef?.url || taskLevelCharacterImage || null;
+      const referenceImageUrls = uniqueUrls([
+        ...(subjectReplaceMode === "product" ? [productImageUrl] : []),
+        ...(subjectReplaceMode === "character" ? [editingCharacterImageUrl] : []),
+        ...subjectRefs.map((ref) => ref.url),
+        productImageUrl,
+        allowCharacterReference ? characterImageUrl : null,
+        referenceFrameUrl,
+      ], maxReferenceImages);
+      const image2Prompt = allowCharacterReference
+        ? [
+          prompt,
+          "",
+          "3D skeleton storyboard mode:",
+          "- Use the selected character reference to preserve the intended character identity and appearance.",
+          "- Use the selected product reference where the shot includes a product.",
+          "- Keep the storyboard pose, action, camera, lighting, and timing from the prompt.",
+          "- Preserve the shot grammar while replacing only the intended character/product subjects.",
+        ].join("\n")
+        : [
+          prompt,
+          "",
+          "Product replacement mode:",
+          "- Use the reference frame as the composition, camera, lighting, pose, layout, and scene anchor.",
+          "- Use the product reference image only to replace the original product with the selected product.",
+          "- Do not use or import any person, face, model, celebrity, or character identity reference.",
+          "- Keep people in the reference frame generic and natural if they appear; do not preserve or copy a real person's identity.",
+          "- Preserve the viral ad shot grammar while swapping only the product identity where applicable.",
+        ].join("\n");
 
       const payload = {
         segment_id: segment.id,
         task_id: id,
         prompt: image2Prompt,
+        raw_prompt: prompt,
         reference_frame_url: referenceFrameUrl,
         has_person: hasPersonFlag,
         has_product: hasProductFlag,
         product_image_url: productImageUrl,
-        character_image_url: null,
-        image_edit_mode: "product_replace",
-        model,
+        character_image_url: characterImageUrl,
+        person_image_url: characterImageUrl,
+        subject_refs: subjectRefs,
+        subject_replace_mode: subjectReplaceMode || (allowCharacterReference ? "character_product_reference" : "product_replace"),
+        reference_image_urls: referenceImageUrls,
+        images: referenceImageUrls,
+        image_urls: referenceImageUrls,
+        image_edit_mode: allowCharacterReference ? "character_product_reference" : "product_replace",
+        model: requestedModel,
+        requested_model: requestedModel,
+        model_capabilities: modelCapabilities,
         aspect_ratio: aspectRatio,
         callback_url: callbackUrl,
         api_key: apiKey,
@@ -218,7 +322,7 @@ export async function POST(
             data: {
               generatedImage: imageUrl,
               status: "IMAGE_READY",
-              imageGenerationModel: model,
+              imageGenerationModel: requestedModel,
             },
           });
           return { segment_id: segment.id, success: true, image_url: imageUrl, immediate: true };
@@ -228,13 +332,17 @@ export async function POST(
             where: { id: segment.id },
             data: {
               status: "IMAGE_GENERATING",
-              imageGenerationModel: model,
+              imageGenerationModel: requestedModel,
             },
           });
           return { segment_id: segment.id, success: true, immediate: false };
         }
       } catch (error) {
         console.error(`[generate-images] Failed for segment ${segment.id}:`, error);
+        await prisma.storyboardSegment.update({
+          where: { id: segment.id },
+          data: { status: "IMAGE_FAILED" },
+        }).catch(() => {});
         return {
           segment_id: segment.id,
           success: false,

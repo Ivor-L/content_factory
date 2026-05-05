@@ -103,7 +103,13 @@ export async function POST(request: Request) {
           });
         }
 
-        return NextResponse.json(analysis);
+        return NextResponse.json({
+          ...analysis,
+          success: true,
+          productId,
+          triggered: analysis.triggered === true,
+          processing: !(hasWorkflowData || hasDetailedText || hasSellingPoints),
+        });
     }
 
     const analysis = await analyzeProduct({
@@ -124,7 +130,12 @@ export async function POST(request: Request) {
     }).catch((e) => console.error('[product/analyze] deduct credits failed:', e));
     logCreditUsage({ featureKey: 'product_analysis', userId: context.userId, amount, success: true });
 
-    return NextResponse.json(analysis);
+    return NextResponse.json({
+      ...analysis,
+      success: true,
+      triggered: analysis.triggered === true,
+      processing: analysis.status !== 'COMPLETED',
+    });
   } catch (error) {
     console.error('Error analyzing product:', error);
     const message = error instanceof Error ? error.message : 'Failed to analyze product';

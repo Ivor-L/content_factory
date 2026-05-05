@@ -10,6 +10,7 @@ import './index.sass';
 
 const POLL_INTERVAL = 4000;
 const IMAGE_MODELS = [
+  { id: 'image2', label: 'GPT-image2' },
   { id: 'nanoBananapro', label: 'Nano Banana Pro' },
   { id: 'nanoBanana2', label: 'Nano Banana 2' },
 ];
@@ -20,6 +21,12 @@ const VIDEO_MODELS = [
   { id: 'veo_3_1-fast', label: 'Veo 3.1 Fast(兼容)' },
 ];
 type StoryboardRef = { type: string; url: string; label?: string };
+type RemixStageKey = 'breakdown' | 'replace' | 'video';
+type RemixReplaceMode = '' | 'product' | 'character';
+
+const DEFAULT_IMAGE_MODEL = 'image2';
+const PRODUCT_REPLACE_PROMPT = '请将分镜故事板的产品换成图1';
+const CHARACTER_REPLACE_PROMPT = '请替换分镜故事板中的角色';
 
 function decodeQueryText(value: string): string {
   const text = String(value || '').trim();
@@ -35,17 +42,19 @@ export default function StoryboardBoardPage() {
   const [taskId, setTaskId] = useState('');
   const [title, setTitle] = useState('3D骨骼分镜板');
   const [routeMode, setRouteMode] = useState('');
+  const [selectedRemixStage, setSelectedRemixStage] = useState<RemixStageKey | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState('');
   const [task, setTask] = useState<StoryboardTaskStatusResult | null>(null);
-  const [imageModel, setImageModel] = useState('nanoBananapro');
+  const [imageModel, setImageModel] = useState(DEFAULT_IMAGE_MODEL);
   const [videoModel, setVideoModel] = useState('veo3.1-fast');
   const [editingSegmentId, setEditingSegmentId] = useState('');
   const [editingType, setEditingType] = useState<'image' | 'video'>('image');
   const [editingPrompt, setEditingPrompt] = useState('');
-  const [editingImageModel, setEditingImageModel] = useState('nanoBananapro');
+  const [editingImageModel, setEditingImageModel] = useState(DEFAULT_IMAGE_MODEL);
   const [editingVideoModel, setEditingVideoModel] = useState('veo3.1-fast');
   const [editingRefs, setEditingRefs] = useState<StoryboardRef[]>([]);
+  const [editingReplaceMode, setEditingReplaceMode] = useState<RemixReplaceMode>('');
   const [uploadingRef, setUploadingRef] = useState(false);
   const [uploadingAsset, setUploadingAsset] = useState(false);
   const [editModelSheetOpen, setEditModelSheetOpen] = useState(false);
@@ -53,6 +62,8 @@ export default function StoryboardBoardPage() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [actioningMap, setActioningMap] = useState<Record<string, boolean>>({});
   const [modelSheetOpen, setModelSheetOpen] = useState(false);
+  const [autoOpenEdit, setAutoOpenEdit] = useState(false);
+  const [autoOpenedEdit, setAutoOpenedEdit] = useState(false);
   const [imageErrorMap, setImageErrorMap] = useState<Record<string, boolean>>({});
   const [videoErrorMap, setVideoErrorMap] = useState<Record<string, boolean>>({});
   const [deleting, setDeleting] = useState(false);
@@ -101,7 +112,11 @@ export default function StoryboardBoardPage() {
     const id = String(query?.id || '').trim();
     const incomingTitle = decodeQueryText(String(query?.title || ''));
     const incomingMode = String(query?.mode || '').trim().toLowerCase();
+    const openEdit = String(query?.openEdit || '').trim().toLowerCase();
     setRouteMode(incomingMode);
+    setSelectedRemixStage(null);
+    setAutoOpenEdit(openEdit === 'image' || openEdit === 'replace');
+    setAutoOpenedEdit(false);
     if (!id) {
       setErrorText('缺少任务ID');
       setLoading(false);
@@ -174,15 +189,59 @@ export default function StoryboardBoardPage() {
   const buildTaskDefaultRefs = (): StoryboardRef[] => {
     const refs: StoryboardRef[] = [];
     for (const ref of task?.references || []) {
-      if (ref.type !== 'product') continue;
       if (!ref.imageUrl) continue;
       refs.push({
-        type: 'product',
+        type: ref.type,
         url: ref.imageUrl,
-        label: '产品图',
+        label: ref.type === 'character' ? '角色图' : '产品图',
       });
     }
     return refs;
+  };
+
+  const getRefsByKind = (kind: RemixReplaceMode): StoryboardRef[] => {
+    const refs: StoryboardRef[] = [];
+    for (const ref of task?.references || []) {
+      if (!ref.imageUrl) continue;
+      if (kind === 'product' && ref.type !== 'product') continue;
+      if (kind === 'character' && ref.type !== 'character') continue;
+      refs.push({
+        type: ref.type,
+        url: ref.imageUrl,
+        label: ref.type === 'character' ? '角色图' : '产品图',
+      });
+    }
+    return refs;
+  };
+
+  const buildReplaceRefs = (mode: RemixReplaceMode, segment: StoryboardSegmentItem): StoryboardRef[] => {
+    const currentRefs = getSegmentRefs(segment, 'image');
+    const targetRefs = mode === 'product' || mode === 'character' ? getRefsByKind(mode) : [];
+    const otherRefs = currentRefs.filter((ref) => ref.type !== 'product' && ref.type !== 'character');
+    const storyboardBoardUrl = getStoryboardGridBoards(task)[0]?.url || '';
+    const storyboardBoardRef = storyboardBoardUrl
+      ? [{ type: 'storyboard_board', url: storyboardBoardUrl, label: '分镜板图' }]
+      : [];
+    const refs = targetRefs.length > 0
+      ? [...targetRefs, ...storyboardBoardRef, ...otherRefs]
+      : [...currentRefs, ...storyboardBoardRef];
+    const seen = new Set<string>();
+    return refs.filter((ref) => {
+      const url = normalizeMediaUrl(ref.url);
+      if (!url || seen.has(url)) return false;
+      seen.add(url);
+      ref.url = url;
+      return true;
+    }).slice(0, 6);
+  };
+
+  const applyReplaceMode = (mode: RemixReplaceMode, segment: StoryboardSegmentItem | null = editingSegment) => {
+    if (!segment || !mode) return;
+    setEditingReplaceMode(mode);
+    setEditingType('image');
+    setEditingPrompt(mode === 'product' ? PRODUCT_REPLACE_PROMPT : CHARACTER_REPLACE_PROMPT);
+    setEditingRefs(buildReplaceRefs(mode, segment));
+    setEditingImageModel(DEFAULT_IMAGE_MODEL);
   };
 
   const getSegmentParams = (segment: StoryboardSegmentItem): Record<string, unknown> => (
@@ -273,10 +332,17 @@ export default function StoryboardBoardPage() {
     setEditingRefs(getSegmentRefs(segment, type));
   };
 
+  const handleEditReplace = (segment: StoryboardSegmentItem, mode: RemixReplaceMode = 'product') => {
+    setEditingSegmentId(segment.id);
+    setEditingVideoModel(videoModel);
+    applyReplaceMode(mode, segment);
+  };
+
   const closeEditPrompt = () => {
     setEditingSegmentId('');
     setEditingPrompt('');
     setEditingRefs([]);
+    setEditingReplaceMode('');
     setEditModelSheetOpen(false);
     setKeyboardHeight(0);
   };
@@ -381,7 +447,11 @@ export default function StoryboardBoardPage() {
     setSavingPrompt(true);
     try {
       await miniappApi.updateStoryboardSegment(segmentId, editingType === 'image'
-        ? { imagePrompt: prompt, subject_refs: editingRefs }
+        ? {
+          imagePrompt: prompt,
+          subject_refs: editingRefs,
+          ...(editingReplaceMode ? { subject_replace_mode: editingReplaceMode } : {}),
+        }
         : { videoPrompt: prompt, video_refs: editingRefs });
       upsertLocalSegment(segmentId, editingType === 'image'
         ? { imagePrompt: prompt }
@@ -608,7 +678,7 @@ export default function StoryboardBoardPage() {
   };
 
   const segments = task?.segments || [];
-  const references = (task?.references || []).filter((ref) => ref.type === 'product');
+  const references = task?.references || [];
   const taskMetadata = getTaskMetadata(task);
   const workflowData = getWorkflowData(task);
   const storyboardGridBoards = getStoryboardGridBoards(task);
@@ -624,7 +694,18 @@ export default function StoryboardBoardPage() {
   const isRemixRoute = isViralRemix || routeMode.includes('remix');
   const isRemixReviewMode = isRemixRoute && !routeMode.includes('board');
   const remixOriginalVideoUrl = getRemixReferenceVideoUrl(taskMetadata, task);
+  const remixOriginalPosterUrl = normalizeMediaUrl(String(
+    taskMetadata.referencePoster ||
+      taskMetadata.reference_video_poster ||
+      storyboardGridUrl ||
+      task?.coverImage ||
+      '',
+  ));
   const remixStageItems = isRemixRoute ? buildRemixStages(task, segments, taskMetadata) : [];
+  const defaultRemixStage = remixStageItems.find((stage) => stage.state === 'active')?.key ||
+    [...remixStageItems].reverse().find((stage) => stage.state === 'done')?.key ||
+    'breakdown';
+  const activeRemixStage = isRemixRoute ? (selectedRemixStage || defaultRemixStage) : null;
   const hasRemixBreakdownResult = isRemixRoute && (
     Boolean(storyboardGridUrl) ||
     contentStructure.length > 0 ||
@@ -650,6 +731,35 @@ export default function StoryboardBoardPage() {
     [keyboardHeight],
   );
 
+  useEffect(() => {
+    if (!autoOpenEdit || autoOpenedEdit || loading || errorText || !isRemixRoute || segments.length === 0) return;
+    setAutoOpenedEdit(true);
+    handleEditReplace(segments[0], 'product');
+  }, [autoOpenEdit, autoOpenedEdit, loading, errorText, isRemixRoute, segments]);
+
+  const handleOpenReferenceVideo = () => {
+    if (!remixOriginalVideoUrl) {
+      Taro.showToast({ title: '暂无原视频', icon: 'none' });
+      return;
+    }
+    Taro.navigateTo({
+      url: `/subpages/work-detail/index?id=${encodeURIComponent(`${task?.id || taskId}:reference-video`)}`,
+      success: () => {
+        Taro.setStorageSync('WORK_DETAIL_ITEM', {
+          id: `${task?.id || taskId}:reference-video`,
+          title: '原视频',
+          type: 'video',
+          status: task?.status || 'BREAKDOWN_COMPLETED',
+          createdAt: new Date().toISOString(),
+          preview: remixOriginalVideoUrl,
+          thumbnailUrl: remixOriginalPosterUrl || null,
+          metadata: null,
+          source: 'task',
+        });
+      },
+    });
+  };
+
   return (
     <View className='storyboard-board-page'>
       <View className='storyboard-board-nav'>
@@ -669,14 +779,45 @@ export default function StoryboardBoardPage() {
           <View className='remix-stage-section'>
             <View className='remix-stage-track'>
               {remixStageItems.map((stage, index) => (
-                <View key={stage.key} className='remix-stage-item'>
-                  <View className={`remix-stage-dot remix-stage-dot--${stage.state}`}>
+                <View
+                  key={stage.key}
+                  className={`remix-stage-item ${activeRemixStage === stage.key ? 'remix-stage-item--selected' : ''}`}
+                  onClick={() => setSelectedRemixStage(stage.key)}
+                >
+                  <View className={`remix-stage-dot remix-stage-dot--${stage.state} ${activeRemixStage === stage.key ? 'remix-stage-dot--selected' : ''}`}>
                     <Text className='remix-stage-dot-text'>{index + 1}</Text>
                   </View>
                   {index < remixStageItems.length - 1 && <View className={`remix-stage-line remix-stage-line--${stage.state}`} />}
-                  <Text className={`remix-stage-name remix-stage-name--${stage.state}`}>{stage.title}</Text>
+                  <Text className={`remix-stage-name remix-stage-name--${stage.state} ${activeRemixStage === stage.key ? 'remix-stage-name--selected' : ''}`}>{stage.title}</Text>
                 </View>
               ))}
+            </View>
+          </View>
+        )}
+
+        {!loading && !errorText && isRemixRoute && activeRemixStage === 'breakdown' && (
+          <View className={isRemixReviewMode ? 'remix-review-section remix-original-section' : 'remix-original-section remix-original-section--board'}>
+            <View className='remix-review-section-head'>
+              <Text className='storyboard-section-title'>原视频</Text>
+              <Text className='remix-review-section-note'>点击查看</Text>
+            </View>
+            <View className={`remix-original-card ${!remixOriginalVideoUrl ? 'remix-original-card--empty' : ''}`} onClick={handleOpenReferenceVideo}>
+              {remixOriginalPosterUrl ? (
+                <Image className='remix-original-poster' src={remixOriginalPosterUrl} mode='aspectFill' />
+              ) : (
+                <View className='remix-original-placeholder'>
+                  <Text className='remix-original-placeholder-text'>原视频</Text>
+                </View>
+              )}
+              <View className='remix-original-overlay'>
+                <View className='remix-original-play'>
+                  <Text className='remix-original-play-text'>▶</Text>
+                </View>
+                <View className='remix-original-copy'>
+                  <Text className='remix-original-title'>查看原视频</Text>
+                  <Text className='remix-original-desc'>{remixOriginalVideoUrl ? '用于对照动作、节奏和镜头' : '当前任务未保存原视频地址'}</Text>
+                </View>
+              </View>
             </View>
           </View>
         )}
@@ -847,11 +988,11 @@ export default function StoryboardBoardPage() {
                     {ref.imageUrl ? (
                       <Image className='storyboard-reference-image' src={ref.imageUrl} mode='aspectFill' />
                     ) : (
-                      <Text className='storyboard-reference-placeholder'>产品</Text>
+                      <Text className='storyboard-reference-placeholder'>{ref.type === 'character' ? '角色' : '产品'}</Text>
                     )}
                   </View>
                   <View className='storyboard-reference-info'>
-                    <Text className='storyboard-reference-label'>参考产品</Text>
+                    <Text className='storyboard-reference-label'>{ref.type === 'character' ? '参考角色' : '参考产品'}</Text>
                     <Text className='storyboard-reference-name'>{ref.name}</Text>
                   </View>
                 </View>
@@ -918,6 +1059,11 @@ export default function StoryboardBoardPage() {
                   const videoUrl = normalizeMediaUrl(segment.generatedVideo);
                   const showImage = Boolean(imageUrl) && !Boolean(imageErrorMap[segment.id]);
                   const showVideo = Boolean(videoUrl) && !Boolean(videoErrorMap[segment.id]);
+                  const statusText = String(segment.status || '').toUpperCase();
+                  const imageGenerating = !showImage && statusText.includes('IMAGE_GENERATING');
+                  const videoGenerating = !showVideo && statusText.includes('VIDEO_GENERATING');
+                  const imageFailed = !showImage && statusText.includes('IMAGE') && (statusText.includes('FAIL') || statusText.includes('ERROR'));
+                  const videoFailed = !showVideo && statusText.includes('VIDEO') && (statusText.includes('FAIL') || statusText.includes('ERROR'));
                   return (
                     <>
                 <View className='storyboard-segment-head'>
@@ -941,7 +1087,7 @@ export default function StoryboardBoardPage() {
                 <View className='storyboard-asset-grid'>
                   <View className='storyboard-asset-block'>
                     {isViralRemix && <Text className='storyboard-asset-title'>产品/角色替换图</Text>}
-                    <View className='storyboard-asset-stage' onClick={() => handleEditPrompt(segment, 'image')}>
+                    <View className='storyboard-asset-stage' onClick={() => (isViralRemix ? handleEditReplace(segment, 'product') : handleEditPrompt(segment, 'image'))}>
                       {showImage ? (
                         <Image
                           className='storyboard-asset-image'
@@ -951,7 +1097,31 @@ export default function StoryboardBoardPage() {
                           onError={() => setImageFailed(segment.id, true)}
                         />
                       ) : (
-                        <Image className='storyboard-asset-placeholder-icon storyboard-asset-placeholder-icon--image' src={imageIcon} mode='aspectFit' />
+                        <View className={`storyboard-asset-placeholder ${imageGenerating ? 'storyboard-asset-placeholder--generating' : ''} ${imageFailed ? 'storyboard-asset-placeholder--failed' : ''}`}>
+                          {imageGenerating ? (
+                            <>
+                              <View className='storyboard-asset-spinner' />
+                              <Text className='storyboard-asset-placeholder-title'>图片生成中</Text>
+                              <Text className='storyboard-asset-placeholder-sub'>完成后会自动更新</Text>
+                            </>
+                          ) : imageFailed ? (
+                            <>
+                              <Image className='storyboard-asset-placeholder-icon storyboard-asset-placeholder-icon--image' src={imageIcon} mode='aspectFit' />
+                              <Text className='storyboard-asset-placeholder-title'>图片生成失败</Text>
+                              <View
+                                className='storyboard-asset-retry'
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void handleRegenerateImage(segment);
+                                }}
+                              >
+                                <Text className='storyboard-asset-retry-text'>重新生成</Text>
+                              </View>
+                            </>
+                          ) : (
+                            <Image className='storyboard-asset-placeholder-icon storyboard-asset-placeholder-icon--image' src={imageIcon} mode='aspectFit' />
+                          )}
+                        </View>
                       )}
                     </View>
                   </View>
@@ -969,7 +1139,31 @@ export default function StoryboardBoardPage() {
                           onError={() => setVideoFailed(segment.id, true)}
                         />
                       ) : (
-                        <Image className='storyboard-asset-placeholder-icon storyboard-asset-placeholder-icon--video' src={videoIcon} mode='aspectFit' />
+                        <View className={`storyboard-asset-placeholder ${videoGenerating ? 'storyboard-asset-placeholder--generating' : ''} ${videoFailed ? 'storyboard-asset-placeholder--failed' : ''}`}>
+                          {videoGenerating ? (
+                            <>
+                              <View className='storyboard-asset-spinner' />
+                              <Text className='storyboard-asset-placeholder-title'>视频生成中</Text>
+                              <Text className='storyboard-asset-placeholder-sub'>完成后会自动更新</Text>
+                            </>
+                          ) : videoFailed ? (
+                            <>
+                              <Image className='storyboard-asset-placeholder-icon storyboard-asset-placeholder-icon--video' src={videoIcon} mode='aspectFit' />
+                              <Text className='storyboard-asset-placeholder-title'>视频生成失败</Text>
+                              <View
+                                className='storyboard-asset-retry'
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void handleRegenerateVideo(segment);
+                                }}
+                              >
+                                <Text className='storyboard-asset-retry-text'>重新生成</Text>
+                              </View>
+                            </>
+                          ) : (
+                            <Image className='storyboard-asset-placeholder-icon storyboard-asset-placeholder-icon--video' src={videoIcon} mode='aspectFit' />
+                          )}
+                        </View>
                       )}
                     </View>
                   </View>
@@ -996,22 +1190,7 @@ export default function StoryboardBoardPage() {
           {remixOriginalVideoUrl && (
             <View
               className='remix-review-bottom-btn remix-review-bottom-btn--ghost'
-              onClick={() => Taro.navigateTo({
-                url: `/subpages/work-detail/index?id=${encodeURIComponent(`${task?.id || taskId}:reference-video`)}`,
-                success: () => {
-                  Taro.setStorageSync('WORK_DETAIL_ITEM', {
-                    id: `${task?.id || taskId}:reference-video`,
-                    title: '参考视频',
-                    type: 'video',
-                    status: task?.status || 'BREAKDOWN_COMPLETED',
-                    createdAt: new Date().toISOString(),
-                    preview: remixOriginalVideoUrl,
-                    thumbnailUrl: taskMetadata.referencePoster || taskMetadata.reference_video_poster || storyboardGridUrl || null,
-                    metadata: null,
-                    source: 'task',
-                  });
-                },
-              })}
+              onClick={handleOpenReferenceVideo}
             >
               <Text className='remix-review-bottom-btn-text remix-review-bottom-btn-text--ghost'>查看原视频</Text>
             </View>
@@ -1020,11 +1199,11 @@ export default function StoryboardBoardPage() {
             className='remix-review-bottom-btn remix-review-bottom-btn--primary'
             onClick={() => {
               Taro.redirectTo({
-                url: `/subpages/storyboard-board/index?id=${encodeURIComponent(taskId)}&title=${encodeURIComponent(title || '一键复刻')}&mode=remix-board`,
+                url: `/subpages/storyboard-board/index?id=${encodeURIComponent(taskId)}&title=${encodeURIComponent(title || '一键复刻')}&mode=remix-board&openEdit=replace`,
               });
             }}
           >
-            <Text className='remix-review-bottom-btn-text'>进入生成阶段</Text>
+            <Text className='remix-review-bottom-btn-text'>替换产品/角色</Text>
           </View>
         </View>
       )}
@@ -1120,7 +1299,13 @@ export default function StoryboardBoardPage() {
       {editingSegment && (
         <View className='storyboard-edit-mask' onClick={closeEditPrompt}>
           <View className='storyboard-edit-panel' onClick={(e) => e.stopPropagation()}>
-            <Text className='storyboard-edit-title'>镜头 {getSegmentDisplayOrder(editingSegment, segments.findIndex((item) => item.id === editingSegment.id))} · {editingType === 'image' ? '图片' : '视频'}</Text>
+            <View className='storyboard-edit-head'>
+              <View className='storyboard-edit-back' onClick={closeEditPrompt}>
+                <Text className='storyboard-edit-back-text'>‹</Text>
+              </View>
+              <Text className='storyboard-edit-title'>镜头 {getSegmentDisplayOrder(editingSegment, segments.findIndex((item) => item.id === editingSegment.id))} · {editingType === 'image' ? '图片' : '视频'}</Text>
+              <View className='storyboard-edit-head-spacer' />
+            </View>
             <ScrollView scrollY className='storyboard-edit-content'>
               <View className='storyboard-edit-scroll-inner'>
                 <View className='storyboard-edit-preview-stage'>
@@ -1196,6 +1381,27 @@ export default function StoryboardBoardPage() {
 
             <View className='storyboard-edit-composer' style={composerStyle}>
               <View className='storyboard-edit-input-card'>
+                {editingType === 'image' && isRemixRoute && (
+                  <View className='storyboard-edit-quick-row'>
+                    <Text className='storyboard-edit-quick-label'>快捷填充</Text>
+                    <View
+                      className='storyboard-edit-quick-btn'
+                      onClick={() => applyReplaceMode('product')}
+                    >
+                      <Text className='storyboard-edit-quick-btn-text'>
+                        换产品
+                      </Text>
+                    </View>
+                    <View
+                      className='storyboard-edit-quick-btn'
+                      onClick={() => applyReplaceMode('character')}
+                    >
+                      <Text className='storyboard-edit-quick-btn-text'>
+                        换角色
+                      </Text>
+                    </View>
+                  </View>
+                )}
                 <View className='storyboard-edit-ref-row storyboard-edit-ref-row--top'>
                   <View className='storyboard-edit-ref-add' onClick={handleChooseRefImage}>
                     <Text className='storyboard-edit-ref-add-text'>{uploadingRef ? '...' : '+'}</Text>
@@ -1216,8 +1422,7 @@ export default function StoryboardBoardPage() {
                   onInput={(e) => setEditingPrompt(e.detail.value)}
                   maxlength={3000}
                   placeholder='请输入提示词'
-                  fixed
-                  adjustPosition={false}
+                  adjustPosition
                   cursorSpacing={20}
                 />
 
@@ -1787,7 +1992,7 @@ function buildRemixStages(
   task: StoryboardTaskStatusResult | null,
   segments: StoryboardSegmentItem[],
   metadata: Record<string, unknown>,
-): Array<{ key: string; title: string; desc: string; state: 'done' | 'active' | 'todo' }> {
+): Array<{ key: RemixStageKey; title: string; desc: string; state: 'done' | 'active' | 'todo' }> {
   const hasSegments = segments.length > 0;
   const hasImages = segments.some((segment) => Boolean(normalizeMediaUrl(segment.generatedImage)));
   const hasVideos = segments.some((segment) => Boolean(normalizeMediaUrl(segment.generatedVideo)));

@@ -92,6 +92,11 @@ const CANVAS_CREDIT_DEFAULTS: Record<CanvasCreditKind, CanvasCreditDefaults> = {
 const MODEL_WORKFLOW_PRESETS: Partial<Record<CanvasCreditKind, ModelWorkflowPreset[]>> = {
   image: [
     {
+      aliases: ["gpt-image-2-all", "gpt image 2 all", "gptimage2all", "gpt-image-2", "gpt image 2"],
+      workflowId: "flow_image_video_Veo",
+      workflowName: "GPT Image 2",
+    },
+    {
       aliases: ["nano banana pro", "nanobananapro", "nano-banana-pro", "gemini-3-pro-image-preview", "gemini-3.1-pro-preview"],
       workflowId: "flow_nano_pro",
       workflowName: "Nano Banana Pro",
@@ -156,6 +161,7 @@ export function resolveCanvasCreditsApiKey(candidate?: string | null) {
   }
   const fallbacks = [
     process.env.CANVAS_CREDITS_DEFAULT_API_KEY,
+    process.env.CANVAS_UPSTREAM_DEFAULT_API_KEY,
     process.env.DEFAULT_USER_API_KEY,
     process.env.CLOUD_API_KEY,
   ];

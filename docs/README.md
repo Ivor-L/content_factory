@@ -121,6 +121,9 @@
 | [20260504-miniapp-one-click-remix-stage-plan.md](./20260504-miniapp-one-click-remix-stage-plan.md) | 小程序一键复刻入口合并、上传预览与三阶段详情页计划 |
 | [20260504-miniapp-referral-and-points-api-plan.md](./20260504-miniapp-referral-and-points-api-plan.md) | 小程序分享赚钱与算力消耗接口补齐计划 |
 | [20260504-miniapp-product-analysis-plan.md](./20260504-miniapp-product-analysis-plan.md) | 小程序产品上传分析与产品库结果查看计划 |
+| [20260505-miniapp-product-detail-edit-delete-plan.md](./20260505-miniapp-product-detail-edit-delete-plan.md) | 小程序产品详情页、编辑删除与上传图片竖构图 |
+| [20260505-miniapp-skeleton-storyboard-reference-duration-plan.md](./20260505-miniapp-skeleton-storyboard-reference-duration-plan.md) | 小程序 3D 骨骼分镜角色引用、时长、语言与生成中占位修复 |
+| [20260505-miniapp-remix-subject-replace-plan.md](./20260505-miniapp-remix-subject-replace-plan.md) | 小程序智能复刻第二阶段主体替换、图片编辑与生图工作流适配 |
 | [20260504-character-library-view-edit-delete-plan.md](./20260504-character-library-view-edit-delete-plan.md) | Web 角色库查看/编辑/删除与创建表单交互优化计划 |
 | [20260504-style-library-image-performance-plan.md](./20260504-style-library-image-performance-plan.md) | 风格库图片加载性能优化：缩略图生成、列表优先加载与懒加载 |
 | [20260504-xhs-markdown-table-render-plan.md](./20260504-xhs-markdown-table-render-plan.md) | 小红书卡片 Markdown 表格渲染：Web/小程序预览、后端导出与 AI 排版对齐 |

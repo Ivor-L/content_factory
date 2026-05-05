@@ -89,6 +89,9 @@
   text-align: center
   padding-top: 0
 
+.remix-stage-item--selected
+  opacity: 1
+
 .remix-stage-dot
   width: 48rpx
   height: 48rpx
@@ -109,6 +112,10 @@
 .remix-stage-dot--active
   border-color: #ecee9f
   box-shadow: 0 0 0 6rpx rgba(236, 238, 159, 0.1)
+
+.remix-stage-dot--selected
+  border-color: #ecee9f
+  box-shadow: 0 0 0 8rpx rgba(236, 238, 159, 0.14)
 
 .remix-stage-dot-text
   color: #9badcf
@@ -149,6 +156,9 @@
 .remix-stage-name--active
   color: #ecee9f
 
+.remix-stage-name--selected
+  color: #f4f6b8
+
 .storyboard-section-title
   display: block
   font-size: 22rpx
@@ -183,6 +193,94 @@
   color: #7889aa
   font-size: 20rpx
   flex-shrink: 0
+
+.remix-original-section--board
+  margin: 0 24rpx 16rpx
+  padding: 16rpx
+  border-radius: 16rpx
+  background: #141414
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+  box-sizing: border-box
+
+.remix-original-card
+  position: relative
+  width: 100%
+  aspect-ratio: 16 / 9
+  border-radius: 16rpx
+  overflow: hidden
+  background: #050505
+  border: 1rpx solid rgba(145, 175, 229, 0.18)
+  box-sizing: border-box
+
+.remix-original-card--empty
+  opacity: 0.72
+
+.remix-original-poster
+  width: 100%
+  height: 100%
+  display: block
+  background: #050505
+
+.remix-original-placeholder
+  width: 100%
+  height: 100%
+  display: flex
+  align-items: center
+  justify-content: center
+  background: #0b0b0b
+
+.remix-original-placeholder-text
+  color: #8ea2c8
+  font-size: 24rpx
+  font-weight: 800
+
+.remix-original-overlay
+  position: absolute
+  left: 0
+  right: 0
+  bottom: 0
+  padding: 22rpx
+  display: flex
+  align-items: center
+  gap: 16rpx
+  background: linear-gradient(180deg, rgba(5, 5, 5, 0), rgba(5, 5, 5, 0.82))
+  box-sizing: border-box
+
+.remix-original-play
+  width: 58rpx
+  height: 58rpx
+  border-radius: 999rpx
+  background: #ecee9f
+  display: flex
+  align-items: center
+  justify-content: center
+  flex-shrink: 0
+
+.remix-original-play-text
+  color: #111
+  font-size: 24rpx
+  font-weight: 900
+  margin-left: 4rpx
+
+.remix-original-copy
+  flex: 1
+  min-width: 0
+
+.remix-original-title
+  display: block
+  color: #f7fbff
+  font-size: 26rpx
+  font-weight: 900
+  margin-bottom: 4rpx
+
+.remix-original-desc
+  display: block
+  color: #b8c7e4
+  font-size: 21rpx
+  line-height: 1.35
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap
 
 .remix-review-shot
   padding: 16rpx 0
@@ -657,6 +755,62 @@
   width: 168rpx
   height: 168rpx
 
+.storyboard-asset-placeholder
+  width: 100%
+  height: 100%
+  display: flex
+  flex-direction: column
+  align-items: center
+  justify-content: center
+  gap: 10rpx
+  background: #000
+  box-sizing: border-box
+
+.storyboard-asset-placeholder--generating
+  background: linear-gradient(135deg, rgba(236, 238, 159, 0.08), rgba(105, 244, 168, 0.07), rgba(0, 0, 0, 0.92))
+
+.storyboard-asset-placeholder--failed
+  background: rgba(255, 90, 95, 0.08)
+
+.storyboard-asset-spinner
+  width: 56rpx
+  height: 56rpx
+  border-radius: 50%
+  border: 5rpx solid rgba(236, 238, 159, 0.2)
+  border-top-color: #ecee9f
+  animation: storyboard-spin 0.9s linear infinite
+
+.storyboard-asset-placeholder-title
+  color: #eef6ff
+  font-size: 24rpx
+  font-weight: 900
+
+.storyboard-asset-placeholder-sub
+  color: #8fa3c9
+  font-size: 20rpx
+
+.storyboard-asset-retry
+  min-width: 132rpx
+  height: 46rpx
+  border-radius: 999rpx
+  background: #ecee9f
+  display: flex
+  align-items: center
+  justify-content: center
+  padding: 0 18rpx
+  box-sizing: border-box
+
+.storyboard-asset-retry-text
+  color: #111
+  font-size: 22rpx
+  font-weight: 900
+
+@keyframes storyboard-spin
+  from
+    transform: rotate(0deg)
+  to
+    transform: rotate(360deg)
+
 .storyboard-action-bar
   position: fixed
   left: 0
@@ -746,7 +900,7 @@
 
 .storyboard-edit-panel
   width: 100%
-  height: calc(100vh - 120rpx)
+  height: calc(100vh - 76rpx)
   border-top-left-radius: 24rpx
   border-top-right-radius: 24rpx
   background: #0f0f0f
@@ -756,12 +910,44 @@
   display: flex
   flex-direction: column
 
+.storyboard-edit-head
+  position: relative
+  min-height: 58rpx
+  display: flex
+  align-items: center
+  justify-content: center
+  margin-bottom: 8rpx
+
+.storyboard-edit-back
+  position: absolute
+  left: 0
+  top: 50%
+  transform: translateY(-50%)
+  width: 56rpx
+  height: 56rpx
+  display: flex
+  align-items: center
+  justify-content: center
+
+.storyboard-edit-back-text
+  color: #e8f2ff
+  font-size: 52rpx
+  line-height: 1
+
+.storyboard-edit-head-spacer
+  width: 56rpx
+  height: 56rpx
+
 .storyboard-edit-title
   display: block
   font-size: 24rpx
   font-weight: 800
   color: #e8f2ff
-  margin-bottom: 12rpx
+  text-align: center
+  max-width: 480rpx
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap
 
 .storyboard-edit-content
   flex: 1
@@ -912,6 +1098,33 @@
   border: 1rpx solid rgba(255, 255, 255, 0.1)
   background: #151515
   padding: 12rpx 12rpx 12rpx
+
+.storyboard-edit-quick-row
+  display: flex
+  align-items: center
+  gap: 10rpx
+  margin-bottom: 12rpx
+
+.storyboard-edit-quick-label
+  color: #7f8da8
+  font-size: 20rpx
+  font-weight: 700
+  flex-shrink: 0
+
+.storyboard-edit-quick-btn
+  height: 46rpx
+  padding: 0 18rpx
+  border-radius: 999rpx
+  border: 1rpx solid rgba(236, 238, 159, 0.28)
+  background: rgba(236, 238, 159, 0.06)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.storyboard-edit-quick-btn-text
+  color: #ecee9f
+  font-size: 20rpx
+  font-weight: 800
 
 .storyboard-edit-preview-image
   width: 100%

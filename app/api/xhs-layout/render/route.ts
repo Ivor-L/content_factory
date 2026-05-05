@@ -23,6 +23,7 @@ type RenderRequestBody = {
   includeCover?: boolean;
   maxPages?: number;
   persist?: boolean;
+  requirePreview?: boolean;
   preview?: {
     pages?: unknown;
     cardClassName?: unknown;
@@ -118,6 +119,17 @@ function sanitizeClassName(value: unknown): string {
     .filter((part) => /^[A-Za-z0-9_-]+$/.test(part))
     .slice(0, 12)
     .join(" ");
+}
+
+function appendPreviewCardClasses(className: string): string {
+  const classes = new Set(
+    className
+      .split(/\s+/)
+      .map((part) => part.trim())
+      .filter(Boolean),
+  );
+  classes.delete("preview-card");
+  return Array.from(classes).join(" ");
 }
 
 function sanitizePreviewHtml(value: unknown): string {
@@ -223,7 +235,7 @@ table{border-collapse:collapse}
 </style>
 </head>
 <body>
-  <div class="preview-card ${escapeHtml(input.cardClassName)}" style="${input.cardStyle}">
+  <div class="preview-card ${escapeHtml(appendPreviewCardClasses(input.cardClassName))}" style="${input.cardStyle}">
     ${appleHeader}
     <div class="${escapeHtml(input.contentClassName || "preview-content-shell")}" style="${input.contentStyle}">
       <div class="${escapeHtml(input.richTextClassName || "preview-richtext")}">${input.pageHtml}</div>
@@ -310,11 +322,16 @@ export async function POST(request: NextRequest) {
   const maxPages = normalizeMaxPages(body?.maxPages);
   const renderId = randomUUID();
   const shouldPersist = body?.persist === true;
+  const requirePreview = body?.requirePreview === true;
 
   try {
-    const pngs = hasPreviewPayload(body?.preview)
+    const hasPreview = hasPreviewPayload(body?.preview);
+    const pngs = hasPreview
       ? await renderPreviewPagesToPngs(body?.preview as NonNullable<RenderRequestBody["preview"]>)
       : [];
+    if (requirePreview && pngs.length === 0) {
+      return NextResponse.json({ error: "预览截图渲染失败，请重试" }, { status: 500 });
+    }
     if (pngs.length === 0) {
       const svgs = buildRenderSvgs({
         markdown,

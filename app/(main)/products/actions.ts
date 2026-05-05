@@ -236,16 +236,24 @@ async function triggerProductAnalysis(payload: ProductAnalysisPayload) {
     });
     // Write analysis result back to database on success
     const sellingPoints = analysis.workflowData ?? { selling_points: analysis.sellingPoints };
-    await prisma.product.update({
-      where: { id: payload.productId },
-      data: {
-        status: 'COMPLETED',
-        progress: 100,
-        sellingPoints: JSON.stringify(sellingPoints),
-        sellingPointsText: analysis.detailedDescription || null,
-        analysisResult: JSON.stringify({ status: 'COMPLETED' }),
-      } as any,
-    });
+    const hasWorkflowData = Boolean(analysis.workflowData);
+    const hasDetailedText = Boolean(analysis.detailedDescription);
+    const hasSellingPoints = Array.isArray(analysis.sellingPoints) && analysis.sellingPoints.length > 0;
+    if (hasWorkflowData || hasDetailedText || hasSellingPoints) {
+      await prisma.product.update({
+        where: { id: payload.productId },
+        data: {
+          status: 'COMPLETED',
+          progress: 100,
+          sellingPoints: JSON.stringify(sellingPoints),
+          sellingPointsText: analysis.detailedDescription || null,
+          analysisResult: JSON.stringify({
+            status: 'COMPLETED',
+            data: analysis.workflowData ?? null,
+          }),
+        } as any,
+      });
+    }
     revalidatePath('/products');
     revalidatePath('/resources');
   } catch (error) {

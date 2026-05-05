@@ -5,19 +5,10 @@ import { miniappApi } from '../../utils/miniapp-api';
 import type { WorkItem } from '../../utils/miniapp-api';
 import './index.sass';
 
-const TABS = [
-  { id: 'all', label: '全部' },
-  { id: 'image-text', label: '图文' },
-  { id: 'remix', label: '复刻' },
-  { id: 'video', label: '视频' },
-  { id: 'copy', label: '文案' },
-];
-
 const WORK_RETENTION_DAYS = 5;
 const RETENTION_MS = WORK_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 export default function WorksPage() {
-  const [activeTab, setActiveTab] = useState('all');
   const [works, setWorks] = useState<WorkItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [scrollTop, setScrollTop] = useState(0);
@@ -96,11 +87,8 @@ export default function WorksPage() {
   });
 
   const filteredWorks = useMemo(() => {
-    const base = activeTab === 'all'
-      ? works
-      : works.filter((item) => item.type === activeTab);
-    return sortWorksByCreatedAtDesc(base);
-  }, [works, activeTab]);
+    return sortWorksByCreatedAtDesc(works);
+  }, [works]);
   const workColumns = useMemo(() => splitAlternatingColumns(filteredWorks), [filteredWorks]);
 
   const handleOpenDetail = (item: any) => {
@@ -138,17 +126,6 @@ export default function WorksPage() {
         <View className='works-retention-banner'>
           <View className='works-retention-banner-dot' />
           <Text className='works-retention-banner-text'>作品保留 5 天，超期自动清理</Text>
-        </View>
-        <View className='works-tabs'>
-          {TABS.map((tab) => (
-            <View
-              key={tab.id}
-              className={`works-tab ${activeTab === tab.id ? 'works-tab--active' : ''}`}
-              onClick={() => setActiveTab(tab.id)}
-            >
-              <Text className={`works-tab-text ${activeTab === tab.id ? 'works-tab-text--active' : ''}`}>{tab.label}</Text>
-            </View>
-          ))}
         </View>
       </View>
 
