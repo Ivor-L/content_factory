@@ -225,17 +225,18 @@ export function QuickReplicationForm({ onClose }: QuickReplicationFormProps) {
 interface QuickPosterFormProps {
   onClose: () => void;
   initialIdeaText?: string;
+  initialTitle?: string;
   onSubmitted?: (taskId?: string | null) => void;
 }
 
-const createPosterFormState = (initialIdeaText = '') => ({
-  title: '',
+const createPosterFormState = (initialIdeaText = '', initialTitle = '') => ({
+  title: initialTitle,
   ideaText: initialIdeaText,
   styleId: '',
   posterCount: DEFAULT_POSTER_COUNT,
 });
 
-export function QuickPosterForm({ onClose, initialIdeaText = '', onSubmitted }: QuickPosterFormProps) {
+export function QuickPosterForm({ onClose, initialIdeaText = '', initialTitle = '', onSubmitted }: QuickPosterFormProps) {
   const { t, language } = useLanguage();
   const languageLabel =
     language === 'zh-TW' ? '繁体' : language === 'en' ? 'English' : '简体';
@@ -245,7 +246,7 @@ export function QuickPosterForm({ onClose, initialIdeaText = '', onSubmitted }: 
   const [styles, setStyles] = useState<StylePresetLite[]>([]);
   const [stylesLoading, setStylesLoading] = useState(true);
   const [stylesError, setStylesError] = useState<string | null>(null);
-  const [form, setForm] = useState(() => createPosterFormState(initialIdeaText));
+  const [form, setForm] = useState(() => createPosterFormState(initialIdeaText, initialTitle));
   const [showAllStyles, setShowAllStyles] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 

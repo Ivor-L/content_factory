@@ -2,7 +2,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { Home, Repeat, Sparkles, Settings, Languages, Clapperboard, Users, History, ChevronUp, Activity, Zap, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, LayoutGrid, User, LogOut, Film, Folder, BookOpen, Gift, Sun, Moon, Download, Wrench } from 'lucide-react';
+import { Home, Repeat, Sparkles, Settings, Languages, Clapperboard, Users, History, ChevronUp, Activity, Zap, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, LayoutGrid, User, LogOut, Film, Folder, BookOpen, Gift, Sun, Moon, Download } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -356,7 +356,6 @@ export function Sidebar() {
       tenant.features.knowledgeVideos && { name: t.sidebar.knowledgeVideos || "Knowledge Videos", href: `${basePath}/knowledge-videos`, icon: Film },
       tenant.features.canvas && { name: t.sidebar.canvas || "无限画布", href: `${basePath}/canvas?view=projects`, icon: LayoutGrid },
       tenant.features.myVideos && { name: t.sidebar.myVideos || t.sidebar.replication, href: `${basePath}/my-works`, icon: Folder },
-      { name: "技能中心", href: `${basePath}/skills`, icon: Wrench },
       (tenant.features.products || tenant.features.characters || tenant.features.assetLibrary) && {
         name: t.sidebar.assets,
         href: `${basePath}/resources`,

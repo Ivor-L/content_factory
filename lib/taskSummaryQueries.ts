@@ -238,6 +238,12 @@ function toMetadataRecord(value: Prisma.JsonValue | null | undefined): Record<st
   return { ...(value as Record<string, unknown>) };
 }
 
+function isHiddenMiniappXhsLayoutTask(task: TaskSummaryRecord): boolean {
+  if (task.taskType !== 'poster') return false;
+  const metadata = toMetadataRecord(task.metadata);
+  return metadata.source === 'miniapp_xhs_layout';
+}
+
 function safeParseResult(payload?: string | null): Record<string, unknown> | null {
   if (!payload) return null;
   try {
@@ -331,6 +337,75 @@ const sanitizeLimit = (raw?: number) => {
   return Math.min(Math.max(raw, 1), 100);
 };
 
+async function fetchVisibleTaskSummaryPage({
+  where,
+  limit,
+  offset,
+  includeTotal,
+}: {
+  where: Prisma.TaskSummaryWhereInput;
+  limit: number;
+  offset: number;
+  includeTotal: boolean;
+}): Promise<{ tasks: TaskSummaryRecord[]; total: number; hasMore: boolean }> {
+  const targetCount = includeTotal ? limit : limit + 1;
+  const batchSize = Math.min(Math.max(limit + offset + 20, 50), 200);
+  const collected: TaskSummaryRecord[] = [];
+  let rawSkip = 0;
+  let visibleSeen = 0;
+  let visibleTotal = 0;
+  let reachedEnd = false;
+
+  while (true) {
+    const batch = await prisma.taskSummary.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: batchSize,
+      skip: rawSkip,
+    });
+
+    rawSkip += batch.length;
+    if (batch.length === 0) {
+      reachedEnd = true;
+      break;
+    }
+
+    for (const task of batch as TaskSummaryRecord[]) {
+      if (isHiddenMiniappXhsLayoutTask(task)) continue;
+
+      if (includeTotal) {
+        visibleTotal += 1;
+      }
+
+      if (visibleSeen < offset) {
+        visibleSeen += 1;
+        continue;
+      }
+
+      if (collected.length < targetCount) {
+        collected.push(task);
+      }
+      visibleSeen += 1;
+    }
+
+    if (!includeTotal && collected.length >= targetCount) break;
+    if (batch.length < batchSize) {
+      reachedEnd = true;
+      break;
+    }
+  }
+
+  const pageTasks = collected.slice(0, limit);
+  const hasMore = includeTotal
+    ? offset + pageTasks.length < visibleTotal
+    : collected.length > limit || (!reachedEnd && collected.length === targetCount);
+  const total = includeTotal
+    ? visibleTotal
+    : offset + pageTasks.length + (hasMore ? 1 : 0);
+
+  return { tasks: pageTasks, total, hasMore };
+}
+
 export async function fetchUserTaskSummaries({
   userId,
   taskType,
@@ -364,44 +439,24 @@ export async function fetchUserTaskSummaries({
     where.status = status;
   }
 
-  where.NOT = [
-    {
-      taskType: 'poster',
-      metadata: {
-        path: ['source'],
-        equals: 'miniapp_xhs_layout',
-      },
-    },
-  ];
-
-  const take = includeTotal ? limit : limit + 1;
-  const tasksFetched = await prisma.taskSummary.findMany({
+  const page = await fetchVisibleTaskSummaryPage({
     where,
-    orderBy: { createdAt: 'desc' },
-    take,
-    skip: offset,
+    limit,
+    offset,
+    includeTotal,
   });
-  const hasExtraForPagination = !includeTotal && tasksFetched.length > limit;
-  const tasks = hasExtraForPagination ? tasksFetched.slice(0, limit) : tasksFetched;
 
-  let total = 0;
-  if (includeTotal) {
-    total = await prisma.taskSummary.count({ where });
-  } else {
-    total = offset + tasks.length + (hasExtraForPagination ? 1 : 0);
-  }
-
-  let resultTasks = tasks as TaskSummaryRecord[];
+  let resultTasks = page.tasks;
   if (includeEnrichment) {
-    const reconciledTasks = await reconcilePosterSummaries(tasks as TaskSummaryRecord[]) as TaskSummaryRecord[];
+    const reconciledTasks = await reconcilePosterSummaries(page.tasks) as TaskSummaryRecord[];
     resultTasks = await attachReplicationResults(reconciledTasks) as TaskSummaryRecord[];
   }
 
   return {
     tasks: resultTasks,
-    total,
+    total: page.total,
     limit,
     offset,
-    hasMore: includeTotal ? offset + resultTasks.length < total : hasExtraForPagination,
+    hasMore: page.hasMore,
   };
 }

@@ -957,6 +957,7 @@ export function MyProjectsClient({
   const [showPosterWizard, setShowPosterWizard] = useState(false);
   const [showDigitalHumanWizard, setShowDigitalHumanWizard] = useState(false);
   const [wizardScript, setWizardScript] = useState("");
+  const [wizardTitle, setWizardTitle] = useState("");
   const [wizardSourceTaskId, setWizardSourceTaskId] = useState("");
   const [renameModalOpen, setRenameModalOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<TaskSummary | null>(null);
@@ -1029,8 +1030,9 @@ export function MyProjectsClient({
     updateTaskIdParam(null);
   }, [updateTaskIdParam]);
 
-  const handlePosterLaunchFromModal = useCallback((script: string) => {
+  const handlePosterLaunchFromModal = useCallback((script: string, title?: string) => {
     setWizardScript(script);
+    setWizardTitle(title?.trim() || "");
     closeActiveTask();
     setShowPosterWizard(true);
   }, [closeActiveTask]);
@@ -1798,8 +1800,30 @@ export function MyProjectsClient({
         </Modal>
       )}
       {showPosterWizard && (
-        <Modal isOpen={showPosterWizard} onClose={() => setShowPosterWizard(false)} title="生成图文" maxWidth="max-w-2xl" zIndex="z-[10000]">
-          <QuickPosterForm onClose={() => setShowPosterWizard(false)} initialIdeaText={wizardScript} />
+        <Modal
+          isOpen={showPosterWizard}
+          onClose={() => setShowPosterWizard(false)}
+          title="生成图文"
+          maxWidth="max-w-2xl"
+          zIndex="z-[10000]"
+        >
+          <QuickPosterForm
+            onClose={() => setShowPosterWizard(false)}
+            initialIdeaText={wizardScript}
+            initialTitle={wizardTitle}
+            onSubmitted={(taskId) => {
+              setShowPosterWizard(false);
+              setWizardScript("");
+              setWizardTitle("");
+              setFilterType("all");
+              setFilterStatus("all");
+              toast.success("新的图文任务卡片已创建");
+              if (taskId) {
+                updateTaskIdParam(taskId);
+              }
+              void fetchTasks({ type: "all", status: "all", offset: 0, mode: "reset" });
+            }}
+          />
         </Modal>
       )}
       {showDigitalHumanWizard && (
@@ -1820,7 +1844,7 @@ interface TaskDetailModalProps {
   onDownload: (images?: string[]) => void;
   onDelete: () => void;
   deleting: boolean;
-  onPosterLaunch?: (script: string) => void;
+  onPosterLaunch?: (script: string, title?: string) => void;
   onDigitalHumanLaunch?: (script: string, taskId: string) => void;
 }
 
@@ -2445,7 +2469,7 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
       toast.error("文案仍在生成，稍后再试");
       return;
     }
-    onPosterLaunch?.(scriptText);
+    onPosterLaunch?.(scriptText, scriptTitle);
   };
 
   const handleDigitalHumanLaunch = () => {
