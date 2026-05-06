@@ -44,6 +44,7 @@ const DEFAULT_IMAGE_MODEL = 'image2';
 const PRODUCT_REPLACE_PROMPT = '请将分镜故事板的产品换成图1';
 const CHARACTER_REPLACE_PROMPT = '请替换分镜故事板中的角色';
 const LOCAL_GENERATING_TTL = 30 * 60 * 1000;
+const DEFAULT_ASPECT_RATIO: StoryboardAspectRatio = '9:16';
 
 function decodeQueryText(value: string): string {
   const text = String(value || '').trim();
@@ -92,6 +93,7 @@ export default function StoryboardBoardPage() {
   const userSelectedImageModelRef = useRef(false);
   const userSelectedVideoModelRef = useRef(false);
   const userSelectedAspectRatioRef = useRef(false);
+  const selectedAspectRatioRef = useRef<StoryboardAspectRatio>(DEFAULT_ASPECT_RATIO);
   const notifiedImageFailuresRef = useRef<Set<string>>(new Set());
   const localGeneratingRef = useRef<Record<string, LocalGeneratingEntry>>({});
 
@@ -109,8 +111,11 @@ export default function StoryboardBoardPage() {
 
   const updateAspectRatio = (ratio: StoryboardAspectRatio, source: 'server' | 'user' = 'user') => {
     if (source === 'user') userSelectedAspectRatioRef.current = true;
-    setSelectedAspectRatio(ratio);
+    selectedAspectRatioRef.current = ratio || DEFAULT_ASPECT_RATIO;
+    setSelectedAspectRatio(selectedAspectRatioRef.current);
   };
+
+  const getRequestAspectRatio = (): StoryboardAspectRatio => selectedAspectRatioRef.current || DEFAULT_ASPECT_RATIO;
 
   const clearTimer = () => {
     if (timerRef.current != null) {
@@ -470,21 +475,21 @@ export default function StoryboardBoardPage() {
     }
 
     if (!videoUrl) return;
+    const detailItem = {
+      id: `${segment.id}:video`,
+      title: `镜头 ${getSegmentDisplayOrder(segment, segments.findIndex((item) => item.id === segment.id))} 视频预览`,
+      type: 'video',
+      status: segment.status,
+      createdAt: new Date().toISOString(),
+      preview: videoUrl,
+      videoUrl,
+      thumbnailUrl: imageUrl || null,
+      metadata: { videoUrl },
+      source: 'task',
+    };
+    Taro.setStorageSync('WORK_DETAIL_ITEM', detailItem);
     Taro.navigateTo({
-      url: `/subpages/work-detail/index?id=${encodeURIComponent(`${segment.id}:video`)}`,
-      success: () => {
-        Taro.setStorageSync('WORK_DETAIL_ITEM', {
-          id: `${segment.id}:video`,
-          title: `镜头 ${getSegmentDisplayOrder(segment, segments.findIndex((item) => item.id === segment.id))} 视频预览`,
-          type: 'video',
-          status: segment.status,
-          createdAt: new Date().toISOString(),
-          preview: videoUrl,
-          thumbnailUrl: imageUrl || null,
-          metadata: null,
-          source: 'task',
-        });
-      },
+      url: `/subpages/work-detail/index?id=${encodeURIComponent(detailItem.id)}`,
       fail: () => {
         Taro.showToast({ title: '暂不支持此方式预览视频', icon: 'none' });
       },
@@ -716,7 +721,7 @@ export default function StoryboardBoardPage() {
         taskId,
         segmentIds: [segment.id],
         model: selectedModel,
-        aspectRatio: effectiveAspectRatio,
+        aspectRatio: getRequestAspectRatio(),
       });
       if (result.triggered <= 0) {
         throw new Error(result.message || '触发生图失败');
@@ -752,7 +757,7 @@ export default function StoryboardBoardPage() {
         segmentIds: [segment.id],
         model: editingVideoModel || videoModel,
         allowTextVideo: true,
-        aspectRatio: effectiveAspectRatio,
+        aspectRatio: getRequestAspectRatio(),
       });
       if (result.triggered <= 0) {
         throw new Error(result.message || '触发生视频失败');
@@ -797,7 +802,7 @@ export default function StoryboardBoardPage() {
         taskId,
         segmentIds: targetSegments.map((segment) => segment.id),
         model: imageModelRef.current || imageModel,
-        aspectRatio: effectiveAspectRatio,
+        aspectRatio: getRequestAspectRatio(),
       });
       if (result.triggered <= 0) {
         throw new Error(result.message || '一键生图失败');
@@ -854,7 +859,7 @@ export default function StoryboardBoardPage() {
         segmentIds: targetSegments.map((segment) => segment.id),
         model: videoModelRef.current || videoModel,
         allowTextVideo: true,
-        aspectRatio: effectiveAspectRatio,
+        aspectRatio: getRequestAspectRatio(),
       });
       if (result.triggered <= 0) {
         throw new Error(result.message || '一键生成视频失败');
@@ -878,21 +883,21 @@ export default function StoryboardBoardPage() {
       Taro.showToast({ title: '成片还未生成', icon: 'none' });
       return;
     }
+    const detailItem = {
+      id: `${task.id}:final-video`,
+      title: title || '分镜成片',
+      type: 'video',
+      status: task.status,
+      createdAt: new Date().toISOString(),
+      preview: task.finalVideoUrl,
+      videoUrl: task.finalVideoUrl,
+      thumbnailUrl: null,
+      metadata: { videoUrl: task.finalVideoUrl },
+      source: 'task',
+    };
+    Taro.setStorageSync('WORK_DETAIL_ITEM', detailItem);
     Taro.navigateTo({
-      url: `/subpages/work-detail/index?id=${encodeURIComponent(`${task.id}:final-video`)}`,
-      success: () => {
-        Taro.setStorageSync('WORK_DETAIL_ITEM', {
-          id: `${task.id}:final-video`,
-          title: title || '分镜成片',
-          type: 'video',
-          status: task.status,
-          createdAt: new Date().toISOString(),
-          preview: task.finalVideoUrl,
-          thumbnailUrl: null,
-          metadata: null,
-          source: 'task',
-        });
-      },
+      url: `/subpages/work-detail/index?id=${encodeURIComponent(detailItem.id)}`,
       fail: () => {
         Taro.showToast({ title: '暂不支持此方式预览成片', icon: 'none' });
       },
@@ -1434,6 +1439,10 @@ export default function StoryboardBoardPage() {
                           src={videoUrl as string}
                           poster={imageUrl || ''}
                           controls
+                          showFullscreenBtn
+                          enablePlayGesture
+                          objectFit='contain'
+                          playBtnPosition='center'
                           onLoadedMetadata={() => setVideoFailed(segment.id, false)}
                           onError={() => setVideoFailed(segment.id, true)}
                         />
@@ -1669,7 +1678,7 @@ export default function StoryboardBoardPage() {
                     ? getSelectedSegmentAssetUrl(editingSegment, 'image')
                     : getSelectedSegmentAssetUrl(editingSegment, 'video')) && (
                     <View className='storyboard-edit-detail-btn' onClick={() => handleOpenAsset(editingType, editingSegment)}>
-                      <Text className='storyboard-edit-detail-text'>详情</Text>
+                      <Text className='storyboard-edit-detail-text'>{editingType === 'video' ? '全屏' : '详情'}</Text>
                     </View>
                   )}
                 </View>

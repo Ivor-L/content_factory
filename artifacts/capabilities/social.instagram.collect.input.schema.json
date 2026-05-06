@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "social.instagram.collect input",
+  "type": "object",
+  "properties": {
+    "queries": {
+      "type": "array",
+      "description": "关键词或账号。"
+    },
+    "urls": {
+      "type": "array",
+      "description": "帖子或账号 URL。"
+    },
+    "limit": {
+      "type": "number",
+      "description": "目标采集数量。",
+      "default": 30
+    }
+  },
+  "required": [],
+  "additionalProperties": true
+}

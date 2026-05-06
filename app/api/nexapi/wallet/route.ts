@@ -16,6 +16,17 @@ export async function GET(request: Request) {
     take: 20,
   });
 
+  const agentRunIds = transactions
+    .filter((tx) => tx.type === 'agent_capability_capture' && tx.refId)
+    .map((tx) => tx.refId!);
+  const agentRuns = agentRunIds.length
+    ? await prisma.agentCapabilityRun.findMany({
+        where: { id: { in: agentRunIds }, userId: ctx.userId },
+        select: { id: true, capabilityId: true, mode: true },
+      })
+    : [];
+  const agentRunMap = new Map(agentRuns.map((run) => [run.id, run]));
+
   return NextResponse.json({
     ok: true,
     wallet: {
@@ -29,6 +40,10 @@ export async function GET(request: Request) {
       amountCredits: tx.amountCredits.toString(),
       amountCny: tx.amountCny ? Number(tx.amountCny) : null,
       channel: tx.channel,
+      port: tx.type === 'agent_capability_capture' ? 'agent' : tx.channel || 'web',
+      source: tx.type === 'agent_capability_capture' ? 'Agent' : tx.channel || 'Web',
+      capabilityId: tx.refId ? agentRunMap.get(tx.refId)?.capabilityId ?? null : null,
+      refId: tx.refId,
       createdAt: tx.createdAt,
     })),
   });

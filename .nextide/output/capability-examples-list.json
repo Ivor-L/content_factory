@@ -1,0 +1,74 @@
+{
+  "capabilities": [
+    {
+      "id": "xhs.note.collect",
+      "title": "小红书笔记采集",
+      "examples": []
+    },
+    {
+      "id": "xhs.card.layout",
+      "title": "小红书图文排版",
+      "examples": []
+    },
+    {
+      "id": "xhs.infographic.style.extract",
+      "title": "小红书信息卡片风格提炼",
+      "examples": []
+    },
+    {
+      "id": "xhs.infographic.generate",
+      "title": "小红书信息卡片生成",
+      "examples": []
+    },
+    {
+      "id": "digital-human.video.generate",
+      "title": "视频数字人生成",
+      "examples": []
+    },
+    {
+      "id": "motion.replication.image_to_video",
+      "title": "动作复刻",
+      "examples": []
+    },
+    {
+      "id": "viral.midform.video.generate",
+      "title": "爆款中视频生成",
+      "examples": []
+    },
+    {
+      "id": "social.tiktok.collect",
+      "title": "TikTok 数据采集",
+      "examples": []
+    },
+    {
+      "id": "social.instagram.collect",
+      "title": "Instagram 数据采集",
+      "examples": []
+    },
+    {
+      "id": "social.facebook.collect",
+      "title": "Facebook 数据采集",
+      "examples": []
+    },
+    {
+      "id": "product.selling_point.analysis",
+      "title": "产品卖点分析",
+      "examples": []
+    },
+    {
+      "id": "viral.breakdown.video_prompts",
+      "title": "爆款拆解并反推视频提示词",
+      "examples": []
+    },
+    {
+      "id": "social.comments.collect",
+      "title": "社媒评论抓取",
+      "examples": []
+    },
+    {
+      "id": "content.wechat.longform.write",
+      "title": "公众号长文写作",
+      "examples": []
+    }
+  ]
+}

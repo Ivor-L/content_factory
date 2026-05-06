@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "social.comments.collect input",
+  "type": "object",
+  "properties": {
+    "platform": {
+      "type": "string",
+      "description": "平台，如 tiktok。"
+    },
+    "urls": {
+      "type": "array",
+      "description": "帖子/视频 URL 列表。"
+    },
+    "limit": {
+      "type": "number",
+      "description": "评论数量上限。",
+      "default": 100
+    }
+  },
+  "required": [
+    "platform",
+    "urls"
+  ],
+  "additionalProperties": true
+}

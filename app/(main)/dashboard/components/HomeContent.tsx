@@ -4650,8 +4650,8 @@ export function HomeContent() {
           <div
             ref={composerContainerRef}
             className={isConversationMode
-              ? 'fixed bottom-4 z-40'
-              : 'mx-auto mt-10 w-full md:mt-12'}
+              ? 'fixed bottom-4 z-20'
+              : 'relative z-20 mx-auto mt-10 w-full md:mt-12'}
             style={isConversationMode
               ? { left: `${fixedComposerInset.left}px`, right: `${fixedComposerInset.right}px` }
               : { maxWidth: `${composerMaxWidth}px` }}
@@ -4736,7 +4736,7 @@ export function HomeContent() {
                 />
               )}
 
-              <div className="relative z-50 mt-3 flex items-center gap-2 overflow-visible whitespace-nowrap">
+              <div className="relative z-10 mt-3 flex items-center gap-2 overflow-visible whitespace-nowrap">
                 <div className="flex shrink-0 items-center gap-1">
                   <div className="group relative">
                     <button

@@ -1,0 +1,684 @@
+{
+  "capabilities": [
+    {
+      "id": "xhs.note.collect",
+      "skillName": "xiaohongshu-note-collector",
+      "title": "小红书笔记采集",
+      "description": "采集小红书链接并沉淀为爆款广场/viral references 可用的结构化数据。MVP 阶段已支持 URL 采集，关键词搜索采集仍为 planned。",
+      "status": "available",
+      "executionType": "internal_api",
+      "internalApiPath": "/api/miniapp/hot-square/collect-xhs",
+      "method": "POST",
+      "async": true,
+      "maxWaitSeconds": 300,
+      "estimatedDurationSeconds": 60,
+      "featureKey": "xhs_collect",
+      "tags": [
+        "xiaohongshu",
+        "collection",
+        "hot-square",
+        "viral-reference"
+      ],
+      "inputSchema": {
+        "source": {
+          "type": "string",
+          "required": true,
+          "enum": [
+            "url",
+            "keyword"
+          ],
+          "description": "采集来源类型：url 或 keyword。"
+        },
+        "urls": {
+          "type": "string[]",
+          "description": "小红书笔记链接列表，source=url 时使用。"
+        },
+        "keywords": {
+          "type": "string[]",
+          "description": "搜索关键词，source=keyword 时使用。"
+        },
+        "limit": {
+          "type": "number",
+          "default": 30,
+          "description": "目标采集数量。"
+        },
+        "collectComments": {
+          "type": "boolean",
+          "default": false,
+          "description": "是否同时采集评论。默认关闭以节省成本。"
+        },
+        "saveToHotSquare": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否保存到爆款广场/素材库。"
+        }
+      },
+      "outputSchema": {
+        "items": {
+          "type": "array",
+          "description": "归一化后的小红书笔记列表。"
+        },
+        "savedReferences": {
+          "type": "array",
+          "description": "已保存的 viral reference 记录。"
+        }
+      }
+    },
+    {
+      "id": "xhs.card.layout",
+      "skillName": "xiaohongshu-card-layout",
+      "title": "小红书图文排版",
+      "description": "将 Markdown 文档排版并渲染为小红书 3:4 卡片图片。",
+      "status": "available",
+      "executionType": "internal_api",
+      "internalApiPath": "/api/xhs-layout/render",
+      "method": "POST",
+      "async": false,
+      "maxWaitSeconds": 120,
+      "estimatedDurationSeconds": 20,
+      "featureKey": "xhs_layout_render",
+      "tags": [
+        "xiaohongshu",
+        "layout",
+        "markdown",
+        "cards"
+      ],
+      "inputSchema": {
+        "markdown": {
+          "type": "string",
+          "required": true,
+          "description": "要排版的 Markdown 正文。"
+        },
+        "title": {
+          "type": "string",
+          "description": "卡片标题。为空时自动从 Markdown 提取。"
+        },
+        "templateId": {
+          "type": "string",
+          "default": "minimal",
+          "description": "卡片模板 ID。"
+        },
+        "includeCover": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否生成封面页。"
+        },
+        "maxPages": {
+          "type": "number",
+          "default": 8,
+          "description": "最多生成页数。"
+        },
+        "persist": {
+          "type": "boolean",
+          "default": false,
+          "description": "是否保存为创作任务。"
+        }
+      },
+      "outputSchema": {
+        "taskId": {
+          "type": "string",
+          "description": "保存任务 ID；persist=false 时为空。"
+        },
+        "title": {
+          "type": "string",
+          "description": "渲染标题。"
+        },
+        "templateId": {
+          "type": "string",
+          "description": "实际使用模板。"
+        },
+        "images": {
+          "type": "string[]",
+          "description": "生成的卡片图片 URL。"
+        }
+      }
+    },
+    {
+      "id": "xhs.infographic.style.extract",
+      "skillName": "xiaohongshu-infographic-generator",
+      "title": "小红书信息卡片风格提炼",
+      "description": "从参考图中提炼小红书信息卡片 Style DNA、版式规则和 prompt kit。",
+      "status": "available",
+      "executionType": "internal_api",
+      "internalApiPath": "/api/assets/styles/upload",
+      "method": "POST",
+      "async": true,
+      "maxWaitSeconds": 600,
+      "estimatedDurationSeconds": 180,
+      "featureKey": "xhs_vision_style_web",
+      "workflowId": "flow_xhs_Vision",
+      "workflowName": "小红书视觉风格分析",
+      "tags": [
+        "xiaohongshu",
+        "style",
+        "infographic",
+        "style-dna"
+      ],
+      "inputSchema": {
+        "referenceImages": {
+          "type": "string[]",
+          "required": true,
+          "description": "参考图片 URL 或已上传文件 URL。"
+        },
+        "styleName": {
+          "type": "string",
+          "description": "风格名称。"
+        }
+      },
+      "outputSchema": {
+        "stylePresetId": {
+          "type": "string",
+          "description": "生成的风格预设 ID。"
+        },
+        "styleDna": {
+          "type": "object",
+          "description": "风格 DNA 结构化结果。"
+        }
+      }
+    },
+    {
+      "id": "xhs.infographic.generate",
+      "skillName": "xiaohongshu-infographic-generator",
+      "title": "小红书信息卡片生成",
+      "description": "根据主题、正文和风格预设生成小红书信息卡片。",
+      "status": "available",
+      "executionType": "internal_api",
+      "internalApiPath": "/api/xhs-text2img/plan",
+      "method": "POST",
+      "async": true,
+      "maxWaitSeconds": 900,
+      "estimatedDurationSeconds": 240,
+      "featureKey": "xhs_text2img_web",
+      "tags": [
+        "xiaohongshu",
+        "infographic",
+        "image-generation"
+      ],
+      "inputSchema": {
+        "topic": {
+          "type": "string",
+          "required": true,
+          "description": "卡片主题。"
+        },
+        "content": {
+          "type": "string",
+          "required": true,
+          "description": "正文内容。"
+        },
+        "stylePresetId": {
+          "type": "string",
+          "description": "风格预设 ID。"
+        },
+        "pageCount": {
+          "type": "number",
+          "default": 6,
+          "description": "生成页数。"
+        }
+      },
+      "outputSchema": {
+        "jobId": {
+          "type": "string",
+          "description": "生成任务 ID。"
+        },
+        "cards": {
+          "type": "array",
+          "description": "生成的卡片结果。"
+        }
+      }
+    },
+    {
+      "id": "digital-human.video.generate",
+      "skillName": "digital-human-generator",
+      "title": "视频数字人生成",
+      "description": "使用人物图、文案和声音生成口播数字人视频。最长可能 60 分钟。",
+      "status": "available",
+      "executionType": "internal_api",
+      "internalApiPath": "/api/digital-human/videos",
+      "method": "POST",
+      "async": true,
+      "maxWaitSeconds": 3600,
+      "estimatedDurationSeconds": 1200,
+      "featureKey": "Digital_Human_web",
+      "workflowId": "flow_Digital_Human",
+      "workflowName": "数字人 / Digital Human",
+      "tags": [
+        "digital-human",
+        "video",
+        "long-running"
+      ],
+      "inputSchema": {
+        "personImage": {
+          "type": "string",
+          "required": true,
+          "description": "人物图片 URL。"
+        },
+        "script": {
+          "type": "string",
+          "required": true,
+          "description": "口播文案。"
+        },
+        "voiceId": {
+          "type": "string",
+          "description": "声音 ID 或预设。"
+        },
+        "duration": {
+          "type": "number",
+          "description": "目标时长，秒。"
+        }
+      },
+      "outputSchema": {
+        "videoUrl": {
+          "type": "string",
+          "description": "生成视频 URL。"
+        },
+        "taskId": {
+          "type": "string",
+          "description": "内部任务 ID。"
+        }
+      }
+    },
+    {
+      "id": "motion.replication.image_to_video",
+      "skillName": "motion-replication",
+      "title": "动作复刻",
+      "description": "使用一张人物图片，让图片人物按参考视频动作生成视频。",
+      "status": "available",
+      "executionType": "internal_api",
+      "internalApiPath": "/api/action-transfer/videos",
+      "method": "POST",
+      "async": true,
+      "maxWaitSeconds": 3600,
+      "estimatedDurationSeconds": 900,
+      "tags": [
+        "motion",
+        "replication",
+        "image-to-video"
+      ],
+      "inputSchema": {
+        "personImage": {
+          "type": "string",
+          "required": true,
+          "description": "待驱动人物图片。"
+        },
+        "motionReferenceVideo": {
+          "type": "string",
+          "required": true,
+          "description": "动作参考视频。"
+        },
+        "duration": {
+          "type": "number",
+          "default": 5,
+          "description": "目标时长，秒。"
+        }
+      },
+      "outputSchema": {
+        "videoUrl": {
+          "type": "string",
+          "description": "动作复刻视频 URL。"
+        }
+      }
+    },
+    {
+      "id": "viral.midform.video.generate",
+      "skillName": "viral-midform-video-generator",
+      "title": "爆款中视频生成",
+      "description": "生成 3D 骨骼等主题化中视频，未来支持更多主题。",
+      "status": "available",
+      "executionType": "internal_api",
+      "internalApiPath": "/api/my-works/t2v",
+      "method": "POST",
+      "async": true,
+      "maxWaitSeconds": 3600,
+      "estimatedDurationSeconds": 1200,
+      "featureKey": "t2v",
+      "tags": [
+        "midform-video",
+        "storyboard",
+        "3d-skeleton"
+      ],
+      "inputSchema": {
+        "theme": {
+          "type": "string",
+          "required": true,
+          "default": "3d-skeleton",
+          "description": "中视频主题。"
+        },
+        "topic": {
+          "type": "string",
+          "required": true,
+          "description": "视频主题或选题。"
+        },
+        "duration": {
+          "type": "number",
+          "default": 60,
+          "description": "目标时长，秒。"
+        }
+      },
+      "outputSchema": {
+        "script": {
+          "type": "string",
+          "description": "生成脚本。"
+        },
+        "finalVideoUrl": {
+          "type": "string",
+          "description": "最终视频 URL。"
+        },
+        "segments": {
+          "type": "array",
+          "description": "分段视频结果。"
+        }
+      }
+    },
+    {
+      "id": "social.tiktok.collect",
+      "skillName": "social-data-collector",
+      "title": "TikTok 数据采集",
+      "description": "采集 TikTok 爆款视频、账号与可选评论，用于爆款复刻和用户语言分析。",
+      "status": "available",
+      "executionType": "internal_api",
+      "internalApiPath": "/api/social-scraper/start",
+      "method": "POST",
+      "async": true,
+      "maxWaitSeconds": 900,
+      "estimatedDurationSeconds": 180,
+      "tags": [
+        "tiktok",
+        "social",
+        "collection"
+      ],
+      "inputSchema": {
+        "queries": {
+          "type": "string[]",
+          "required": true,
+          "description": "搜索关键词。"
+        },
+        "limit": {
+          "type": "number",
+          "default": 30,
+          "description": "目标采集数量。"
+        },
+        "collectComments": {
+          "type": "boolean",
+          "default": false,
+          "description": "是否采集评论。"
+        }
+      },
+      "outputSchema": {
+        "items": {
+          "type": "array",
+          "description": "归一化内容列表。"
+        },
+        "creators": {
+          "type": "array",
+          "description": "创作者列表。"
+        },
+        "comments": {
+          "type": "array",
+          "description": "评论列表。"
+        }
+      }
+    },
+    {
+      "id": "social.instagram.collect",
+      "skillName": "social-data-collector",
+      "title": "Instagram 数据采集",
+      "description": "采集 Instagram 账号、帖子或 Reels 数据。",
+      "status": "available",
+      "executionType": "internal_api",
+      "internalApiPath": "/api/social-scraper/start",
+      "method": "POST",
+      "async": true,
+      "maxWaitSeconds": 900,
+      "estimatedDurationSeconds": 180,
+      "tags": [
+        "instagram",
+        "social",
+        "collection"
+      ],
+      "inputSchema": {
+        "queries": {
+          "type": "string[]",
+          "description": "关键词或账号。"
+        },
+        "urls": {
+          "type": "string[]",
+          "description": "帖子或账号 URL。"
+        },
+        "limit": {
+          "type": "number",
+          "default": 30,
+          "description": "目标采集数量。"
+        }
+      },
+      "outputSchema": {
+        "items": {
+          "type": "array",
+          "description": "归一化内容列表。"
+        },
+        "creators": {
+          "type": "array",
+          "description": "创作者列表。"
+        }
+      }
+    },
+    {
+      "id": "social.facebook.collect",
+      "skillName": "social-data-collector",
+      "title": "Facebook 数据采集",
+      "description": "采集 Facebook 公开页面、帖子或相关爆款内容。",
+      "status": "available",
+      "executionType": "internal_api",
+      "internalApiPath": "/api/social-scraper/start",
+      "method": "POST",
+      "async": true,
+      "maxWaitSeconds": 900,
+      "estimatedDurationSeconds": 180,
+      "tags": [
+        "facebook",
+        "social",
+        "collection"
+      ],
+      "inputSchema": {
+        "queries": {
+          "type": "string[]",
+          "description": "关键词或页面。"
+        },
+        "urls": {
+          "type": "string[]",
+          "description": "帖子或页面 URL。"
+        },
+        "limit": {
+          "type": "number",
+          "default": 30,
+          "description": "目标采集数量。"
+        }
+      },
+      "outputSchema": {
+        "items": {
+          "type": "array",
+          "description": "归一化内容列表。"
+        },
+        "creators": {
+          "type": "array",
+          "description": "主页/创作者列表。"
+        }
+      }
+    },
+    {
+      "id": "product.selling_point.analysis",
+      "skillName": "product-selling-point-analysis",
+      "title": "产品卖点分析",
+      "description": "分析产品图片与描述，提炼卖点、目标人群、痛点和内容角度。",
+      "status": "available",
+      "executionType": "internal_api",
+      "internalApiPath": "/api/products/analyze",
+      "method": "POST",
+      "async": false,
+      "maxWaitSeconds": 180,
+      "estimatedDurationSeconds": 40,
+      "featureKey": "product_analysis",
+      "workflowId": "flow_product_dna",
+      "workflowName": "产品分析",
+      "tags": [
+        "product",
+        "selling-points",
+        "analysis"
+      ],
+      "inputSchema": {
+        "name": {
+          "type": "string",
+          "required": true,
+          "description": "产品名称。"
+        },
+        "description": {
+          "type": "string",
+          "description": "产品描述。"
+        },
+        "images": {
+          "type": "string[]",
+          "description": "产品图片 URL 列表。"
+        },
+        "productId": {
+          "type": "string",
+          "description": "已有产品 ID。可选。"
+        }
+      },
+      "outputSchema": {
+        "sellingPoints": {
+          "type": "string[]",
+          "description": "卖点列表。"
+        },
+        "detailedDescription": {
+          "type": "string",
+          "description": "详细产品分析文本。"
+        },
+        "workflowData": {
+          "type": "object",
+          "description": "完整结构化结果。"
+        }
+      }
+    },
+    {
+      "id": "viral.breakdown.video_prompts",
+      "skillName": "viral-breakdown-to-video-prompts",
+      "title": "爆款拆解并反推视频提示词",
+      "description": "拆解爆款视频/图文结构，并反推可用于视频模型的提示词与 reference contract。MVP 接入图文复刻任务创建与视频文案提取链路。",
+      "status": "available",
+      "executionType": "internal_api",
+      "internalApiPath": "/api/image-text-replication/start",
+      "method": "POST",
+      "async": true,
+      "maxWaitSeconds": 900,
+      "estimatedDurationSeconds": 180,
+      "tags": [
+        "viral-breakdown",
+        "video-prompts",
+        "replication"
+      ],
+      "inputSchema": {
+        "referenceUrl": {
+          "type": "string",
+          "description": "参考爆款链接。"
+        },
+        "referenceVideo": {
+          "type": "string",
+          "description": "参考视频 URL。"
+        },
+        "targetProduct": {
+          "type": "object",
+          "description": "目标产品信息。"
+        },
+        "promptProvider": {
+          "type": "string",
+          "default": "seedance",
+          "description": "目标视频模型或提示词格式。"
+        }
+      },
+      "outputSchema": {
+        "breakdown": {
+          "type": "object",
+          "description": "爆款拆解结果。"
+        },
+        "referenceContract": {
+          "type": "object",
+          "description": "学习/禁止复制契约。"
+        },
+        "videoPrompts": {
+          "type": "array",
+          "description": "分段视频提示词。"
+        }
+      }
+    },
+    {
+      "id": "social.comments.collect",
+      "skillName": "social-data-collector",
+      "title": "社媒评论抓取",
+      "description": "抓取 TikTok 等平台评论，用于用户语言、痛点、异议和购买意图分析。",
+      "status": "available",
+      "executionType": "n8n_workflow",
+      "async": true,
+      "maxWaitSeconds": 900,
+      "estimatedDurationSeconds": 180,
+      "tags": [
+        "comments",
+        "audience-language",
+        "tiktok"
+      ],
+      "inputSchema": {
+        "platform": {
+          "type": "string",
+          "required": true,
+          "description": "平台，如 tiktok。"
+        },
+        "urls": {
+          "type": "string[]",
+          "required": true,
+          "description": "帖子/视频 URL 列表。"
+        },
+        "limit": {
+          "type": "number",
+          "default": 100,
+          "description": "评论数量上限。"
+        }
+      },
+      "outputSchema": {
+        "comments": {
+          "type": "array",
+          "description": "评论列表。"
+        },
+        "clusters": {
+          "type": "array",
+          "description": "可选的评论聚类结果。"
+        }
+      }
+    },
+    {
+      "id": "content.wechat.longform.write",
+      "skillName": "wechat-longform-writer",
+      "title": "公众号长文写作",
+      "description": "使用公众号长文写作 skill 将素材写成公众号长文。",
+      "status": "available",
+      "executionType": "local_agent",
+      "async": false,
+      "maxWaitSeconds": 0,
+      "tags": [
+        "wechat",
+        "longform",
+        "writing"
+      ],
+      "inputSchema": {
+        "material": {
+          "type": "string",
+          "required": true,
+          "description": "写作素材。"
+        }
+      },
+      "outputSchema": {
+        "article": {
+          "type": "string",
+          "description": "公众号文章。"
+        }
+      }
+    }
+  ]
+}

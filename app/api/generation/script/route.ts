@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { generateFromScript } from "@/lib/n8n";
 import { getRequestUserContext } from "@/lib/authServer";
-import { deductCredits } from "@/lib/credits";
-import { getCreditCost } from "@/lib/creditCosts";
+import { deductConfiguredCredits } from "@/lib/creditBilling";
 import { logCreditUsage } from "@/lib/logCreditUsage";
 
 const WORKFLOW_ID = "flow_script_gen";
@@ -31,14 +30,18 @@ export async function POST(req: NextRequest) {
     });
 
     if (apiKey) {
-      const amount = await getCreditCost("script_generation", 1);
-      deductCredits(apiKey, {
-        amount,
-        reason: "script_generation",
-        workflowId: WORKFLOW_ID,
-        workflowName: WORKFLOW_NAME,
-      }).catch((e) => console.error("[generation/script] deduct credits failed:", e));
-      logCreditUsage({ featureKey: "script_generation", amount, success: true });
+      try {
+        await deductConfiguredCredits({
+          apiKey,
+          featureKey: "script_generation",
+          defaultAmount: 1,
+          workflowId: WORKFLOW_ID,
+          workflowName: WORKFLOW_NAME,
+        });
+      } catch (error) {
+        console.error("[generation/script] deduct credits failed:", error);
+        return NextResponse.json({ error: "积分不足或扣费失败" }, { status: 402 });
+      }
     }
 
     return NextResponse.json(replication);

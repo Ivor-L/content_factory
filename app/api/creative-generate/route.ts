@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRequestUserContext, getApiKeyForUser } from "@/lib/authServer";
 import prisma from "@/lib/prisma";
 import { triggerCreativeScriptGeneration } from "@/lib/n8n";
+import { deductConfiguredCredits } from "@/lib/creditBilling";
 
 const normalizeStyleRules = (value: unknown): Record<string, any> | undefined => {
   if (!value) return undefined;
@@ -123,8 +124,19 @@ export async function POST(request: NextRequest) {
   const callbackUrl = `${appUrl}/api/webhook/replication/script`;
   const apiKey =
     requestApiKey || (await getApiKeyForUser(userId).catch(() => null));
+  if (!apiKey) {
+    return NextResponse.json({ error: "请先在设置页绑定 API Key" }, { status: 400 });
+  }
 
   try {
+    await deductConfiguredCredits({
+      apiKey,
+      featureKey: "creative_generation",
+      userId,
+      defaultAmount: 1,
+      workflowId: "creative_generation",
+      workflowName: "智能创作文案生成",
+    });
     await triggerCreativeScriptGeneration({
       replicationId: replication.id,
       userId,
@@ -133,7 +145,7 @@ export async function POST(request: NextRequest) {
       styleRules,
       styleId,
       language: requestLanguage,
-      apiKey: apiKey ?? undefined,
+      apiKey,
       callbackUrl,
       appUrl,
     });

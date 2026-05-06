@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "product.selling_point.analysis input",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "产品名称。"
+    },
+    "description": {
+      "type": "string",
+      "description": "产品描述。"
+    },
+    "images": {
+      "type": "array",
+      "description": "产品图片 URL 列表。"
+    },
+    "productId": {
+      "type": "string",
+      "description": "已有产品 ID。可选。"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "additionalProperties": true
+}

@@ -29,6 +29,7 @@
 |------|------|
 | [DEPLOY_CLOUDFLARE_SITE_ONLY.md](./03-deployment/DEPLOY_CLOUDFLARE_SITE_ONLY.md) | 官网页面单独部署到 Cloudflare Workers |
 | [MULTI_TENANT_DEPLOY.md](./03-deployment/MULTI_TENANT_DEPLOY.md) | 多租户功能部署、数据库迁移、租户初始化 |
+| [20260506-nextide-agent-runtime-deploy-checklist.md](./20260506-nextide-agent-runtime-deploy-checklist.md) | NexTide Agent Runtime 部署安全清单：迁移、鉴权、积分、回调与产物导出检查 |
 
 ---
 
@@ -129,7 +130,9 @@
 | [20260506-miniapp-referrals-records-points-fix-plan.md](./20260506-miniapp-referrals-records-points-fix-plan.md) | 小程序分享有礼接口、记录页性能与算力记录名称优化 |
 | [20260506-nextide-skills-runtime-plan.md](./20260506-nextide-skills-runtime-plan.md) | NexTide Skills Runtime：将 SaaS、小程序、n8n 与闭源内容生产能力抽象为 Agent skills 的计划书 |
 | [20260506-nextide-skills-runtime-delivery.md](./20260506-nextide-skills-runtime-delivery.md) | NexTide Skills Runtime MVP 交付说明：已接入 capability、CLI、skills、调用示例与限制 |
+| [20260506-nextide-agent-runtime-release-notes.md](./20260506-nextide-agent-runtime-release-notes.md) | NexTide Agent Runtime Phase 2 发布说明：能力、安全、积分、CLI、Skills、部署与后续计划 |
 | [20260507-nextide-skills-runtime-phase2-plan.md](./20260507-nextide-skills-runtime-phase2-plan.md) | NexTide Skills Runtime Phase 2：Agent Run Store、长任务状态闭环与后续产品化计划 |
+| [20260506-nextide-skills-runtime-next-dev-plan.md](./20260506-nextide-skills-runtime-next-dev-plan.md) | NexTide Skills Runtime 新开发计划与当前进度：合并 ClipcatSkill 学习、线上更新、积分流水单表、TikTok Commerce Surface 与 Sprint 计划 |
 | [20260504-character-library-view-edit-delete-plan.md](./20260504-character-library-view-edit-delete-plan.md) | Web 角色库查看/编辑/删除与创建表单交互优化计划 |
 | [20260504-style-library-image-performance-plan.md](./20260504-style-library-image-performance-plan.md) | 风格库图片加载性能优化：缩略图生成、列表优先加载与懒加载 |
 | [20260504-xhs-markdown-table-render-plan.md](./20260504-xhs-markdown-table-render-plan.md) | 小红书卡片 Markdown 表格渲染：Web/小程序预览、后端导出与 AI 排版对齐 |

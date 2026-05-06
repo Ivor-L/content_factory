@@ -2,6 +2,7 @@ import { View, Text, Button, Video, Image } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 import { useState } from 'react';
 import { api, NotBoundError } from '../../utils/api';
+import { bindPendingReferral, captureReferralFromQuery } from '../../utils/referrals';
 import antHeadLogoYellow from '../../assets/icons/ant-head-logo-yellow.png';
 import wechatIcon from '../../assets/icons/login/wechat.svg';
 import phoneIcon from '../../assets/icons/login/phone.svg';
@@ -17,9 +18,11 @@ export default function LoginPage() {
   const [phoneQuickLoading, setPhoneQuickLoading] = useState(false);
   const [heroVideoFailed, setHeroVideoFailed] = useState(false);
 
-  useLoad(() => {
+  useLoad((query) => {
+    captureReferralFromQuery(query);
     const key = Taro.getStorageSync('API_KEY');
     if (key) {
+      void bindPendingReferral(key);
       Taro.switchTab({ url: '/pages/home/index' });
     }
   });
@@ -27,6 +30,7 @@ export default function LoginPage() {
   const saveAndEnter = (user: { apiKey: string; userId: string; username: string | null; avatarUrl: string | null }) => {
     Taro.setStorageSync('API_KEY', user.apiKey);
     Taro.setStorageSync('USER_INFO', JSON.stringify(user));
+    void bindPendingReferral(user.apiKey);
     Taro.switchTab({ url: '/pages/home/index' });
   };
 

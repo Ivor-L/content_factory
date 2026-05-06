@@ -67,6 +67,35 @@ Content Factory Web — Codex 的 Web 客户端项目，基于 Next.js + Prisma 
 **判定规则：**
 - 未完成调研直接编码：**禁止进入实现阶段**
 
+### 5.1) 积分配置接入（必须）
+
+所有 Web 端、小程序端、Agent/Skill 新增的付费功能、AI 生图、生视频、音频、LLM 分析、数据采集、n8n/RunningHub/第三方模型调用，必须接入后台「积分配置」。
+
+**新增功能约束：**
+- 任何新开发的付费功能，默认就必须接入后台配置，不得先硬编码价格后补。
+- 在功能进入开发前，就要先预留稳定 `featureKey`；若存在多模型或多工作流差异价，必须同时设计 `featureKey:modelKey`。
+- Agent capability 新增时，必须同步补 `featureKey`，并在需要差异定价时补 `creditModelKey`。
+
+**实现规则：**
+- 每个付费能力必须定义稳定的 `featureKey`，并在后台 `/admin/credits` 或 `scripts/seed-credit-configs.ts` 中配置默认项。
+- 业务代码禁止硬编码最终扣费金额；统一使用 `deductConfiguredCredits()`，或在 Canvas 已有链路中使用 `getCreditCostForModel()` + `deductCanvasCredits()`。
+- 扣费必须写入 `creditUsageLog`；优先使用 `deductConfiguredCredits()`，它会统一完成扣费和日志。
+- 如果同一功能支持多个模型/工作流且价格不同，后台配置使用 `featureKey:modelKey`。解析顺序是：`featureKey:normalizedModelKey` → `featureKey:rawModelKey` → `featureKey` → 代码默认值。
+- Agent capability 必须声明 `featureKey`；模型或工作流价格不同的能力还必须声明 `creditModelKey`，用于 quota preflight 命中模型级价格。
+- 扣费失败必须阻断付费任务继续触发，并返回 402；异步回调后扣费的历史链路必须保证幂等，避免重复扣费。
+- 智能复刻、图文复刻、分镜板这类复合流程，必须按阶段拆价，不得只挂一个总价 key。
+- 新开发的功能必须先接入后台配置，再接业务路由；如果暂时没有后台配置，视为未完成。
+
+**后台配置示例：**
+- `storyboard_video`：分镜视频功能兜底价
+- `storyboard_video:veo3.1-fast`：Veo 3.1 Fast 单独价格
+- `storyboard_video:bytedance/seedance-2`：Seedance 2 每秒价格
+- `storyboard_merge`：成片剪辑
+- `storyboard_subtitle`：成片字幕生成
+- `canvas_image_generation:nano-banana-pro`：Canvas 指定生图模型价格
+- `miniapp_canvas_image:image2`：小程序 AI 作图 image2 工作流价格
+- 变现广场 / 聚合广场 / 纯跳转入口（如 `monetization_*`）只作为导流链接，不单独进积分配置，也不进后台首页功能统计。
+
 ### 6) Worktree 隔离（必须）
 
 - 有 Worktree 时，所有改动仅允许发生在该 Worktree

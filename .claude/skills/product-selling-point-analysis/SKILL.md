@@ -41,11 +41,12 @@ npm run nextide -- capability run product.selling_point.analysis \
   --user-api-key <NEX用户积分API_KEY>
 ```
 
-Current MVP note:
+Auth note:
 
-- The runner currently requires `apiKey` or `api_key` in the input JSON, or a compatible key passed by CLI/env/config.
-- For local debugging, prefer `--user-api-key <key>` or `NEXTIDE_USER_API_KEY=<key>` instead of writing secrets into reusable fixture files.
-- If missing, the capability returns `unauthorized`.
+- Pass a NexTide user API key through CLI/env/config, for example `--user-api-key <key>` or `NEXTIDE_USER_API_KEY=<key>`.
+- Do not write secrets into reusable fixture files.
+- The runner uses the authenticated user's profile API key; `apiKey` / `api_key` in input is only a backward-compatible fallback.
+- If missing or invalid, the capability returns `unauthorized`.
 
 ## Input JSON
 
@@ -53,8 +54,7 @@ Current MVP note:
 {
   "name": "家用射频美容仪",
   "description": "产品描述...",
-  "images": ["https://..."],
-  "apiKey": "用户积分 API Key"
+  "images": ["https://..."]
 }
 ```
 
@@ -63,7 +63,7 @@ Field rules:
 - `name` is required.
 - `description` is recommended.
 - `images` should include at least one product image URL when visual analysis matters.
-- `apiKey` is required in MVP.
+- Do not include `apiKey` in the JSON fixture; pass it through CLI/env/config.
 
 ## Workflow
 
@@ -107,3 +107,81 @@ Return:
 - Avoid medical, guaranteed-result, or exaggerated efficacy claims.
 - If the image or product data is insufficient, say what is missing.
 - Do not invent product specs not present in the source.
+
+<!-- BEGIN NEXTIDE AUTO-GENERATED -->
+
+## NexTide Capability Contract
+
+### 产品卖点分析
+
+- Capability: `product.selling_point.analysis`
+- Version: `0.2.0`
+- Category: `product`
+- Status: `available`
+- Execution: `internal_api`
+- Async: `false`
+- Cost level: `low`
+- Required auth: `nexTideApiKey`
+- Required env: `none`
+- Required plan: `none`
+- Rate limit: `none`
+- Estimated credits: 2
+- Estimated duration: 40 seconds
+- Tags: `product`, `selling-points`, `analysis`
+
+Description:
+
+分析产品图片与描述，提炼卖点、目标人群、痛点和内容角度。
+
+Examples:
+
+- 产品卖点分析
+
+  ```json
+  {
+    "name": "护颈枕",
+    "description": "适合久坐人群的支撑枕",
+    "images": []
+  }
+  ```
+
+Input fields:
+
+- `name` (string, required)：产品名称。
+- `description` (string)：产品描述。
+- `images` (string[])：产品图片 URL 列表。
+- `productId` (string)：已有产品 ID。可选。
+
+Output fields:
+
+- `sellingPoints` (string[])：卖点列表。
+- `detailedDescription` (string)：详细产品分析文本。
+- `workflowData` (object)：完整结构化结果。
+
+CLI:
+
+```bash
+nextide capability run product.selling_point.analysis \
+  --input .nextide/input/product.selling_point.analysis.json \
+  --output .nextide/output/product.selling_point.analysis-result.json \
+  --mode wait
+```
+
+If the result contains artifacts, export them:
+
+```bash
+RUN_ID=$(node -e "const r=require('./.nextide/output/product.selling_point.analysis-result.json'); console.log(r.run && r.run.runId)")
+nextide run artifacts "$RUN_ID" \
+  --output-dir .nextide/output/$RUN_ID
+```
+
+## General Rules
+
+- Use NexTide capability IDs, not internal n8n webhook URLs.
+- Do not expose API secrets or internal webhook URLs in prompts or output.
+- If status is not `available`, fail fast and explain what is missing.
+- For async tasks, prefer `--wait` when the user wants a finished result in the same turn.
+- After a finished run, use `nextide run artifacts <run-id> --output-dir .nextide/output/<run-id>` and read `manifest.json` first.
+- Prefer returning local artifact paths from `manifest.json` over pasting huge raw JSON.
+
+<!-- END NEXTIDE AUTO-GENERATED -->

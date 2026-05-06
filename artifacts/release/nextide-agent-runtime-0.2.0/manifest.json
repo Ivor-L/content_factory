@@ -1,0 +1,13 @@
+{
+  "name": "nextide-agent-runtime",
+  "version": "0.2.0",
+  "createdAt": "2026-05-06T11:57:42.749Z",
+  "webBaseUrl": "https://atomx.top",
+  "contents": {
+    "cli": "cli/nextide-cli-0.2.0.tgz",
+    "skills": "skills/nextide-skills.zip",
+    "capabilities": "capabilities/capabilities.json",
+    "fixtures": "fixtures",
+    "installGuide": "INSTALL.md"
+  }
+}

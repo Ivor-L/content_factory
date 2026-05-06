@@ -21,13 +21,19 @@
     "layouts:previews": "tsx scripts/regenerate-layout-previews.ts",
     "build:extensions": "tsx scripts/build-extension-packages.ts",
     "build:nextide-cli": "tsc -p packages/nextide-cli/tsconfig.json",
-    "capabilities:export": "node scripts/export-nextide-capabilities.mjs",
-    "skills:generate": "node scripts/generate-nextide-skills.mjs",
+    "capabilities:export": "tsx scripts/export-nextide-capabilities.ts",
+    "skills:generate": "tsx scripts/generate-nextide-skills.ts",
+    "fixtures:generate": "tsx scripts/generate-nextide-fixtures.ts",
+    "skills:package": "npm run capabilities:export && npm run skills:generate && npm run fixtures:generate && tsx scripts/package-nextide-skills.ts",
     "build:nexapi:apifox": "tsx scripts/nexapi/build-apifox.ts",
     "backfill:media-cache": "tsx scripts/backfill-reference-media-cache.ts",
     "nextide": "node scripts/nextide-cli.mjs",
     "nextide:cli": "node packages/nextide-cli/dist/index.js",
-    "nextide:link": "npm run build:nextide-cli && chmod +x packages/nextide-cli/dist/index.js && npm link ./packages/nextide-cli"
+    "nextide:link": "npm run build:nextide-cli && chmod +x packages/nextide-cli/dist/index.js && npm link ./packages/nextide-cli",
+    "nextide:pack": "mkdir -p artifacts/cli && cd packages/nextide-cli && npm pack --pack-destination ../../artifacts/cli",
+    "release:agent-runtime": "npm run nextide:pack && npm run skills:package && tsx scripts/package-nextide-agent-runtime.ts",
+    "smoke:agent-runtime": "tsx scripts/smoke-nextide-agent-security.ts",
+    "cleanup:agent-runs": "tsx scripts/cleanup-stale-agent-runs.ts"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.4.1",

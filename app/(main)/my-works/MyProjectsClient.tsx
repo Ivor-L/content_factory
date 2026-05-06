@@ -1097,7 +1097,7 @@ export function MyProjectsClient({
   }, [renameTarget, renameValue]);
 
   const pageTitle = t.sidebar?.myVideos || pickCopy(HEADER_COPY, langKey);
-  const subtitle = pickCopy(SUBTITLE_COPY, langKey);
+  const retentionNotice = pickCopy(RETENTION_NOTICE_COPY, langKey);
   const loadErrorMessage = pickCopy(LOAD_ERROR_COPY, langKey);
   const statusOptions = useMemo<FilterSelectOption<string>[]>(() => {
     return STATUS_FILTERS.map((option) => ({
@@ -1620,7 +1620,10 @@ export function MyProjectsClient({
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{pageTitle}</h1>
-            <p className="text-base text-gray-600 dark:text-gray-300 mt-2 max-w-2xl">{subtitle}</p>
+            <div className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50/80 px-2.5 py-1 text-xs font-medium text-amber-900 shadow-sm dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
+              <Clock className="h-3.5 w-3.5 shrink-0 text-amber-500 dark:text-amber-300" />
+              <span className="leading-tight">{retentionNotice}</span>
+            </div>
           </div>
           <div className="flex flex-wrap gap-3">
             <button
@@ -1636,10 +1639,6 @@ export function MyProjectsClient({
               {pickCopy(REFRESH_COPY, langKey)}
             </button>
           </div>
-        </div>
-        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm text-amber-900 shadow-sm dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
-          <Clock className="mt-0.5 h-4 w-4 shrink-0 text-amber-500 dark:text-amber-300" />
-          <p className="leading-relaxed">{pickCopy(RETENTION_NOTICE_COPY, langKey)}</p>
         </div>
         <div className="flex flex-wrap gap-3">
           <FilterSelect

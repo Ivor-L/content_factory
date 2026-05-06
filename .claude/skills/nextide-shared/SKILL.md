@@ -73,6 +73,97 @@ npm run nextide -- capability run <capability-id> \
 - 视频/数字人/动作复刻属于高成本长任务，提交前应说明耗时和可能消耗
 - 不要一开始做大规模全量采集
 
+新增或修改 NexTide hosted capability / skill 时，凡是会调用付费模型、n8n、RunningHub、云端生图、生视频、音频、LLM 分析或数据采集，都必须接入后台积分配置：
+
+- capability registry 必须声明稳定 `featureKey`
+- 同一能力如果不同模型/工作流价格不同，必须声明 `creditModelKey`
+- 后端执行链路必须使用后台 `credit_configs`，优先走 `deductConfiguredCredits()` 或既有 Canvas 计费 helper
+- 后台配置 key 规则：`featureKey:modelKey` 优先，找不到再回退 `featureKey`
+- 扣费失败必须停止付费任务，不要继续触发上游工作流
+
+## Multimodal Artifact Preview Rule
+
+当 capability 返回 artifacts，优先用 artifact-first 工作流，不要只把远程链接粘给用户。
+
+完成 run 后执行：
+
+```bash
+npm run nextide -- run artifacts <run-id> \
+  --output-dir .nextide/output/<run-id> \
+  --download \
+  --gallery \
+  --datatable
+```
+
+该命令会尽量生成：
+
+```text
+.nextide/output/<run-id>/
+  manifest.json
+  summary.json      # Agent 友好的任务摘要、推荐回复、下一步建议
+  gallery.html      # 图片画廊
+  preview.html      # 图片/视频/音频/JSON 通用多模态预览
+  datatable.json    # 可排序/筛选的数据表，若结果可表格化
+  <downloaded files>
+```
+
+回复用户时优先读取 `summary.json`，并按以下优先级返回：
+
+1. `summary.recommendedResponse.message` 简短摘要；
+2. `preview.html` / `gallery.html` 富媒体预览；
+3. `datatable.json` 数据表；
+4. 本地下载文件路径；
+5. 远程 URL；
+6. `summary.recommendedResponse.nextActions` 下一步建议。
+
+如果当前 Agent 支持富媒体 block，直接输出：
+
+````markdown
+```html-preview
+{"src":"/absolute/path/to/preview.html","title":"NexTide 结果预览"}
+```
+````
+
+数据类结果可以用：
+
+````markdown
+```datatable
+{"src":"/absolute/path/to/datatable.json","title":"NexTide 数据结果"}
+```
+````
+
+统一回复模板：
+
+````markdown
+已完成：<任务标题>
+
+预览：
+```html-preview
+{"src":"/absolute/path/to/preview.html","title":"NexTide 结果预览"}
+```
+
+数据表：
+```datatable
+{"src":"/absolute/path/to/datatable.json","title":"NexTide 数据结果"}
+```
+
+文件：
+- /absolute/path/to/file.ext
+
+下一步你可以：
+1. <summary.json 中的 nextActions[0]>
+2. <summary.json 中的 nextActions[1]>
+```
+````
+
+多张图片也可以用：
+
+````markdown
+```image-preview
+{"title":"生成图片","items":[{"src":"/absolute/path/1.png","title":"第 1 页"},{"src":"/absolute/path/2.png","title":"第 2 页"}]}
+```
+````
+
 ## Long-running Task Rule
 
 数字人、动作复刻、中视频、批量图片生成等任务可能长达 60 分钟。
@@ -90,6 +181,15 @@ npm run nextide -- run status <run-id>
 npm run nextide -- run result <run-id> --output .nextide/output/<run-id>-result.json
 ```
 
+更推荐使用 follow 命令自动轮询并在成功后导出 artifact bundle：
+
+```bash
+npm run nextide -- run follow <run-id> \
+  --output-dir .nextide/output/<run-id> \
+  --timeout 1800 \
+  --interval 5
+```
+
 当前 MVP 阶段 run store 可能尚未完整实现。若返回 `run_store_not_implemented`，说明该 capability 已规划但长任务查询层还在实现中。
 
 ## Privacy / IP Rule
@@ -99,6 +199,35 @@ npm run nextide -- run result <run-id> --output .nextide/output/<run-id>-result.
 - 可以学习结构、节奏、镜头、视觉语法、信息层级
 - 不复制原作者身份、脸、商标、品牌资产、字幕原句、独特场景
 - 需要生成 reference contract 时，明确 `learn` 与 `doNotCopy`
+
+## Human-readable Error Rule
+
+当 CLI 返回 `explanation` 字段，优先把它转成用户可执行的说明，不要只粘贴 raw JSON。
+
+常见结构：
+
+```json
+{
+  "explanation": {
+    "code": "unauthorized",
+    "title": "认证失败",
+    "message": "缺少或无效的 NexTide 凭证。",
+    "nextActions": ["运行 nextide auth login", "运行 nextide status 确认已登录"]
+  }
+}
+```
+
+回复模板：
+
+```text
+任务没有继续执行：认证失败。
+
+原因：缺少或无效的 NexTide 凭证。
+
+你可以：
+1. 运行 nextide auth login
+2. 运行 nextide status 确认已登录
+```
 
 ## Fail-fast Rule
 

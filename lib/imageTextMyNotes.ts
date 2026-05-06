@@ -3,6 +3,8 @@ import { toInputJson } from '@/lib/jsonUtils';
 import { IMAGE_UNDERSTANDING_PROMPT_EXACT_TEXT } from '@/lib/imageUnderstandingPrompts';
 import { rewriteXhsNote } from '@/lib/xhsRewritePrompt';
 import { randomUUID } from 'node:crypto';
+import { deductConfiguredCredits } from '@/lib/creditBilling';
+import { getApiKeyForUser } from '@/lib/authServer';
 
 const MAX_RECOGNIZE_CONCURRENCY = 3;
 
@@ -126,6 +128,39 @@ export async function runBreakdownForMyNote(noteId: string): Promise<void> {
   if (!note) return;
 
   const sourceImages = parseSourceImages(note.sourceImages);
+  const creditsApiKey = await getApiKeyForUser(note.userId).catch(() => null);
+  if (!creditsApiKey) {
+    await prisma.imageTextReplicationTask.update({
+      where: { id: noteId },
+      data: {
+        status: 'BREAKDOWN_FAILED',
+        errorMessage: '请先在设置页绑定 API Key',
+      },
+    });
+    return;
+  }
+  try {
+    await deductConfiguredCredits({
+      apiKey: creditsApiKey,
+      featureKey: 'my_note_breakdown',
+      userId: note.userId,
+      defaultAmount: 1,
+      modelKey: 'gemini-3.1-flash-lite-preview',
+      units: Math.max(1, sourceImages.length),
+      workflowId: 'my_note_breakdown',
+      workflowName: '我的笔记图片解析',
+    });
+  } catch (error) {
+    await prisma.imageTextReplicationTask.update({
+      where: { id: noteId },
+      data: {
+        status: 'BREAKDOWN_FAILED',
+        errorMessage: error instanceof Error ? error.message : '积分不足或扣费失败',
+      },
+    });
+    return;
+  }
+
   if (sourceImages.length === 0) {
     const analysisResult = {
       sourceTitle: note.sourceTitle || '',
@@ -280,6 +315,17 @@ export async function retryBreakdownImageForMyNote(
 
   let imageText: ExtractedImageText;
   try {
+    const creditsApiKey = await getApiKeyForUser(note.userId).catch(() => null);
+    if (!creditsApiKey) throw new Error('请先在设置页绑定 API Key');
+    await deductConfiguredCredits({
+      apiKey: creditsApiKey,
+      featureKey: 'my_note_breakdown_retry',
+      userId: note.userId,
+      defaultAmount: 1,
+      modelKey: 'gemini-3.1-flash-lite-preview',
+      workflowId: 'my_note_breakdown_retry',
+      workflowName: '我的笔记图片解析重试',
+    });
     const text = await callVisionExactText(sourceImages[normalizedIndex - 1]);
     imageText = {
       index: normalizedIndex,
@@ -353,6 +399,17 @@ export async function rewriteMyNoteAndCreateWork(noteId: string): Promise<{ work
   });
 
   try {
+    const creditsApiKey = await getApiKeyForUser(note.userId).catch(() => null);
+    if (!creditsApiKey) throw new Error('请先在设置页绑定 API Key');
+    await deductConfiguredCredits({
+      apiKey: creditsApiKey,
+      featureKey: 'my_note_rewrite',
+      userId: note.userId,
+      defaultAmount: 1,
+      modelKey: 'xhs_rewrite',
+      workflowId: 'my_note_rewrite',
+      workflowName: '我的笔记仿写',
+    });
     const rewritten = await rewriteXhsNote({
       title: normalizeText(note.sourceTitle) || '未命名标题',
       body: normalizeText(note.sourceText),

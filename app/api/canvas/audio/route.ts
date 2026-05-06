@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getRequestUserContext } from "@/lib/authServer";
+import { getApiKeyForUser, getRequestUserContext } from "@/lib/authServer";
 import { createRunningHubTask, fetchRunningHubOutputs, RunningHubNodePatch } from "@/lib/runninghub";
+import { deductConfiguredCredits } from "@/lib/creditBilling";
 
 const AUDIO_WORKFLOW_ID = process.env.RUNNINGHUB_AUDIO_WORKFLOW_ID || "2029476062287110146";
 const AUDIO_API_KEY = process.env.RUNNINGHUB_API_KEY || "d75f6f54beb14fee8b7379b35449332f";
@@ -33,6 +34,26 @@ export async function POST(request: NextRequest) {
 
   const workflowId = (typeof body.workflowId === "string" && body.workflowId.trim()) || AUDIO_WORKFLOW_ID;
   const apiKey = (typeof body.apiKey === "string" && body.apiKey.trim()) || AUDIO_API_KEY;
+  const creditsApiKey = await getApiKeyForUser(userId);
+  if (!creditsApiKey) {
+    return NextResponse.json({ error: "请先在设置页绑定 API Key" }, { status: 400 });
+  }
+  try {
+    await deductConfiguredCredits({
+      apiKey: creditsApiKey,
+      featureKey: "canvas_audio_generation",
+      userId,
+      defaultAmount: 1,
+      modelKey: workflowId,
+      workflowId,
+      workflowName: "Canvas Audio Generation",
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "积分不足或扣费失败" },
+      { status: 402 },
+    );
+  }
 
   const nodeInfoList: RunningHubNodePatch[] = [
     { nodeId: "13", fieldName: "audio", fieldValue: voiceUrl },

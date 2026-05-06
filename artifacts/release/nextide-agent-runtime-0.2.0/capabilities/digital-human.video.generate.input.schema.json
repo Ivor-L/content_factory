@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "digital-human.video.generate input",
+  "type": "object",
+  "properties": {
+    "personImage": {
+      "type": "string",
+      "description": "人物图片 URL。"
+    },
+    "script": {
+      "type": "string",
+      "description": "口播文案。"
+    },
+    "voiceId": {
+      "type": "string",
+      "description": "声音 ID 或预设。"
+    },
+    "duration": {
+      "type": "number",
+      "description": "目标时长，秒。"
+    }
+  },
+  "required": [
+    "personImage",
+    "script"
+  ],
+  "additionalProperties": true
+}

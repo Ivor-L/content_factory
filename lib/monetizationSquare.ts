@@ -213,7 +213,7 @@ export const DEFAULT_MONETIZATION_SQUARE_CONFIG: MonetizationSquareConfigPayload
             type: 'route',
             route: '/pages/home/index',
             params: {},
-            featureKey: 'monetization_channels_video_share',
+            featureKey: 'social_instagram_collect',
           },
           demos: [
             {

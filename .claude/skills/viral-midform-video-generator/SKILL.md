@@ -97,3 +97,87 @@ t2v_storyboard_id = ...
 - This MVP creates/plans storyboard segments; downstream image/video generation happens in storyboard workflows.
 - If user does not have an existing creative task, omit `taskId`; standalone task creation is supported.
 - Default theme is `3d-skeleton`.
+
+<!-- BEGIN NEXTIDE AUTO-GENERATED -->
+
+## NexTide Capability Contract
+
+### 爆款中视频生成
+
+- Capability: `viral.midform.video.generate`
+- Version: `0.2.0`
+- Category: `video`
+- Status: `available`
+- Execution: `internal_api`
+- Async: `true`
+- Cost level: `high`
+- Required auth: `nexTideApiKey`
+- Required env: `N8N_T2V_WEBHOOK`
+- Required plan: `paid`
+- Rate limit: `5/minute`, `20/hour`
+- Estimated credits: 25
+- Estimated duration: 1200 seconds
+- Tags: `midform-video`, `storyboard`, `3d-skeleton`
+
+Description:
+
+生成 3D 骨骼等主题化中视频，未来支持更多主题。
+
+Examples:
+
+- 3D 骨骼中视频 standalone
+
+  ```json
+  {
+    "title": "久坐为什么让肩颈越来越僵",
+    "scriptText": "完整脚本文案...",
+    "theme": "3d-skeleton",
+    "allowText": false
+  }
+  ```
+
+Input fields:
+
+- `theme` (string, required)：中视频主题。 默认：`"3d-skeleton"`
+- `topic` (string, required)：视频主题或选题。
+- `duration` (number)：目标时长，秒。 默认：`60`
+
+Output fields:
+
+- `script` (string)：生成脚本。
+- `finalVideoUrl` (string)：最终视频 URL。
+- `segments` (array)：分段视频结果。
+
+CLI:
+
+```bash
+nextide capability run viral.midform.video.generate \
+  --input .nextide/input/viral.midform.video.generate.json \
+  --output .nextide/output/viral.midform.video.generate-result.json \
+  --mode submit \
+  --wait \
+  --timeout 3600 \
+  --interval 5
+
+RUN_ID=$(node -e "const r=require('./.nextide/output/viral.midform.video.generate-result.json'); console.log(r.run && r.run.runId)")
+nextide run artifacts "$RUN_ID" \
+  --output-dir .nextide/output/$RUN_ID
+```
+
+Artifact-first reading order:
+
+1. Read `.nextide/output/$RUN_ID/manifest.json`.
+2. Return local artifact paths when present.
+3. If a remote URL artifact is present, return the URL from manifest.
+4. Only inspect the full result JSON when manifest is insufficient.
+
+## General Rules
+
+- Use NexTide capability IDs, not internal n8n webhook URLs.
+- Do not expose API secrets or internal webhook URLs in prompts or output.
+- If status is not `available`, fail fast and explain what is missing.
+- For async tasks, prefer `--wait` when the user wants a finished result in the same turn.
+- After a finished run, use `nextide run artifacts <run-id> --output-dir .nextide/output/<run-id>` and read `manifest.json` first.
+- Prefer returning local artifact paths from `manifest.json` over pasting huge raw JSON.
+
+<!-- END NEXTIDE AUTO-GENERATED -->

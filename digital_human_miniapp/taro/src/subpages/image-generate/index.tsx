@@ -1886,7 +1886,7 @@ function estimateWrapCount(text: string, fontSizePx: number, contentWidthPx: num
 
 function paginatePreviewMarkdown(
   markdown: string,
-  maxPages: number,
+  _maxPages: number,
   density: CardDensity,
   h1FontScale: CardFontScale,
   h2FontScale: CardFontScale,
@@ -2026,16 +2026,7 @@ function paginatePreviewMarkdown(
     .map((page) => page.trim())
     .filter(Boolean);
 
-  if (mergedPages.length <= maxPages) return mergedPages;
-
-  const sliced = mergedPages.slice(0, maxPages);
-  const last = sliced[maxPages - 1];
-  const lastLines = last.split('\n');
-  if (lastLines.length === 0 || !lastLines[lastLines.length - 1].includes('...')) {
-    lastLines.push('...');
-  }
-  sliced[maxPages - 1] = lastLines.join('\n');
-  return sliced;
+  return mergedPages;
 }
 
 export default function ImageGeneratePage() {

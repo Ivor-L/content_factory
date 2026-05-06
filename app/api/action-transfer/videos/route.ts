@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getRequestUserContext } from '@/lib/authServer';
 import { syncTaskToSummary } from '@/lib/taskSummary';
+import { deductConfiguredCredits } from '@/lib/creditBilling';
 
 type CreatePayload = {
   imageUrl?: string;
@@ -86,6 +87,16 @@ export async function POST(request: NextRequest) {
 
   try {
     const workflowId = process.env.N8N_ACTION_TRANSFER_WORKFLOW_ID_FOR_CREDITS || 'flow_action_transfer_wan_animate';
+    await deductConfiguredCredits({
+      apiKey,
+      featureKey: 'action_transfer',
+      userId,
+      defaultAmount: 30,
+      modelKey: workflowId,
+      workflowId,
+      workflowName: '动作迁移 Wan Animate',
+    });
+
     const record = await prisma.digitalHumanVideo.create({
       data: {
         type: 'ACTION_TRANSFER',

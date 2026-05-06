@@ -55,9 +55,15 @@
   overflow: visible
   background: transparent
 
+.work-detail-panel--video
+  margin-bottom: 96rpx
+
 .work-detail-cover-wrap
   position: relative
   margin: 20rpx 24rpx 26rpx
+
+.work-detail-panel--video .work-detail-cover-wrap
+  margin: 12rpx 24rpx 18rpx
 
 .work-detail-cover
   width: 100%
@@ -65,8 +71,8 @@
 
 .work-detail-video
   width: 100%
-  height: 840rpx
-  min-height: 720rpx
+  height: min(1248rpx, calc(100vh - 260rpx))
+  min-height: 900rpx
   display: block
   background: #050505
 

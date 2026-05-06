@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "content.visual_hook.design input",
+  "type": "object",
+  "properties": {
+    "visualDescription": {
+      "type": "string",
+      "description": "当前第一帧/首图/前 3 秒画面描述。"
+    },
+    "goal": {
+      "type": "string",
+      "description": "想让观众产生的问题或动作。"
+    }
+  },
+  "required": [
+    "visualDescription"
+  ],
+  "additionalProperties": true
+}

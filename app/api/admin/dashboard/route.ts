@@ -3,6 +3,10 @@ import prisma from "@/lib/prisma";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getRequestUserContext } from "@/lib/authServer";
 
+function shouldHideUsageFeature(featureKey: string) {
+  return featureKey.startsWith("monetization_");
+}
+
 async function requireAdmin(request: Request) {
   const { userId } = await getRequestUserContext(request);
   if (!userId) return null;
@@ -50,15 +54,25 @@ export async function GET(request: NextRequest) {
     planDist[plan] = (planDist[plan] ?? 0) + 1;
   }
 
-  // Active users = had successful usage logs in past 3 days
+  // Active users = had successful usage logs in past 3 days, excluding link-only entries
   let activeUsers = 0;
   try {
     const activeRes = await (prisma as any).creditUsageLog.groupBy({
-      by: ["userId"],
+      by: ["userId", "featureKey"],
       where: { createdAt: { gte: threeDaysAgo }, success: true, ...userWhere },
     });
-    activeUsers = activeRes.length;
+    activeUsers = new Set(
+      activeRes
+        .filter((row: { featureKey: string }) => !shouldHideUsageFeature(row.featureKey))
+        .map((row: { userId: string }) => row.userId),
+    ).size;
   } catch { /* skip */ }
+
+  // ── Credit configs (base list for full coverage) ─────────────────────────
+  const configs = await prisma.creditConfig.findMany({
+    select: { featureKey: true, featureName: true, sellingPrice: true, cost: true },
+  });
+  const configMap = new Map(configs.map((c) => [c.featureKey, c]));
 
   // ── Overall usage stats by featureKey ─────────────────────────────────────
   let usageStats: Array<{ featureKey: string; success: boolean; _count: { id: number }; _sum: { amount: number | null } }> = [];
@@ -78,12 +92,12 @@ export async function GET(request: NextRequest) {
   let monthFailed = 0;
   try {
     const monthAll = await (prisma as any).creditUsageLog.groupBy({
-      by: ["success"],
+      by: ["featureKey", "success"],
       _count: { id: true },
       _sum: { amount: true },
       where: { createdAt: { gte: monthStart }, ...userWhere },
     });
-    for (const s of monthAll) {
+    for (const s of monthAll.filter((row: { featureKey: string }) => !shouldHideUsageFeature(row.featureKey))) {
       const cnt = s._count.id ?? 0;
       const amt = s._sum.amount ?? 0;
       monthCalls += cnt;
@@ -120,14 +134,11 @@ export async function GET(request: NextRequest) {
     }
   } catch { /* skip */ }
 
-  // ── Credit configs for revenue/cost mapping ───────────────────────────────
-  const configs = await prisma.creditConfig.findMany({
-    select: { featureKey: true, featureName: true, sellingPrice: true, cost: true },
-  });
-  const configMap = new Map(configs.map((c) => [c.featureKey, c]));
-
-  // ── Build feature stats ───────────────────────────────────────────────────
+  // ── Build feature stats with full config coverage ────────────────────────
   const featureMap: Record<string, { calls: number; success: number; failed: number; credits: number }> = {};
+  for (const config of configs) {
+    featureMap[config.featureKey] = { calls: 0, success: 0, failed: 0, credits: 0 };
+  }
   for (const s of usageStats) {
     const k = s.featureKey;
     if (!featureMap[k]) featureMap[k] = { calls: 0, success: 0, failed: 0, credits: 0 };
@@ -140,7 +151,9 @@ export async function GET(request: NextRequest) {
   let totalRevenue = 0;
   let totalCost = 0;
 
-  const features = Object.entries(featureMap).map(([featureKey, stats]) => {
+  const features = Object.entries(featureMap)
+    .filter(([featureKey]) => !shouldHideUsageFeature(featureKey))
+    .map(([featureKey, stats]) => {
     const cfg = configMap.get(featureKey);
     const revenue = cfg?.sellingPrice != null ? stats.success * cfg.sellingPrice : null;
     const cost = cfg?.cost != null ? stats.success * cfg.cost : null;
@@ -153,12 +166,12 @@ export async function GET(request: NextRequest) {
       revenue,
       cost,
     };
-  }).sort((a, b) => b.calls - a.calls);
+  }).sort((a, b) => b.calls - a.calls || a.featureKey.localeCompare(b.featureKey));
 
   // Month revenue/cost from usage
   let monthRevenueFromUsage = 0;
   let monthCostFromUsage = 0;
-  for (const s of monthByFeature) {
+  for (const s of monthByFeature.filter((row) => !shouldHideUsageFeature(row.featureKey))) {
     const cfg = configMap.get(s.featureKey);
     if (cfg?.sellingPrice != null) monthRevenueFromUsage += s._count.id * cfg.sellingPrice;
     if (cfg?.cost != null) monthCostFromUsage += s._count.id * cfg.cost;

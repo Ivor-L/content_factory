@@ -19,6 +19,7 @@ interface FeatureStat {
   credits: number;
   revenue: number | null;
   cost: number | null;
+  enabled?: boolean;
 }
 interface DashboardData {
   users: { total: number; active: number; planDistribution: PlanDist[] };
@@ -302,7 +303,12 @@ export default function AdminDashboardPage() {
                       className="grid grid-cols-[1fr_80px_80px_80px_90px_90px_80px_80px] px-4 py-3 border-b border-gray-50 dark:border-gray-700/50 last:border-b-0 items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors"
                     >
                       <div className="min-w-0">
-                        <div className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{f.featureName}</div>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{f.featureName}</div>
+                          {f.calls === 0 && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 shrink-0">0 次</span>
+                          )}
+                        </div>
                         <div className="text-xs text-gray-400 font-mono truncate">{f.featureKey}</div>
                       </div>
                       <div className="text-center text-sm font-semibold text-gray-700 dark:text-gray-300 tabular-nums">{fmtInt(f.calls)}</div>

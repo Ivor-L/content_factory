@@ -147,3 +147,285 @@ Return:
 - Do not collect comments by default; use comments capability when wired.
 - Do not invent collected records before callback/import completes.
 - Keyword mode is TikTok-only in the current Web API.
+
+<!-- BEGIN NEXTIDE AUTO-GENERATED -->
+
+## NexTide Capability Contract
+
+### TikTok 数据采集
+
+- Capability: `social.tiktok.collect`
+- Version: `0.2.0`
+- Category: `social`
+- Status: `available`
+- Execution: `internal_api`
+- Async: `true`
+- Cost level: `medium`
+- Required auth: `nexTideApiKey`
+- Required env: `N8N_SOCIAL_SCRAPER_WEBHOOK`, `SOCIAL_SCRAPER_APIFY_TOKEN or APIFY_API_TOKEN`
+- Required plan: `none`
+- Rate limit: `10/minute`, `60/hour`
+- Estimated credits: 5
+- Estimated duration: 180 seconds
+- Tags: `tiktok`, `social`, `collection`, `creator-research`
+
+Description:
+
+采集 TikTok 爆款视频、账号与可选评论，用于爆款复刻、博主蒸馏和用户语言分析。
+
+Examples:
+
+- TikTok 关键词采集
+
+  ```json
+  {
+    "platform": "tiktok",
+    "mode": "keyword",
+    "queries": [
+      "neck pain"
+    ],
+    "limit": 20
+  }
+  ```
+- TikTok 博主账号采集：博主蒸馏器第一步：采集账号热门视频。
+
+  ```json
+  {
+    "platform": "tiktok",
+    "mode": "creator",
+    "targets": [
+      "@quinclips3"
+    ],
+    "limit": 20,
+    "sortBy": "likes"
+  }
+  ```
+
+Input fields:
+
+- `mode` (string)：采集模式：keyword / creator / video。 默认：`"keyword"`
+- `queries` (string[])：keyword 模式下的搜索关键词。
+- `keywords` (string[])：keyword 模式下的搜索关键词别名。
+- `targets` (string[])：creator 模式下的账号名或账号 URL，例如 @creator。
+- `creators` (string[])：creator 模式下的账号名列表。
+- `urls` (string[])：video 模式下的视频 URL，或 creator 模式下的账号 URL。
+- `limit` (number)：目标采集数量。 默认：`30`
+- `sortBy` (string)：排序方式：likes / views / comments / shares / recent。 默认：`"likes"`
+- `collectComments` (boolean)：是否采集评论。 默认：`false`
+
+Output fields:
+
+- `items` (array)：归一化内容列表。
+- `creators` (array)：创作者列表。
+- `comments` (array)：评论列表。
+
+CLI:
+
+```bash
+nextide capability run social.tiktok.collect \
+  --input .nextide/input/social.tiktok.collect.json \
+  --output .nextide/output/social.tiktok.collect-result.json \
+  --mode submit \
+  --wait \
+  --timeout 900 \
+  --interval 5
+
+RUN_ID=$(node -e "const r=require('./.nextide/output/social.tiktok.collect-result.json'); console.log(r.run && r.run.runId)")
+nextide run artifacts "$RUN_ID" \
+  --output-dir .nextide/output/$RUN_ID
+```
+
+Artifact-first reading order:
+
+1. Read `.nextide/output/$RUN_ID/manifest.json`.
+2. Return local artifact paths when present.
+3. If a remote URL artifact is present, return the URL from manifest.
+4. Only inspect the full result JSON when manifest is insufficient.
+
+### Instagram 数据采集
+
+- Capability: `social.instagram.collect`
+- Version: `0.2.0`
+- Category: `social`
+- Status: `available`
+- Execution: `internal_api`
+- Async: `true`
+- Cost level: `medium`
+- Required auth: `nexTideApiKey`
+- Required env: `N8N_INSTAGRAM_SCRAPER_WEBHOOK`
+- Required plan: `none`
+- Rate limit: `10/minute`, `60/hour`
+- Estimated credits: 5
+- Estimated duration: 180 seconds
+- Tags: `instagram`, `social`, `collection`
+
+Description:
+
+采集 Instagram 账号、帖子或 Reels 数据。
+
+Examples:
+
+- none
+
+Input fields:
+
+- `queries` (string[])：关键词或账号。
+- `urls` (string[])：帖子或账号 URL。
+- `limit` (number)：目标采集数量。 默认：`30`
+
+Output fields:
+
+- `items` (array)：归一化内容列表。
+- `creators` (array)：创作者列表。
+
+CLI:
+
+```bash
+nextide capability run social.instagram.collect \
+  --input .nextide/input/social.instagram.collect.json \
+  --output .nextide/output/social.instagram.collect-result.json \
+  --mode submit \
+  --wait \
+  --timeout 900 \
+  --interval 5
+
+RUN_ID=$(node -e "const r=require('./.nextide/output/social.instagram.collect-result.json'); console.log(r.run && r.run.runId)")
+nextide run artifacts "$RUN_ID" \
+  --output-dir .nextide/output/$RUN_ID
+```
+
+Artifact-first reading order:
+
+1. Read `.nextide/output/$RUN_ID/manifest.json`.
+2. Return local artifact paths when present.
+3. If a remote URL artifact is present, return the URL from manifest.
+4. Only inspect the full result JSON when manifest is insufficient.
+
+### Facebook 数据采集
+
+- Capability: `social.facebook.collect`
+- Version: `0.2.0`
+- Category: `social`
+- Status: `available`
+- Execution: `internal_api`
+- Async: `true`
+- Cost level: `medium`
+- Required auth: `nexTideApiKey`
+- Required env: `N8N_SOCIAL_SCRAPER_WEBHOOK`, `SOCIAL_SCRAPER_APIFY_TOKEN or APIFY_API_TOKEN`
+- Required plan: `none`
+- Rate limit: `10/minute`, `60/hour`
+- Estimated credits: 5
+- Estimated duration: 180 seconds
+- Tags: `facebook`, `social`, `collection`
+
+Description:
+
+采集 Facebook 公开页面、帖子或相关爆款内容。
+
+Examples:
+
+- none
+
+Input fields:
+
+- `queries` (string[])：关键词或页面。
+- `urls` (string[])：帖子或页面 URL。
+- `limit` (number)：目标采集数量。 默认：`30`
+
+Output fields:
+
+- `items` (array)：归一化内容列表。
+- `creators` (array)：主页/创作者列表。
+
+CLI:
+
+```bash
+nextide capability run social.facebook.collect \
+  --input .nextide/input/social.facebook.collect.json \
+  --output .nextide/output/social.facebook.collect-result.json \
+  --mode submit \
+  --wait \
+  --timeout 900 \
+  --interval 5
+
+RUN_ID=$(node -e "const r=require('./.nextide/output/social.facebook.collect-result.json'); console.log(r.run && r.run.runId)")
+nextide run artifacts "$RUN_ID" \
+  --output-dir .nextide/output/$RUN_ID
+```
+
+Artifact-first reading order:
+
+1. Read `.nextide/output/$RUN_ID/manifest.json`.
+2. Return local artifact paths when present.
+3. If a remote URL artifact is present, return the URL from manifest.
+4. Only inspect the full result JSON when manifest is insufficient.
+
+### 社媒评论抓取
+
+- Capability: `social.comments.collect`
+- Version: `0.2.0`
+- Category: `social`
+- Status: `available`
+- Execution: `n8n_workflow`
+- Async: `true`
+- Cost level: `medium`
+- Required auth: `nexTideApiKey`
+- Required env: `N8N_TIKTOK_COMMENTS_WEBHOOK or N8N_SOCIAL_COMMENTS_WEBHOOK`
+- Required plan: `none`
+- Rate limit: `10/minute`, `60/hour`
+- Estimated credits: 5
+- Estimated duration: 180 seconds
+- Tags: `comments`, `audience-language`, `tiktok`
+
+Description:
+
+抓取 TikTok 等平台评论，用于用户语言、痛点、异议和购买意图分析。
+
+Examples:
+
+- none
+
+Input fields:
+
+- `platform` (string, required)：平台，如 tiktok。
+- `urls` (string[], required)：帖子/视频 URL 列表。
+- `limit` (number)：评论数量上限。 默认：`100`
+
+Output fields:
+
+- `comments` (array)：评论列表。
+- `clusters` (array)：可选的评论聚类结果。
+
+CLI:
+
+```bash
+nextide capability run social.comments.collect \
+  --input .nextide/input/social.comments.collect.json \
+  --output .nextide/output/social.comments.collect-result.json \
+  --mode submit \
+  --wait \
+  --timeout 900 \
+  --interval 5
+
+RUN_ID=$(node -e "const r=require('./.nextide/output/social.comments.collect-result.json'); console.log(r.run && r.run.runId)")
+nextide run artifacts "$RUN_ID" \
+  --output-dir .nextide/output/$RUN_ID
+```
+
+Artifact-first reading order:
+
+1. Read `.nextide/output/$RUN_ID/manifest.json`.
+2. Return local artifact paths when present.
+3. If a remote URL artifact is present, return the URL from manifest.
+4. Only inspect the full result JSON when manifest is insufficient.
+
+## General Rules
+
+- Use NexTide capability IDs, not internal n8n webhook URLs.
+- Do not expose API secrets or internal webhook URLs in prompts or output.
+- If status is not `available`, fail fast and explain what is missing.
+- For async tasks, prefer `--wait` when the user wants a finished result in the same turn.
+- After a finished run, use `nextide run artifacts <run-id> --output-dir .nextide/output/<run-id>` and read `manifest.json` first.
+- Prefer returning local artifact paths from `manifest.json` over pasting huge raw JSON.
+
+<!-- END NEXTIDE AUTO-GENERATED -->

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getRequestUserContext } from '@/lib/authServer';
 import { createStoryboardJob, parseStoryboardJobBody } from '@/lib/storyboard/orchestrator';
 import prisma from '@/lib/prisma';
+import { deductConfiguredCredits } from '@/lib/creditBilling';
 
 function safeParseImages(images: string | null | undefined): string[] {
   if (!images) return [];
@@ -64,6 +65,16 @@ export async function POST(request: Request) {
     if (parsed.pipelineKey === 'script_to_storyboard' && !parsed.script) {
       return NextResponse.json({ error: 'script is required for script_to_storyboard' }, { status: 400 });
     }
+
+    await deductConfiguredCredits({
+      apiKey,
+      featureKey: 'storyboard_job_create',
+      userId,
+      defaultAmount: 1,
+      modelKey: parsed.pipelineKey,
+      workflowId: `storyboard_job:${parsed.pipelineKey}`,
+      workflowName: `分镜任务创建:${parsed.pipelineKey}`,
+    });
 
     const taskData: Record<string, unknown> = {};
     const payloadData: Record<string, unknown> = {};

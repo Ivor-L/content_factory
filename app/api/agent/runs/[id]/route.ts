@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { assertAgentRunReadable, requireAgentApiKey, agentAuthErrorResponse } from '@/lib/agent-auth/api-key';
 import { resolveBusinessStatus } from '@/lib/agent-runs/business-status';
 import { getAgentCapabilityRunRecord, serializeAgentRunRecord } from '@/lib/agent-runs/store';
 
@@ -14,6 +15,13 @@ export async function GET(
       { error: { code: 'run_not_found', message: `Run ${id} was not found` } },
       { status: 404 },
     );
+  }
+
+  try {
+    const auth = await requireAgentApiKey(_request);
+    assertAgentRunReadable(auth, record);
+  } catch (error) {
+    return agentAuthErrorResponse(error);
   }
 
   if (record.businessType && record.businessId && ['queued', 'running', 'waiting_callback'].includes(record.status)) {

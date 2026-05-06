@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "content.wechat.longform.write input",
+  "type": "object",
+  "properties": {
+    "material": {
+      "type": "string",
+      "description": "写作素材。"
+    }
+  },
+  "required": [
+    "material"
+  ],
+  "additionalProperties": true
+}

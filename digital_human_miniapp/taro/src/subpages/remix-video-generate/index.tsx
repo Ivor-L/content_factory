@@ -11,7 +11,6 @@ const VIDEO_MODELS = [
   { id: 'bytedance/seedance-2', label: 'Seedance 2.0' },
   { id: 'bytedance/seedance-2-fast', label: 'Seedance Fast' },
   { id: 'veo3.1-fast', label: 'Veo 3.1 Fast' },
-  { id: 'veo_3_1-fast', label: 'Veo 兼容' },
 ];
 
 type EditingState = {
@@ -156,22 +155,21 @@ export default function RemixVideoGeneratePage() {
       return;
     }
     const imageUrl = normalizeMediaUrl(segment.generatedImage) || gridUrl;
+    const detailItem = {
+      id: `${segment.id}:remix-video`,
+      title: `Clip ${clip.clipIndex}`,
+      type: 'video',
+      status: segment.status,
+      createdAt: new Date().toISOString(),
+      preview: videoUrl,
+      videoUrl,
+      thumbnailUrl: imageUrl || null,
+      metadata: { videoUrl },
+      source: 'task',
+    };
+    Taro.setStorageSync('WORK_DETAIL_ITEM', detailItem);
     Taro.navigateTo({
-      url: `/subpages/work-detail/index?id=${encodeURIComponent(`${segment.id}:remix-video`)}`,
-      success: () => {
-        Taro.setStorageSync('WORK_DETAIL_ITEM', {
-          id: `${segment.id}:remix-video`,
-          title: `Clip ${clip.clipIndex}`,
-          type: 'video',
-          status: segment.status,
-          createdAt: new Date().toISOString(),
-          preview: videoUrl,
-          videoUrl,
-          thumbnailUrl: imageUrl || null,
-          metadata: { videoUrl },
-          source: 'task',
-        });
-      },
+      url: `/subpages/work-detail/index?id=${encodeURIComponent(detailItem.id)}`,
     });
   };
 

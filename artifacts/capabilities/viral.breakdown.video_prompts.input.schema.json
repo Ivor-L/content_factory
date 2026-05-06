@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "viral.breakdown.video_prompts input",
+  "type": "object",
+  "properties": {
+    "referenceUrl": {
+      "type": "string",
+      "description": "参考爆款链接。"
+    },
+    "referenceVideo": {
+      "type": "string",
+      "description": "参考视频 URL。"
+    },
+    "targetProduct": {
+      "type": "object",
+      "description": "目标产品信息。"
+    },
+    "promptProvider": {
+      "type": "string",
+      "description": "目标视频模型或提示词格式。",
+      "default": "seedance"
+    }
+  },
+  "required": [],
+  "additionalProperties": true
+}

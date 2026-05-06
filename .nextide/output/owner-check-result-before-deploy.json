@@ -1,0 +1,155 @@
+{
+  "run": {
+    "runId": "run_ceab901e-32ae-406d-aaa8-af9028046876",
+    "capabilityId": "viral.midform.video.generate",
+    "mode": "submit",
+    "status": "succeeded",
+    "createdAt": "2026-05-06T08:18:37.918Z",
+    "finishedAt": "2026-05-06T08:57:49.968Z",
+    "result": {
+      "data": {
+        "id": "69dd4403-0a99-4bc1-ab8c-d8872f51dc08",
+        "userId": "db74f72f-9f0e-4d42-8b9d-b34c890f5eea",
+        "title": "久坐为什么让肩颈越来越僵",
+        "channel": "video",
+        "targetOutput": "midform_video",
+        "ideaText": "长期久坐时，肩颈不是突然僵住的，而是身体在一点点代偿。第一段先解释头前伸如何让颈椎负担变大，第二段用 3D 骨骼画面展示斜方肌和肩胛提肌持续紧张，第三段给出一个简单的放松动作。",
+        "stage": "diagnosis",
+        "status": "active",
+        "goal": {
+          "theme": "3d-skeleton",
+          "source": "agent_capability",
+          "capabilityId": "viral.midform.video.generate"
+        },
+        "progress": 0,
+        "layoutResultJson": null,
+        "generatedImagesJson": null,
+        "errorMessage": null,
+        "metadata": {
+          "custom": {
+            "t2v_shots": null,
+            "t2v_style": {
+              "allowText": false,
+              "creativeStyleRaw": "3d-skeleton",
+              "styleProfileText": null,
+              "creativeStyleNorm": "3D骨骼"
+            },
+            "t2v_status": "done",
+            "t2v_storyboard_id": "cmotsd5fs001601s6kvgix6r0"
+          },
+          "stages": {
+            "draft": {
+              "key": "draft",
+              "status": "pending"
+            },
+            "topic": {
+              "key": "topic",
+              "status": "pending"
+            },
+            "mining": {
+              "key": "mining",
+              "status": "pending"
+            },
+            "diagnosis": {
+              "key": "diagnosis",
+              "status": "in_progress"
+            },
+            "framework": {
+              "key": "framework",
+              "status": "pending"
+            }
+          },
+          "actions": {}
+        },
+        "outlinePath": null,
+        "draftPath": null,
+        "artifacts": null,
+        "voiceProfileId": null,
+        "createdAt": "2026-05-06T08:18:37.970Z",
+        "updatedAt": "2026-05-06T08:19:08.115Z"
+      },
+      "business": {
+        "type": "creativeTask",
+        "id": "69dd4403-0a99-4bc1-ab8c-d8872f51dc08",
+        "status": "done",
+        "storyboardTaskId": "cmotsd5fs001601s6kvgix6r0"
+      }
+    },
+    "artifacts": [],
+    "usage": {
+      "provider": "internal_api",
+      "durationMs": 106
+    },
+    "error": null
+  },
+  "result": {
+    "data": {
+      "id": "69dd4403-0a99-4bc1-ab8c-d8872f51dc08",
+      "userId": "db74f72f-9f0e-4d42-8b9d-b34c890f5eea",
+      "title": "久坐为什么让肩颈越来越僵",
+      "channel": "video",
+      "targetOutput": "midform_video",
+      "ideaText": "长期久坐时，肩颈不是突然僵住的，而是身体在一点点代偿。第一段先解释头前伸如何让颈椎负担变大，第二段用 3D 骨骼画面展示斜方肌和肩胛提肌持续紧张，第三段给出一个简单的放松动作。",
+      "stage": "diagnosis",
+      "status": "active",
+      "goal": {
+        "theme": "3d-skeleton",
+        "source": "agent_capability",
+        "capabilityId": "viral.midform.video.generate"
+      },
+      "progress": 0,
+      "layoutResultJson": null,
+      "generatedImagesJson": null,
+      "errorMessage": null,
+      "metadata": {
+        "custom": {
+          "t2v_shots": null,
+          "t2v_style": {
+            "allowText": false,
+            "creativeStyleRaw": "3d-skeleton",
+            "styleProfileText": null,
+            "creativeStyleNorm": "3D骨骼"
+          },
+          "t2v_status": "done",
+          "t2v_storyboard_id": "cmotsd5fs001601s6kvgix6r0"
+        },
+        "stages": {
+          "draft": {
+            "key": "draft",
+            "status": "pending"
+          },
+          "topic": {
+            "key": "topic",
+            "status": "pending"
+          },
+          "mining": {
+            "key": "mining",
+            "status": "pending"
+          },
+          "diagnosis": {
+            "key": "diagnosis",
+            "status": "in_progress"
+          },
+          "framework": {
+            "key": "framework",
+            "status": "pending"
+          }
+        },
+        "actions": {}
+      },
+      "outlinePath": null,
+      "draftPath": null,
+      "artifacts": null,
+      "voiceProfileId": null,
+      "createdAt": "2026-05-06T08:18:37.970Z",
+      "updatedAt": "2026-05-06T08:19:08.115Z"
+    },
+    "business": {
+      "type": "creativeTask",
+      "id": "69dd4403-0a99-4bc1-ab8c-d8872f51dc08",
+      "status": "done",
+      "storyboardTaskId": "cmotsd5fs001601s6kvgix6r0"
+    }
+  },
+  "artifacts": []
+}

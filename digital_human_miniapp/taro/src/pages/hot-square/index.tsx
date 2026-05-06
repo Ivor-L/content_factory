@@ -295,6 +295,7 @@ export default function HotSquarePage() {
     try {
       const result = await miniappApi.collectHotXhsNote(url);
       Taro.showToast({ title: result.message || '采集成功', icon: 'success' });
+      forgetRemovedHotItem(result.taskId, result.sourceId, result.sourceUrl, result.referenceId);
       setCollectVisible(false);
       setCollectUrl('');
       setActiveCategory('我的');
@@ -562,6 +563,17 @@ function isRemovedHotItem(item: any): boolean {
     item?.sourceUrl,
   ].map((value) => String(value || '').trim()).filter(Boolean);
   return keys.some((key) => removed.has(key));
+}
+
+function forgetRemovedHotItem(...ids: Array<string | null | undefined>) {
+  try {
+    const removing = new Set(ids.map((id) => String(id || '').trim()).filter(Boolean));
+    if (removing.size === 0) return;
+    const next = readRemovedHotItems().filter((id) => !removing.has(id));
+    Taro.setStorageSync(HOT_REMOVED_ITEMS_KEY, JSON.stringify(next));
+  } catch {
+    // ignore storage failures
+  }
 }
 
 function splitAlternatingColumns<T>(items: T[]) {

@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getApiKeyForUser } from '@/lib/authServer';
-import { deductCredits } from '@/lib/credits';
 import { emitStoryboardTaskUpsert } from '@/lib/storyboardEvents';
-import { logCreditUsage } from '@/lib/logCreditUsage';
+import { deductConfiguredCredits } from '@/lib/creditBilling';
 
 function normalizeTaskId(payload: any, queryTaskId?: string | null): string | null {
   return (
@@ -155,17 +154,19 @@ export async function POST(request: Request) {
       try {
         const apiKey = await getApiKeyForUser(task.userId);
         if (apiKey) {
-          await deductCredits(apiKey, {
-            amount: 1,
+          const result = await deductConfiguredCredits({
+            apiKey,
+            featureKey: 'storyboard_split',
+            userId: task.userId,
+            defaultAmount: 1,
             workflowId: 'flow_storyboard_Split',
             workflowName: 'Storyboard Split',
             reason: 'storyboard_split',
           });
-          logCreditUsage({ featureKey: 'storyboard_split', userId: task.userId, amount: 1, success: true });
+          console.log('Storyboard split credits deducted', { taskId, amount: result.amount });
         }
       } catch (error) {
         console.error('Failed to deduct credits for storyboard split', error);
-        logCreditUsage({ featureKey: 'storyboard_split', userId: task.userId ?? undefined, success: false, errorMessage: error instanceof Error ? error.message : 'Unknown' });
       }
     }
 

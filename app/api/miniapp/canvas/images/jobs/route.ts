@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { after, NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getRequestUserContext } from "@/lib/authServer";
+import { getApiKeyForUser, getRequestUserContext } from "@/lib/authServer";
 import { CanvasImageGenerationError, generateCanvasImageOnServer } from "@/lib/canvasImageGenerationServer";
+import { deductConfiguredCredits } from "@/lib/creditBilling";
 import { toInputJson } from "@/lib/jsonUtils";
 import { getAssetBucket, posterImagePath } from "@/lib/storagePaths";
 import { uploadToStorage } from "@/lib/storageUpload";
@@ -137,6 +138,27 @@ function getModelMaxReferenceImages(model: string): number {
 
 function isImage2WorkflowModel(value: string): boolean {
   return value.trim().toLowerCase() === IMAGE2_WORKFLOW_MODEL;
+}
+
+async function deductMiniappImageCredits(params: {
+  userId: string;
+  model: string;
+  count: number;
+}) {
+  const creditsApiKey = await getApiKeyForUser(params.userId).catch(() => null);
+  if (!creditsApiKey) {
+    throw new Error("请先在设置页绑定 API Key");
+  }
+  return deductConfiguredCredits({
+    apiKey: creditsApiKey,
+    featureKey: "miniapp_canvas_image",
+    userId: params.userId,
+    defaultAmount: 40,
+    modelKey: params.model,
+    units: params.count,
+    workflowId: "flow_storyboard_image",
+    workflowName: "小程序 AI 作图",
+  });
 }
 
 function pushUniqueUrl(urls: string[], value: string | undefined | null) {
@@ -587,6 +609,7 @@ export async function POST(request: NextRequest) {
     };
 
     try {
+      await deductMiniappImageCredits({ userId, model: IMAGE2_WORKFLOW_MODEL, count });
       const { response } = await postStoryboardImageWorkflow({
         urls: resolveStoryboardImageWebhookUrls(),
         payload: webhookPayload,

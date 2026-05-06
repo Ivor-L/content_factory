@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import type { Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
-import { getRequestUserContext } from '@/lib/authServer';
+import { getApiKeyForUser, getRequestUserContext } from '@/lib/authServer';
 import { toInputJson } from '@/lib/jsonUtils';
 import { runBreakdownForMyNote } from '@/lib/imageTextMyNotes';
+import { deductConfiguredCredits } from '@/lib/creditBilling';
 
 type XhsDetailResponse = {
   message?: string;
@@ -547,7 +548,7 @@ async function syncMiniappCollectToWebReference(
     source: 'miniapp-xhs-collect',
   };
 
-  await db.viralReferenceItem.upsert({
+  return db.viralReferenceItem.upsert({
     where: {
       platform_sourceId: {
         platform: 'xiaohongshu',
@@ -692,6 +693,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: message }, { status: 502 });
   }
 
+  const apiKey = await getApiKeyForUser(userId);
+  if (!apiKey) {
+    return NextResponse.json({ error: '请先在设置页绑定 API Key' }, { status: 400 });
+  }
+  try {
+    await deductConfiguredCredits({
+      apiKey,
+      featureKey: 'xhs_collect',
+      userId,
+      defaultAmount: 5,
+      workflowId: 'xhs_collect',
+      workflowName: '小红书笔记采集',
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : '积分不足或扣费失败' },
+      { status: 402 },
+    );
+  }
+
   const payload = detail?.data || {};
   const title = pickTextAtPaths(payload, [
     '作品标题',
@@ -783,7 +804,7 @@ export async function POST(request: NextRequest) {
     source: 'miniapp-xhs-collect',
   };
 
-  const taskId = await prisma.$transaction(async (tx) => {
+  const saved = await prisma.$transaction(async (tx) => {
     const existing = await tx.imageTextReplicationTask.findFirst({
       where: {
         userId,
@@ -829,7 +850,7 @@ export async function POST(request: NextRequest) {
       savedTaskId = created.id;
     }
 
-    await syncMiniappCollectToWebReference(tx, {
+    const reference = await syncMiniappCollectToWebReference(tx, {
       userId,
       taskId: savedTaskId,
       sourceId: parsedSourceId,
@@ -844,15 +865,21 @@ export async function POST(request: NextRequest) {
       rawPayload,
     });
 
-    return savedTaskId;
+    return {
+      taskId: savedTaskId,
+      referenceId: reference.id,
+    };
   });
 
   if (!isVideoNote) {
-    void runBreakdownForMyNote(taskId);
+    void runBreakdownForMyNote(saved.taskId);
   }
 
   return NextResponse.json({
-    taskId,
+    taskId: saved.taskId,
+    sourceId: parsedSourceId,
+    sourceUrl: parsedSourceUrl,
+    referenceId: saved.referenceId,
     status: isVideoNote ? 'VIDEO_COLLECTED' : 'BREAKDOWN_PENDING',
     title,
     videoUrl,

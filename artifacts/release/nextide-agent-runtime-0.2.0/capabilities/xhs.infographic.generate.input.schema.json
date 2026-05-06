@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "xhs.infographic.generate input",
+  "type": "object",
+  "properties": {
+    "topic": {
+      "type": "string",
+      "description": "卡片主题。"
+    },
+    "content": {
+      "type": "string",
+      "description": "正文内容。"
+    },
+    "stylePresetId": {
+      "type": "string",
+      "description": "风格预设 ID。"
+    },
+    "pageCount": {
+      "type": "number",
+      "description": "生成页数。",
+      "default": 6
+    }
+  },
+  "required": [
+    "topic",
+    "content"
+  ],
+  "additionalProperties": true
+}

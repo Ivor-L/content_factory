@@ -27,7 +27,7 @@ export default function WorkDetailPage() {
   const [posterRatioMap, setPosterRatioMap] = useState<Record<string, number>>({});
 
   useLoad((query) => {
-    const cached = Taro.getStorageSync('WORK_DETAIL_ITEM');
+    const cached = normalizeStoredWorkDetailItem(Taro.getStorageSync('WORK_DETAIL_ITEM'));
     if (cached && (!query?.id || String(cached.id) === String(query.id))) {
       setItem(cached);
     }
@@ -535,6 +535,20 @@ function resolveVideoUrlFromItem(item: any): string {
   const exact = urls.find((url) => VIDEO_URL_RE.test(url));
   if (exact) return exact;
   return urls.find((url) => HTTP_URL_RE.test(url)) || '';
+}
+
+function normalizeStoredWorkDetailItem(value: unknown): Record<string, unknown> | null {
+  if (!value) return null;
+  if (typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value !== 'string') return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function collectImageUrls(value: unknown, depth = 0): string[] {

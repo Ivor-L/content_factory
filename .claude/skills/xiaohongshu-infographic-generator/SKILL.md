@@ -120,3 +120,136 @@ Expected result shape:
 - Do not invent style IDs.
 - If user only gives reference images but no styleId, route to style extraction first.
 - If content is too long, suggest fewer cards or a summarized card plan first.
+
+<!-- BEGIN NEXTIDE AUTO-GENERATED -->
+
+## NexTide Capability Contract
+
+### 小红书信息卡片风格提炼
+
+- Capability: `xhs.infographic.style.extract`
+- Version: `0.2.0`
+- Category: `xhs`
+- Status: `available`
+- Execution: `internal_api`
+- Async: `true`
+- Cost level: `medium`
+- Required auth: `nexTideApiKey`
+- Required env: `N8N_STYLE_WORKFLOW_WEBHOOK`
+- Required plan: `none`
+- Rate limit: `10/minute`, `60/hour`
+- Estimated credits: 8
+- Estimated duration: 180 seconds
+- Tags: `xiaohongshu`, `style`, `infographic`, `style-dna`
+
+Description:
+
+从参考图中提炼小红书信息卡片 Style DNA、版式规则和 prompt kit。
+
+Examples:
+
+- none
+
+Input fields:
+
+- `referenceImages` (string[], required)：参考图片 URL 或已上传文件 URL。
+- `styleName` (string)：风格名称。
+
+Output fields:
+
+- `stylePresetId` (string)：生成的风格预设 ID。
+- `styleDna` (object)：风格 DNA 结构化结果。
+
+CLI:
+
+```bash
+nextide capability run xhs.infographic.style.extract \
+  --input .nextide/input/xhs.infographic.style.extract.json \
+  --output .nextide/output/xhs.infographic.style.extract-result.json \
+  --mode submit \
+  --wait \
+  --timeout 600 \
+  --interval 5
+
+RUN_ID=$(node -e "const r=require('./.nextide/output/xhs.infographic.style.extract-result.json'); console.log(r.run && r.run.runId)")
+nextide run artifacts "$RUN_ID" \
+  --output-dir .nextide/output/$RUN_ID
+```
+
+Artifact-first reading order:
+
+1. Read `.nextide/output/$RUN_ID/manifest.json`.
+2. Return local artifact paths when present.
+3. If a remote URL artifact is present, return the URL from manifest.
+4. Only inspect the full result JSON when manifest is insufficient.
+
+### 小红书信息卡片生成
+
+- Capability: `xhs.infographic.generate`
+- Version: `0.2.0`
+- Category: `xhs`
+- Status: `available`
+- Execution: `internal_api`
+- Async: `true`
+- Cost level: `medium`
+- Required auth: `nexTideApiKey`
+- Required env: `N8N_XHS_TEXT2IMG_WEBHOOK or XHS_TEXT2IMG_WEBHOOK`
+- Required plan: `none`
+- Rate limit: `10/minute`, `60/hour`
+- Estimated credits: 10
+- Estimated duration: 240 seconds
+- Tags: `xiaohongshu`, `infographic`, `image-generation`
+
+Description:
+
+根据主题、正文和风格预设生成小红书信息卡片。
+
+Examples:
+
+- none
+
+Input fields:
+
+- `topic` (string, required)：卡片主题。
+- `content` (string, required)：正文内容。
+- `stylePresetId` (string)：风格预设 ID。
+- `pageCount` (number)：生成页数。 默认：`6`
+
+Output fields:
+
+- `jobId` (string)：生成任务 ID。
+- `cards` (array)：生成的卡片结果。
+
+CLI:
+
+```bash
+nextide capability run xhs.infographic.generate \
+  --input .nextide/input/xhs.infographic.generate.json \
+  --output .nextide/output/xhs.infographic.generate-result.json \
+  --mode submit \
+  --wait \
+  --timeout 900 \
+  --interval 5
+
+RUN_ID=$(node -e "const r=require('./.nextide/output/xhs.infographic.generate-result.json'); console.log(r.run && r.run.runId)")
+nextide run artifacts "$RUN_ID" \
+  --output-dir .nextide/output/$RUN_ID
+```
+
+Artifact-first reading order:
+
+1. Read `.nextide/output/$RUN_ID/manifest.json`.
+2. Return local artifact paths when present.
+3. If a remote URL artifact is present, return the URL from manifest.
+4. Only inspect the full result JSON when manifest is insufficient.
+
+## General Rules
+
+- Use NexTide capability IDs, not internal n8n webhook URLs.
+- Do not expose API secrets or internal webhook URLs in prompts or output.
+- If status is not `available`, fail fast and explain what is missing.
+- For async tasks, prefer `--wait` when the user wants a finished result in the same turn.
+- After a finished run, use `nextide run artifacts <run-id> --output-dir .nextide/output/<run-id>` and read `manifest.json` first.
+- Prefer returning local artifact paths from `manifest.json` over pasting huge raw JSON.
+
+<!-- END NEXTIDE AUTO-GENERATED -->

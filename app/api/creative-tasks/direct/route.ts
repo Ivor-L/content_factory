@@ -9,6 +9,7 @@ import { serializeTaskDetail } from "@/lib/creativeTaskFormatter";
 import type { CreativeStageKey } from "@/lib/creativeStages";
 import { syncTaskToSummary } from "@/lib/taskSummary";
 import { triggerCreativeScriptGeneration } from "@/lib/n8n";
+import { deductConfiguredCredits } from "@/lib/creditBilling";
 
 type DirectCreateBody = CreateCreativeTaskPayload & {
   targetStage?: CreativeStageKey;
@@ -41,6 +42,31 @@ export async function POST(request: NextRequest) {
     language: normalizedLanguage,
   };
 
+  const appUrl =
+    process.env.N8N_CALLBACK_BASE_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    "http://localhost:3000";
+  const callbackUrl = `${appUrl}/api/webhook/creative-task/script`;
+  const apiKey =
+    requestApiKey || (await getApiKeyForUser(userId).catch(() => null));
+  if (!apiKey) {
+    return NextResponse.json({ error: "请先在设置页绑定 API Key" }, { status: 400 });
+  }
+
+  try {
+    await deductConfiguredCredits({
+      apiKey,
+      featureKey: "creative_generation",
+      userId,
+      defaultAmount: 1,
+      workflowId: "creative_generation",
+      workflowName: "智能创作文案生成",
+    });
+  } catch (error) {
+    console.error("[creative-tasks/direct] deduct credits failed", error);
+    return NextResponse.json({ error: "积分不足或扣费失败" }, { status: 402 });
+  }
+
   let task;
   try {
     task = await createCreativeTaskWithAssets({ userId, payload: createPayload });
@@ -59,14 +85,6 @@ export async function POST(request: NextRequest) {
 
   // 触发 n8n 文案生成工作流（异步，不阻塞响应）
   try {
-    const appUrl =
-      process.env.N8N_CALLBACK_BASE_URL ||
-      process.env.NEXT_PUBLIC_APP_URL ||
-      "http://localhost:3000";
-    const callbackUrl = `${appUrl}/api/webhook/creative-task/script`;
-    const apiKey =
-      requestApiKey || (await getApiKeyForUser(userId).catch(() => null));
-
     const wordCount =
       payload.goal && typeof payload.goal === "object" && "targetWordCount" in payload.goal
         ? (payload.goal as { targetWordCount?: number }).targetWordCount
@@ -79,7 +97,7 @@ export async function POST(request: NextRequest) {
       wordCount,
       styleRules: payload.styleRules as Record<string, any> | null ?? null,
       language: typeof normalizedLanguage === "string" ? normalizedLanguage : undefined,
-      apiKey: apiKey ?? undefined,
+      apiKey,
       callbackUrl,
       appUrl,
     }).catch((err) => {

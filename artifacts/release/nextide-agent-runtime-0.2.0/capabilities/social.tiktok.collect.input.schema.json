@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "social.tiktok.collect input",
+  "type": "object",
+  "properties": {
+    "mode": {
+      "type": "string",
+      "description": "采集模式：keyword / creator / video。",
+      "enum": [
+        "keyword",
+        "creator",
+        "video"
+      ],
+      "default": "keyword"
+    },
+    "queries": {
+      "type": "array",
+      "description": "keyword 模式下的搜索关键词。"
+    },
+    "keywords": {
+      "type": "array",
+      "description": "keyword 模式下的搜索关键词别名。"
+    },
+    "targets": {
+      "type": "array",
+      "description": "creator 模式下的账号名或账号 URL，例如 @creator。"
+    },
+    "creators": {
+      "type": "array",
+      "description": "creator 模式下的账号名列表。"
+    },
+    "urls": {
+      "type": "array",
+      "description": "video 模式下的视频 URL，或 creator 模式下的账号 URL。"
+    },
+    "limit": {
+      "type": "number",
+      "description": "目标采集数量。",
+      "default": 30
+    },
+    "sortBy": {
+      "type": "string",
+      "description": "排序方式：likes / views / comments / shares / recent。",
+      "default": "likes"
+    },
+    "collectComments": {
+      "type": "boolean",
+      "description": "是否采集评论。",
+      "default": false
+    }
+  },
+  "required": [],
+  "additionalProperties": true
+}

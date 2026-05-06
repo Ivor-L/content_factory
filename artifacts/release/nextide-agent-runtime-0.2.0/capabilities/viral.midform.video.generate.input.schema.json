@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "viral.midform.video.generate input",
+  "type": "object",
+  "properties": {
+    "theme": {
+      "type": "string",
+      "description": "中视频主题。",
+      "default": "3d-skeleton"
+    },
+    "topic": {
+      "type": "string",
+      "description": "视频主题或选题。"
+    },
+    "duration": {
+      "type": "number",
+      "description": "目标时长，秒。",
+      "default": 60
+    }
+  },
+  "required": [
+    "theme",
+    "topic"
+  ],
+  "additionalProperties": true
+}

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { auditAgentCapabilityCreditConfigs } from "@/lib/agent-capabilities/credit-audit";
+import { listAgentCapabilities } from "@/lib/agent-capabilities/registry";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { getRequestUserContext } from "@/lib/authServer";
 
@@ -41,13 +43,26 @@ export async function GET(request: NextRequest) {
     statsMap.set(stat.featureKey, entry);
   }
 
+  const agentUsageMap = new Map<string, Array<{ id: string; title: string; skillName: string }>>();
+  for (const capability of listAgentCapabilities()) {
+    if (!capability.featureKey) continue;
+    const entry = agentUsageMap.get(capability.featureKey) ?? [];
+    entry.push({ id: capability.id, title: capability.title, skillName: capability.skillName });
+    agentUsageMap.set(capability.featureKey, entry);
+  }
+
   const data = configs.map((c) => ({
     ...c,
     successCount: statsMap.get(c.featureKey)?.successCount ?? 0,
     failureCount: statsMap.get(c.featureKey)?.failureCount ?? 0,
+    agentCapabilities: agentUsageMap.get(c.featureKey) ?? [],
+    usedByAgent: (agentUsageMap.get(c.featureKey)?.length ?? 0) > 0,
   }));
 
-  return NextResponse.json({ data });
+  return NextResponse.json({
+    data,
+    agentCreditAudit: await auditAgentCapabilityCreditConfigs(listAgentCapabilities()),
+  });
 }
 
 export async function POST(request: NextRequest) {

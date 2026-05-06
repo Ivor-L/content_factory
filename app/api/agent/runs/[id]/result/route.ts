@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
+import { assertAgentRunReadable, requireAgentApiKey, agentAuthErrorResponse } from '@/lib/agent-auth/api-key';
 import { resolveBusinessStatus } from '@/lib/agent-runs/business-status';
+import { normalizeAgentRunResult } from '@/lib/agent-runs/normalize';
 import { getAgentCapabilityRunRecord, serializeAgentRunRecord } from '@/lib/agent-runs/store';
 
 export async function GET(
@@ -14,6 +16,13 @@ export async function GET(
       { error: { code: 'run_not_found', message: `Run ${id} was not found` } },
       { status: 404 },
     );
+  }
+
+  try {
+    const auth = await requireAgentApiKey(_request);
+    assertAgentRunReadable(auth, record);
+  } catch (error) {
+    return agentAuthErrorResponse(error);
   }
 
   const run = record.businessType && record.businessId
@@ -52,5 +61,5 @@ export async function GET(
     );
   }
 
-  return NextResponse.json({ run, result: run.result, artifacts: run.artifacts || [] });
+  return NextResponse.json(normalizeAgentRunResult(run));
 }

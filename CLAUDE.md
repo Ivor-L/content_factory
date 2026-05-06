@@ -84,6 +84,18 @@ docs/                    # API 文档（云雾API Apifox 文件）
 - `nano-banana-pro` 映射至 `gemini-3.1-pro-preview`（原 `gemini-3-pro-preview` 已于 2026-03-26 下线）
 - 模型别名映射位置：`lib/canvasCredits.ts` 和 `app/api/canvas/images/generations/route.ts`
 
+**积分计费接入（重要）**
+- 新增 Web、小程序、Agent/Skill 的付费功能必须接入后台 `/admin/credits`，不得只在代码里硬编码价格。
+- 新功能从设计阶段就要预留 `featureKey`；如果同一功能存在多模型/多工作流差异价，必须使用 `featureKey:modelKey` 预留后台配置位。
+- 稳定功能标识使用 `featureKey`；同一功能不同模型/工作流价格不同，使用 `featureKey:modelKey` 配置。
+- 代码优先使用 `deductConfiguredCredits()`；Canvas 既有链路可使用 `getCreditCostForModel()` + `deductCanvasCredits()`。
+- 模型级计价优先级：`featureKey:normalizedModelKey` → `featureKey:rawModelKey` → `featureKey` → 代码默认值。
+- Agent capability 必须声明 `featureKey`；模型/工作流差异定价时声明 `creditModelKey`。
+- 扣费失败必须阻断付费生成/分析任务继续触发并返回 402；回调扣费链路必须保证幂等。
+- 智能复刻、图文复刻、分镜板这类复合流程，必须按阶段拆价，不得只挂一个总价 key。
+- 成片剪辑、字幕、分镜视频等后链路能力必须分别挂后台配置，不要只保留一个拼接总价。
+- 仅 Seedance 这类支持用户选时长的视频链路按秒计费，后台 `amount` 表示每秒单价，扣费时按 `单价 × 秒数` 计算。
+
 ---
 
 ## 禁止操作（红线规则）

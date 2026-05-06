@@ -1,0 +1,36 @@
+{
+  "ok": true,
+  "apiBaseUrl": "https://atomx.top",
+  "configPath": "/Users/kaka/.nextide/config.json",
+  "checks": [
+    {
+      "name": "api_base_url",
+      "ok": true,
+      "details": {
+        "apiBaseUrl": "https://atomx.top"
+      }
+    },
+    {
+      "name": "capability_list",
+      "ok": true,
+      "details": {
+        "count": 14
+      }
+    },
+    {
+      "name": "device_code_endpoint",
+      "ok": true,
+      "details": {
+        "hasDeviceCode": true,
+        "verificationUri": "https://atomx.top/agent-login?user_code=478-410"
+      }
+    },
+    {
+      "name": "stored_nexTide_api_key",
+      "ok": true,
+      "details": {
+        "present": true
+      }
+    }
+  ]
+}

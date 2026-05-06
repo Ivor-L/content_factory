@@ -98,3 +98,79 @@ Always separate:
 - Do not invent transcript or prompts if extraction is pending.
 - If only a platform post URL is provided, collect it first with the relevant collector skill.
 - Treat this as a source-prep capability, not final video generation.
+
+<!-- BEGIN NEXTIDE AUTO-GENERATED -->
+
+## NexTide Capability Contract
+
+### 爆款拆解并反推视频提示词
+
+- Capability: `viral.breakdown.video_prompts`
+- Version: `0.2.0`
+- Category: `video`
+- Status: `available`
+- Execution: `internal_api`
+- Async: `true`
+- Cost level: `medium`
+- Required auth: `nexTideApiKey`
+- Required env: `none`
+- Required plan: `none`
+- Rate limit: `10/minute`, `60/hour`
+- Estimated credits: 8
+- Estimated duration: 180 seconds
+- Tags: `viral-breakdown`, `video-prompts`, `replication`
+
+Description:
+
+拆解爆款视频/图文结构，并反推可用于视频模型的提示词与 reference contract。MVP 接入图文复刻任务创建与视频文案提取链路。
+
+Examples:
+
+- none
+
+Input fields:
+
+- `referenceUrl` (string)：参考爆款链接。
+- `referenceVideo` (string)：参考视频 URL。
+- `targetProduct` (object)：目标产品信息。
+- `promptProvider` (string)：目标视频模型或提示词格式。 默认：`"seedance"`
+
+Output fields:
+
+- `breakdown` (object)：爆款拆解结果。
+- `referenceContract` (object)：学习/禁止复制契约。
+- `videoPrompts` (array)：分段视频提示词。
+
+CLI:
+
+```bash
+nextide capability run viral.breakdown.video_prompts \
+  --input .nextide/input/viral.breakdown.video_prompts.json \
+  --output .nextide/output/viral.breakdown.video_prompts-result.json \
+  --mode submit \
+  --wait \
+  --timeout 900 \
+  --interval 5
+
+RUN_ID=$(node -e "const r=require('./.nextide/output/viral.breakdown.video_prompts-result.json'); console.log(r.run && r.run.runId)")
+nextide run artifacts "$RUN_ID" \
+  --output-dir .nextide/output/$RUN_ID
+```
+
+Artifact-first reading order:
+
+1. Read `.nextide/output/$RUN_ID/manifest.json`.
+2. Return local artifact paths when present.
+3. If a remote URL artifact is present, return the URL from manifest.
+4. Only inspect the full result JSON when manifest is insufficient.
+
+## General Rules
+
+- Use NexTide capability IDs, not internal n8n webhook URLs.
+- Do not expose API secrets or internal webhook URLs in prompts or output.
+- If status is not `available`, fail fast and explain what is missing.
+- For async tasks, prefer `--wait` when the user wants a finished result in the same turn.
+- After a finished run, use `nextide run artifacts <run-id> --output-dir .nextide/output/<run-id>` and read `manifest.json` first.
+- Prefer returning local artifact paths from `manifest.json` over pasting huge raw JSON.
+
+<!-- END NEXTIDE AUTO-GENERATED -->

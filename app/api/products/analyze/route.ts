@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 import { analyzeProduct } from '@/lib/n8n';
 import prisma from '@/lib/prisma';
 import { getRequestUserContext } from '@/lib/authServer';
-import { deductCredits } from '@/lib/credits';
-import { getCreditCost } from '@/lib/creditCosts';
+import { deductConfiguredCredits } from '@/lib/creditBilling';
 import { logCreditUsage } from '@/lib/logCreditUsage';
 
 const PRODUCT_ANALYSIS_WORKFLOW_ID = 'flow_product_dna';
@@ -74,14 +73,19 @@ export async function POST(request: Request) {
         });
 
         // 触发成功后扣费
-        const amount = await getCreditCost('product_analysis', 2);
-        deductCredits(apiKey, {
-          amount,
-          reason: 'product_analysis',
-          workflowId: PRODUCT_ANALYSIS_WORKFLOW_ID,
-          workflowName: PRODUCT_ANALYSIS_WORKFLOW_NAME,
-        }).catch((e) => console.error('[product/analyze] deduct credits failed:', e));
-        logCreditUsage({ featureKey: 'product_analysis', userId: context.userId, amount, success: true });
+        try {
+          await deductConfiguredCredits({
+            apiKey,
+            featureKey: 'product_analysis',
+            userId: context.userId,
+            defaultAmount: 2,
+            workflowId: PRODUCT_ANALYSIS_WORKFLOW_ID,
+            workflowName: PRODUCT_ANALYSIS_WORKFLOW_NAME,
+          });
+        } catch (error) {
+          console.error('[product/analyze] deduct credits failed:', error);
+          return NextResponse.json({ error: '积分不足或扣费失败' }, { status: 402 });
+        }
 
         const sellingPoints = analysis.workflowData ?? { selling_points: analysis.sellingPoints };
         const hasWorkflowData = Boolean(analysis.workflowData);
@@ -121,14 +125,19 @@ export async function POST(request: Request) {
       workflowName: PRODUCT_ANALYSIS_WORKFLOW_NAME,
     });
 
-    const amount = await getCreditCost('product_analysis', 2);
-    deductCredits(apiKey, {
-      amount,
-      reason: 'product_analysis',
-      workflowId: PRODUCT_ANALYSIS_WORKFLOW_ID,
-      workflowName: PRODUCT_ANALYSIS_WORKFLOW_NAME,
-    }).catch((e) => console.error('[product/analyze] deduct credits failed:', e));
-    logCreditUsage({ featureKey: 'product_analysis', userId: context.userId, amount, success: true });
+    try {
+      await deductConfiguredCredits({
+        apiKey,
+        featureKey: 'product_analysis',
+        userId: context.userId,
+        defaultAmount: 2,
+        workflowId: PRODUCT_ANALYSIS_WORKFLOW_ID,
+        workflowName: PRODUCT_ANALYSIS_WORKFLOW_NAME,
+      });
+    } catch (error) {
+      console.error('[product/analyze] deduct credits failed:', error);
+      return NextResponse.json({ error: '积分不足或扣费失败' }, { status: 402 });
+    }
 
     return NextResponse.json({
       ...analysis,

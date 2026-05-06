@@ -1244,6 +1244,27 @@ model AgentCliDeviceLogin {
   @@schema("public")
 }
 
+model AgentCapabilityCreditHold {
+  id               String    @id
+  runId            String    @unique @map("run_id")
+  userId           String    @map("user_id") @db.Uuid
+  capabilityId     String    @map("capability_id")
+  featureKey       String    @map("feature_key")
+  estimatedCredits Int       @default(0) @map("estimated_credits")
+  status           String    @default("held")
+  reason           String?
+  metadataJson     Json?     @map("metadata_json")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  finishedAt       DateTime? @map("finished_at")
+
+  @@index([userId])
+  @@index([capabilityId])
+  @@index([status])
+  @@map("agent_capability_credit_holds")
+  @@schema("public")
+}
+
 model AgentCapabilityRun {
   id             String    @id
   capabilityId   String    @map("capability_id")

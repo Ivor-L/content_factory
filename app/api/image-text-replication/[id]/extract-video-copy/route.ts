@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { getRequestUserContext } from '@/lib/authServer';
+import { getApiKeyForUser, getRequestUserContext } from '@/lib/authServer';
 import { toInputJson } from '@/lib/jsonUtils';
+import { deductConfiguredCredits } from '@/lib/creditBilling';
 
 const webhookUrl =
   process.env.N8N_EXTRACT_VIDEO_TEXT_WEBHOOK ||
@@ -130,6 +131,27 @@ export async function POST(
   const videoUrl = resolveVideoUrl(note.generatedImages);
   if (!videoUrl) {
     return NextResponse.json({ error: '未找到可提取的视频地址' }, { status: 400 });
+  }
+
+  const apiKey = await getApiKeyForUser(userId).catch(() => null);
+  if (!apiKey) {
+    return NextResponse.json({ error: '请先在设置页绑定 API Key' }, { status: 400 });
+  }
+
+  try {
+    await deductConfiguredCredits({
+      apiKey,
+      featureKey: 'image_text_replication:extract-video-copy',
+      userId,
+      defaultAmount: 2,
+      modelKey: 'extract-video-copy',
+      workflowId: 'flow_image_text_replication',
+      workflowName: '图文复刻',
+      reason: 'image_text_replication:extract-video-copy',
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '积分不足';
+    return NextResponse.json({ error: message }, { status: 402 });
   }
 
   const callbackBase = (process.env.N8N_CALLBACK_BASE_URL || '').replace(/\/+$/, '');

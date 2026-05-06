@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "xhs.card.layout input",
+  "type": "object",
+  "properties": {
+    "markdown": {
+      "type": "string",
+      "description": "要排版的 Markdown 正文。"
+    },
+    "title": {
+      "type": "string",
+      "description": "卡片标题。为空时自动从 Markdown 提取。"
+    },
+    "templateId": {
+      "type": "string",
+      "description": "卡片模板 ID。",
+      "default": "minimal"
+    },
+    "includeCover": {
+      "type": "boolean",
+      "description": "是否生成封面页。",
+      "default": true
+    },
+    "maxPages": {
+      "type": "number",
+      "description": "最多生成页数。",
+      "default": 8
+    },
+    "persist": {
+      "type": "boolean",
+      "description": "是否保存为创作任务。",
+      "default": false
+    }
+  },
+  "required": [
+    "markdown"
+  ],
+  "additionalProperties": true
+}

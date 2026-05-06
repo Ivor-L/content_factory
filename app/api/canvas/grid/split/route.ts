@@ -5,8 +5,7 @@ import {
   RunningHubNodePatch,
 } from "@/lib/runninghub";
 import { getRequestUserContext } from "@/lib/authServer";
-import { deductCredits } from "@/lib/credits";
-import { getCreditCost } from "@/lib/creditCosts";
+import { deductConfiguredCredits } from "@/lib/creditBilling";
 
 const GRID_SPLIT_WORKFLOW_ID =
   process.env.RUNNINGHUB_GRID_SPLIT_WORKFLOW_ID || "2025911236491218945";
@@ -36,12 +35,14 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const creditCost = await getCreditCost("canvas_grid_split", 100);
-    await deductCredits(apiKey, {
-      amount: creditCost,
+    const creditCharge = await deductConfiguredCredits({
+      apiKey,
+      featureKey: "canvas_grid_split",
+      userId,
+      defaultAmount: 100,
+      modelKey: GRID_SPLIT_WORKFLOW_ID,
       workflowId: GRID_SPLIT_WORKFLOW_ID,
       workflowName: "Canvas Grid Split",
-      reason: "canvas_grid_split",
     });
 
     const nodeInfoList: RunningHubNodePatch[] = [
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
       userId,
       imageUrl: imageUrl.substring(0, 50),
       nodeId,
-      creditCost,
+      creditCost: creditCharge.amount,
     });
 
     const task = await createRunningHubTask({

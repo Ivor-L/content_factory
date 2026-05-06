@@ -1,0 +1,15 @@
+{
+  "creator": "@quinclips3",
+  "creatorUrl": "https://www.tiktok.com/@quinclips3",
+  "platform": "tiktok",
+  "collectLimit": 20,
+  "topN": 5,
+  "sortBy": "likes",
+  "language": "zh-CN",
+  "includeVideoBreakdown": true,
+  "includeScriptTemplates": true,
+  "productContext": {
+    "name": "便携榨汁杯",
+    "sellingPoints": ["便携", "无线", "易清洗"]
+  }
+}

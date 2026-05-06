@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "xhs.infographic.style.extract input",
+  "type": "object",
+  "properties": {
+    "referenceImages": {
+      "type": "array",
+      "description": "参考图片 URL 或已上传文件 URL。"
+    },
+    "styleName": {
+      "type": "string",
+      "description": "风格名称。"
+    }
+  },
+  "required": [
+    "referenceImages"
+  ],
+  "additionalProperties": true
+}

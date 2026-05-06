@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "reference.decode input",
+  "type": "object",
+  "properties": {
+    "referenceSummary": {
+      "type": "string",
+      "description": "参考视频/首帧/分镜/benchmark 的描述或已拆解结果。"
+    },
+    "targetProduct": {
+      "type": "string",
+      "description": "要迁移到的新产品或内容主题。"
+    }
+  },
+  "required": [
+    "referenceSummary"
+  ],
+  "additionalProperties": true
+}

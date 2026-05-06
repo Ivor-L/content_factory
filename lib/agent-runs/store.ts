@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { settleAgentCapabilityCreditHoldForRun } from '@/lib/agent-capabilities/quota-preflight';
 import prisma from '@/lib/prisma';
 import type {
   AgentCapabilityRunInput,
@@ -65,7 +66,7 @@ export async function updateAgentCapabilityRunFromResult(
   result: AgentCapabilityRunResult,
   business?: AgentRunBusinessLink,
 ) {
-  return prisma.agentCapabilityRun.upsert({
+  const record = await prisma.agentCapabilityRun.upsert({
     where: { id: result.runId },
     create: {
       id: result.runId,
@@ -95,6 +96,20 @@ export async function updateAgentCapabilityRunFromResult(
       finishedAt: result.finishedAt ? new Date(result.finishedAt) : finishedAtForStatus(result.status),
     },
   });
+
+  await settleAgentCapabilityCreditHoldForRun({
+    runId: result.runId,
+    status: result.status,
+    errorMessage: result.error?.message,
+  }).catch((error) => {
+    console.error('[agent-runs] failed to settle credit hold', {
+      runId: result.runId,
+      status: result.status,
+      error,
+    });
+  });
+
+  return record;
 }
 
 export async function markAgentCapabilityRunFailed(input: {
@@ -103,7 +118,7 @@ export async function markAgentCapabilityRunFailed(input: {
   mode: AgentCapabilityRunMode;
   error: { code: string; message: string; details?: unknown };
 }) {
-  return prisma.agentCapabilityRun.upsert({
+  const record = await prisma.agentCapabilityRun.upsert({
     where: { id: input.runId },
     create: {
       id: input.runId,
@@ -119,6 +134,19 @@ export async function markAgentCapabilityRunFailed(input: {
       finishedAt: new Date(),
     },
   });
+
+  await settleAgentCapabilityCreditHoldForRun({
+    runId: input.runId,
+    status: 'failed',
+    errorMessage: input.error.message,
+  }).catch((error) => {
+    console.error('[agent-runs] failed to release credit hold after failure', {
+      runId: input.runId,
+      error,
+    });
+  });
+
+  return record;
 }
 
 export async function getAgentCapabilityRunRecord(runId: string) {

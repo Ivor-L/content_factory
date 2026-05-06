@@ -1,7 +1,9 @@
-import { View, Text, ScrollView } from '@tarojs/components';
-import Taro, { useLoad } from '@tarojs/taro';
+import { View, Text, ScrollView, Button } from '@tarojs/components';
+import Taro, { useLoad, useShareAppMessage } from '@tarojs/taro';
 import { useMemo, useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
+import { buildMiniappReferralPath } from '../../utils/referrals';
+import homeShareImage from '../../assets/videos/hero-poster.jpg';
 import './index.sass';
 
 type Invitee = {
@@ -119,6 +121,14 @@ export default function ReferralsPage() {
     return `${__API_BASE_URL__}/register?ref=${encodeURIComponent(code)}`;
   }, [payload?.shareCode]);
 
+  const miniappSharePath = useMemo(() => buildMiniappReferralPath(payload?.shareCode), [payload?.shareCode]);
+
+  useShareAppMessage(() => ({
+    title: '我在用小蚁AI做爆款内容，一起领取算力体验',
+    path: miniappSharePath,
+    imageUrl: homeShareImage,
+  }));
+
   const warningText = useMemo(() => {
     if (!payload?.warnings?.length) return '';
     return '邀请明细暂时不可用，专属链接仍可正常分享。';
@@ -140,6 +150,12 @@ export default function ReferralsPage() {
       Taro.showToast({ title: '链接已复制', icon: 'success' });
     } catch {
       Taro.showToast({ title: '复制失败', icon: 'none' });
+    }
+  };
+
+  const handleNativeShareFallback = () => {
+    if (!payload?.shareCode) {
+      Taro.showToast({ title: '请稍后再分享', icon: 'none' });
     }
   };
 
@@ -175,8 +191,16 @@ export default function ReferralsPage() {
             <Text className='ref-link-label'>专属链接</Text>
             <Text className='ref-link-value'>{shareLink || '暂无链接'}</Text>
             {!!warningText && <Text className='ref-warning'>{warningText}</Text>}
+            <Button
+              className='ref-copy-btn'
+              openType='share'
+              disabled={!payload?.shareCode}
+              onClick={handleNativeShareFallback}
+            >
+              <Text className='ref-copy-btn-text'>分享给微信好友</Text>
+            </Button>
             <View className='ref-copy-btn' onClick={handleCopy}>
-              <Text className='ref-copy-btn-text'>复制链接</Text>
+              <Text className='ref-copy-btn-text'>复制网页登录链接</Text>
             </View>
           </View>
 

@@ -1,0 +1,62 @@
+{
+  "ok": true,
+  "apiBaseUrl": "https://atomx.top",
+  "configPath": "/Users/kaka/.nextide/config.json",
+  "checks": [
+    {
+      "name": "api_base_url",
+      "ok": true,
+      "details": {
+        "apiBaseUrl": "https://atomx.top"
+      }
+    },
+    {
+      "name": "capability_list",
+      "ok": true,
+      "details": {
+        "count": 14
+      }
+    },
+    {
+      "name": "device_code_endpoint",
+      "ok": true,
+      "details": {
+        "hasDeviceCode": true,
+        "verificationUri": "https://atomx.top/agent-login?user_code=588-386"
+      }
+    },
+    {
+      "name": "stored_nexTide_api_key",
+      "ok": true,
+      "details": {
+        "present": true
+      }
+    },
+    {
+      "name": "capability_environment_metadata",
+      "ok": true,
+      "details": {
+        "capabilitiesWithEnvHints": 0,
+        "envHints": []
+      }
+    },
+    {
+      "name": "capability_credit_config_audit",
+      "ok": true,
+      "details": {
+        "ok": false,
+        "total": 14,
+        "missingFeatureKey": [
+          "motion.replication.image_to_video",
+          "social.tiktok.collect",
+          "social.instagram.collect",
+          "social.facebook.collect",
+          "viral.breakdown.video_prompts",
+          "social.comments.collect",
+          "content.wechat.longform.write"
+        ],
+        "note": "Server does not expose creditAudit yet; checked featureKey presence only."
+      }
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "platform": "tiktok",
+  "mode": "creator",
+  "targets": [
+    "@quinclips3"
+  ],
+  "limit": 20,
+  "sortBy": "likes"
+}

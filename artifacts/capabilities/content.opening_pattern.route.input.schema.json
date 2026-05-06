@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "content.opening_pattern.route input",
+  "type": "object",
+  "properties": {
+    "brief": {
+      "type": "string",
+      "description": "短视频任务、产品、观众或已有开头想法。"
+    },
+    "segmentType": {
+      "type": "string",
+      "description": "hook / benefit / cta / creator / lifestyle / testimonial。"
+    }
+  },
+  "required": [
+    "brief"
+  ],
+  "additionalProperties": true
+}

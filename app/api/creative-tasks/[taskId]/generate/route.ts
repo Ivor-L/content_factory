@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getRequestUserContext } from "@/lib/authServer";
+import { getApiKeyForUser, getRequestUserContext } from "@/lib/authServer";
 import { assertStageKey } from "@/lib/creativeTaskService";
 import { generateStageForTask } from "@/lib/creativeAi";
+import { deductConfiguredCredits } from "@/lib/creditBilling";
 
 type Params = {
   params: Promise<{ taskId: string }>;
@@ -28,6 +29,19 @@ export async function POST(request: NextRequest, { params }: Params) {
 
   const { taskId } = await params;
   try {
+    const apiKey = await getApiKeyForUser(userId);
+    if (!apiKey) {
+      return NextResponse.json({ error: "请先在设置页绑定 API Key" }, { status: 400 });
+    }
+    await deductConfiguredCredits({
+      apiKey,
+      featureKey: "creative_stage_generation",
+      userId,
+      defaultAmount: 1,
+      modelKey: stage,
+      workflowId: `creative_stage:${stage}`,
+      workflowName: `创作阶段生成:${stage}`,
+    });
     const result = await generateStageForTask(taskId, userId, stage);
     return NextResponse.json({ data: result });
   } catch (error) {

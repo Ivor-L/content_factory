@@ -258,22 +258,23 @@ export default function LoginPage() {
   const isNexTideTenant = tenantSlug === 'nextide' || tenant?.name?.toLowerCase() === 'nextide';
   const isJubaoPenTenant = tenantSlug === 'jubaopen' || tenant?.name?.includes('聚保盆');
   const loginLogoWrapperClass = cn(
-    "mb-8 flex justify-center lg:justify-start"
+    "mb-5 flex justify-center lg:mb-6 lg:justify-start"
   );
   const loginLogoScaleClass = cn(
     "origin-center lg:origin-left",
     isNexTideTenant ? "scale-[0.28]" : isJubaoPenTenant ? "scale-[0.25]" : "scale-50"
   );
   const loginLogoSize: 'sm' | 'md' | 'lg' = isNexTideTenant ? 'md' : 'sm';
+  const loginContentFrameClass = "mx-auto w-full max-w-[400px] lg:-translate-x-8 lg:-translate-y-6 xl:-translate-x-12 xl:-translate-y-8";
 
   if (!mounted) return null;
 
   return (
-    <div className="flex min-h-screen w-full bg-white dark:bg-black font-sans selection:bg-[var(--tenant-primary)] selection:text-[var(--tenant-primary-foreground)]">
+    <div className="flex h-dvh max-h-dvh w-full overflow-hidden bg-white font-sans selection:bg-[var(--tenant-primary)] selection:text-[var(--tenant-primary-foreground)] dark:bg-black">
       {/* Left Panel - Content */}
-      <div className="w-full lg:w-3/5 flex flex-col justify-center p-8 md:p-12 lg:p-24 relative z-10 text-black dark:text-white">
+      <div className="relative z-10 flex h-full w-full flex-col justify-center overflow-hidden px-6 pb-6 pt-20 text-black dark:text-white sm:px-8 sm:pb-8 lg:w-3/5 lg:px-16 lg:py-8 xl:px-24">
         {/* Main Content */}
-        <div className="w-full max-w-[400px] mx-auto">
+        <div className={loginContentFrameClass}>
             {/* Logo */}
             <div className={loginLogoWrapperClass}>
                 <Link
@@ -297,14 +298,14 @@ export default function LoginPage() {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
                     >
-                        <h1 className="text-3xl font-medium text-black dark:text-white mb-2 text-center lg:text-left">
+                        <h1 className="mb-2 text-center text-2xl font-medium text-black dark:text-white sm:text-3xl lg:text-left">
                             {t.auth?.enterCode || 'Enter verification code'}
                         </h1>
-                        <p className="text-gray-500 dark:text-gray-300 mb-10 text-center lg:text-left">
+                        <p className="mb-6 text-center text-sm text-gray-500 dark:text-gray-300 sm:mb-8 sm:text-base lg:text-left">
                             {t.auth?.sentTo || 'We sent a code to'} <span className="font-medium text-black dark:text-white">{email}</span>
                         </p>
 
-                        <form onSubmit={handleVerifyOtp} className="space-y-6">
+                        <form onSubmit={handleVerifyOtp} className="space-y-5 sm:space-y-6">
                             <div className="space-y-2">
                                 <label htmlFor="otp" className="block text-sm font-medium text-gray-700 dark:text-gray-200 ml-1">
                                     {t.auth?.codeLabel || 'Verification Code'}
@@ -321,7 +322,7 @@ export default function LoginPage() {
                                 />
                             </div>
 
-                            <div className="space-y-3 pt-4">
+                            <div className="space-y-3 pt-2 sm:pt-4">
                                 <button
                                     type="submit"
                                     disabled={loading}
@@ -350,14 +351,14 @@ export default function LoginPage() {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
                     >
-                        <h1 className="text-3xl font-medium text-black dark:text-white mb-10 text-center lg:text-left">
+                        <h1 className="mb-6 text-center text-2xl font-medium text-black dark:text-white sm:mb-8 sm:text-3xl lg:text-left">
                             {loginMethod === 'magic_link' 
                                 ? (t.auth?.signInTitle || 'Sign in with your email')
                                 : (t.auth?.signInWithPassword || 'Sign in with password')
                             }
                         </h1>
 
-                        <form onSubmit={loginMethod === 'magic_link' ? handleSendOtp : handlePasswordLogin} className="space-y-6">
+                        <form onSubmit={loginMethod === 'magic_link' ? handleSendOtp : handlePasswordLogin} className="space-y-5 sm:space-y-6">
                             <div className="space-y-2">
                                 <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-200 ml-1">
                                     {t.auth?.emailLabel || 'Email'}
@@ -389,7 +390,7 @@ export default function LoginPage() {
                                 </div>
                             )}
 
-                            <div className="space-y-3 pt-4">
+                            <div className="space-y-3 pt-2 sm:pt-4">
                                 <button
                                     type="submit"
                                     disabled={loading || (loginMethod === 'magic_link' && cooldown > 0)}
@@ -415,7 +416,7 @@ export default function LoginPage() {
                             </div>
                         </form>
 
-                        <div className="mt-8 flex items-center justify-between text-sm">
+                        <div className="mt-5 flex items-center justify-between text-sm sm:mt-6">
                             <div className="flex items-center gap-1 text-gray-500 dark:text-gray-300">
                             </div>
 
@@ -432,7 +433,7 @@ export default function LoginPage() {
         </div>
 
         {/* Footer */}
-        <div className="mt-8 w-full max-w-[400px] mx-auto">
+        <div className={cn(loginContentFrameClass, "mt-5 sm:mt-6")}>
           <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-300 text-left">
               <button
                   type="button"
@@ -447,7 +448,7 @@ export default function LoginPage() {
       </div>
 
       {/* Right Panel - Visual */}
-      <div className="hidden lg:flex lg:w-2/5 items-center justify-center relative overflow-hidden bg-black">
+      <div className="relative hidden h-full items-center justify-center overflow-hidden bg-black lg:flex lg:w-2/5">
         <video
           className="absolute inset-0 h-full w-full object-cover object-center"
           autoPlay
@@ -483,7 +484,7 @@ export default function LoginPage() {
       </div>
 
       {/* Mobile Language Switcher */}
-      <div className="absolute top-8 right-8 lg:hidden z-20 flex gap-2">
+      <div className="absolute right-6 top-6 z-20 flex gap-2 sm:right-8 sm:top-8 lg:hidden">
           <button
               onClick={toggleLanguage}
               className="p-2 rounded-full border border-gray-200 text-gray-500 hover:text-black transition-colors bg-white/80"

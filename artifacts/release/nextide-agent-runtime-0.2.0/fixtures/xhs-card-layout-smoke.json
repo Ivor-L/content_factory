@@ -1,0 +1,8 @@
+{
+  "markdown": "# NexTide Skills 测试卡片\n\n这是一个用于验证 xhs.card.layout capability 的最小 Markdown。\n\n- 支持 Markdown 输入\n- 输出小红书 3:4 卡片\n- 通过 NexTide CLI 调用\n\n> 这是一次 smoke test。",
+  "title": "NexTide Skills 测试",
+  "templateId": "minimal",
+  "includeCover": true,
+  "maxPages": 4,
+  "persist": false
+}

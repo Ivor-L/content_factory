@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "social.facebook.collect input",
+  "type": "object",
+  "properties": {
+    "queries": {
+      "type": "array",
+      "description": "关键词或页面。"
+    },
+    "urls": {
+      "type": "array",
+      "description": "帖子或页面 URL。"
+    },
+    "limit": {
+      "type": "number",
+      "description": "目标采集数量。",
+      "default": 30
+    }
+  },
+  "required": [],
+  "additionalProperties": true
+}

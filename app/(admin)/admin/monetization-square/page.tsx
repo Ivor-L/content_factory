@@ -189,7 +189,7 @@ function createShareCategory(): MonetizationCategoryConfig {
           type: 'route',
           route: '/pages/home/index',
           params: {},
-          featureKey: 'monetization_channels_video_share',
+          featureKey: 'social_instagram_collect',
         },
         demos: [
           createShareDemo('视频号视频 1'),

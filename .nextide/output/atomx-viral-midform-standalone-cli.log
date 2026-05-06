@@ -1,0 +1,24 @@
+{
+  "run": {
+    "runId": "run_498e0175-7c3d-4ab4-8cad-60657e1b9982",
+    "capabilityId": "viral.midform.video.generate",
+    "mode": "submit",
+    "status": "waiting_callback",
+    "createdAt": "2026-05-06T07:20:00.063Z",
+    "finishedAt": "2026-05-06T07:20:00.199Z",
+    "result": {
+      "ok": true,
+      "taskId": "61363e56-565f-4195-a470-aceb158ee8da",
+      "theme": "3d-skeleton",
+      "note": "Midform video generation currently triggers T2V storyboard planning for an existing creative task. Callback writes t2v_status/t2v_storyboard_id into creativeTask metadata."
+    },
+    "artifacts": [],
+    "usage": {
+      "provider": "internal_api",
+      "durationMs": 93
+    },
+    "error": null,
+    "statusCommand": "nextide run status run_498e0175-7c3d-4ab4-8cad-60657e1b9982",
+    "resultCommand": "nextide run result run_498e0175-7c3d-4ab4-8cad-60657e1b9982 --output result.json"
+  }
+}

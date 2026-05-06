@@ -2,6 +2,7 @@ import { View, Text, Input, Button, Video, Image } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { useEffect, useState } from 'react';
 import { api } from '../../utils/api';
+import { bindPendingReferral } from '../../utils/referrals';
 import antHeadLogoYellow from '../../assets/icons/ant-head-logo-yellow.png';
 import './index.sass';
 
@@ -26,6 +27,7 @@ export default function LoginEmailPage() {
   const saveAndEnter = (user: { apiKey: string; userId: string; username: string | null; avatarUrl: string | null }) => {
     Taro.setStorageSync('API_KEY', user.apiKey);
     Taro.setStorageSync('USER_INFO', JSON.stringify(user));
+    void bindPendingReferral(user.apiKey);
     Taro.switchTab({ url: '/pages/home/index' });
   };
 

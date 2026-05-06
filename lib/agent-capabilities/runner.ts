@@ -7,6 +7,7 @@ import { getRequestUserContext } from '@/lib/authServer';
 import { renderXhsCardLayout } from '@/lib/xhs-card-layout-service';
 import { createCreativeTaskWithAssets } from '@/lib/creativeTaskCreation';
 import prisma from '@/lib/prisma';
+import { createAgentCapabilityCreditHold } from '@/lib/agent-capabilities/quota-preflight';
 import {
   createAgentCapabilityRunRecord,
   markAgentCapabilityRunFailed,
@@ -109,6 +110,13 @@ export async function runAgentCapability(input: {
   capability: AgentCapabilityDefinition;
   request: AgentCapabilityRunInput;
   authHeaders?: Headers;
+  userId?: string;
+  userApiKey?: string | null;
+  creditHold?: {
+    estimatedCredits: number;
+    featureKey: string;
+    source?: string;
+  };
 }): Promise<AgentCapabilityRunResult> {
   const mode = normalizeRunMode(input.capability, input.request.mode);
   const runId = input.request.idempotencyKey ? `run_${input.request.idempotencyKey}` : `run_${randomUUID()}`;
@@ -119,7 +127,19 @@ export async function runAgentCapability(input: {
     capabilityId: input.capability.id,
     mode,
     request: input.request,
+    userId: input.userId,
   });
+
+  if (input.userId && input.creditHold && input.creditHold.estimatedCredits > 0) {
+    await createAgentCapabilityCreditHold({
+      runId,
+      userId: input.userId,
+      capability: input.capability,
+      estimatedCredits: input.creditHold.estimatedCredits,
+      featureKey: input.creditHold.featureKey,
+      metadata: { source: input.creditHold.source, mode },
+    });
+  }
   if (persisted.id !== runId || persisted.status !== 'running') {
     const existing = serializeAgentRunRecord(persisted);
     if (existing) return existing;
@@ -140,7 +160,7 @@ export async function runAgentCapability(input: {
   try {
     let result: AgentCapabilityRunResult;
     if (input.capability.id === 'product.selling_point.analysis') {
-      result = await runProductSellingPointAnalysis({ runId, mode, createdAt, payload: input.request.input || {} });
+      result = await runProductSellingPointAnalysis({ runId, mode, createdAt, payload: input.request.input || {}, userApiKey: input.userApiKey });
     } else if (input.capability.id === 'xhs.card.layout') {
       result = await runXhsCardLayout({ runId, mode, createdAt, payload: input.request.input || {}, authHeaders: input.authHeaders });
     } else if (input.capability.id === 'xhs.note.collect') {
@@ -161,6 +181,8 @@ export async function runAgentCapability(input: {
       result = await runViralBreakdownVideoPrompts({ runId, mode, createdAt, capability: input.capability, payload: input.request.input || {}, authHeaders: input.authHeaders });
     } else if (input.capability.id === 'social.comments.collect') {
       result = await runSocialCommentsCollect({ runId, mode, createdAt, capability: input.capability, payload: input.request.input || {}, authHeaders: input.authHeaders });
+    } else if (input.capability.executionType === 'local_agent') {
+      result = runLocalAgentGuidance({ runId, mode, createdAt, capability: input.capability, payload: input.request.input || {} });
     } else {
       result = failedResult({
         runId,
@@ -184,11 +206,52 @@ export async function runAgentCapability(input: {
   }
 }
 
+function runLocalAgentGuidance(input: {
+  runId: string;
+  mode: AgentCapabilityRunMode;
+  createdAt: string;
+  capability: AgentCapabilityDefinition;
+  payload: Record<string, unknown>;
+}): AgentCapabilityRunResult {
+  const skillPath = `.claude/skills/${input.capability.skillName}/SKILL.md`;
+  return {
+    runId: input.runId,
+    capabilityId: input.capability.id,
+    mode: input.mode,
+    status: 'succeeded',
+    createdAt: input.createdAt,
+    finishedAt: nowIso(),
+    result: {
+      type: 'local_agent_guidance',
+      capabilityId: input.capability.id,
+      skillName: input.capability.skillName,
+      title: input.capability.title,
+      input: input.payload,
+      instructions: `Use the local NexTide skill at ${skillPath}. This capability is a free local-agent guidance skill; it does not call cloud providers or consume credits.`,
+      skillPath,
+    },
+    artifacts: [
+      {
+        type: 'text',
+        name: 'local-agent-skill-instructions',
+        data: `Read ${skillPath} and apply it to the provided input.`,
+        metadata: {
+          skillName: input.capability.skillName,
+          capabilityId: input.capability.id,
+        },
+      },
+    ],
+    usage: { credits: 0, provider: 'local_agent' },
+    error: null,
+  };
+}
+
 async function runProductSellingPointAnalysis(input: {
   runId: string;
   mode: AgentCapabilityRunMode;
   createdAt: string;
   payload: Record<string, unknown>;
+  userApiKey?: string | null;
 }): Promise<AgentCapabilityRunResult> {
   const name = pickString(input.payload.name || input.payload.productName);
   if (!name) {
@@ -204,6 +267,7 @@ async function runProductSellingPointAnalysis(input: {
   const description = pickString(input.payload.description);
   const images = pickStringArray(input.payload.images);
   const apiKey = pickString(
+    input.userApiKey ||
     input.payload.apiKey ||
     input.payload.api_key ||
     process.env.NEXTIDE_USER_API_KEY ||
@@ -215,7 +279,7 @@ async function runProductSellingPointAnalysis(input: {
       capabilityId: 'product.selling_point.analysis',
       mode: input.mode,
       code: 'unauthorized',
-      message: 'apiKey is required for product analysis in the current MVP runner.',
+      message: 'A valid NexTide API Key is required for product analysis.',
     });
   }
 
@@ -652,7 +716,19 @@ async function runDigitalHumanVideoGenerate(input: {
       ...(typeof one.result === 'object' && one.result !== null ? one.result : { data: one.result }),
       note: agentStatus === 'waiting_callback' ? 'Digital human generation is a long-running task and can take up to 60 minutes. Use the returned video id with /api/digital-human/videos/[id] or NexTide UI to inspect progress.' : undefined,
     },
-    artifacts: typeof data.resultUrl === 'string' && data.resultUrl ? [{ type: 'video', url: data.resultUrl, name: 'digital-human.mp4' }] : [],
+    artifacts: typeof data.resultUrl === 'string' && data.resultUrl ? [{
+      type: 'video',
+      url: data.resultUrl,
+      name: 'digital-human.mp4',
+      mimeType: 'video/mp4',
+      metadata: {
+        capabilityId: input.capability.id,
+        taskId: pickString(data.id),
+        status: pickString(data.status),
+        sourceType,
+        mode: type,
+      },
+    }] : [],
     statusCommand: agentStatus === 'waiting_callback' ? buildCommand(input.runId, 'status') : undefined,
     resultCommand: agentStatus === 'waiting_callback' ? buildCommand(input.runId, 'result') : undefined,
   };
@@ -698,7 +774,19 @@ async function runMotionReplication(input: {
       ...(typeof one.result === 'object' && one.result !== null ? one.result : { data: one.result }),
       note: agentStatus === 'waiting_callback' ? 'Motion replication is a long-running task. The returned id is a digitalHumanVideo record with type ACTION_TRANSFER.' : undefined,
     },
-    artifacts: typeof data.resultUrl === 'string' && data.resultUrl ? [{ type: 'video', url: data.resultUrl, name: 'motion-replication.mp4' }] : [],
+    artifacts: typeof data.resultUrl === 'string' && data.resultUrl ? [{
+      type: 'video',
+      url: data.resultUrl,
+      name: 'motion-replication.mp4',
+      mimeType: 'video/mp4',
+      metadata: {
+        capabilityId: input.capability.id,
+        taskId: pickString(data.id),
+        status: pickString(data.status),
+        sourceImageUrl: imageUrl,
+        referenceVideoUrl: videoUrl,
+      },
+    }] : [],
     statusCommand: agentStatus === 'waiting_callback' ? buildCommand(input.runId, 'status') : undefined,
     resultCommand: agentStatus === 'waiting_callback' ? buildCommand(input.runId, 'result') : undefined,
   };
@@ -1126,13 +1214,26 @@ function extractStyleArtifacts(data: unknown): AgentCapabilityRunResult['artifac
 
 function extractArtifacts(capabilityId: string, data: unknown): AgentCapabilityRunResult['artifacts'] {
   if (capabilityId !== 'xhs.card.layout') return [];
-  const images = (data as { data?: { images?: unknown } } | null)?.data?.images;
+  const payload = (data as { data?: { images?: unknown; title?: unknown; templateId?: unknown; taskId?: unknown } } | null)?.data;
+  const images = payload?.images;
   if (!Array.isArray(images)) return [];
+  const title = pickString(payload?.title);
+  const templateId = pickString(payload?.templateId);
+  const taskId = pickString(payload?.taskId);
   return images
     .filter((url): url is string => typeof url === 'string' && url.length > 0)
     .map((url, index) => ({
       type: 'image',
       url,
       name: `xhs-card-${index + 1}.png`,
+      mimeType: 'image/png',
+      metadata: {
+        page: index + 1,
+        pageCount: images.length,
+        title: title || undefined,
+        templateId: templateId || undefined,
+        taskId: taskId || undefined,
+        capabilityId,
+      },
     }));
 }

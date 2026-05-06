@@ -2,9 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getRequestUserContext } from "@/lib/authServer";
 import { resolveUserApiKey } from "@/lib/userApiKey";
-import { deductCredits } from "@/lib/credits";
-import { getCreditCost } from "@/lib/creditCosts";
-import { logCreditUsage } from "@/lib/logCreditUsage";
+import { deductConfiguredCredits } from "@/lib/creditBilling";
 
 /**
  * Merge storyboard segments into final video with optional subtitles
@@ -139,24 +137,29 @@ export async function POST(
       // 7. 扣除积分（拼接 + 字幕各计一次）
       const apiKey = await resolveUserApiKey({ userId, explicitApiKey: contextApiKey, allowDefaultFallback: false });
       if (apiKey) {
-        const mergeAmount = await getCreditCost("storyboard_merge", 1);
-        deductCredits(apiKey, {
-          amount: mergeAmount,
-          reason: "storyboard_merge",
-          workflowId: "storyboard_video_merge",
-          workflowName: "分镜视频拼接",
-        }).catch((e) => console.error("[merge-video] deduct merge credits failed:", e));
-        logCreditUsage({ featureKey: "storyboard_merge", userId, amount: mergeAmount, success: true });
-
-        if (enableSubtitles) {
-          const subtitleAmount = await getCreditCost("storyboard_subtitle", 1);
-          deductCredits(apiKey, {
-            amount: subtitleAmount,
-            reason: "storyboard_subtitle",
+        try {
+          await deductConfiguredCredits({
+            apiKey,
+            featureKey: "storyboard_merge",
+            userId,
+            defaultAmount: 1,
             workflowId: "storyboard_video_merge",
-            workflowName: "分镜字幕生成",
-          }).catch((e) => console.error("[merge-video] deduct subtitle credits failed:", e));
-          logCreditUsage({ featureKey: "storyboard_subtitle", userId, amount: subtitleAmount, success: true });
+            workflowName: "成片剪辑",
+          });
+
+          if (enableSubtitles) {
+            await deductConfiguredCredits({
+              apiKey,
+              featureKey: "storyboard_subtitle",
+              userId,
+              defaultAmount: 1,
+              workflowId: "storyboard_video_merge",
+              workflowName: "成片字幕生成",
+            });
+          }
+        } catch (error) {
+          console.error("[merge-video] deduct credits failed:", error);
+          return NextResponse.json({ error: "积分不足或扣费失败" }, { status: 402 });
         }
       }
 

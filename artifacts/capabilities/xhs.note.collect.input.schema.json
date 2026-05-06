@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "xhs.note.collect input",
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "string",
+      "description": "采集来源类型：url 或 keyword。",
+      "enum": [
+        "url",
+        "keyword"
+      ]
+    },
+    "urls": {
+      "type": "array",
+      "description": "小红书笔记链接列表，source=url 时使用。"
+    },
+    "keywords": {
+      "type": "array",
+      "description": "搜索关键词，source=keyword 时使用。"
+    },
+    "limit": {
+      "type": "number",
+      "description": "目标采集数量。",
+      "default": 30
+    },
+    "collectComments": {
+      "type": "boolean",
+      "description": "是否同时采集评论。默认关闭以节省成本。",
+      "default": false
+    },
+    "saveToHotSquare": {
+      "type": "boolean",
+      "description": "是否保存到爆款广场/素材库。",
+      "default": true
+    }
+  },
+  "required": [
+    "source"
+  ],
+  "additionalProperties": true
+}

@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getRequestUserContext } from "@/lib/authServer";
-import { getCreditCost } from "@/lib/creditCosts";
-import { deductCredits } from "@/lib/credits";
-import { logCreditUsage } from "@/lib/logCreditUsage";
+import { deductConfiguredCredits } from "@/lib/creditBilling";
 import { createRunningHubTask, RunningHubNodePatch } from "@/lib/runninghub";
 import { syncTaskToSummary } from "@/lib/taskSummary";
 
@@ -111,23 +109,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Missing API key" }, { status: 403 });
     }
 
-    const creditAmount = await getCreditCost("canvas_grid_split", 100);
     try {
-      await deductCredits(apiKey, {
-        amount: creditAmount,
-        workflowId: process.env.CANVAS_GRID_SPLIT_WORKFLOW_ID || "flow_grid_split",
-        workflowName: process.env.CANVAS_GRID_SPLIT_WORKFLOW_NAME || "Canvas Grid Split",
-        reason: "canvas_grid_split",
-      });
-      logCreditUsage({ featureKey: "canvas_grid_split", userId, amount: creditAmount, success: true });
-    } catch (error) {
-      logCreditUsage({
+      await deductConfiguredCredits({
+        apiKey,
         featureKey: "canvas_grid_split",
         userId,
-        amount: creditAmount,
-        success: false,
-        errorMessage: error instanceof Error ? error.message : "Deduct credits failed",
+        defaultAmount: 100,
+        modelKey: GRID_SPLIT_WORKFLOW_ID,
+        workflowId: process.env.CANVAS_GRID_SPLIT_WORKFLOW_ID || "flow_grid_split",
+        workflowName: process.env.CANVAS_GRID_SPLIT_WORKFLOW_NAME || "Canvas Grid Split",
       });
+    } catch (error) {
       return NextResponse.json({ error: "积分不足或扣费失败" }, { status: 402 });
     }
 

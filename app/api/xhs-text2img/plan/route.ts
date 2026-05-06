@@ -6,7 +6,7 @@ import { initMetadata } from "@/lib/creativeTaskUtils";
 import { toInputJson } from "@/lib/jsonUtils";
 import { getXhsText2ImgWebhookUrl } from "@/lib/webhookTargets";
 import { deductCredits } from "@/lib/credits";
-import { getCreditCost } from "@/lib/creditCosts";
+import { getCreditCostForModel } from "@/lib/creditCosts";
 import { logCreditUsage } from "@/lib/logCreditUsage";
 
 const WORKFLOW_ID = "flow_xhs_text2img";
@@ -281,7 +281,7 @@ export async function POST(request: NextRequest) {
   const imageCount = clampImageCount(rawImageCount);
   const taskId = randomUUID();
 
-  const costPerImage = await getCreditCost("image_text_replication", 2);
+  const costPerImage = await getCreditCostForModel("image_text_replication", WORKFLOW_ID, 2);
   const totalCost = imageCount * costPerImage;
   try {
     await deductCredits(apiKey, {

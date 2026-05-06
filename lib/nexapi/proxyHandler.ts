@@ -166,27 +166,21 @@ export async function proxyOpenAiRequest(request: NextRequest, options: ProxyOpt
 
     try {
       await prisma.$transaction(async (tx) => {
-        await tx.usageLog.create({
-          data: {
-            userId: keyRecord.userId,
-            apiKeyId: keyRecord.id,
-            modelId,
-            route: routeBase,
-            promptTokens,
-            completionTokens,
-            priceCny: new Prisma.Decimal(pricing.sellCost),
-            chargedCredits: BigInt(pricing.credits),
-            responseMs: Date.now() - startTime,
-          },
-        });
-
         await adjustWalletCreditsInTransaction(tx, keyRecord.userId, BigInt(-pricing.credits), {
           reason: 'deduct',
-          channel: 'usage',
+          channel: 'api',
           refId: modelId,
           meta: {
+            port: 'api',
+            source: 'API',
             model: modelId,
             route: routeBase,
+            apiKeyId: keyRecord.id,
+            promptTokens,
+            completionTokens,
+            priceCny: pricing.sellCost,
+            chargedCredits: pricing.credits,
+            responseMs: Date.now() - startTime,
           },
         });
       });

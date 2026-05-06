@@ -1,0 +1,8 @@
+{
+  "platform": "tiktok",
+  "mode": "keyword",
+  "queries": [
+    "neck pain"
+  ],
+  "limit": 20
+}

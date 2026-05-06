@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
 import { getApiKeyForUser } from "@/lib/authServer";
 import { deductCredits } from "@/lib/credits";
+import { getCreditCostForModel } from "@/lib/creditCosts";
 import { parseMetadata } from "@/lib/creativeTaskService";
 import { setTaskActionStatus } from "@/lib/creativeTaskUtils";
 import { syncTaskToSummary } from "@/lib/taskSummary";
@@ -143,7 +144,11 @@ async function deductCreditsForDigitalHuman(
   }
 
   const workflowMeta = await fetchWorkflowCreditMeta(workflowId);
-  const creditCost = workflowMeta?.credit_cost;
+  const creditCost = await getCreditCostForModel(
+    "digital_human",
+    workflowId,
+    workflowMeta?.credit_cost ?? 10
+  );
   if (!creditCost || creditCost <= 0) {
     console.error("Skipping credit deduction: invalid credit cost", {
       workflowId,
@@ -154,8 +159,8 @@ async function deductCreditsForDigitalHuman(
 
   await deductCredits(apiKey, {
     amount: creditCost,
-    workflowId: workflowMeta.workflow_id ?? workflowId,
-    workflowName: workflowMeta.workflow_name ?? "Digital Human",
+    workflowId: workflowMeta?.workflow_id ?? workflowId,
+    workflowName: workflowMeta?.workflow_name ?? "Digital Human",
     reason: "digital_human",
   });
   logCreditUsage({ featureKey: "digital_human", userId: userId ?? undefined, amount: creditCost, success: true });

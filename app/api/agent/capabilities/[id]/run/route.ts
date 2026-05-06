@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAgentApiKey, agentAuthErrorResponse } from '@/lib/agent-auth/api-key';
+import { assertAgentCapabilityCostAllowed, agentCostGuardErrorResponse } from '@/lib/agent-capabilities/cost-guard';
+import { assertAgentCapabilityQuotaAvailable, agentQuotaPreflightErrorResponse } from '@/lib/agent-capabilities/quota-preflight';
 import { getAgentCapability } from '@/lib/agent-capabilities/registry';
 import { runAgentCapability } from '@/lib/agent-capabilities/runner';
 import type { AgentCapabilityRunInput } from '@/lib/agent-capabilities/types';
@@ -38,10 +41,57 @@ export async function POST(
     );
   }
 
+  if (capability.executionType === 'local_agent') {
+    const run = await runAgentCapability({
+      capability,
+      request: body,
+      authHeaders: request.headers,
+    });
+    const status = run.status === 'failed' ? 400 : 200;
+    return NextResponse.json({ run }, { status });
+  }
+
+  let auth;
+  try {
+    auth = await requireAgentApiKey(request);
+  } catch (error) {
+    return agentAuthErrorResponse(error);
+  }
+
+  try {
+    await assertAgentCapabilityCostAllowed({
+      userId: auth.userId,
+      capability,
+      profile: auth.profile,
+    });
+  } catch (error) {
+    return agentCostGuardErrorResponse(error);
+  }
+
+  let quotaPreflight;
+  try {
+    quotaPreflight = await assertAgentCapabilityQuotaAvailable({
+      userId: auth.userId,
+      capability,
+      profile: auth.profile,
+    });
+  } catch (error) {
+    return agentQuotaPreflightErrorResponse(error);
+  }
+
   const run = await runAgentCapability({
     capability,
     request: body,
     authHeaders: request.headers,
+    userId: auth.userId,
+    userApiKey: auth.profile.api_key,
+    creditHold: quotaPreflight.estimatedCredits > 0 && quotaPreflight.featureKey
+      ? {
+          estimatedCredits: quotaPreflight.estimatedCredits,
+          featureKey: quotaPreflight.featureKey,
+          source: quotaPreflight.creditConfigSource,
+        }
+      : undefined,
   });
 
   const status = run.status === 'failed' ? 400 : 200;

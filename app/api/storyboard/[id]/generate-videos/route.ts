@@ -4,7 +4,8 @@ import { getRequestUserContext } from "@/lib/authServer";
 import { resolveUserApiKey } from "@/lib/userApiKey";
 import type { Prisma } from "@prisma/client";
 import { deductCredits } from "@/lib/credits";
-import { getCreditCost } from "@/lib/creditCosts";
+import { deductConfiguredCredits } from "@/lib/creditBilling";
+import { getCreditCostForModel } from "@/lib/creditCosts";
 import { logCreditUsage } from "@/lib/logCreditUsage";
 
 const NO_BGM_RULE =
@@ -151,6 +152,11 @@ function getSkeletonVideoReferenceImageUrls(firstFrameUrl: string): string[] {
   return url ? [url] : [];
 }
 
+function getPositiveDurationSeconds(value: unknown, fallback = 1): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 /**
  * Batch trigger video generation for storyboard segments
  * POST /api/storyboard/[id]/generate-videos
@@ -252,17 +258,34 @@ export async function POST(
     ).replace(/\/+$/, "");
     const callbackUrl = `${callbackBase}/api/webhook/storyboard-video`;
 
-    // 4a. Deduct credits upfront (per segment)
+    // 4a. Deduct credits upfront
     try {
-      const costPerSegment = await getCreditCost("storyboard_video", 1);
-      const totalCost = costPerSegment * targetSegments.length;
-      await deductCredits(apiKey, {
-        amount: totalCost,
-        workflowId: "flow_storyboard_video",
-        workflowName: "分镜视频生成",
-        reason: "storyboard_video",
-      });
-      logCreditUsage({ featureKey: "storyboard_video", userId, amount: totalCost, success: true });
+      if (isSeedanceModel(model)) {
+        const totalDurationSeconds = targetSegments.reduce(
+          (sum, segment) => sum + getPositiveDurationSeconds(segment.duration, 0),
+          0,
+        ) || 1;
+        await deductConfiguredCredits({
+          apiKey,
+          featureKey: "storyboard_video",
+          userId,
+          defaultAmount: 1,
+          modelKey: String(model || ""),
+          units: totalDurationSeconds,
+          workflowId: "flow_storyboard_video",
+          workflowName: "分镜视频生成",
+        });
+      } else {
+        const costPerSegment = await getCreditCostForModel("storyboard_video", String(model || ""), 1);
+        const totalCost = costPerSegment * targetSegments.length;
+        await deductCredits(apiKey, {
+          amount: totalCost,
+          workflowId: "flow_storyboard_video",
+          workflowName: "分镜视频生成",
+          reason: "storyboard_video",
+        });
+        logCreditUsage({ featureKey: "storyboard_video", userId, amount: totalCost, success: true });
+      }
     } catch (error) {
       console.error("[generate-videos] Failed to deduct credits:", error);
       logCreditUsage({ featureKey: "storyboard_video", userId, success: false, errorMessage: error instanceof Error ? error.message : "Unknown" });

@@ -1,0 +1,38 @@
+{
+  "run": {
+    "runId": "run_a21dfb0c-8450-43d7-89a7-0170617252d3",
+    "capabilityId": "xhs.card.layout",
+    "mode": "wait",
+    "status": "succeeded",
+    "createdAt": "2026-05-06T10:48:57.934Z",
+    "finishedAt": "2026-05-06T10:48:58.693Z",
+    "result": {
+      "data": {
+        "taskId": "",
+        "title": "AI 工具清单",
+        "templateId": "notion-style",
+        "images": [
+          "https://oss.atomx.top/xhs-layout/db74f72f-9f0e-4d42-8b9d-b34c890f5eea/9c4af6f4-2b23-448e-9667-2f04f16194e8/page-01.png",
+          "https://oss.atomx.top/xhs-layout/db74f72f-9f0e-4d42-8b9d-b34c890f5eea/9c4af6f4-2b23-448e-9667-2f04f16194e8/page-02.png"
+        ]
+      }
+    },
+    "artifacts": [
+      {
+        "type": "image",
+        "url": "https://oss.atomx.top/xhs-layout/db74f72f-9f0e-4d42-8b9d-b34c890f5eea/9c4af6f4-2b23-448e-9667-2f04f16194e8/page-01.png",
+        "name": "xhs-card-1.png"
+      },
+      {
+        "type": "image",
+        "url": "https://oss.atomx.top/xhs-layout/db74f72f-9f0e-4d42-8b9d-b34c890f5eea/9c4af6f4-2b23-448e-9667-2f04f16194e8/page-02.png",
+        "name": "xhs-card-2.png"
+      }
+    ],
+    "usage": {
+      "provider": "internal_service",
+      "durationMs": 741
+    },
+    "error": null
+  }
+}

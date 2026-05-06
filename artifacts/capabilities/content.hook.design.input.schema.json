@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "content.hook.design input",
+  "type": "object",
+  "properties": {
+    "brief": {
+      "type": "string",
+      "description": "短视频开头想法、产品卖点或脚本需求。"
+    },
+    "audience": {
+      "type": "string",
+      "description": "目标观众。"
+    },
+    "productRevealPreference": {
+      "type": "string",
+      "description": "产品露出偏好：early / delayed / hidden-until-proof。"
+    }
+  },
+  "required": [
+    "brief"
+  ],
+  "additionalProperties": true
+}

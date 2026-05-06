@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "skipped": true,
+  "reason": "DATABASE_URL or DIRECT_URL is not set",
+  "dryRun": true,
+  "olderThanMinutes": 999999,
+  "matched": 0,
+  "processed": 0
+}

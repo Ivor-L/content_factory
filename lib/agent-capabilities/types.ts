@@ -20,6 +20,28 @@ export type AgentCapabilityExecutionType =
   | 'local_agent'
   | 'planned';
 
+export type AgentCapabilityCategory =
+  | 'xhs'
+  | 'video'
+  | 'social'
+  | 'product'
+  | 'writing'
+  | 'system';
+
+export type AgentCapabilityCostLevel = 'free' | 'low' | 'medium' | 'high' | 'variable';
+
+export type AgentCapabilityAuthRequirement =
+  | 'nexTideApiKey'
+  | 'webSession'
+  | 'serverEnv'
+  | 'none';
+
+export interface AgentCapabilityExample {
+  name: string;
+  description?: string;
+  input: Record<string, unknown>;
+}
+
 export interface AgentCapabilitySchemaField {
   type: string;
   required?: boolean;
@@ -30,11 +52,24 @@ export interface AgentCapabilitySchemaField {
 
 export interface AgentCapabilityDefinition {
   id: string;
+  version?: string;
+  category?: AgentCapabilityCategory;
   skillName: string;
   title: string;
   description: string;
   status: AgentCapabilityStatus;
   executionType: AgentCapabilityExecutionType;
+  costLevel?: AgentCapabilityCostLevel;
+  requiredAuth?: AgentCapabilityAuthRequirement[];
+  requiredEnv?: string[];
+  examples?: AgentCapabilityExample[];
+  docsUrl?: string;
+  requiredPlan?: string;
+  estimatedCredits?: number;
+  rateLimit?: {
+    perMinute?: number;
+    perHour?: number;
+  };
   internalApiPath?: string;
   method?: 'POST' | 'GET';
   async: boolean;
@@ -43,6 +78,7 @@ export interface AgentCapabilityDefinition {
   workflowId?: string;
   workflowName?: string;
   featureKey?: string;
+  creditModelKey?: string;
   tags: string[];
   inputSchema: Record<string, AgentCapabilitySchemaField>;
   outputSchema: Record<string, AgentCapabilitySchemaField>;
@@ -59,6 +95,25 @@ export interface AgentCapabilityRunInput {
   };
 }
 
+export interface AgentCapabilityRunArtifact {
+  type: string;
+  url?: string;
+  path?: string;
+  name?: string;
+  mimeType?: string;
+  data?: unknown;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AgentCapabilityRunBusiness {
+  type?: string;
+  id?: string;
+  taskId?: string;
+  status?: string;
+  storyboardTaskId?: string;
+  [key: string]: unknown;
+}
+
 export interface AgentCapabilityRunResult {
   runId: string;
   capabilityId: string;
@@ -67,12 +122,7 @@ export interface AgentCapabilityRunResult {
   createdAt: string;
   finishedAt?: string;
   result?: unknown;
-  artifacts?: Array<{
-    type: string;
-    url?: string;
-    path?: string;
-    name?: string;
-  }>;
+  artifacts?: AgentCapabilityRunArtifact[];
   usage?: {
     credits?: number;
     provider?: string;

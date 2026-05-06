@@ -109,3 +109,80 @@ If the note is a video note, status may be `VIDEO_COLLECTED`.
 - Do not treat keyword search as available in MVP.
 - For multiple URLs, report partial failures clearly.
 - Do not ask the user to paste cookies; NexTide server handles downloader configuration.
+
+<!-- BEGIN NEXTIDE AUTO-GENERATED -->
+
+## NexTide Capability Contract
+
+### 小红书笔记采集
+
+- Capability: `xhs.note.collect`
+- Version: `0.2.0`
+- Category: `xhs`
+- Status: `available`
+- Execution: `internal_api`
+- Async: `true`
+- Cost level: `medium`
+- Required auth: `nexTideApiKey`
+- Required env: `XHS_DOWNLOADER_BASE_URL`
+- Required plan: `none`
+- Rate limit: `10/minute`, `60/hour`
+- Estimated credits: 5
+- Estimated duration: 60 seconds
+- Tags: `xiaohongshu`, `collection`, `hot-square`, `viral-reference`
+
+Description:
+
+采集小红书链接并沉淀为爆款广场/viral references 可用的结构化数据。MVP 阶段已支持 URL 采集，关键词搜索采集仍为 planned。
+
+Examples:
+
+- none
+
+Input fields:
+
+- `source` (string, required)：采集来源类型：url 或 keyword。
+- `urls` (string[])：小红书笔记链接列表，source=url 时使用。
+- `keywords` (string[])：搜索关键词，source=keyword 时使用。
+- `limit` (number)：目标采集数量。 默认：`30`
+- `collectComments` (boolean)：是否同时采集评论。默认关闭以节省成本。 默认：`false`
+- `saveToHotSquare` (boolean)：是否保存到爆款广场/素材库。 默认：`true`
+
+Output fields:
+
+- `items` (array)：归一化后的小红书笔记列表。
+- `savedReferences` (array)：已保存的 viral reference 记录。
+
+CLI:
+
+```bash
+nextide capability run xhs.note.collect \
+  --input .nextide/input/xhs.note.collect.json \
+  --output .nextide/output/xhs.note.collect-result.json \
+  --mode submit \
+  --wait \
+  --timeout 300 \
+  --interval 5
+
+RUN_ID=$(node -e "const r=require('./.nextide/output/xhs.note.collect-result.json'); console.log(r.run && r.run.runId)")
+nextide run artifacts "$RUN_ID" \
+  --output-dir .nextide/output/$RUN_ID
+```
+
+Artifact-first reading order:
+
+1. Read `.nextide/output/$RUN_ID/manifest.json`.
+2. Return local artifact paths when present.
+3. If a remote URL artifact is present, return the URL from manifest.
+4. Only inspect the full result JSON when manifest is insufficient.
+
+## General Rules
+
+- Use NexTide capability IDs, not internal n8n webhook URLs.
+- Do not expose API secrets or internal webhook URLs in prompts or output.
+- If status is not `available`, fail fast and explain what is missing.
+- For async tasks, prefer `--wait` when the user wants a finished result in the same turn.
+- After a finished run, use `nextide run artifacts <run-id> --output-dir .nextide/output/<run-id>` and read `manifest.json` first.
+- Prefer returning local artifact paths from `manifest.json` over pasting huge raw JSON.
+
+<!-- END NEXTIDE AUTO-GENERATED -->

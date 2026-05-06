@@ -27,6 +27,17 @@ const ACCESS_TOKEN_STORAGE_KEY = 'MINIAPP_ACCESS_TOKEN';
 const REQUEST_TIMEOUT_MS = 30000;
 const DEFAULT_CANVAS_IMAGE_REFERENCE_LIMIT = 8;
 
+function normalizeStoryboardAspectRatio(value: unknown, fallback = '9:16'): '9:16' | '16:9' {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === '16:9' || raw === '16/9' || raw === 'landscape' || raw === 'horizontal' || raw === '横屏' || raw === '横版') {
+    return '16:9';
+  }
+  if (raw === '9:16' || raw === '9/16' || raw === 'portrait' || raw === 'vertical' || raw === '竖屏' || raw === '竖版') {
+    return '9:16';
+  }
+  return fallback === '16:9' ? '16:9' : '9:16';
+}
+
 export type TaskStatus = 'PENDING' | 'GENERATING' | 'COMPLETED' | 'FAILED' | string;
 
 export interface MiniappProfile {
@@ -326,6 +337,9 @@ export interface XhsPublishResult {
 
 export interface MiniappCollectXhsResult {
   taskId: string;
+  sourceId?: string;
+  sourceUrl?: string;
+  referenceId?: string;
   status: string;
   title: string;
   videoUrl?: string | null;
@@ -1254,13 +1268,25 @@ export const miniappApi = {
   },
 
   async collectHotXhsNote(url: string): Promise<MiniappCollectXhsResult> {
-    const payload = await request<{ taskId?: string; status?: string; title?: string; videoUrl?: string | null; message?: string }>('/api/miniapp/hot-square/collect-xhs', {
+    const payload = await request<{
+      taskId?: string;
+      sourceId?: string;
+      sourceUrl?: string;
+      referenceId?: string;
+      status?: string;
+      title?: string;
+      videoUrl?: string | null;
+      message?: string;
+    }>('/api/miniapp/hot-square/collect-xhs', {
       method: 'POST',
       data: { url },
     });
 
     return {
       taskId: String(payload?.taskId || ''),
+      sourceId: typeof payload?.sourceId === 'string' ? payload.sourceId : undefined,
+      sourceUrl: typeof payload?.sourceUrl === 'string' ? payload.sourceUrl : undefined,
+      referenceId: typeof payload?.referenceId === 'string' ? payload.referenceId : undefined,
       status: String(payload?.status || 'BREAKDOWN_PENDING'),
       title: String(payload?.title || '未命名笔记'),
       videoUrl: typeof payload?.videoUrl === 'string' ? payload.videoUrl : null,
@@ -1730,12 +1756,13 @@ export const miniappApi = {
     model: string;
     aspectRatio?: string;
   }): Promise<StoryboardGenerateResult> {
+    const aspectRatio = normalizeStoryboardAspectRatio(params.aspectRatio, '9:16');
     return request<StoryboardGenerateResult>(`/api/storyboard/${encodeURIComponent(params.taskId)}/generate-images`, {
       method: 'POST',
       data: {
         segmentIds: params.segmentIds,
         model: params.model,
-        aspectRatio: params.aspectRatio || '16:9',
+        aspectRatio,
       },
     });
   },
@@ -1747,13 +1774,14 @@ export const miniappApi = {
     allowTextVideo?: boolean;
     aspectRatio?: string;
   }): Promise<StoryboardGenerateResult> {
+    const aspectRatio = normalizeStoryboardAspectRatio(params.aspectRatio, '9:16');
     return request<StoryboardGenerateResult>(`/api/storyboard/${encodeURIComponent(params.taskId)}/generate-videos`, {
       method: 'POST',
       data: {
         segmentIds: params.segmentIds,
         model: params.model,
         allowTextVideo: Boolean(params.allowTextVideo),
-        aspectRatio: params.aspectRatio || '9:16',
+        aspectRatio,
       },
     });
   },

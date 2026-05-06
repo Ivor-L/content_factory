@@ -3,8 +3,7 @@ import { getApiKeyForUser, getRequestUserContext } from "@/lib/authServer";
 import prisma from "@/lib/prisma";
 import { getXhsText2ImgWebhookUrl } from "@/lib/webhookTargets";
 import { toInputJson } from "@/lib/jsonUtils";
-import { deductCredits } from "@/lib/credits";
-import { getCreditCost } from "@/lib/creditCosts";
+import { deductConfiguredCredits } from "@/lib/creditBilling";
 import { logCreditUsage } from "@/lib/logCreditUsage";
 import { rewriteXhsNote } from "@/lib/xhsRewritePrompt";
 
@@ -288,8 +287,7 @@ export async function POST(
     return NextResponse.json({ error: "请先在设置页绑定 API Key" }, { status: 400 });
   }
 
-  const costPerImage = await getCreditCost("image_text_replication", 2);
-  const totalCost = imageCount * costPerImage;
+  const stageFeatureKey = "image_text_replication:generate";
 
   const explicitStyleProfile =
     normalizeJsonString(body.styleProfileJson) ||
@@ -324,7 +322,7 @@ export async function POST(
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "仿写失败";
-    logCreditUsage({ featureKey: "image_text_replication", userId, amount: totalCost, success: false, errorMessage: message });
+    logCreditUsage({ featureKey: stageFeatureKey, userId, amount: imageCount, success: false, errorMessage: message });
     return NextResponse.json({ error: message }, { status: 502 });
   }
 
@@ -332,16 +330,20 @@ export async function POST(
   const generationText = rewritten.body || sourceText || sourceTitle;
 
   try {
-    await deductCredits(resolvedApiKey, {
-      amount: totalCost,
+    const charge = await deductConfiguredCredits({
+      apiKey: resolvedApiKey,
+      featureKey: stageFeatureKey,
+      userId,
+      defaultAmount: 2,
+      units: imageCount,
       workflowId: WORKFLOW_ID,
       workflowName: WORKFLOW_NAME,
-      reason: "image_text_replication",
+      reason: stageFeatureKey,
     });
-    logCreditUsage({ featureKey: "image_text_replication", userId, amount: totalCost, success: true });
+    logCreditUsage({ featureKey: stageFeatureKey, userId, amount: charge.amount, success: true });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "积分不足";
-    logCreditUsage({ featureKey: "image_text_replication", userId, amount: totalCost, success: false, errorMessage });
+    logCreditUsage({ featureKey: stageFeatureKey, userId, amount: imageCount, success: false, errorMessage });
     return NextResponse.json({ error: errorMessage }, { status: 402 });
   }
 

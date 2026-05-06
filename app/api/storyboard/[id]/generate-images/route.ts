@@ -3,7 +3,7 @@ import prisma from "@/lib/prisma";
 import { getRequestUserContext } from "@/lib/authServer";
 import { resolveUserApiKey } from "@/lib/userApiKey";
 import { deductCredits } from "@/lib/credits";
-import { getCreditCost } from "@/lib/creditCosts";
+import { getCreditCostForModel } from "@/lib/creditCosts";
 import { logCreditUsage } from "@/lib/logCreditUsage";
 
 /**
@@ -108,7 +108,7 @@ export async function POST(
 
     // 4a. Deduct credits upfront (per segment)
     try {
-      const costPerSegment = await getCreditCost("storyboard_image", 1);
+      const costPerSegment = await getCreditCostForModel("storyboard_image", requestedModel, 1);
       const totalCost = costPerSegment * segments.length;
       await deductCredits(apiKey, {
         amount: totalCost,

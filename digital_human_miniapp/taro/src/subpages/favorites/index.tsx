@@ -55,17 +55,21 @@ export default function FavoritesPage() {
 
   const handleOpen = (item: any) => {
     if (item?.videoUrl) {
-      Taro.navigateTo({
-        url: `/subpages/work-detail/index?id=${encodeURIComponent(String(item.id || 'favorite'))}`,
-      });
-      Taro.setStorageSync('WORK_DETAIL_ITEM', {
+      const detailItem = {
         id: item.id,
         title: item.title || '收藏内容',
         type: 'video',
         status: 'COMPLETED',
         createdAt: new Date(item.collectedAt || Date.now()).toISOString(),
         preview: item.videoUrl,
+        videoUrl: item.videoUrl,
         thumbnailUrl: item.coverUrl || null,
+        metadata: { videoUrl: item.videoUrl },
+        source: 'task',
+      };
+      Taro.setStorageSync('WORK_DETAIL_ITEM', detailItem);
+      Taro.navigateTo({
+        url: `/subpages/work-detail/index?id=${encodeURIComponent(String(detailItem.id || 'favorite'))}`,
       });
       return;
     }

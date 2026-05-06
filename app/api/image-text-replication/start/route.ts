@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { getRequestUserContext } from "@/lib/authServer";
+import { getApiKeyForUser, getRequestUserContext } from "@/lib/authServer";
 import prisma from "@/lib/prisma";
 import { initMetadata } from "@/lib/creativeTaskUtils";
 import { toInputJson } from "@/lib/jsonUtils";
+import { deductConfiguredCredits } from "@/lib/creditBilling";
 
 function isTransactionStartTimeoutError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? "");
@@ -77,6 +78,26 @@ export async function POST(request: NextRequest) {
   const title = (body.sourceTitle || "").trim() || "爆款图文复刻";
   const preview = (body.sourceText || "").trim().slice(0, 140) || "正在分析原帖内容";
   const metadata = buildTaskMetadata(body);
+  const apiKey = await getApiKeyForUser(userId).catch(() => null);
+  if (!apiKey) {
+    return NextResponse.json({ error: "请先在设置页绑定 API Key" }, { status: 400 });
+  }
+
+  try {
+    await deductConfiguredCredits({
+      apiKey,
+      featureKey: "image_text_replication:start",
+      userId,
+      defaultAmount: 1,
+      modelKey: "start",
+      workflowId: "flow_image_text_replication",
+      workflowName: "图文复刻",
+      reason: "image_text_replication:start",
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "积分不足";
+    return NextResponse.json({ error: message }, { status: 402 });
+  }
 
   // Write in two steps to avoid transaction-start timeouts under high DB load.
   try {

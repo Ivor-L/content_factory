@@ -104,7 +104,22 @@ Expected result shape:
 }
 ```
 
-If `resultUrl` is present, return it as the generated video.
+If `resultUrl` is present, export multimodal artifacts and return the local video/preview paths:
+
+```bash
+RUN_ID=$(node -e "const r=require('./.nextide/output/digital-human-video-result.json'); console.log(r.run && r.run.runId)")
+npm run nextide -- run artifacts "$RUN_ID" \
+  --output-dir .nextide/output/$RUN_ID \
+  --download \
+  --gallery
+```
+
+Return:
+
+- generated video URL
+- local downloaded video path if available
+- `preview.html` path if generated
+- status/task id
 
 ## Rules
 
@@ -112,3 +127,86 @@ If `resultUrl` is present, return it as the generated video.
 - Do not claim the video is finished until `resultUrl` exists or status is completed.
 - User must have rights to the face/image/video/audio source.
 - This skill does not generate TTS/audio in MVP; require `audioUrl`.
+
+<!-- BEGIN NEXTIDE AUTO-GENERATED -->
+
+## NexTide Capability Contract
+
+### 视频数字人生成
+
+- Capability: `digital-human.video.generate`
+- Version: `0.2.0`
+- Category: `video`
+- Status: `available`
+- Execution: `internal_api`
+- Async: `true`
+- Cost level: `high`
+- Required auth: `nexTideApiKey`
+- Required env: `N8N_DIGITAL_HUMAN_WEBHOOK or DIGITAL_HUMAN_WEBHOOK_URL`
+- Required plan: `paid`
+- Rate limit: `5/minute`, `20/hour`
+- Estimated credits: 30
+- Estimated duration: 1200 seconds
+- Tags: `digital-human`, `video`, `long-running`
+
+Description:
+
+使用人物图、文案和声音生成口播数字人视频。最长可能 60 分钟。
+
+Examples:
+
+- 图片数字人口播
+
+  ```json
+  {
+    "personImage": "https://example.com/person.png",
+    "audioUrl": "https://example.com/audio.mp3",
+    "script": "口播文案"
+  }
+  ```
+
+Input fields:
+
+- `personImage` (string, required)：人物图片 URL。
+- `script` (string, required)：口播文案。
+- `voiceId` (string)：声音 ID 或预设。
+- `duration` (number)：目标时长，秒。
+
+Output fields:
+
+- `videoUrl` (string)：生成视频 URL。
+- `taskId` (string)：内部任务 ID。
+
+CLI:
+
+```bash
+nextide capability run digital-human.video.generate \
+  --input .nextide/input/digital-human.video.generate.json \
+  --output .nextide/output/digital-human.video.generate-result.json \
+  --mode submit \
+  --wait \
+  --timeout 3600 \
+  --interval 5
+
+RUN_ID=$(node -e "const r=require('./.nextide/output/digital-human.video.generate-result.json'); console.log(r.run && r.run.runId)")
+nextide run artifacts "$RUN_ID" \
+  --output-dir .nextide/output/$RUN_ID
+```
+
+Artifact-first reading order:
+
+1. Read `.nextide/output/$RUN_ID/manifest.json`.
+2. Return local artifact paths when present.
+3. If a remote URL artifact is present, return the URL from manifest.
+4. Only inspect the full result JSON when manifest is insufficient.
+
+## General Rules
+
+- Use NexTide capability IDs, not internal n8n webhook URLs.
+- Do not expose API secrets or internal webhook URLs in prompts or output.
+- If status is not `available`, fail fast and explain what is missing.
+- For async tasks, prefer `--wait` when the user wants a finished result in the same turn.
+- After a finished run, use `nextide run artifacts <run-id> --output-dir .nextide/output/<run-id>` and read `manifest.json` first.
+- Prefer returning local artifact paths from `manifest.json` over pasting huge raw JSON.
+
+<!-- END NEXTIDE AUTO-GENERATED -->

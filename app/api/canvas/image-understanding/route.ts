@@ -5,6 +5,7 @@ import {
   deductCanvasCredits,
   resolveCanvasCreditsApiKey,
 } from "@/lib/canvasCredits";
+import { getCreditCostForModel } from "@/lib/creditCosts";
 
 const ALLOWED_MODELS = new Set([
   "gemini-3.1-flash-lite-preview",
@@ -60,11 +61,12 @@ export async function POST(request: NextRequest) {
 
     // Deduct credits (same logic as image/video generation)
     try {
+      const amount = await getCreditCostForModel("canvas_image_understanding", model, 15);
       await deductCanvasCredits(creditsApiKey, "image", { model }, {
         charge: {
           workflowId: model,
           workflowName: model,
-          amount: 1,
+          amount,
           reason: "canvas_image_understanding",
         },
       });

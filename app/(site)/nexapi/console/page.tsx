@@ -41,6 +41,8 @@ interface UsageItem {
   chargedCredits: string;
   priceCny: number;
   createdAt: string;
+  port?: string;
+  source?: string;
 }
 
 interface RechargeOrder {
@@ -373,7 +375,10 @@ export default function NexApiConsolePage() {
                       <div key={item.id} className="rounded-2xl border border-black/5 p-4">
                         <div className="flex items-center justify-between text-xs text-[#7a7f8f]">
                           <span>{new Date(item.createdAt).toLocaleString()}</span>
-                          <span>{item.route}</span>
+                          <span className="inline-flex items-center gap-1">
+                            <span className="rounded-full bg-[#101522]/5 px-2 py-0.5 text-[10px] text-[#101522]">{item.source || item.port || 'Web'}</span>
+                            <span>{item.route}</span>
+                          </span>
                         </div>
                         <div className="mt-2 text-[#101522] font-semibold">{item.modelId}</div>
                         <div className="mt-1 text-xs text-[#7a7f8f]">

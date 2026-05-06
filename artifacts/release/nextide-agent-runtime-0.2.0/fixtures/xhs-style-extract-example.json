@@ -1,0 +1,6 @@
+{
+  "referenceImages": ["/absolute/path/to/reference-card.png"],
+  "styleName": "高密度知识卡",
+  "styleGoal": "适合知识卡片/小红书封面风格",
+  "sceneType": "图文讲解详情图"
+}

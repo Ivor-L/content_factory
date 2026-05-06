@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "prompt.preflight.qa input",
+  "type": "object",
+  "properties": {
+    "prompt": {
+      "type": "string",
+      "description": "准备执行的视频/图片生成 prompt 或 storyboard。"
+    },
+    "targetCapability": {
+      "type": "string",
+      "description": "计划调用的 NexTide capability，例如 viral.midform.video.generate。"
+    }
+  },
+  "required": [
+    "prompt"
+  ],
+  "additionalProperties": true
+}

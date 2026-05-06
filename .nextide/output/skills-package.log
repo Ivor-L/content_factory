@@ -1,0 +1,72 @@
+
+> content-factory-web@0.1.6 skills:package
+> npm run capabilities:export && npm run skills:generate && tsx scripts/package-nextide-skills.ts
+
+
+> content-factory-web@0.1.6 capabilities:export
+> tsx scripts/export-nextide-capabilities.ts
+
+Exported 14 capabilities to /Users/kaka/Desktop/软件开发/content-factory-web 3.2/artifacts/capabilities
+
+> content-factory-web@0.1.6 skills:generate
+> tsx scripts/generate-nextide-skills.ts
+
+updated .claude/skills/xiaohongshu-note-collector/SKILL.md
+updated .claude/skills/xiaohongshu-card-layout/SKILL.md
+updated .claude/skills/xiaohongshu-infographic-generator/SKILL.md
+updated .claude/skills/digital-human-generator/SKILL.md
+updated .claude/skills/motion-replication/SKILL.md
+updated .claude/skills/viral-midform-video-generator/SKILL.md
+updated .claude/skills/social-data-collector/SKILL.md
+updated .claude/skills/product-selling-point-analysis/SKILL.md
+updated .claude/skills/viral-breakdown-to-video-prompts/SKILL.md
+updated .claude/skills/wechat-longform-writer/SKILL.md
+generated router
+  adding: .claude/skills/ (stored 0%)
+  adding: .claude/skills/video-automation-flow/ (stored 0%)
+  adding: .claude/skills/video-automation-flow/SKILL.md (deflated 44%)
+  adding: .claude/skills/product-selling-point-analysis/ (stored 0%)
+  adding: .claude/skills/product-selling-point-analysis/SKILL.md (deflated 52%)
+  adding: .claude/skills/motion-replication/ (stored 0%)
+  adding: .claude/skills/motion-replication/SKILL.md (deflated 53%)
+  adding: .claude/skills/xiaohongshu-note-collector/ (stored 0%)
+  adding: .claude/skills/xiaohongshu-note-collector/SKILL.md (deflated 52%)
+  adding: .claude/skills/wechat-longform-writer/ (stored 0%)
+  adding: .claude/skills/wechat-longform-writer/SKILL.md (deflated 49%)
+  adding: .claude/skills/viral-midform-video-generator/ (stored 0%)
+  adding: .claude/skills/viral-midform-video-generator/SKILL.md (deflated 52%)
+  adding: .claude/skills/xiaohongshu-infographic-generator/ (stored 0%)
+  adding: .claude/skills/xiaohongshu-infographic-generator/SKILL.md (deflated 59%)
+  adding: .claude/skills/social-data-collector/ (stored 0%)
+  adding: .claude/skills/social-data-collector/SKILL.md (deflated 68%)
+  adding: .claude/skills/viral-breakdown-to-video-prompts/ (stored 0%)
+  adding: .claude/skills/viral-breakdown-to-video-prompts/SKILL.md (deflated 52%)
+  adding: .claude/skills/xiaohongshu-card-layout/ (stored 0%)
+  adding: .claude/skills/xiaohongshu-card-layout/SKILL.md (deflated 52%)
+  adding: .claude/skills/nextide-skill-router-cn/ (stored 0%)
+  adding: .claude/skills/nextide-skill-router-cn/SKILL.md (deflated 53%)
+  adding: .claude/skills/nextide-shared/ (stored 0%)
+  adding: .claude/skills/nextide-shared/SKILL.md (deflated 45%)
+  adding: .claude/skills/digital-human-generator/ (stored 0%)
+  adding: .claude/skills/digital-human-generator/SKILL.md (deflated 54%)
+  adding: .claude/skills/social-data-parser/ (stored 0%)
+  adding: .claude/skills/social-data-parser/SKILL.md (deflated 42%)
+  adding: skills/wechat-longform-writer/ (stored 0%)
+  adding: skills/wechat-longform-writer/SKILL.md (deflated 54%)
+  adding: artifacts/capabilities/ (stored 0%)
+  adding: artifacts/capabilities/viral.breakdown.video_prompts.input.schema.json (deflated 48%)
+  adding: artifacts/capabilities/xhs.infographic.style.extract.input.schema.json (deflated 36%)
+  adding: artifacts/capabilities/motion.replication.image_to_video.input.schema.json (deflated 46%)
+  adding: artifacts/capabilities/capabilities.json (deflated 82%)
+  adding: artifacts/capabilities/social.instagram.collect.input.schema.json (deflated 44%)
+  adding: artifacts/capabilities/social.facebook.collect.input.schema.json (deflated 44%)
+  adding: artifacts/capabilities/xhs.card.layout.input.schema.json (deflated 54%)
+  adding: artifacts/capabilities/content.wechat.longform.write.input.schema.json (deflated 32%)
+  adding: artifacts/capabilities/social.comments.collect.input.schema.json (deflated 42%)
+  adding: artifacts/capabilities/digital-human.video.generate.input.schema.json (deflated 48%)
+  adding: artifacts/capabilities/viral.midform.video.generate.input.schema.json (deflated 47%)
+  adding: artifacts/capabilities/xhs.infographic.generate.input.schema.json (deflated 49%)
+  adding: artifacts/capabilities/product.selling_point.analysis.input.schema.json (deflated 50%)
+  adding: artifacts/capabilities/social.tiktok.collect.input.schema.json (deflated 45%)
+  adding: artifacts/capabilities/xhs.note.collect.input.schema.json (deflated 51%)
+Packaged NexTide skills to /Users/kaka/Desktop/软件开发/content-factory-web 3.2/artifacts/skills/nextide-skills.zip

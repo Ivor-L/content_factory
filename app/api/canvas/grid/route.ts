@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { getRequestUserContext } from "@/lib/authServer";
+import { getApiKeyForUser, getRequestUserContext } from "@/lib/authServer";
 import { syncTaskToSummary } from "@/lib/taskSummary";
 import { emitStoryboardTaskUpsert } from "@/lib/storyboardEvents";
+import { deductConfiguredCredits } from "@/lib/creditBilling";
 
 export async function GET(request: NextRequest) {
   const taskId = request.nextUrl.searchParams.get("taskId");
@@ -54,6 +55,20 @@ export async function POST(request: NextRequest) {
   const mappedContentType = contentTypeMap[String(contentType || "产品展示")] || "产品展示";
 
   try {
+    const apiKey = await getApiKeyForUser(userId);
+    if (!apiKey) {
+      return NextResponse.json({ error: "请先在设置页绑定 API Key" }, { status: 400 });
+    }
+    await deductConfiguredCredits({
+      apiKey,
+      featureKey: "canvas_grid_generation",
+      userId,
+      defaultAmount: 50,
+      modelKey: "nanoBananapro",
+      workflowId: "flow_grid",
+      workflowName: "Canvas Grid Generation",
+    });
+
     const task = await (prisma as any).storyboardTask.create({
       data: {
         status: "GENERATING_GRID",

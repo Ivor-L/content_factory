@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "motion.replication.image_to_video input",
+  "type": "object",
+  "properties": {
+    "personImage": {
+      "type": "string",
+      "description": "待驱动人物图片。"
+    },
+    "motionReferenceVideo": {
+      "type": "string",
+      "description": "动作参考视频。"
+    },
+    "duration": {
+      "type": "number",
+      "description": "目标时长，秒。",
+      "default": 5
+    }
+  },
+  "required": [
+    "personImage",
+    "motionReferenceVideo"
+  ],
+  "additionalProperties": true
+}

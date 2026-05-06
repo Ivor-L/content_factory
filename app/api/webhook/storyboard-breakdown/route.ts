@@ -3,9 +3,7 @@ import prisma from "@/lib/prisma";
 import { isValidAdminWebhookRequest } from "@/lib/webhookAuth";
 import { syncTaskToSummary } from "@/lib/taskSummary";
 import { getApiKeyForUser } from "@/lib/authServer";
-import { deductCredits } from "@/lib/credits";
-import { getCreditCost } from "@/lib/creditCosts";
-import { logCreditUsage } from "@/lib/logCreditUsage";
+import { deductConfiguredCredits } from "@/lib/creditBilling";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -476,18 +474,17 @@ export async function POST(req: NextRequest) {
         try {
           const apiKey = await getApiKeyForUser(task.userId);
           if (apiKey) {
-            const cost = await getCreditCost("storyboard_breakdown", 1);
-            await deductCredits(apiKey, {
-              amount: cost,
+            await deductConfiguredCredits({
+              apiKey,
+              featureKey: "storyboard_breakdown",
+              userId: task.userId,
+              defaultAmount: 1,
               workflowId: "flow_storyboard_disassembly",
               workflowName: "分镜拆解",
-              reason: "storyboard_breakdown",
             });
-            logCreditUsage({ featureKey: "storyboard_breakdown", userId: task.userId, amount: cost, success: true });
           }
         } catch (error) {
           console.error("[storyboard-breakdown] Failed to deduct credits:", error);
-          logCreditUsage({ featureKey: "storyboard_breakdown", userId: task.userId, success: false, errorMessage: error instanceof Error ? error.message : "Unknown" });
         }
       }
     }

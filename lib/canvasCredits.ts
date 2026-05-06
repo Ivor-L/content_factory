@@ -285,6 +285,19 @@ async function fetchWorkflowCreditMeta(workflowId: string): Promise<WorkflowCred
   return {};
 }
 
+async function resolveConfiguredCreditAmount(
+  featureKey: string,
+  modelKey: string | null,
+  fallbackAmount: number,
+): Promise<number> {
+  if (typeof window !== "undefined") {
+    return fallbackAmount;
+  }
+  const requireServer = eval("require") as NodeRequire;
+  const creditCosts = requireServer("@/lib/creditCosts") as typeof import("@/lib/creditCosts");
+  return creditCosts.getCreditCostForModel(featureKey, modelKey, fallbackAmount);
+}
+
 async function resolveCanvasCreditCharge(
   kind: CanvasCreditKind,
   requestBody: Record<string, unknown>,
@@ -309,7 +322,11 @@ async function resolveCanvasCreditCharge(
   const fallbackAmount = envAmount ?? defaults.defaultAmount;
 
   const workflowMeta = await fetchWorkflowCreditMeta(workflowId);
-  const amount = workflowMeta.amount ?? fallbackAmount;
+  const amount = await resolveConfiguredCreditAmount(
+    defaults.reason,
+    resolveModelName(requestBody),
+    workflowMeta.amount ?? fallbackAmount,
+  );
 
   return {
     workflowId: workflowMeta.workflowId || workflowId,

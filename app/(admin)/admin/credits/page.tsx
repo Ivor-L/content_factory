@@ -38,6 +38,12 @@ interface CreditConfig {
   updatedAt: string;
   successCount: number;
   failureCount: number;
+  usedByAgent?: boolean;
+  agentCapabilities?: Array<{
+    id: string;
+    title: string;
+    skillName: string;
+  }>;
 }
 
 type LocalEdit = {
@@ -45,6 +51,15 @@ type LocalEdit = {
   cost?: number | null;
   sellingPrice?: number | null;
   enabled?: boolean;
+};
+
+type AgentCreditAudit = {
+  ok: boolean;
+  total: number;
+  okCount: number;
+  missingFeatureKey: Array<{ id: string; title: string }>;
+  missingCreditConfig: Array<{ id: string; title: string; featureKey?: string; fallbackEstimatedCredits?: number }>;
+  disabledCreditConfig: Array<{ id: string; title: string; featureKey?: string; amount?: number }>;
 };
 
 const CATEGORY_META: Record<string, { label: string; icon: React.ElementType }> = {
@@ -91,9 +106,26 @@ function profitColor(profit: number) {
   return "text-gray-400";
 }
 
+function isSeedanceCredit(config: Pick<CreditConfig, "featureKey">) {
+  return config.featureKey.startsWith("storyboard_video:bytedance/seedance-");
+}
+
+function getCreditDisplayName(config: CreditConfig) {
+  if (!isSeedanceCredit(config)) return config.featureName;
+
+  const isCompat = config.featureKey.includes(".0");
+  const isFast = config.featureKey.includes("fast");
+  const version = isFast ? "Seedance 2.0 Fast" : "Seedance 2.0";
+  return `分镜视频生成 · ${version}${isCompat ? "（兼容写法）" : "（标准写法）"}`;
+}
+
+function shouldHideConfig(config: CreditConfig) {
+  return config.featureKey.startsWith("monetization_");
+}
+
 // CSV export
 function exportCSV(configs: CreditConfig[]) {
-  const headers = ["featureKey", "featureName", "modelKey", "category", "cost(元)", "sellingPrice(元)", "amount(积分)", "enabled", "successCount", "failureCount"];
+  const headers = ["featureKey", "featureName", "modelKey", "category", "cost(元)", "sellingPrice(元)", "amount(积分)", "enabled", "successCount", "failureCount", "agentCapabilities"];
   const rows = configs.map((c) => [
     c.featureKey,
     c.featureName,
@@ -105,6 +137,7 @@ function exportCSV(configs: CreditConfig[]) {
     c.enabled ? "true" : "false",
     c.successCount,
     c.failureCount,
+    c.agentCapabilities?.map((item) => item.id).join(";") ?? "",
   ]);
   const csv = [headers, ...rows].map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
@@ -144,6 +177,8 @@ export default function AdminCreditsPage() {
   const [token, setToken] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<string | null>(null);
+  const [agentAudit, setAgentAudit] = useState<AgentCreditAudit | null>(null);
+  const [fixingAgentAudit, setFixingAgentAudit] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -173,6 +208,7 @@ export default function AdminCreditsPage() {
       if (!text) return;
       const json = JSON.parse(text);
       if (json.data) setConfigs(json.data);
+      if (json.agentCreditAudit) setAgentAudit(json.agentCreditAudit);
     } finally {
       setLoading(false);
     }
@@ -204,6 +240,28 @@ export default function AdminCreditsPage() {
       next.set(id, merged);
       return next;
     });
+  };
+
+  const fixAgentAudit = async (action: "fix_all" | "create_missing" | "enable_disabled" = "fix_all") => {
+    if (!token) return;
+    setFixingAgentAudit(true);
+    setImportResult(null);
+    try {
+      const res = await fetch("/api/admin/credits/agent-audit/fix", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `修复失败 (${res.status})`);
+      setAgentAudit(json.data?.audit ?? null);
+      setImportResult(`Agent 积分配置已修复：创建 ${json.data?.created?.length ?? 0} 个，启用 ${json.data?.enabled?.length ?? 0} 个`);
+      await fetchConfigs();
+    } catch (e: any) {
+      setImportResult(`Agent 积分配置修复失败：${e.message}`);
+    } finally {
+      setFixingAgentAudit(false);
+    }
   };
 
   const saveOne = async (config: CreditConfig) => {
@@ -400,7 +458,9 @@ export default function AdminCreditsPage() {
 
   const dirtyCount = editingIds.size;
 
-  const grouped = configs.reduce<Record<string, CreditConfig[]>>((acc, c) => {
+  const visibleConfigs = configs.filter((config) => !shouldHideConfig(config));
+
+  const grouped = visibleConfigs.reduce<Record<string, CreditConfig[]>>((acc, c) => {
     (acc[c.category] ??= []).push(c);
     return acc;
   }, {});
@@ -411,11 +471,11 @@ export default function AdminCreditsPage() {
   ];
 
   // 汇总统计
-  const totalProfit = configs.reduce((sum, c) => {
+  const totalProfit = visibleConfigs.reduce((sum, c) => {
     if (c.cost != null && c.sellingPrice != null) return sum + (c.sellingPrice - c.cost);
     return sum;
   }, 0);
-  const marginItems = configs.filter((c) => c.sellingPrice != null && c.sellingPrice > 0 && c.cost != null);
+  const marginItems = visibleConfigs.filter((c) => c.sellingPrice != null && c.sellingPrice > 0 && c.cost != null);
   const avgMargin = marginItems.length > 0
     ? marginItems.reduce((sum, c) => sum + (c.sellingPrice! - c.cost!) / c.sellingPrice! * 100, 0) / marginItems.length
     : null;
@@ -430,7 +490,7 @@ export default function AdminCreditsPage() {
         <div>
           <h1 className="text-xl font-bold text-gray-900 dark:text-white">积分配置</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-            共 {configs.length} 项 · 1元 = {EXCHANGE_RATE} 积分 · 修改后 60 秒内生效
+            共 {visibleConfigs.length} 项 · 1元 = {EXCHANGE_RATE} 积分 · 修改后 60 秒内生效
           </p>
         </div>
         {/* Import / Export */}
@@ -464,6 +524,35 @@ export default function AdminCreditsPage() {
       {importResult && (
         <div className={`mb-4 px-4 py-2.5 rounded-lg text-sm font-medium ${importResult.includes("失败") ? "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400" : "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400"}`}>
           {importResult}
+        </div>
+      )}
+
+      {agentAudit && !agentAudit.ok && (
+        <div className="mb-4 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center shrink-0">
+              <Zap size={16} className="text-amber-600 dark:text-amber-300" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-sm font-semibold text-amber-900 dark:text-amber-100">Agent 功能积分检查</h2>
+                <span className="text-xs text-amber-700 dark:text-amber-300">{agentAudit.okCount}/{agentAudit.total} 已配置</span>
+              </div>
+              <div className="mt-2 space-y-1 text-xs text-amber-800 dark:text-amber-200">
+                {agentAudit.missingFeatureKey.length > 0 && <p>缺少 featureKey：{agentAudit.missingFeatureKey.map((item) => item.id).join(", ")}</p>}
+                {agentAudit.missingCreditConfig.length > 0 && <p>缺少积分配置：{agentAudit.missingCreditConfig.map((item) => `${item.featureKey || item.id}(${item.fallbackEstimatedCredits ?? 1}积分)`).join(", ")}</p>}
+                {agentAudit.disabledCreditConfig.length > 0 && <p>已禁用配置：{agentAudit.disabledCreditConfig.map((item) => item.featureKey || item.id).join(", ")}</p>}
+              </div>
+            </div>
+            <button
+              onClick={() => fixAgentAudit("fix_all")}
+              disabled={fixingAgentAudit || agentAudit.missingFeatureKey.length > 0}
+              className="px-3 py-2 rounded-lg bg-black text-white dark:bg-white dark:text-black text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+              title={agentAudit.missingFeatureKey.length > 0 ? "缺少 featureKey 需要开发侧先补 registry 映射" : "按 agent 能力审计结果创建缺失配置并启用已禁用配置"}
+            >
+              {fixingAgentAudit ? "修复中..." : "一键修复"}
+            </button>
+          </div>
         </div>
       )}
 
@@ -553,12 +642,30 @@ export default function AdminCreditsPage() {
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className={`text-sm font-medium text-gray-800 dark:text-gray-200 ${!currentEnabled && !isEditing ? "line-through" : ""}`}>
-                            {config.featureName}
+                            {getCreditDisplayName(config)}
                           </span>
                           {config.modelKey && (
                             <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded font-mono">{config.modelKey}</span>
                           )}
+                          {isSeedanceCredit(config) && (
+                            <span className="text-[10px] bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 rounded-full font-semibold tracking-wide">
+                              每秒
+                            </span>
+                          )}
+                          {config.usedByAgent && (
+                            <span
+                              title={config.agentCapabilities?.map((item) => `${item.title} (${item.id})`).join("\n")}
+                              className="text-[10px] bg-black text-white dark:bg-white dark:text-black px-1.5 py-0.5 rounded-full font-semibold tracking-wide"
+                            >
+                              Agent ×{config.agentCapabilities?.length ?? 0}
+                            </span>
+                          )}
                         </div>
+                        {config.usedByAgent && config.agentCapabilities?.length ? (
+                          <p className="text-[11px] text-indigo-500 dark:text-indigo-300 mt-0.5 truncate">
+                            Agent: {config.agentCapabilities.map((item) => item.id).join(", ")}
+                          </p>
+                        ) : null}
                         {errMsg && <p className="text-xs text-red-500 mt-0.5">{errMsg}</p>}
                       </div>
 
@@ -654,9 +761,9 @@ export default function AdminCreditsPage() {
 
                       {/* Success Count */}
                       <div className="flex justify-center">
-                        <span className="text-xs font-medium tabular-nums text-green-600 dark:text-green-400">
-                          {config.successCount > 0 ? config.successCount : <span className="text-gray-300 dark:text-gray-600">0</span>}
-                        </span>
+                          <span className="text-xs font-medium tabular-nums text-green-600 dark:text-green-400">
+                            {config.successCount > 0 ? config.successCount : <span className="text-gray-300 dark:text-gray-600">0</span>}
+                          </span>
                       </div>
 
                       {/* Failure Count */}
@@ -676,7 +783,7 @@ export default function AdminCreditsPage() {
                             <span className={`inline-block h-4 w-4 transform rounded-full bg-white dark:bg-black transition-transform ${currentEnabled ? "translate-x-6" : "translate-x-1"}`} />
                           </button>
                         ) : (
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${config.enabled ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400" : "bg-gray-100 dark:bg-gray-700 text-gray-400"}`}>
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${config.enabled ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400" : "bg-gray-100 dark:bg-gray-700 text-gray-400"}`}>
                             {config.enabled ? "启用" : "禁用"}
                           </span>
                         )}

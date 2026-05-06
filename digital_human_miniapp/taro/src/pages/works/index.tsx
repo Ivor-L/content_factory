@@ -146,6 +146,7 @@ export default function WorksPage() {
                   const isRemix = isRemixWork(item);
                   const videoPreviewUrl = isRemix ? resolveRemixReferenceVideoUrl(item) : item.type === 'video' ? resolveWorkVideoUrl(item) : '';
                   const cardStatus = getWorkStatusLabel(item);
+                  const isImageText = item.type === 'image-text';
 
                   return (
                     <View
@@ -201,7 +202,7 @@ export default function WorksPage() {
                       </View>
 
                       <View className='works-card-body'>
-                        <Text className='works-card-title'>{item.title}</Text>
+                        <Text className={`works-card-title ${isImageText ? 'works-card-title--full' : ''}`}>{item.title}</Text>
                         {isRemix && (
                           <Text className='works-card-preview'>{getRemixStageText(item)}</Text>
                         )}
