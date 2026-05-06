@@ -5,6 +5,12 @@ import { loadTaskWithAssets, parseMetadata } from "@/lib/creativeTaskService";
 import { serializeTaskDetail } from "@/lib/creativeTaskFormatter";
 import { sanitizeStyleRules } from "@/lib/styleRules";
 import { syncTaskToSummary } from "@/lib/taskSummary";
+import { deleteShortTtlCache } from "@/lib/shortTtlCache";
+
+function invalidateTaskListCaches(userId: string) {
+  deleteShortTtlCache("api:creative-tasks:list", (key) => key.includes(userId));
+  deleteShortTtlCache("api:tasks:list", (key) => key.includes(userId));
+}
 
 type Params = {
   params: Promise<{ taskId: string }>;
@@ -114,6 +120,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     taskId: taskId,
     operation: 'update',
   });
+  invalidateTaskListCaches(userId);
 
   const updated = await loadTaskWithAssets(taskId, userId);
   return NextResponse.json({ data: serializeTaskDetail(updated!) });
@@ -162,6 +169,7 @@ export async function DELETE(request: NextRequest, { params }: Params) {
     taskId: taskId,
     operation: 'delete',
   });
+  invalidateTaskListCaches(userId);
 
   return NextResponse.json({ ok: true });
 }

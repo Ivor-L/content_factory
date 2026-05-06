@@ -10,9 +10,12 @@ import {
   type CreateCreativeTaskPayload,
 } from "@/lib/creativeTaskCreation";
 import { syncTaskToSummary } from "@/lib/taskSummary";
+import { deleteShortTtlCache, getShortTtlCache, setShortTtlCache } from "@/lib/shortTtlCache";
+
+const CREATIVE_TASKS_LIST_CACHE_TTL_MS = 3_000;
 
 export async function GET(request: NextRequest) {
-  const { userId } = await getRequestUserContext(request);
+  const { userId } = await getRequestUserContext(request, { skipProfileKeys: true });
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -27,6 +30,21 @@ export async function GET(request: NextRequest) {
 
   const includeCounts = searchParams.get("includeCounts") === "1";
   const includeHeavy = searchParams.get("includeHeavy") === "1";
+
+  const cacheKey = JSON.stringify({
+    userId,
+    stage,
+    status,
+    limit,
+    includeCounts,
+    includeHeavy,
+  });
+  const cached = getShortTtlCache<object>("api:creative-tasks:list", cacheKey);
+  if (cached) {
+    return NextResponse.json(cached, {
+      headers: { "X-Cache": "HIT" },
+    });
+  }
 
   const tasks = await prisma.creativeTask.findMany({
     where: {
@@ -91,7 +109,17 @@ export async function GET(request: NextRequest) {
     generatedImages: includeHeavy ? parseGeneratedImages(task.generatedImagesJson) : [],
   }));
 
-  return NextResponse.json({ data });
+  const responseBody = { data };
+  setShortTtlCache(
+    "api:creative-tasks:list",
+    cacheKey,
+    responseBody,
+    CREATIVE_TASKS_LIST_CACHE_TTL_MS,
+  );
+
+  return NextResponse.json(responseBody, {
+    headers: { "X-Cache": "MISS" },
+  });
 }
 
 type CreateBody = CreateCreativeTaskPayload;
@@ -129,6 +157,8 @@ export async function POST(request: NextRequest) {
     taskId: task.id,
     operation: 'create',
   });
+  deleteShortTtlCache("api:creative-tasks:list", (key) => key.includes(userId));
+  deleteShortTtlCache("api:tasks:list", (key) => key.includes(userId));
 
   const fullTask = await loadTaskWithAssets(task.id, userId);
   return NextResponse.json({ data: fullTask ? serializeTaskDetail(fullTask) : null }, { status: 201 });

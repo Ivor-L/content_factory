@@ -147,9 +147,9 @@ export interface RequestUserContext {
 
 export async function getRequestUserContext(
   request: Request,
-  options: { allowDefaultApiKey?: boolean; useSystemApiKey?: boolean } = {}
+  options: { allowDefaultApiKey?: boolean; useSystemApiKey?: boolean; skipProfileKeys?: boolean } = {}
 ): Promise<RequestUserContext> {
-  const { allowDefaultApiKey = true, useSystemApiKey = false } = options;
+  const { allowDefaultApiKey = true, useSystemApiKey = false, skipProfileKeys = false } = options;
   const headerApiKey = request.headers.get('x-user-api-key')?.trim() ?? null;
   const headerNexApiKey = request.headers.get('x-nexapi-key')?.trim() ?? null;
   const token = extractBearerToken(request);
@@ -214,6 +214,15 @@ export async function getRequestUserContext(
       }
     }
     return { userId: null, token: null, apiKey: null, nexApiKey: null };
+  }
+
+  if (skipProfileKeys) {
+    return {
+      userId: resolvedUserId,
+      token,
+      apiKey: headerApiKey,
+      nexApiKey: headerNexApiKey,
+    };
   }
 
   let apiKey: string | null = null;
