@@ -25,6 +25,9 @@ export async function GET(request: NextRequest) {
     ? Math.max(1, Math.min(limitParam, 100))
     : 30;
 
+  const includeCounts = searchParams.get("includeCounts") === "1";
+  const includeHeavy = searchParams.get("includeHeavy") === "1";
+
   const tasks = await prisma.creativeTask.findMany({
     where: {
       userId,
@@ -35,14 +38,30 @@ export async function GET(request: NextRequest) {
     },
     orderBy: { updatedAt: "desc" },
     take: limit,
-    include: {
-      _count: {
-        select: {
-          historyDocs: true,
-          stories: true,
-          styles: true,
-        },
-      },
+    select: {
+      id: true,
+      title: true,
+      stage: true,
+      status: true,
+      ideaText: true,
+      channel: true,
+      targetOutput: true,
+      goal: includeHeavy,
+      metadata: includeHeavy,
+      generatedImagesJson: includeHeavy,
+      createdAt: true,
+      updatedAt: true,
+      ...(includeCounts
+        ? {
+            _count: {
+              select: {
+                historyDocs: true,
+                stories: true,
+                styles: true,
+              },
+            },
+          }
+        : {}),
     },
   });
 
@@ -54,16 +73,22 @@ export async function GET(request: NextRequest) {
     ideaText: task.ideaText,
     channel: task.channel,
     targetOutput: task.targetOutput,
-    goal: task.goal,
-    metadata: parseMetadata(task.metadata),
+    goal: includeHeavy ? task.goal : null,
+    metadata: includeHeavy ? parseMetadata(task.metadata) : null,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
-    attachments: {
-      historyDocs: task._count.historyDocs,
-      stories: task._count.stories,
-      styles: task._count.styles,
-    },
-    generatedImages: parseGeneratedImages(task.generatedImagesJson),
+    attachments: includeCounts
+      ? {
+          historyDocs: task._count.historyDocs,
+          stories: task._count.stories,
+          styles: task._count.styles,
+        }
+      : {
+          historyDocs: 0,
+          stories: 0,
+          styles: 0,
+        },
+    generatedImages: includeHeavy ? parseGeneratedImages(task.generatedImagesJson) : [],
   }));
 
   return NextResponse.json({ data });
