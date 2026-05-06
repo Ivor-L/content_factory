@@ -28,10 +28,11 @@ type CacheEntry<T> = {
   expiresAt: number;
 };
 
-const TOKEN_USER_CACHE_TTL_MS = 30_000;
+const TOKEN_USER_CACHE_TTL_MS = 5 * 60_000;
 const PROFILE_API_KEY_CACHE_TTL_MS = 30_000;
 const AUTH_CACHE_MAX_ENTRIES = 1000;
 const tokenUserCache = new Map<string, CacheEntry<string>>();
+const tokenUserInflight = new Map<string, Promise<string | null>>();
 const profileApiKeyCache = new Map<string, CacheEntry<string | null>>();
 const profileNexApiKeyCache = new Map<string, CacheEntry<string | null>>();
 
@@ -181,13 +182,28 @@ export async function getRequestUserContext(
   }
 
   if (!resolvedUserId) {
+    let inflight = tokenUserInflight.get(token);
+    if (!inflight) {
+      inflight = (async () => {
+        try {
+          const { data, error } = await supabaseAnonClient.auth.getUser(token);
+          if (!error && data?.user?.id) {
+            return data.user.id;
+          }
+        } catch (error) {
+          console.error('Failed to resolve Supabase user', error);
+        }
+        return null;
+      })();
+      tokenUserInflight.set(token, inflight);
+    }
+
     try {
-      const { data, error } = await supabaseAnonClient.auth.getUser(token);
-      if (!error && data?.user?.id) {
-        resolvedUserId = data.user.id;
+      resolvedUserId = await inflight;
+    } finally {
+      if (tokenUserInflight.get(token) === inflight) {
+        tokenUserInflight.delete(token);
       }
-    } catch (error) {
-      console.error('Failed to resolve Supabase user', error);
     }
   }
 
