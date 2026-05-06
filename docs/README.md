@@ -29,6 +29,7 @@
 |------|------|
 | [DEPLOY_CLOUDFLARE_SITE_ONLY.md](./03-deployment/DEPLOY_CLOUDFLARE_SITE_ONLY.md) | 官网页面单独部署到 Cloudflare Workers |
 | [MULTI_TENANT_DEPLOY.md](./03-deployment/MULTI_TENANT_DEPLOY.md) | 多租户功能部署、数据库迁移、租户初始化 |
+| [web-scale-runbook.md](./03-deployment/web-scale-runbook.md) | Web 多副本扩容 Runbook：Docker Compose + Nginx 负载均衡、压测复验与回滚 |
 | [20260506-nextide-agent-runtime-deploy-checklist.md](./20260506-nextide-agent-runtime-deploy-checklist.md) | NexTide Agent Runtime 部署安全清单：迁移、鉴权、积分、回调与产物导出检查 |
 
 ---

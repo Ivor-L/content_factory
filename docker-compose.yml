@@ -1,8 +1,5 @@
-version: '3.9'
-
 services:
   web:
-    container_name: content-factory-web
     build:
       context: .
       dockerfile: Dockerfile
@@ -14,8 +11,6 @@ services:
         NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
         SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
     restart: always
-    ports:
-      - "3002:3000"
     env_file:
       - .env
     environment:
@@ -31,6 +26,21 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - skills_data:/app/data/skills
+    expose:
+      - "3000"
+    networks:
+      - app_network
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: content-factory-web
+    restart: always
+    depends_on:
+      - web
+    ports:
+      - "3002:80"
+    volumes:
+      - ./deploy/nginx/content-factory.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
       - app_network
 
