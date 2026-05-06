@@ -458,8 +458,8 @@ export default function LoginPage() {
           preload="metadata"
           poster="/videos/login-hero-poster.jpg"
         >
-          <source src="/videos/login-hero.webm" type="video/webm" />
           <source src="/videos/login-hero.mp4" type="video/mp4" />
+          <source src="/videos/login-hero.webm" type="video/webm" />
         </video>
         <div className="absolute inset-0 bg-gradient-to-br from-black/60 via-black/30 to-black/70" />
 
