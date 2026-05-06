@@ -721,6 +721,8 @@ model CreativeTask {
   digitalHumanVideos  DigitalHumanVideo[]
   knowledgeVideos     KnowledgeVideoTask[]
 
+  @@index([userId, updatedAt(sort: Desc)], map: "creative_tasks_user_updated_idx")
+  @@index([userId, status, updatedAt(sort: Desc)], map: "creative_tasks_user_status_updated_idx")
   @@map("creative_tasks")
   @@schema("public")
 }
@@ -1185,7 +1187,9 @@ model TaskSummary {
   @@unique([taskType, taskId])
   @@index([userId, updatedAt(sort: Desc)])
   @@index([userId, taskType])
+  @@index([userId, taskType, updatedAt(sort: Desc)], map: "task_summaries_user_type_updated_idx")
   @@index([userId, status])
+  @@index([userId, status, updatedAt(sort: Desc)], map: "task_summaries_user_status_updated_idx")
   @@map("task_summaries")
   @@schema("public")
 }

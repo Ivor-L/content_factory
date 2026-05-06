@@ -74,6 +74,8 @@
 | 文件 | 说明 |
 |------|------|
 | [TEST_PLAN.md](./07-testing/TEST_PLAN.md) | QA 测试计划、测试套件、风险清单 |
+| [20260506-online-load-test-plan.md](./07-testing/20260506-online-load-test-plan.md) | 线上压力测试执行计划：范围、阶段、指标、终止条件与交付物；脚本见 `tests/load/` |
+| [20260506-online-load-test-runbook.md](./07-testing/20260506-online-load-test-runbook.md) | 2026-05-07 线上压测 Runbook：2 小时窗口、100 并发、预算与执行命令 |
 | [CLEANUP_AUDIT_2026-03-24.md](./07-testing/CLEANUP_AUDIT_2026-03-24.md) | 2026-03-24 仓库清理审计报告 |
 
 ---
@@ -133,6 +135,7 @@
 | [20260506-nextide-agent-runtime-release-notes.md](./20260506-nextide-agent-runtime-release-notes.md) | NexTide Agent Runtime Phase 2 发布说明：能力、安全、积分、CLI、Skills、部署与后续计划 |
 | [20260507-nextide-skills-runtime-phase2-plan.md](./20260507-nextide-skills-runtime-phase2-plan.md) | NexTide Skills Runtime Phase 2：Agent Run Store、长任务状态闭环与后续产品化计划 |
 | [20260506-nextide-skills-runtime-next-dev-plan.md](./20260506-nextide-skills-runtime-next-dev-plan.md) | NexTide Skills Runtime 新开发计划与当前进度：合并 ClipcatSkill 学习、线上更新、积分流水单表、TikTok Commerce Surface 与 Sprint 计划 |
+| [20260506-online-load-test-performance-fix-plan.md](./20260506-online-load-test-performance-fix-plan.md) | 线上压测后性能修复计划：任务列表纯读化、索引补齐与复验标准 |
 | [20260504-character-library-view-edit-delete-plan.md](./20260504-character-library-view-edit-delete-plan.md) | Web 角色库查看/编辑/删除与创建表单交互优化计划 |
 | [20260504-style-library-image-performance-plan.md](./20260504-style-library-image-performance-plan.md) | 风格库图片加载性能优化：缩略图生成、列表优先加载与懒加载 |
 | [20260504-xhs-markdown-table-render-plan.md](./20260504-xhs-markdown-table-render-plan.md) | 小红书卡片 Markdown 表格渲染：Web/小程序预览、后端导出与 AI 排版对齐 |

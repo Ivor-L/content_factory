@@ -77,6 +77,14 @@ const pickFirstText = (record: Record<string, any> | null, keys: string[]): stri
   return "";
 };
 
+const extractCopyFailureFromBreakdown = (raw?: string | null): string => {
+  const parsed = parseResult(raw);
+  const extraction = asRecord(parsed.copyExtraction) ?? asRecord(parsed.copy_extraction);
+  const status = typeof extraction?.status === "string" ? extraction.status.toLowerCase() : "";
+  if (status !== "failed") return "";
+  return pickFirstText(extraction, ["error", "message", "reason"]) || "未获取到文案";
+};
+
 const extractRemixCopyFromPayload = (
   payload?: Record<string, any> | null,
   seen?: WeakSet<Record<string, any>>,
@@ -622,6 +630,14 @@ export function CopyRemixPanel({
             .eq("id", scriptId)
             .maybeSingle();
           if (!data) return;
+          const failure = extractCopyFailureFromBreakdown(data.breakdown);
+          if (failure) {
+            clearInterval(timer);
+            setExtracting(false);
+            window.localStorage.removeItem(key);
+            toast.error(failure);
+            return;
+          }
           const next = extractCopyFromBreakdown(data.breakdown);
           if (next && next !== baseCopyRef.current) {
             clearInterval(timer);
@@ -651,9 +667,16 @@ export function CopyRemixPanel({
         },
         (payload) => {
           const breakdown = (payload.new as { breakdown?: string | null })?.breakdown;
+          const failure = extractCopyFailureFromBreakdown(breakdown);
+          if (failure) {
+            setExtracting(false);
+            toast.error(failure);
+            return;
+          }
           const next = extractCopyFromBreakdown(breakdown);
           if (next && next !== baseCopyRef.current) {
             setBaseCopy(next);
+            setExtracting(false);
           }
         },
       )
@@ -719,6 +742,14 @@ export function CopyRemixPanel({
                 .eq("id", scriptId)
                 .maybeSingle();
               if (error || !data) return;
+              const failure = extractCopyFailureFromBreakdown(data.breakdown);
+              if (failure) {
+                clearInterval(timer);
+                setExtracting(false);
+                if (pendingKey) window.localStorage.removeItem(pendingKey);
+                toast.error(failure);
+                return;
+              }
               const next = extractCopyFromBreakdown(data.breakdown);
               if (next && next !== baseCopyRef.current) {
                 clearInterval(timer);

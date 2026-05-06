@@ -49,6 +49,14 @@ nextide capability list
 | 视频提示词生成前 QA | `video-prompt-preflight-qa` | `prompt.preflight.qa` | `available` | prompt-qa, preflight, video, cost-guard, local-agent |
 | 视觉开头优化 | `visual-hook-optimizer` | `content.visual_hook.design` | `available` | visual-hook, first-frame, cover, short-video, local-agent |
 | 短视频开头模式路由 | `opening-pattern-router` | `content.opening_pattern.route` | `available` | hook-router, opening-pattern, short-video, local-agent |
+| 小红书标题生成 | `xiaohongshu-title-generator` | `content.xhs.title.generate` | `available` | xiaohongshu, title, copywriting, local-agent |
+| 小红书笔记正文写作 | `xiaohongshu-note-writer` | `content.xhs.note.write` | `available` | xiaohongshu, note, copywriting, local-agent |
+| 内容一鱼多吃打包 | `content-repurpose-packager` | `content.repurpose.pack` | `available` | repurpose, multi-platform, content-pack, local-agent |
+| 内容日历规划 | `content-calendar-planner` | `content.calendar.plan` | `available` | calendar, planning, content-strategy, local-agent |
+| 广告文案变体生成 | `ad-copy-variant-generator` | `content.ad.copy.variants` | `available` | ad-copy, variants, performance, local-agent |
+| 产品内容角度矩阵 | `product-content-angle-matrix` | `product.angle.matrix` | `available` | product, angle-matrix, content-strategy, local-agent |
+| 竞品对标 Brief | `competitor-benchmark-brief` | `competitor.benchmark.brief` | `available` | competitor, benchmark, brief, local-agent |
+| 短视频分镜脚本规划 | `short-video-storyboard-planner` | `script.storyboard.plan` | `available` | storyboard, short-video, script, prompt, local-agent |
 | 公众号长文写作 | `wechat-longform-writer` | `content.wechat.longform.write` | `available` | wechat, longform, writing |
 
 <!-- END NEXTIDE AUTO-GENERATED -->

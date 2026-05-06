@@ -1156,7 +1156,98 @@ nextide-skills.zip includes all hook skills
 nextide-agent-runtime-0.2.0.zip includes updated capabilities/fixtures/skills
 ```
 
-## 15. 立即下一步
+## 15. TikTok 博主蒸馏器线上验证与排查记录
+
+已验证线上 `social.tiktok.collect` 的 `mode=creator`：
+
+```bash
+nextide capability run social.tiktok.collect \
+  --api-base-url https://atomx.top \
+  --input .nextide/input/tiktok-creator-collect-example.json \
+  --mode submit --wait
+```
+
+线上 API 能成功提交任务：
+
+```text
+HTTP 200
+run.status = waiting_callback
+result.platform = tiktok
+result.mode = creator
+result.entries = ["@quinclips3"]
+callbackUrl = https://atomx.top/api/webhook/social-scraper
+```
+
+本次验证 run：
+
+```text
+run_58782d8a-b126-4015-9b1d-5a99cbf7483e
+```
+
+同时验证账号 URL 形式：
+
+```text
+.nextide/input/tiktok-creator-collect-url-example.json
+```
+
+提交成功 run：
+
+```text
+run_0cbce08a-9bb1-41b9-91c2-083f27a6257a
+```
+
+但持续轮询后，两种输入都仍然：
+
+```text
+status = waiting_callback
+data.importedCount = 0
+artifacts = []
+```
+
+排查结论：
+
+```text
+Agent Runtime / API / auth / credit / run store 正常。
+问题在 social-scraper/start 向 n8n 传 TikTok creator mode 时，当前线上代码把 creator 归并成 input_mode=url，并把 @handle 当 postURLs 传给 workflow。
+如果 n8n 工作流只按 postURLs 采集单视频，则不会得到账号视频列表。
+```
+
+已本地修复：
+
+```text
+app/api/social-scraper/start/route.ts
+lib/agent-capabilities/runner.ts
+```
+
+修复内容：
+
+```text
+- social runner 支持 creators 字段
+- social-scraper/start 支持 body.creators/body.urls
+- TikTok creator mode 不再只传 postURLs
+- creator mode 会生成：
+  profiles: ["@handle"]
+  profileUrls/profileURLs: ["https://www.tiktok.com/@handle"]
+  startUrls: [{url}]
+  postURLs: [url]  // 仅保留兼容旧 n8n
+  input_mode: "creator"
+  request_meta.requested_mode = "creator"
+```
+
+已验证本地：
+
+```bash
+npm run typecheck
+```
+
+下一步：
+
+```text
+需要部署该 patch，并确认 n8n Social采集总工作流_Web直连版 支持 input_mode=creator 或至少使用 payload.profiles/profileUrls/startUrls。
+如果 n8n 暂不支持 creator 分支，则需要在 n8n 增加 TikTok profile actor 分支，或在 Next API 侧增加 Apify profile direct runner。
+```
+
+## 16. 立即下一步
 
 建议下一步直接执行 Sprint 1 的本地开发和部署准备：
 

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "content.xhs.note.write input",
+  "type": "object",
+  "properties": {
+    "material": {
+      "type": "string",
+      "description": "产品信息、体验素材、选题或已有草稿。"
+    },
+    "audience": {
+      "type": "string",
+      "description": "目标人群。"
+    },
+    "tone": {
+      "type": "string",
+      "description": "语气：真实体验/专业测评/朋友安利/避坑/清单等。"
+    },
+    "complianceLevel": {
+      "type": "string",
+      "description": "合规严格度：normal / strict。",
+      "default": "normal"
+    }
+  },
+  "required": [
+    "material"
+  ],
+  "additionalProperties": true
+}

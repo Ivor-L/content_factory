@@ -359,7 +359,7 @@ async function fetchVisibleTaskSummaryPage({
   while (true) {
     const batch = await prisma.taskSummary.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { updatedAt: 'desc' },
       take: batchSize,
       skip: rawSkip,
     });

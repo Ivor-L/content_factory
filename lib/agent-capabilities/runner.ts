@@ -509,6 +509,7 @@ async function runSocialCollect(input: {
   const entries = [
     ...pickStringArray(input.payload.entries),
     ...pickStringArray(input.payload.targets),
+    ...pickStringArray(input.payload.creators),
     ...pickStringArray(input.payload.urls),
     ...pickStringArray(input.payload.queries),
     ...pickStringArray(input.payload.keywords),

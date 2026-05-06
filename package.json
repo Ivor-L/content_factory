@@ -33,7 +33,13 @@
     "nextide:pack": "mkdir -p artifacts/cli && cd packages/nextide-cli && npm pack --pack-destination ../../artifacts/cli",
     "release:agent-runtime": "npm run nextide:pack && npm run skills:package && tsx scripts/package-nextide-agent-runtime.ts",
     "smoke:agent-runtime": "tsx scripts/smoke-nextide-agent-security.ts",
-    "cleanup:agent-runs": "tsx scripts/cleanup-stale-agent-runs.ts"
+    "cleanup:agent-runs": "tsx scripts/cleanup-stale-agent-runs.ts",
+    "loadtest:readonly": "k6 run tests/load/online-smoke-readonly.js",
+    "loadtest:write": "k6 run tests/load/online-creative-task-write.js",
+    "loadtest:ai": "k6 run tests/load/online-ai-generation.js",
+    "loadtest:cleanup": "tsx scripts/loadtest-cleanup.ts",
+    "loadtest:node": "node tests/load/node-loadtest.mjs",
+    "loadtest:node-cleanup": "node tests/load/node-cleanup-loadtest.mjs"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.4.1",

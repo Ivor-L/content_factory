@@ -3,65 +3,303 @@
   "apiBaseUrl": "https://atomx.top",
   "hasUserApiKey": true,
   "userApiKeySource": "/Users/kaka/.nextide/config.json",
-  "createdAt": "2026-05-06T10:48:58.894Z",
+  "createdAt": "2026-05-06T13:41:45.450Z",
   "checks": [
     {
       "name": "capability_list",
       "ok": true,
       "details": {
-        "count": 14
+        "count": 19
       }
     },
     {
       "name": "credit_config_audit",
       "ok": true,
       "details": {
-        "skipped": "server_does_not_expose_creditAudit_yet"
+        "ok": true,
+        "total": 19,
+        "okCount": 19,
+        "missingFeatureKey": [],
+        "missingCreditConfig": [],
+        "disabledCreditConfig": [],
+        "items": [
+          {
+            "id": "xhs.note.collect",
+            "title": "小红书笔记采集",
+            "featureKey": "xhs_note_collect",
+            "hasFeatureKey": true,
+            "configExists": true,
+            "configEnabled": true,
+            "amount": 3,
+            "category": "xhs",
+            "modelKey": null,
+            "fallbackEstimatedCredits": 5,
+            "status": "ok"
+          },
+          {
+            "id": "xhs.card.layout",
+            "title": "小红书图文排版",
+            "featureKey": "xhs_card_layout",
+            "hasFeatureKey": true,
+            "configExists": true,
+            "configEnabled": true,
+            "amount": 200,
+            "category": "xhs",
+            "modelKey": null,
+            "fallbackEstimatedCredits": 1,
+            "status": "ok"
+          },
+          {
+            "id": "xhs.infographic.style.extract",
+            "title": "小红书信息卡片风格提炼",
+            "featureKey": "xhs_vision_style_web",
+            "hasFeatureKey": true,
+            "configExists": true,
+            "configEnabled": true,
+            "amount": 30,
+            "category": "xhs",
+            "modelKey": "flow_xhs_Vision",
+            "fallbackEstimatedCredits": 8,
+            "status": "ok"
+          },
+          {
+            "id": "xhs.infographic.generate",
+            "title": "小红书信息卡片生成",
+            "featureKey": "xhs_infographic_generate",
+            "hasFeatureKey": true,
+            "configExists": true,
+            "configEnabled": true,
+            "amount": 150,
+            "category": "xhs",
+            "modelKey": null,
+            "fallbackEstimatedCredits": 10,
+            "status": "ok"
+          },
+          {
+            "id": "digital-human.video.generate",
+            "title": "视频数字人生成",
+            "featureKey": "digital_human",
+            "hasFeatureKey": true,
+            "configExists": true,
+            "configEnabled": true,
+            "amount": 500,
+            "category": "digital_human",
+            "modelKey": "flow_digital_human",
+            "fallbackEstimatedCredits": 30,
+            "status": "ok"
+          },
+          {
+            "id": "motion.replication.image_to_video",
+            "title": "动作复刻",
+            "featureKey": "action_transfer",
+            "hasFeatureKey": true,
+            "configExists": true,
+            "configEnabled": true,
+            "amount": 400,
+            "category": "digital_human",
+            "modelKey": "flow_action_transfer_wan_animate",
+            "fallbackEstimatedCredits": 30,
+            "status": "ok"
+          },
+          {
+            "id": "viral.midform.video.generate",
+            "title": "爆款中视频生成",
+            "featureKey": "storyboard_video",
+            "hasFeatureKey": true,
+            "configExists": true,
+            "configEnabled": true,
+            "amount": 50,
+            "category": "storyboard",
+            "modelKey": "veo3.1-fast",
+            "fallbackEstimatedCredits": 25,
+            "status": "ok"
+          },
+          {
+            "id": "viral.breakdown.video_prompts",
+            "title": "爆款拆解并反推视频提示词",
+            "featureKey": "image_text_replication",
+            "hasFeatureKey": true,
+            "configExists": true,
+            "configEnabled": true,
+            "amount": 50,
+            "category": "replication",
+            "modelKey": null,
+            "fallbackEstimatedCredits": 8,
+            "status": "ok"
+          },
+          {
+            "id": "social.tiktok.collect",
+            "title": "TikTok 数据采集",
+            "featureKey": "social_tiktok_collect",
+            "hasFeatureKey": true,
+            "configExists": true,
+            "configEnabled": true,
+            "amount": 5,
+            "category": "social",
+            "modelKey": null,
+            "fallbackEstimatedCredits": 5,
+            "status": "ok"
+          },
+          {
+            "id": "social.instagram.collect",
+            "title": "Instagram 数据采集",
+            "featureKey": "social_instagram_collect",
+            "hasFeatureKey": true,
+            "configExists": true,
+            "configEnabled": true,
+            "amount": 5,
+            "category": "social",
+            "modelKey": null,
+            "fallbackEstimatedCredits": 5,
+            "status": "ok"
+          },
+          {
+            "id": "social.facebook.collect",
+            "title": "Facebook 数据采集",
+            "featureKey": "social_facebook_collect",
+            "hasFeatureKey": true,
+            "configExists": true,
+            "configEnabled": true,
+            "amount": 5,
+            "category": "social",
+            "modelKey": null,
+            "fallbackEstimatedCredits": 5,
+            "status": "ok"
+          },
+          {
+            "id": "social.comments.collect",
+            "title": "社媒评论抓取",
+            "featureKey": "social_comments_collect",
+            "hasFeatureKey": true,
+            "configExists": true,
+            "configEnabled": true,
+            "amount": 5,
+            "category": "social",
+            "modelKey": null,
+            "fallbackEstimatedCredits": 5,
+            "status": "ok"
+          },
+          {
+            "id": "product.selling_point.analysis",
+            "title": "产品卖点分析",
+            "featureKey": "product_analysis",
+            "hasFeatureKey": true,
+            "configExists": true,
+            "configEnabled": true,
+            "amount": 10,
+            "category": "content_generation",
+            "modelKey": null,
+            "fallbackEstimatedCredits": 2,
+            "status": "ok"
+          },
+          {
+            "id": "content.hook.design",
+            "title": "短视频 Hook 设计",
+            "featureKey": "smart_creation",
+            "hasFeatureKey": true,
+            "configExists": true,
+            "configEnabled": true,
+            "amount": 30,
+            "category": "smart_creation",
+            "modelKey": null,
+            "fallbackEstimatedCredits": 0,
+            "status": "ok"
+          },
+          {
+            "id": "reference.decode",
+            "title": "参考开头结构解码",
+            "featureKey": "smart_creation",
+            "hasFeatureKey": true,
+            "configExists": true,
+            "configEnabled": true,
+            "amount": 30,
+            "category": "smart_creation",
+            "modelKey": null,
+            "fallbackEstimatedCredits": 0,
+            "status": "ok"
+          },
+          {
+            "id": "prompt.preflight.qa",
+            "title": "视频提示词生成前 QA",
+            "featureKey": "smart_creation",
+            "hasFeatureKey": true,
+            "configExists": true,
+            "configEnabled": true,
+            "amount": 30,
+            "category": "smart_creation",
+            "modelKey": null,
+            "fallbackEstimatedCredits": 0,
+            "status": "ok"
+          },
+          {
+            "id": "content.visual_hook.design",
+            "title": "视觉开头优化",
+            "featureKey": "smart_creation",
+            "hasFeatureKey": true,
+            "configExists": true,
+            "configEnabled": true,
+            "amount": 30,
+            "category": "smart_creation",
+            "modelKey": null,
+            "fallbackEstimatedCredits": 0,
+            "status": "ok"
+          },
+          {
+            "id": "content.opening_pattern.route",
+            "title": "短视频开头模式路由",
+            "featureKey": "smart_creation",
+            "hasFeatureKey": true,
+            "configExists": true,
+            "configEnabled": true,
+            "amount": 30,
+            "category": "smart_creation",
+            "modelKey": null,
+            "fallbackEstimatedCredits": 0,
+            "status": "ok"
+          },
+          {
+            "id": "content.wechat.longform.write",
+            "title": "公众号长文写作",
+            "featureKey": "script_generation",
+            "hasFeatureKey": true,
+            "configExists": true,
+            "configEnabled": true,
+            "amount": 10,
+            "category": "content_generation",
+            "modelKey": null,
+            "fallbackEstimatedCredits": 0,
+            "status": "ok"
+          }
+        ]
       }
     },
     {
       "name": "anonymous_run_401",
       "ok": true,
       "details": {
-        "run": {
-          "runId": "run_181a19a2-985a-4991-97a9-6660aaff68b0",
-          "capabilityId": "xhs.card.layout",
-          "mode": "wait",
-          "status": "failed",
-          "createdAt": "2026-05-06T10:48:57.798Z",
-          "finishedAt": "2026-05-06T10:48:57.798Z",
-          "error": {
-            "code": "unauthorized",
-            "message": "xhs.card.layout requires a user identity. Pass --auth-token, --user-api-key, --nexapi-key, or configure NEXTIDE_AGENT_USER_ID for service-mode rendering."
-          }
+        "error": {
+          "code": "unauthorized",
+          "message": "Missing NexTide API Key. Run `nextide auth login` or pass `--user-api-key`."
         },
-        "acceptedPreDeploy400": true
+        "acceptedPreDeploy400": false
       }
     },
     {
       "name": "invalid_key_run_401",
       "ok": true,
       "details": {
-        "run": {
-          "runId": "run_f3c4e784-3cbc-4f43-994c-415f7c6f05c2",
-          "capabilityId": "xhs.card.layout",
-          "mode": "wait",
-          "status": "failed",
-          "createdAt": "2026-05-06T10:48:57.889Z",
-          "finishedAt": "2026-05-06T10:48:57.889Z",
-          "error": {
-            "code": "unauthorized",
-            "message": "xhs.card.layout requires a user identity. Pass --auth-token, --user-api-key, --nexapi-key, or configure NEXTIDE_AGENT_USER_ID for service-mode rendering."
-          }
+        "error": {
+          "code": "unauthorized",
+          "message": "Invalid NexTide API Key."
         },
-        "acceptedPreDeploy400": true
+        "acceptedPreDeploy400": false
       }
     },
     {
       "name": "authorized_low_cost_run",
       "ok": true,
       "details": {
-        "runId": "run_a21dfb0c-8450-43d7-89a7-0170617252d3",
+        "runId": "run_b24d8c6d-da8f-4aa4-b934-f5cfe9894794",
         "status": "succeeded"
       }
     },
@@ -83,13 +321,57 @@
       "name": "cancel_completed_run_409",
       "ok": true,
       "details": {
-        "skipped": "server_does_not_expose_run_cancel_yet"
+        "run": {
+          "runId": "run_b24d8c6d-da8f-4aa4-b934-f5cfe9894794",
+          "capabilityId": "xhs.card.layout",
+          "status": "succeeded",
+          "mode": "wait",
+          "createdAt": "2026-05-06T13:41:38.717Z",
+          "finishedAt": "2026-05-06T13:41:44.741Z",
+          "result": {
+            "data": {
+              "title": "AI 工具清单",
+              "images": [
+                "https://oss.atomx.top/xhs-layout/db74f72f-9f0e-4d42-8b9d-b34c890f5eea/9359b6c4-b74f-4fe8-9ab2-8b9043e1745d/page-01.png",
+                "https://oss.atomx.top/xhs-layout/db74f72f-9f0e-4d42-8b9d-b34c890f5eea/9359b6c4-b74f-4fe8-9ab2-8b9043e1745d/page-02.png"
+              ],
+              "taskId": "",
+              "templateId": "notion-style"
+            }
+          },
+          "artifacts": [
+            {
+              "url": "https://oss.atomx.top/xhs-layout/db74f72f-9f0e-4d42-8b9d-b34c890f5eea/9359b6c4-b74f-4fe8-9ab2-8b9043e1745d/page-01.png",
+              "name": "xhs-card-1.png",
+              "type": "image"
+            },
+            {
+              "url": "https://oss.atomx.top/xhs-layout/db74f72f-9f0e-4d42-8b9d-b34c890f5eea/9359b6c4-b74f-4fe8-9ab2-8b9043e1745d/page-02.png",
+              "name": "xhs-card-2.png",
+              "type": "image"
+            }
+          ],
+          "usage": {
+            "provider": "internal_service",
+            "durationMs": 5961
+          },
+          "error": null
+        },
+        "error": {
+          "code": "run_not_cancellable",
+          "message": "Run run_b24d8c6d-da8f-4aa4-b934-f5cfe9894794 is succeeded; only queued/running/waiting_callback runs can be cancelled."
+        }
       }
     },
     {
       "name": "cancel_missing_run_404",
       "ok": true,
-      "details": "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/><link rel=\"stylesheet\" href=\"/_next/static/chunks/d985ab3b4a19a602.css\" data-precedence=\"next\"/><link rel=\"preload\" as=\"script\" fetchPriority=\"low\" href=\"/_next/static/chunks/63721d978c4c3bd8.js\"/><script src=\"/_next/static/chunks/797fcb0710da3be2.js\" async=\"\"></script><script src=\"/_next/static/chunks/269dc890dd37ee5c.js\" async=\"\"></script><script src=\"/_next/static/chunks/4af27f77bd5de33b.js\" async=\"\"></script><script src=\"/_next/static/chunks/bd172f201ccc9c7a.js\" async=\"\"></script><script src=\"/_next/static/chunks/turbopack-797f0be4eaac3b53.js\" async=\"\"></script><script src=\"/_next/static/chunks/137c504392e5a005.js\" async=\"\"></script><script src=\"/_next/static/chunks/1570fb289ac44006.js\" async=\"\"></script><script src=\"/_next/static/chunks/bc71d004e42ef59f.js\" async=\"\"></script><script src=\"/_next/static/chunks/d96012bcfc98706a.js\" async=\"\"></script><script src=\"/_next/static/chunks/73e3194f06db260e.js\" async=\"\"></script><script src=\"/_next/static/chunks/94f63463d8a6318a.js\" async=\"\"></script><meta name=\"robots\" content=\"noindex\"/><title>404: This page could not be found.</title><title>NexTide</title><meta name=\"description\" content=\"Next.js App Router + TypeScript + Tailwind CSS\"/><link rel=\"icon\" href=\"/logo/black-logo.png\"/><script src=\"/_next/static/chunks/a6dad97d9634a72d.js\" noModule=\"\"></script></head><body class=\"min-h-screen bg-[#F6F7F9] dark:bg-[#05060b] text-gray-900 dark:text-gray-100 transition-colors duration-300\"><div hidden=\"\"><!--$--><!--/$--></div><script>((a,b,c,d,e,f,g,h)=>{let i=document.documentElement,j=[\"light\",\"dark\"];function k(b){var c;(Array.isArray(a)?a:[a]).forEach(a=>{let c=\"class\"===a,d=c&&f?e.map(a=>f[a]||a):e;c?(i.classList.remove(...d),i.classList.add(f&&f[b]?f[b]:b)):i.setAttribute(a,b)}),c=b,h&&j.includes(c)&&(i.style.colorScheme=c)}if(d)k(d);else try{let a=localStorage.getItem(b)||c,d=g&&\"system\"===a?window.matchMedia(\"(prefers-color-scheme: dark)\").matches?\"dark\":\"light\":a;k(d)}catch(a){}})(\"class\",\"theme\",\"light\",null,[\"light\",\"dark\"],null,false,true)</script><!--$--><div style=\"font-family:system-ui,&quot;Segoe UI&quot;,Roboto,Helvetica,Arial,sans-serif,&quot;Apple Color Emoji&quot;,&quot;Segoe UI Emoji&quot;;height:100vh;text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center\"><div><style>body{color:#000;background:#fff;margin:0}.next-error-h1{border-right:1px solid rgba(0,0,0,.3)}@media (prefers-color-scheme:dark){body{color:#fff;background:#000}.next-error-h1{border-right:1px solid rgba(255,255,255,.3)}}</style><h1 class=\"next-error-h1\" style=\"display:inline-block;margin:0 20px 0 0;padding:0 23px 0 0;font-size:24px;font-weight:500;vertical-align:top;line-height:49px\">404</h1><div style=\"display:inline-block\"><h2 style=\"font-size:14px;font-weight:400;line-height:49px;margin:0\">This page could not be found.</h2></div></div></div><!--$--><!--/$--><!--/$--><div data-rht-toaster=\"\" style=\"position:fixed;z-index:9999;top:16px;left:16px;right:16px;bottom:16px;pointer-events:none\"></div><script src=\"/_next/static/chunks/63721d978c4c3bd8.js\" id=\"_R_\" async=\"\"></script><script>(self.__next_f=self.__next_f||[]).push([0])</script><script>self.__next_f.push([1,\"1:\\\"$Sreact.fragment\\\"\\n2:I[96923,[\\\"/_next/static/chunks/137c504392e5a005.js\\\",\\\"/_next/static/chunks/1570fb289ac44006.js\\\",\\\"/_next/static/chunks/bc71d004e42ef59f.js\\\"],\\\"Providers\\\"]\\n3:I[339756,[\\\"/_next/static/chunks/d96012bcfc98706a.js\\\",\\\"/_next/static/chunks/73e3194f06db260e.js\\\"],\\\"default\\\"]\\n4:I[837457,[\\\"/_next/static/chunks/d96012bcfc98706a.js\\\",\\\"/_next/static/chunks/73e3194f06db260e.js\\\"],\\\"default\\\"]\\n5:I[705766,[\\\"/_next/static/chunks/137c504392e5a005.js\\\",\\\"/_next/static/chunks/1570fb289ac44006.js\\\",\\\"/_next/static/chunks/bc71d004e42ef59f.js\\\"],\\\"Toaster\\\"]\\n6:I[897367,[\\\"/_next/static/chunks/d96012bcfc98706a.js\\\",\\\"/_next/static/chunks/73e3194f06db260e.js\\\"],\\\"OutletBoundary\\\"]\\n7:\\\"$Sreact.suspense\\\"\\n9:I[360251,[\\\"/_next/static/chunks/137c504392e5a005.js\\\",\\\"/_next/static/chunks/1570fb289ac44006.js\\\",\\\"/_next/static/chunks/bc71d004e42ef59f.js\\\",\\\"/_next/static/chunks/94f63463d8a6318a.js\\\"],\\\"PageLoading\\\"]\\na:I[897367,[\\\"/_next/static/chunks/d96012bcfc98706a.js\\\",\\\"/_next/static/chunks/73e3194f06db260e.js\\\"],\\\"ViewportBoundary\\\"]\\nc:I[897367,[\\\"/_next/static/chunks/d96012bcfc98706a.js\\\",\\\"/_next/static/chunks/73e3194f06db260e.js\\\"],\\\"MetadataBoundary\\\"]\\ne:I[168027,[\\\"/_next/static/chunks/d96012bcfc98706a.js\\\",\\\"/_next/static/chunks/73e3194f06db260e.js\\\"],\\\"default\\\"]\\nf:I[27201,[\\\"/_next/static/chunks/d96012bcfc98706a.js\\\",\\\"/_next/static/chunks/73e3194f06db260e.js\\\"],\\\"IconMark\\\"]\\n:HL[\\\"/_next/static/chunks/d985ab3b4a19a602.css\\\",\\\"style\\\"]\\n\"])</script><script>self.__next_f.push([1,\"0:{\\\"P\\\":null,\\\"b\\\":\\\"DKkjDApECJJwikv4Olc-R\\\",\\\"c\\\":[\\\"\\\",\\\"api\\\",\\\"agent\\\",\\\"runs\\\",\\\"run_missing_smoke\\\",\\\"cancel\\\"],\\\"q\\\":\\\"\\\",\\\"i\\\":false,\\\"f\\\":[[[\\\"\\\",{\\\"children\\\":[\\\"/_not-found\\\",{\\\"children\\\":[\\\"__PAGE__\\\",{}]}]},\\\"$undefined\\\",\\\"$undefined\\\",true],[[\\\"$\\\",\\\"$1\\\",\\\"c\\\",{\\\"children\\\":[[[\\\"$\\\",\\\"link\\\",\\\"0\\\",{\\\"rel\\\":\\\"stylesheet\\\",\\\"href\\\":\\\"/_next/static/chunks/d985ab3b4a19a602.css\\\",\\\"precedence\\\":\\\"next\\\",\\\"crossOrigin\\\":\\\"$undefined\\\",\\\"nonce\\\":\\\"$undefined\\\"}],[\\\"$\\\",\\\"script\\\",\\\"script-0\\\",{\\\"src\\\":\\\"/_next/static/chunks/137c504392e5a005.js\\\",\\\"async\\\":true,\\\"nonce\\\":\\\"$undefined\\\"}],[\\\"$\\\",\\\"script\\\",\\\"script-1\\\",{\\\"src\\\":\\\"/_next/static/chunks/1570fb289ac44006.js\\\",\\\"async\\\":true,\\\"nonce\\\":\\\"$undefined\\\"}],[\\\"$\\\",\\\"script\\\",\\\"script-2\\\",{\\\"src\\\":\\\"/_next/static/chunks/bc71d004e42ef59f.js\\\",\\\"async\\\":true,\\\"nonce\\\":\\\"$undefined\\\"}]],[\\\"$\\\",\\\"html\\\",null,{\\\"lang\\\":\\\"zh-CN\\\",\\\"suppressHydrationWarning\\\":true,\\\"children\\\":[\\\"$\\\",\\\"body\\\",null,{\\\"className\\\":\\\"min-h-screen bg-[#F6F7F9] dark:bg-[#05060b] text-gray-900 dark:text-gray-100 transition-colors duration-300\\\",\\\"suppressHydrationWarning\\\":true,\\\"children\\\":[\\\"$\\\",\\\"$L2\\\",null,{\\\"children\\\":[[\\\"$\\\",\\\"$L3\\\",null,{\\\"parallelRouterKey\\\":\\\"children\\\",\\\"error\\\":\\\"$undefined\\\",\\\"errorStyles\\\":\\\"$undefined\\\",\\\"errorScripts\\\":\\\"$undefined\\\",\\\"template\\\":[\\\"$\\\",\\\"$L4\\\",null,{}],\\\"templateStyles\\\":\\\"$undefined\\\",\\\"templateScripts\\\":\\\"$undefined\\\",\\\"notFound\\\":[[[\\\"$\\\",\\\"title\\\",null,{\\\"children\\\":\\\"404: This page could not be found.\\\"}],[\\\"$\\\",\\\"div\\\",null,{\\\"style\\\":{\\\"fontFamily\\\":\\\"system-ui,\\\\\\\"Segoe UI\\\\\\\",Roboto,Helvetica,Arial,sans-serif,\\\\\\\"Apple Color Emoji\\\\\\\",\\\\\\\"Segoe UI Emoji\\\\\\\"\\\",\\\"height\\\":\\\"100vh\\\",\\\"textAlign\\\":\\\"center\\\",\\\"display\\\":\\\"flex\\\",\\\"flexDirection\\\":\\\"column\\\",\\\"alignItems\\\":\\\"center\\\",\\\"justifyContent\\\":\\\"center\\\"},\\\"children\\\":[\\\"$\\\",\\\"div\\\",null,{\\\"children\\\":[[\\\"$\\\",\\\"style\\\",null,{\\\"dangerouslySetInnerHTML\\\":{\\\"__html\\\":\\\"body{color:#000;background:#fff;margin:0}.next-error-h1{border-right:1px solid rgba(0,0,0,.3)}@media (prefers-color-scheme:dark){body{color:#fff;background:#000}.next-error-h1{border-right:1px solid rgba(255,255,255,.3)}}\\\"}}],[\\\"$\\\",\\\"h1\\\",null,{\\\"className\\\":\\\"next-error-h1\\\",\\\"style\\\":{\\\"display\\\":\\\"inline-block\\\",\\\"margin\\\":\\\"0 20px 0 0\\\",\\\"padding\\\":\\\"0 23px 0 0\\\",\\\"fontSize\\\":24,\\\"fontWeight\\\":500,\\\"verticalAlign\\\":\\\"top\\\",\\\"lineHeight\\\":\\\"49px\\\"},\\\"children\\\":404}],[\\\"$\\\",\\\"div\\\",null,{\\\"style\\\":{\\\"display\\\":\\\"inline-block\\\"},\\\"children\\\":[\\\"$\\\",\\\"h2\\\",null,{\\\"style\\\":{\\\"fontSize\\\":14,\\\"fontWeight\\\":400,\\\"lineHeight\\\":\\\"49px\\\",\\\"margin\\\":0},\\\"children\\\":\\\"This page could not be found.\\\"}]}]]}]}]],[]],\\\"forbidden\\\":\\\"$undefined\\\",\\\"unauthorized\\\":\\\"$undefined\\\"}],[\\\"$\\\",\\\"$L5\\\",null,{\\\"position\\\":\\\"top-center\\\"}]]}]}]}]]}],{\\\"children\\\":[[\\\"$\\\",\\\"$1\\\",\\\"c\\\",{\\\"children\\\":[null,[\\\"$\\\",\\\"$L3\\\",null,{\\\"parallelRouterKey\\\":\\\"children\\\",\\\"error\\\":\\\"$undefined\\\",\\\"errorStyles\\\":\\\"$undefined\\\",\\\"errorScripts\\\":\\\"$undefined\\\",\\\"template\\\":[\\\"$\\\",\\\"$L4\\\",null,{}],\\\"templateStyles\\\":\\\"$undefined\\\",\\\"templateScripts\\\":\\\"$undefined\\\",\\\"notFound\\\":\\\"$undefined\\\",\\\"forbidden\\\":\\\"$undefined\\\",\\\"unauthorized\\\":\\\"$undefined\\\"}]]}],{\\\"children\\\":[[\\\"$\\\",\\\"$1\\\",\\\"c\\\",{\\\"children\\\":[[[\\\"$\\\",\\\"title\\\",null,{\\\"children\\\":\\\"404: This page could not be found.\\\"}],[\\\"$\\\",\\\"div\\\",null,{\\\"style\\\":\\\"$0:f:0:1:0:props:children:1:props:children:props:children:props:children:0:props:notFound:0:1:props:style\\\",\\\"children\\\":[\\\"$\\\",\\\"div\\\",null,{\\\"children\\\":[[\\\"$\\\",\\\"style\\\",null,{\\\"dangerouslySetInnerHTML\\\":{\\\"__html\\\":\\\"body{color:#000;background:#fff;margin:0}.next-error-h1{border-right:1px solid rgba(0,0,0,.3)}@media (prefers-color-scheme:dark){body{color:#fff;background:#000}.next-error-h1{border-right:1px solid rgba(255,255,255,.3)}}\\\"}}],[\\\"$\\\",\\\"h1\\\",null,{\\\"className\\\":\\\"next-error-h1\\\",\\\"style\\\":\\\"$0:f:0:1:0:props:children:1:props:children:props:children:props:children:0:props:notFound:0:1:props:children:props:children:1:props:style\\\",\\\"children\\\":404}],[\\\"$\\\",\\\"div\\\",null,{\\\"style\\\":\\\"$0:f:0:1:0:props:children:1:props:children:props:children:props:children:0:props:notFound:0:1:props:children:props:children:2:props:style\\\",\\\"children\\\":[\\\"$\\\",\\\"h2\\\",null,{\\\"style\\\":\\\"$0:f:0:1:0:props:children:1:props:children:props:children:props:children:0:props:notFound:0:1:props:children:props:children:2:props:children:props:style\\\",\\\"children\\\":\\\"This page could not be found.\\\"}]}]]}]}]],null,[\\\"$\\\",\\\"$L6\\\",null,{\\\"children\\\":[\\\"$\\\",\\\"$7\\\",null,{\\\"name\\\":\\\"Next.MetadataOutlet\\\",\\\"children\\\":\\\"$@8\\\"}]}]]}],{},null,false,false]},null,false,false]},[[\\\"$\\\",\\\"$L9\\\",\\\"l\\\",{}],[],[[\\\"$\\\",\\\"script\\\",\\\"script-0\\\",{\\\"src\\\":\\\"/_next/static/chunks/94f63463d8a6318a.js\\\",\\\"async\\\":true}]]],false,false],[\\\"$\\\",\\\"$1\\\",\\\"h\\\",{\\\"children\\\":[[\\\"$\\\",\\\"meta\\\",null,{\\\"name\\\":\\\"robots\\\",\\\"content\\\":\\\"noindex\\\"}],[\\\"$\\\",\\\"$La\\\",null,{\\\"children\\\":\\\"$Lb\\\"}],[\\\"$\\\",\\\"div\\\",null,{\\\"hidden\\\":true,\\\"children\\\":[\\\"$\\\",\\\"$Lc\\\",null,{\\\"children\\\":[\\\"$\\\",\\\"$7\\\",null,{\\\"name\\\":\\\"Next.Metadata\\\",\\\"children\\\":\\\"$Ld\\\"}]}]}],null]}],false]],\\\"m\\\":\\\"$undefined\\\",\\\"G\\\":[\\\"$e\\\",\\\"$undefined\\\"],\\\"S\\\":false}\\n\"])</script><script>self.__next_f.push([1,\"b:[[\\\"$\\\",\\\"meta\\\",\\\"0\\\",{\\\"charSet\\\":\\\"utf-8\\\"}],[\\\"$\\\",\\\"meta\\\",\\\"1\\\",{\\\"name\\\":\\\"viewport\\\",\\\"content\\\":\\\"width=device-width, initial-scale=1\\\"}]]\\n8:null\\nd:[[\\\"$\\\",\\\"title\\\",\\\"0\\\",{\\\"children\\\":\\\"NexTide\\\"}],[\\\"$\\\",\\\"meta\\\",\\\"1\\\",{\\\"name\\\":\\\"description\\\",\\\"content\\\":\\\"Next.js App Router + TypeScript + Tailwind CSS\\\"}],[\\\"$\\\",\\\"link\\\",\\\"2\\\",{\\\"rel\\\":\\\"icon\\\",\\\"href\\\":\\\"/logo/black-logo.png\\\"}],[\\\"$\\\",\\\"$Lf\\\",\\\"3\\\",{}]]\\n\"])</script></body></html>"
+      "details": {
+        "error": {
+          "code": "run_not_found",
+          "message": "Run run_missing_smoke was not found"
+        }
+      }
     }
   ]
 }

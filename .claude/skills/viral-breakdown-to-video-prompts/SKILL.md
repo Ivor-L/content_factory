@@ -153,16 +153,21 @@ nextide capability run viral.breakdown.video_prompts \
   --interval 5
 
 RUN_ID=$(node -e "const r=require('./.nextide/output/viral.breakdown.video_prompts-result.json'); console.log(r.run && r.run.runId)")
-nextide run artifacts "$RUN_ID" \
-  --output-dir .nextide/output/$RUN_ID
+nextide run follow "$RUN_ID" \
+  --output-dir .nextide/output/$RUN_ID \
+  --timeout 900 \
+  --interval 5
 ```
 
 Artifact-first reading order:
 
-1. Read `.nextide/output/$RUN_ID/manifest.json`.
-2. Return local artifact paths when present.
-3. If a remote URL artifact is present, return the URL from manifest.
-4. Only inspect the full result JSON when manifest is insufficient.
+1. Read `.nextide/output/$RUN_ID/summary.json`.
+2. Read `.nextide/output/$RUN_ID/manifest.json`.
+3. Return `preview.html` / `gallery.html` with rich preview when supported.
+4. Return `datatable.json` for data/table results.
+5. Return local artifact paths when present.
+6. If a remote URL artifact is present, return the URL from manifest.
+7. Only inspect the full result JSON when manifest is insufficient.
 
 ## General Rules
 
@@ -170,7 +175,9 @@ Artifact-first reading order:
 - Do not expose API secrets or internal webhook URLs in prompts or output.
 - If status is not `available`, fail fast and explain what is missing.
 - For async tasks, prefer `--wait` when the user wants a finished result in the same turn.
-- After a finished run, use `nextide run artifacts <run-id> --output-dir .nextide/output/<run-id>` and read `manifest.json` first.
-- Prefer returning local artifact paths from `manifest.json` over pasting huge raw JSON.
+- After a finished run, use `nextide run artifacts <run-id> --output-dir .nextide/output/<run-id> --download --gallery --datatable` and read `summary.json` then `manifest.json`.
+- For long-running runs, prefer `nextide run follow <run-id> --output-dir .nextide/output/<run-id> --timeout 1800 --interval 5`.
+- Prefer returning `summary.recommendedResponse.message`, `preview.html`, `datatable.json`, and local artifact paths over pasting huge raw JSON.
+- If the CLI output includes `explanation`, convert it into a clear user-facing failure message with next actions.
 
 <!-- END NEXTIDE AUTO-GENERATED -->

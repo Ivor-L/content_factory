@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { persistExtractedText } from "../route";
+import { persistExtractedText, persistExtractStatus } from "../route";
 
 function firstNonEmptyString(...values: unknown[]): string {
   for (const value of values) {
@@ -44,11 +44,6 @@ export async function POST(request: NextRequest) {
     nested?.raw?.text,
   );
 
-  if (!extractedText) {
-    console.warn("[extract/callback] received empty transcript", { body: data });
-    return NextResponse.json({ error: "empty transcript" }, { status: 422 });
-  }
-
   const scriptId = firstNonEmptyString(
     data?.script_id,
     data?.scriptId,
@@ -81,6 +76,36 @@ export async function POST(request: NextRequest) {
     request.nextUrl.searchParams.get("note_id"),
     request.nextUrl.searchParams.get("noteId"),
   ) || undefined;
+
+  if (!extractedText) {
+    const message = firstNonEmptyString(
+      data?.error,
+      data?.message,
+      data?.errorDescription,
+      nested?.error,
+      nested?.message,
+      nested?.errorDescription,
+    ) || "未获取到文案内容";
+
+    console.warn("[extract/callback] received empty transcript", { scriptId, referenceItemId, myNoteId });
+    try {
+      await persistExtractStatus({
+        scriptId,
+        referenceItemId,
+        myNoteId,
+        status: "failed",
+        message,
+      });
+    } catch (error) {
+      console.error("[extract/callback] persist empty-transcript status error", error);
+    }
+
+    return NextResponse.json({
+      success: false,
+      status: "failed",
+      error: message,
+    });
+  }
 
   try {
     await persistExtractedText({ scriptId, referenceItemId, myNoteId, extractedText });

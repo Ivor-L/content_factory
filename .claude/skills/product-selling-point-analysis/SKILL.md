@@ -37,9 +37,10 @@ CLI contract:
 npm run nextide -- capability run product.selling_point.analysis \
   --input .nextide/input/product-selling-point-analysis.json \
   --output .nextide/output/product-selling-point-analysis-result.json \
-  --mode wait \
-  --user-api-key <NEX用户积分API_KEY>
+  --mode wait
 ```
+
+For local debugging only, credentials may be supplied via config/env/flag. Prefer `nextide auth login` or `NEXTIDE_USER_API_KEY=<redacted>` over putting keys in commands.
 
 Auth note:
 
@@ -68,10 +69,22 @@ Field rules:
 ## Workflow
 
 1. Collect product name, description, and image URLs from the user.
-2. Create `.nextide/input/product-selling-point-analysis.json`.
-3. Run the capability command.
-4. Read `.nextide/output/product-selling-point-analysis-result.json`.
-5. Summarize the result into user-facing product insight.
+2. Ask for missing essentials only when the analysis would be misleading; otherwise run a bounded first pass.
+3. Create `.nextide/input/product-selling-point-analysis.json` with business input only, no credentials.
+4. Run the capability command.
+5. If a `runId` exists, export the artifact/data bundle:
+
+   ```bash
+   RUN_ID=$(node -e "const r=require('./.nextide/output/product-selling-point-analysis-result.json'); console.log(r.run && r.run.runId)")
+   npm run nextide -- run artifacts "$RUN_ID" \
+     --output-dir .nextide/output/$RUN_ID \
+     --download \
+     --gallery \
+     --datatable
+   ```
+
+6. Read `summary.json` and `datatable.json` first when present.
+7. Summarize into user-facing product insight, separating facts from hypotheses.
 
 ## Output Handling
 
@@ -99,14 +112,26 @@ Return:
 - pain points
 - usage scenarios
 - content angles
+- `datatable` preview for the product insight table when generated
 - warnings about unverifiable claims
+- suggested next actions: sales page, short video script, XHS seed copy, competitor comparison
+
+Output format preference:
+
+1. One-paragraph executive summary.
+2. Structured bullets grouped by 卖点 / 痛点 / 人群 / 场景 / 内容角度.
+3. Datatable block if `datatable.json` exists.
+4. Compliance notes and missing evidence.
+5. Next actions.
 
 ## Compliance Rules
 
 - Distinguish observed product facts from marketing hypotheses.
 - Avoid medical, guaranteed-result, or exaggerated efficacy claims.
-- If the image or product data is insufficient, say what is missing.
-- Do not invent product specs not present in the source.
+- If the image or product data is insufficient, say what is missing and lower confidence.
+- Do not invent product specs, certifications, prices, ingredients, dimensions, materials, or efficacy not present in the source.
+- For health/beauty products, phrase claims as perceived benefit or content angle unless evidence is supplied.
+- If CLI returns `explanation`, stop and give the user the recommended next actions.
 
 <!-- BEGIN NEXTIDE AUTO-GENERATED -->
 
@@ -172,8 +197,13 @@ If the result contains artifacts, export them:
 ```bash
 RUN_ID=$(node -e "const r=require('./.nextide/output/product.selling_point.analysis-result.json'); console.log(r.run && r.run.runId)")
 nextide run artifacts "$RUN_ID" \
-  --output-dir .nextide/output/$RUN_ID
+  --output-dir .nextide/output/$RUN_ID \
+  --download \
+  --gallery \
+  --datatable
 ```
+
+Then read `summary.json` first, followed by `manifest.json`.
 
 ## General Rules
 
@@ -181,7 +211,9 @@ nextide run artifacts "$RUN_ID" \
 - Do not expose API secrets or internal webhook URLs in prompts or output.
 - If status is not `available`, fail fast and explain what is missing.
 - For async tasks, prefer `--wait` when the user wants a finished result in the same turn.
-- After a finished run, use `nextide run artifacts <run-id> --output-dir .nextide/output/<run-id>` and read `manifest.json` first.
-- Prefer returning local artifact paths from `manifest.json` over pasting huge raw JSON.
+- After a finished run, use `nextide run artifacts <run-id> --output-dir .nextide/output/<run-id> --download --gallery --datatable` and read `summary.json` then `manifest.json`.
+- For long-running runs, prefer `nextide run follow <run-id> --output-dir .nextide/output/<run-id> --timeout 1800 --interval 5`.
+- Prefer returning `summary.recommendedResponse.message`, `preview.html`, `datatable.json`, and local artifact paths over pasting huge raw JSON.
+- If the CLI output includes `explanation`, convert it into a clear user-facing failure message with next actions.
 
 <!-- END NEXTIDE AUTO-GENERATED -->

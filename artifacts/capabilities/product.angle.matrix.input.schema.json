@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "product.angle.matrix input",
+  "type": "object",
+  "properties": {
+    "product": {
+      "type": "string",
+      "description": "产品名称、描述、卖点或分析结果。"
+    },
+    "audience": {
+      "type": "string",
+      "description": "目标人群。"
+    },
+    "channels": {
+      "type": "array",
+      "description": "内容渠道。"
+    }
+  },
+  "required": [
+    "product"
+  ],
+  "additionalProperties": true
+}

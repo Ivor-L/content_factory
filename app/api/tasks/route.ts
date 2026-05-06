@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
   // Filtering
   const taskType = searchParams.get("taskType");
   const status = searchParams.get("status");
+  const includeEnrichment = searchParams.get("includeEnrichment") === "1";
 
   // Pagination
   const limitParam = Number(searchParams.get("limit") ?? "50");
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
       status,
       limit: limitParam,
       offset: offsetParam,
-      includeEnrichment: true,
+      includeEnrichment,
       includeTotal: false,
     });
 

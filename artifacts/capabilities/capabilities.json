@@ -1,8 +1,8 @@
 {
   "schemaVersion": "2026-05-06",
   "brand": "NexTide",
-  "generatedAt": "2026-05-06T11:57:41.696Z",
-  "count": 19,
+  "generatedAt": "2026-05-06T16:20:31.755Z",
+  "count": 27,
   "capabilities": [
     {
       "version": "0.2.0",
@@ -966,7 +966,7 @@
       "category": "writing",
       "costLevel": "free",
       "requiredAuth": [
-        "none"
+        "nexTideApiKey"
       ],
       "requiredEnv": [],
       "examples": [
@@ -1024,7 +1024,7 @@
       "category": "system",
       "costLevel": "free",
       "requiredAuth": [
-        "none"
+        "nexTideApiKey"
       ],
       "requiredEnv": [],
       "examples": [
@@ -1078,7 +1078,7 @@
       "category": "system",
       "costLevel": "free",
       "requiredAuth": [
-        "none"
+        "nexTideApiKey"
       ],
       "requiredEnv": [],
       "examples": [
@@ -1136,7 +1136,7 @@
       "category": "writing",
       "costLevel": "free",
       "requiredAuth": [
-        "none"
+        "nexTideApiKey"
       ],
       "requiredEnv": [],
       "examples": [
@@ -1190,7 +1190,7 @@
       "category": "writing",
       "costLevel": "free",
       "requiredAuth": [
-        "none"
+        "nexTideApiKey"
       ],
       "requiredEnv": [],
       "examples": [
@@ -1241,9 +1241,423 @@
     {
       "version": "0.2.0",
       "category": "writing",
+      "costLevel": "low",
+      "requiredAuth": [
+        "nexTideApiKey"
+      ],
+      "requiredEnv": [],
+      "examples": [],
+      "docsUrl": "artifacts/capabilities/content.xhs.title.generate.input.schema.json",
+      "id": "content.xhs.title.generate",
+      "skillName": "xiaohongshu-title-generator",
+      "title": "小红书标题生成",
+      "description": "根据选题、正文、产品卖点或人群痛点，生成多组小红书标题，并解释每个标题的点击机制与适用场景。",
+      "status": "available",
+      "executionType": "local_agent",
+      "async": false,
+      "maxWaitSeconds": 0,
+      "estimatedDurationSeconds": 45,
+      "featureKey": "smart_creation",
+      "tags": [
+        "xiaohongshu",
+        "title",
+        "copywriting",
+        "local-agent"
+      ],
+      "inputSchema": {
+        "topic": {
+          "type": "string",
+          "required": true,
+          "description": "选题、产品、正文摘要或内容方向。"
+        },
+        "audience": {
+          "type": "string",
+          "description": "目标人群。"
+        },
+        "style": {
+          "type": "string",
+          "description": "标题风格：痛点/清单/反差/经验/避坑/测评/情绪等。"
+        },
+        "count": {
+          "type": "number",
+          "description": "需要生成的标题数量。",
+          "default": 12
+        }
+      },
+      "outputSchema": {
+        "titles": {
+          "type": "array",
+          "description": "标题候选，含公式、点击机制、风险提示。"
+        }
+      },
+      "estimatedCredits": 1
+    },
+    {
+      "version": "0.2.0",
+      "category": "writing",
+      "costLevel": "low",
+      "requiredAuth": [
+        "nexTideApiKey"
+      ],
+      "requiredEnv": [],
+      "examples": [],
+      "docsUrl": "artifacts/capabilities/content.xhs.note.write.input.schema.json",
+      "id": "content.xhs.note.write",
+      "skillName": "xiaohongshu-note-writer",
+      "title": "小红书笔记正文写作",
+      "description": "把产品卖点、使用体验、选题或长文素材转成小红书笔记正文，包含开头、正文结构、种草逻辑、标签和合规提醒。",
+      "status": "available",
+      "executionType": "local_agent",
+      "async": false,
+      "maxWaitSeconds": 0,
+      "estimatedDurationSeconds": 90,
+      "featureKey": "smart_creation",
+      "tags": [
+        "xiaohongshu",
+        "note",
+        "copywriting",
+        "local-agent"
+      ],
+      "inputSchema": {
+        "material": {
+          "type": "string",
+          "required": true,
+          "description": "产品信息、体验素材、选题或已有草稿。"
+        },
+        "audience": {
+          "type": "string",
+          "description": "目标人群。"
+        },
+        "tone": {
+          "type": "string",
+          "description": "语气：真实体验/专业测评/朋友安利/避坑/清单等。"
+        },
+        "complianceLevel": {
+          "type": "string",
+          "description": "合规严格度：normal / strict。",
+          "default": "normal"
+        }
+      },
+      "outputSchema": {
+        "note": {
+          "type": "object",
+          "description": "标题、开头、正文、CTA、标签、合规提示。"
+        }
+      },
+      "estimatedCredits": 1
+    },
+    {
+      "version": "0.2.0",
+      "category": "writing",
+      "costLevel": "low",
+      "requiredAuth": [
+        "nexTideApiKey"
+      ],
+      "requiredEnv": [],
+      "examples": [],
+      "docsUrl": "artifacts/capabilities/content.repurpose.pack.input.schema.json",
+      "id": "content.repurpose.pack",
+      "skillName": "content-repurpose-packager",
+      "title": "内容一鱼多吃打包",
+      "description": "把一份长文、产品分析、直播复盘或爆款拆解，拆成小红书、短视频、朋友圈、公众号、广告文案等多平台内容包。",
+      "status": "available",
+      "executionType": "local_agent",
+      "async": false,
+      "maxWaitSeconds": 0,
+      "estimatedDurationSeconds": 120,
+      "featureKey": "smart_creation",
+      "tags": [
+        "repurpose",
+        "multi-platform",
+        "content-pack",
+        "local-agent"
+      ],
+      "inputSchema": {
+        "source": {
+          "type": "string",
+          "required": true,
+          "description": "原始素材或文章。"
+        },
+        "targetPlatforms": {
+          "type": "array",
+          "description": "目标平台列表，如 xhs/douyin/wechat/moments/ads。"
+        },
+        "campaignGoal": {
+          "type": "string",
+          "description": "转化目标或传播目标。"
+        }
+      },
+      "outputSchema": {
+        "package": {
+          "type": "object",
+          "description": "多平台内容包，包括标题、短文案、脚本、CTA 和复用策略。"
+        }
+      },
+      "estimatedCredits": 1
+    },
+    {
+      "version": "0.2.0",
+      "category": "writing",
+      "costLevel": "low",
+      "requiredAuth": [
+        "nexTideApiKey"
+      ],
+      "requiredEnv": [],
+      "examples": [],
+      "docsUrl": "artifacts/capabilities/content.calendar.plan.input.schema.json",
+      "id": "content.calendar.plan",
+      "skillName": "content-calendar-planner",
+      "title": "内容日历规划",
+      "description": "根据产品、目标人群、渠道和营销目标，规划 7/14/30 天内容日历，包含选题、形式、素材需求和转化目标。",
+      "status": "available",
+      "executionType": "local_agent",
+      "async": false,
+      "maxWaitSeconds": 0,
+      "estimatedDurationSeconds": 90,
+      "featureKey": "smart_creation",
+      "tags": [
+        "calendar",
+        "planning",
+        "content-strategy",
+        "local-agent"
+      ],
+      "inputSchema": {
+        "product": {
+          "type": "string",
+          "required": true,
+          "description": "产品、账号或业务描述。"
+        },
+        "audience": {
+          "type": "string",
+          "description": "目标人群。"
+        },
+        "days": {
+          "type": "number",
+          "description": "规划天数。",
+          "default": 14
+        },
+        "platforms": {
+          "type": "array",
+          "description": "平台列表。"
+        }
+      },
+      "outputSchema": {
+        "calendar": {
+          "type": "array",
+          "description": "按日期/阶段排列的内容计划。"
+        }
+      },
+      "estimatedCredits": 1
+    },
+    {
+      "version": "0.2.0",
+      "category": "writing",
+      "costLevel": "low",
+      "requiredAuth": [
+        "nexTideApiKey"
+      ],
+      "requiredEnv": [],
+      "examples": [],
+      "docsUrl": "artifacts/capabilities/content.ad.copy.variants.input.schema.json",
+      "id": "content.ad.copy.variants",
+      "skillName": "ad-copy-variant-generator",
+      "title": "广告文案变体生成",
+      "description": "围绕同一产品卖点生成多组广告文案变体，覆盖痛点、利益、证明、限时、场景、对比等角度，并标注适用投放位置。",
+      "status": "available",
+      "executionType": "local_agent",
+      "async": false,
+      "maxWaitSeconds": 0,
+      "estimatedDurationSeconds": 75,
+      "featureKey": "smart_creation",
+      "tags": [
+        "ad-copy",
+        "variants",
+        "performance",
+        "local-agent"
+      ],
+      "inputSchema": {
+        "product": {
+          "type": "string",
+          "required": true,
+          "description": "产品或服务描述。"
+        },
+        "sellingPoints": {
+          "type": "array",
+          "description": "卖点列表。"
+        },
+        "placement": {
+          "type": "string",
+          "description": "投放位置：feed/search/landing-page/video-caption 等。"
+        },
+        "count": {
+          "type": "number",
+          "description": "变体数量。",
+          "default": 10
+        }
+      },
+      "outputSchema": {
+        "variants": {
+          "type": "array",
+          "description": "广告文案变体，含角度、正文、CTA、风险提示。"
+        }
+      },
+      "estimatedCredits": 1
+    },
+    {
+      "version": "0.2.0",
+      "category": "product",
+      "costLevel": "low",
+      "requiredAuth": [
+        "nexTideApiKey"
+      ],
+      "requiredEnv": [],
+      "examples": [],
+      "docsUrl": "artifacts/capabilities/product.angle.matrix.input.schema.json",
+      "id": "product.angle.matrix",
+      "skillName": "product-content-angle-matrix",
+      "title": "产品内容角度矩阵",
+      "description": "把一个产品拆成可持续生产内容的角度矩阵：人群、痛点、场景、证据、反对意见、内容形式和转化路径。",
+      "status": "available",
+      "executionType": "local_agent",
+      "async": false,
+      "maxWaitSeconds": 0,
+      "estimatedDurationSeconds": 90,
+      "featureKey": "smart_creation",
+      "tags": [
+        "product",
+        "angle-matrix",
+        "content-strategy",
+        "local-agent"
+      ],
+      "inputSchema": {
+        "product": {
+          "type": "string",
+          "required": true,
+          "description": "产品名称、描述、卖点或分析结果。"
+        },
+        "audience": {
+          "type": "string",
+          "description": "目标人群。"
+        },
+        "channels": {
+          "type": "array",
+          "description": "内容渠道。"
+        }
+      },
+      "outputSchema": {
+        "matrix": {
+          "type": "array",
+          "description": "内容角度矩阵行。"
+        }
+      },
+      "estimatedCredits": 1
+    },
+    {
+      "version": "0.2.0",
+      "category": "system",
+      "costLevel": "low",
+      "requiredAuth": [
+        "nexTideApiKey"
+      ],
+      "requiredEnv": [],
+      "examples": [],
+      "docsUrl": "artifacts/capabilities/competitor.benchmark.brief.input.schema.json",
+      "id": "competitor.benchmark.brief",
+      "skillName": "competitor-benchmark-brief",
+      "title": "竞品对标 Brief",
+      "description": "把竞品链接、账号、文案或观察记录整理成对标 brief：可学什么、不能抄什么、差异化机会和下一步验证任务。",
+      "status": "available",
+      "executionType": "local_agent",
+      "async": false,
+      "maxWaitSeconds": 0,
+      "estimatedDurationSeconds": 90,
+      "featureKey": "smart_creation",
+      "tags": [
+        "competitor",
+        "benchmark",
+        "brief",
+        "local-agent"
+      ],
+      "inputSchema": {
+        "references": {
+          "type": "string",
+          "required": true,
+          "description": "竞品链接、账号、内容摘要或观察记录。"
+        },
+        "ownProduct": {
+          "type": "string",
+          "description": "自己的产品/账号/业务。"
+        },
+        "goal": {
+          "type": "string",
+          "description": "对标目标：选题/视觉/转化/账号定位/广告等。"
+        }
+      },
+      "outputSchema": {
+        "brief": {
+          "type": "object",
+          "description": "可学习点、禁止复制点、差异机会、验证任务。"
+        }
+      },
+      "estimatedCredits": 1
+    },
+    {
+      "version": "0.2.0",
+      "category": "system",
+      "costLevel": "low",
+      "requiredAuth": [
+        "nexTideApiKey"
+      ],
+      "requiredEnv": [],
+      "examples": [],
+      "docsUrl": "artifacts/capabilities/script.storyboard.plan.input.schema.json",
+      "id": "script.storyboard.plan",
+      "skillName": "short-video-storyboard-planner",
+      "title": "短视频分镜脚本规划",
+      "description": "把 Hook brief、产品卖点或内容选题转成短视频分镜脚本，包含镜头、画面、台词、字幕、产品露出和 AI 视频提示词草案。",
+      "status": "available",
+      "executionType": "local_agent",
+      "async": false,
+      "maxWaitSeconds": 0,
+      "estimatedDurationSeconds": 120,
+      "featureKey": "smart_creation",
+      "tags": [
+        "storyboard",
+        "short-video",
+        "script",
+        "prompt",
+        "local-agent"
+      ],
+      "inputSchema": {
+        "brief": {
+          "type": "string",
+          "required": true,
+          "description": "Hook brief、产品卖点、选题或脚本需求。"
+        },
+        "durationSeconds": {
+          "type": "number",
+          "description": "目标视频时长。",
+          "default": 30
+        },
+        "style": {
+          "type": "string",
+          "description": "视频风格或平台。"
+        }
+      },
+      "outputSchema": {
+        "storyboard": {
+          "type": "array",
+          "description": "分镜脚本，含镜头、台词、字幕、视觉提示词。"
+        }
+      },
+      "estimatedCredits": 1
+    },
+    {
+      "version": "0.2.0",
+      "category": "writing",
       "costLevel": "free",
       "requiredAuth": [
-        "none"
+        "nexTideApiKey"
       ],
       "requiredEnv": [],
       "examples": [],

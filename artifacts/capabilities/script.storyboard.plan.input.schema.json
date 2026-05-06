@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "script.storyboard.plan input",
+  "type": "object",
+  "properties": {
+    "brief": {
+      "type": "string",
+      "description": "Hook brief、产品卖点、选题或脚本需求。"
+    },
+    "durationSeconds": {
+      "type": "number",
+      "description": "目标视频时长。",
+      "default": 30
+    },
+    "style": {
+      "type": "string",
+      "description": "视频风格或平台。"
+    }
+  },
+  "required": [
+    "brief"
+  ],
+  "additionalProperties": true
+}

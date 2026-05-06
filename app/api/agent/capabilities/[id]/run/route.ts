@@ -41,21 +41,23 @@ export async function POST(
     );
   }
 
-  if (capability.executionType === 'local_agent') {
-    const run = await runAgentCapability({
-      capability,
-      request: body,
-      authHeaders: request.headers,
-    });
-    const status = run.status === 'failed' ? 400 : 200;
-    return NextResponse.json({ run }, { status });
-  }
-
   let auth;
   try {
     auth = await requireAgentApiKey(request);
   } catch (error) {
     return agentAuthErrorResponse(error);
+  }
+
+  if (capability.executionType === 'local_agent') {
+    const run = await runAgentCapability({
+      capability,
+      request: body,
+      authHeaders: request.headers,
+      userId: auth.userId,
+      userApiKey: auth.profile.api_key,
+    });
+    const status = run.status === 'failed' ? 400 : 200;
+    return NextResponse.json({ run }, { status });
   }
 
   try {

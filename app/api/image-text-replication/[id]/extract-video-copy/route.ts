@@ -214,7 +214,16 @@ export async function POST(
 
           const envelope = normalizeWebhookEnvelope(rawData);
           const extractedText = extractTextFromEnvelope(envelope);
-          if (!extractedText) return;
+          if (!extractedText) {
+            await prisma.imageTextReplicationTask.update({
+              where: { id },
+              data: {
+                status: 'VIDEO_COPY_FAILED',
+                errorMessage: '未获取到文案内容',
+              },
+            });
+            return;
+          }
 
           const rawMeta = parseObject(note.generatedImages) ?? {};
           const videoMeta = parseObject(rawMeta.video) ?? {};
@@ -265,9 +274,17 @@ export async function POST(
     const extractedText = extractTextFromEnvelope(envelope);
 
     if (!extractedText) {
+      await prisma.imageTextReplicationTask.update({
+        where: { id },
+        data: {
+          status: 'VIDEO_COPY_FAILED',
+          errorMessage: '未获取到文案内容',
+        },
+      });
       return NextResponse.json({
         data: {
-          status: 'pending',
+          status: 'failed',
+          error: '未获取到文案内容',
           videoUrl,
         },
       });

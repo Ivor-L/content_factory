@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "content.calendar.plan input",
+  "type": "object",
+  "properties": {
+    "product": {
+      "type": "string",
+      "description": "产品、账号或业务描述。"
+    },
+    "audience": {
+      "type": "string",
+      "description": "目标人群。"
+    },
+    "days": {
+      "type": "number",
+      "description": "规划天数。",
+      "default": 14
+    },
+    "platforms": {
+      "type": "array",
+      "description": "平台列表。"
+    }
+  },
+  "required": [
+    "product"
+  ],
+  "additionalProperties": true
+}

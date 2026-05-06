@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "content.repurpose.pack input",
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "string",
+      "description": "原始素材或文章。"
+    },
+    "targetPlatforms": {
+      "type": "array",
+      "description": "目标平台列表，如 xhs/douyin/wechat/moments/ads。"
+    },
+    "campaignGoal": {
+      "type": "string",
+      "description": "转化目标或传播目标。"
+    }
+  },
+  "required": [
+    "source"
+  ],
+  "additionalProperties": true
+}

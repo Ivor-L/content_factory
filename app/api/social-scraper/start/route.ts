@@ -48,6 +48,22 @@ function normalizePlatform(value: string | undefined): string {
   return (value || "").trim().toLowerCase();
 }
 
+function normalizeTikTokProfileUrl(entry: string): string {
+  const trimmed = entry.trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  const handle = trimmed.replace(/^@+/, "");
+  return handle ? `https://www.tiktok.com/@${handle}` : "";
+}
+
+function normalizeTikTokHandle(entry: string): string {
+  const trimmed = entry.trim();
+  if (!trimmed) return "";
+  const match = trimmed.match(/tiktok\.com\/@([^/?#]+)/i);
+  const raw = match?.[1] || trimmed.replace(/^@+/, "");
+  return raw ? `@${raw}` : "";
+}
+
 function splitEntries(raw: unknown): string[] {
   if (Array.isArray(raw)) {
     return raw
@@ -102,7 +118,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const entries = splitEntries(body.entries ?? body.targets ?? body.input);
+  const entries = splitEntries(body.entries ?? body.targets ?? body.creators ?? body.urls ?? body.input);
   if (requestedMode === "keyword" && platform !== "tiktok") {
     return NextResponse.json(
       { error: "当前仅支持 TikTok 关键词采集，请改用链接模式。" },
@@ -178,12 +194,25 @@ export async function POST(request: Request) {
   const limit = Number(body.limit);
   const normalizedLimit = Number.isFinite(limit) && limit > 0 ? Math.min(limit, 50) : undefined;
 
-  let inputMode: "keyword" | "url" = requestedMode === "keyword" ? "keyword" : "url";
+  let inputMode: "keyword" | "creator" | "url" = requestedMode === "keyword" ? "keyword" : requestedMode === "creator" ? "creator" : "url";
   const payload: Record<string, unknown> = {};
 
   if (platform === "tiktok" && inputMode === "keyword") {
     payload.searchQueries = entries;
     payload.limit = normalizedLimit ?? 20;
+    payload.maxItems = normalizedLimit ?? 20;
+  } else if (platform === "tiktok" && inputMode === "creator") {
+    const profileUrls = entries.map(normalizeTikTokProfileUrl).filter(Boolean);
+    const profiles = entries.map(normalizeTikTokHandle).filter(Boolean);
+    payload.profiles = profiles;
+    payload.profileUrls = profileUrls;
+    payload.profileURLs = profileUrls;
+    payload.startUrls = profileUrls.map((url) => ({ url }));
+    // Compatibility for existing n8n workflows that still read postURLs for TikTok URL mode.
+    payload.postURLs = profileUrls;
+    payload.limit = normalizedLimit ?? 20;
+    payload.maxItems = normalizedLimit ?? 20;
+    payload.resultsPerPage = normalizedLimit ?? 20;
   } else if (platform === "tiktok") {
     payload.postURLs = entries;
   } else if (platform === "facebook") {
@@ -216,6 +245,8 @@ export async function POST(request: Request) {
     request_meta: {
       source: "web",
       client_uid: userId ?? "",
+      requested_mode: requestedMode,
+      original_entries: entries,
     },
   };
 

@@ -135,6 +135,17 @@ export async function POST(request: NextRequest) {
     callback_url: callbackUrl,
   };
 
+  if (scriptId) {
+    await persistExtractStatus({
+      scriptId,
+      status: "pending",
+      message: null,
+      script,
+    }).catch((error) => {
+      console.error("[replication/copy/extract] persist pending status error", error);
+    });
+  }
+
   // ── Async path (preferred in production) ─────────────────────────────────
   // Fire the webhook without awaiting so nginx/Vercel never times out.
   // n8n will call callback_url when done.
@@ -260,6 +271,11 @@ export async function persistExtractedText({
         parsed = {};
       }
       parsed.originalCopy = extractedText;
+      parsed.copyExtraction = {
+        status: "completed",
+        error: null,
+        updatedAt: new Date().toISOString(),
+      };
       await prisma.script.update({
         where: { id: s.id },
         data: { breakdown: JSON.stringify(parsed) },
@@ -284,6 +300,11 @@ export async function persistExtractedText({
           rawPayload: {
             ...existingPayload,
             scriptText: extractedText,
+            copyExtraction: {
+              status: "completed",
+              error: null,
+              updatedAt: new Date().toISOString(),
+            },
           },
         },
       });
@@ -321,6 +342,107 @@ export async function persistExtractedText({
             },
           }),
           errorMessage: null,
+        },
+      });
+    }
+  }
+}
+
+export async function persistExtractStatus({
+  scriptId,
+  referenceItemId,
+  myNoteId,
+  status,
+  message,
+  script,
+}: {
+  scriptId?: string;
+  referenceItemId?: string;
+  myNoteId?: string;
+  status: "pending" | "failed";
+  message?: string | null;
+  script?: { id: string; breakdown: string | null } | null;
+}) {
+  const updatedAt = new Date().toISOString();
+
+  if (scriptId) {
+    const s = script ?? await prisma.script.findUnique({
+      where: { id: scriptId },
+      select: { id: true, breakdown: true },
+    });
+    if (s) {
+      let parsed: Record<string, any>;
+      try {
+        parsed = s.breakdown ? JSON.parse(s.breakdown) : {};
+      } catch {
+        parsed = {};
+      }
+      parsed.copyExtraction = {
+        status,
+        error: message || null,
+        updatedAt,
+      };
+      await prisma.script.update({
+        where: { id: s.id },
+        data: { breakdown: JSON.stringify(parsed) },
+      });
+    }
+  }
+
+  if (referenceItemId) {
+    const refItem = await prisma.viralReferenceItem.findUnique({
+      where: { id: referenceItemId },
+      select: { rawPayload: true },
+    });
+    if (refItem) {
+      const existingPayload =
+        refItem.rawPayload && typeof refItem.rawPayload === "object" && !Array.isArray(refItem.rawPayload)
+          ? (refItem.rawPayload as Record<string, unknown>)
+          : {};
+      await prisma.viralReferenceItem.update({
+        where: { id: referenceItemId },
+        data: {
+          rawPayload: {
+            ...existingPayload,
+            copyExtraction: {
+              status,
+              error: message || null,
+              updatedAt,
+            },
+          },
+        },
+      });
+    }
+  }
+
+  if (myNoteId && status === "failed") {
+    const myNote = await prisma.imageTextReplicationTask.findUnique({
+      where: { id: myNoteId },
+      select: { generatedImages: true },
+    });
+    if (myNote) {
+      const existingPayload =
+        myNote.generatedImages && typeof myNote.generatedImages === "object" && !Array.isArray(myNote.generatedImages)
+          ? (myNote.generatedImages as Record<string, unknown>)
+          : {};
+      const videoPayload =
+        existingPayload.video && typeof existingPayload.video === "object" && !Array.isArray(existingPayload.video)
+          ? (existingPayload.video as Record<string, unknown>)
+          : {};
+
+      await prisma.imageTextReplicationTask.update({
+        where: { id: myNoteId },
+        data: {
+          status: "VIDEO_COPY_FAILED",
+          generatedImages: toInputJson({
+            ...existingPayload,
+            video: {
+              ...videoPayload,
+              extractionError: message || "未获取到文案内容",
+              extractionFailedAt: updatedAt,
+            },
+          }),
+          errorMessage: message || "未获取到文案内容",
         },
       });
     }

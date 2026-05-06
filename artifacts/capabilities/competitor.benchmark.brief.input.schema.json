@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "competitor.benchmark.brief input",
+  "type": "object",
+  "properties": {
+    "references": {
+      "type": "string",
+      "description": "竞品链接、账号、内容摘要或观察记录。"
+    },
+    "ownProduct": {
+      "type": "string",
+      "description": "自己的产品/账号/业务。"
+    },
+    "goal": {
+      "type": "string",
+      "description": "对标目标：选题/视觉/转化/账号定位/广告等。"
+    }
+  },
+  "required": [
+    "references"
+  ],
+  "additionalProperties": true
+}

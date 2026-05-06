@@ -1,0 +1,44 @@
+{
+  "run": {
+    "runId": "run_7cc40fec-7162-4113-9523-462fe424e7af",
+    "capabilityId": "social.tiktok.collect",
+    "mode": "submit",
+    "status": "waiting_callback",
+    "createdAt": "2026-05-06T15:52:36.539Z",
+    "result": {
+      "data": {
+        "importedCount": 0,
+        "items": []
+      },
+      "business": {
+        "type": "socialCollection",
+        "id": "tiktok",
+        "taskId": "social_1778082756619::cGxhaW46eyJraW5kIjoidXNlciIsInZhbHVlIjoiZGI3NGY3MmYtOWYwZS00ZDQyLThiOWQtYjM0Yzg5MGY1ZWVhIn0",
+        "status": "waiting_callback"
+      }
+    },
+    "artifacts": [],
+    "usage": {
+      "provider": "internal_api",
+      "durationMs": 144
+    },
+    "error": null,
+    "statusCommand": "nextide run status run_7cc40fec-7162-4113-9523-462fe424e7af",
+    "resultCommand": "nextide run result run_7cc40fec-7162-4113-9523-462fe424e7af --output result.json"
+  },
+  "error": {
+    "code": "wait_timeout",
+    "message": "Timed out waiting for run run_7cc40fec-7162-4113-9523-462fe424e7af",
+    "timeoutSeconds": 900
+  },
+  "explanation": {
+    "code": "wait_timeout",
+    "title": "等待超时",
+    "message": "Timed out waiting for run run_7cc40fec-7162-4113-9523-462fe424e7af",
+    "nextActions": [
+      "稍后运行 nextide run status <run-id>",
+      "继续运行 nextide run follow <run-id>",
+      "如果长时间无变化，保留 runId 反馈给管理员"
+    ]
+  }
+}

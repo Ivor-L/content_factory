@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "content.ad.copy.variants input",
+  "type": "object",
+  "properties": {
+    "product": {
+      "type": "string",
+      "description": "产品或服务描述。"
+    },
+    "sellingPoints": {
+      "type": "array",
+      "description": "卖点列表。"
+    },
+    "placement": {
+      "type": "string",
+      "description": "投放位置：feed/search/landing-page/video-caption 等。"
+    },
+    "count": {
+      "type": "number",
+      "description": "变体数量。",
+      "default": 10
+    }
+  },
+  "required": [
+    "product"
+  ],
+  "additionalProperties": true
+}

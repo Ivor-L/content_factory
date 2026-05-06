@@ -68,7 +68,7 @@ export function enrichCapability(capability: AgentCapabilityDefinition): AgentCa
     version: '0.2.0',
     category: inferCategory(capability.id),
     costLevel,
-    requiredAuth: capability.executionType === 'local_agent' ? ['none'] : ['nexTideApiKey'],
+    requiredAuth: ['nexTideApiKey'],
     requiredEnv: REQUIRED_ENV_BY_ID[capability.id] || [],
     examples: EXAMPLES_BY_ID[capability.id] || [],
     docsUrl: `artifacts/capabilities/${capability.id}.input.schema.json`,

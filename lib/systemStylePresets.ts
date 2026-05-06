@@ -35,6 +35,9 @@ const LEGACY_SYSTEM_PRESET_IDS = [
   "0b09efe2-edb7-4209-8313-43657df52571", // flow
 ];
 
+const DEPRECATED_DEFAULT_STYLE_PRESET_NAMES = ["复古漫画"];
+const DEPRECATED_DEFAULT_STYLE_PRESET_SLUGS = ["retro-comic", "retro_comic"];
+
 let seedPromise: Promise<void> | null = null;
 
 export async function ensureSystemStylePresetsSeeded() {
@@ -46,7 +49,37 @@ export async function ensureSystemStylePresetsSeeded() {
 
 async function seedSystemStylePresets() {
   // Delete legacy hardcoded system presets from DB (one-time cleanup).
-  await prisma.stylePreset.deleteMany({
-    where: { id: { in: LEGACY_SYSTEM_PRESET_IDS } },
-  });
+  await prisma.$transaction([
+    prisma.stylePreset.deleteMany({
+      where: { id: { in: LEGACY_SYSTEM_PRESET_IDS } },
+    }),
+    prisma.stylePreset.deleteMany({
+      where: {
+        userId: null,
+        name: { in: DEPRECATED_DEFAULT_STYLE_PRESET_NAMES },
+      },
+    }),
+  ]);
+}
+
+const readMetadata = (value: unknown): Record<string, any> =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, any>)
+    : {};
+
+export function isDeprecatedDefaultStylePreset(style: {
+  name?: string | null;
+  userId?: string | null;
+  metadata?: unknown;
+}) {
+  if (style.userId) return false;
+
+  const name = typeof style.name === "string" ? style.name.trim() : "";
+  if (DEPRECATED_DEFAULT_STYLE_PRESET_NAMES.includes(name)) {
+    return true;
+  }
+
+  const metadata = readMetadata(style.metadata);
+  const slug = typeof metadata.slug === "string" ? metadata.slug.trim() : "";
+  return DEPRECATED_DEFAULT_STYLE_PRESET_SLUGS.includes(slug);
 }

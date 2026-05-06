@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "content.xhs.title.generate input",
+  "type": "object",
+  "properties": {
+    "topic": {
+      "type": "string",
+      "description": "选题、产品、正文摘要或内容方向。"
+    },
+    "audience": {
+      "type": "string",
+      "description": "目标人群。"
+    },
+    "style": {
+      "type": "string",
+      "description": "标题风格：痛点/清单/反差/经验/避坑/测评/情绪等。"
+    },
+    "count": {
+      "type": "number",
+      "description": "需要生成的标题数量。",
+      "default": 12
+    }
+  },
+  "required": [
+    "topic"
+  ],
+  "additionalProperties": true
+}

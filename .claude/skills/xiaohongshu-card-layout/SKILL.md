@@ -68,20 +68,29 @@ Field rules:
 
 1. Read or receive the Markdown content.
 2. If the content is not already Markdown, convert it lightly without changing wording.
-3. Create `.nextide/input/xhs-card-layout.json`.
-4. Run the capability command.
-5. Read `.nextide/output/xhs-card-layout-result.json`.
-6. Export multimodal artifacts when the user wants preview/download:
+3. Decide card constraints before running:
+   - `maxPages`: default 6-8 for普通内容，10+ only if user accepts longer carousel.
+   - `includeCover`: true unless user explicitly says no cover.
+   - `templateId`: only set when user specifies a style; otherwise use capability default.
+4. Create `.nextide/input/xhs-card-layout.json`.
+5. Run the capability command.
+6. Export the full artifact bundle:
 
    ```bash
    RUN_ID=$(node -e "const r=require('./.nextide/output/xhs-card-layout-result.json'); console.log(r.run && r.run.runId)")
    npm run nextide -- run artifacts "$RUN_ID" \
      --output-dir .nextide/output/$RUN_ID \
      --download \
-     --gallery
+     --gallery \
+     --datatable
    ```
 
-7. Return the generated image URLs, local image paths, `gallery.html`, and any useful task metadata.
+7. Read in this order:
+   - `.nextide/output/$RUN_ID/summary.json`
+   - `.nextide/output/$RUN_ID/manifest.json`
+   - `.nextide/output/$RUN_ID/gallery.html` / `preview.html`
+   - `.nextide/output/$RUN_ID/datatable.json`
+8. Return rich preview blocks if supported, then local image paths, then remote fallback URLs.
 
 ## Output Handling
 
@@ -108,20 +117,40 @@ Expected successful result shape:
 
 Return:
 
-- status
-- title
-- template used
-- card image URLs
-- local downloaded image paths if artifact export was run
-- `gallery.html` path if generated
-- note if the run failed and why
+- `summary.recommendedResponse.message` if `summary.json` exists
+- `html-preview` block for `preview.html` or `gallery.html` when supported
+- `datatable` block for `datatable.json` when useful
+- local downloaded image paths
+- remote image URLs only as fallback
+- template used and page count
+- `explanation` next actions if the run failed
+
+Good final response shape:
+
+````markdown
+已完成：<summary message>
+
+```html-preview
+{"src":"/absolute/path/to/preview.html","title":"小红书卡片预览"}
+```
+
+文件：
+- /absolute/path/to/xhs-card-1.png
+- /absolute/path/to/xhs-card-2.png
+
+下一步你可以：
+1. 生成小红书标题
+2. 生成发布正文
+````
 
 ## Quality Rules
 
 - Do not rewrite the user’s source text unless explicitly asked.
 - Preserve dense information if the user gave a memo-style source.
-- If a source is too long, tell the user it may need pagination or maxPages increase.
-- Do not invent image URLs if generation fails.
+- Prefer structure cleanup over content改写: headings, bullets, emphasis, page rhythm.
+- If a source is too long, tell the user it may need pagination or `maxPages` increase before truncating.
+- Avoid claiming the cards are “ready to publish” if source facts, compliance, or visual review are incomplete.
+- Do not invent image URLs, local paths, page count, or template id if generation fails.
 
 <!-- BEGIN NEXTIDE AUTO-GENERATED -->
 
@@ -191,8 +220,13 @@ If the result contains artifacts, export them:
 ```bash
 RUN_ID=$(node -e "const r=require('./.nextide/output/xhs.card.layout-result.json'); console.log(r.run && r.run.runId)")
 nextide run artifacts "$RUN_ID" \
-  --output-dir .nextide/output/$RUN_ID
+  --output-dir .nextide/output/$RUN_ID \
+  --download \
+  --gallery \
+  --datatable
 ```
+
+Then read `summary.json` first, followed by `manifest.json`.
 
 ## General Rules
 
@@ -200,7 +234,9 @@ nextide run artifacts "$RUN_ID" \
 - Do not expose API secrets or internal webhook URLs in prompts or output.
 - If status is not `available`, fail fast and explain what is missing.
 - For async tasks, prefer `--wait` when the user wants a finished result in the same turn.
-- After a finished run, use `nextide run artifacts <run-id> --output-dir .nextide/output/<run-id>` and read `manifest.json` first.
-- Prefer returning local artifact paths from `manifest.json` over pasting huge raw JSON.
+- After a finished run, use `nextide run artifacts <run-id> --output-dir .nextide/output/<run-id> --download --gallery --datatable` and read `summary.json` then `manifest.json`.
+- For long-running runs, prefer `nextide run follow <run-id> --output-dir .nextide/output/<run-id> --timeout 1800 --interval 5`.
+- Prefer returning `summary.recommendedResponse.message`, `preview.html`, `datatable.json`, and local artifact paths over pasting huge raw JSON.
+- If the CLI output includes `explanation`, convert it into a clear user-facing failure message with next actions.
 
 <!-- END NEXTIDE AUTO-GENERATED -->

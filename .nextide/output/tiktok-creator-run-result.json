@@ -1,0 +1,33 @@
+{
+  "run": {
+    "runId": "run_58782d8a-b126-4015-9b1d-5a99cbf7483e",
+    "capabilityId": "social.tiktok.collect",
+    "mode": "submit",
+    "status": "waiting_callback",
+    "createdAt": "2026-05-06T16:06:17.120Z",
+    "result": {
+      "data": {
+        "importedCount": 0,
+        "items": []
+      },
+      "business": {
+        "type": "socialCollection",
+        "id": "tiktok",
+        "taskId": "social_1778083577200::cGxhaW46eyJraW5kIjoidXNlciIsInZhbHVlIjoiZGI3NGY3MmYtOWYwZS00ZDQyLThiOWQtYjM0Yzg5MGY1ZWVhIn0",
+        "status": "waiting_callback"
+      }
+    },
+    "artifacts": [],
+    "usage": {
+      "provider": "internal_api",
+      "durationMs": 138
+    },
+    "error": null,
+    "statusCommand": "nextide run status run_58782d8a-b126-4015-9b1d-5a99cbf7483e",
+    "resultCommand": "nextide run result run_58782d8a-b126-4015-9b1d-5a99cbf7483e --output result.json"
+  },
+  "error": {
+    "code": "run_not_finished",
+    "message": "Run run_58782d8a-b126-4015-9b1d-5a99cbf7483e is waiting_callback; result is not final yet."
+  }
+}

@@ -12,13 +12,36 @@ Follow shared NexTide rules in:
 
 Use this skill for platform collection feeding NexTide viral references / hot clone workflows.
 
+Use it when the user asks to:
+
+- collect TikTok / Instagram / Facebook public posts or videos
+- import reference URLs into NexTide viral references
+- prepare a benchmark pool for viral breakdown or prompt generation
+- collect comments after the user explicitly asks for comment mining
+- do a bounded first-pass trend/material scan
+
+Do not use it for:
+
+- private account scraping or bypassing platform permissions
+- full account crawling without a bounded limit
+- sentiment/comment analysis unless collection output exists first
+- claiming import completion before callback/result confirms it
+
 ## Capabilities
 
 ```text
 social.tiktok.collect
 social.instagram.collect
 social.facebook.collect
+social.comments.collect
 ```
+
+Default bounds:
+
+- first pass: 10-30 public items
+- smoke test: 5-10 public items
+- comments: off by default; only collect when user explicitly asks
+- high-volume collection: ask for confirmation and explain cost/time risk
 
 ## TikTok
 
@@ -133,20 +156,44 @@ TikTok/Facebook normally return `waiting_callback` because n8n imports results a
 
 Instagram may return synchronously if the Instagram workflow returns `post_data` immediately.
 
+For any run with a `runId`, prefer:
+
+```bash
+npm run nextide -- run follow <run-id> \
+  --output-dir .nextide/output/<run-id> \
+  --timeout 1800 \
+  --interval 5
+```
+
+If the run is already finished, export:
+
+```bash
+npm run nextide -- run artifacts <run-id> \
+  --output-dir .nextide/output/<run-id> \
+  --download \
+  --gallery \
+  --datatable
+```
+
 Return:
 
-- platform
-- mode
-- submitted entries
+- platform and collection mode
+- submitted queries/URLs count
 - imported count if available
-- workflow/import errors if any
+- `datatable` block when `datatable.json` exists
+- `summary.recommendedResponse.nextActions` when present
+- workflow/import errors or `explanation` next actions if failed
 
 ## Rules
 
 - Bounded first pass: default 10-30 items.
-- Do not collect comments by default; use comments capability when wired.
+- Do not collect comments by default; use comments capability only when explicitly requested.
 - Do not invent collected records before callback/import completes.
 - Keyword mode is TikTok-only in the current Web API.
+- Only use public URLs or user-provided materials.
+- Do not imply platform endorsement or access to private metrics.
+- If output is `waiting_callback`, clearly say the job was submitted and show follow/status commands.
+- If `datatable.json` exists, prefer it over dumping raw workflow JSON.
 
 <!-- BEGIN NEXTIDE AUTO-GENERATED -->
 
@@ -231,16 +278,21 @@ nextide capability run social.tiktok.collect \
   --interval 5
 
 RUN_ID=$(node -e "const r=require('./.nextide/output/social.tiktok.collect-result.json'); console.log(r.run && r.run.runId)")
-nextide run artifacts "$RUN_ID" \
-  --output-dir .nextide/output/$RUN_ID
+nextide run follow "$RUN_ID" \
+  --output-dir .nextide/output/$RUN_ID \
+  --timeout 900 \
+  --interval 5
 ```
 
 Artifact-first reading order:
 
-1. Read `.nextide/output/$RUN_ID/manifest.json`.
-2. Return local artifact paths when present.
-3. If a remote URL artifact is present, return the URL from manifest.
-4. Only inspect the full result JSON when manifest is insufficient.
+1. Read `.nextide/output/$RUN_ID/summary.json`.
+2. Read `.nextide/output/$RUN_ID/manifest.json`.
+3. Return `preview.html` / `gallery.html` with rich preview when supported.
+4. Return `datatable.json` for data/table results.
+5. Return local artifact paths when present.
+6. If a remote URL artifact is present, return the URL from manifest.
+7. Only inspect the full result JSON when manifest is insufficient.
 
 ### Instagram 数据采集
 
@@ -290,16 +342,21 @@ nextide capability run social.instagram.collect \
   --interval 5
 
 RUN_ID=$(node -e "const r=require('./.nextide/output/social.instagram.collect-result.json'); console.log(r.run && r.run.runId)")
-nextide run artifacts "$RUN_ID" \
-  --output-dir .nextide/output/$RUN_ID
+nextide run follow "$RUN_ID" \
+  --output-dir .nextide/output/$RUN_ID \
+  --timeout 900 \
+  --interval 5
 ```
 
 Artifact-first reading order:
 
-1. Read `.nextide/output/$RUN_ID/manifest.json`.
-2. Return local artifact paths when present.
-3. If a remote URL artifact is present, return the URL from manifest.
-4. Only inspect the full result JSON when manifest is insufficient.
+1. Read `.nextide/output/$RUN_ID/summary.json`.
+2. Read `.nextide/output/$RUN_ID/manifest.json`.
+3. Return `preview.html` / `gallery.html` with rich preview when supported.
+4. Return `datatable.json` for data/table results.
+5. Return local artifact paths when present.
+6. If a remote URL artifact is present, return the URL from manifest.
+7. Only inspect the full result JSON when manifest is insufficient.
 
 ### Facebook 数据采集
 
@@ -349,16 +406,21 @@ nextide capability run social.facebook.collect \
   --interval 5
 
 RUN_ID=$(node -e "const r=require('./.nextide/output/social.facebook.collect-result.json'); console.log(r.run && r.run.runId)")
-nextide run artifacts "$RUN_ID" \
-  --output-dir .nextide/output/$RUN_ID
+nextide run follow "$RUN_ID" \
+  --output-dir .nextide/output/$RUN_ID \
+  --timeout 900 \
+  --interval 5
 ```
 
 Artifact-first reading order:
 
-1. Read `.nextide/output/$RUN_ID/manifest.json`.
-2. Return local artifact paths when present.
-3. If a remote URL artifact is present, return the URL from manifest.
-4. Only inspect the full result JSON when manifest is insufficient.
+1. Read `.nextide/output/$RUN_ID/summary.json`.
+2. Read `.nextide/output/$RUN_ID/manifest.json`.
+3. Return `preview.html` / `gallery.html` with rich preview when supported.
+4. Return `datatable.json` for data/table results.
+5. Return local artifact paths when present.
+6. If a remote URL artifact is present, return the URL from manifest.
+7. Only inspect the full result JSON when manifest is insufficient.
 
 ### 社媒评论抓取
 
@@ -408,16 +470,21 @@ nextide capability run social.comments.collect \
   --interval 5
 
 RUN_ID=$(node -e "const r=require('./.nextide/output/social.comments.collect-result.json'); console.log(r.run && r.run.runId)")
-nextide run artifacts "$RUN_ID" \
-  --output-dir .nextide/output/$RUN_ID
+nextide run follow "$RUN_ID" \
+  --output-dir .nextide/output/$RUN_ID \
+  --timeout 900 \
+  --interval 5
 ```
 
 Artifact-first reading order:
 
-1. Read `.nextide/output/$RUN_ID/manifest.json`.
-2. Return local artifact paths when present.
-3. If a remote URL artifact is present, return the URL from manifest.
-4. Only inspect the full result JSON when manifest is insufficient.
+1. Read `.nextide/output/$RUN_ID/summary.json`.
+2. Read `.nextide/output/$RUN_ID/manifest.json`.
+3. Return `preview.html` / `gallery.html` with rich preview when supported.
+4. Return `datatable.json` for data/table results.
+5. Return local artifact paths when present.
+6. If a remote URL artifact is present, return the URL from manifest.
+7. Only inspect the full result JSON when manifest is insufficient.
 
 ## General Rules
 
@@ -425,7 +492,9 @@ Artifact-first reading order:
 - Do not expose API secrets or internal webhook URLs in prompts or output.
 - If status is not `available`, fail fast and explain what is missing.
 - For async tasks, prefer `--wait` when the user wants a finished result in the same turn.
-- After a finished run, use `nextide run artifacts <run-id> --output-dir .nextide/output/<run-id>` and read `manifest.json` first.
-- Prefer returning local artifact paths from `manifest.json` over pasting huge raw JSON.
+- After a finished run, use `nextide run artifacts <run-id> --output-dir .nextide/output/<run-id> --download --gallery --datatable` and read `summary.json` then `manifest.json`.
+- For long-running runs, prefer `nextide run follow <run-id> --output-dir .nextide/output/<run-id> --timeout 1800 --interval 5`.
+- Prefer returning `summary.recommendedResponse.message`, `preview.html`, `datatable.json`, and local artifact paths over pasting huge raw JSON.
+- If the CLI output includes `explanation`, convert it into a clear user-facing failure message with next actions.
 
 <!-- END NEXTIDE AUTO-GENERATED -->
