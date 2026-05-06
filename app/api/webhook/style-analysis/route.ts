@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { toInputJson } from "@/lib/jsonUtils";
+import { updateAgentRunsForBusiness } from "@/lib/agent-runs/callback-updates";
 
 const DEFAULT_WORKFLOW_ID = process.env.N8N_STYLE_WORKFLOW_ID || "flow_xhs_Vision";
 const DEFAULT_WORKFLOW_NAME = process.env.N8N_STYLE_WORKFLOW_NAME || "小红书视觉风格分析";
@@ -202,12 +203,22 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  await prisma.stylePreset.update({
+  const updatedStyle = await prisma.stylePreset.update({
     where: { id: style.id },
     data: {
       spec: toInputJson(nextSpec) ?? undefined,
       metadata: toInputJson(nextMetadata) ?? undefined,
     },
+  });
+
+  await updateAgentRunsForBusiness({
+    businessType: "stylePreset",
+    businessId: style.id,
+    businessStatus: nextMetadata.processingStatus,
+    status: isSuccess ? "succeeded" : "failed",
+    result: { data: updatedStyle },
+    artifacts: updatedStyle.previewUrl ? [{ type: "image", url: updatedStyle.previewUrl, name: "style-reference.png" }] : [],
+    error: isSuccess ? undefined : { code: "workflow_failed", message: nextMetadata.lastError || "style analysis failed" },
   });
 
   return NextResponse.json({ ok: true });

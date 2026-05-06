@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { syncTaskToSummary } from '@/lib/taskSummary';
 import type { T2VShot } from '@/lib/n8n';
 import { Prisma } from '@prisma/client';
+import { updateAgentRunsForBusiness } from '@/lib/agent-runs/callback-updates';
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({})) as {
@@ -79,6 +80,14 @@ export async function POST(request: NextRequest) {
               },
             },
           },
+        });
+
+        await updateAgentRunsForBusiness({
+          businessType: 'creativeTask',
+          businessId: task_id,
+          businessStatus: 'done',
+          status: 'succeeded',
+          result: { data: { creativeTaskId: task_id, storyboardTaskId: storyboardTask.id, shots } },
         });
       }
     } catch (error) {

@@ -128,6 +128,8 @@
 | [20260506-miniapp-remix-video-generation-page-plan.md](./20260506-miniapp-remix-video-generation-page-plan.md) | 小程序智能复刻视频生成页拆分：网格图替换回写、复刻底栏收敛与独立片段视频生成 |
 | [20260506-miniapp-referrals-records-points-fix-plan.md](./20260506-miniapp-referrals-records-points-fix-plan.md) | 小程序分享有礼接口、记录页性能与算力记录名称优化 |
 | [20260506-nextide-skills-runtime-plan.md](./20260506-nextide-skills-runtime-plan.md) | NexTide Skills Runtime：将 SaaS、小程序、n8n 与闭源内容生产能力抽象为 Agent skills 的计划书 |
+| [20260506-nextide-skills-runtime-delivery.md](./20260506-nextide-skills-runtime-delivery.md) | NexTide Skills Runtime MVP 交付说明：已接入 capability、CLI、skills、调用示例与限制 |
+| [20260507-nextide-skills-runtime-phase2-plan.md](./20260507-nextide-skills-runtime-phase2-plan.md) | NexTide Skills Runtime Phase 2：Agent Run Store、长任务状态闭环与后续产品化计划 |
 | [20260504-character-library-view-edit-delete-plan.md](./20260504-character-library-view-edit-delete-plan.md) | Web 角色库查看/编辑/删除与创建表单交互优化计划 |
 | [20260504-style-library-image-performance-plan.md](./20260504-style-library-image-performance-plan.md) | 风格库图片加载性能优化：缩略图生成、列表优先加载与懒加载 |
 | [20260504-xhs-markdown-table-render-plan.md](./20260504-xhs-markdown-table-render-plan.md) | 小红书卡片 Markdown 表格渲染：Web/小程序预览、后端导出与 AI 排版对齐 |

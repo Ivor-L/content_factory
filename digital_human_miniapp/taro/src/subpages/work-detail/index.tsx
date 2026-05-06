@@ -246,32 +246,6 @@ export default function WorkDetailPage() {
     }
   };
 
-  const handleDownloadImage = async (url: string) => {
-    if (!canDownload) {
-      Taro.showToast({ title: '生成中的任务暂不可下载', icon: 'none' });
-      return;
-    }
-    if (!url || downloading) return;
-    const granted = await ensureAlbumPermission();
-    if (!granted) {
-      Taro.showToast({ title: '未开启相册权限', icon: 'none' });
-      return;
-    }
-
-    setDownloading(true);
-    try {
-      await saveMediaFromUrl(url, 'image');
-      Taro.showToast({ title: '已保存到相册', icon: 'success' });
-    } catch (error) {
-      Taro.showToast({
-        title: error instanceof Error ? error.message : '下载失败',
-        icon: 'none',
-      });
-    } finally {
-      setDownloading(false);
-    }
-  };
-
   const handleDownloadMain = async () => {
     if (!canDownload) {
       Taro.showToast({ title: '生成中的任务暂不可下载', icon: 'none' });
@@ -322,7 +296,7 @@ export default function WorkDetailPage() {
     }
   };
 
-  const downloadBtnText = '下载';
+  const downloadBtnText = isImageText ? '下载全部' : '下载';
 
   return (
     <View className='work-detail-page'>
@@ -341,7 +315,7 @@ export default function WorkDetailPage() {
       ) : (
         <View className='work-detail-content'>
           <ScrollView scrollY className='work-detail-scroll'>
-            <View className='work-detail-card'>
+            <View className={`work-detail-panel ${item.type === 'video' ? 'work-detail-panel--video' : ''}`}>
               <View className='work-detail-cover-wrap'>
                 {isImageText && posterImages.length > 0 ? (
                   <View className='work-detail-swiper-wrap' style={{ height: `${getPosterDisplayHeight(currentPosterUrl)}rpx` }}>
@@ -407,16 +381,6 @@ export default function WorkDetailPage() {
                     {renderWorkDetailPlaceholderIcon(getPlaceholderKind(item.type))}
                   </View>
                 )}
-                {canDownload && (isImageText ? Boolean(currentPosterUrl) : coverUrl && item.type !== 'video') && (
-                  <View
-                    className='work-detail-cover-download'
-                    onClick={() => {
-                      void handleDownloadImage(isImageText ? currentPosterUrl : (coverUrl as string));
-                    }}
-                  >
-                    <Text className='work-detail-cover-download-text'>↓</Text>
-                  </View>
-                )}
                 {item.type === 'video' && !videoUrl && (
                   <View className='work-detail-video-icon'>
                     <Text className='work-detail-video-icon-text'>▶</Text>
@@ -456,6 +420,14 @@ export default function WorkDetailPage() {
           </ScrollView>
 
           <View className='work-detail-action-bar'>
+            <View
+              className={`work-detail-action-btn work-detail-delete-btn ${deleting ? 'work-detail-action-btn--disabled' : ''}`}
+              onClick={() => {
+                void handleDelete();
+              }}
+            >
+              <Text className='work-detail-delete-btn-text'>{deleting ? '删除中...' : '删除'}</Text>
+            </View>
             {selectTarget && (
               <View
                 className={`work-detail-action-btn work-detail-use-btn ${!selectableImageUrl ? 'work-detail-action-btn--disabled' : ''}`}
@@ -465,23 +437,13 @@ export default function WorkDetailPage() {
               </View>
             )}
             <View
-              className={`work-detail-action-btn work-detail-delete-btn ${deleting ? 'work-detail-action-btn--disabled' : ''}`}
+              className={`work-detail-action-btn work-detail-download-btn ${downloading || !canDownload ? 'work-detail-action-btn--disabled' : ''}`}
               onClick={() => {
-                void handleDelete();
+                void handleDownloadMain();
               }}
             >
-              <Text className='work-detail-delete-btn-text'>{deleting ? '删除中...' : '删除'}</Text>
+              <Text className='work-detail-download-btn-text'>{isProcessing ? '生成中不可下载' : downloading ? '下载中...' : downloadBtnText}</Text>
             </View>
-            {!isImageText && (
-              <View
-                className={`work-detail-action-btn work-detail-download-btn ${downloading || !canDownload ? 'work-detail-action-btn--disabled' : ''}`}
-                onClick={() => {
-                  void handleDownloadMain();
-                }}
-              >
-                <Text className='work-detail-download-btn-text'>{isProcessing ? '生成中不可下载' : downloading ? '下载中...' : downloadBtnText}</Text>
-              </View>
-            )}
           </View>
         </View>
       )}

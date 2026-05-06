@@ -1,6 +1,6 @@
 import { View, Text, Image, ScrollView } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../../utils/api';
 import './index.sass';
 
@@ -16,8 +16,8 @@ export default function WarehousePage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadingVoice, setUploadingVoice] = useState(false);
   const [recording, setRecording] = useState(false);
-
-  const recorderManager = Taro.getRecorderManager ? Taro.getRecorderManager() : null;
+  const [stoppingRecord, setStoppingRecord] = useState(false);
+  const recorderManagerRef = useRef<ReturnType<typeof Taro.getRecorderManager> | null>(null);
 
   const fetchHumans = async () => {
     setLoading(true);
@@ -33,6 +33,43 @@ export default function WarehousePage() {
   };
 
   useLoad(() => { void fetchHumans(); });
+
+  useEffect(() => {
+    if (!Taro.getRecorderManager) return;
+
+    const recorderManager = Taro.getRecorderManager();
+    recorderManagerRef.current = recorderManager;
+
+    const handleStop = async (res: Taro.RecorderManager.OnStopCallbackResult) => {
+      setStoppingRecord(false);
+      setRecording(false);
+      setUploadingVoice(true);
+      try {
+        const url = await api.uploadMedia(res.tempFilePath, `record-${Date.now()}.m4a`, 'audio/mp4');
+        setNewVoiceUrl(url);
+      } catch {
+        Taro.showToast({ title: '录音上传失败', icon: 'none' });
+      } finally {
+        setUploadingVoice(false);
+      }
+    };
+
+    const handleError = () => {
+      setRecording(false);
+      setStoppingRecord(false);
+      setUploadingVoice(false);
+      Taro.showToast({ title: '录音失败，请重试', icon: 'none' });
+    };
+
+    recorderManager.onStop(handleStop);
+    recorderManager.onError(handleError);
+
+    return () => {
+      recorderManager.offStop?.(handleStop);
+      recorderManager.offError?.(handleError);
+      recorderManagerRef.current = null;
+    };
+  }, []);
 
   const handleDelete = (id) => {
     Taro.showModal({
@@ -75,25 +112,32 @@ export default function WarehousePage() {
   };
 
   const handleStartRecord = () => {
-    if (!recorderManager) return;
-    recorderManager.onStop(async (res) => {
-      setUploadingVoice(true);
-      try {
-        const url = await api.uploadMedia(res.tempFilePath, 'record.m4a', 'audio/mp4');
-        setNewVoiceUrl(url);
-      } catch {
-        Taro.showToast({ title: '录音上传失败', icon: 'none' });
-      } finally {
-        setUploadingVoice(false);
-        setRecording(false);
-      }
-    });
-    recorderManager.start({ duration: 60000, format: 'm4a' });
+    const recorderManager = recorderManagerRef.current;
+    if (recording || stoppingRecord || uploadingVoice) return;
+    if (!recorderManager) {
+      Taro.showToast({ title: '当前环境不支持录音', icon: 'none' });
+      return;
+    }
     setRecording(true);
+    setStoppingRecord(false);
+    try {
+      recorderManager.start({ duration: 60000, format: 'm4a' });
+    } catch {
+      setRecording(false);
+      Taro.showToast({ title: '录音启动失败', icon: 'none' });
+    }
   };
 
   const handleStopRecord = () => {
-    recorderManager?.stop();
+    if (!recording || stoppingRecord) return;
+    setStoppingRecord(true);
+    try {
+      recorderManagerRef.current?.stop();
+    } catch {
+      setRecording(false);
+      setStoppingRecord(false);
+      Taro.showToast({ title: '停止录音失败', icon: 'none' });
+    }
   };
 
   const handleCreate = async () => {
@@ -187,7 +231,7 @@ export default function WarehousePage() {
                 className={`voice-btn ${recording ? 'voice-btn--recording' : ''}`}
                 onClick={recording ? handleStopRecord : handleStartRecord}
               >
-                <Text>{recording ? '停止录音' : '点击录音'}</Text>
+                <Text>{stoppingRecord ? '处理中...' : recording ? '停止录音' : '点击录音'}</Text>
               </View>
             </View>
             {newVoiceUrl && <Text className='voice-set-hint'>✅ 音色已设置</Text>}

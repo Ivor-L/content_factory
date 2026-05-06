@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { toInputJson } from "@/lib/jsonUtils";
+import { updateAgentRunsForBusiness } from "@/lib/agent-runs/callback-updates";
 
 function parseObject(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -190,6 +191,14 @@ export async function POST(request: NextRequest) {
         },
       }),
     ]);
+    await updateAgentRunsForBusiness({
+      businessType: "creativeTask",
+      businessId: taskId,
+      businessStatus: "COMPLETED",
+      status: "succeeded",
+      result: { data: { taskId, generatedCopy: resolvedCopy, generatedImages: normalizedImages } },
+      artifacts: normalizedImages.map((url, index) => ({ type: "image", url, name: `image-${index + 1}.png` })),
+    });
   } else if (status === "failed" || status === "error" || error) {
     const errorMessage = error ?? "Generation failed";
     await prisma.$transaction([
@@ -209,6 +218,14 @@ export async function POST(request: NextRequest) {
         },
       }),
     ]);
+    await updateAgentRunsForBusiness({
+      businessType: "creativeTask",
+      businessId: taskId,
+      businessStatus: "FAILED",
+      status: "failed",
+      error: { code: "workflow_failed", message: errorMessage },
+      result: { data: { taskId, error: errorMessage } },
+    });
   } else {
     // 其他中间状态忽略
     console.log(`[image-text-result] Ignoring intermediate status: ${status} for task ${taskId}`);

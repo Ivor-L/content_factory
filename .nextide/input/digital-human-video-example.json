@@ -1,0 +1,8 @@
+{
+  "sourceType": "IMAGE",
+  "imageUrl": "https://example.com/person.png",
+  "audioUrl": "https://example.com/voice.mp3",
+  "script": "这里替换成口播文案。",
+  "type": "VOICE_CLONE",
+  "durationSeconds": 30
+}

@@ -20,9 +20,14 @@
     "styles:thumbs": "tsx scripts/generate-system-style-thumbnails.ts",
     "layouts:previews": "tsx scripts/regenerate-layout-previews.ts",
     "build:extensions": "tsx scripts/build-extension-packages.ts",
+    "build:nextide-cli": "tsc -p packages/nextide-cli/tsconfig.json",
+    "capabilities:export": "node scripts/export-nextide-capabilities.mjs",
+    "skills:generate": "node scripts/generate-nextide-skills.mjs",
     "build:nexapi:apifox": "tsx scripts/nexapi/build-apifox.ts",
     "backfill:media-cache": "tsx scripts/backfill-reference-media-cache.ts",
-    "nextide": "node scripts/nextide-cli.mjs"
+    "nextide": "node scripts/nextide-cli.mjs",
+    "nextide:cli": "node packages/nextide-cli/dist/index.js",
+    "nextide:link": "npm run build:nextide-cli && chmod +x packages/nextide-cli/dist/index.js && npm link ./packages/nextide-cli"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.4.1",

@@ -52,7 +52,7 @@ npm run nextide -- capability list --json
 | TikTok/Instagram/Facebook 数据采集 | `social-data-collector` | `social.*.collect` |
 | 产品卖点分析 | `product-selling-point-analysis` | `product.selling_point.analysis` |
 | 爆款拆解并反推视频提示词 | `viral-breakdown-to-video-prompts` | `viral.breakdown.video_prompts` |
-| 公众号长文 | `khazix-writer` | `content.wechat.longform.write` |
+| 公众号长文 | `wechat-longform-writer` | `content.wechat.longform.write` |
 | 小红书标题/内容诊断 | DBS skills | local agent skills |
 
 ## Good Output Shape

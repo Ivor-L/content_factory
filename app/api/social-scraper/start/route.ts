@@ -242,6 +242,9 @@ export async function POST(request: Request) {
     success: true,
     platform,
     mode: requestedMode,
+    taskId,
+    task_id: taskId,
+    callbackUrl,
     message: "采集任务已提交，请稍候在列表中查看更新。",
   });
 }

@@ -5,6 +5,7 @@ import {
   importViralReferenceQueueItems,
   type RawQueueItem,
 } from "@/lib/viralReferenceImporter";
+import { updateAgentRunsForBusinessTask } from "@/lib/agent-runs/callback-updates";
 
 const CALLBACK_SECRET =
   process.env.SOCIAL_SCRAPER_WEBHOOK_SECRET || process.env.N8N_SOCIAL_WEBHOOK_SECRET || "";
@@ -183,6 +184,16 @@ export async function POST(request: Request) {
   if (results.length === 0) {
     const statusText = payload.status || "NO_DATA";
     console.info("[social-scraper-webhook] No results", { taskId, status: statusText });
+    if (taskId) {
+      await updateAgentRunsForBusinessTask({
+        businessType: "socialCollection",
+        businessTaskId: taskId,
+        businessId: payload.platform || "social",
+        businessStatus: statusText,
+        status: "succeeded",
+        result: { data: { imported: 0, status: statusText } },
+      });
+    }
     return NextResponse.json({ success: true, imported: 0, status: statusText });
   }
 
@@ -193,10 +204,29 @@ export async function POST(request: Request) {
   const importResult = await importViralReferenceQueueItems(queueItems, ownerDescriptor.value);
   const isSuccess = SUCCESS_STATUS.has(String(payload.status || "").toLowerCase());
 
+  const finalStatus = payload.status ?? (isSuccess ? "COMPLETED" : "UNKNOWN");
+  if (taskId) {
+    await updateAgentRunsForBusinessTask({
+      businessType: "socialCollection",
+      businessTaskId: taskId,
+      businessId: payload.platform || queueItems[0]?.platform || "social",
+      businessStatus: finalStatus,
+      status: "succeeded",
+      result: {
+        data: {
+          imported: importResult.results.length,
+          errors: importResult.errors,
+          results: importResult.results,
+          status: finalStatus,
+        },
+      },
+    });
+  }
+
   return NextResponse.json({
     success: true,
     imported: importResult.results.length,
     errors: importResult.errors,
-    status: payload.status ?? (isSuccess ? "COMPLETED" : "UNKNOWN"),
+    status: finalStatus,
   });
 }

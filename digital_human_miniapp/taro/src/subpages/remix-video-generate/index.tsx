@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, Image, Video, Textarea } from '@tarojs/components';
+import { View, Text, ScrollView, Image, Video, Textarea, Input } from '@tarojs/components';
 import Taro, { useDidShow, useLoad, usePullDownRefresh } from '@tarojs/taro';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
@@ -15,8 +15,20 @@ const VIDEO_MODELS = [
 ];
 
 type EditingState = {
+  clipKey: string;
   segmentId: string;
   prompt: string;
+  durationText: string;
+};
+
+type RemixClipItem = {
+  key: string;
+  clipIndex: number;
+  timeRange: string;
+  duration: number;
+  imagePrompt: string;
+  videoPrompt: string;
+  segment: StoryboardSegmentItem | null;
 };
 
 function decodeQueryText(value: string): string {
@@ -98,14 +110,17 @@ export default function RemixVideoGeneratePage() {
   });
 
   const segments = task?.segments || [];
+  const clipItems = useMemo(() => buildRemixClipItems(task), [task]);
   const gridUrl = resolveRemixGridUrl(task);
-  const generatedCount = segments.filter((segment) => Boolean(normalizeMediaUrl(segment.generatedVideo))).length;
-  const pendingCount = Math.max(0, segments.length - generatedCount);
+  const generatedCount = clipItems.filter((clip) => Boolean(normalizeMediaUrl(clip.segment?.generatedVideo))).length;
+  const pendingCount = Math.max(0, clipItems.length - generatedCount);
+  const stageItems = buildRemixStages(segments, Boolean(task?.finalVideoUrl));
 
-  const editingSegment = useMemo(
-    () => segments.find((item) => item.id === editing?.segmentId) || null,
-    [segments, editing?.segmentId],
+  const editingClip = useMemo(
+    () => clipItems.find((item) => item.key === editing?.clipKey) || null,
+    [clipItems, editing?.clipKey],
   );
+  const editingSegment = editingClip?.segment || segments.find((item) => item.id === editing?.segmentId) || null;
 
   const setActioning = (key: string, value: boolean) => {
     setActioningMap((prev) => ({ ...prev, [key]: value }));
@@ -132,7 +147,9 @@ export default function RemixVideoGeneratePage() {
     Taro.previewImage({ current: gridUrl, urls: [gridUrl] });
   };
 
-  const handleOpenVideo = (segment: StoryboardSegmentItem) => {
+  const handleOpenVideo = (clip: RemixClipItem) => {
+    const segment = clip.segment;
+    if (!segment) return;
     const videoUrl = normalizeMediaUrl(segment.generatedVideo);
     if (!videoUrl) {
       Taro.showToast({ title: '视频还未生成', icon: 'none' });
@@ -144,7 +161,7 @@ export default function RemixVideoGeneratePage() {
       success: () => {
         Taro.setStorageSync('WORK_DETAIL_ITEM', {
           id: `${segment.id}:remix-video`,
-          title: `片段 ${getSegmentDisplayOrder(segment, segments.findIndex((item) => item.id === segment.id))}`,
+          title: `Clip ${clip.clipIndex}`,
           type: 'video',
           status: segment.status,
           createdAt: new Date().toISOString(),
@@ -158,11 +175,45 @@ export default function RemixVideoGeneratePage() {
     });
   };
 
-  const handleGenerateSegment = async (segment: StoryboardSegmentItem) => {
+  const persistClipToSegment = async (clip: RemixClipItem, patch?: { prompt?: string; duration?: number }) => {
+    const segment = clip.segment;
+    if (!segment) throw new Error('当前 Clip 缺少可生成片段');
+    const prompt = (patch?.prompt ?? clip.videoPrompt).trim();
+    const duration = patch?.duration ?? clip.duration;
+    await miniappApi.updateStoryboardSegment(segment.id, {
+      videoPrompt: prompt,
+      duration,
+      clip_video_prompt: prompt,
+      clipVideoPrompt: prompt,
+      clip_index: clip.clipIndex,
+      clipIndex: clip.clipIndex,
+      clip_time_range: clip.timeRange,
+      clipTimeRange: clip.timeRange,
+    });
+    const params = asRecord(segment.generationParams) || {};
+    upsertLocalSegment(segment.id, {
+      videoPrompt: prompt,
+      duration,
+      generationParams: {
+        ...params,
+        clip_video_prompt: prompt,
+        clip_index: clip.clipIndex,
+        clip_time_range: clip.timeRange,
+      },
+    });
+  };
+
+  const handleGenerateClip = async (clip: RemixClipItem) => {
+    const segment = clip.segment;
+    if (!segment) {
+      Taro.showToast({ title: '当前 Clip 缺少可生成片段', icon: 'none' });
+      return;
+    }
     const actionKey = `${segment.id}-video`;
     if (isActioning(actionKey)) return;
     setActioning(actionKey, true);
     try {
+      await persistClipToSegment(clip);
       upsertLocalSegment(segment.id, { generatedVideo: null, status: 'VIDEO_GENERATING' });
       const result = await miniappApi.generateStoryboardVideos({
         taskId,
@@ -185,13 +236,13 @@ export default function RemixVideoGeneratePage() {
 
   const handleGenerateAll = async () => {
     if (batchGenerating) return;
-    if (!segments.length) {
+    if (!clipItems.length) {
       Taro.showToast({ title: '暂无视频提示词', icon: 'none' });
       return;
     }
 
-    let targetSegments = segments.filter((segment) => !normalizeMediaUrl(segment.generatedVideo));
-    if (targetSegments.length === 0) {
+    let targetClips = clipItems.filter((clip) => clip.segment && !normalizeMediaUrl(clip.segment.generatedVideo));
+    if (targetClips.length === 0) {
       const modal = await Taro.showModal({
         title: '重新生成全部视频？',
         content: '所有片段已有视频，将重新生成全部片段。',
@@ -199,15 +250,23 @@ export default function RemixVideoGeneratePage() {
         cancelText: '取消',
       });
       if (!modal.confirm) return;
-      targetSegments = segments;
+      targetClips = clipItems.filter((clip) => clip.segment);
+    }
+
+    if (!targetClips.length) {
+      Taro.showToast({ title: '当前 Clip 缺少可生成片段', icon: 'none' });
+      return;
     }
 
     setBatchGenerating(true);
     try {
-      targetSegments.forEach((segment) => upsertLocalSegment(segment.id, { generatedVideo: null, status: 'VIDEO_GENERATING' }));
+      await Promise.all(targetClips.map((clip) => persistClipToSegment(clip)));
+      targetClips.forEach((clip) => {
+        if (clip.segment) upsertLocalSegment(clip.segment.id, { generatedVideo: null, status: 'VIDEO_GENERATING' });
+      });
       const result = await miniappApi.generateStoryboardVideos({
         taskId,
-        segmentIds: targetSegments.map((segment) => segment.id),
+        segmentIds: targetClips.map((clip) => clip.segment?.id).filter((id): id is string => Boolean(id)),
         model: videoModel,
         allowTextVideo: true,
       });
@@ -225,12 +284,16 @@ export default function RemixVideoGeneratePage() {
   };
 
   const handleSaveEditingPrompt = async () => {
-    if (!editingSegment || !editing) return false;
+    if (!editingClip || !editingSegment || !editing) return false;
     const prompt = editing.prompt.trim();
+    const nextDuration = parseDurationInput(editing.durationText, editingClip.duration);
+    if (nextDuration == null) {
+      Taro.showToast({ title: '请输入有效时长', icon: 'none' });
+      return false;
+    }
     setSavingPrompt(true);
     try {
-      await miniappApi.updateStoryboardSegment(editingSegment.id, { videoPrompt: prompt });
-      upsertLocalSegment(editingSegment.id, { videoPrompt: prompt });
+      await persistClipToSegment(editingClip, { prompt, duration: nextDuration });
       Taro.showToast({ title: '提示词已保存', icon: 'success' });
       return true;
     } catch (error) {
@@ -242,12 +305,13 @@ export default function RemixVideoGeneratePage() {
   };
 
   const handleSaveAndGenerate = async () => {
-    if (!editingSegment) return;
+    if (!editingClip) return;
     const ok = await handleSaveEditingPrompt();
     if (!ok) return;
-    const nextSegment = { ...editingSegment, videoPrompt: editing?.prompt.trim() || '' };
+    const nextDuration = parseDurationInput(editing?.durationText || '', editingClip.duration) ?? editingClip.duration;
+    const nextClip = { ...editingClip, videoPrompt: editing?.prompt.trim() || '', duration: nextDuration };
     setEditing(null);
-    await handleGenerateSegment(nextSegment);
+    await handleGenerateClip(nextClip);
   };
 
   return (
@@ -276,11 +340,25 @@ export default function RemixVideoGeneratePage() {
 
         {!loading && !errorText && (
           <>
+            <View className='remix-video-stage-section'>
+              <View className='remix-video-stage-track'>
+                {stageItems.map((stage, index) => (
+                  <View key={stage.key} className='remix-video-stage-item'>
+                    <View className={`remix-video-stage-dot remix-video-stage-dot--${stage.state}`}>
+                      <Text className='remix-video-stage-dot-text'>{index + 1}</Text>
+                    </View>
+                    {index < stageItems.length - 1 && <View className={`remix-video-stage-line remix-video-stage-line--${stage.state}`} />}
+                    <Text className={`remix-video-stage-name remix-video-stage-name--${stage.state}`}>{stage.title}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+
             <View className='remix-video-hero'>
               <View className='remix-video-hero-head'>
                 <View>
                   <Text className='remix-video-title'>{title || '一键复刻'}</Text>
-                  <Text className='remix-video-subtitle'>{segments.length} 条视频提示词 · 已完成 {generatedCount} 条</Text>
+                  <Text className='remix-video-subtitle'>{clipItems.length} 条视频提示词 · 已完成 {generatedCount} 条</Text>
                 </View>
                 <Text className='remix-video-count'>{pendingCount > 0 ? `${pendingCount}待生成` : '已生成'}</Text>
               </View>
@@ -319,28 +397,29 @@ export default function RemixVideoGeneratePage() {
             </View>
 
             <View className='remix-video-list'>
-              {segments.map((segment, index) => {
-                const videoUrl = normalizeMediaUrl(segment.generatedVideo);
-                const statusText = String(segment.status || '').toUpperCase();
+              {clipItems.map((clip) => {
+                const segment = clip.segment;
+                const videoUrl = normalizeMediaUrl(segment?.generatedVideo);
+                const statusText = String(segment?.status || '').toUpperCase();
                 const generating = statusText.includes('VIDEO_GENERATING') && !videoUrl;
                 const failed = statusText.includes('VIDEO') && (statusText.includes('FAIL') || statusText.includes('ERROR'));
-                const actioning = isActioning(`${segment.id}-video`);
+                const actioning = segment ? isActioning(`${segment.id}-video`) : false;
                 return (
-                  <View key={segment.id} className='remix-video-clip-card'>
+                  <View key={clip.key} className='remix-video-clip-card'>
                     <View className='remix-video-clip-head'>
-                      <Text className='remix-video-clip-title'>片段 {getSegmentDisplayOrder(segment, index)}</Text>
+                      <Text className='remix-video-clip-title'>Clip {clip.clipIndex}</Text>
                       <Text className={`remix-video-clip-status ${videoUrl ? 'remix-video-clip-status--done' : ''} ${failed ? 'remix-video-clip-status--failed' : ''}`}>
-                        {videoUrl ? '已生成' : generating || actioning ? '生成中' : failed ? '失败' : '待生成'}
+                        {!segment ? '待同步' : videoUrl ? '已生成' : generating || actioning ? '生成中' : failed ? '失败' : '待生成'}
                       </Text>
                     </View>
-                    <Text className='remix-video-clip-meta'>{segment.duration || 0}s {segment.timeRange ? `| ${segment.timeRange}` : ''}</Text>
-                    <Text className='remix-video-clip-prompt'>{segment.videoPrompt || '暂无视频提示词'}</Text>
+                    <Text className='remix-video-clip-meta'>时长 {formatDuration(clip.duration)}s{clip.timeRange ? ` | ${clip.timeRange}` : ''}</Text>
+                    <Text className='remix-video-clip-prompt'>{clip.videoPrompt || '暂无视频提示词'}</Text>
                     {videoUrl && (
-                      <View className='remix-video-preview' onClick={() => handleOpenVideo(segment)}>
+                      <View className='remix-video-preview' onClick={() => handleOpenVideo(clip)}>
                         <Video
                           className='remix-video-preview-video'
                           src={videoUrl}
-                          poster={normalizeMediaUrl(segment.generatedImage) || gridUrl}
+                          poster={normalizeMediaUrl(segment?.generatedImage) || gridUrl}
                           controls={false}
                           muted
                           autoplay={false}
@@ -356,13 +435,18 @@ export default function RemixVideoGeneratePage() {
                     <View className='remix-video-clip-actions'>
                       <View
                         className='remix-video-clip-btn remix-video-clip-btn--ghost'
-                        onClick={() => setEditing({ segmentId: segment.id, prompt: segment.videoPrompt || '' })}
+                        onClick={() => setEditing({
+                          clipKey: clip.key,
+                          segmentId: segment?.id || '',
+                          prompt: clip.videoPrompt || '',
+                          durationText: formatDuration(clip.duration),
+                        })}
                       >
                         <Text className='remix-video-clip-btn-text remix-video-clip-btn-text--ghost'>编辑提示词</Text>
                       </View>
                       <View
-                        className={`remix-video-clip-btn remix-video-clip-btn--primary ${actioning ? 'remix-video-clip-btn--disabled' : ''}`}
-                        onClick={() => void handleGenerateSegment(segment)}
+                        className={`remix-video-clip-btn remix-video-clip-btn--primary ${actioning || !segment ? 'remix-video-clip-btn--disabled' : ''}`}
+                        onClick={() => void handleGenerateClip(clip)}
                       >
                         <Text className='remix-video-clip-btn-text'>{actioning || generating ? '生成中' : videoUrl ? '重新生成' : '生成视频'}</Text>
                       </View>
@@ -386,19 +470,31 @@ export default function RemixVideoGeneratePage() {
         </View>
       )}
 
-      {editing && editingSegment && (
+      {editing && editingClip && (
         <View className='remix-video-edit-mask' onClick={() => setEditing(null)}>
           <View className='remix-video-edit-panel' onClick={(event) => event.stopPropagation()}>
             <View className='remix-video-edit-head'>
-              <Text className='remix-video-edit-title'>片段 {getSegmentDisplayOrder(editingSegment, segments.findIndex((item) => item.id === editingSegment.id))} · 视频提示词</Text>
+              <Text className='remix-video-edit-title'>Clip {editingClip.clipIndex} · 视频提示词</Text>
               <View className='remix-video-edit-close' onClick={() => setEditing(null)}>
                 <Text className='remix-video-edit-close-text'>×</Text>
+              </View>
+            </View>
+            <View className='remix-video-edit-duration-row'>
+              <Text className='remix-video-edit-duration-label'>片段时长</Text>
+              <View className='remix-video-edit-duration-input-wrap'>
+                <Input
+                  className='remix-video-edit-duration-input'
+                  type='digit'
+                  value={editing.durationText}
+                  onInput={(event) => setEditing({ ...editing, durationText: String(event.detail.value || '') })}
+                />
+                <Text className='remix-video-edit-duration-unit'>秒</Text>
               </View>
             </View>
             <Textarea
               className='remix-video-edit-textarea'
               value={editing.prompt}
-              maxlength={3000}
+              maxlength={12000}
               placeholder='请输入视频提示词'
               placeholderStyle='font-size: 26rpx; color: #7f8da8;'
               onInput={(event) => setEditing({ ...editing, prompt: event.detail.value })}
@@ -440,7 +536,10 @@ function resolveRemixGridUrl(task: StoryboardTaskStatusResult | null): string {
   const detailed = asRecord(task?.detailedBreakdown);
   const workflowData = getWorkflowData(task);
   const replacedGrid = (task?.segments || [])
-    .map((segment) => normalizeMediaUrl(segment.generatedImage))
+    .map((segment) => {
+      const params = asRecord(segment.generationParams) || {};
+      return normalizeMediaUrl(params.selected_image_url || params.selectedImageUrl || segment.generatedImage);
+    })
     .find(Boolean);
   return normalizeMediaUrl(
     replacedGrid ||
@@ -454,8 +553,192 @@ function resolveRemixGridUrl(task: StoryboardTaskStatusResult | null): string {
   );
 }
 
+function buildRemixClipItems(task: StoryboardTaskStatusResult | null): RemixClipItem[] {
+  const segments = task?.segments || [];
+  const workflowData = getWorkflowData(task);
+  const clonePrompt = asRecord(workflowData.clone_prompt) || asRecord(workflowData.clonePrompt);
+  const sourceClips = [
+    ...toRecordArray(clonePrompt?.clips),
+    ...toRecordArray(workflowData.clip_prompts),
+    ...toRecordArray(workflowData.clipPrompts),
+    ...toRecordArray(workflowData.video_prompts),
+    ...toRecordArray(workflowData.videoPrompts),
+    ...toRecordArray(workflowData.clips),
+  ];
+  const seenSourceKeys = new Set<string>();
+  const promptClips = sourceClips
+    .map((record, index) => {
+      const rawClipIndex = Number(record.clip_index || record.clipIndex || record.index || index + 1);
+      const clipIndex = Number.isFinite(rawClipIndex) && rawClipIndex > 0 ? Math.floor(rawClipIndex) : index + 1;
+      const timeRange = normalizeText(String(record.time_range || record.timeRange || record.timeline || ''));
+      const segment = findMatchingSegment(segments, clipIndex, timeRange, index);
+      const params = asRecord(segment?.generationParams) || {};
+      const savedPrompt = normalizeText(String(params.clip_video_prompt || params.clipVideoPrompt || ''));
+      const videoPrompt = savedPrompt || resolveClipPrompt(record);
+      const imagePrompt = normalizeText(String(record.image_prompt || record.imagePrompt || record.first_frame_prompt || ''));
+      const segmentDuration = Number(segment?.duration || 0);
+      const duration = Number.isFinite(segmentDuration) && segmentDuration > 0
+        ? Math.round(segmentDuration * 1000) / 1000
+        : resolveClipDuration(record, timeRange);
+      const sourceKey = `${clipIndex}-${timeRange}-${videoPrompt.slice(0, 80)}`;
+      if ((!videoPrompt && !imagePrompt) || seenSourceKeys.has(sourceKey)) return null;
+      seenSourceKeys.add(sourceKey);
+      return {
+        key: `clip-${clipIndex}-${index}`,
+        clipIndex,
+        timeRange,
+        duration,
+        imagePrompt,
+        videoPrompt,
+        segment,
+      };
+    })
+    .filter((item): item is RemixClipItem => Boolean(item));
+
+  if (promptClips.length > 0) return promptClips;
+
+  return segments
+    .map((segment, index) => {
+      const params = asRecord(segment.generationParams) || {};
+      const clipIndex = getSegmentDisplayOrder(segment, index);
+      const timeRange = normalizeText(segment.timeRange || '');
+      const videoPrompt = normalizeText(String(params.clip_video_prompt || params.clipVideoPrompt || segment.videoPrompt || ''));
+      const imagePrompt = normalizeText(segment.imagePrompt || '');
+      if (!imagePrompt && !videoPrompt) return null;
+      return {
+        key: segment.id,
+        clipIndex,
+        timeRange,
+        duration: Number(segment.duration || 0) || resolveClipDuration({}, timeRange),
+        imagePrompt,
+        videoPrompt,
+        segment,
+      };
+    })
+    .filter((item): item is RemixClipItem => Boolean(item));
+}
+
+function resolveClipPrompt(record: Record<string, unknown>): string {
+  const direct = normalizeText(String(
+    record.prompt ||
+      record.video_prompt ||
+      record.videoPrompt ||
+      record.generation_prompt ||
+      record.generationPrompt ||
+      '',
+  ));
+  if (direct) return direct;
+
+  const sections = [
+    record.clip_info_srt || record.clipInfoSrt || record.clip_info || record.clipInfo,
+    record.timeline,
+    record.storyboard_panels || record.storyboardPanels,
+    record.matched_srt || record.matchedSrt,
+    record.visual_audit || record.visualAudit,
+    record.generationPrompt || record.generation_prompt,
+    record.sequence_details || record.sequenceDetails,
+    record.global_visual_anchor || record.globalVisualAnchor,
+    record.audio_action_cues || record.audioActionCues,
+  ]
+    .map((value) => normalizeText(String(value || '')))
+    .filter(Boolean);
+  return sections.join('\n');
+}
+
+function resolveClipDuration(record: Record<string, unknown>, timeRange: string): number {
+  const rawDuration = Number(
+    record.duration ||
+      record.duration_sec ||
+      record.durationSec ||
+      record.duration_seconds ||
+      record.durationSeconds ||
+      0,
+  );
+  if (Number.isFinite(rawDuration) && rawDuration > 0) return Math.round(rawDuration * 1000) / 1000;
+  const fromTimeRange = durationFromTimeRange(timeRange);
+  return fromTimeRange > 0 ? fromTimeRange : 8;
+}
+
+function durationFromTimeRange(value: string): number {
+  const text = normalizeText(value);
+  const match = text.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*[-~–—]\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (!match) return 0;
+  const start = toSeconds(match[1], match[2], match[3]);
+  const end = toSeconds(match[4], match[5], match[6]);
+  return end > start ? Math.round((end - start) * 1000) / 1000 : 0;
+}
+
+function toSeconds(first: string, second: string, third?: string): number {
+  const a = Number(first);
+  const b = Number(second);
+  const c = third === undefined ? 0 : Number(third);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(c)) return 0;
+  return third === undefined ? a * 60 + b : a * 3600 + b * 60 + c;
+}
+
+function findMatchingSegment(
+  segments: StoryboardSegmentItem[],
+  clipIndex: number,
+  timeRange: string,
+  fallbackIndex: number,
+): StoryboardSegmentItem | null {
+  const byOrder = segments.find((segment, index) => getSegmentDisplayOrder(segment, index) === clipIndex);
+  if (byOrder) return byOrder;
+  const normalizedTimeRange = normalizeComparableText(timeRange);
+  if (normalizedTimeRange) {
+    const byTime = segments.find((segment) => normalizeComparableText(segment.timeRange || '') === normalizedTimeRange);
+    if (byTime) return byTime;
+  }
+  return segments[fallbackIndex] || null;
+}
+
+function toRecordArray(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => asRecord(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item));
+}
+
+function normalizeText(value: string): string {
+  return String(value || '').replace(/\r\n/g, '\n').trim();
+}
+
+function normalizeComparableText(value: string): string {
+  return normalizeText(value).toLowerCase().replace(/\s+/g, ' ');
+}
+
 function getSegmentDisplayOrder(segment: StoryboardSegmentItem, index: number): number {
   const raw = Number(segment.order);
   if (Number.isFinite(raw) && raw > 0) return Math.floor(raw);
   return index >= 0 ? index + 1 : 1;
+}
+
+function formatDuration(value: unknown): string {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num <= 0) return '8';
+  return String(Math.round(num * 1000) / 1000).replace(/\.0+$/, '');
+}
+
+function parseDurationInput(value: string, fallback: number): number | null {
+  const text = String(value || '').trim();
+  const num = text ? Number(text) : Number(fallback);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return Math.max(1, Math.min(60, Math.round(num * 1000) / 1000));
+}
+
+function buildRemixStages(
+  segments: StoryboardSegmentItem[],
+  hasFinalVideo: boolean,
+): Array<{ key: string; title: string; state: 'done' | 'active' | 'todo' }> {
+  const hasSegments = segments.length > 0;
+  const hasGeneratedVideos = segments.some((segment) => Boolean(normalizeMediaUrl(segment.generatedVideo)));
+  return [
+    { key: 'breakdown', title: '爆款拆解', state: hasSegments ? 'done' : 'active' },
+    { key: 'replace', title: '产品/角色替换', state: hasSegments ? 'done' : 'todo' },
+    {
+      key: 'video',
+      title: '视频生成',
+      state: hasFinalVideo || hasGeneratedVideos ? 'done' : hasSegments ? 'active' : 'todo',
+    },
+  ];
 }

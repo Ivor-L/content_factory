@@ -18,7 +18,33 @@ export async function PATCH(
 
     const { segmentId } = await params;
     const body = await req.json();
-    const { subject_refs, video_refs, subject_replace_mode, imagePrompt, videoPrompt, originalScript, rewrittenScript, push_image_url, push_video_url, generatedImage, generatedVideo, status } = body;
+    const {
+      subject_refs,
+      video_refs,
+      subject_replace_mode,
+      selected_image_url,
+      selectedImageUrl,
+      selected_video_url,
+      selectedVideoUrl,
+      clip_video_prompt,
+      clipVideoPrompt,
+      clip_index,
+      clipIndex,
+      clip_time_range,
+      clipTimeRange,
+      imagePrompt,
+      videoPrompt,
+      duration,
+      duration_sec,
+      durationSec,
+      originalScript,
+      rewrittenScript,
+      push_image_url,
+      push_video_url,
+      generatedImage,
+      generatedVideo,
+      status,
+    } = body;
 
     // Verify segment belongs to user's task
     const segment = await prisma.storyboardSegment.findFirst({
@@ -48,6 +74,21 @@ export async function PATCH(
     if (video_refs !== undefined) {
       updatedParams.video_refs = video_refs;
     }
+    if (selected_image_url !== undefined || selectedImageUrl !== undefined) {
+      updatedParams.selected_image_url = selected_image_url ?? selectedImageUrl ?? null;
+    }
+    if (selected_video_url !== undefined || selectedVideoUrl !== undefined) {
+      updatedParams.selected_video_url = selected_video_url ?? selectedVideoUrl ?? null;
+    }
+    if (clip_video_prompt !== undefined || clipVideoPrompt !== undefined) {
+      updatedParams.clip_video_prompt = clip_video_prompt ?? clipVideoPrompt ?? null;
+    }
+    if (clip_index !== undefined || clipIndex !== undefined) {
+      updatedParams.clip_index = clip_index ?? clipIndex ?? null;
+    }
+    if (clip_time_range !== undefined || clipTimeRange !== undefined) {
+      updatedParams.clip_time_range = clip_time_range ?? clipTimeRange ?? null;
+    }
 
     if (push_image_url) {
       const history: string[] = Array.isArray(currentParams.image_history)
@@ -75,6 +116,10 @@ export async function PATCH(
     };
     if (imagePrompt !== undefined) updateData.imagePrompt = imagePrompt;
     if (videoPrompt !== undefined) updateData.videoPrompt = videoPrompt;
+    const nextDuration = Number(duration ?? duration_sec ?? durationSec);
+    if (Number.isFinite(nextDuration) && nextDuration > 0) {
+      updateData.duration = Math.round(nextDuration * 1000) / 1000;
+    }
     if (originalScript !== undefined) updateData.originalScript = originalScript;
     if (rewrittenScript !== undefined) updateData.rewrittenScript = rewrittenScript;
     if (generatedImage !== undefined) updateData.generatedImage = generatedImage;

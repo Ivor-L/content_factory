@@ -146,6 +146,11 @@ function getReferenceImageUrls(
   return urls;
 }
 
+function getSkeletonVideoReferenceImageUrls(firstFrameUrl: string): string[] {
+  const url = cleanUrl(firstFrameUrl);
+  return url ? [url] : [];
+}
+
 /**
  * Batch trigger video generation for storyboard segments
  * POST /api/storyboard/[id]/generate-videos
@@ -289,18 +294,27 @@ export async function POST(
         !Array.isArray(segment.generationParams)
         ? segment.generationParams as Record<string, unknown>
         : {};
-      const basePrompt = ensureNoBgmPrompt(segment.videoPrompt || segment.visualDescription || "");
+      const clipPrompt = typeof generationParams.clip_video_prompt === "string"
+        ? generationParams.clip_video_prompt.trim()
+        : typeof generationParams.clipVideoPrompt === "string"
+          ? generationParams.clipVideoPrompt.trim()
+          : "";
+      const basePrompt = ensureNoBgmPrompt(clipPrompt || segment.videoPrompt || segment.visualDescription || "");
       const firstFrameUrl = cleanUrl(segment.generatedImage) || cleanUrl(generationParams.reference_frame_url);
       const hasProduct = readBooleanFlag(generationParams.has_product ?? generationParams.hasProduct);
+      const isSkeletonVideo = pipelineKey === "skeleton_video";
       const includeProductRefs = pipelineKey === "skeleton_video" ? hasProduct === true : hasProduct !== false;
       const productImageUrl = Array.isArray(generationParams.subject_refs)
         ? generationParams.subject_refs
           .map((ref) => (ref && typeof ref === "object" ? ref as Record<string, unknown> : null))
           .find((ref) => String(ref?.type || "").trim() === "product")?.url
         : null;
-      const finalPrompt = isSeedanceModel(model) && firstFrameUrl && storyboardGridUrl
+      const finalPrompt = !isSkeletonVideo && isSeedanceModel(model) && firstFrameUrl && storyboardGridUrl
         ? withSeedanceStoryboardReference(basePrompt, generationParams, storyboardGridUrl, requestedAspectRatio)
         : basePrompt;
+      const segmentDuration = Number.isFinite(Number(segment.duration)) && Number(segment.duration) > 0
+        ? Math.round(Number(segment.duration) * 1000) / 1000
+        : 8;
 
       const payload = {
         segment_id: segment.id,
@@ -311,10 +325,21 @@ export async function POST(
         storyboard_grid_url: storyboardGridUrl || null,
         storyboardGridUrl: storyboardGridUrl || null,
         reference_image_urls: isSeedanceModel(model)
-          ? getReferenceImageUrls(firstFrameUrl, storyboardGridUrl, generationParams, { includeProductRefs, productImageUrl: cleanUrl(productImageUrl) })
+          ? isSkeletonVideo
+            ? getSkeletonVideoReferenceImageUrls(firstFrameUrl)
+            : getReferenceImageUrls(firstFrameUrl, storyboardGridUrl, generationParams, { includeProductRefs, productImageUrl: cleanUrl(productImageUrl) })
           : [],
         time_range: segment.timeRange || null,
-        duration: segment.duration || 8,
+        timeRange: segment.timeRange || null,
+        duration: segmentDuration,
+        duration_sec: segmentDuration,
+        durationSec: segmentDuration,
+        duration_seconds: segmentDuration,
+        durationSeconds: segmentDuration,
+        target_duration_seconds: segmentDuration,
+        targetDurationSeconds: segmentDuration,
+        video_duration_seconds: segmentDuration,
+        videoDurationSeconds: segmentDuration,
         model: toProviderModel(model),
         requested_model: model,
         requestedModel: model,

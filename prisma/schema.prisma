@@ -1221,6 +1221,57 @@ model ImageTextReplicationTask {
   @@schema("public")
 }
 
+model AgentCliDeviceLogin {
+  id            String    @id @default(cuid())
+  deviceCode    String    @unique @map("device_code")
+  userCode      String    @unique @map("user_code")
+  status        String    @default("pending")
+  userId        String?   @map("user_id") @db.Uuid
+  apiKeyId      String?   @map("api_key_id")
+  apiKeySecret  String?   @map("api_key_secret")
+  label         String?
+  clientJson    Json?     @map("client_json")
+  expiresAt     DateTime  @map("expires_at")
+  approvedAt    DateTime? @map("approved_at")
+  deniedAt      DateTime? @map("denied_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([userCode])
+  @@index([deviceCode])
+  @@index([userId])
+  @@map("agent_cli_device_logins")
+  @@schema("public")
+}
+
+model AgentCapabilityRun {
+  id             String    @id
+  capabilityId   String    @map("capability_id")
+  userId         String?   @map("user_id") @db.Uuid
+  status         String    @default("queued")
+  mode           String    @default("submit")
+  inputJson      Json?     @map("input_json")
+  resultJson     Json?     @map("result_json")
+  errorJson      Json?     @map("error_json")
+  artifactsJson  Json?     @map("artifacts_json")
+  usageJson      Json?     @map("usage_json")
+  businessType   String?   @map("business_type")
+  businessId     String?   @map("business_id")
+  businessTaskId String?   @map("business_task_id")
+  businessStatus String?   @map("business_status")
+  idempotencyKey String?   @unique @map("idempotency_key")
+  clientJson     Json?     @map("client_json")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  finishedAt     DateTime? @map("finished_at")
+
+  @@index([userId])
+  @@index([capabilityId])
+  @@index([businessType, businessId])
+  @@map("agent_capability_runs")
+  @@schema("public")
+}
+
 model ApiKey {
   id           String   @id @default(cuid())
   userId       String   @map("user_id") @db.Uuid

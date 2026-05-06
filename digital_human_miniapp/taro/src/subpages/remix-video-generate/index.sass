@@ -73,8 +73,84 @@
   color: #8ea2c8
   font-size: 25rpx
 
+.remix-video-stage-section
+  margin: 22rpx 24rpx 28rpx
+
+.remix-video-stage-track
+  display: grid
+  grid-template-columns: repeat(3, 1fr)
+  gap: 10rpx
+
+.remix-video-stage-item
+  position: relative
+  min-width: 0
+  display: flex
+  flex-direction: column
+  align-items: center
+  text-align: center
+
+.remix-video-stage-dot
+  width: 48rpx
+  height: 48rpx
+  border-radius: 999rpx
+  border: 2rpx solid rgba(142, 162, 200, 0.42)
+  background: #101010
+  display: flex
+  align-items: center
+  justify-content: center
+  position: relative
+  z-index: 2
+  box-sizing: border-box
+
+.remix-video-stage-dot--done
+  background: #ecee9f
+  border-color: #ecee9f
+
+.remix-video-stage-dot--active
+  border-color: #ecee9f
+  box-shadow: 0 0 0 6rpx rgba(236, 238, 159, 0.1)
+
+.remix-video-stage-dot-text
+  color: #9badcf
+  font-size: 22rpx
+  font-weight: 900
+
+.remix-video-stage-dot--done .remix-video-stage-dot-text
+  color: #151515
+
+.remix-video-stage-dot--active .remix-video-stage-dot-text
+  color: #ecee9f
+
+.remix-video-stage-line
+  position: absolute
+  left: calc(50% + 24rpx)
+  top: 24rpx
+  width: calc(100% - 28rpx)
+  height: 2rpx
+  background: rgba(142, 162, 200, 0.22)
+  z-index: 1
+
+.remix-video-stage-line--done
+  background: rgba(236, 238, 159, 0.75)
+
+.remix-video-stage-name
+  display: block
+  width: 100%
+  margin-top: 12rpx
+  color: #9badcf
+  font-size: 21rpx
+  line-height: 1.25
+  font-weight: 900
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap
+
+.remix-video-stage-name--done,
+.remix-video-stage-name--active
+  color: #ecee9f
+
 .remix-video-hero
-  margin: 22rpx 24rpx 18rpx
+  margin: 0 24rpx 18rpx
 
 .remix-video-hero-head
   display: flex
@@ -346,6 +422,39 @@
 .remix-video-edit-close-text
   color: #d7e5ff
   font-size: 30rpx
+
+.remix-video-edit-duration-row
+  display: flex
+  align-items: center
+  justify-content: space-between
+  gap: 18rpx
+  margin-bottom: 16rpx
+
+.remix-video-edit-duration-label
+  color: #8ea2c8
+  font-size: 24rpx
+  font-weight: 800
+
+.remix-video-edit-duration-input-wrap
+  width: 210rpx
+  height: 64rpx
+  padding: 0 16rpx
+  border-radius: 14rpx
+  background: #181818
+  display: flex
+  align-items: center
+  box-sizing: border-box
+
+.remix-video-edit-duration-input
+  flex: 1
+  height: 64rpx
+  color: #e8f2ff
+  font-size: 26rpx
+  font-weight: 900
+
+.remix-video-edit-duration-unit
+  color: #8ea2c8
+  font-size: 23rpx
 
 .remix-video-edit-textarea
   width: 100%

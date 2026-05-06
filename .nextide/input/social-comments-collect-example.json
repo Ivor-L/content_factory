@@ -1,0 +1,5 @@
+{
+  "platform": "tiktok",
+  "urls": ["https://www.tiktok.com/@user/video/REPLACE_WITH_VIDEO_ID"],
+  "limit": 100
+}

@@ -18,11 +18,10 @@ const VIDEO_MODELS = [
   { id: 'bytedance/seedance-2', label: 'Seedance 2.0' },
   { id: 'bytedance/seedance-2-fast', label: 'Seedance 2.0 Fast' },
   { id: 'veo3.1-fast', label: 'Veo 3.1 Fast' },
-  { id: 'veo_3_1-fast', label: 'Veo 3.1 Fast(兼容)' },
 ];
 const ASPECT_RATIO_OPTIONS = [
-  { id: '9:16', label: '竖屏', hint: '9:16' },
-  { id: '16:9', label: '横屏', hint: '16:9' },
+  { id: '9:16', label: '竖屏', hint: '9:16', icon: '▯' },
+  { id: '16:9', label: '横屏', hint: '16:9', icon: '▭' },
 ] as const;
 type StoryboardAspectRatio = typeof ASPECT_RATIO_OPTIONS[number]['id'];
 type StoryboardRef = { type: string; url: string; label?: string };
@@ -66,7 +65,7 @@ export default function StoryboardBoardPage() {
   const [task, setTask] = useState<StoryboardTaskStatusResult | null>(null);
   const [imageModel, setImageModel] = useState(DEFAULT_IMAGE_MODEL);
   const [videoModel, setVideoModel] = useState('veo3.1-fast');
-  const [selectedAspectRatio, setSelectedAspectRatio] = useState<StoryboardAspectRatio | ''>('');
+  const [selectedAspectRatio, setSelectedAspectRatio] = useState<StoryboardAspectRatio | ''>('9:16');
   const [editingSegmentId, setEditingSegmentId] = useState('');
   const [editingType, setEditingType] = useState<'image' | 'video'>('image');
   const [editingPrompt, setEditingPrompt] = useState('');
@@ -153,9 +152,8 @@ export default function StoryboardBoardPage() {
       if (data.videoModel && !userSelectedVideoModelRef.current) {
         updateVideoModel(data.videoModel, 'server');
       }
-      const inferredRatio = resolveStoryboardImageAspectRatio(data, isRemixRoute);
       if (!userSelectedAspectRatioRef.current) {
-        updateAspectRatio(inferredRatio, 'server');
+        updateAspectRatio(selectedAspectRatio || '9:16', 'server');
       }
       nextFailedImageSegments.forEach((segment) => notifiedImageFailuresRef.current.add(segment.id));
       if (freshFailure) {
@@ -387,6 +385,8 @@ export default function StoryboardBoardPage() {
 
   const getSegmentRefs = (segment: StoryboardSegmentItem, type: 'image' | 'video'): StoryboardRef[] => {
     const rawParams = getSegmentParams(segment);
+    const pipelineKey = getTaskPipelineKey(task);
+    const isSkeletonVideoRefs = type === 'video' && pipelineKey === 'skeleton_video';
     const key = type === 'image' ? 'subject_refs' : 'video_refs';
     const stored = Array.isArray(rawParams[key])
       ? (rawParams[key] as unknown[])
@@ -400,8 +400,8 @@ export default function StoryboardBoardPage() {
         })
         .filter((item) => item.url)
       : [];
-    const defaults = buildTaskDefaultRefs();
-    const refs = [...stored, ...defaults];
+    const defaults = isSkeletonVideoRefs ? [] : buildTaskDefaultRefs();
+    const refs = isSkeletonVideoRefs ? [] : [...stored, ...defaults];
     if (type === 'video' && segment.generatedImage) {
       refs.unshift({ type: 'reference_frame', url: segment.generatedImage, label: '首帧图' });
     }
@@ -425,8 +425,16 @@ export default function StoryboardBoardPage() {
         .filter(Boolean)
       : [];
     return type === 'image'
-      ? uniqueStrings([...history, current])
+      ? uniqueStrings([current, ...history])
       : uniqueStrings([current, ...history]);
+  };
+
+  const getSelectedSegmentAssetUrl = (segment: StoryboardSegmentItem, type: 'image' | 'video'): string => {
+    const params = getSegmentParams(segment);
+    const selected = type === 'image'
+      ? normalizeMediaUrl(params.selected_image_url || params.selectedImageUrl)
+      : normalizeMediaUrl(params.selected_video_url || params.selectedVideoUrl);
+    return selected || normalizeMediaUrl(type === 'image' ? segment.generatedImage : segment.generatedVideo);
   };
 
   const getEditingAssetItems = (segment: StoryboardSegmentItem, type: 'image' | 'video'): EditingAssetItem[] => {
@@ -453,8 +461,8 @@ export default function StoryboardBoardPage() {
   };
 
   const handleOpenAsset = (type: 'image' | 'video', segment: StoryboardSegmentItem) => {
-    const imageUrl = normalizeMediaUrl(segment.generatedImage);
-    const videoUrl = normalizeMediaUrl(segment.generatedVideo);
+    const imageUrl = getSelectedSegmentAssetUrl(segment, 'image');
+    const videoUrl = getSelectedSegmentAssetUrl(segment, 'video');
     if (type === 'image') {
       if (!imageUrl) return;
       Taro.previewImage({ current: imageUrl, urls: [imageUrl] });
@@ -500,7 +508,7 @@ export default function StoryboardBoardPage() {
 
   const syncRemixGridFromEditingSegment = (segment: StoryboardSegmentItem | null) => {
     if (!segment || editingType !== 'image' || !isRemixRoute) return;
-    const imageUrl = normalizeMediaUrl(segment.generatedImage);
+    const imageUrl = getSelectedSegmentAssetUrl(segment, 'image');
     if (!imageUrl) return;
     const currentGridUrl = normalizeMediaUrl(task?.storyboardImageUrl || task?.coverImage || '');
     if (imageUrl === currentGridUrl) return;
@@ -549,20 +557,19 @@ export default function StoryboardBoardPage() {
     const segment = editingSegment;
     const assetUrl = normalizeMediaUrl(url);
     if (!segment || !assetUrl) return;
-    const currentUrl = normalizeMediaUrl(editingType === 'image' ? segment.generatedImage : segment.generatedVideo);
+    const currentUrl = getSelectedSegmentAssetUrl(segment, editingType);
     if (assetUrl === currentUrl) return;
 
     const patch = editingType === 'image'
-      ? { generatedImage: assetUrl, push_image_url: true, status: 'IMAGE_READY' }
-      : { generatedVideo: assetUrl, push_video_url: true, status: 'VIDEO_READY' };
+      ? { selected_image_url: assetUrl, status: 'IMAGE_READY' }
+      : { selected_video_url: assetUrl, status: 'VIDEO_READY' };
     try {
       await miniappApi.updateStoryboardSegment(segment.id, patch);
       const params = getSegmentParams(segment);
       const historyKey = editingType === 'image' ? 'image_history' : 'video_history';
-      const nextHistory = uniqueStrings([
-        currentUrl,
-        ...(Array.isArray(params[historyKey]) ? (params[historyKey] as unknown[]).map((item) => normalizeMediaUrl(typeof item === 'string' ? item : '')) : []),
-      ]).slice(0, 20);
+      const nextHistory = Array.isArray(params[historyKey])
+        ? (params[historyKey] as unknown[]).map((item) => normalizeMediaUrl(typeof item === 'string' ? item : '')).filter(Boolean)
+        : [];
       const localGenerating = localGeneratingRef.current[segment.id];
       if (editingType === 'image' && localGenerating?.type === 'image') {
         localGeneratingRef.current = {
@@ -570,15 +577,21 @@ export default function StoryboardBoardPage() {
           [segment.id]: {
             ...localGenerating,
             keepUrl: assetUrl,
-            history: uniqueStrings([assetUrl, ...nextHistory, ...(localGenerating.history || [])]).slice(0, 20),
+            history: uniqueStrings([...(localGenerating.history || []), ...nextHistory]).slice(0, 20),
           },
         };
       }
       upsertLocalSegment(segment.id, {
         ...(editingType === 'image'
-          ? { generatedImage: assetUrl, status: localGenerating?.type === 'image' ? 'IMAGE_GENERATING' : 'IMAGE_READY' }
-          : { generatedVideo: assetUrl, status: 'VIDEO_READY' }),
-        generationParams: { ...params, [historyKey]: nextHistory },
+          ? { status: localGenerating?.type === 'image' ? 'IMAGE_GENERATING' : 'IMAGE_READY' }
+          : { status: 'VIDEO_READY' }),
+        generationParams: {
+          ...params,
+          [historyKey]: nextHistory,
+          ...(editingType === 'image'
+            ? { selected_image_url: assetUrl }
+            : { selected_video_url: assetUrl }),
+        },
       });
     } catch (error) {
       Taro.showToast({ title: error instanceof Error ? error.message : '切换素材失败', icon: 'none' });
@@ -938,6 +951,8 @@ export default function StoryboardBoardPage() {
   const references = task?.references || [];
   const taskMetadata = getTaskMetadata(task);
   const workflowData = getWorkflowData(task);
+  const isViralRemix = taskMetadata.feature === 'viral_remix';
+  const isRemixRoute = isViralRemix || routeMode.includes('remix');
   const remixReplacedGridUrl = isRemixRoute ? getRemixReplacedGridUrl(segments) : '';
   const storyboardGridBoards = getStoryboardGridBoards(task, remixReplacedGridUrl);
   const storyboardGridUrl = storyboardGridBoards[0]?.url || '';
@@ -948,10 +963,8 @@ export default function StoryboardBoardPage() {
   const beatMapItems = getBeatMapItems(workflowData);
   const mechanismSections = getMechanismSections(workflowData);
   const sceneDetailItems = getSceneDetailItems(workflowData, segments);
-  const isViralRemix = taskMetadata.feature === 'viral_remix';
-  const isRemixRoute = isViralRemix || routeMode.includes('remix');
   const resolvedImageAspectRatio = resolveStoryboardImageAspectRatio(task, isRemixRoute);
-  const effectiveAspectRatio = selectedAspectRatio || resolvedImageAspectRatio;
+  const effectiveAspectRatio = selectedAspectRatio || resolvedImageAspectRatio || '9:16';
   const isRemixReviewMode = isRemixRoute && !routeMode.includes('board');
   const remixOriginalVideoUrl = getRemixReferenceVideoUrl(taskMetadata, task);
   const remixOriginalPosterUrl = normalizeMediaUrl(String(
@@ -1585,12 +1598,17 @@ export default function StoryboardBoardPage() {
                   className={`storyboard-sheet-tab storyboard-sheet-tab--ratio ${effectiveAspectRatio === option.id ? 'storyboard-sheet-tab--active' : ''}`}
                   onClick={() => updateAspectRatio(option.id)}
                 >
-                  <Text className={`storyboard-sheet-tab-text ${effectiveAspectRatio === option.id ? 'storyboard-sheet-tab-text--active' : ''}`}>
-                    {option.label}
+                  <Text className={`storyboard-sheet-tab-icon ${effectiveAspectRatio === option.id ? 'storyboard-sheet-tab-icon--active' : ''}`}>
+                    {option.icon}
                   </Text>
-                  <Text className={`storyboard-sheet-tab-hint ${effectiveAspectRatio === option.id ? 'storyboard-sheet-tab-hint--active' : ''}`}>
-                    {option.hint}
-                  </Text>
+                  <View className='storyboard-sheet-ratio-copy'>
+                    <Text className={`storyboard-sheet-tab-text ${effectiveAspectRatio === option.id ? 'storyboard-sheet-tab-text--active' : ''}`}>
+                      {option.label}
+                    </Text>
+                    <Text className={`storyboard-sheet-tab-hint ${effectiveAspectRatio === option.id ? 'storyboard-sheet-tab-hint--active' : ''}`}>
+                      {option.hint}
+                    </Text>
+                  </View>
                 </View>
               ))}
             </View>
@@ -1625,10 +1643,10 @@ export default function StoryboardBoardPage() {
               <View className='storyboard-edit-scroll-inner'>
                 <View className='storyboard-edit-preview-stage'>
                   {editingType === 'image' ? (
-                    normalizeMediaUrl(editingSegment.generatedImage) ? (
+                    getSelectedSegmentAssetUrl(editingSegment, 'image') ? (
                       <Image
                         className='storyboard-edit-preview-image'
-                        src={normalizeMediaUrl(editingSegment.generatedImage)}
+                        src={getSelectedSegmentAssetUrl(editingSegment, 'image')}
                         mode='aspectFit'
                         onClick={() => handleOpenAsset('image', editingSegment)}
                       />
@@ -1636,11 +1654,11 @@ export default function StoryboardBoardPage() {
                       <Image className='storyboard-edit-preview-icon' src={imageIcon} mode='aspectFit' />
                     )
                   ) : (
-                    normalizeMediaUrl(editingSegment.generatedVideo) ? (
+                    getSelectedSegmentAssetUrl(editingSegment, 'video') ? (
                       <Video
                         className='storyboard-edit-preview-video'
-                        src={normalizeMediaUrl(editingSegment.generatedVideo)}
-                        poster={normalizeMediaUrl(editingSegment.generatedImage)}
+                        src={getSelectedSegmentAssetUrl(editingSegment, 'video')}
+                        poster={getSelectedSegmentAssetUrl(editingSegment, 'image')}
                         controls
                       />
                     ) : (
@@ -1648,8 +1666,8 @@ export default function StoryboardBoardPage() {
                     )
                   )}
                   {(editingType === 'image'
-                    ? normalizeMediaUrl(editingSegment.generatedImage)
-                    : normalizeMediaUrl(editingSegment.generatedVideo)) && (
+                    ? getSelectedSegmentAssetUrl(editingSegment, 'image')
+                    : getSelectedSegmentAssetUrl(editingSegment, 'video')) && (
                     <View className='storyboard-edit-detail-btn' onClick={() => handleOpenAsset(editingType, editingSegment)}>
                       <Text className='storyboard-edit-detail-text'>详情</Text>
                     </View>
@@ -1667,7 +1685,7 @@ export default function StoryboardBoardPage() {
                         <Text className='storyboard-edit-asset-add-text'>{uploadingAsset ? '...' : '+'}</Text>
                       </View>
                       {editingAssets.map((asset) => {
-                        const activeUrl = normalizeMediaUrl(editingType === 'image' ? editingSegment.generatedImage : editingSegment.generatedVideo);
+                        const activeUrl = getSelectedSegmentAssetUrl(editingSegment, editingType);
                         const active = asset.kind === 'asset' && asset.url && asset.url === activeUrl;
                         return (
                           <View
@@ -1686,8 +1704,8 @@ export default function StoryboardBoardPage() {
                               <Image className='storyboard-edit-asset-thumb' src={asset.url} mode='aspectFill' />
                             ) : (
                               <>
-                                {normalizeMediaUrl(editingSegment.generatedImage) ? (
-                                  <Image className='storyboard-edit-asset-thumb' src={normalizeMediaUrl(editingSegment.generatedImage)} mode='aspectFill' />
+                                {getSelectedSegmentAssetUrl(editingSegment, 'image') ? (
+                                  <Image className='storyboard-edit-asset-thumb' src={getSelectedSegmentAssetUrl(editingSegment, 'image')} mode='aspectFill' />
                                 ) : (
                                   <Image className='storyboard-edit-asset-video-icon' src={videoIcon} mode='aspectFit' />
                                 )}
@@ -1881,6 +1899,11 @@ function getWorkflowData(task: StoryboardTaskStatusResult | null): Record<string
   return nested || detailed || {};
 }
 
+function getTaskPipelineKey(task: StoryboardTaskStatusResult | null): string {
+  const detailed = asRecord(task?.detailedBreakdown);
+  return String(detailed?.pipeline_key || detailed?.pipelineKey || '').trim();
+}
+
 function normalizeImageAspectRatio(value: unknown): StoryboardAspectRatio | '' {
   const raw = String(value || '').trim().toLowerCase();
   if (!raw) return '';
@@ -1956,12 +1979,13 @@ function resolveStoryboardImageAspectRatio(
     const value = pickImageAspectRatioFromRecord(candidate);
     if (value) return value;
   }
-  return isRemixRoute ? '9:16' : '16:9';
+  return '9:16';
 }
 
 function getRemixReplacedGridUrl(segments: StoryboardSegmentItem[]): string {
   for (const segment of segments) {
-    const url = normalizeMediaUrl(segment.generatedImage);
+    const params = asRecord(segment.generationParams) || {};
+    const url = normalizeMediaUrl(params.selected_image_url || params.selectedImageUrl || segment.generatedImage);
     if (url) return url;
   }
   return '';

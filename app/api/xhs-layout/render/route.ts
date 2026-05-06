@@ -14,6 +14,7 @@ import {
   normalizeTemplateId,
   type CardTemplateId,
 } from "@/lib/xhsLayoutEngine";
+import { renderXhsCardLayout } from "@/lib/xhs-card-layout-service";
 
 type RenderRequestBody = {
   markdown?: string;
@@ -339,9 +340,26 @@ export async function POST(request: NextRequest) {
   const renderId = randomUUID();
   const shouldPersist = body?.persist === true;
   const requirePreview = body?.requirePreview === true;
+  const hasPreview = hasPreviewPayload(body?.preview);
+
+  if (!hasPreview && !requirePreview) {
+    try {
+      const data = await renderXhsCardLayout({
+        userId,
+        accessToken: token,
+        body: {
+          ...body,
+          markdown,
+        },
+      });
+      return NextResponse.json({ data });
+    } catch (error) {
+      console.error("[xhs-layout/render] service render failed", error);
+      return NextResponse.json({ error: "模板渲染失败，请稍后重试" }, { status: 500 });
+    }
+  }
 
   try {
-    const hasPreview = hasPreviewPayload(body?.preview);
     const pngs = hasPreview
       ? await renderPreviewPagesToPngs(body?.preview as NonNullable<RenderRequestBody["preview"]>)
       : [];
