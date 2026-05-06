@@ -63,7 +63,32 @@ echo "[deploy-safe] Validating env..."
 echo "[deploy-safe] Pulling latest code..."
 git pull --ff-only
 
-echo "[deploy-safe] Building and starting containers..."
-docker compose up -d --build
+web_replicas="${WEB_REPLICAS:-3}"
+case "$web_replicas" in
+  ''|*[!0-9]*)
+    echo "[deploy-safe] ERROR: WEB_REPLICAS must be a positive integer, got: $web_replicas" >&2
+    exit 1
+    ;;
+esac
+if [ "$web_replicas" -lt 1 ]; then
+  echo "[deploy-safe] ERROR: WEB_REPLICAS must be >= 1, got: $web_replicas" >&2
+  exit 1
+fi
+
+if ! grep -q '^SKIP_PRISMA_DB_PUSH=1$' .env; then
+  echo "[deploy-safe] SKIP_PRISMA_DB_PUSH is not 1; setting it to 1 for scaled production startup."
+  upsert_env_var "SKIP_PRISMA_DB_PUSH" "1" ".env"
+fi
+
+if ! grep -q 'connection_limit=' .env; then
+  echo "[deploy-safe] WARN: DATABASE_URL does not appear to include connection_limit=."
+  echo "[deploy-safe] WARN: For WEB_REPLICAS=$web_replicas, consider adding connection_limit=3&pool_timeout=10 to DATABASE_URL."
+fi
+
+echo "[deploy-safe] Building and starting containers with WEB_REPLICAS=$web_replicas..."
+docker compose up -d --build --scale web="$web_replicas"
+
+echo "[deploy-safe] Deployment status:"
+docker compose ps
 
 echo "[deploy-safe] Done."
