@@ -3815,6 +3815,7 @@ export function MarkdownTextCardDialog({
   const [previewScale, setPreviewScale] = useState(100);
   const [pageIndex, setPageIndex] = useState(0);
   const [exporting, setExporting] = useState(false);
+  const [layoutMarkdown, setLayoutMarkdown] = useState("");
   const [coverImageEl, setCoverImageEl] = useState<HTMLImageElement | null>(null);
   const [socialIconImages, setSocialIconImages] = useState<Partial<Record<SocialIconId, HTMLImageElement | null>>>({});
   const [coverStickerImages, setCoverStickerImages] = useState<Partial<Record<CoverStyleId, { primary: HTMLImageElement | null; secondary: HTMLImageElement | null }>>>({});
@@ -3837,12 +3838,13 @@ export function MarkdownTextCardDialog({
   const currentCardStyleMode = useMemo(() => getCardStyleMode(currentCardStyle, cardStyleModeId), [cardStyleModeId, currentCardStyle]);
   const currentTemplate = useMemo(() => findTemplate(templateId), [templateId]);
   const title = useMemo(() => getDefaultTitle(filePath), [filePath]);
-  const inferredCoverTitle = useMemo(() => deriveCoverTitleFromMarkdown(markdown, title), [markdown, title]);
+  const sourceMarkdown = layoutMarkdown || markdown;
+  const inferredCoverTitle = useMemo(() => deriveCoverTitleFromMarkdown(sourceMarkdown, title), [sourceMarkdown, title]);
   const resolvedCoverText = useMemo(
     () => resolveCoverText(config.coverTitle, config.coverSubtitle, inferredCoverTitle, title),
     [config.coverTitle, config.coverSubtitle, inferredCoverTitle, title]
   );
-  const cardMarkdown = useMemo(() => preprocessMarkdownForCard(markdown), [markdown]);
+  const cardMarkdown = useMemo(() => preprocessMarkdownForCard(sourceMarkdown), [sourceMarkdown]);
   const pages = useMemo(
     () => paginateMarkdown(cardMarkdown, templateId, config, cardStyleId, cardStyleModeId),
     [cardMarkdown, templateId, config, cardStyleId, cardStyleModeId]
@@ -3896,6 +3898,7 @@ export function MarkdownTextCardDialog({
   useEffect(() => {
     if (!open) return;
     setCoverTitleEdited(false);
+    setLayoutMarkdown(markdown || "");
   }, [open, markdown, filePath]);
 
   useEffect(() => {

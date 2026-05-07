@@ -81,13 +81,6 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 type AnalysisStatus = "idle" | "running" | "success" | "error";
-type StructuredSection = {
-  heading: string;
-  subheading: string;
-  keyPoint: string;
-  summary: string;
-  htmlHint: string;
-};
 
 const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
@@ -105,47 +98,6 @@ const normalizeUrlList = (urls: string[]): string[] => {
 };
 
 const MAX_RECOGNIZE_CONCURRENCY = 3;
-
-const sanitizeLineForTag = (raw: string): string => {
-  return raw
-    .replace(/<[^>]*>/g, " ")
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-};
-
-const inferTagsFromSource = (title: string, body: string): string[] => {
-  const candidates = new Set<string>();
-  const seedWords = `${title}\n${body}`
-    .replace(/\r\n/g, "\n")
-    .split(/\n+/)
-    .map((line) => sanitizeLineForTag(line))
-    .filter(Boolean);
-  const stopWords = new Set([
-    "我们", "你们", "他们", "自己", "这个", "那个", "就是", "以及", "如果", "因为", "所以",
-    "然后", "但是", "已经", "一个", "一些", "可以", "需要", "进行", "通过", "内容", "文案",
-    "视频", "图片", "原文", "标题", "正文", "方法", "步骤", "总结", "分析", "分享", "经验",
-  ]);
-
-  for (const line of seedWords) {
-    for (const token of line.split(/\s+/)) {
-      const word = token.trim().replace(/^#+/, "");
-      if (!word || word.length < 2 || word.length > 12) continue;
-      if (stopWords.has(word)) continue;
-      candidates.add(word);
-      if (candidates.size >= 8) break;
-    }
-    if (candidates.size >= 8) break;
-  }
-
-  if (candidates.size === 0) {
-    candidates.add("图文复刻");
-    candidates.add("内容拆解");
-    candidates.add("小红书");
-  }
-
-  return Array.from(candidates).slice(0, 8);
-};
 
 const IMAGE_BLOCK_HEADING_RE = /^#{1,6}\s*图\s*\d+\s*$/i;
 const IMAGE_ONLY_LINE_RE = /^图\s*\d+\s*$/i;
@@ -255,239 +207,29 @@ const normalizeRecognizedText = (input: string): string => {
   return merged.join("\n\n").trim();
 };
 
-const isNarrativeSectionHeading = (line: string): boolean => {
-  const trimmed = line.trim();
-  if (!trimmed) return false;
-  if (/^(?:[一二三四五六七八九十]{1,3}|[0-9]{1,2})[、.．]\s*\S+/.test(trimmed)) return true;
-  if (/^(?:总结|结论|方法|启发|复盘|注意|核心观点)\s*[：:]/.test(trimmed)) return true;
-  return false;
-};
+const PLACEHOLDER_SECTION_RE = /^(封面标题|副标题|标题|图文正文|正文|标签)\s*$/;
+const PLACEHOLDER_TOPIC_RE = /^\s*#?[\p{L}\p{N}\s-]*\[话题\]#?\s*$/u;
 
-const isTagOnlyLine = (line: string): boolean => {
-  const tokens = line.trim().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return false;
-  const hashtagCount = tokens.filter((token) => /^#\S+/.test(token)).length;
-  return hashtagCount >= 2 && hashtagCount === tokens.length;
-};
-
-const formatNarrativeMarkdown = (input: string): string => {
-  const lines = input
-    .replace(/\r\n/g, "\n")
-    .split("\n")
-    .map((line) => normalizeSentenceSpacing(line))
-    .map((line) => line.replace(/^\|\s*/, ""))
-    .map((line) => line.trimEnd());
-
-  const blocks: string[] = [];
-  let paragraphLines: string[] = [];
-
-  const flushParagraph = () => {
-    if (paragraphLines.length === 0) return;
-    const compact = normalizeSentenceSpacing(paragraphLines.join(" "));
-    if (compact) blocks.push(compact);
-    paragraphLines = [];
-  };
-
+const removePlaceholderSections = (input: string): string => {
+  const lines = input.replace(/\r\n/g, "\n").split("\n");
+  const kept: string[] = [];
   for (const line of lines) {
-    const trimmed = line.trim();
+    const trimmed = line.trim().replace(/^#{1,6}\s*/, "");
     if (!trimmed) {
-      flushParagraph();
+      if (kept.length > 0 && kept[kept.length - 1] !== "") kept.push("");
       continue;
     }
-    if (isNarrativeSectionHeading(trimmed)) {
-      flushParagraph();
-      blocks.push(`### ${trimmed}`);
-      continue;
-    }
-    if (isTagOnlyLine(trimmed)) {
-      flushParagraph();
-      blocks.push(`**标签**：${trimmed}`);
-      continue;
-    }
-    paragraphLines.push(trimmed);
+    if (PLACEHOLDER_SECTION_RE.test(trimmed)) continue;
+    if (PLACEHOLDER_TOPIC_RE.test(trimmed)) continue;
+    kept.push(line);
   }
-  flushParagraph();
-
-  return blocks.join("\n\n").trim();
+  return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 };
 
-const MARKDOWN_POLISH_INSTRUCTION = [
-  "你是 Markdown 排版编辑器，只做格式整理，不允许改写内容。",
-  "硬性规则：",
-  "1) 不删除任何实质信息，不新增观点，不改动事实和语气。",
-  "2) 只允许调整标题层级、段落换行、列表样式、标点空格。",
-  "3) 输出必须是纯 Markdown，不要代码块围栏，不要解释说明。",
-  "4) 保留原有结构：一级标题、原帖正文、标签、OCR 提取文本(details)。",
-].join("\n");
-
-const stripMarkdownFence = (input: string): string => {
-  const text = input.trim();
-  const fenceMatch = text.match(/^```(?:markdown|md)?\s*([\s\S]*?)\s*```$/i);
-  return fenceMatch ? fenceMatch[1].trim() : text;
-};
-
-const normalizeCompareText = (input: string): string => {
-  return input
-    .replace(/```[\s\S]*?```/g, " ")
-    .replace(/<\/?details>/gi, " ")
-    .replace(/<summary>[\s\S]*?<\/summary>/gi, " ")
-    .replace(/[#>*`~\-\[\]\(\)_]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-};
-
-const tokenizeForCompare = (input: string): string[] => {
-  const matches = normalizeCompareText(input).match(/[\p{L}\p{N}]+/gu);
-  return matches ? matches.filter(Boolean) : [];
-};
-
-const isPolishedMarkdownSafe = (before: string, after: string): boolean => {
-  const sourceTokens = tokenizeForCompare(before);
-  const outputTokens = tokenizeForCompare(after);
-  if (sourceTokens.length === 0 || outputTokens.length === 0) return false;
-
-  const countMap = new Map<string, number>();
-  for (const token of outputTokens) {
-    countMap.set(token, (countMap.get(token) || 0) + 1);
-  }
-  let matched = 0;
-  for (const token of sourceTokens) {
-    const count = countMap.get(token) || 0;
-    if (count <= 0) continue;
-    matched += 1;
-    countMap.set(token, count - 1);
-  }
-  const recall = matched / sourceTokens.length;
-  const ratio = outputTokens.length / sourceTokens.length;
-  return recall >= 0.92 && ratio >= 0.82 && ratio <= 1.25;
-};
-
-const polishMarkdownWithLlm = async (rawMarkdown: string, authToken?: string | null): Promise<string> => {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (authToken) {
-    headers.Authorization = `Bearer ${authToken}`;
-  }
-
-  const response = await fetch("/api/canvas/text-transform", {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      instruction: MARKDOWN_POLISH_INSTRUCTION,
-      upstreamText: rawMarkdown,
-      model: "gemini-3.1-flash-lite-preview",
-    }),
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error((payload as { error?: string }).error || "LLM 排版失败");
-  }
-  const polished = stripMarkdownFence(typeof payload?.result === "string" ? payload.result : "");
-  if (!polished.trim()) {
-    throw new Error("LLM 排版结果为空");
-  }
-  if (!isPolishedMarkdownSafe(rawMarkdown, polished)) {
-    throw new Error("LLM 排版结果偏离原文，已回退");
-  }
-  return polished.trim();
-};
-
-const splitRecognizedSections = (input: string): StructuredSection[] => {
-  const normalizedText = normalizeRecognizedText(input);
-  const blocks = normalizedText
-    .split(/\n{2,}/)
-    .map((block) => normalizeSentenceSpacing(block))
-    .filter(Boolean);
-
-  if (blocks.length === 0) {
-    return [
-      {
-        heading: "内容结构",
-        subheading: "核心摘要",
-        keyPoint: "暂无可识别内容",
-        summary: "未识别到有效文本，请补充原始素材后重试。",
-        htmlHint: "<blockquote><p><strong>提示：</strong>建议重新上传更清晰的参考图。</p></blockquote>",
-      },
-    ];
-  }
-
-  const sections: StructuredSection[] = [];
-  for (let i = 0; i < Math.min(blocks.length, 6); i += 1) {
-    const block = blocks[i];
-    const idx = sections.length + 1;
-    const sentences = block
-      .split(/(?<=[。！？!?])/)
-      .map((item) => normalizeSentenceSpacing(item))
-      .filter(Boolean);
-    const firstSentence = sentences[0] || block;
-    const secondSentence = sentences[1] || sentences[0] || "要点拆解";
-    const subheadingLine = firstSentence.slice(0, 36) || `图文片段 ${idx}`;
-    const keyPoint = secondSentence.slice(0, 80) || firstSentence.slice(0, 80) || "暂无关键观点";
-    const summary = normalizeSentenceSpacing(block).slice(0, 240);
-    sections.push({
-      heading: `结构模块 ${idx}`,
-      subheading: subheadingLine,
-      keyPoint,
-      summary,
-      htmlHint: `<p><strong>模块 ${idx} 可视化建议：</strong><em>${subheadingLine.slice(0, 42)}</em></p>`,
-    });
-  }
-
-  return sections.slice(0, 6);
-};
-
-const buildStructuredMarkdown = ({
-  sourceTitle,
-  sourceBody,
-  tags,
-  rawRecognizedText,
-}: {
-  sourceTitle: string;
-  sourceBody: string;
-  tags: string[];
-  rawRecognizedText: string;
-}): string => {
-  const resolvedTitle = sourceTitle.trim() || "爆款图文复刻";
-  const resolvedBody = sourceBody.trim() || "暂无原正文";
-  const normalizedRecognizedText = normalizeRecognizedText(rawRecognizedText);
-  const prettySourceBody = formatNarrativeMarkdown(resolvedBody) || resolvedBody;
-  const prettyRecognizedText = normalizeRecognizedText(
-    normalizedRecognizedText || rawRecognizedText || "暂无识别内容",
-  );
-  const tagLine = tags.map((tag) => `#${tag.replace(/^#+/, "")}`).join(" ").trim();
-  const parts: string[] = [];
-  parts.push(`# ${resolvedTitle}`);
-  parts.push("");
-  parts.push("## 原帖正文");
-  parts.push(prettySourceBody);
-  parts.push("");
-  if (tagLine) {
-    parts.push(`**标签**：${tagLine}`);
-    parts.push("");
-  }
-  parts.push("## OCR 提取文本");
-  parts.push("<details>");
-  parts.push("<summary>展开查看</summary>");
-  parts.push("");
-  parts.push("```text");
-  parts.push(prettyRecognizedText || "暂无识别内容");
-  parts.push("```");
-  parts.push("");
-  parts.push("</details>");
-  return parts.join("\n").trim();
-};
-
-const escapeYamlInline = (input: string): string => {
-  return `"${input.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-};
-
-const toYamlBlock = (input: string): string => {
-  const normalized = input.replace(/\r\n/g, "\n");
-  const lines = normalized.split("\n");
-  if (lines.length === 0) return "|-\n  ";
-  return ["|-", ...lines.map((line) => `  ${line}`)].join("\n");
+const resolveSavedNoteBody = (recognizedText: string, fallbackSourceText?: string | null): string => {
+  const fromRecognition = removePlaceholderSections(normalizeRecognizedText(recognizedText) || recognizedText);
+  if (fromRecognition) return fromRecognition;
+  return removePlaceholderSections(fallbackSourceText?.trim() || "");
 };
 
 const slugifyForFile = (input: string): string => {
@@ -1109,38 +851,16 @@ export function ImageTextReplicationPanel({
       const folder = knowledgeFolders.find((item) => item.id === selectedKnowledgeFolderId);
       const resolvedSourceTitle = (sourceTitle?.trim() || "图文识别").slice(0, 80);
       const resolvedSourceBody = sourceText?.trim() || "暂无原正文";
-      const inferredTags = inferTagsFromSource(resolvedSourceTitle, `${resolvedSourceBody}\n${content}`);
-      const standardizedMarkdownBase = buildStructuredMarkdown({
-        sourceTitle: resolvedSourceTitle,
-        sourceBody: resolvedSourceBody,
-        tags: inferredTags,
-        rawRecognizedText: content,
-      });
-      let standardizedMarkdown = standardizedMarkdownBase;
-      try {
-        standardizedMarkdown = await polishMarkdownWithLlm(standardizedMarkdownBase, authToken);
-      } catch (error) {
-        console.warn("[replication-panel] markdown polish fallback to local formatter", error);
+      const noteBody = resolveSavedNoteBody(content, sourceText);
+      if (!noteBody) {
+        toast.error("未识别到可保存的正文");
+        return;
       }
       const titleBase = slugifyForFile(resolvedSourceTitle);
       const savedAt = new Date();
       const pad = (num: number) => String(num).padStart(2, "0");
       const fileTimeLabel = `${savedAt.getFullYear()}-${pad(savedAt.getMonth() + 1)}-${pad(savedAt.getDate())}-${pad(savedAt.getHours())}-${pad(savedAt.getMinutes())}-${pad(savedAt.getSeconds())}`;
       const path = `01-素材库/raw/${titleBase}-${fileTimeLabel}.md`;
-      const savedAtLabel = `${savedAt.getFullYear()}-${pad(savedAt.getMonth() + 1)}-${pad(savedAt.getDate())} ${pad(savedAt.getHours())}:${pad(savedAt.getMinutes())}`;
-      const bodyContent = [
-        "---",
-        `source_title: ${escapeYamlInline(resolvedSourceTitle)}`,
-        `source_tags: [${inferredTags.map((tag) => escapeYamlInline(tag)).join(", ")}]`,
-        `source_platform: ${escapeYamlInline(sourcePlatform?.trim() || "")}`,
-        `source_url: ${escapeYamlInline(sourceUrl?.trim() || "")}`,
-        `saved_at: ${escapeYamlInline(savedAtLabel)}`,
-        "---",
-        "",
-        standardizedMarkdown,
-      ]
-        .filter(Boolean)
-        .join("\n");
 
       const res = await fetch(`/api/knowledge/folders/${selectedKnowledgeFolderId}/files`, {
         method: "POST",
@@ -1151,7 +871,7 @@ export function ImageTextReplicationPanel({
         body: JSON.stringify({
           title: titleBase,
           path,
-          content: bodyContent,
+          content: noteBody,
           sourceType: "replication-parse",
           contentFactory: {
             kind: "raw",
@@ -1162,7 +882,6 @@ export function ImageTextReplicationPanel({
             sourceUrl: sourceUrl?.trim() || null,
             sourceTitle: resolvedSourceTitle,
             sourceText: resolvedSourceBody,
-            sourceTags: inferredTags,
           },
         }),
       });

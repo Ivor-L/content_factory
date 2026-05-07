@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 
 const CACHE_TTL_MS = 60_000; // 60 秒
+const FALLBACK_CACHE_TTL_MS = 10_000; // DB 暂不可用时短暂降级，避免每次请求都阻塞。
 
 interface CacheEntry {
   configs: Map<string, number>;
@@ -10,11 +11,31 @@ interface CacheEntry {
 let cache: CacheEntry | null = null;
 
 async function loadCache(): Promise<Map<string, number>> {
-  const rows = await prisma.creditConfig.findMany({
-    where: { enabled: true },
-    select: { featureKey: true, amount: true },
-  });
-  return new Map(rows.map((r) => [r.featureKey, r.amount]));
+  try {
+    const rows = await prisma.creditConfig.findMany({
+      where: { enabled: true },
+      select: { featureKey: true, amount: true },
+    });
+    return new Map(rows.map((r) => [r.featureKey, r.amount]));
+  } catch (error) {
+    console.warn(
+      "[creditCosts] Failed to load credit configs, falling back to code defaults",
+      error instanceof Error ? error.message : error,
+    );
+    return cache?.configs ?? new Map<string, number>();
+  }
+}
+
+async function ensureCache(): Promise<CacheEntry> {
+  const now = Date.now();
+  if (!cache || now - cache.loadedAt > CACHE_TTL_MS) {
+    const configs = await loadCache();
+    cache = {
+      configs,
+      loadedAt: now - (configs.size === 0 ? CACHE_TTL_MS - FALLBACK_CACHE_TTL_MS : 0),
+    };
+  }
+  return cache;
 }
 
 /**
@@ -28,12 +49,8 @@ export async function getCreditCost(
   featureKey: string,
   defaultAmount = 1
 ): Promise<number> {
-  const now = Date.now();
-  if (!cache || now - cache.loadedAt > CACHE_TTL_MS) {
-    const configs = await loadCache();
-    cache = { configs, loadedAt: now };
-  }
-  return cache.configs.get(featureKey) ?? defaultAmount;
+  const entry = await ensureCache();
+  return entry.configs.get(featureKey) ?? defaultAmount;
 }
 
 export function normalizeCreditModelKey(modelKey?: string | null): string | null {
@@ -55,11 +72,7 @@ export async function getCreditCostForModel(
   modelKey?: string | null,
   defaultAmount = 1
 ): Promise<number> {
-  const now = Date.now();
-  if (!cache || now - cache.loadedAt > CACHE_TTL_MS) {
-    const configs = await loadCache();
-    cache = { configs, loadedAt: now };
-  }
+  const entry = await ensureCache();
 
   const rawModelKey = typeof modelKey === "string" ? modelKey.trim() : "";
   const normalizedModelKey = normalizeCreditModelKey(rawModelKey);
@@ -70,7 +83,7 @@ export async function getCreditCostForModel(
   ].filter((value): value is string => Boolean(value));
 
   for (const key of candidates) {
-    const amount = cache.configs.get(key);
+    const amount = entry.configs.get(key);
     if (typeof amount === "number") return amount;
   }
 

@@ -4124,7 +4124,8 @@ export default function ImageGeneratePage() {
                   <Textarea
                     className='textarea textarea--info textarea--card-editor'
                     value={cardMarkdown}
-                    autoHeight
+                    adjustPosition={false}
+                    cursorSpacing={20}
                     onInput={(e) => {
                       const value = e.detail.value;
                       setCardUserCleared(!value.trim());

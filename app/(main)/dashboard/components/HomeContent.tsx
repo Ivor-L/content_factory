@@ -380,6 +380,11 @@ function getPathBaseNameFromDocPath(path: string) {
   return parts[parts.length - 1] || '';
 }
 
+function getDocTitleFromPath(path?: string | null) {
+  const baseName = getPathBaseNameFromDocPath(path || '');
+  return baseName.replace(/\.(md|markdown|txt)$/i, '').trim();
+}
+
 function extractReusableDocText(markdown: string) {
   const raw = (markdown || '').trim();
   if (!raw) return '';
@@ -390,6 +395,18 @@ function extractReusableDocText(markdown: string) {
   const normalized = stripKnowledgeMetaForGeneration((body || raw).replace(/\r\n/g, '\n')).trim();
   if (!normalized) return '';
   return normalized.slice(0, DOC_REUSE_MAX_CHARS);
+}
+
+function extractMarkdownLayoutSource(markdown: string) {
+  const raw = (markdown || '').replace(/\r\n/g, '\n').trim();
+  if (!raw) return '';
+  const parsed = parseContentFactoryPackage(raw);
+  const preferred = (parsed.body || parsed.imageCopy).trim();
+  if (preferred) return stripKnowledgeMetaForGeneration(preferred).trim();
+
+  const { body } = splitMarkdownDocument(raw);
+  const bodyText = stripLeadingLooseMetaYaml(body || raw);
+  return stripKnowledgeMetaForGeneration(bodyText).trim();
 }
 
 function stripLeadingLooseMetaYaml(input: string) {
@@ -429,6 +446,11 @@ function stripLeadingLooseMetaYaml(input: string) {
 function normalizeDocForPreview(input: string) {
   const raw = (input || "").replace(/\r\n/g, "\n");
   if (!raw.trim()) return "";
+  const hasExplicitContentFactoryShape =
+    /^---\n[\s\S]*?\n---\n?/m.test(raw) ||
+    /^#{1,6}\s*(封面标题|副标题|标题|图文正文|正文|标签)\s*$/m ||
+    /^(封面标题|副标题|标题|图文正文|正文|标签)\s*[：:]/m;
+  if (!hasExplicitContentFactoryShape) return stripLeadingLooseMetaYaml(raw);
   const parsed = parseContentFactoryPackage(raw);
   const hasAnyContentFactoryField = Boolean(
     parsed.coverTitle || parsed.subTitle || parsed.title || parsed.imageCopy || parsed.body || parsed.tags.length > 0,
@@ -1843,6 +1865,8 @@ export function HomeContent() {
   const [docDraftContent, setDocDraftContent] = useState('');
   const [docViewMode, setDocViewMode] = useState<DocViewMode>('preview');
   const [savingDocContent, setSavingDocContent] = useState(false);
+  const [formattingDocMarkdown, setFormattingDocMarkdown] = useState(false);
+  const [docMarkdownFormatError, setDocMarkdownFormatError] = useState('');
   const [loadingDocContent, setLoadingDocContent] = useState(false);
   const [docSearch, setDocSearch] = useState('');
   const [pendingKnowledgeSaveTarget, setPendingKnowledgeSaveTarget] = useState<PersistedKnowledgeSaveTarget | null>(null);
@@ -2378,6 +2402,7 @@ export function HomeContent() {
   const loadDocContent = useCallback(async (fileId: string) => {
     if (!authToken) return;
     setLoadingDocContent(true);
+    setDocMarkdownFormatError('');
     try {
       const res = await fetch(`/api/knowledge/files/${fileId}/content`, {
         headers: { Authorization: `Bearer ${authToken}` },
@@ -2795,22 +2820,33 @@ export function HomeContent() {
     setSelectedDocId(null);
     setSelectedDocContent('');
     setDocDraftContent('');
+    setDocMarkdownFormatError('');
   }, [handleFolderChange]);
 
   const hasDocDraftChanges = selectedDocId
     ? docDraftContent.replace(/\r\n/g, '\n') !== selectedDocContent.replace(/\r\n/g, '\n')
     : false;
-  const currentDocMarkdown = docViewMode === 'edit' ? docDraftContent : selectedDocContent;
-  const previewDocMarkdown = useMemo(() => normalizeDocForPreview(selectedDocContent), [selectedDocContent]);
+  const currentDocMarkdown = docViewMode === 'edit' || hasDocDraftChanges ? docDraftContent : selectedDocContent;
+  const previewDocMarkdown = useMemo(
+    () => normalizeDocForPreview(hasDocDraftChanges ? docDraftContent : selectedDocContent),
+    [docDraftContent, hasDocDraftChanges, selectedDocContent],
+  );
   const contentFactoryDraft = useMemo(
     () => parseContentFactoryPackage(currentDocMarkdown),
     [currentDocMarkdown],
   );
+  const selectedDocTitle = useMemo(() => getDocTitleFromPath(selectedDocPath), [selectedDocPath]);
   const xhsLayoutReadyMarkdown = useMemo(
     () => {
-      return (contentFactoryDraft.imageCopy || "").trim();
+      const body = (contentFactoryDraft.body || "").trim();
+      if (body) return body;
+      return stripKnowledgeMetaForGeneration(currentDocMarkdown);
     },
-    [contentFactoryDraft.imageCopy],
+    [contentFactoryDraft.body, currentDocMarkdown],
+  );
+  const xhsLayoutTitle = useMemo(
+    () => (contentFactoryDraft.title || selectedDocTitle).trim(),
+    [contentFactoryDraft.title, selectedDocTitle],
   );
   const wechatLayoutReadyMarkdown = useMemo(
     () => {
@@ -2853,6 +2889,38 @@ export function HomeContent() {
       setSavingDocContent(false);
     }
   }, [authToken, docDraftContent, savingDocContent, selectedDocId]);
+
+  const formatDocMarkdownWithAi = useCallback(async () => {
+    if (!selectedDocId || formattingDocMarkdown) return;
+    const source = extractMarkdownLayoutSource(docDraftContent || selectedDocContent);
+    if (!source) {
+      setDocMarkdownFormatError('正文为空，无法 AI 排版');
+      return;
+    }
+
+    setFormattingDocMarkdown(true);
+    setDocMarkdownFormatError('');
+    try {
+      const res = await fetch('/api/xhs-layout/normalize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ markdown: source }),
+      });
+      const payload = await res.json().catch(() => ({})) as { data?: { markdown?: string }; error?: string };
+      if (!res.ok) throw new Error(payload.error || 'AI 排版失败');
+      const nextMarkdown = typeof payload.data?.markdown === 'string' ? payload.data.markdown.trim() : '';
+      if (!nextMarkdown) throw new Error('AI 未返回有效 Markdown 文档');
+      setDocDraftContent(nextMarkdown);
+      setDocViewMode('preview');
+      toast.success('AI 排版已更新到 MD 预览区');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'AI 排版失败';
+      setDocMarkdownFormatError(message);
+      toast.error(message);
+    } finally {
+      setFormattingDocMarkdown(false);
+    }
+  }, [docDraftContent, formattingDocMarkdown, selectedDocContent, selectedDocId]);
 
   const organizeWiki = useCallback(async () => {
     if (!authToken || !selectedFolderId || organizingWiki) return;
@@ -5148,6 +5216,16 @@ export function HomeContent() {
                             </button>
                           </div>
                           <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void formatDocMarkdownWithAi()}
+                              disabled={formattingDocMarkdown || !selectedDocContent.trim()}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                              title="根据原文内容排版成 Markdown 文档"
+                            >
+                              {formattingDocMarkdown ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WandSparkles className="h-3.5 w-3.5" />}
+                              {formattingDocMarkdown ? '排版中' : 'AI 排版'}
+                            </button>
                             <div className="relative">
                               <button
                                 ref={contentOutputButtonRef}
@@ -5220,7 +5298,7 @@ export function HomeContent() {
                                 </div>
                               )}
                             </div>
-                            {docViewMode === 'edit' && (
+                            {(docViewMode === 'edit' || hasDocDraftChanges) && (
                               <button
                                 type="button"
                                 onClick={() => void saveDocContent()}
@@ -5233,6 +5311,11 @@ export function HomeContent() {
                             )}
                           </div>
                         </div>
+                        {docMarkdownFormatError ? (
+                          <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+                            {docMarkdownFormatError}
+                          </p>
+                        ) : null}
                         {docViewMode === 'edit' ? (
                           <textarea
                             value={docDraftContent}
@@ -5578,8 +5661,8 @@ export function HomeContent() {
           xhsMeta={{
             coverTitle: contentFactoryDraft.coverTitle,
             subTitle: contentFactoryDraft.subTitle,
-            title: contentFactoryDraft.title,
-            body: contentFactoryDraft.body,
+            title: xhsLayoutTitle,
+            body: xhsLayoutReadyMarkdown,
             tags: contentFactoryDraft.tags,
           }}
         />

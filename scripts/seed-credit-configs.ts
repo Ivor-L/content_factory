@@ -348,6 +348,15 @@ const DEFAULT_CREDIT_CONFIGS = [
     description: "小红书 Markdown 图文排版",
   },
   {
+    featureKey: "xhs_layout_normalize",
+    featureName: "小红书 AI 排版",
+    category: "smart_creation",
+    modelKey: null,
+    amount: 1,
+    enabled: true,
+    description: "小红书 Markdown 预览区 AI 排版（仅调整排版，不改写内容）",
+  },
+  {
     featureKey: "xhs_infographic_generate",
     featureName: "小红书信息卡片生成",
     category: "smart_creation",
