@@ -2982,13 +2982,120 @@ function splitOversizedMarkdownBlock(markdown: string, maxUnits: number): string
   return chunks.length > 0 ? chunks : [markdown];
 }
 
-function paginateMarkdown(markdown: string, templateId: CardTemplateId, config: CardConfig, cardStyleId?: CardStyleId): CardPage[] {
+function isMarkdownTableBlock(markdown: string): boolean {
+  const lines = markdown
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return lines.length >= 2
+    && lines[0].includes("|")
+    && /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(lines[1]);
+}
+
+function splitMarkdownBlockByLines(markdown: string): string[] {
+  if (isMarkdownTableBlock(markdown)) return [markdown];
+  const lines = markdown
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return lines.length > 1 ? lines : [markdown];
+}
+
+function splitMarkdownTextForPagination(markdown: string, maxUnits: number): string[] {
+  const lineParts = splitMarkdownBlockByLines(markdown);
+  if (lineParts.length > 1) {
+    return lineParts.flatMap((part) => splitMarkdownTextForPagination(part, maxUnits));
+  }
+
+  const plain = markdownToPlainText(markdown);
+  if (!plain || estimateMarkdownBlockUnits(markdown) <= maxUnits) return [markdown];
+
+  const sentenceParts = plain
+    .split(/(?<=[。！？!?；;])/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (sentenceParts.length > 1) {
+    return sentenceParts.flatMap((part) => splitOversizedMarkdownBlock(part, maxUnits));
+  }
+
+  return splitOversizedMarkdownBlock(markdown, maxUnits);
+}
+
+function measureMd2CardPageFits(
+  markdown: string,
+  config: CardConfig,
+  cardStyleId: CardStyleId,
+  cardStyleModeId: CardStyleModeId
+): boolean {
+  if (typeof document === "undefined") return true;
+  if (!markdown.trim()) return true;
+
+  const rootId = "xhs-md2card-pagination-measure-root";
+  let root = document.getElementById(rootId) as HTMLDivElement | null;
+  if (!root) {
+    root = document.createElement("div");
+    root.id = rootId;
+    root.setAttribute("aria-hidden", "true");
+    root.style.cssText = [
+      "position:absolute",
+      "left:-10000px",
+      "top:0",
+      `width:${MD2CARD_PREVIEW_WIDTH}px`,
+      `height:${MD2CARD_PREVIEW_HEIGHT}px`,
+      "overflow:hidden",
+      "visibility:hidden",
+      "pointer-events:none",
+      "z-index:-1",
+    ].join(";");
+    document.body.appendChild(root);
+  }
+
+  const page: CardPage = { type: "content", lines: [], markdown };
+  root.innerHTML = [
+    `<style>${escapeStyleForSvg(buildMd2CardCss(config, cardStyleId, 1))}</style>`,
+    `<div class="md2card-preview-shell" style="width:${MD2CARD_PREVIEW_WIDTH}px;height:${MD2CARD_PREVIEW_HEIGHT}px;overflow:hidden;">`,
+    renderMd2CardHtml(page, 0, 1, config, cardStyleId, cardStyleModeId),
+    "</div>",
+  ].join("");
+
+  const card = root.querySelector<HTMLElement>(".card");
+  const content = root.querySelector<HTMLElement>(".card-content");
+  const inner = root.querySelector<HTMLElement>(".card-content-inner");
+  const measured = inner || content || card;
+  if (!card || !measured) return true;
+
+  const cardRect = card.getBoundingClientRect();
+  const contentRect = content?.getBoundingClientRect();
+  const footerRect = root.querySelector<HTMLElement>(".card-footer")?.getBoundingClientRect();
+  const bottomLimit = content && content.clientHeight > 0
+    ? contentRect!.top + content.clientHeight
+    : cardRect.bottom - (footerRect?.height || 0);
+
+  let contentBottom = measured.getBoundingClientRect().top;
+  const children = Array.from(measured.children) as HTMLElement[];
+  for (const child of children) {
+    const rect = child.getBoundingClientRect();
+    contentBottom = Math.max(contentBottom, rect.bottom);
+  }
+
+  const scrollOverflow = Math.max(measured.scrollHeight - measured.clientHeight, 0);
+  return contentBottom <= bottomLimit + 1 && scrollOverflow <= 1;
+}
+
+function paginateMarkdown(
+  markdown: string,
+  templateId: CardTemplateId,
+  config: CardConfig,
+  cardStyleId: CardStyleId,
+  cardStyleModeId: CardStyleModeId
+): CardPage[] {
   void templateId;
-  void cardStyleId;
   const pages: CardPage[] = [];
   if (config.hasCover) pages.push({ type: "cover" });
   const bodyFontSize = Math.max(12, config.fontSize / 2);
-  const maxUnits = Math.max(86, Math.round(5400 / (bodyFontSize * config.lineHeight)));
+  const maxUnits = Math.max(60, Math.round(3900 / (bodyFontSize * config.lineHeight)));
   const blocks = splitMarkdownBlocks(markdown).filter((block) => !isHorizontalRuleLine(block.trim()));
   let currentMarkdown: string[] = [];
   let currentUnits = 0;
@@ -3001,12 +3108,15 @@ function paginateMarkdown(markdown: string, templateId: CardTemplateId, config: 
     }
   };
 
+  const currentWith = (part: string) => [...currentMarkdown, part].join("\n\n");
+  const wouldFit = (part: string) => measureMd2CardPageFits(currentWith(part), config, cardStyleId, cardStyleModeId);
+
   for (const block of blocks.length > 0 ? blocks : [""]) {
-    const expandedBlocks = splitOversizedMarkdownBlock(block, maxUnits);
+    const expandedBlocks = splitMarkdownTextForPagination(block, maxUnits);
     for (const part of expandedBlocks) {
       const units = estimateMarkdownBlockUnits(part) + 16;
-      if (/^##\s+/.test(part.trim()) && currentMarkdown.length > 0) flushPage();
-      if (currentMarkdown.length > 0 && currentUnits + units > maxUnits) flushPage();
+      if (/^#{1,6}\s+/.test(part.trim()) && currentMarkdown.length > 0) flushPage();
+      if (currentMarkdown.length > 0 && (currentUnits + units > maxUnits || !wouldFit(part))) flushPage();
       currentMarkdown.push(part);
       currentUnits += units;
       if (currentUnits >= maxUnits) {
@@ -3474,6 +3584,124 @@ function dataUrlToBlob(dataUrl: string): Blob {
   return new Blob([bytes], { type: mime });
 }
 
+function copyBytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
+function makeCrc32Table(): Uint32Array {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let value = i;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+    }
+    table[i] = value >>> 0;
+  }
+  return table;
+}
+
+const CRC32_TABLE = makeCrc32Table();
+const ZIP_UTF8_FLAG = 0x0800;
+
+function crc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (let i = 0; i < bytes.length; i += 1) {
+    crc = CRC32_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function dosDateTime(date: Date): { date: number; time: number } {
+  const year = Math.max(1980, date.getFullYear());
+  return {
+    time: (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2),
+    date: ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate(),
+  };
+}
+
+function writeUint16(view: DataView, offset: number, value: number) {
+  view.setUint16(offset, value, true);
+}
+
+function writeUint32(view: DataView, offset: number, value: number) {
+  view.setUint32(offset, value >>> 0, true);
+}
+
+async function createZipBlob(files: Array<{ name: string; blob: Blob }>): Promise<Blob> {
+  const encoder = new TextEncoder();
+  const now = dosDateTime(new Date());
+  const localParts: BlobPart[] = [];
+  const centralParts: BlobPart[] = [];
+  let offset = 0;
+
+  for (const file of files) {
+    const nameBytes = encoder.encode(file.name);
+    const nameBuffer = copyBytesToArrayBuffer(nameBytes);
+    const contentBuffer = await file.blob.arrayBuffer();
+    const content = new Uint8Array(contentBuffer);
+    const checksum = crc32(content);
+
+    const localHeader = new ArrayBuffer(30);
+    const localView = new DataView(localHeader);
+    writeUint32(localView, 0, 0x04034b50);
+    writeUint16(localView, 4, 20);
+    writeUint16(localView, 6, ZIP_UTF8_FLAG);
+    writeUint16(localView, 8, 0);
+    writeUint16(localView, 10, now.time);
+    writeUint16(localView, 12, now.date);
+    writeUint32(localView, 14, checksum);
+    writeUint32(localView, 18, content.length);
+    writeUint32(localView, 22, content.length);
+    writeUint16(localView, 26, nameBytes.length);
+    writeUint16(localView, 28, 0);
+    localParts.push(localHeader, nameBuffer, contentBuffer);
+
+    const centralHeader = new ArrayBuffer(46);
+    const centralView = new DataView(centralHeader);
+    writeUint32(centralView, 0, 0x02014b50);
+    writeUint16(centralView, 4, 20);
+    writeUint16(centralView, 6, 20);
+    writeUint16(centralView, 8, ZIP_UTF8_FLAG);
+    writeUint16(centralView, 10, 0);
+    writeUint16(centralView, 12, now.time);
+    writeUint16(centralView, 14, now.date);
+    writeUint32(centralView, 16, checksum);
+    writeUint32(centralView, 20, content.length);
+    writeUint32(centralView, 24, content.length);
+    writeUint16(centralView, 28, nameBytes.length);
+    writeUint16(centralView, 30, 0);
+    writeUint16(centralView, 32, 0);
+    writeUint16(centralView, 34, 0);
+    writeUint16(centralView, 36, 0);
+    writeUint32(centralView, 38, 0);
+    writeUint32(centralView, 42, offset);
+    centralParts.push(centralHeader, nameBuffer);
+
+    offset += localHeader.byteLength + nameBytes.length + content.length;
+  }
+
+  const centralSize = centralParts.reduce((sum, part) => {
+    if (part instanceof ArrayBuffer) return sum + part.byteLength;
+    if (part instanceof Uint8Array) return sum + part.byteLength;
+    return sum;
+  }, 0);
+
+  const eocd = new ArrayBuffer(22);
+  const eocdView = new DataView(eocd);
+  writeUint32(eocdView, 0, 0x06054b50);
+  writeUint16(eocdView, 4, 0);
+  writeUint16(eocdView, 6, 0);
+  writeUint16(eocdView, 8, files.length);
+  writeUint16(eocdView, 10, files.length);
+  writeUint32(eocdView, 12, centralSize);
+  writeUint32(eocdView, 16, offset);
+  writeUint16(eocdView, 20, 0);
+
+  return new Blob([...localParts, ...centralParts, eocd], { type: "application/zip" });
+}
+
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -3496,10 +3724,6 @@ function triggerDownload(blob: Blob, fileName: string) {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export function MarkdownTextCardDialog({
@@ -3549,7 +3773,10 @@ export function MarkdownTextCardDialog({
     [config.coverTitle, config.coverSubtitle, inferredCoverTitle, title]
   );
   const cardMarkdown = useMemo(() => preprocessMarkdownForCard(markdown), [markdown]);
-  const pages = useMemo(() => paginateMarkdown(cardMarkdown, templateId, config, cardStyleId), [cardMarkdown, templateId, config, cardStyleId]);
+  const pages = useMemo(
+    () => paginateMarkdown(cardMarkdown, templateId, config, cardStyleId, cardStyleModeId),
+    [cardMarkdown, templateId, config, cardStyleId, cardStyleModeId]
+  );
 
   useEffect(() => {
     const firstMode = getFirstCardStyleMode(currentCardStyle);
@@ -3856,11 +4083,17 @@ export function MarkdownTextCardDialog({
     setExporting(true);
     try {
       const base = sanitizeFileName(title);
+      const ext = format === "jpeg" ? "jpg" : "png";
+      const files: Array<{ name: string; blob: Blob }> = [];
       for (let i = 0; i < pages.length; i += 1) {
         const blob = await renderPageForOutput(pages[i], i, format);
-        triggerDownload(blob, `${base}-${String(i + 1).padStart(2, "0")}.${format === "jpeg" ? "jpg" : "png"}`);
-        await sleep(80);
+        files.push({
+          name: `${base}-${String(i + 1).padStart(2, "0")}.${ext}`,
+          blob,
+        });
       }
+      const zip = await createZipBlob(files);
+      triggerDownload(zip, `${base}-${format}-pages.zip`);
     } finally {
       setExporting(false);
     }
