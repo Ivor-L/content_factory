@@ -3411,23 +3411,24 @@ function getMd2CardClassName(cardStyleId: CardStyleId, modeId: CardStyleModeId):
   return cn("card markdown-body", theme.className.startsWith("card-") ? theme.className : `card-${theme.className}`, mode?.className);
 }
 
-function rewriteMd2CardAssetUrls(css: string): string {
+function rewriteMd2CardAssetUrls(css: string, options?: { exportSafe?: boolean }): string {
   return css.replace(/url\((['"]?)\/img\/assets\/([^'")]+)\1\)/g, (_match, quote: string, path: string) => {
     const mark = quote || "\"";
     if (path === "img/coil-bg.png") {
       return `url(${mark}${MD2CARD_COIL_BG_DATA_URL}${mark})`;
     }
+    if (options?.exportSafe) return "none";
     return `url(${mark}https://md2card.com/img/assets/${path}${mark})`;
   });
 }
 
-function buildMd2CardCss(config: CardConfig, cardStyleId: CardStyleId, scale: number): string {
+function buildMd2CardCss(config: CardConfig, cardStyleId: CardStyleId, scale: number, options?: { exportSafe?: boolean }): string {
   const theme = getMd2CardTheme(cardStyleId);
   const width = MD2CARD_PREVIEW_WIDTH * scale;
   const height = MD2CARD_PREVIEW_HEIGHT * scale;
   const bodyFontSize = config.fontSize / 2;
   const spacing = Math.max(2, (bodyFontSize / 5) * scale);
-  const themeCss = rewriteMd2CardAssetUrls(theme.css);
+  const themeCss = rewriteMd2CardAssetUrls(theme.css, options);
   return `
     ${MD2CARD_COMMON_CSS}
     ${themeCss}
@@ -3491,35 +3492,74 @@ function renderMd2CardHtml(
   return `<section class="${className}">${body}</section>`;
 }
 
-async function renderMd2CardPageToDataUrl(
+function renderMd2CardPageExportHtml(
   page: CardPage,
   config: CardConfig,
   cardStyleId: CardStyleId,
   cardStyleModeId: CardStyleModeId,
   index: number,
-  total: number,
-  format: ExportFormat = "png"
-): Promise<string> {
-  if (page.type === "cover") return "";
+  total: number
+): string {
   const width = MD2CARD_EXPORT_WIDTH;
   const height = MD2CARD_EXPORT_HEIGHT;
   const scale = width / MD2CARD_PREVIEW_WIDTH;
   const html = renderMd2CardHtml(page, index, total, config, cardStyleId, cardStyleModeId);
-  const css = buildMd2CardCss(config, cardStyleId, scale);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml"><style>${escapeStyleForSvg(css)}</style><div class="md2card-preview-shell" style="width:${width}px;height:${height}px;overflow:hidden;">${html}</div></div></foreignObject></svg>`;
-  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
-  try {
-    const image = await loadImage(url);
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Canvas not available");
-    ctx.drawImage(image, 0, 0, width, height);
-    return canvas.toDataURL(format === "jpeg" ? "image/jpeg" : "image/png", 0.94);
-  } finally {
-    URL.revokeObjectURL(url);
+  const css = buildMd2CardCss(config, cardStyleId, scale, { exportSafe: true });
+  return `<!doctype html><html><head><meta charset="utf-8" /><style>html,body{margin:0;width:${width}px;height:${height}px;overflow:hidden;background:#fff}${css}</style></head><body><div class="md2card-preview-shell" style="width:${width}px;height:${height}px;overflow:hidden;">${html}</div></body></html>`;
+}
+
+function base64ToBlob(base64: string, mime: string): Blob {
+  const binary = window.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
   }
+  return new Blob([bytes], { type: mime });
+}
+
+async function renderMd2CardPagesForOutput(
+  requests: Array<{ page: CardPage; index: number }>,
+  outputFormat: ExportFormat,
+  config: CardConfig,
+  cardStyleId: CardStyleId,
+  cardStyleModeId: CardStyleModeId,
+  total: number
+): Promise<Map<number, Blob>> {
+  if (requests.length === 0) return new Map();
+  const output = new Map<number, Blob>();
+  const batchSize = 12;
+  for (let start = 0; start < requests.length; start += batchSize) {
+    const batch = requests.slice(start, start + batchSize);
+    const response = await fetch("/api/xhs-layout/md2card-export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        format: outputFormat,
+        width: MD2CARD_EXPORT_WIDTH,
+        height: MD2CARD_EXPORT_HEIGHT,
+        pages: batch.map(({ page, index }) => renderMd2CardPageExportHtml(page, config, cardStyleId, cardStyleModeId, index, total)),
+      }),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(
+        typeof payload?.error === "string" && payload.error.trim()
+          ? payload.error.trim()
+          : "图片导出失败，请稍后重试"
+      );
+    }
+    const mime = typeof payload?.data?.mime === "string" ? payload.data.mime : (outputFormat === "jpeg" ? "image/jpeg" : "image/png");
+    const images = Array.isArray(payload?.data?.images) ? payload.data.images : [];
+    if (images.length !== batch.length) {
+      throw new Error("图片导出数量异常，请稍后重试");
+    }
+    images.forEach((item: unknown, itemIndex: number) => {
+      if (typeof item === "string" && item) {
+        output.set(batch[itemIndex].index, base64ToBlob(item, mime));
+      }
+    });
+  }
+  return output;
 }
 
 function Md2CardPreview({
@@ -3571,17 +3611,6 @@ function canvasToBlob(canvas: HTMLCanvasElement, format: ExportFormat): Promise<
       0.94
     );
   });
-}
-
-function dataUrlToBlob(dataUrl: string): Blob {
-  const [meta, payload] = dataUrl.split(",");
-  const mime = meta.match(/^data:([^;]+)/)?.[1] || "image/png";
-  const binary = window.atob(payload || "");
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return new Blob([bytes], { type: mime });
 }
 
 function copyBytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -4044,7 +4073,7 @@ export function MarkdownTextCardDialog({
     });
   };
 
-  const renderPageForOutput = async (page: CardPage, index: number, outputFormat: ExportFormat): Promise<Blob> => {
+  const renderCoverPageForOutput = async (page: CardPage, index: number, outputFormat: ExportFormat): Promise<Blob> => {
     if (page.type === "cover") {
       const canvas = renderPageCanvas(
         page,
@@ -4061,8 +4090,7 @@ export function MarkdownTextCardDialog({
       );
       return canvasToBlob(canvas, outputFormat);
     }
-    const dataUrl = await renderMd2CardPageToDataUrl(page, config, cardStyleId, cardStyleModeId, index, pages.length, outputFormat);
-    return dataUrlToBlob(dataUrl);
+    throw new Error("当前页不是封面");
   };
 
   const handleExportCurrent = async () => {
@@ -4070,7 +4098,17 @@ export function MarkdownTextCardDialog({
     setExporting(true);
     try {
       const idx = Math.max(0, Math.min(pageIndex, pages.length - 1));
-      const blob = await renderPageForOutput(pages[idx], idx, format);
+      const blob = pages[idx].type === "cover"
+        ? await renderCoverPageForOutput(pages[idx], idx, format)
+        : (await renderMd2CardPagesForOutput(
+            [{ page: pages[idx], index: idx }],
+            format,
+            config,
+            cardStyleId,
+            cardStyleModeId,
+            pages.length
+          )).get(idx);
+      if (!blob) throw new Error("图片导出失败，请稍后重试");
       const base = sanitizeFileName(title);
       triggerDownload(blob, `${base}-${String(idx + 1).padStart(2, "0")}.${format === "jpeg" ? "jpg" : "png"}`);
     } finally {
@@ -4085,8 +4123,21 @@ export function MarkdownTextCardDialog({
       const base = sanitizeFileName(title);
       const ext = format === "jpeg" ? "jpg" : "png";
       const files: Array<{ name: string; blob: Blob }> = [];
+      const contentBlobs = await renderMd2CardPagesForOutput(
+        pages
+          .map((page, index) => ({ page, index }))
+          .filter((item) => item.page.type === "content"),
+        format,
+        config,
+        cardStyleId,
+        cardStyleModeId,
+        pages.length
+      );
       for (let i = 0; i < pages.length; i += 1) {
-        const blob = await renderPageForOutput(pages[i], i, format);
+        const blob = pages[i].type === "cover"
+          ? await renderCoverPageForOutput(pages[i], i, format)
+          : contentBlobs.get(i);
+        if (!blob) throw new Error("图片导出失败，请稍后重试");
         files.push({
           name: `${base}-${String(i + 1).padStart(2, "0")}.${ext}`,
           blob,
@@ -4113,9 +4164,22 @@ export function MarkdownTextCardDialog({
       const baseName = sanitizeFileName(title);
       const pagesToPublish = pages.slice(0, 18);
       const imageUrls: string[] = [];
+      const publishContentBlobs = await renderMd2CardPagesForOutput(
+        pagesToPublish
+          .map((page, index) => ({ page, index }))
+          .filter((item) => item.page.type === "content"),
+        "png",
+        config,
+        cardStyleId,
+        cardStyleModeId,
+        pages.length
+      );
 
       for (let i = 0; i < pagesToPublish.length; i += 1) {
-        const blob = await renderPageForOutput(pagesToPublish[i], i, "png");
+        const blob = pagesToPublish[i].type === "cover"
+          ? await renderCoverPageForOutput(pagesToPublish[i], i, "png")
+          : publishContentBlobs.get(i);
+        if (!blob) throw new Error("图片生成失败，请稍后重试");
         const file = new File([blob], `${baseName}-${String(i + 1).padStart(2, "0")}.png`, { type: "image/png" });
         const formData = new FormData();
         formData.append("file", file);
