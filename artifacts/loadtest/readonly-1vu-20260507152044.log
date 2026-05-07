@@ -1,0 +1,37 @@
+
+> content-factory-web@0.1.6 loadtest:node
+> node tests/load/node-loadtest.mjs
+
+Starting node load test: mode=readonly, targetVus=1, duration=60s, base=https://atomx.top
+[progress] requests=28 failures=0 recent_p95=232ms
+[progress] requests=54 failures=0 recent_p95=190ms
+[progress] requests=80 failures=0 recent_p95=190ms
+[progress] requests=103 failures=0 recent_p95=185ms
+[progress] requests=133 failures=0 recent_p95=185ms
+
+=== Load Test Summary ===
+{
+  "mode": "readonly",
+  "baseUrl": "https://atomx.top",
+  "targetVus": 1,
+  "durationSeconds": 60,
+  "requests": 159,
+  "failures": 0,
+  "failureRate": 0
+}
+status: { '200': 159 }
+latency_ms: { p50: 86, p95: 176, p99: 272, max: 450 }
+┌─────────┬───────────────────────────────────────┬────────┬─────┬───────────┐
+│ (index) │ name                                  │ status │ ms  │ error     │
+├─────────┼───────────────────────────────────────┼────────┼─────┼───────────┤
+│ 0       │ 'POST /api/auth/email/password-login' │ 200    │ 450 │ undefined │
+│ 1       │ 'GET /'                               │ 200    │ 272 │ undefined │
+│ 2       │ 'GET /api/user/profile'               │ 200    │ 232 │ undefined │
+│ 3       │ 'GET /'                               │ 200    │ 201 │ undefined │
+│ 4       │ 'GET /'                               │ 200    │ 190 │ undefined │
+│ 5       │ 'GET /'                               │ 200    │ 185 │ undefined │
+│ 6       │ 'GET /'                               │ 200    │ 185 │ undefined │
+│ 7       │ 'GET /'                               │ 200    │ 176 │ undefined │
+│ 8       │ 'GET /'                               │ 200    │ 167 │ undefined │
+│ 9       │ 'GET /'                               │ 200    │ 161 │ undefined │
+└─────────┴───────────────────────────────────────┴────────┴─────┴───────────┘

@@ -44,6 +44,9 @@ function getApiBaseUrl(): string {
 
 function buildCardExportDownloadUrl(url: string, index: number): string {
   const filename = `xhs-card-${String(index + 1).padStart(2, '0')}.png`;
+  if (!/^https?:\/\//i.test(url)) {
+    return url;
+  }
   const path = `/api/proxy/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`;
   const apiBaseUrl = getApiBaseUrl();
   return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
@@ -2084,7 +2087,6 @@ export default function ImageGeneratePage() {
   const [cardSettingsOpen, setCardSettingsOpen] = useState(false);
   const [cardSubmitting, setCardSubmitting] = useState(false);
   const [cardOptimizing, setCardOptimizing] = useState(false);
-  const [cardPreviewRendering, setCardPreviewRendering] = useState(false);
   const [cardExporting, setCardExporting] = useState(false);
   const [cardPreviewImages, setCardPreviewImages] = useState<string[]>([]);
   const [cardPublishQrcode, setCardPublishQrcode] = useState('');
@@ -2661,20 +2663,6 @@ export default function ImageGeneratePage() {
     return `preview-content-shell preview-content-shell--${selectedCardStylePreset.id}`;
   }, [selectedCardStylePreset.id]);
 
-  const renderCardExportButton = () => (
-    <View
-      className={`card-topbar-export ${cardExporting ? 'card-topbar-export--loading' : ''}`}
-      onClick={(event) => {
-        event.stopPropagation();
-        void handleExportCardImages();
-      }}
-    >
-      <Text className='card-topbar-export-text'>
-        {cardExporting ? '导出中...' : '一键导出全部'}
-      </Text>
-    </View>
-  );
-
   const cardCoverPreviewTitle = useMemo(() => {
     const customTitle = cardCoverTitle.trim();
     if (customTitle) return customTitle;
@@ -2815,7 +2803,8 @@ export default function ImageGeneratePage() {
       }
       setCardUserCleared(false);
       setCardMarkdown(nextMarkdown);
-      Taro.showToast({ title: '已优化为标准 Markdown', icon: 'success' });
+      setCardPreviewImages([]);
+      Taro.showToast({ title: '已优化排版，原文不变', icon: 'success' });
     } catch (error) {
       Taro.showToast({
         title: error instanceof Error ? error.message : '优化失败，请稍后重试',
@@ -3268,29 +3257,6 @@ export default function ImageGeneratePage() {
     return images;
   };
 
-  const handleRenderCardPreviewImages = async () => {
-    if (cardPreviewRendering || cardExporting) return;
-    if (!cardMarkdown.trim()) {
-      Taro.showToast({ title: '请先输入内容', icon: 'none' });
-      return;
-    }
-    setCardPreviewRendering(true);
-    try {
-      Taro.showLoading({ title: '正在生成预览图', mask: true });
-      const images = await renderCardImagesForPreview();
-      setCardPreviewImages(images);
-      setCardPreviewPageIndex(0);
-    } catch (error) {
-      Taro.showToast({
-        title: error instanceof Error ? error.message : '生成预览图失败',
-        icon: 'none',
-      });
-    } finally {
-      Taro.hideLoading();
-      setCardPreviewRendering(false);
-    }
-  };
-
   const ensureAlbumPermission = async (): Promise<boolean> => {
     try {
       const setting = await Taro.getSetting();
@@ -3327,13 +3293,12 @@ export default function ImageGeneratePage() {
     try {
       setCardExporting(true);
       Taro.showLoading({ title: '正在准备导出图', mask: true });
-      exportImages = cardPreviewImages.length > 0 ? cardPreviewImages : await renderCardImagesForPreview();
-      if (cardPreviewImages.length === 0) {
-        setCardPreviewImages(exportImages);
-        setCardPreviewPageIndex(0);
-      }
+      exportImages = await renderCardImagesForPreview();
+      setCardPreviewImages(exportImages);
+      setCardPreviewPageIndex(0);
       if (exportImages.length === 0) {
         Taro.showToast({ title: '生成导出图失败', icon: 'none' });
+        setCardExporting(false);
         return;
       }
     } catch (error) {
@@ -3341,6 +3306,7 @@ export default function ImageGeneratePage() {
         title: error instanceof Error ? error.message : '生成导出图失败',
         icon: 'none',
       });
+      setCardExporting(false);
       return;
     } finally {
       Taro.hideLoading();
@@ -3380,7 +3346,26 @@ export default function ImageGeneratePage() {
           }
           await Taro.saveImageToPhotosAlbum({ filePath });
           successCount += 1;
-        } catch {
+        } catch (error) {
+          try {
+            await Taro.request({
+              url: `${getApiBaseUrl()}/api/client-logs`,
+              method: 'POST',
+              data: {
+                event: 'miniapp_xhs_card_export_image_failed',
+                payload: {
+                  imageUrl,
+                  downloadUrl: /^https?:\/\//i.test(imageUrl) ? buildCardExportDownloadUrl(imageUrl, index) : imageUrl,
+                  error: error instanceof Error ? error.message : String(error || 'unknown'),
+                },
+                client: 'weapp',
+                createdAt: new Date().toISOString(),
+              },
+              timeout: 5000,
+            });
+          } catch {
+            // ignore diagnostics failure
+          }
           failCount += 1;
         }
       }
@@ -4119,10 +4104,7 @@ export default function ImageGeneratePage() {
                 </View>
               <View
                 className={`card-mode-btn ${cardEditorMode === 'preview' ? 'card-mode-btn--active' : ''}`}
-                onClick={() => {
-                  setCardEditorMode('preview');
-                  void handleRenderCardPreviewImages();
-                }}
+                onClick={() => setCardEditorMode('preview')}
               >
                 <Text className={`card-mode-btn-text ${cardEditorMode === 'preview' ? 'card-mode-btn-text--active' : ''}`}>预览</Text>
               </View>
@@ -4133,7 +4115,6 @@ export default function ImageGeneratePage() {
               >
                 <Text className={`card-setting-trigger-text ${cardSettingsOpen ? 'card-setting-trigger-text--active' : ''}`}>⚙</Text>
               </View>
-              {renderCardExportButton()}
             </View>
 
             {cardEditorMode === 'edit' && (
@@ -4148,6 +4129,7 @@ export default function ImageGeneratePage() {
                       const value = e.detail.value;
                       setCardUserCleared(!value.trim());
                       setCardMarkdown(value);
+                      setCardPreviewImages([]);
                     }}
                     placeholder='粘贴网页端的小红书 Markdown，自动转卡片布局。'
                     maxlength={8000}
@@ -4175,38 +4157,48 @@ export default function ImageGeneratePage() {
 
             {cardEditorMode === 'preview' && (
               <>
-                {renderSectionTitle('preview', '导出图预览')}
-                {cardPreviewImages.length > 0 ? (
-                  <View className='preview-swiper-wrap preview-swiper-wrap--image'>
-                    <Swiper
-                      className='preview-swiper preview-swiper--image'
-                      indicatorDots={false}
-                      circular={false}
-                      current={cardPreviewPageIndex}
-                      onChange={(event) => setCardPreviewPageIndex(event.detail.current)}
-                    >
-                      {cardPreviewImages.map((url, idx) => (
-                        <SwiperItem key={`preview-image-${idx}`}>
-                          <View className='preview-swiper-item preview-swiper-item--image'>
-                            <Image className='preview-export-image' src={url} mode='widthFix' />
+                {renderSectionTitle('preview', '排版预览')}
+                <View className='preview-swiper-wrap'>
+                  <Swiper
+                    className='preview-swiper'
+                    indicatorDots={false}
+                    circular={false}
+                    current={cardPreviewPageIndex}
+                    onChange={(event) => setCardPreviewPageIndex(event.detail.current)}
+                  >
+                    {cardPreviewPages.map((html, idx) => (
+                      <SwiperItem key={`preview-page-${idx}`}>
+                        <View className='preview-swiper-item'>
+                          <View className={`preview-card ${cardPreviewThemeClass}`} style={cardPreviewThemeInlineStyle}>
+                            {selectedCardStyle === 'apple-notes' && (
+                              <View className='preview-apple-header'>
+                                <View className='preview-apple-header-left'>
+                                  <Text className='preview-apple-header-icon'>‹</Text>
+                                  <Text className='preview-apple-header-title'>备忘录</Text>
+                                </View>
+                                <View className='preview-apple-header-right'>
+                                  <Text className='preview-apple-header-icon'>↥</Text>
+                                  <Text className='preview-apple-header-icon'>◌</Text>
+                                </View>
+                              </View>
+                            )}
+                            <View className={cardPreviewContentShellClass} style={cardPreviewContentInlineStyle}>
+                              <RichText className={cardPreviewRichtextClass} nodes={html} />
+                            </View>
                           </View>
-                        </SwiperItem>
-                      ))}
-                    </Swiper>
-                    <View className='preview-swiper-indicator'>
-                      <Text className='preview-swiper-indicator-text'>{cardPreviewPageIndex + 1}/{cardPreviewImages.length}</Text>
-                    </View>
+                        </View>
+                      </SwiperItem>
+                    ))}
+                  </Swiper>
+                  <View className='preview-swiper-indicator'>
+                    <Text className='preview-swiper-indicator-text'>{cardPreviewPageIndex + 1}/{cardPreviewPages.length}</Text>
                   </View>
-                ) : (
-                  <View className='preview-image-empty'>
-                    <Text className='preview-image-empty-text'>{cardPreviewRendering ? '正在生成预览图...' : '点击下方按钮生成导出图预览'}</Text>
-                  </View>
-                )}
+                </View>
                 <View
-                  className={`card-preview-render-btn ${cardPreviewRendering ? 'card-preview-render-btn--loading' : ''}`}
-                  onClick={() => void handleRenderCardPreviewImages()}
+                  className={`card-preview-render-btn ${cardExporting ? 'card-preview-render-btn--loading' : ''}`}
+                  onClick={() => void handleExportCardImages()}
                 >
-                  <Text className='card-preview-render-btn-text'>{cardPreviewRendering ? '生成中...' : '刷新预览图'}</Text>
+                  <Text className='card-preview-render-btn-text'>{cardExporting ? '导出中...' : '一键导出'}</Text>
                 </View>
                 {renderCardPresetSwitcher()}
               </>

@@ -1,0 +1,16 @@
+
+> content-factory-web@0.1.6 loadtest:node
+> node tests/load/node-loadtest.mjs
+
+Starting node load test: mode=readonly, targetVus=25, duration=120s, base=https://atomx.top
+[progress] requests=124 failures=0 recent_p95=170ms
+[progress] requests=376 failures=0 recent_p95=1036ms
+[progress] requests=695 failures=0 recent_p95=1321ms
+[progress] requests=941 failures=0 recent_p95=2342ms
+[progress] requests=1204 failures=0 recent_p95=1130ms
+[progress] requests=1424 failures=0 recent_p95=843ms
+[progress] requests=1670 failures=0 recent_p95=748ms
+[progress] requests=1897 failures=0 recent_p95=2070ms
+[progress] requests=2133 failures=0 recent_p95=477ms
+[progress] requests=2325 failures=0 recent_p95=1177ms
+[progress] requests=2565 failures=0 recent_p95=2896ms

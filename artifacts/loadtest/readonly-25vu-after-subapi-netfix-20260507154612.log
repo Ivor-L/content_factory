@@ -1,0 +1,40 @@
+
+> content-factory-web@0.1.6 loadtest:node
+> node tests/load/node-loadtest.mjs
+
+Starting node load test: mode=readonly, targetVus=25, duration=90s, base=https://atomx.top
+[progress] requests=132 failures=0 recent_p95=165ms
+[progress] requests=408 failures=0 recent_p95=350ms
+[progress] requests=742 failures=0 recent_p95=463ms
+[progress] requests=1056 failures=0 recent_p95=423ms
+[progress] requests=1370 failures=0 recent_p95=385ms
+[progress] requests=1644 failures=0 recent_p95=373ms
+[progress] requests=1900 failures=0 recent_p95=418ms
+[progress] requests=2107 failures=0 recent_p95=1163ms
+
+=== Load Test Summary ===
+{
+  "mode": "readonly",
+  "baseUrl": "https://atomx.top",
+  "targetVus": 25,
+  "durationSeconds": 90,
+  "requests": 2394,
+  "failures": 4,
+  "failureRate": 0.001670843776106934
+}
+status: { '0': 4, '200': 2390 }
+latency_ms: { p50: 47, p95: 428, p99: 7966, max: 191000 }
+┌─────────┬───────────────────────────┬────────┬────────┬────────────────┐
+│ (index) │ name                      │ status │ ms     │ error          │
+├─────────┼───────────────────────────┼────────┼────────┼────────────────┤
+│ 0       │ 'GET /api/tasks'          │ 0      │ 191000 │ 'fetch failed' │
+│ 1       │ 'GET /api/creative-tasks' │ 0      │ 181311 │ 'fetch failed' │
+│ 2       │ 'GET /api/creative-tasks' │ 0      │ 180141 │ 'fetch failed' │
+│ 3       │ 'GET /api/creative-tasks' │ 0      │ 130568 │ 'fetch failed' │
+│ 4       │ 'GET /api/creative-tasks' │ 200    │ 91644  │ undefined      │
+│ 5       │ 'GET /api/tasks'          │ 200    │ 65279  │ undefined      │
+│ 6       │ 'GET /api/tasks'          │ 200    │ 65101  │ undefined      │
+│ 7       │ 'GET /api/tasks'          │ 200    │ 62005  │ undefined      │
+│ 8       │ 'GET /api/tasks'          │ 200    │ 61532  │ undefined      │
+│ 9       │ 'GET /api/creative-tasks' │ 200    │ 60944  │ undefined      │
+└─────────┴───────────────────────────┴────────┴────────┴────────────────┘

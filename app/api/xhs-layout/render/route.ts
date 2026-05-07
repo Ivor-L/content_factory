@@ -303,7 +303,7 @@ async function renderPreviewPagesToPngs(preview: NonNullable<RenderRequestBody["
         const availableWidth = shell.clientWidth;
         const scrollHeight = richText.scrollHeight;
         if (availableHeight <= 0 || scrollHeight <= availableHeight) return;
-        const scale = Math.max(0.9, Math.min(1, availableHeight / scrollHeight));
+        const scale = Math.max(0.72, Math.min(1, availableHeight / scrollHeight));
         richText.style.transform = `scale(${scale})`;
         richText.style.width = `${availableWidth / scale}px`;
       });

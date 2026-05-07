@@ -14,11 +14,23 @@ type PublishRequestBody = {
 
 type UpstreamResponse = {
   success?: boolean;
+  ok?: boolean;
   data?: {
     id?: string;
     url?: string;
     qrcode?: string;
+    qrCode?: string;
+    qr_code?: string;
+    qrcode_url?: string;
+    qrcodeUrl?: string;
   };
+  id?: string;
+  url?: string;
+  qrcode?: string;
+  qrCode?: string;
+  qr_code?: string;
+  qrcode_url?: string;
+  qrcodeUrl?: string;
   error?: {
     code?: string;
     message?: string;
@@ -28,13 +40,16 @@ type UpstreamResponse = {
 
 const REDNOTE_BASE_URL = "https://www.myaibot.vip";
 const REDNOTE_PUBLISH_ENDPOINT = "/api/rednote/publish";
-const REDNOTE_API_KEY = (
-  process.env.REDNOTE_API_KEY
-  || process.env.REDNOTE_QR_API_KEY
-  || process.env.XHS_QR_PUBLISH_API_KEY
-  || process.env.XHS_PUBLISH_API_KEY
-  || ""
-).trim();
+
+function resolveRednoteApiKey() {
+  return (
+    process.env.REDNOTE_API_KEY
+    || process.env.REDNOTE_QR_API_KEY
+    || process.env.XHS_QR_PUBLISH_API_KEY
+    || process.env.XHS_PUBLISH_API_KEY
+    || ""
+  ).trim();
+}
 
 function sanitizeText(value: unknown, maxLength: number) {
   if (typeof value !== "string") return "";
@@ -54,13 +69,21 @@ function normalizeImageUrls(images: unknown): string[] {
     .slice(0, 18);
 }
 
+function pickFirstString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
 export async function POST(request: NextRequest) {
   const { userId } = await getRequestUserContext(request, { allowDefaultApiKey: false, useSystemApiKey: false });
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!REDNOTE_API_KEY) {
+  const rednoteApiKey = resolveRednoteApiKey();
+  if (!rednoteApiKey) {
     return NextResponse.json(
       {
         error:
@@ -90,7 +113,7 @@ export async function POST(request: NextRequest) {
   const upstreamPayload =
     type === "video"
       ? {
-          api_key: REDNOTE_API_KEY,
+          api_key: rednoteApiKey,
           type,
           title,
           content,
@@ -98,7 +121,7 @@ export async function POST(request: NextRequest) {
           cover: cover || undefined,
         }
       : {
-          api_key: REDNOTE_API_KEY,
+          api_key: rednoteApiKey,
           type,
           title,
           content,
@@ -116,11 +139,25 @@ export async function POST(request: NextRequest) {
     });
 
     const payload = (await upstreamResponse.json().catch(() => null)) as UpstreamResponse | null;
-    const success = payload?.success === true;
+    const success = payload?.success === true || payload?.ok === true;
     const data = payload?.data;
     const errorMessage = payload?.error?.message?.trim();
+    const qrcode = pickFirstString(
+      data?.qrcode,
+      data?.qrCode,
+      data?.qr_code,
+      data?.qrcode_url,
+      data?.qrcodeUrl,
+      payload?.qrcode,
+      payload?.qrCode,
+      payload?.qr_code,
+      payload?.qrcode_url,
+      payload?.qrcodeUrl,
+    );
+    const publishedUrl = pickFirstString(data?.url, payload?.url);
+    const publishId = pickFirstString(data?.id, payload?.id);
 
-    if (!upstreamResponse.ok || !success || !data?.qrcode) {
+    if (!upstreamResponse.ok || !success || !qrcode) {
       const status = upstreamResponse.status || 502;
       const fallback =
         errorMessage ||
@@ -129,13 +166,19 @@ export async function POST(request: NextRequest) {
           : upstreamResponse.status === 402
             ? "发布服务调用次数不足"
             : "发布失败，请稍后重试");
+      console.error("[xhs-layout/publish] upstream failed", {
+        status: upstreamResponse.status,
+        success,
+        hasQrcode: Boolean(qrcode),
+        payload,
+      });
       return NextResponse.json({ error: fallback, code: payload?.error?.code || "UPSTREAM_ERROR" }, { status });
     }
 
     const resultPayload = {
-      id: data.id || "",
-      url: data.url || "",
-      qrcode: data.qrcode || "",
+      id: publishId,
+      url: publishedUrl,
+      qrcode,
     };
 
     if (taskId) {

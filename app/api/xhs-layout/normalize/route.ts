@@ -38,6 +38,59 @@ function sanitizeInput(value: unknown): string {
   return value.replace(/\r\n/g, "\n").trim();
 }
 
+function stripMarkdownSyntaxForCompare(value: string): string {
+  return value
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .filter((line) => !/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/.test(line))
+    .map((line) => line
+      .replace(/^\s{0,3}#{1,6}\s+/, "")
+      .replace(/^\s{0,3}>\s?/, "")
+      .replace(/^\s*[-*+]\s+/, "")
+      .replace(/^\s*\d+[.)、]\s+/, "")
+      .replace(/\|/g, "")
+      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, "$1$2")
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1$2")
+      .replace(/<\/?[^>]+>/g, "")
+      .replace(/(\*\*|__|~~|`|==|\+\+|''|\*)/g, "")
+    )
+    .join("\n");
+}
+
+function normalizeComparableText(value: string): string {
+  return stripMarkdownSyntaxForCompare(value)
+    .replace(/\s+/g, "")
+    .trim();
+}
+
+function preservesOriginalContent(candidate: string, original: string): boolean {
+  const normalizedCandidate = normalizeComparableText(candidate);
+  const normalizedOriginal = normalizeComparableText(original);
+  return Boolean(normalizedCandidate) && normalizedCandidate === normalizedOriginal;
+}
+
+function buildFormatOnlyFallback(source: string): string {
+  const lines = source
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) return source;
+
+  return lines
+    .map((line, index) => {
+      if (/^\s{0,3}(#{1,6}\s+|[-*+]\s+|\d+[.)、]\s+|>\s?|\|)/.test(line)) {
+        return line;
+      }
+      if (index === 0 && line.length <= 42) {
+        return `# ${line}`;
+      }
+      return line;
+    })
+    .join("\n\n");
+}
+
 function extractAssistantText(payload: unknown): string {
   if (!payload || typeof payload !== "object") return "";
   const source = payload as Record<string, unknown>;
@@ -92,10 +145,20 @@ function toSafePayload(raw: unknown, fallback: string): NormalizePayload {
   const needsRewrite = Boolean(source.needsRewrite ?? source.needs_rewrite);
 
   const normalized = standardizedMarkdown || markdown || fallback;
+  const safeMarkdown = preservesOriginalContent(markdown, fallback) ? markdown : normalized;
+  if (!preservesOriginalContent(safeMarkdown, fallback)) {
+    const formatOnly = buildFormatOnlyFallback(fallback);
+    return {
+      markdown: formatOnly,
+      standardizedMarkdown: formatOnly,
+      needsRewrite: false,
+    };
+  }
+
   return {
-    markdown: markdown || fallback,
-    standardizedMarkdown: normalized,
-    needsRewrite: needsRewrite || normalized !== fallback,
+    markdown: safeMarkdown,
+    standardizedMarkdown: safeMarkdown,
+    needsRewrite: needsRewrite && safeMarkdown !== fallback,
   };
 }
 
@@ -142,15 +205,15 @@ export async function POST(request: NextRequest) {
           {
             role: "system",
             content: [
-              "你是内容结构化编辑器。",
-              "任务：把非标准文案整理成可用于小红书图文排版的标准 Markdown。",
-              "要求：",
-              "1) 可以重写与结构化，但必须保留原意，不得虚构事实。",
-              "2) 输出包含主标题、二级小节、列表或表格，段落简洁。",
-              "3) 已有 Markdown 表格必须保留为标准表格，不要拆成纯文本或列表。",
-              "4) 遇到活动名称、参加时间、时长、地点、项目、参数、属性等键值型信息时，优先整理为标准 Markdown 表格，格式必须包含表头行与分隔行，例如：| 项目 | 内容 | 下一行 | --- | --- |。",
-              "5) 长段经历、说明、感悟继续保留为段落，不要强行塞进表格。",
-              "6) 删除口水词、重复句、无意义表情符号。",
+              "你是 Markdown 排版格式化器，不是文案编辑器。",
+              "任务：只给原文增加 Markdown 排版符号和换行，让它更适合小红书图文卡片排版。",
+              "硬性要求：",
+              "1) 绝对禁止改写、润色、总结、扩写、删减、调换顺序或翻译原文。",
+              "2) 绝对禁止新增原文中不存在的标题、表头、标签、解释、情绪词、连接词或任何事实。",
+              "3) 原文里的每一个非空白字符都必须保留，且顺序不变；只允许调整空格/换行，或添加 Markdown 控制符号（#、##、-、>、** 等）。",
+              "4) 可以把原文中已有的一行加成标题，可以把原文中已有的逐条内容加成列表，但列表文字必须逐字不变。",
+              "5) 已有 Markdown 表格可以修正分隔行；不要把普通键值信息改成新表格，因为表头会新增内容。",
+              "6) 不要删除口水词、重复句、表情符号或标点；它们也是原文。",
               "7) 输出严格 JSON，不要 markdown 代码块。",
             ].join("\n"),
           },
@@ -160,9 +223,9 @@ export async function POST(request: NextRequest) {
               "请返回 JSON：",
               '{"markdown":"","standardizedMarkdown":"","needsRewrite":true}',
               "字段说明：",
-              "- markdown: 你整理后的标准 Markdown（最终可用于排版）。",
+              "- markdown: 只添加 Markdown 排版后的文本，原文字词必须逐字保留。",
               "- standardizedMarkdown: 同 markdown（兼容字段，保持一致）。",
-              "- needsRewrite: 是否进行了明显结构化改写。",
+              "- needsRewrite: 只能在确实添加了 Markdown 排版符号或换行时为 true；不得代表内容改写。",
               "原始内容如下：",
               markdown,
             ].join("\n"),
