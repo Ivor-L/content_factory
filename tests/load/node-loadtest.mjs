@@ -99,12 +99,24 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const SINGLE_ENDPOINT_MODES = {
+  profile: { path: '/api/user/profile', name: 'GET /api/user/profile' },
+  tasks: { path: '/api/tasks?limit=20', name: 'GET /api/tasks' },
+  'creative-tasks': { path: '/api/creative-tasks?limit=20', name: 'GET /api/creative-tasks' },
+};
+
 async function readonlyFlow(token, vu, iter) {
   for (const path of ['/', '/dashboard', '/api/user/profile', '/api/creative-tasks?limit=20', '/api/tasks?limit=20']) {
     if (stop) return;
     await getPath(token, path);
     await sleep(100 + Math.random() * 400);
   }
+}
+
+async function singleEndpointFlow(token, vu, iter) {
+  const endpoint = SINGLE_ENDPOINT_MODES[MODE];
+  await getPath(token, endpoint.path, endpoint.name);
+  await sleep(100 + Math.random() * 400);
 }
 
 async function writeFlow(token, vu, iter) {
@@ -162,7 +174,7 @@ async function worker(token, vu, flow) {
 async function main() {
   console.log(`Starting node load test: mode=${MODE}, targetVus=${TARGET_VUS}, duration=${DURATION_SECONDS}s, base=${BASE_URL}`);
   const token = await login();
-  const flow = MODE === 'write' ? writeFlow : MODE === 'ai' ? aiFlow : readonlyFlow;
+  const flow = MODE === 'write' ? writeFlow : MODE === 'ai' ? aiFlow : SINGLE_ENDPOINT_MODES[MODE] ? singleEndpointFlow : readonlyFlow;
   const workers = [];
   for (let vu = 1; vu <= TARGET_VUS; vu += 1) {
     const delay = RAMP_SECONDS > 0 ? Math.floor((vu - 1) * (RAMP_SECONDS * 1000 / TARGET_VUS)) : 0;

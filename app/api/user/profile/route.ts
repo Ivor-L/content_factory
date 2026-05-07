@@ -4,7 +4,7 @@ import { getRequestUserContext } from '@/lib/authServer';
 import { FinalizeLoginError, finalizeLogin } from '@/lib/auth/finalizeLogin';
 
 export async function GET(request: NextRequest) {
-  const { userId } = await getRequestUserContext(request);
+  const { userId } = await getRequestUserContext(request, { skipProfileKeys: true });
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
