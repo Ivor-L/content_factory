@@ -10,9 +10,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const finalized = await finalizeLogin({ userId });
-
-    const profile = await prisma.profiles.findUnique({
+    let profile = await prisma.profiles.findUnique({
       where: { id: userId },
       select: {
         id: true,
@@ -21,8 +19,25 @@ export async function GET(request: NextRequest) {
         avatar_url: true,
         plan: true,
         role: true,
+        api_key: true,
       },
     });
+
+    if (!profile || !profile.api_key) {
+      await finalizeLogin({ userId });
+      profile = await prisma.profiles.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          username: true,
+          full_name: true,
+          avatar_url: true,
+          plan: true,
+          role: true,
+          api_key: true,
+        },
+      });
+    }
 
     if (!profile) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
@@ -34,7 +49,7 @@ export async function GET(request: NextRequest) {
         username: profile.username ?? profile.full_name ?? null,
         avatarUrl: profile.avatar_url ?? null,
         memberLevel: profile.plan || profile.role || null,
-        apiKey: finalized.apiKey,
+        apiKey: profile.api_key,
       },
     });
   } catch (error) {
