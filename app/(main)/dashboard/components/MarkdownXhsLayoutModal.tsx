@@ -1360,13 +1360,18 @@ function applyTemplateDefaults(previous: CardConfig, tpl: TemplateSpec): CardCon
   };
 }
 
-function applyCardStyleDefaults(previous: CardConfig, style: CardStylePreset, mode: CardStyleMode | null): CardConfig {
+function applyCardStyleDefaults(
+  previous: CardConfig,
+  style: CardStylePreset,
+  mode: CardStyleMode | null,
+  options: { preserveTypography?: boolean } = {}
+): CardConfig {
   const background = parseLinearGradientPreset(mode?.previewBackground || style.previewBackground);
   const textColor = mode?.textColor || style.textColor;
   const accentColor = mode?.accentColor || style.accentColor;
   if (style.id === "coil-notebook") {
     const modeColor = mode?.colors?.[0] || style.colors[0] || background.bgColor;
-    return {
+    const next: CardConfig = {
       ...previous,
       bgMode: "solid",
       bgColor: modeColor,
@@ -1375,6 +1380,10 @@ function applyCardStyleDefaults(previous: CardConfig, style: CardStylePreset, mo
       gradientAngle: 180,
       textColor: "#24292e",
       accentColor: "#24292e",
+    };
+    if (options.preserveTypography) return next;
+    return {
+      ...next,
       fontSize: 52,
       lineHeight: 1.5,
       letterSpacing: 0,
@@ -1384,11 +1393,15 @@ function applyCardStyleDefaults(previous: CardConfig, style: CardStylePreset, mo
       h3Scale: 1.08,
     };
   }
-  return {
+  const next = {
     ...previous,
     ...background,
     textColor,
     accentColor,
+  };
+  if (options.preserveTypography) return next;
+  return {
+    ...next,
     fontSize: 40,
     lineHeight: 1.58,
     letterSpacing: 0,
@@ -2952,36 +2965,6 @@ function buildLayoutBlocks(markdown: string, templateId: CardTemplateId, config:
   return output;
 }
 
-function estimateMarkdownBlockUnits(markdown: string): number {
-  const plain = markdownToPlainText(markdown) || markdown.replace(/[#>*_`~\-[\]()]/g, "");
-  const tableLines = markdown.split(/\n/).filter((line) => line.includes("|")).length;
-  const codeLines = markdown.split(/\n/).filter((line) => line.trim().startsWith("```")).length;
-  return Array.from(plain).reduce((sum, char) => sum + (/[A-Za-z0-9]/.test(char) ? 0.58 : /\s/.test(char) ? 0.25 : 1), 0)
-    + tableLines * 14
-    + codeLines * 10;
-}
-
-function splitOversizedMarkdownBlock(markdown: string, maxUnits: number): string[] {
-  const plain = markdownToPlainText(markdown);
-  if (!plain || estimateMarkdownBlockUnits(markdown) <= maxUnits) return [markdown];
-  const chunks: string[] = [];
-  let current = "";
-  let units = 0;
-  for (const char of Array.from(plain)) {
-    const nextUnit = /[A-Za-z0-9]/.test(char) ? 0.58 : /\s/.test(char) ? 0.25 : 1;
-    if (current && units + nextUnit > maxUnits) {
-      chunks.push(current.trim());
-      current = char;
-      units = nextUnit;
-    } else {
-      current += char;
-      units += nextUnit;
-    }
-  }
-  if (current.trim()) chunks.push(current.trim());
-  return chunks.length > 0 ? chunks : [markdown];
-}
-
 function isMarkdownTableBlock(markdown: string): boolean {
   const lines = markdown
     .replace(/\r\n/g, "\n")
@@ -3003,24 +2986,68 @@ function splitMarkdownBlockByLines(markdown: string): string[] {
   return lines.length > 1 ? lines : [markdown];
 }
 
-function splitMarkdownTextForPagination(markdown: string, maxUnits: number): string[] {
-  const lineParts = splitMarkdownBlockByLines(markdown);
-  if (lineParts.length > 1) {
-    return lineParts.flatMap((part) => splitMarkdownTextForPagination(part, maxUnits));
+function splitPlainTextByRenderedFit(markdown: string, fits: (markdown: string) => boolean): string[] {
+  const source = (markdownToPlainText(markdown) || markdown).trim();
+  const chars = Array.from(source);
+  if (chars.length === 0) return [];
+  if (fits(source)) return [source];
+
+  const chunks: string[] = [];
+  let start = 0;
+  while (start < chars.length) {
+    while (start < chars.length && /\s/.test(chars[start])) start += 1;
+    if (start >= chars.length) break;
+
+    let low = start + 1;
+    let high = chars.length;
+    let best = start;
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+      const candidate = chars.slice(start, mid).join("").trim();
+      if (candidate && fits(candidate)) {
+        best = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+
+    if (best <= start) {
+      best = Math.min(chars.length, start + 24);
+    }
+    const chunk = chars.slice(start, best).join("").trim();
+    if (chunk) chunks.push(chunk);
+    start = best;
   }
 
-  const plain = markdownToPlainText(markdown);
-  if (!plain || estimateMarkdownBlockUnits(markdown) <= maxUnits) return [markdown];
+  return chunks.length > 0 ? chunks : [source];
+}
 
+function splitMarkdownTextByRenderedFit(markdown: string, fits: (markdown: string) => boolean): string[] {
+  const source = markdown.trim();
+  if (!source || fits(source)) return [markdown];
+  if (isMarkdownTableBlock(source)) return [source];
+
+  const lineParts = splitMarkdownBlockByLines(source);
+  if (lineParts.length > 1) {
+    return lineParts.flatMap((part) => splitMarkdownTextByRenderedFit(part, fits));
+  }
+
+  const plain = markdownToPlainText(source) || source;
   const sentenceParts = plain
     .split(/(?<=[。！？!?；;])/)
     .map((part) => part.trim())
     .filter(Boolean);
   if (sentenceParts.length > 1) {
-    return sentenceParts.flatMap((part) => splitOversizedMarkdownBlock(part, maxUnits));
+    return sentenceParts.flatMap((part) => (fits(part) ? [part] : splitPlainTextByRenderedFit(part, fits)));
   }
 
-  return splitOversizedMarkdownBlock(markdown, maxUnits);
+  return splitPlainTextByRenderedFit(source, fits);
+}
+
+function isShortLabelBlock(markdown: string): boolean {
+  const plain = markdownToPlainText(markdown).trim();
+  return plain.length > 0 && plain.length <= 16 && /[：:]$/.test(plain);
 }
 
 function measureMd2CardPageFits(
@@ -3081,7 +3108,8 @@ function measureMd2CardPageFits(
   }
 
   const scrollOverflow = Math.max(measured.scrollHeight - measured.clientHeight, 0);
-  return contentBottom <= bottomLimit + 1 && scrollOverflow <= 1;
+  const tolerance = Math.max(10, measured.clientHeight * 0.08);
+  return contentBottom <= bottomLimit + tolerance && scrollOverflow <= tolerance;
 }
 
 function paginateMarkdown(
@@ -3094,34 +3122,47 @@ function paginateMarkdown(
   void templateId;
   const pages: CardPage[] = [];
   if (config.hasCover) pages.push({ type: "cover" });
-  const bodyFontSize = Math.max(12, config.fontSize / 2);
-  const maxUnits = Math.max(60, Math.round(3900 / (bodyFontSize * config.lineHeight)));
   const blocks = splitMarkdownBlocks(markdown).filter((block) => !isHorizontalRuleLine(block.trim()));
   let currentMarkdown: string[] = [];
-  let currentUnits = 0;
+  const fitCache = new Map<string, boolean>();
 
   const flushPage = () => {
     if (currentMarkdown.length > 0) {
       pages.push({ type: "content", lines: [], markdown: currentMarkdown.join("\n\n") });
       currentMarkdown = [];
-      currentUnits = 0;
     }
   };
 
   const currentWith = (part: string) => [...currentMarkdown, part].join("\n\n");
-  const wouldFit = (part: string) => measureMd2CardPageFits(currentWith(part), config, cardStyleId, cardStyleModeId);
+  const fitsPage = (source: string) => {
+    const key = source.trim();
+    if (!fitCache.has(key)) {
+      fitCache.set(key, measureMd2CardPageFits(key, config, cardStyleId, cardStyleModeId));
+    }
+    return fitCache.get(key) ?? true;
+  };
+  const wouldFit = (part: string) => fitsPage(currentWith(part));
 
   for (const block of blocks.length > 0 ? blocks : [""]) {
-    const expandedBlocks = splitMarkdownTextForPagination(block, maxUnits);
+    const expandedBlocks = splitMarkdownTextByRenderedFit(block, fitsPage);
     for (const part of expandedBlocks) {
-      const units = estimateMarkdownBlockUnits(part) + 16;
       if (/^#{1,6}\s+/.test(part.trim()) && currentMarkdown.length > 0) flushPage();
-      if (currentMarkdown.length > 0 && (currentUnits + units > maxUnits || !wouldFit(part))) flushPage();
-      currentMarkdown.push(part);
-      currentUnits += units;
-      if (currentUnits >= maxUnits) {
+      if (
+        currentMarkdown.length > 1
+        && isShortLabelBlock(currentMarkdown[currentMarkdown.length - 1])
+        && !isShortLabelBlock(part)
+        && !wouldFit(part)
+      ) {
+        const label = currentMarkdown.pop();
+        flushPage();
+        if (label) {
+          currentMarkdown.push(label);
+        }
+      }
+      if (currentMarkdown.length > 0 && !wouldFit(part)) {
         flushPage();
       }
+      currentMarkdown.push(part);
     }
   }
 
@@ -4035,14 +4076,14 @@ export function MarkdownTextCardDialog({
     setCardStyleId(style.id);
     setCardStyleModeId(firstMode?.id || "");
     setTemplateId(style.backendTemplateId);
-    setConfig((prev) => applyCardStyleDefaults(prev, style, firstMode));
+    setConfig((prev) => applyCardStyleDefaults(prev, style, firstMode, { preserveTypography: true }));
     setPageIndex(0);
   };
 
   const handleCardStyleModeChange = (nextModeId: CardStyleModeId) => {
     const mode = getCardStyleMode(currentCardStyle, nextModeId);
     setCardStyleModeId(mode?.id || "");
-    setConfig((prev) => applyCardStyleDefaults(prev, currentCardStyle, mode));
+    setConfig((prev) => applyCardStyleDefaults(prev, currentCardStyle, mode, { preserveTypography: true }));
     setPageIndex(0);
   };
 
