@@ -22,8 +22,7 @@ export async function POST(
     const result = await rewriteMyNoteAndCreateWork(id);
     return NextResponse.json({
       taskId: id,
-      status: 'REWRITE_COMPLETED',
-      workTaskId: result.workTaskId,
+      status: result.status,
     });
   } catch (error) {
     return NextResponse.json(

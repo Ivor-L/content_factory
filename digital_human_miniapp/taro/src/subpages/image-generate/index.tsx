@@ -2900,7 +2900,7 @@ export default function ImageGeneratePage() {
         sourceTitle: '信息图',
         sourceText: infoContent.trim(),
         sourceImages: [],
-        sourcePlatform: 'miniapp',
+        sourcePlatform: 'miniapp-xhs-text2img',
       });
 
       const generated = await miniappApi.triggerImageTextReplicationGenerate(start.taskId, {
@@ -3897,7 +3897,7 @@ export default function ImageGeneratePage() {
   const fixedSubmitSub = activeFeature === 'ai-image'
     ? '预计扣除算力值 40'
     : activeFeature === 'infographic'
-      ? '预计扣除算力值 20'
+      ? '按后台小红书图文价格扣费'
       : '实时预览已同步，点击后将云端生成并发布';
 
   const handleFixedSubmit = () => {

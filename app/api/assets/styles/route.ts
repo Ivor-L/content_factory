@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getRequestUserContext } from "@/lib/authServer";
+import { getStylePreviewImageUrl } from "@/lib/stylePreviewImage";
 import {
   ensureSystemStylePresetsSeeded,
   isDeprecatedDefaultStylePreset,
@@ -25,6 +26,13 @@ const readSystemThumbnailUrl = (previewUrl?: string | null) => {
 
 const resolveThumbnailUrl = (previewUrl: string | null | undefined, meta: Record<string, any>) =>
   readThumbnailUrl(meta) ?? readSystemThumbnailUrl(previewUrl);
+
+const resolveListPreviewUrl = (previewUrl: string | null | undefined, meta: Record<string, any>) =>
+  getStylePreviewImageUrl({
+    previewUrl: previewUrl ?? null,
+    thumbnailUrl: resolveThumbnailUrl(previewUrl, meta),
+    metadata: meta,
+  }) ?? previewUrl ?? null;
 
 export async function GET(request: NextRequest) {
   const { userId } = await getRequestUserContext(request);
@@ -71,7 +79,7 @@ export async function GET(request: NextRequest) {
           id: style.id,
           name: style.name,
           type: style.type,
-          previewUrl: style.previewUrl,
+          previewUrl: summary ? resolveListPreviewUrl(style.previewUrl, meta) : style.previewUrl,
           thumbnailUrl,
           status,
         };

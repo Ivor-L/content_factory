@@ -83,20 +83,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "请先在设置页绑定 API Key" }, { status: 400 });
   }
 
-  try {
-    await deductConfiguredCredits({
-      apiKey,
-      featureKey: "image_text_replication:start",
-      userId,
-      defaultAmount: 1,
-      modelKey: "start",
-      workflowId: "flow_image_text_replication",
-      workflowName: "图文复刻",
-      reason: "image_text_replication:start",
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "积分不足";
-    return NextResponse.json({ error: message }, { status: 402 });
+  const sourcePlatform = String(body.sourcePlatform || "").trim();
+  const shouldUseWebXhsText2ImgPricing =
+    sourcePlatform === "miniapp-xhs-text2img" ||
+    sourcePlatform === "miniapp-infographic";
+  const shouldSkipStartCredit = shouldUseWebXhsText2ImgPricing;
+
+  if (!shouldSkipStartCredit) {
+    try {
+      await deductConfiguredCredits({
+        apiKey,
+        featureKey: "image_text_replication:start",
+        userId,
+        defaultAmount: 1,
+        modelKey: "start",
+        workflowId: "flow_image_text_replication",
+        workflowName: "图文复刻",
+        reason: "image_text_replication:start",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "积分不足";
+      return NextResponse.json({ error: message }, { status: 402 });
+    }
   }
 
   // Write in two steps to avoid transaction-start timeouts under high DB load.

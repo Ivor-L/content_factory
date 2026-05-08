@@ -1436,8 +1436,8 @@ export const miniappApi = {
     };
   },
 
-  async triggerImageTextMyNoteRewrite(taskId: string): Promise<{ taskId: string; status: string; workTaskId: string }> {
-    return request<{ taskId: string; status: string; workTaskId: string }>(`/api/image-text-replication/${encodeURIComponent(taskId)}/rewrite`, {
+  async triggerImageTextMyNoteRewrite(taskId: string): Promise<{ taskId: string; status: string }> {
+    return request<{ taskId: string; status: string }>(`/api/image-text-replication/${encodeURIComponent(taskId)}/rewrite`, {
       method: 'POST',
       data: {},
     });
@@ -1884,7 +1884,13 @@ export const miniappApi = {
       name: String(item.name || '未命名模板'),
       type: String(item.type || type),
       previewUrl: typeof item.previewUrl === 'string' ? item.previewUrl : null,
-      thumbnailUrl: typeof item.thumbnailUrl === 'string' ? item.thumbnailUrl : null,
+      thumbnailUrl: typeof item.thumbnailUrl === 'string'
+        ? item.thumbnailUrl
+        : typeof item.thumbnail_url === 'string'
+          ? item.thumbnail_url
+          : item.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata) && typeof (item.metadata as Record<string, unknown>).thumbnailUrl === 'string'
+            ? String((item.metadata as Record<string, unknown>).thumbnailUrl)
+            : null,
       status: typeof item.status === 'string' ? item.status : null,
     })).filter((item) => item.id);
   },

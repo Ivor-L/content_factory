@@ -277,6 +277,10 @@ export async function POST(
   const sourceImages = Array.isArray(sourceImagesRaw)
     ? sourceImagesRaw.filter((item) => typeof item === "string") as string[]
     : [];
+  const sourcePlatform = String(replication.sourcePlatform ?? "").trim();
+  const useWebXhsText2ImgPricing =
+    sourcePlatform === "miniapp-xhs-text2img" ||
+    sourcePlatform === "miniapp-infographic";
   const requestedImageCount = Number(body.imageCount ?? body.image_count);
   const imageCount = clampImageCount(
     Number.isFinite(requestedImageCount) ? requestedImageCount : sourceImages.length || 3,
@@ -287,7 +291,9 @@ export async function POST(
     return NextResponse.json({ error: "请先在设置页绑定 API Key" }, { status: 400 });
   }
 
-  const stageFeatureKey = "image_text_replication:generate";
+  const stageFeatureKey = useWebXhsText2ImgPricing
+    ? "image_text_replication"
+    : "image_text_replication:generate";
 
   const explicitStyleProfile =
     normalizeJsonString(body.styleProfileJson) ||
@@ -335,14 +341,26 @@ export async function POST(
       featureKey: stageFeatureKey,
       userId,
       defaultAmount: 2,
+      modelKey: useWebXhsText2ImgPricing ? "flow_xhs_text2img" : undefined,
       units: imageCount,
-      workflowId: WORKFLOW_ID,
-      workflowName: WORKFLOW_NAME,
-      reason: stageFeatureKey,
+      workflowId: useWebXhsText2ImgPricing ? "flow_xhs_text2img" : WORKFLOW_ID,
+      workflowName: useWebXhsText2ImgPricing ? "图文排版" : WORKFLOW_NAME,
+      reason: useWebXhsText2ImgPricing ? "image_text_replication" : stageFeatureKey,
     });
     logCreditUsage({ featureKey: stageFeatureKey, userId, amount: charge.amount, success: true });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "积分不足";
+    console.error("[image-text-replication/generate] credit deduction failed", {
+      userId,
+      taskId: id,
+      sourcePlatform,
+      featureKey: stageFeatureKey,
+      useWebXhsText2ImgPricing,
+      imageCount,
+      apiKeyPresent: Boolean(resolvedApiKey),
+      apiKeyPrefix: resolvedApiKey ? `${resolvedApiKey.slice(0, 6)}...` : null,
+      errorMessage,
+    });
     logCreditUsage({ featureKey: stageFeatureKey, userId, amount: imageCount, success: false, errorMessage });
     return NextResponse.json({ error: errorMessage }, { status: 402 });
   }

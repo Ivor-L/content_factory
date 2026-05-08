@@ -120,6 +120,8 @@ export default function HotDetailPage() {
   const [publishUrl, setPublishUrl] = useState('');
   const [publishingRewrite, setPublishingRewrite] = useState(false);
   const pollTimerRef = useRef<number | null>(null);
+  const rewriteDrawerTouchStartYRef = useRef(0);
+  const rewriteDrawerTouchDeltaYRef = useRef(0);
 
   const clearPoll = () => {
     if (pollTimerRef.current != null) {
@@ -340,7 +342,7 @@ export default function HotDetailPage() {
     if (!activeTaskId || rewriting || !taskCanRewrite) return;
     setRewriting(true);
     try {
-      const result = await miniappApi.triggerImageTextMyNoteRewrite(activeTaskId);
+      await miniappApi.triggerImageTextMyNoteRewrite(activeTaskId);
       const latest = await miniappApi.getImageTextMyNoteTask(activeTaskId);
       if (mode === 'my') setMyTask(latest);
       if (mode === 'hot') setInlineTask(latest);
@@ -348,7 +350,7 @@ export default function HotDetailPage() {
       if (latestRewrite) Taro.setStorageSync('MY_NOTE_REWRITE_PAYLOAD', buildRewritePayload(latestRewrite, 'card-layout'));
       setSelectedRewriteTitle(latestRewrite?.title || '');
       setRewriteDrawerVisible(true);
-      Taro.showToast({ title: result.workTaskId ? '仿写完成' : '仿写完成', icon: 'success' });
+      Taro.showToast({ title: '仿写完成', icon: 'success' });
     } catch (error) {
       Taro.showToast({ title: error instanceof Error ? error.message : '仿写失败', icon: 'none' });
     } finally {
@@ -374,6 +376,26 @@ export default function HotDetailPage() {
     if (!rewrite) return;
     setSelectedRewriteTitle((current) => current || rewrite.title || rewriteTitleOptions[0] || '');
     setRewriteDrawerVisible(true);
+  };
+
+  const handleRewriteDrawerTouchStart = (event: any) => {
+    const touch = event?.touches?.[0] || event?.changedTouches?.[0];
+    rewriteDrawerTouchStartYRef.current = typeof touch?.clientY === 'number' ? touch.clientY : 0;
+    rewriteDrawerTouchDeltaYRef.current = 0;
+  };
+
+  const handleRewriteDrawerTouchMove = (event: any) => {
+    const touch = event?.touches?.[0] || event?.changedTouches?.[0];
+    if (!touch || !rewriteDrawerTouchStartYRef.current) return;
+    rewriteDrawerTouchDeltaYRef.current = touch.clientY - rewriteDrawerTouchStartYRef.current;
+  };
+
+  const handleRewriteDrawerTouchEnd = () => {
+    if (rewriteDrawerTouchDeltaYRef.current > 72) {
+      setRewriteDrawerVisible(false);
+    }
+    rewriteDrawerTouchStartYRef.current = 0;
+    rewriteDrawerTouchDeltaYRef.current = 0;
   };
 
   const handleExtractVideoCopy = async () => {
@@ -589,37 +611,45 @@ export default function HotDetailPage() {
     if (!rewrite || !rewriteDrawerVisible) return null;
     const activeTitle = selectedRewriteTitle || rewrite.title || rewriteTitleOptions[0] || '';
     return (
-      <View className='hot-rewrite-layer' onClick={() => setRewriteDrawerVisible(false)}>
-        <View className='hot-rewrite-mask' />
+      <View className='hot-rewrite-layer' catchMove onClick={() => setRewriteDrawerVisible(false)}>
+        <View className='hot-rewrite-mask' catchMove />
         <View
           className='hot-rewrite-drawer'
           onClick={(event) => {
             event.stopPropagation();
           }}
         >
-          <View className='hot-rewrite-handle' />
-          <Text className='hot-rewrite-kicker'>仿写结果</Text>
-          <View className='hot-rewrite-section-head'>
-            <Text className='hot-rewrite-section-title hot-rewrite-section-title--inline'>标题</Text>
-            <View className='hot-rewrite-copy' onClick={() => copyTextToClipboard('标题', activeTitle)}>
-              <Text className='hot-rewrite-copy-text'>复制</Text>
-            </View>
-          </View>
-          <Text className='hot-rewrite-main-title'>{activeTitle}</Text>
-          <View className='hot-rewrite-title-grid'>
-            {rewriteTitleOptions.map((title) => (
-              <View
-                key={title}
-                className={`hot-rewrite-title-chip ${activeTitle === title ? 'hot-rewrite-title-chip--active' : ''}`}
-                onClick={() => setSelectedRewriteTitle(title)}
-              >
-                <Text className={`hot-rewrite-title-chip-text ${activeTitle === title ? 'hot-rewrite-title-chip-text--active' : ''}`}>{title}</Text>
-              </View>
-            ))}
+          <View
+            className='hot-rewrite-grabber'
+            onTouchStart={handleRewriteDrawerTouchStart}
+            onTouchMove={handleRewriteDrawerTouchMove}
+            onTouchEnd={handleRewriteDrawerTouchEnd}
+            onTouchCancel={handleRewriteDrawerTouchEnd}
+          >
+            <View className='hot-rewrite-handle' />
           </View>
           <View className='hot-rewrite-content-shell'>
             <ScrollView scrollY className='hot-rewrite-content'>
               <View className='hot-rewrite-content-inner'>
+                <Text className='hot-rewrite-kicker'>仿写结果</Text>
+                <View className='hot-rewrite-section-head'>
+                  <Text className='hot-rewrite-section-title hot-rewrite-section-title--inline'>标题</Text>
+                  <View className='hot-rewrite-copy' onClick={() => copyTextToClipboard('标题', activeTitle)}>
+                    <Text className='hot-rewrite-copy-text'>复制</Text>
+                  </View>
+                </View>
+                <Text className='hot-rewrite-main-title'>{activeTitle}</Text>
+                <View className='hot-rewrite-title-grid'>
+                  {rewriteTitleOptions.map((title) => (
+                    <View
+                      key={title}
+                      className={`hot-rewrite-title-chip ${activeTitle === title ? 'hot-rewrite-title-chip--active' : ''}`}
+                      onClick={() => setSelectedRewriteTitle(title)}
+                    >
+                      <Text className={`hot-rewrite-title-chip-text ${activeTitle === title ? 'hot-rewrite-title-chip-text--active' : ''}`}>{title}</Text>
+                    </View>
+                  ))}
+                </View>
                 <View className='hot-rewrite-section-head'>
                   <Text className='hot-rewrite-section-title'>正文</Text>
                   <View className='hot-rewrite-copy' onClick={() => copyTextToClipboard('正文', rewrite.body || '')}>

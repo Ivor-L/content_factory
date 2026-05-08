@@ -2,7 +2,6 @@ import prisma from '@/lib/prisma';
 import { toInputJson } from '@/lib/jsonUtils';
 import { IMAGE_UNDERSTANDING_PROMPT_EXACT_TEXT } from '@/lib/imageUnderstandingPrompts';
 import { rewriteXhsNote } from '@/lib/xhsRewritePrompt';
-import { randomUUID } from 'node:crypto';
 import { deductConfiguredCredits } from '@/lib/creditBilling';
 import { getApiKeyForUser } from '@/lib/authServer';
 
@@ -45,11 +44,6 @@ function parseSourceImages(value: unknown): string[] {
     return trimmed.split(',').map((item) => item.trim()).filter(Boolean);
   }
   return [];
-}
-
-function clipText(input: string, max = 120): string {
-  if (input.length <= max) return input;
-  return `${input.slice(0, max - 1)}…`;
 }
 
 type ExtractedImageText = {
@@ -370,7 +364,7 @@ export async function retryBreakdownImageForMyNote(
   return { status, imageText };
 }
 
-export async function rewriteMyNoteAndCreateWork(noteId: string): Promise<{ workTaskId: string }> {
+export async function rewriteMyNoteAndCreateWork(noteId: string): Promise<{ status: string }> {
   const note = await prisma.imageTextReplicationTask.findUnique({ where: { id: noteId } });
   if (!note) {
     throw new Error('笔记不存在');
@@ -424,95 +418,25 @@ export async function rewriteMyNoteAndCreateWork(noteId: string): Promise<{ work
       rewrittenAt: new Date().toISOString(),
     };
 
-    const workTaskId = randomUUID();
-    const preview = clipText(rewritten.body || rewritten.title, 140);
+    const mergedAnalysis = {
+      ...analysis,
+      rewriteResult,
+    };
 
-    await prisma.$transaction(async (tx) => {
-      const mergedAnalysis = {
-        ...analysis,
-        rewriteResult,
-      };
-
-      await tx.imageTextReplicationTask.update({
-        where: { id: noteId },
-        data: {
-          status: 'REWRITE_COMPLETED',
-          generatedCopy: rewritten.body,
-          imageGuidance: toInputJson(
-            rewritten.imageTexts.map((text, index) => ({ index: index + 1, description: text })),
-          ),
-          analysisResult: toInputJson(mergedAnalysis),
-          errorMessage: null,
-        },
-      });
-
-      await tx.creativeTask.create({
-        data: {
-          id: workTaskId,
-          userId: note.userId,
-          title: rewritten.title,
-          ideaText: rewritten.body,
-          channel: 'xhs',
-          targetOutput: 'poster',
-          status: 'BREAKDOWN_COMPLETED',
-          progress: 15,
-          metadata: toInputJson({
-            custom: {
-              posterMode: 'text2image',
-              source: 'image_text_replication',
-              replication: {
-                phase: 'ready_to_generate',
-                sourceTitle: note.sourceTitle || '',
-                sourceText: rewritten.body,
-                sourceImages: parseSourceImages(note.sourceImages),
-                sourcePlatform: note.sourcePlatform || 'miniapp',
-                sourceId: note.sourceId || note.id,
-                sourceUrl: note.sourceUrl || '',
-                rewrittenTitle: rewritten.title,
-                rewrittenImageTexts: rewritten.imageTexts,
-                fromMyNoteId: note.id,
-              },
-            },
-          }),
-        },
-      });
-
-      await tx.taskSummary.upsert({
-        where: {
-          taskType_taskId: {
-            taskType: 'poster',
-            taskId: workTaskId,
-          },
-        },
-        create: {
-          userId: note.userId,
-          taskType: 'poster',
-          taskId: workTaskId,
-          title: rewritten.title,
-          status: 'PROCESSING',
-          preview,
-          progress: 15,
-          metadata: {
-            posterMode: 'text2image',
-            source: 'image_text_replication',
-            fromMyNoteId: note.id,
-          },
-        },
-        update: {
-          title: rewritten.title,
-          status: 'PROCESSING',
-          preview,
-          progress: 15,
-          metadata: {
-            posterMode: 'text2image',
-            source: 'image_text_replication',
-            fromMyNoteId: note.id,
-          },
-        },
-      });
+    await prisma.imageTextReplicationTask.update({
+      where: { id: noteId },
+      data: {
+        status: 'REWRITE_COMPLETED',
+        generatedCopy: rewritten.body,
+        imageGuidance: toInputJson(
+          rewritten.imageTexts.map((text, index) => ({ index: index + 1, description: text })),
+        ),
+        analysisResult: toInputJson(mergedAnalysis),
+        errorMessage: null,
+      },
     });
 
-    return { workTaskId };
+    return { status: 'REWRITE_COMPLETED' };
   } catch (error) {
     const message = error instanceof Error ? error.message : '仿写失败';
     await prisma.imageTextReplicationTask.update({
