@@ -455,7 +455,7 @@ export default function LoginPage() {
           loop
           muted
           playsInline
-          preload="metadata"
+          preload="none"
           poster="/videos/login-hero-poster.jpg"
         >
           <source src="/videos/login-hero.mp4" type="video/mp4" />

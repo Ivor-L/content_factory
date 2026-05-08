@@ -103,6 +103,7 @@ const SINGLE_ENDPOINT_MODES = {
   profile: { path: '/api/user/profile', name: 'GET /api/user/profile' },
   tasks: { path: '/api/tasks?limit=20', name: 'GET /api/tasks' },
   'creative-tasks': { path: '/api/creative-tasks?limit=20', name: 'GET /api/creative-tasks' },
+  'login-page': { path: '/login', name: 'GET /login' },
 };
 
 async function readonlyFlow(token, vu, iter) {
@@ -135,6 +136,15 @@ async function aiFlow(token, vu, iter) {
   await generateDiagnosis(token, taskId);
   await sleep(1000);
   await getPath(token, `/api/creative-tasks/${taskId}`, 'GET /api/creative-tasks/:taskId');
+}
+
+async function passwordLoginFlow(token, vu, iter) {
+  await timed('POST /api/auth/email/password-login', () => fetch(`${BASE_URL}/api/auth/email/password-login`, {
+    method: 'POST',
+    headers: headers(null, true),
+    body: JSON.stringify({ email: LOGIN_EMAIL, password: LOGIN_PASSWORD }),
+  }));
+  await sleep(300 + Math.random() * 700);
 }
 
 function percentile(values, p) {
@@ -173,8 +183,8 @@ async function worker(token, vu, flow) {
 
 async function main() {
   console.log(`Starting node load test: mode=${MODE}, targetVus=${TARGET_VUS}, duration=${DURATION_SECONDS}s, base=${BASE_URL}`);
-  const token = await login();
-  const flow = MODE === 'write' ? writeFlow : MODE === 'ai' ? aiFlow : SINGLE_ENDPOINT_MODES[MODE] ? singleEndpointFlow : readonlyFlow;
+  const token = MODE === 'login-page' || MODE === 'password-login' ? null : await login();
+  const flow = MODE === 'write' ? writeFlow : MODE === 'ai' ? aiFlow : MODE === 'password-login' ? passwordLoginFlow : SINGLE_ENDPOINT_MODES[MODE] ? singleEndpointFlow : readonlyFlow;
   const workers = [];
   for (let vu = 1; vu <= TARGET_VUS; vu += 1) {
     const delay = RAMP_SECONDS > 0 ? Math.floor((vu - 1) * (RAMP_SECONDS * 1000 / TARGET_VUS)) : 0;
