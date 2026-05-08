@@ -414,6 +414,7 @@ export async function rewriteMyNoteAndCreateWork(noteId: string): Promise<{ stat
       title: rewritten.title,
       body: rewritten.body,
       imageTexts: rewritten.imageTexts,
+      tags: rewritten.tags,
       titleFormula: rewritten.titleFormula,
       rewrittenAt: new Date().toISOString(),
     };

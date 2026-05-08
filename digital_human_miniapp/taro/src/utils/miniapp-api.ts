@@ -109,6 +109,7 @@ export interface MyNoteTaskDetail {
       title: string;
       body: string;
       imageTexts: string[];
+      tags?: string[];
       titleFormula?: {
         topic: string;
         industry: string;
@@ -131,6 +132,8 @@ export interface MyNoteTaskDetail {
       } | null;
     } | null;
   };
+  generatedImages?: string[];
+  imageGuidance?: Array<{ index: number; description: string }>;
   generatedCopy?: string | null;
   errorMessage?: string | null;
 }
@@ -1304,6 +1307,29 @@ export const miniappApi = {
     const extractedRaw = Array.isArray(analysisRaw.extractedImageTexts)
       ? analysisRaw.extractedImageTexts
       : [];
+    const generatedImages = Array.isArray(task.generatedImages)
+      ? task.generatedImages.map((item) => {
+        if (typeof item === 'string') return item.trim();
+        if (item && typeof item === 'object') {
+          const obj = item as Record<string, unknown>;
+          const url = obj.url;
+          return typeof url === 'string' ? url.trim() : '';
+        }
+        return '';
+      }).filter(Boolean)
+      : [];
+    const imageGuidanceRaw = Array.isArray(task.imageGuidance) ? task.imageGuidance : [];
+    const imageGuidance = imageGuidanceRaw.map((item, index) => {
+      if (!item || typeof item !== 'object') return null;
+      const obj = item as Record<string, unknown>;
+      const indexValue = Number(obj.index);
+      const description = String(obj.description || '').trim();
+      if (!description) return null;
+      return {
+        index: Number.isFinite(indexValue) && indexValue > 0 ? Math.floor(indexValue) : index + 1,
+        description,
+      };
+    }).filter((item): item is { index: number; description: string } => Boolean(item));
 
     const extractedImageTexts = extractedRaw
       .map((item, index) => {
@@ -1378,6 +1404,9 @@ export const miniappApi = {
               imageTexts: Array.isArray(rewriteRaw.imageTexts)
                 ? rewriteRaw.imageTexts.map((text) => String(text || '').trim()).filter(Boolean)
                 : [],
+              tags: Array.isArray(rewriteRaw.tags)
+                ? rewriteRaw.tags.map((text) => String(text || '').trim()).filter(Boolean)
+                : [],
               titleFormula: formulaRaw
                 ? {
                     topic: String(formulaRaw.topic || ''),
@@ -1390,6 +1419,8 @@ export const miniappApi = {
           : null,
       },
       generatedCopy: typeof task.generatedCopy === 'string' ? task.generatedCopy : null,
+      generatedImages,
+      imageGuidance,
       errorMessage: typeof task.errorMessage === 'string' ? task.errorMessage : null,
     };
   },

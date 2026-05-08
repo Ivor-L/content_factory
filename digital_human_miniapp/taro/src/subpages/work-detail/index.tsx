@@ -12,6 +12,14 @@ const WORK_SELECT_TARGET_STORAGE_KEY = 'WORK_SELECT_TARGET';
 const DETAIL_IMAGE_WIDTH_RPX = 702;
 const DETAIL_IMAGE_FALLBACK_HEIGHT_RPX = 936;
 
+function buildQrcodeImageSrc(text: string): string {
+  const value = String(text || '').trim();
+  if (!value) return '';
+  if (/^https?:\/\/.+\.(png|jpe?g|webp)(\?|$)/i.test(value) || /^data:image\//i.test(value)) return value;
+  const path = `/api/utils/qrcode?size=360&text=${encodeURIComponent(value)}`;
+  return API_BASE_URL ? `${API_BASE_URL}${path}` : path;
+}
+
 type WorkSelectTarget = {
   target: 'action-transfer';
   storageKey: string;
@@ -97,28 +105,6 @@ export default function WorkDetailPage() {
     const qrcode = (publish as Record<string, unknown>).qrcode;
     return typeof qrcode === 'string' ? qrcode.trim() : '';
   }, [item]);
-
-  const publishUrl = useMemo(() => {
-    const meta = item?.metadata;
-    if (!meta || typeof meta !== 'object') return '';
-    const publish = (meta as Record<string, unknown>).xhsPublish;
-    if (!publish || typeof publish !== 'object') return '';
-    const url = (publish as Record<string, unknown>).url;
-    return typeof url === 'string' ? url.trim() : '';
-  }, [item]);
-
-  const handleCopyQrcode = () => {
-    if (!publishQrcode) return;
-    Taro.setClipboardData({
-      data: publishQrcode,
-      success: () => {
-        Taro.showToast({ title: '已复制二维码链接', icon: 'success' });
-      },
-      fail: () => {
-        Taro.showToast({ title: '复制失败', icon: 'none' });
-      },
-    });
-  };
 
   const handleBack = () => {
     Taro.navigateBack({ delta: 1 });
@@ -405,13 +391,7 @@ export default function WorkDetailPage() {
                 {publishQrcode && (
                   <View className='work-detail-qrcode-card'>
                     <Text className='work-detail-qrcode-title'>小红书发布二维码</Text>
-                    <Text className='work-detail-qrcode-link'>{publishQrcode}</Text>
-                    {!!publishUrl && (
-                      <Text className='work-detail-qrcode-link'>发布链接：{publishUrl}</Text>
-                    )}
-                    <View className='work-detail-qrcode-btn' onClick={handleCopyQrcode}>
-                      <Text className='work-detail-qrcode-btn-text'>复制链接</Text>
-                    </View>
+                    <Image className='work-detail-qrcode-image' src={buildQrcodeImageSrc(publishQrcode)} mode='aspectFit' />
                   </View>
                 )}
                 <Text className='work-detail-date'>{formatDate(item.createdAt)}</Text>

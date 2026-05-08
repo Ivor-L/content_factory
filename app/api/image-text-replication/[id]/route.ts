@@ -115,6 +115,9 @@ function normalizeMyNoteAnalysis(value: unknown) {
         imageTexts: Array.isArray(rewrite.imageTexts)
           ? rewrite.imageTexts.map((item) => String(item || '').trim()).filter(Boolean)
           : [],
+        tags: Array.isArray(rewrite.tags)
+          ? rewrite.tags.map((item) => String(item || '').trim()).filter(Boolean)
+          : [],
         titleFormula: titleFormula
           ? {
               topic: typeof titleFormula.topic === 'string' ? titleFormula.topic : '',

@@ -69,6 +69,15 @@ function buildCardExportDownloadHeaders(): Record<string, string> {
   return headers;
 }
 
+function buildQrcodeImageSrc(text: string): string {
+  const value = String(text || '').trim();
+  if (!value) return '';
+  if (/^https?:\/\/.+\.(png|jpe?g|webp)(\?|$)/i.test(value) || /^data:image\//i.test(value)) return value;
+  const apiBaseUrl = getApiBaseUrl();
+  const path = `/api/utils/qrcode?size=360&text=${encodeURIComponent(value)}`;
+  return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
+}
+
 const IMAGE_MODELS = [
   { key: 'image2', name: 'GPT-image2', desc: '细节表现优秀，适合精细创作', badge: '默认', maxReferenceImages: 8 },
   { key: 'nano-banana-pro', name: 'nano-Banana-Pro-3', desc: '综合能力强，适合多种创意场景', maxReferenceImages: 8 },
@@ -2722,7 +2731,7 @@ export default function ImageGeneratePage() {
     Taro.switchTab({ url: '/pages/home/index' });
   };
 
-  const returnToHotRewrite = (payload?: { qrcode?: string; url?: string }) => {
+  const returnToHotRewrite = (payload?: { qrcode?: string; url?: string; images?: string[]; kind?: 'infographic' | 'card-layout'; generatedTaskId?: string }) => {
     if (!hotRewriteReturnTaskId) {
       handleBack();
       return;
@@ -2730,10 +2739,15 @@ export default function ImageGeneratePage() {
     Taro.setStorageSync('HOT_REWRITE_RETURN_PAYLOAD', {
       taskId: hotRewriteReturnTaskId,
       mode: hotRewriteReturnMode,
+      kind: payload?.kind || (activeFeature === 'infographic' ? 'infographic' : 'card-layout'),
+      generatedTaskId: payload?.generatedTaskId || '',
+      images: Array.isArray(payload?.images) ? payload.images.filter(Boolean) : [],
       qrcode: payload?.qrcode || cardPublishQrcode || '',
       url: payload?.url || cardPublishUrl || '',
     });
-    Taro.navigateBack({ delta: 1 });
+    Taro.navigateTo({
+      url: `/subpages/note-rewrite-result/index?taskId=${encodeURIComponent(hotRewriteReturnTaskId)}&mode=${encodeURIComponent(hotRewriteReturnMode)}`,
+    });
   };
 
   const handleChooseImages = async () => {
@@ -2912,11 +2926,16 @@ export default function ImageGeneratePage() {
       if (hotRewriteReturnTaskId) {
         Taro.showModal({
           title: '信息图任务已提交',
-          content: '任务会在后台生成，可先返回仿写结果继续操作。',
+          content: '任务会在后台生成，回到仿写结果页后会自动显示。',
           cancelText: '留在本页',
           confirmText: '返回仿写结果',
           success: (res) => {
-            if (res.confirm) returnToHotRewrite();
+            if (res.confirm) {
+              returnToHotRewrite({
+                kind: 'infographic',
+                generatedTaskId: generated.taskId || start.taskId,
+              });
+            }
           },
         });
       } else {
@@ -3105,23 +3124,17 @@ export default function ImageGeneratePage() {
       Taro.setStorageSync('CARD_LAYOUT_STYLE_CONFIG', cardStyleConfig);
 
       if (published.qrcode) {
-        Taro.showModal({
-          title: '发布二维码已生成',
-          content: hotRewriteReturnTaskId ? '已完成出图和发布，可返回仿写结果继续复制或发布。' : '已完成规范化、出图和发布，请在弹窗后查看二维码链接。',
-          cancelText: hotRewriteReturnTaskId ? '留在本页' : '关闭',
-          confirmText: hotRewriteReturnTaskId ? '返回仿写结果' : '复制二维码链接',
-          success: (res) => {
-            if (res.confirm) {
-              if (hotRewriteReturnTaskId) {
-                returnToHotRewrite({ qrcode: published.qrcode || '', url: published.url || '' });
-              } else {
-                Taro.setClipboardData({
-                  data: published.qrcode,
-                });
-              }
-            }
-          },
-        });
+        if (hotRewriteReturnTaskId) {
+          returnToHotRewrite({
+            kind: 'card-layout',
+            generatedTaskId: renderResult.taskId || '',
+            images: publishImages,
+            qrcode: published.qrcode || '',
+            url: published.url || '',
+          });
+        } else {
+          Taro.showToast({ title: '二维码已生成', icon: 'success' });
+        }
       } else {
         Taro.showToast({ title: '卡片已生成并发布', icon: 'success' });
       }
@@ -4224,11 +4237,7 @@ export default function ImageGeneratePage() {
                 {!!cardPublishQrcode && (
                   <View className='card-publish-qrcode-card'>
                     <Text className='card-publish-qrcode-title'>小红书发布二维码</Text>
-                    <Text className='card-publish-qrcode-link'>{cardPublishQrcode}</Text>
-                    {!!cardPublishUrl && <Text className='card-publish-qrcode-link'>发布链接：{cardPublishUrl}</Text>}
-                    <View className='card-publish-qrcode-copy' onClick={() => Taro.setClipboardData({ data: cardPublishQrcode })}>
-                      <Text className='card-publish-qrcode-copy-text'>复制二维码链接</Text>
-                    </View>
+                    <Image className='card-publish-qrcode-image' src={buildQrcodeImageSrc(cardPublishQrcode)} mode='aspectFit' />
                   </View>
                 )}
               </View>

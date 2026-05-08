@@ -11,6 +11,7 @@ export default defineAppConfig({
       pages: [
         'favorites/index',
         'hot-detail/index',
+        'note-rewrite-result/index',
         'asset-center/index',
         'work-detail/index',
         'storyboard-board/index',

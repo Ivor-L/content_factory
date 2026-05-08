@@ -137,6 +137,7 @@
 | [20260507-nextide-skills-runtime-phase2-plan.md](./20260507-nextide-skills-runtime-phase2-plan.md) | NexTide Skills Runtime Phase 2：Agent Run Store、长任务状态闭环与后续产品化计划 |
 | [20260506-nextide-skills-runtime-next-dev-plan.md](./20260506-nextide-skills-runtime-next-dev-plan.md) | NexTide Skills Runtime 新开发计划与当前进度：合并 ClipcatSkill 学习、线上更新、积分流水单表、TikTok Commerce Surface 与 Sprint 计划 |
 | [20260506-online-load-test-performance-fix-plan.md](./20260506-online-load-test-performance-fix-plan.md) | 线上压测后性能修复计划：任务列表纯读化、索引补齐与复验标准 |
+| [20260509-miniapp-note-rewrite-result-page-plan.md](./20260509-miniapp-note-rewrite-result-page-plan.md) | 小程序图文笔记仿写结果页：独立页面、生成图片回流与二维码图片展示 |
 | [20260504-character-library-view-edit-delete-plan.md](./20260504-character-library-view-edit-delete-plan.md) | Web 角色库查看/编辑/删除与创建表单交互优化计划 |
 | [20260504-style-library-image-performance-plan.md](./20260504-style-library-image-performance-plan.md) | 风格库图片加载性能优化：缩略图生成、列表优先加载与懒加载 |
 | [20260504-xhs-markdown-table-render-plan.md](./20260504-xhs-markdown-table-render-plan.md) | 小红书卡片 Markdown 表格渲染：Web/小程序预览、后端导出与 AI 排版对齐 |

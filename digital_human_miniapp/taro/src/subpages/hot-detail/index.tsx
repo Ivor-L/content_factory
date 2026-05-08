@@ -208,10 +208,9 @@ export default function HotDetailPage() {
       const payload = returned as { taskId?: string; qrcode?: string; url?: string };
       const taskId = String(payload.taskId || '').trim();
       if (!taskId || taskId === activeTaskId) {
-        setRewriteDrawerVisible(true);
-        setPublishQrcode(String(payload.qrcode || ''));
-        setPublishUrl(String(payload.url || ''));
-        Taro.removeStorageSync('HOT_REWRITE_RETURN_PAYLOAD');
+        Taro.navigateTo({
+          url: `/subpages/note-rewrite-result/index?taskId=${encodeURIComponent(taskId || activeTaskId)}&mode=${encodeURIComponent(mode)}`,
+        });
       }
     }
   });
@@ -349,7 +348,11 @@ export default function HotDetailPage() {
       const latestRewrite = latest.analysisResult.rewriteResult;
       if (latestRewrite) Taro.setStorageSync('MY_NOTE_REWRITE_PAYLOAD', buildRewritePayload(latestRewrite, 'card-layout'));
       setSelectedRewriteTitle(latestRewrite?.title || '');
-      setRewriteDrawerVisible(true);
+      if (latestRewrite) {
+        Taro.navigateTo({
+          url: `/subpages/note-rewrite-result/index?taskId=${encodeURIComponent(activeTaskId)}&mode=${encodeURIComponent(mode)}`,
+        });
+      }
       Taro.showToast({ title: '仿写完成', icon: 'success' });
     } catch (error) {
       Taro.showToast({ title: error instanceof Error ? error.message : '仿写失败', icon: 'none' });
@@ -375,7 +378,9 @@ export default function HotDetailPage() {
   const handleOpenRewriteDrawer = () => {
     if (!rewrite) return;
     setSelectedRewriteTitle((current) => current || rewrite.title || rewriteTitleOptions[0] || '');
-    setRewriteDrawerVisible(true);
+    Taro.navigateTo({
+      url: `/subpages/note-rewrite-result/index?taskId=${encodeURIComponent(activeTaskId)}&mode=${encodeURIComponent(mode)}`,
+    });
   };
 
   const handleRewriteDrawerTouchStart = (event: any) => {
@@ -506,14 +511,15 @@ export default function HotDetailPage() {
       setPublishQrcode(result.qrcode || '');
       setPublishUrl(result.url || '');
       if (result.qrcode) {
-        Taro.showModal({
-          title: '发布二维码已生成',
-          content: '请复制二维码链接或稍后在作品详情查看。',
-          cancelText: '关闭',
-          confirmText: '复制链接',
-          success: (res) => {
-            if (res.confirm) Taro.setClipboardData({ data: result.qrcode });
-          },
+        Taro.setStorageSync('HOT_REWRITE_RETURN_PAYLOAD', {
+          taskId: activeTaskId,
+          mode,
+          kind: 'card-layout',
+          qrcode: result.qrcode || '',
+          url: result.url || '',
+        });
+        Taro.navigateTo({
+          url: `/subpages/note-rewrite-result/index?taskId=${encodeURIComponent(activeTaskId)}&mode=${encodeURIComponent(mode)}`,
         });
       } else {
         Taro.showToast({ title: '发布请求已提交', icon: 'success' });
