@@ -9,7 +9,6 @@ import tplImage3 from '../../assets/home-icons-v2/copy.webp';
 import tplImage4 from '../../assets/home-icons-v2/video.webp';
 import tplImage5 from '../../assets/home-icons-v2/swap.webp';
 import tplImage6 from '../../assets/home-icons-v2/human.webp';
-import md2CoilBg from '../../assets/md2card/coil-bg.png';
 import md2MeadowDawnBg from '../../assets/md2card/meadow-dawn-bg.jpeg';
 import './index.sass';
 
@@ -30,6 +29,7 @@ const FEATURE_TABS: Array<{ key: FeatureKey; label: string }> = [
 ];
 const ACTION_TRANSFER_IMAGE_RETURN_KEY = 'REMIX_ACTION_SOURCE_IMAGE_URL';
 const WORK_SELECT_TARGET_STORAGE_KEY = 'WORK_SELECT_TARGET';
+const SMART_COPY_CARD_PAYLOAD_KEY = 'SMART_COPY_CARD_PAYLOAD';
 
 function getApiBaseUrl(): string {
   try {
@@ -183,6 +183,7 @@ type CardStylePreset = {
   previewBackground: string;
   textColor: string;
   accentColor: string;
+  previewCardClassName?: string;
   renderTone: 'clean' | 'dark' | 'gradient';
   backendTemplateId: LegacyCardTemplateId;
   modes?: CardStyleMode[];
@@ -225,6 +226,17 @@ const DEFAULT_CARD_MARKDOWN = `# 复盘：内容增长不是玄学
 3. 每周只优化一个关键指标
 
 > 先跑通，再放大。`;
+
+const COIL_NOTEBOOK_GRID_BLUE =
+  'linear-gradient(90deg,rgba(255,255,255,0.18) 1px,transparent 1px), linear-gradient(0deg,rgba(255,255,255,0.18) 1px,transparent 1px), linear-gradient(180deg,#5271ff 0%,#5d76ff 100%)';
+const COIL_NOTEBOOK_GRID_PINK =
+  'linear-gradient(90deg,rgba(255,255,255,0.2) 1px,transparent 1px), linear-gradient(0deg,rgba(255,255,255,0.2) 1px,transparent 1px), linear-gradient(180deg,#ff7eb6 0%,#ffa4cd 100%)';
+const COIL_NOTEBOOK_GRID_MINT =
+  'linear-gradient(90deg,rgba(255,255,255,0.24) 1px,transparent 1px), linear-gradient(0deg,rgba(255,255,255,0.24) 1px,transparent 1px), linear-gradient(180deg,#7be495 0%,#a6efba 100%)';
+const COIL_NOTEBOOK_GRID_YELLOW =
+  'linear-gradient(90deg,rgba(255,255,255,0.28) 1px,transparent 1px), linear-gradient(0deg,rgba(255,255,255,0.28) 1px,transparent 1px), linear-gradient(180deg,#ffd66b 0%,#ffe59d 100%)';
+const BYTEDANCE_GRID_BACKGROUND =
+  'linear-gradient(90deg,rgba(0,102,255,0.08) 1px,transparent 1px), linear-gradient(0deg,rgba(250,44,25,0.06) 1px,transparent 1px), linear-gradient(155deg,#ffffff 0%,#f3f7ff 100%)';
 
 const CARD_LAYOUT_STYLES: CardStylePreset[] = [
   {
@@ -365,9 +377,10 @@ const CARD_LAYOUT_STYLES: CardStylePreset[] = [
     desc: 'Coil Notebook',
     colors: ['#5271ff', '#ffffff', '#d7def9'],
     defaultMarkdown: DEFAULT_CARD_MARKDOWN,
-    previewBackground: 'linear-gradient(180deg,#5271ff 0%,#7790ff 100%)',
+    previewBackground: COIL_NOTEBOOK_GRID_BLUE,
     textColor: '#ffffff',
     accentColor: '#d6e3ff',
+    previewCardClassName: 'style-preset-thumb--coil-notebook',
     renderTone: 'clean',
     backendTemplateId: 'notion-style',
     modes: [
@@ -376,7 +389,7 @@ const CARD_LAYOUT_STYLES: CardStylePreset[] = [
         title: '默认蓝',
         desc: 'Blue',
         colors: ['#5271ff', '#7790ff'],
-        previewBackground: 'linear-gradient(180deg,#5271ff 0%,#7790ff 100%)',
+        previewBackground: COIL_NOTEBOOK_GRID_BLUE,
         textColor: '#ffffff',
       },
       {
@@ -384,7 +397,7 @@ const CARD_LAYOUT_STYLES: CardStylePreset[] = [
         title: '小红书粉',
         desc: 'Pink',
         colors: ['#ff7eb6', '#ffa4cd'],
-        previewBackground: 'linear-gradient(180deg,#ff7eb6 0%,#ffa4cd 100%)',
+        previewBackground: COIL_NOTEBOOK_GRID_PINK,
         textColor: '#ffffff',
       },
       {
@@ -392,7 +405,7 @@ const CARD_LAYOUT_STYLES: CardStylePreset[] = [
         title: '薄荷绿',
         desc: 'Mint',
         colors: ['#7be495', '#a6efba'],
-        previewBackground: 'linear-gradient(180deg,#7be495 0%,#a6efba 100%)',
+        previewBackground: COIL_NOTEBOOK_GRID_MINT,
         textColor: '#11431f',
       },
       {
@@ -400,7 +413,7 @@ const CARD_LAYOUT_STYLES: CardStylePreset[] = [
         title: '暖黄',
         desc: 'Yellow',
         colors: ['#ffd66b', '#ffe59d'],
-        previewBackground: 'linear-gradient(180deg,#ffd66b 0%,#ffe59d 100%)',
+        previewBackground: COIL_NOTEBOOK_GRID_YELLOW,
         textColor: '#4d3a00',
       },
     ],
@@ -457,9 +470,10 @@ const CARD_LAYOUT_STYLES: CardStylePreset[] = [
     desc: 'ByteDance',
     colors: ['#ffffff', '#0066ff', '#fa2c19'],
     defaultMarkdown: DEFAULT_CARD_MARKDOWN,
-    previewBackground: 'linear-gradient(155deg,#ffffff 0%,#f3f7ff 100%)',
+    previewBackground: BYTEDANCE_GRID_BACKGROUND,
     textColor: '#1f2937',
     accentColor: '#0066ff',
+    previewCardClassName: 'style-preset-thumb--bytedance',
     renderTone: 'clean',
     backendTemplateId: 'pro-doc',
   },
@@ -990,9 +1004,7 @@ const CARD_FONT_SCALE_FACTOR_MAP: Record<CardFontScale, number> = {
   xxxxxxxl: 3.25,
 };
 
-const CARD_STYLE_PREVIEW_IMAGE_MAP: Partial<Record<CardStyleId, string>> = {
-  'coil-notebook': md2CoilBg,
-};
+const CARD_STYLE_PREVIEW_IMAGE_MAP: Partial<Record<CardStyleId, string>> = {};
 
 type PreviewRenderStyle = {
   textColor: string;
@@ -1020,7 +1032,6 @@ type CardPreviewThemeSpec = {
 
 type CardStyleLayoutParams = {
   background: string;
-  backgroundImage?: string;
   textColor: string;
   accent: string;
   spacing: number;
@@ -1054,16 +1065,15 @@ const CARD_STYLE_LAYOUT_PARAMS: Record<CardStyleId, CardStyleLayoutParams> = {
     contentPaddingY: 18,
   },
   'coil-notebook': {
-    background: '#5271ff',
-    backgroundImage: `url("${md2CoilBg}")`,
+    background: COIL_NOTEBOOK_GRID_BLUE,
     textColor: '#24292e',
     accent: '#d6e3ff',
     spacing: 1,
     headerHeight: 0,
     footerHeight: 10,
     contentBackground: '#ffffff',
-    contentPaddingX: 20,
-    contentPaddingY: 18,
+    contentPaddingX: 38,
+    contentPaddingY: 30,
   },
   'pop-art': {
     background: 'radial-gradient(rgba(17,24,39,0.2) 1.1px, transparent 1.3px), linear-gradient(0deg,#fde041,#fde041)',
@@ -1076,16 +1086,15 @@ const CARD_STYLE_LAYOUT_PARAMS: Record<CardStyleId, CardStyleLayoutParams> = {
     contentPaddingY: 18,
   },
   bytedance: {
-    background:
-      'radial-gradient(circle at 86% 10%, rgba(0, 102, 255, 0.16) 0, transparent 20%), radial-gradient(circle at 14% 88%, rgba(250, 44, 25, 0.14) 0, transparent 20%), linear-gradient(155deg,#ffffff 0%,#f3f7ff 100%)',
-    textColor: '#24292e',
+    background: BYTEDANCE_GRID_BACKGROUND,
+    textColor: '#111827',
     accent: '#0066ff',
-    spacing: 1,
+    spacing: 0.96,
     headerHeight: 0,
     footerHeight: 10,
-    contentBackground: 'rgba(255,255,255,0.92)',
-    contentPaddingX: 20,
-    contentPaddingY: 18,
+    contentBackground: 'rgba(255,255,255,0.96)',
+    contentPaddingX: 22,
+    contentPaddingY: 20,
   },
   alibaba: {
     background:
@@ -1339,14 +1348,14 @@ const CARD_PREVIEW_THEME_SPEC_MAP: Record<CardStyleId, CardPreviewThemeSpec> = {
     },
   },
   'coil-notebook': {
-    cardBackground: '#5271ff',
+    cardBackground: COIL_NOTEBOOK_GRID_BLUE,
     textColor: '#24292e',
     contentBackground: '#ffffff',
     modeBackground: {
-      'blue-mode': '#5271ff',
-      'pink-mode': '#ff7eb6',
-      'mint-mode': '#7be495',
-      'yellow-mode': '#ffd66b',
+      'blue-mode': COIL_NOTEBOOK_GRID_BLUE,
+      'pink-mode': COIL_NOTEBOOK_GRID_PINK,
+      'mint-mode': COIL_NOTEBOOK_GRID_MINT,
+      'yellow-mode': COIL_NOTEBOOK_GRID_YELLOW,
     },
   },
   'pop-art': {
@@ -1363,10 +1372,9 @@ const CARD_PREVIEW_THEME_SPEC_MAP: Record<CardStyleId, CardPreviewThemeSpec> = {
     },
   },
   bytedance: {
-    cardBackground:
-      'radial-gradient(circle at 86% 10%, rgba(0, 102, 255, 0.16) 0, transparent 20%), radial-gradient(circle at 14% 88%, rgba(250, 44, 25, 0.14) 0, transparent 20%), linear-gradient(155deg,#ffffff 0%,#f3f7ff 100%)',
-    textColor: '#24292e',
-    contentBackground: 'rgba(255,255,255,0.92)',
+    cardBackground: BYTEDANCE_GRID_BACKGROUND,
+    textColor: '#111827',
+    contentBackground: 'rgba(255,255,255,0.96)',
   },
   alibaba: {
     cardBackground:
@@ -1945,15 +1953,20 @@ function paginatePreviewMarkdown(
   const rpxScale = safeWindowWidthPx / 750;
   const cardHeightPx = 980 * rpxScale;
   const pageHorizontalPaddingPx = 24 * rpxScale * 2;
-  const previewCardPaddingPx = 22 * rpxScale * 2;
+  const previewCardPaddingXPx = styleId === 'coil-notebook'
+    ? (96 + 40) * rpxScale
+    : 22 * rpxScale * 2;
+  const previewCardPaddingYPx = styleId === 'coil-notebook'
+    ? (42 + 40) * rpxScale
+    : 22 * rpxScale * 2;
   const contentShellPadXPx = Math.max(0, (styleLayout.contentPaddingX ?? (styleId === 'apple-notes' ? 0 : 20)) * rpxScale * 2);
   const contentShellPadYPx = Math.max(0, (styleLayout.contentPaddingY ?? (styleId === 'apple-notes' ? 0 : 18)) * rpxScale * 2);
   const headerDeductPx = Math.max(0, (styleLayout.headerHeight || 0) * rpxScale);
   const footerDeductPx = Math.max(0, (styleLayout.footerHeight || 0) * rpxScale);
 
   const pageWidthPx = Math.max(260, safeWindowWidthPx - pageHorizontalPaddingPx);
-  const cardInnerWidthPx = Math.max(200, pageWidthPx - previewCardPaddingPx);
-  const cardInnerHeightPx = Math.max(200, cardHeightPx - previewCardPaddingPx);
+  const cardInnerWidthPx = Math.max(200, pageWidthPx - previewCardPaddingXPx);
+  const cardInnerHeightPx = Math.max(200, cardHeightPx - previewCardPaddingYPx);
   const richTextWidthPx = Math.max(120, cardInnerWidthPx - contentShellPadXPx - markdownPaddingPx * 2);
   const richTextHeightPx = Math.max(180, cardInnerHeightPx - contentShellPadYPx - headerDeductPx - footerDeductPx - markdownPaddingPx * 2 - 6);
   const bodyLinePx = Math.max(12, bodyFontPx * lineHeight);
@@ -2104,6 +2117,8 @@ export default function ImageGeneratePage() {
   const [injectedFromMyNote, setInjectedFromMyNote] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [cardUserCleared, setCardUserCleared] = useState(false);
+  const [stylePresetScrollLeft, setStylePresetScrollLeft] = useState(0);
+  const stylePresetScrollLeftRef = useRef(0);
 
   const applyCardCoverStyleDefaults = (styleId: CardCoverStyleId) => {
     const spec = getCardCoverStyleSpec(styleId);
@@ -2150,6 +2165,12 @@ export default function ImageGeneratePage() {
     if (from === 'action-transfer') {
       setReturnTarget('action-transfer');
       setActiveFeature('ai-image');
+    }
+    if (from === 'smart-copy') {
+      const targetFeature = String(query?.targetFeature || '').trim();
+      if (targetFeature === 'infographic' || targetFeature === 'card-layout') {
+        setActiveFeature(targetFeature);
+      }
     }
     const origin = String(query?.origin || '').trim();
     if (origin === 'hot-rewrite') {
@@ -2400,6 +2421,30 @@ export default function ImageGeneratePage() {
     setCardSettingsOpen(false);
     void loadInfographicTemplates();
 
+    const smartCopyRaw = Taro.getStorageSync(SMART_COPY_CARD_PAYLOAD_KEY);
+    if (smartCopyRaw && typeof smartCopyRaw === 'object') {
+      const payload = smartCopyRaw as {
+        targetFeature?: 'infographic' | 'card-layout';
+        title?: string;
+        body?: string;
+      };
+      const title = cleanMyNoteCardText(String(payload.title || ''));
+      const body = cleanMyNoteCardText(String(payload.body || ''));
+      const mergedText = [title ? `# ${title}` : '', body].filter(Boolean).join('\n\n');
+      if (payload.targetFeature === 'infographic') {
+        setActiveFeature('infographic');
+        if (mergedText) setInfoContent(mergedText);
+      } else {
+        setActiveFeature('card-layout');
+        if (mergedText) {
+          setCardUserCleared(false);
+          setCardMarkdown(mergedText);
+        }
+      }
+      Taro.removeStorageSync(SMART_COPY_CARD_PAYLOAD_KEY);
+      return;
+    }
+
     // Optional prefill from "我的笔记仿写结果"
     if (!injectedFromMyNote) {
       const raw = Taro.getStorageSync('MY_NOTE_REWRITE_PAYLOAD');
@@ -2608,7 +2653,7 @@ export default function ImageGeneratePage() {
         || CARD_THEME_ACCENT_MAP.amber;
       const accentSoftColor = CARD_THEME_ACCENT_SOFT_MAP[cardThemeColor] || CARD_THEME_ACCENT_SOFT_MAP.amber;
       const baseStyle = buildPreviewBackgroundStyle(background);
-      const textureImage = styleLayout?.backgroundImage || CARD_STYLE_PREVIEW_IMAGE_MAP[selectedCardStylePreset.id];
+      const textureImage = CARD_STYLE_PREVIEW_IMAGE_MAP[selectedCardStylePreset.id];
       const inlineStyle: Record<string, string> = {
         ...baseStyle,
         color: textColor,
@@ -2619,14 +2664,14 @@ export default function ImageGeneratePage() {
       if (textureImage) {
         if (baseStyle.backgroundImage) {
           inlineStyle.backgroundImage = `url("${textureImage}"), ${baseStyle.backgroundImage}`;
-          inlineStyle.backgroundSize = selectedCardStylePreset.id === 'coil-notebook' ? '40rpx auto, cover' : 'cover, cover';
-          inlineStyle.backgroundPosition = selectedCardStylePreset.id === 'coil-notebook' ? 'left top, center' : 'center, center';
-          inlineStyle.backgroundRepeat = selectedCardStylePreset.id === 'coil-notebook' ? 'repeat-y, no-repeat' : 'no-repeat, no-repeat';
+          inlineStyle.backgroundSize = 'cover, cover';
+          inlineStyle.backgroundPosition = 'center, center';
+          inlineStyle.backgroundRepeat = 'no-repeat, no-repeat';
         } else {
           inlineStyle.backgroundImage = `url("${textureImage}")`;
-          inlineStyle.backgroundSize = selectedCardStylePreset.id === 'coil-notebook' ? '40rpx auto' : 'cover';
-          inlineStyle.backgroundPosition = selectedCardStylePreset.id === 'coil-notebook' ? 'left top' : 'center';
-          inlineStyle.backgroundRepeat = selectedCardStylePreset.id === 'coil-notebook' ? 'repeat-y' : 'no-repeat';
+          inlineStyle.backgroundSize = 'cover';
+          inlineStyle.backgroundPosition = 'center';
+          inlineStyle.backgroundRepeat = 'no-repeat';
         }
       }
 
@@ -3824,7 +3869,14 @@ export default function ImageGeneratePage() {
   const renderCardPresetSwitcher = () => (
     <>
       {renderSectionTitle('style', '预设风格')}
-      <ScrollView scrollX className='style-preset-scroll'>
+      <ScrollView
+        scrollX
+        className='style-preset-scroll'
+        scrollLeft={stylePresetScrollLeft}
+        onScroll={(event) => {
+          stylePresetScrollLeftRef.current = Number(event.detail.scrollLeft) || 0;
+        }}
+      >
         <View className='style-preset-list'>
           {CARD_LAYOUT_STYLES.map((item) => {
             const active = selectedCardStyle === item.id;
@@ -3836,9 +3888,14 @@ export default function ImageGeneratePage() {
                 key={item.id}
                 className={`style-preset-card ${active ? 'style-preset-card--active' : ''}`}
                 onClick={() => {
+                  setStylePresetScrollLeft(stylePresetScrollLeftRef.current);
                   setSelectedCardStyle(item.id);
-                  const firstMode = item.modes?.[0];
-                  setSelectedCardStyleMode(firstMode ? firstMode.id : '');
+                  const nextModes = item.modes || [];
+                  if (nextModes.length === 0) {
+                    setSelectedCardStyleMode('');
+                  } else if (!nextModes.some((mode) => mode.id === selectedCardStyleMode)) {
+                    setSelectedCardStyleMode(nextModes[0].id);
+                  }
                   setCardPreviewImages([]);
                   if (!cardMarkdown.trim()) {
                     setCardUserCleared(false);
@@ -3847,7 +3904,7 @@ export default function ImageGeneratePage() {
                 }}
               >
                 <View
-                  className='style-preset-thumb'
+                  className={`style-preset-thumb ${item.previewCardClassName || ''}`.trim()}
                   style={buildPreviewBackgroundStyle(displayMode?.previewBackground || item.previewBackground)}
                 >
                   <Text

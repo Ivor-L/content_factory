@@ -4,8 +4,6 @@ import {
   createCreativeTaskWithAssets,
   type CreateCreativeTaskPayload,
 } from "@/lib/creativeTaskCreation";
-import { loadTaskWithAssets } from "@/lib/creativeTaskService";
-import { serializeTaskDetail } from "@/lib/creativeTaskFormatter";
 import type { CreativeStageKey } from "@/lib/creativeStages";
 import { syncTaskToSummary } from "@/lib/taskSummary";
 import { triggerCreativeScriptGeneration } from "@/lib/n8n";
@@ -108,6 +106,18 @@ export async function POST(request: NextRequest) {
     console.error("[creative-tasks/direct] failed to trigger n8n webhook", error);
   }
 
-  const detail = await loadTaskWithAssets(task.id, userId);
-  return NextResponse.json({ data: detail ? serializeTaskDetail(detail) : null }, { status: 201 });
+  return NextResponse.json({
+    data: {
+      id: task.id,
+      title: task.title,
+      ideaText: task.ideaText,
+      channel: task.channel,
+      targetOutput: task.targetOutput,
+      stage: task.stage,
+      status: task.status,
+      goal: task.goal,
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt,
+    },
+  }, { status: 201 });
 }

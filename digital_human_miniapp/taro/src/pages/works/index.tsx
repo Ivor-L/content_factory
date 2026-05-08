@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, Image, Video } from '@tarojs/components';
+import { View, Text, ScrollView, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
@@ -7,6 +7,11 @@ import './index.sass';
 
 const WORK_RETENTION_DAYS = 5;
 const RETENTION_MS = WORK_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+const WORK_LIST_LIMIT = 40;
+const WORKS_CACHE_KEY = 'WORKS_LIST_CACHE_V1';
+const WORKS_CACHE_TTL_MS = 2 * 60 * 1000;
+
+let memoryWorksCache: { items: WorkItem[]; updatedAt: number } | null = null;
 
 export default function WorksPage() {
   const [works, setWorks] = useState<WorkItem[]>([]);
@@ -39,42 +44,28 @@ export default function WorksPage() {
     }, 80);
   };
 
-  const loadWorks = async () => {
-    setLoading(true);
+  const loadWorks = async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) {
+      setLoading(true);
+    }
     try {
-      const data = await miniappApi.getWorkList(60);
-      const now = Date.now();
-      const expired: WorkItem[] = [];
-      const valid: WorkItem[] = [];
-
-      for (const item of data) {
-        const createdAtMs = new Date(item.createdAt).getTime();
-        if (!Number.isFinite(createdAtMs) || now - createdAtMs <= RETENTION_MS) {
-          valid.push(item);
-          continue;
-        }
-        expired.push(item);
-      }
-
-      if (expired.length > 0) {
-        const settled = await Promise.allSettled(expired.map((item) => miniappApi.deleteWorkItem(item)));
-        const deletedCount = settled.filter((result) => result.status === 'fulfilled').length;
-        if (deletedCount > 0) {
-          Taro.showToast({
-            title: `已清理 ${deletedCount} 条超期作品`,
-            icon: 'none',
-          });
-        }
-      }
-
+      const data = await miniappApi.getWorkList(WORK_LIST_LIMIT);
+      const { valid, expired } = splitValidWorks(data);
       setWorks(valid);
+      writeWorksCache(valid);
+      cleanupExpiredWorks(expired);
     } catch (error) {
-      Taro.showToast({
-        title: error instanceof Error ? error.message : '加载失败',
-        icon: 'none',
-      });
+      if (!silent) {
+        Taro.showToast({
+          title: error instanceof Error ? error.message : '加载失败',
+          icon: 'none',
+        });
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
       if (shouldRestoreScrollRef.current) {
         shouldRestoreScrollRef.current = false;
         restoreScrollPosition();
@@ -83,6 +74,12 @@ export default function WorksPage() {
   };
 
   useDidShow(() => {
+    const cached = readWorksCache();
+    if (cached.length > 0) {
+      setWorks(cached);
+      void loadWorks({ silent: true });
+      return;
+    }
     void loadWorks();
   });
 
@@ -145,8 +142,11 @@ export default function WorksPage() {
                   const isProcessing = isWorkProcessing(item);
                   const isRemix = isRemixWork(item);
                   const videoPreviewUrl = isRemix ? resolveRemixReferenceVideoUrl(item) : item.type === 'video' ? resolveWorkVideoUrl(item) : '';
+                  const showVideoBadge = Boolean(videoPreviewUrl) || item.type === 'video';
                   const cardStatus = getWorkStatusLabel(item);
                   const isImageText = item.type === 'image-text';
+                  const isCopy = item.type === 'copy';
+                  const overlayStatusText = getWorkProcessingText(item);
 
                   return (
                     <View
@@ -155,19 +155,7 @@ export default function WorksPage() {
                       onClick={() => handleOpenDetail(item)}
                     >
                       <View className={`works-cover ${coverRatioClass}`}>
-                        {videoPreviewUrl ? (
-                          <Video
-                            className='works-cover-video'
-                            src={videoPreviewUrl}
-                            poster={coverUrl || undefined}
-                            controls={false}
-                            autoplay={false}
-                            muted
-                            showCenterPlayBtn={false}
-                            showFullscreenBtn={false}
-                            objectFit='cover'
-                          />
-                        ) : hasCover ? (
+                        {hasCover ? (
                           <Image
                             className='works-cover-image'
                             src={coverUrl as string}
@@ -183,7 +171,7 @@ export default function WorksPage() {
                             <Text className='works-remix-badge-text'>智能复刻</Text>
                           </View>
                         )}
-                        {item.type === 'video' && !isRemix && (
+                        {showVideoBadge && (
                           <View className='works-video-icon'>
                             <Text className='works-video-icon-text'>▶</Text>
                           </View>
@@ -196,7 +184,7 @@ export default function WorksPage() {
                         {isProcessing && (
                           <View className='works-processing-overlay'>
                             <View className='works-processing-spinner' />
-                            <Text className='works-processing-text'>生成中</Text>
+                            <Text className='works-processing-text'>{overlayStatusText}</Text>
                           </View>
                         )}
                       </View>
@@ -207,6 +195,9 @@ export default function WorksPage() {
                           <Text className='works-card-preview'>{getRemixStageText(item)}</Text>
                         )}
                         {item.taskType === 'digitalHuman' && item.preview && (
+                          <Text className='works-card-preview'>{item.preview}</Text>
+                        )}
+                        {isCopy && item.preview && (
                           <Text className='works-card-preview'>{item.preview}</Text>
                         )}
                         <View className='works-card-bottom'>
@@ -243,6 +234,59 @@ function pickWorkCover(item: any): string | null {
   }
 
   return null;
+}
+
+function splitValidWorks(items: WorkItem[]) {
+  const now = Date.now();
+  const expired: WorkItem[] = [];
+  const valid: WorkItem[] = [];
+
+  for (const item of items) {
+    const createdAtMs = new Date(item.createdAt).getTime();
+    if (!Number.isFinite(createdAtMs) || now - createdAtMs <= RETENTION_MS) {
+      valid.push(item);
+      continue;
+    }
+    expired.push(item);
+  }
+
+  return { valid, expired };
+}
+
+function readWorksCache(): WorkItem[] {
+  const now = Date.now();
+  if (memoryWorksCache && now - memoryWorksCache.updatedAt <= WORKS_CACHE_TTL_MS) {
+    return splitValidWorks(memoryWorksCache.items).valid;
+  }
+
+  try {
+    const raw = Taro.getStorageSync(WORKS_CACHE_KEY);
+    const parsed = raw ? JSON.parse(String(raw)) : null;
+    const updatedAt = Number(parsed?.updatedAt || 0);
+    const items = Array.isArray(parsed?.items) ? parsed.items as WorkItem[] : [];
+    if (!updatedAt || now - updatedAt > WORKS_CACHE_TTL_MS || items.length === 0) return [];
+    memoryWorksCache = { items, updatedAt };
+    return splitValidWorks(items).valid;
+  } catch {
+    return [];
+  }
+}
+
+function writeWorksCache(items: WorkItem[]) {
+  const payload = { items, updatedAt: Date.now() };
+  memoryWorksCache = payload;
+  try {
+    Taro.setStorageSync(WORKS_CACHE_KEY, JSON.stringify(payload));
+  } catch {
+    // Storage quota should not block the works page.
+  }
+}
+
+function cleanupExpiredWorks(expired: WorkItem[]) {
+  if (expired.length === 0) return;
+  setTimeout(() => {
+    void Promise.allSettled(expired.map((item) => miniappApi.deleteWorkItem(item)));
+  }, 300);
 }
 
 function resolveWorkVideoUrl(item: any): string {
@@ -312,7 +356,18 @@ function getWorkStatusLabel(item: any): string {
   if (status.includes('FAIL') || status.includes('ERROR')) return '失败';
   if (status.includes('COMPLETE') || status === 'DONE' || status === 'SUCCESS') return '已完成';
   if (isRemixWork(item)) return '复刻中';
+  if (isCopyWork(item) && isWorkProcessing(item)) return '撰写中';
   return isWorkProcessing(item) ? '生成中' : '';
+}
+
+function getWorkProcessingText(item: any): string {
+  if (isCopyWork(item)) return '撰写中';
+  return '生成中';
+}
+
+function isCopyWork(item: any): boolean {
+  const taskType = String(item?.taskType || '').toLowerCase();
+  return item?.type === 'copy' || taskType === 'creative' || taskType.includes('copy') || taskType.includes('writing');
 }
 
 function getPosterImages(item: any): string[] {
@@ -439,7 +494,12 @@ function isWorkProcessing(item: any) {
     status.includes('QUEUE') ||
     status.includes('WAIT') ||
     status.includes('RUNNING') ||
-    status.includes('START')
+    status.includes('START') ||
+    status === 'ACTIVE' ||
+    status === 'CREATED' ||
+    status === 'CREATE' ||
+    status === 'INIT' ||
+    status === 'INITIALIZED'
   );
 }
 

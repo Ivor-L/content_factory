@@ -20,6 +20,9 @@ const SORT_OPTIONS: Array<{ id: 'recent' | 'likes' | 'collects'; label: string }
 const SEARCH_HISTORY_KEY = 'HOT_SEARCH_HISTORY';
 const SEARCH_HISTORY_MAX = 10;
 const HOT_REMOVED_ITEMS_KEY = 'HOT_SQUARE_REMOVED_ITEMS';
+const HOT_LIST_LIMIT = 24;
+const HOT_LIST_CACHE_PREFIX = 'HOT_SQUARE_LIST_CACHE_V1';
+const HOT_LIST_CACHE_TTL_MS = 2 * 60 * 1000;
 const SEARCH_SUGGESTIONS = [
   'ai总是替我说话怎么办',
   '小红书live图带货',
@@ -28,6 +31,8 @@ const SEARCH_SUGGESTIONS = [
   'ai做ppt的工作流',
   'ar数字人技术介绍',
 ];
+
+const memoryHotListCache: Record<string, { items: any[]; updatedAt: number }> = {};
 
 export default function HotSquarePage() {
   const [activeCategory, setActiveCategory] = useState('我的');
@@ -75,30 +80,61 @@ export default function HotSquarePage() {
     return String(Math.round(value));
   };
 
+  const refreshHotSquareConfig = async () => {
+    try {
+      const config = await miniappApi.getHotSquareConfig();
+      const list = Array.isArray(config.categories)
+        ? config.categories
+          .filter((item: HotSquareCategoryConfig) => item?.enabled !== false)
+          .map((item: HotSquareCategoryConfig) => String(item.name || '').trim())
+          .filter(Boolean)
+        : [];
+      setDynamicCategories(list.length > 0 ? list : DEFAULT_REMOTE_CATEGORIES);
+    } catch {
+      setDynamicCategories(DEFAULT_REMOTE_CATEGORIES);
+    }
+  };
+
   const loadList = async (
     category = activeCategory,
     q = keyword,
     filter = activeFilter,
     sort = activeSort,
+    options?: { silent?: boolean },
   ) => {
-    setLoading(true);
+    const cacheKey = makeHotListCacheKey(category, q, filter, sort);
+    const cached = filterVisibleHotItems(readHotListCache(cacheKey));
+    const silent = options?.silent === true || cached.length > 0;
+
+    if (cached.length > 0) {
+      setList(cached);
+    }
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       const data = await miniappApi.getHotList({
         category,
         q,
-        limit: 40,
+        limit: HOT_LIST_LIMIT,
         sort,
         contentType: filter === 'video' ? 'video' : (filter === 'image' ? 'image' : undefined),
         source: category === '我的' ? 'mine' : 'all',
       });
-      setList(data.filter((item) => !isRemovedHotItem(item)));
+      const nextList = filterVisibleHotItems(data);
+      setList(nextList);
+      writeHotListCache(cacheKey, nextList);
     } catch (error) {
-      Taro.showToast({
-        title: error instanceof Error ? error.message : '加载失败',
-        icon: 'none',
-      });
+      if (!silent) {
+        Taro.showToast({
+          title: error instanceof Error ? error.message : '加载失败',
+          icon: 'none',
+        });
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
@@ -106,22 +142,7 @@ export default function HotSquarePage() {
     const boot = async () => {
       setList((prev) => prev.filter((item) => !isRemovedHotItem(item)));
       setSearchHistory(readSearchHistory());
-      try {
-        const config = await miniappApi.getHotSquareConfig();
-        const list = Array.isArray(config.categories)
-          ? config.categories
-            .filter((item: HotSquareCategoryConfig) => item?.enabled !== false)
-            .map((item: HotSquareCategoryConfig) => String(item.name || '').trim())
-            .filter(Boolean)
-          : [];
-        if (list.length > 0) {
-          setDynamicCategories(list);
-        } else {
-          setDynamicCategories(DEFAULT_REMOTE_CATEGORIES);
-        }
-      } catch {
-        setDynamicCategories(DEFAULT_REMOTE_CATEGORIES);
-      }
+      void refreshHotSquareConfig();
 
       const defaultFilter = Taro.getStorageSync('HOT_SQUARE_DEFAULT_FILTER');
       if (defaultFilter === 'video' || defaultFilter === 'image' || defaultFilter === 'all') {
@@ -542,6 +563,57 @@ function updateSearchHistory(keyword: string): string[] {
   return next;
 }
 
+function makeHotListCacheKey(
+  category: string,
+  keyword: string,
+  filter: 'all' | 'video' | 'image',
+  sort: 'recent' | 'likes' | 'collects',
+) {
+  const payload = [
+    category || '我的',
+    keyword.trim(),
+    filter,
+    sort,
+  ].map((item) => encodeURIComponent(item));
+  return `${HOT_LIST_CACHE_PREFIX}:${payload.join(':')}`;
+}
+
+function readHotListCache(cacheKey: string): any[] {
+  const now = Date.now();
+  const memory = memoryHotListCache[cacheKey];
+  if (memory && now - memory.updatedAt <= HOT_LIST_CACHE_TTL_MS) {
+    return memory.items;
+  }
+
+  try {
+    const raw = Taro.getStorageSync(cacheKey);
+    const parsed = raw ? JSON.parse(String(raw)) : null;
+    const updatedAt = Number(parsed?.updatedAt || 0);
+    const items = Array.isArray(parsed?.items) ? parsed.items : [];
+    if (!updatedAt || now - updatedAt > HOT_LIST_CACHE_TTL_MS || items.length === 0) return [];
+    memoryHotListCache[cacheKey] = { items, updatedAt };
+    return items;
+  } catch {
+    return [];
+  }
+}
+
+function writeHotListCache(cacheKey: string, items: any[]) {
+  const payload = { items, updatedAt: Date.now() };
+  memoryHotListCache[cacheKey] = payload;
+  try {
+    Taro.setStorageSync(cacheKey, JSON.stringify(payload));
+  } catch {
+    // Cache writes are optional; rendering should continue without them.
+  }
+}
+
+function filterVisibleHotItems(items: any[]) {
+  const removed = new Set(readRemovedHotItems());
+  if (removed.size === 0) return items;
+  return items.filter((item) => !isRemovedHotItemWithSet(item, removed));
+}
+
 function readRemovedHotItems(): string[] {
   try {
     const raw = Taro.getStorageSync(HOT_REMOVED_ITEMS_KEY);
@@ -556,6 +628,10 @@ function readRemovedHotItems(): string[] {
 
 function isRemovedHotItem(item: any): boolean {
   const removed = new Set(readRemovedHotItems());
+  return isRemovedHotItemWithSet(item, removed);
+}
+
+function isRemovedHotItemWithSet(item: any, removed: Set<string>): boolean {
   const keys = [
     item?.id,
     item?.myTaskId,

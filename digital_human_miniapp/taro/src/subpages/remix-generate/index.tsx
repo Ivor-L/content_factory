@@ -1,11 +1,10 @@
 import { View, Text, ScrollView, Image, Video, Picker } from '@tarojs/components';
 import Taro, { useDidShow, useLoad } from '@tarojs/taro';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { api, reportClientLog } from '../../utils/api';
 import { miniappApi } from '../../utils/miniapp-api';
 import './index.sass';
 
-type DurationBucket = 'SHORT' | 'LONG';
 type RemixMode = 'SMART' | 'ACTION';
 type UploadPhase = 'uploading' | 'confirming' | 'processing' | 'done';
 
@@ -223,11 +222,6 @@ export default function RemixGeneratePage() {
     Taro.navigateTo({ url: '/subpages/image-generate/index?from=action-transfer' });
   };
 
-  const submitHint = useMemo(() => {
-    if (remixMode === 'ACTION') return '预计扣除算力值 280';
-    const durationBucket: DurationBucket = durationSeconds > 15 ? 'LONG' : 'SHORT';
-    return durationBucket === 'SHORT' ? '预计扣除算力值 280' : '预计扣除算力值 520';
-  }, [remixMode, durationSeconds]);
   const targetLanguage = VIDEO_LANGUAGE_OPTIONS[targetLanguageIndex] || VIDEO_LANGUAGE_OPTIONS[0];
 
   const handleSubmit = async () => {
@@ -297,8 +291,7 @@ export default function RemixGeneratePage() {
         durationSeconds,
         targetLanguage: targetLanguage.value,
       });
-      const result = await miniappApi.createStoryboardJob({
-        pipelineKey: 'viral_clone',
+      const result = await miniappApi.createViralCloneStoryboardJob({
         title: `一键复刻-${durationSeconds}s`,
         script: `参考视频爆款复刻，目标时长${durationSeconds}秒。第一阶段拆解参考视频，第二阶段替换用户选择的产品，第三阶段生成视频。`,
         productId: selectedProductId || undefined,
@@ -555,7 +548,6 @@ export default function RemixGeneratePage() {
 
       <View className='fixed-submit-bar'>
         <View className='fixed-submit'>
-          <Text className='fixed-submit-sub'>{submitHint}</Text>
           <View className={`submit-btn ${submitting ? 'submit-btn--disabled' : ''}`} onClick={handleSubmit}>
             <Text className='submit-btn-text'>{submitting ? '生成中...' : '立即生成'}</Text>
           </View>

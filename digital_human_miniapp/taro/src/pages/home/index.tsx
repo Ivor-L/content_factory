@@ -28,8 +28,17 @@ const VIDEO_ICON_SVG = encodeSvgDataUri(`
   <path d="m10 9 5 3-5 3V9Z"/>
 </svg>
 `);
+const COPY_ICON_SVG = encodeSvgDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#111111" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M8 4.5h7.2l3.3 3.3v11.7H8z"/>
+  <path d="M15 4.5V8h3.5"/>
+  <path d="M5.5 7.5v12h9"/>
+  <path d="M10.8 12h5"/>
+  <path d="M10.8 15h4"/>
+</svg>
+`);
 
-type HomeFlatIcon = 'human' | 'image' | 'video' | 'coin';
+type HomeFlatIcon = 'human' | 'image' | 'video' | 'coin' | 'copy';
 
 export default function HomePage() {
   const [profile, setProfile] = useState<any>(null);
@@ -163,12 +172,12 @@ export default function HomePage() {
         </View>
       </View>
 
-      <View className='home-action-row' onClick={() => Taro.navigateTo({ url: '/subpages/monetization-square/index' })}>
+      <View className='home-action-row home-action-row--smart-copy' onClick={() => Taro.navigateTo({ url: '/subpages/smart-copy/index' })}>
         <View className='home-card-icon-shell home-card-icon-shell--coin'>
-          {renderHomeFlatIcon('coin')}
+          {renderHomeFlatIcon('copy')}
         </View>
         <Text className='home-card-arrow'>↗</Text>
-        <Text className='home-action-title'>变现广场</Text>
+        <Text className='home-action-title'>智能文案</Text>
       </View>
 
     </View>
@@ -194,6 +203,12 @@ function renderHomeFlatIcon(type: HomeFlatIcon) {
   if (type === 'video') {
     return (
       <Image className='home-flat-icon home-flat-icon-image' src={VIDEO_ICON_SVG} mode='aspectFit' />
+    );
+  }
+
+  if (type === 'copy') {
+    return (
+      <Image className='home-flat-icon home-flat-icon-image' src={COPY_ICON_SVG} mode='aspectFit' />
     );
   }
 

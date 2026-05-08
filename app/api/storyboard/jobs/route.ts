@@ -32,6 +32,22 @@ function safeReadString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function isMiniappStoryboardJob(parsed: {
+  pipelineKey: string;
+  source: string;
+  metadata: Record<string, unknown>;
+}): boolean {
+  const source = safeReadString(parsed.source);
+  const feature = safeReadString(parsed.metadata.feature);
+  const entry = safeReadString(parsed.metadata.entry);
+  return (
+    source === 'miniapp_generate_page' ||
+    source === 'miniapp_remix_generate_page' ||
+    (parsed.pipelineKey === 'skeleton_video' && feature === 'skeleton_storyboard') ||
+    (parsed.pipelineKey === 'viral_clone' && (feature === 'viral_remix' || entry === 'remix_generate_page'))
+  );
+}
+
 function stringifyRawProductAnalysis(product: {
   sellingPoints?: string | null;
   analysisResult?: string | null;
@@ -66,19 +82,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'script is required for script_to_storyboard' }, { status: 400 });
     }
 
-    await deductConfiguredCredits({
-      apiKey,
-      featureKey: 'storyboard_job_create',
-      userId,
-      defaultAmount: 1,
-      modelKey: parsed.pipelineKey,
-      workflowId: `storyboard_job:${parsed.pipelineKey}`,
-      workflowName: `分镜任务创建:${parsed.pipelineKey}`,
-    });
+    if (!isMiniappStoryboardJob(parsed)) {
+      await deductConfiguredCredits({
+        apiKey,
+        featureKey: 'storyboard_job_create',
+        userId,
+        defaultAmount: 1,
+        modelKey: parsed.pipelineKey,
+        workflowId: `storyboard_job:${parsed.pipelineKey}`,
+        workflowName: `分镜任务创建:${parsed.pipelineKey}`,
+      });
+    }
 
     const taskData: Record<string, unknown> = {};
     const payloadData: Record<string, unknown> = {};
     const metadata: Record<string, unknown> = { ...(parsed.metadata || {}) };
+    if (parsed.pipelineKey === 'viral_clone') {
+      taskData.replicationMode = 'viral-clone';
+    }
 
     if (parsed.productId) {
       const product = await prisma.product.findFirst({
@@ -226,9 +247,13 @@ export async function POST(request: Request) {
     console.error('[storyboard/jobs] Failed to create storyboard job', error);
     const message = error instanceof Error ? error.message : 'Failed to create storyboard job';
     const isWorkflowError = message.toLowerCase().includes('n8n webhook failed');
+    const isCreditError =
+      message.includes('积分') ||
+      message.toLowerCase().includes('credit') ||
+      message.toLowerCase().includes('insufficient');
     return NextResponse.json(
-      { error: isWorkflowError ? message : 'Failed to create storyboard job' },
-      { status: 500 }
+      { error: isWorkflowError || isCreditError ? message : 'Failed to create storyboard job', message },
+      { status: isCreditError ? 402 : isWorkflowError ? 502 : 500 }
     );
   }
 }

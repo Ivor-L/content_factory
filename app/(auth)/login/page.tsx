@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
+import Image from 'next/image';
 import Link from 'next/link';
 import { TenantLogo } from '@/components/TenantLogo';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -221,7 +222,11 @@ export default function LoginPage() {
       if (error) throw error;
 
       void triggerProvisionCredits(data.session?.access_token, 'password');
-      await syncServerSession(data.session?.access_token ?? null);
+      try {
+        await syncServerSession(data.session?.access_token ?? null);
+      } catch (syncError) {
+        console.warn('[auth] Failed to sync server session after password login', syncError);
+      }
       localStorage.setItem('login_timestamp', Date.now().toString());
       toast.success('Login successful');
       router.replace(tenantDashboardPath);
@@ -449,19 +454,15 @@ export default function LoginPage() {
 
       {/* Right Panel - Visual */}
       <div className="relative hidden h-full items-center justify-center overflow-hidden bg-black lg:flex lg:w-2/5">
-        <video
-          className="absolute inset-0 h-full w-full object-cover object-center"
-          autoPlay
-          loop
-          muted
-          playsInline
-          preload="none"
-          poster="/videos/login-hero-poster.jpg"
-        >
-          <source src="/videos/login-hero.mp4" type="video/mp4" />
-          <source src="/videos/login-hero.webm" type="video/webm" />
-        </video>
-        <div className="absolute inset-0 bg-gradient-to-br from-black/60 via-black/30 to-black/70" />
+        <Image
+          src="/login-hero-entryway.avif"
+          alt="Creative entryway organization inspiration"
+          fill
+          priority
+          sizes="40vw"
+          className="object-cover object-center"
+        />
+        <div className="absolute inset-0 bg-gradient-to-br from-black/50 via-black/20 to-black/60" />
 
         {/* Language Switcher */}
         <div className="absolute bottom-8 right-8 z-20 flex gap-2">

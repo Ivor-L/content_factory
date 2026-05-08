@@ -296,6 +296,12 @@
   align-items: center
   z-index: 60
 
+.work-detail-action-bar--copy
+  display: grid
+  grid-template-columns: repeat(2, minmax(0, 1fr))
+  gap: 12rpx
+  padding-bottom: calc(env(safe-area-inset-bottom) + 22rpx)
+
 .work-detail-action-btn
   flex: 1
   height: 74rpx
@@ -311,6 +317,9 @@
   flex: 0.9
   border: 1rpx solid rgba(255, 90, 95, 0.48)
   background: rgba(255, 90, 95, 0.12)
+
+.work-detail-delete-btn--copy
+  flex: none
 
 .work-detail-delete-btn-text
   font-size: 26rpx
@@ -331,6 +340,15 @@
 
 .work-detail-use-btn-text
   font-size: 25rpx
+  color: #131313
+  font-weight: 800
+
+.work-detail-copy-action-btn
+  flex: none
+  background: #ecee9f
+
+.work-detail-copy-action-btn-text
+  font-size: 24rpx
   color: #131313
   font-weight: 800
 

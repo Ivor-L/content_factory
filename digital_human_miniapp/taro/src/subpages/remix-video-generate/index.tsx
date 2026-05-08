@@ -9,9 +9,15 @@ const POLL_INTERVAL = 4000;
 
 const VIDEO_MODELS = [
   { id: 'bytedance/seedance-2', label: 'Seedance 2.0' },
-  { id: 'bytedance/seedance-2-fast', label: 'Seedance Fast' },
-  { id: 'veo3.1-fast', label: 'Veo 3.1 Fast' },
+  { id: 'bytedance/seedance-2-fast', label: 'Seedance 2.0 Fast' },
 ];
+const DEFAULT_VIDEO_MODEL = 'bytedance/seedance-2';
+const SMART_REMIX_VIDEO_STAGE_SOURCE = 'smart_remix_video_stage';
+
+function normalizeVideoModel(model: unknown): string {
+  const value = String(model || '').trim();
+  return VIDEO_MODELS.some((item) => item.id === value) ? value : DEFAULT_VIDEO_MODEL;
+}
 
 type EditingState = {
   clipKey: string;
@@ -46,7 +52,7 @@ export default function RemixVideoGeneratePage() {
   const [task, setTask] = useState<StoryboardTaskStatusResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState('');
-  const [videoModel, setVideoModel] = useState('bytedance/seedance-2');
+  const [videoModel, setVideoModel] = useState(DEFAULT_VIDEO_MODEL);
   const [batchGenerating, setBatchGenerating] = useState(false);
   const [actioningMap, setActioningMap] = useState<Record<string, boolean>>({});
   const [editing, setEditing] = useState<EditingState | null>(null);
@@ -78,7 +84,7 @@ export default function RemixVideoGeneratePage() {
     try {
       const data = await miniappApi.getStoryboardStatus(taskId);
       setTask(data);
-      if (data.videoModel) setVideoModel(data.videoModel);
+      if (data.videoModel) setVideoModel(normalizeVideoModel(data.videoModel));
       setErrorText('');
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : '复刻视频任务加载失败');
@@ -113,6 +119,7 @@ export default function RemixVideoGeneratePage() {
   const gridUrl = resolveRemixGridUrl(task);
   const generatedCount = clipItems.filter((clip) => Boolean(normalizeMediaUrl(clip.segment?.generatedVideo))).length;
   const pendingCount = Math.max(0, clipItems.length - generatedCount);
+  const generatingCount = clipItems.filter((clip) => isVideoGenerating(clip.segment)).length;
   const stageItems = buildRemixStages(segments, Boolean(task?.finalVideoUrl));
 
   const editingClip = useMemo(
@@ -207,6 +214,10 @@ export default function RemixVideoGeneratePage() {
       Taro.showToast({ title: '当前 Clip 缺少可生成片段', icon: 'none' });
       return;
     }
+    if (isVideoGenerating(segment)) {
+      Taro.showToast({ title: '视频生成中，请稍后查看', icon: 'none' });
+      return;
+    }
     const actionKey = `${segment.id}-video`;
     if (isActioning(actionKey)) return;
     setActioning(actionKey, true);
@@ -218,6 +229,7 @@ export default function RemixVideoGeneratePage() {
         segmentIds: [segment.id],
         model: videoModel,
         allowTextVideo: true,
+        source: SMART_REMIX_VIDEO_STAGE_SOURCE,
       });
       if (result.triggered <= 0) {
         throw new Error(result.message || '触发视频生成失败');
@@ -239,8 +251,14 @@ export default function RemixVideoGeneratePage() {
       return;
     }
 
-    let targetClips = clipItems.filter((clip) => clip.segment && !normalizeMediaUrl(clip.segment.generatedVideo));
+    let targetClips = clipItems.filter(
+      (clip) => clip.segment && !normalizeMediaUrl(clip.segment.generatedVideo) && !isVideoGenerating(clip.segment),
+    );
     if (targetClips.length === 0) {
+      if (generatingCount > 0) {
+        Taro.showToast({ title: '视频生成中，请稍后查看', icon: 'none' });
+        return;
+      }
       const modal = await Taro.showModal({
         title: '重新生成全部视频？',
         content: '所有片段已有视频，将重新生成全部片段。',
@@ -258,6 +276,26 @@ export default function RemixVideoGeneratePage() {
 
     setBatchGenerating(true);
     try {
+      const quote = await miniappApi.generateStoryboardVideos({
+        taskId,
+        segmentIds: targetClips.map((clip) => clip.segment?.id).filter((id): id is string => Boolean(id)),
+        model: videoModel,
+        allowTextVideo: true,
+        quoteOnly: true,
+        source: SMART_REMIX_VIDEO_STAGE_SOURCE,
+      });
+      const credits = quote.creditEstimate?.amount;
+      const unitText = quote.creditEstimate?.billingMode === 'duration_seconds'
+        ? `，计费时长 ${quote.creditEstimate.units} 秒`
+        : `，计费片段 ${quote.creditEstimate?.units ?? targetClips.length} 个`;
+      const confirm = await Taro.showModal({
+        title: '确认消耗积分',
+        content: `本次将生成 ${targetClips.length} 个片段，预计消耗 ${formatCreditAmount(credits)} 积分${unitText}。确认后开始生成。`,
+        confirmText: '确认生成',
+        cancelText: '取消',
+      });
+      if (!confirm.confirm) return;
+
       await Promise.all(targetClips.map((clip) => persistClipToSegment(clip)));
       targetClips.forEach((clip) => {
         if (clip.segment) upsertLocalSegment(clip.segment.id, { generatedVideo: null, status: 'VIDEO_GENERATING' });
@@ -267,6 +305,7 @@ export default function RemixVideoGeneratePage() {
         segmentIds: targetClips.map((clip) => clip.segment?.id).filter((id): id is string => Boolean(id)),
         model: videoModel,
         allowTextVideo: true,
+        source: SMART_REMIX_VIDEO_STAGE_SOURCE,
       });
       if (result.triggered <= 0) {
         throw new Error(result.message || '触发批量生成失败');
@@ -278,6 +317,44 @@ export default function RemixVideoGeneratePage() {
       await loadStatus(true);
     } finally {
       setBatchGenerating(false);
+    }
+  };
+
+  const handleCancelGeneratingClip = async (clip: RemixClipItem) => {
+    const segment = clip.segment;
+    if (!segment) return;
+    const actionKey = `${segment.id}-cancel-video`;
+    if (isActioning(actionKey)) return;
+    const confirm = await Taro.showModal({
+      title: '取消生成？',
+      content: '取消后当前片段会恢复为待生成状态，可稍后重新生成。',
+      confirmText: '取消生成',
+      cancelText: '继续等待',
+    });
+    if (!confirm.confirm) return;
+
+    setActioning(actionKey, true);
+    try {
+      await miniappApi.updateStoryboardSegment(segment.id, {
+        status: normalizeMediaUrl(segment.generatedImage) ? 'IMAGE_READY' : 'PENDING',
+        generatedVideo: null,
+        video_generation_cancelled: true,
+        videoGenerationCancelled: true,
+      });
+      upsertLocalSegment(segment.id, {
+        generatedVideo: null,
+        status: normalizeMediaUrl(segment.generatedImage) ? 'IMAGE_READY' : 'PENDING',
+        generationParams: {
+          ...(asRecord(segment.generationParams) || {}),
+          video_generation_cancelled: true,
+        },
+      });
+      Taro.showToast({ title: '已取消生成', icon: 'success' });
+      await loadStatus(true);
+    } catch (error) {
+      Taro.showToast({ title: error instanceof Error ? error.message : '取消失败', icon: 'none' });
+    } finally {
+      setActioning(actionKey, false);
     }
   };
 
@@ -378,7 +455,7 @@ export default function RemixVideoGeneratePage() {
                     <View
                       key={model.id}
                       className={`remix-video-model-chip ${videoModel === model.id ? 'remix-video-model-chip--active' : ''}`}
-                      onClick={() => setVideoModel(model.id)}
+                      onClick={() => setVideoModel(normalizeVideoModel(model.id))}
                     >
                       <Text className={`remix-video-model-chip-text ${videoModel === model.id ? 'remix-video-model-chip-text--active' : ''}`}>
                         {model.label}
@@ -398,10 +475,11 @@ export default function RemixVideoGeneratePage() {
               {clipItems.map((clip) => {
                 const segment = clip.segment;
                 const videoUrl = normalizeMediaUrl(segment?.generatedVideo);
-                const statusText = String(segment?.status || '').toUpperCase();
-                const generating = statusText.includes('VIDEO_GENERATING') && !videoUrl;
-                const failed = statusText.includes('VIDEO') && (statusText.includes('FAIL') || statusText.includes('ERROR'));
+                const generating = isVideoGenerating(segment) && !videoUrl;
+                const failed = isVideoFailed(segment);
                 const actioning = segment ? isActioning(`${segment.id}-video`) : false;
+                const cancelling = segment ? isActioning(`${segment.id}-cancel-video`) : false;
+                const disableActions = actioning || generating || !segment;
                 return (
                   <View key={clip.key} className='remix-video-clip-card'>
                     <View className='remix-video-clip-head'>
@@ -430,21 +508,45 @@ export default function RemixVideoGeneratePage() {
                         </View>
                       </View>
                     )}
+                    {generating && !videoUrl && (
+                      <View className='remix-video-generating-card'>
+                        <View className='remix-video-generating-pulse'>
+                          <View className='remix-video-generating-spinner' />
+                        </View>
+                        <Text className='remix-video-generating-title'>视频生成中</Text>
+                        <Text className='remix-video-generating-desc'>可离开当前页面，回来后会继续同步状态</Text>
+                        <View
+                          className={`remix-video-cancel-btn ${cancelling ? 'remix-video-cancel-btn--disabled' : ''}`}
+                          onClick={() => {
+                            if (cancelling) return;
+                            void handleCancelGeneratingClip(clip);
+                          }}
+                        >
+                          <Text className='remix-video-cancel-btn-text'>{cancelling ? '取消中' : '取消生成'}</Text>
+                        </View>
+                      </View>
+                    )}
                     <View className='remix-video-clip-actions'>
                       <View
-                        className='remix-video-clip-btn remix-video-clip-btn--ghost'
-                        onClick={() => setEditing({
-                          clipKey: clip.key,
-                          segmentId: segment?.id || '',
-                          prompt: clip.videoPrompt || '',
-                          durationText: formatDuration(clip.duration),
-                        })}
+                        className={`remix-video-clip-btn remix-video-clip-btn--ghost ${generating ? 'remix-video-clip-btn--disabled' : ''}`}
+                        onClick={() => {
+                          if (generating) return;
+                          setEditing({
+                            clipKey: clip.key,
+                            segmentId: segment?.id || '',
+                            prompt: clip.videoPrompt || '',
+                            durationText: formatDuration(clip.duration),
+                          });
+                        }}
                       >
                         <Text className='remix-video-clip-btn-text remix-video-clip-btn-text--ghost'>编辑提示词</Text>
                       </View>
                       <View
-                        className={`remix-video-clip-btn remix-video-clip-btn--primary ${actioning || !segment ? 'remix-video-clip-btn--disabled' : ''}`}
-                        onClick={() => void handleGenerateClip(clip)}
+                        className={`remix-video-clip-btn remix-video-clip-btn--primary ${disableActions ? 'remix-video-clip-btn--disabled' : ''}`}
+                        onClick={() => {
+                          if (disableActions) return;
+                          void handleGenerateClip(clip);
+                        }}
                       >
                         <Text className='remix-video-clip-btn-text'>{actioning || generating ? '生成中' : videoUrl ? '重新生成' : '生成视频'}</Text>
                       </View>
@@ -517,6 +619,23 @@ function normalizeMediaUrl(value: unknown): string {
   if (!text || /^(undefined|null|nan)$/i.test(text)) return '';
   if (text.startsWith('//')) return `https:${text}`;
   return /^https?:\/\//i.test(text) ? text : '';
+}
+
+function isVideoGenerating(segment?: StoryboardSegmentItem | null): boolean {
+  const statusText = String(segment?.status || '').toUpperCase();
+  return statusText.includes('VIDEO_GENERATING') || statusText.includes('VIDEO_QUEUED') || statusText.includes('VIDEO_PROCESSING');
+}
+
+function isVideoFailed(segment?: StoryboardSegmentItem | null): boolean {
+  const statusText = String(segment?.status || '').toUpperCase();
+  return statusText.includes('VIDEO') && (statusText.includes('FAIL') || statusText.includes('ERROR'));
+}
+
+function formatCreditAmount(value: unknown): string {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0) return '约 0';
+  if (Number.isInteger(amount)) return String(amount);
+  return amount.toFixed(2).replace(/\.?0+$/, '');
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

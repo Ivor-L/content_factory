@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestUserContext } from "@/lib/authServer";
 import { fetchUserTaskSummaries } from "@/lib/taskSummaryQueries";
-import { getShortTtlCache, setShortTtlCache } from "@/lib/shortTtlCache";
+import { getOrSetShortTtlCache } from "@/lib/shortTtlCache";
 
 const TASKS_LIST_CACHE_TTL_MS = 3_000;
 
@@ -30,37 +30,37 @@ export async function GET(request: NextRequest) {
     offset: offsetParam,
     includeEnrichment,
   });
-  const cached = getShortTtlCache<object>("api:tasks:list", cacheKey);
-  if (cached) {
-    return NextResponse.json(cached, {
-      headers: { "X-Cache": "HIT" },
-    });
-  }
 
   try {
-    const { tasks, total, limit, offset, hasMore } = await fetchUserTaskSummaries({
-      userId,
-      taskType: taskType as any,
-      status,
-      limit: limitParam,
-      offset: offsetParam,
-      includeEnrichment,
-      includeTotal: false,
-    });
+    const { value: responseBody, cacheStatus } = await getOrSetShortTtlCache(
+      "api:tasks:list",
+      cacheKey,
+      TASKS_LIST_CACHE_TTL_MS,
+      async () => {
+        const { tasks, total, limit, offset, hasMore } = await fetchUserTaskSummaries({
+          userId,
+          taskType: taskType as any,
+          status,
+          limit: limitParam,
+          offset: offsetParam,
+          includeEnrichment,
+          includeTotal: false,
+        });
 
-    const responseBody = {
-      data: tasks,
-      pagination: {
-        total,
-        limit,
-        offset,
-        hasMore,
+        return {
+          data: tasks,
+          pagination: {
+            total,
+            limit,
+            offset,
+            hasMore,
+          },
+        };
       },
-    };
-    setShortTtlCache("api:tasks:list", cacheKey, responseBody, TASKS_LIST_CACHE_TTL_MS);
+    );
 
     return NextResponse.json(responseBody, {
-      headers: { "X-Cache": "MISS" },
+      headers: { "X-Cache": cacheStatus },
     });
   } catch (error) {
     console.error("Failed to fetch tasks", error);

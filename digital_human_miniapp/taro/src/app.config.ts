@@ -26,6 +26,7 @@ export default defineAppConfig({
         'remix-generate/index',
         'remix-video-generate/index',
         'generate/index',
+        'smart-copy/index',
         'monetization-square/index',
         'image-generate/index',
         'records/index',

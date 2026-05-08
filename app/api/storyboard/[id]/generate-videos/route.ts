@@ -4,9 +4,13 @@ import { getRequestUserContext } from "@/lib/authServer";
 import { resolveUserApiKey } from "@/lib/userApiKey";
 import type { Prisma } from "@prisma/client";
 import { deductCredits } from "@/lib/credits";
-import { deductConfiguredCredits } from "@/lib/creditBilling";
 import { getCreditCostForModel } from "@/lib/creditCosts";
 import { logCreditUsage } from "@/lib/logCreditUsage";
+import {
+  mergeStoryboardVideoCreditCharge,
+  refundStoryboardVideoCreditCharge,
+  type StoryboardVideoCreditCharge,
+} from "@/lib/storyboardVideoCredits";
 
 const NO_BGM_RULE =
   "ABSOLUTELY NO BGM, NO BACKGROUND MUSIC. Pure voice/dialogue and ambient foley only.";
@@ -16,6 +20,17 @@ function cleanUrl(value: unknown): string {
   if (!text || /^(undefined|null|nan)$/i.test(text)) return "";
   if (text.startsWith("//")) return `https:${text}`;
   return /^https?:\/\//i.test(text) ? text : "";
+}
+
+function appendQueryParams(url: string, params: Record<string, string | undefined>): string {
+  const base = cleanUrl(url);
+  if (!base) return "";
+  const parsed = new URL(base);
+  for (const [key, value] of Object.entries(params)) {
+    const text = String(value || "").trim();
+    if (text) parsed.searchParams.set(key, text);
+  }
+  return parsed.toString();
 }
 
 function ensureNoBgmPrompt(prompt: string): string {
@@ -32,6 +47,58 @@ function isSeedanceModel(model: unknown): boolean {
 
 function isSeedanceFastModel(model: unknown): boolean {
   return /seedance.*fast|fast.*seedance/i.test(String(model || ""));
+}
+
+function isSmartRemixVideoStageSource(value: unknown): boolean {
+  return String(value || "").trim() === "smart_remix_video_stage";
+}
+
+function normalizeSeedanceVideoModel(model: unknown): string {
+  return isSeedanceFastModel(model) ? "bytedance/seedance-2-fast" : "bytedance/seedance-2";
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function jsonContainsAnyString(value: unknown, needles: string[]): boolean {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    return needles.some((needle) => normalized.includes(needle));
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) => jsonContainsAnyString(item, needles));
+  }
+  if (value && typeof value === "object") {
+    return Object.values(value as Record<string, unknown>).some((item) => jsonContainsAnyString(item, needles));
+  }
+  return false;
+}
+
+function isSmartRemixStoryboardTask(task: {
+  detailedBreakdown?: Prisma.JsonValue | null;
+  replicationMode?: string | null;
+}): boolean {
+  const breakdown = asRecord(task.detailedBreakdown);
+  const metadata = asRecord(breakdown.metadata);
+  const pipelineKey = String(breakdown.pipeline_key || breakdown.pipelineKey || "").trim();
+  const feature = String(metadata.feature || breakdown.feature || "").trim();
+  const source = String(breakdown.source || metadata.entry || "").trim();
+  const replicationMode = String(task.replicationMode || "").trim();
+  return pipelineKey === "viral_clone" ||
+    replicationMode === "viral-clone" ||
+    feature === "viral_remix" ||
+    source === "miniapp_remix_generate_page" ||
+    source === "remix_generate_page" ||
+    jsonContainsAnyString(task.detailedBreakdown, [
+      "viral_clone",
+      "viral_remix",
+      "one_click_remix",
+      "miniapp_remix_generate_page",
+      "remix_generate_page",
+    ]);
 }
 
 function normalizeVideoAspectRatio(value: unknown): "9:16" | "16:9" | "" {
@@ -157,11 +224,151 @@ function getPositiveDurationSeconds(value: unknown, fallback = 1): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function clampSeedanceDurationSeconds(value: unknown, fallback = 8): number {
+  const parsed = Math.round(Number(value) || fallback);
+  return Math.max(4, Math.min(15, parsed));
+}
+
+function getBillableDurationSeconds(model: unknown, duration: unknown): number {
+  return isSeedanceModel(model)
+    ? clampSeedanceDurationSeconds(duration, 0)
+    : getPositiveDurationSeconds(duration, 1);
+}
+
+function getDefaultStoryboardVideoUnitCost(model: unknown): number {
+  if (!isSeedanceModel(model)) return 3;
+  return isSeedanceFastModel(model) ? 3 : 4;
+}
+
+async function getStoryboardVideoUnitCost(model: unknown): Promise<number> {
+  const defaultAmount = getDefaultStoryboardVideoUnitCost(model);
+  const configured = await getCreditCostForModel("storyboard_video", String(model || ""), defaultAmount);
+  const amount = Math.floor(Number(configured) || 0);
+  return amount > 0 ? amount : defaultAmount;
+}
+
+async function estimateStoryboardVideoCredits(
+  model: unknown,
+  segments: Array<{ duration: unknown }>,
+): Promise<{ unitAmount: number; units: number; amount: number; billingMode: "duration_seconds" | "segments" }> {
+  if (isSeedanceModel(model)) {
+    const units = segments.reduce(
+      (sum, segment) => sum + getBillableDurationSeconds(model, segment.duration),
+      0,
+    ) || 1;
+    const unitAmount = await getStoryboardVideoUnitCost(model);
+    return {
+      unitAmount,
+      units: Math.max(1, Math.ceil(units)),
+      amount: unitAmount * Math.max(1, Math.ceil(units)),
+      billingMode: "duration_seconds",
+    };
+  }
+
+  const unitAmount = await getStoryboardVideoUnitCost(model);
+  const units = Math.max(1, segments.length);
+  return {
+    unitAmount,
+    units,
+    amount: unitAmount * units,
+    billingMode: "segments",
+  };
+}
+
+function buildStoryboardVideoCreditCharges(
+  model: unknown,
+  segments: Array<{ id: string; duration: unknown }>,
+  creditEstimate: { unitAmount: number; billingMode: "duration_seconds" | "segments" },
+): Map<string, StoryboardVideoCreditCharge> {
+  const requestId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const chargedAt = new Date().toISOString();
+  const charges = new Map<string, StoryboardVideoCreditCharge>();
+  for (const segment of segments) {
+    const units = creditEstimate.billingMode === "duration_seconds"
+      ? getBillableDurationSeconds(model, segment.duration)
+      : 1;
+    const normalizedUnits = Math.max(1, Math.ceil(Number(units) || 1));
+    charges.set(segment.id, {
+      requestId,
+      featureKey: "storyboard_video",
+      modelKey: String(model || ""),
+      unitAmount: creditEstimate.unitAmount,
+      units: normalizedUnits,
+      amount: creditEstimate.unitAmount * normalizedUnits,
+      billingMode: creditEstimate.billingMode,
+      chargedAt,
+    });
+  }
+  return charges;
+}
+
+function parseKieTaskId(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  const data = record.data && typeof record.data === "object" && !Array.isArray(record.data)
+    ? record.data as Record<string, unknown>
+    : null;
+  return cleanText(data?.taskId) || cleanText(record.taskId) || cleanText(data?.id) || "";
+}
+
+function cleanText(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+async function createKieSeedanceTask(payload: {
+  prompt: string;
+  referenceImageUrls: string[];
+  duration: number;
+  aspectRatio: string;
+  model: string;
+  callbackUrl: string;
+  providerApiKey: string;
+}) {
+  const requestBody = {
+    model: payload.model,
+    input: {
+      prompt: payload.prompt,
+      reference_image_urls: payload.referenceImageUrls,
+      reference_video_urls: [],
+      reference_audio_urls: [],
+      generate_audio: false,
+      resolution: "720p",
+      aspect_ratio: payload.aspectRatio,
+      duration: payload.duration,
+      web_search: false,
+      nsfw_checker: true,
+    },
+    callBackUrl: payload.callbackUrl,
+  };
+
+  const response = await fetch("https://api.kie.ai/api/v1/jobs/createTask", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${payload.providerApiKey}`,
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  const result = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(`KIE Seedance createTask failed: ${response.status} ${JSON.stringify(result).slice(0, 500)}`);
+  }
+
+  const taskId = parseKieTaskId(result);
+  if (!taskId) {
+    throw new Error(`KIE Seedance createTask did not return taskId: ${JSON.stringify(result).slice(0, 500)}`);
+  }
+
+  return { taskId, requestBody, rawResponse: result };
+}
+
 /**
  * Batch trigger video generation for storyboard segments
  * POST /api/storyboard/[id]/generate-videos
  *
- * Calls n8n webhook which generates the video and POSTs back via callback_url.
+ * Seedance calls KIE directly and receives KIE callbacks on /api/webhook/storyboard-video.
+ * Other video models still use the legacy n8n webhook.
  */
 
 export async function POST(
@@ -183,9 +390,9 @@ export async function POST(
       model = "veo3.1-fast",
       allowTextVideo = false,
     } = body;
+    const requestSource = body.source || body.requestSource || body.request_source;
+    const quoteOnly = body.quoteOnly === true || body.quote_only === true || body.dryRun === true || body.dry_run === true;
     const requestedAspectRatio = normalizeVideoAspectRatio(body.aspectRatio || body.aspect_ratio || body.ratio) || "9:16";
-
-    console.log("[generate-videos] Request:", { task_id: id, segmentIds, model, userId });
 
     // 1. Verify task
     const task = await prisma.storyboardTask.findUnique({
@@ -195,6 +402,20 @@ export async function POST(
     if (!task || (task.userId && task.userId !== userId)) {
       return NextResponse.json({ error: "Task not found or unauthorized" }, { status: 404 });
     }
+    const forceSeedanceRoute = isSmartRemixVideoStageSource(requestSource) || isSmartRemixStoryboardTask(task);
+    const effectiveModel = forceSeedanceRoute ? normalizeSeedanceVideoModel(model) : model;
+    const providerRoute = isSeedanceModel(effectiveModel) ? "kie" : "n8n";
+
+    console.log("[generate-videos] Request:", {
+      task_id: id,
+      segmentIds,
+      model: effectiveModel,
+      requestedModel: model,
+      source: requestSource,
+      forceSeedanceRoute,
+      providerRoute,
+      userId,
+    });
 
     // 2. Get segments
     const hasSpecificSegments = Array.isArray(segmentIds) && segmentIds.length > 0;
@@ -223,6 +444,22 @@ export async function POST(
       return NextResponse.json({ error: "All selected segments already have generated videos" }, { status: 404 });
     }
 
+    const creditEstimate = await estimateStoryboardVideoCredits(effectiveModel, targetSegments);
+    const creditCharges = buildStoryboardVideoCreditCharges(effectiveModel, targetSegments, creditEstimate);
+    if (quoteOnly) {
+      return NextResponse.json({
+        success: true,
+        quoteOnly: true,
+        task_id: id,
+        total: targetSegments.length,
+        triggered: 0,
+        failed: 0,
+        model: effectiveModel,
+        providerRoute,
+        creditEstimate,
+      });
+    }
+
     // 3. Resolve API key
     const apiKey = await resolveUserApiKey({
       userId,
@@ -235,8 +472,17 @@ export async function POST(
         { status: 400 }
       );
     }
-    const seedanceProviderApiKey = isSeedanceModel(model) ? resolveSeedanceProviderApiKey() : "";
-    if (isSeedanceModel(model) && !seedanceProviderApiKey) {
+    const seedanceProviderApiKey = providerRoute === "kie" ? resolveSeedanceProviderApiKey() : "";
+    if (forceSeedanceRoute && providerRoute !== "kie") {
+      return NextResponse.json(
+        {
+          error: "Invalid provider route",
+          message: "智能复刻第三阶段只能直连 KIE Seedance，禁止回退到 n8n。",
+        },
+        { status: 400 }
+      );
+    }
+    if (providerRoute === "kie" && !seedanceProviderApiKey) {
       return NextResponse.json(
         {
           error: "Seedance provider key not configured",
@@ -245,12 +491,18 @@ export async function POST(
         { status: 400 }
       );
     }
+    const adminToken = (process.env.ADMIN_TOKEN || "").trim();
+    if (providerRoute === "kie" && !adminToken) {
+      return NextResponse.json(
+        {
+          error: "Admin token not configured",
+          message: "Seedance 2.0 直连回调需要配置 ADMIN_TOKEN。",
+        },
+        { status: 400 }
+      );
+    }
 
-    // 4. Resolve webhook + callback URLs
-    const webhookUrl =
-      process.env.N8N_VIDEO_GEN_WEBHOOK?.trim() ||
-      "https://hooks.atomx.top/webhook/storyboard_video";
-
+    // 4. Resolve callback URL. The n8n webhook is resolved only inside the non-Seedance branch.
     const callbackBase = (
       process.env.N8N_CALLBACK_BASE_URL ||
       process.env.CANVAS_VIDEO_POLL_CALLBACK_BASE_URL ||
@@ -260,32 +512,20 @@ export async function POST(
 
     // 4a. Deduct credits upfront
     try {
-      if (isSeedanceModel(model)) {
-        const totalDurationSeconds = targetSegments.reduce(
-          (sum, segment) => sum + getPositiveDurationSeconds(segment.duration, 0),
-          0,
-        ) || 1;
-        await deductConfiguredCredits({
-          apiKey,
-          featureKey: "storyboard_video",
-          userId,
-          defaultAmount: 1,
-          modelKey: String(model || ""),
-          units: totalDurationSeconds,
-          workflowId: "flow_storyboard_video",
-          workflowName: "分镜视频生成",
-        });
-      } else {
-        const costPerSegment = await getCreditCostForModel("storyboard_video", String(model || ""), 1);
-        const totalCost = costPerSegment * targetSegments.length;
-        await deductCredits(apiKey, {
-          amount: totalCost,
-          workflowId: "flow_storyboard_video",
-          workflowName: "分镜视频生成",
-          reason: "storyboard_video",
-        });
-        logCreditUsage({ featureKey: "storyboard_video", userId, amount: totalCost, success: true });
-      }
+      await deductCredits(apiKey, {
+        amount: creditEstimate.amount,
+        workflowId: "flow_storyboard_video",
+        workflowName: "分镜视频生成",
+        reason: "storyboard_video",
+      });
+      logCreditUsage({
+        featureKey: providerRoute === "kie"
+          ? `storyboard_video:${String(effectiveModel || "")}`
+          : "storyboard_video",
+        userId,
+        amount: creditEstimate.amount,
+        success: true,
+      });
     } catch (error) {
       console.error("[generate-videos] Failed to deduct credits:", error);
       logCreditUsage({ featureKey: "storyboard_video", userId, success: false, errorMessage: error instanceof Error ? error.message : "Unknown" });
@@ -295,7 +535,7 @@ export async function POST(
       );
     }
 
-    // 5. Fire n8n for each segment
+    // 5. Fire provider for each segment. Seedance 2.0 calls KIE directly; other models keep the legacy n8n path.
     const breakdown = task.detailedBreakdown as Record<string, unknown> | null;
     const pipelineKey = String(breakdown?.pipeline_key || breakdown?.pipelineKey || "");
     const style = (breakdown?.style as Record<string, unknown>) ?? {};
@@ -317,6 +557,7 @@ export async function POST(
         !Array.isArray(segment.generationParams)
         ? segment.generationParams as Record<string, unknown>
         : {};
+      const creditCharge = creditCharges.get(segment.id);
       const clipPrompt = typeof generationParams.clip_video_prompt === "string"
         ? generationParams.clip_video_prompt.trim()
         : typeof generationParams.clipVideoPrompt === "string"
@@ -332,12 +573,15 @@ export async function POST(
           .map((ref) => (ref && typeof ref === "object" ? ref as Record<string, unknown> : null))
           .find((ref) => String(ref?.type || "").trim() === "product")?.url
         : null;
-      const finalPrompt = !isSkeletonVideo && isSeedanceModel(model) && firstFrameUrl && storyboardGridUrl
+      const finalPrompt = !isSkeletonVideo && isSeedanceModel(effectiveModel) && firstFrameUrl && storyboardGridUrl
         ? withSeedanceStoryboardReference(basePrompt, generationParams, storyboardGridUrl, requestedAspectRatio)
         : basePrompt;
-      const segmentDuration = Number.isFinite(Number(segment.duration)) && Number(segment.duration) > 0
+      const rawSegmentDuration = Number.isFinite(Number(segment.duration)) && Number(segment.duration) > 0
         ? Math.round(Number(segment.duration) * 1000) / 1000
         : 8;
+      const segmentDuration = providerRoute === "kie"
+        ? clampSeedanceDurationSeconds(rawSegmentDuration)
+        : rawSegmentDuration;
 
       const payload = {
         segment_id: segment.id,
@@ -347,7 +591,7 @@ export async function POST(
         first_frame_url: firstFrameUrl || null,
         storyboard_grid_url: storyboardGridUrl || null,
         storyboardGridUrl: storyboardGridUrl || null,
-        reference_image_urls: isSeedanceModel(model)
+        reference_image_urls: providerRoute === "kie"
           ? isSkeletonVideo
             ? getSkeletonVideoReferenceImageUrls(firstFrameUrl)
             : getReferenceImageUrls(firstFrameUrl, storyboardGridUrl, generationParams, { includeProductRefs, productImageUrl: cleanUrl(productImageUrl) })
@@ -363,22 +607,66 @@ export async function POST(
         targetDurationSeconds: segmentDuration,
         video_duration_seconds: segmentDuration,
         videoDurationSeconds: segmentDuration,
-        model: toProviderModel(model),
-        requested_model: model,
-        requestedModel: model,
+        model: toProviderModel(effectiveModel),
+        requested_model: effectiveModel,
+        requestedModel: effectiveModel,
         aspect_ratio: requestedAspectRatio,
         aspectRatio: requestedAspectRatio,
         callback_url: callbackUrl,
         api_key: apiKey,
         provider_api_key: seedanceProviderApiKey || undefined,
         providerApiKey: seedanceProviderApiKey || undefined,
-        admin_token: process.env.ADMIN_TOKEN,
+        admin_token: adminToken || undefined,
         creative_style_raw: (style.creativeStyleRaw as string) ?? "",
         creative_style_norm: (style.creativeStyleNorm as string) ?? "写实",
         style_profile_json: styleProfileJson,
       };
 
       try {
+        if (providerRoute === "kie") {
+          const kieCallbackUrl = appendQueryParams(callbackUrl, {
+            segment_id: segment.id,
+            task_id: id,
+            model: toProviderModel(effectiveModel),
+            admin_token: adminToken,
+          });
+          const kieTask = await createKieSeedanceTask({
+            prompt: finalPrompt,
+            referenceImageUrls: payload.reference_image_urls,
+            duration: segmentDuration,
+            aspectRatio: requestedAspectRatio,
+            model: toProviderModel(effectiveModel),
+            callbackUrl: kieCallbackUrl,
+            providerApiKey: seedanceProviderApiKey,
+          });
+
+          await prisma.storyboardSegment.update({
+            where: { id: segment.id },
+            data: {
+              status: "VIDEO_GENERATING",
+              videoGenerationModel: effectiveModel,
+              generationParams: mergeStoryboardVideoCreditCharge({
+                ...generationParams,
+                provider: "kie",
+                provider_task_id: kieTask.taskId,
+                provider_model: toProviderModel(effectiveModel),
+                provider_callback_url: kieCallbackUrl,
+                provider_request: kieTask.requestBody,
+              }, creditCharge),
+            },
+          });
+
+          console.log(`[generate-videos] Triggered KIE Seedance for segment ${segment.id}`);
+          return { segment_id: segment.id, success: true, provider: "kie", provider_task_id: kieTask.taskId };
+        }
+
+        if (forceSeedanceRoute) {
+          throw new Error("智能复刻第三阶段禁止调用 n8n");
+        }
+
+        const webhookUrl =
+          process.env.N8N_VIDEO_GEN_WEBHOOK?.trim() ||
+          "https://hooks.atomx.top/webhook/storyboard_video";
         const response = await fetch(webhookUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -391,7 +679,11 @@ export async function POST(
 
         await prisma.storyboardSegment.update({
           where: { id: segment.id },
-          data: { status: "VIDEO_GENERATING", videoGenerationModel: model },
+          data: {
+            status: "VIDEO_GENERATING",
+            videoGenerationModel: effectiveModel,
+            generationParams: mergeStoryboardVideoCreditCharge(generationParams, creditCharge),
+          },
         });
 
         console.log(`[generate-videos] Triggered n8n for segment ${segment.id}`);
@@ -400,8 +692,25 @@ export async function POST(
         console.error(`[generate-videos] Failed for segment ${segment.id}:`, error);
         await prisma.storyboardSegment.update({
           where: { id: segment.id },
-          data: { status: "VIDEO_FAILED" },
+          data: {
+            status: "VIDEO_FAILED",
+            generationParams: mergeStoryboardVideoCreditCharge({
+              ...generationParams,
+              video_trigger_error: error instanceof Error ? error.message : "Unknown error",
+            }, creditCharge),
+          },
         }).catch(() => {});
+        if (creditCharge) {
+          await refundStoryboardVideoCreditCharge({
+            segmentId: segment.id,
+            apiKey,
+            userId,
+            reason: "storyboard_video_trigger_failed",
+            errorMessage: error instanceof Error ? error.message : "Unknown error",
+          }).catch((refundError) => {
+            console.error(`[generate-videos] Failed to refund segment ${segment.id}:`, refundError);
+          });
+        }
         return {
           segment_id: segment.id,
           success: false,
@@ -417,7 +726,7 @@ export async function POST(
     if (successCount > 0) {
       await prisma.storyboardTask.update({
         where: { id },
-        data: { status: "VIDEO_GENERATING", progress: 65, videoModel: model },
+        data: { status: "VIDEO_GENERATING", progress: 65, videoModel: effectiveModel },
       });
     }
 
@@ -426,7 +735,7 @@ export async function POST(
       total: targetSegments.length,
       success: successCount,
       failures: failureCount,
-      model,
+      model: effectiveModel,
     });
 
     return NextResponse.json(
@@ -437,7 +746,9 @@ export async function POST(
         total: targetSegments.length,
         triggered: successCount,
         failed: failureCount,
-        model,
+        model: effectiveModel,
+        providerRoute,
+        creditEstimate,
         results,
         message:
           successCount === 0 ? "所有分镜生视频触发失败" : failureCount > 0 ? "部分分镜触发失败" : undefined,

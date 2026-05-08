@@ -327,6 +327,71 @@
   font-size: 22rpx
   font-weight: 800
 
+.remix-video-generating-card
+  min-height: 220rpx
+  margin-top: 16rpx
+  border-radius: 14rpx
+  border: 1rpx solid rgba(236, 238, 159, 0.18)
+  background: linear-gradient(135deg, rgba(236, 238, 159, 0.08), rgba(81, 121, 191, 0.12))
+  display: flex
+  flex-direction: column
+  align-items: center
+  justify-content: center
+  box-sizing: border-box
+
+.remix-video-generating-pulse
+  width: 72rpx
+  height: 72rpx
+  border-radius: 999rpx
+  background: rgba(236, 238, 159, 0.12)
+  display: flex
+  align-items: center
+  justify-content: center
+  animation: remixVideoPulse 1.35s ease-in-out infinite
+
+.remix-video-generating-spinner
+  width: 38rpx
+  height: 38rpx
+  border-radius: 999rpx
+  border: 4rpx solid rgba(236, 238, 159, 0.25)
+  border-top-color: #ecee9f
+  animation: remixVideoSpin 0.9s linear infinite
+
+.remix-video-generating-title
+  display: block
+  margin-top: 16rpx
+  color: #ecee9f
+  font-size: 26rpx
+  font-weight: 900
+
+.remix-video-generating-desc
+  display: block
+  margin-top: 8rpx
+  color: #8ea2c8
+  font-size: 22rpx
+  line-height: 1.35
+
+.remix-video-cancel-btn
+  min-width: 160rpx
+  height: 58rpx
+  margin-top: 18rpx
+  padding: 0 22rpx
+  border-radius: 999rpx
+  border: 1rpx solid rgba(255, 138, 142, 0.45)
+  background: rgba(255, 138, 142, 0.1)
+  display: flex
+  align-items: center
+  justify-content: center
+  box-sizing: border-box
+
+.remix-video-cancel-btn--disabled
+  opacity: 0.56
+
+.remix-video-cancel-btn-text
+  color: #ff9ca0
+  font-size: 23rpx
+  font-weight: 900
+
 .remix-video-clip-actions
   display: flex
   gap: 12rpx
@@ -502,3 +567,12 @@
     transform: rotate(0deg)
   to
     transform: rotate(360deg)
+
+@keyframes remixVideoPulse
+  0%,
+  100%
+    transform: scale(1)
+    opacity: 0.82
+  50%
+    transform: scale(1.08)
+    opacity: 1

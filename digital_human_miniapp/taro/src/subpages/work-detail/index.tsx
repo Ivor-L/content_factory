@@ -11,6 +11,8 @@ const ACTION_TRANSFER_IMAGE_RETURN_KEY = 'REMIX_ACTION_SOURCE_IMAGE_URL';
 const WORK_SELECT_TARGET_STORAGE_KEY = 'WORK_SELECT_TARGET';
 const DETAIL_IMAGE_WIDTH_RPX = 702;
 const DETAIL_IMAGE_FALLBACK_HEIGHT_RPX = 936;
+const SMART_COPY_CARD_PAYLOAD_KEY = 'SMART_COPY_CARD_PAYLOAD';
+const SMART_COPY_SCRIPT_PAYLOAD_KEY = 'SMART_COPY_SCRIPT_PAYLOAD';
 
 function buildQrcodeImageSrc(text: string): string {
   const value = String(text || '').trim();
@@ -38,6 +40,9 @@ export default function WorkDetailPage() {
     const cached = normalizeStoredWorkDetailItem(Taro.getStorageSync('WORK_DETAIL_ITEM'));
     if (cached && (!query?.id || String(cached.id) === String(query.id))) {
       setItem(cached);
+      if (isCopyWork(cached)) {
+        void hydrateSmartCopyDetail(cached);
+      }
     }
     const target = Taro.getStorageSync(WORK_SELECT_TARGET_STORAGE_KEY);
     if (
@@ -54,6 +59,35 @@ export default function WorkDetailPage() {
     }
   });
 
+  const hydrateSmartCopyDetail = async (current: Record<string, unknown>) => {
+    const taskId = String(current.taskId || current.id || '').trim();
+    if (!taskId) return;
+    try {
+      const detail = await miniappApi.getSmartCopyTask(taskId);
+      const generatedText = String(detail.generatedText || '').trim();
+      const generatedTitle = String(detail.generatedTitle || detail.title || '').trim();
+      const metadata = current.metadata && typeof current.metadata === 'object'
+        ? current.metadata as Record<string, unknown>
+        : {};
+      const next = {
+        ...current,
+        title: generatedTitle || current.title || '智能文案',
+        status: detail.status || current.status,
+        preview: generatedText || current.preview || '',
+        metadata: {
+          ...metadata,
+          generatedText: generatedText || metadata.generatedText,
+          generatedTitle: generatedTitle || metadata.generatedTitle,
+          tags: detail.tags,
+        },
+      };
+      setItem(next);
+      Taro.setStorageSync('WORK_DETAIL_ITEM', next);
+    } catch {
+      // Keep the summary item if detail refresh fails.
+    }
+  };
+
   const posterImages = useMemo<string[]>(() => getPosterImages(item), [item]);
 
   const coverUrl = useMemo<string | null>(() => {
@@ -68,9 +102,11 @@ export default function WorkDetailPage() {
   }, [item, posterImages]);
 
   const isImageText = item?.type === 'image-text';
+  const isCopy = isCopyWork(item);
   const videoUrl = useMemo(() => resolveVideoUrlFromItem(item), [item]);
   const currentPosterUrl = posterImages[currentPosterIndex] || '';
   const isProcessing = useMemo(() => isWorkProcessingStatus(item?.status), [item?.status]);
+  const detailPreviewText = isCopy ? getCopyText(item) : String(item?.preview || '').trim();
   const selectableImageUrl = useMemo(() => {
     if (!selectTarget || isProcessing) return '';
     if (isImageText && currentPosterUrl) return currentPosterUrl;
@@ -90,9 +126,11 @@ export default function WorkDetailPage() {
   const statusText = useMemo(() => {
     const status = String(item?.status ?? '').toUpperCase();
     if (status.includes('COMPLETE') || status === 'DONE' || status === 'SUCCESS') return '已完成';
+    if (isCopyWork(item) && isWorkProcessingStatus(status)) return '撰写中';
     if (status.includes('GENERAT') || status.includes('PROCESS')) return '生成中';
     if (status.includes('FAIL') || status.includes('ERROR')) return '失败';
-    if (status.includes('PEND') || status.includes('QUEUE') || status.includes('WAIT')) return '待处理';
+    if (status === 'CREATED' || status === 'CREATE' || status === 'INIT' || status === 'INITIALIZED') return isCopyWork(item) ? '撰写中' : '待处理';
+    if (status.includes('PEND') || status.includes('QUEUE') || status.includes('WAIT')) return isCopyWork(item) ? '撰写中' : '待处理';
     return item?.status || '--';
   }, [item]);
   const canDownload = Boolean(item) && !isProcessing;
@@ -234,10 +272,22 @@ export default function WorkDetailPage() {
 
   const handleDownloadMain = async () => {
     if (!canDownload) {
-      Taro.showToast({ title: '生成中的任务暂不可下载', icon: 'none' });
+      Taro.showToast({ title: isCopy ? '文案撰写中，暂不可下载' : '生成中的任务暂不可下载', icon: 'none' });
       return;
     }
     if (!item || downloading) return;
+
+    if (isCopy) {
+      const copyText = getCopyText(item);
+      if (!copyText) {
+        Taro.showToast({ title: '暂无可复制文案', icon: 'none' });
+        return;
+      }
+      await Taro.setClipboardData({ data: copyText });
+      Taro.showToast({ title: '文案已复制', icon: 'success' });
+      return;
+    }
+
     const granted = await ensureAlbumPermission();
     if (!granted) {
       Taro.showToast({ title: '未开启相册权限', icon: 'none' });
@@ -282,7 +332,43 @@ export default function WorkDetailPage() {
     }
   };
 
-  const downloadBtnText = isImageText ? '下载全部' : '下载';
+  const ensureCopyReady = () => {
+    if (isProcessing) {
+      Taro.showToast({ title: '文案撰写中，请完成后再使用', icon: 'none' });
+      return '';
+    }
+    const copyText = getCopyText(item);
+    if (!copyText) {
+      Taro.showToast({ title: '正文为空，请稍后刷新', icon: 'none' });
+      return '';
+    }
+    return copyText;
+  };
+
+  const handleGenerateCardFromCopy = (targetFeature: 'card-layout' | 'infographic') => {
+    const copyText = ensureCopyReady();
+    if (!copyText || !item) return;
+    Taro.setStorageSync(SMART_COPY_CARD_PAYLOAD_KEY, {
+      targetFeature,
+      title: String(item.title || '智能文案'),
+      body: copyText,
+    });
+    Taro.navigateTo({
+      url: `/subpages/image-generate/index?from=smart-copy&targetFeature=${targetFeature}`,
+    });
+  };
+
+  const handleGenerateDigitalHumanFromCopy = () => {
+    const copyText = ensureCopyReady();
+    if (!copyText || !item) return;
+    Taro.setStorageSync(SMART_COPY_SCRIPT_PAYLOAD_KEY, {
+      title: String(item.title || '智能文案'),
+      script: copyText,
+    });
+    Taro.navigateTo({ url: '/subpages/generate/index?from=smart-copy&feature=digital-human' });
+  };
+
+  const downloadBtnText = isCopy ? '复制文案' : isImageText ? '下载全部' : '下载';
 
   return (
     <View className='work-detail-page'>
@@ -380,12 +466,12 @@ export default function WorkDetailPage() {
                   <Text className='work-detail-type'>{getTypeLabel(item.type)}</Text>
                   <Text className='work-detail-status'>{statusText}</Text>
                 </View>
-                {!!item.preview && (
+                {!!detailPreviewText && (
                   <View className='work-detail-preview-card'>
                     <Text className='work-detail-preview-label'>
-                      {item.taskType === 'digitalHuman' ? '口播文案' : '内容'}
+                      {isCopy ? '正文' : item.taskType === 'digitalHuman' ? '口播文案' : '内容'}
                     </Text>
-                    <Text className='work-detail-preview'>{item.preview}</Text>
+                    <Text className='work-detail-preview'>{detailPreviewText}</Text>
                   </View>
                 )}
                 {publishQrcode && (
@@ -399,32 +485,63 @@ export default function WorkDetailPage() {
             </View>
           </ScrollView>
 
-          <View className='work-detail-action-bar'>
-            <View
-              className={`work-detail-action-btn work-detail-delete-btn ${deleting ? 'work-detail-action-btn--disabled' : ''}`}
-              onClick={() => {
-                void handleDelete();
-              }}
-            >
-              <Text className='work-detail-delete-btn-text'>{deleting ? '删除中...' : '删除'}</Text>
-            </View>
-            {selectTarget && (
+          {isCopy ? (
+            <View className='work-detail-action-bar work-detail-action-bar--copy'>
               <View
-                className={`work-detail-action-btn work-detail-use-btn ${!selectableImageUrl ? 'work-detail-action-btn--disabled' : ''}`}
-                onClick={handleUseForActionTransfer}
+                className={`work-detail-action-btn work-detail-copy-action-btn ${isProcessing ? 'work-detail-action-btn--disabled' : ''}`}
+                onClick={() => handleGenerateCardFromCopy('card-layout')}
               >
-                <Text className='work-detail-use-btn-text'>用于动作复刻</Text>
+                <Text className='work-detail-copy-action-btn-text'>生成图文卡片</Text>
               </View>
-            )}
-            <View
-              className={`work-detail-action-btn work-detail-download-btn ${downloading || !canDownload ? 'work-detail-action-btn--disabled' : ''}`}
-              onClick={() => {
-                void handleDownloadMain();
-              }}
-            >
-              <Text className='work-detail-download-btn-text'>{isProcessing ? '生成中不可下载' : downloading ? '下载中...' : downloadBtnText}</Text>
+              <View
+                className={`work-detail-action-btn work-detail-copy-action-btn ${isProcessing ? 'work-detail-action-btn--disabled' : ''}`}
+                onClick={() => handleGenerateCardFromCopy('infographic')}
+              >
+                <Text className='work-detail-copy-action-btn-text'>信息卡片</Text>
+              </View>
+              <View
+                className={`work-detail-action-btn work-detail-copy-action-btn ${isProcessing ? 'work-detail-action-btn--disabled' : ''}`}
+                onClick={handleGenerateDigitalHumanFromCopy}
+              >
+                <Text className='work-detail-copy-action-btn-text'>数字人</Text>
+              </View>
+              <View
+                className={`work-detail-action-btn work-detail-delete-btn work-detail-delete-btn--copy ${deleting ? 'work-detail-action-btn--disabled' : ''}`}
+                onClick={() => {
+                  void handleDelete();
+                }}
+              >
+                <Text className='work-detail-delete-btn-text'>{deleting ? '删除中...' : '删除'}</Text>
+              </View>
             </View>
-          </View>
+          ) : (
+            <View className='work-detail-action-bar'>
+              <View
+                className={`work-detail-action-btn work-detail-delete-btn ${deleting ? 'work-detail-action-btn--disabled' : ''}`}
+                onClick={() => {
+                  void handleDelete();
+                }}
+              >
+                <Text className='work-detail-delete-btn-text'>{deleting ? '删除中...' : '删除'}</Text>
+              </View>
+              {selectTarget && (
+                <View
+                  className={`work-detail-action-btn work-detail-use-btn ${!selectableImageUrl ? 'work-detail-action-btn--disabled' : ''}`}
+                  onClick={handleUseForActionTransfer}
+                >
+                  <Text className='work-detail-use-btn-text'>用于动作复刻</Text>
+                </View>
+              )}
+              <View
+                className={`work-detail-action-btn work-detail-download-btn ${downloading || !canDownload ? 'work-detail-action-btn--disabled' : ''}`}
+                onClick={() => {
+                  void handleDownloadMain();
+                }}
+              >
+                <Text className='work-detail-download-btn-text'>{isProcessing ? '生成中不可下载' : downloading ? '下载中...' : downloadBtnText}</Text>
+              </View>
+            </View>
+          )}
         </View>
       )}
     </View>
@@ -640,8 +757,42 @@ function isWorkProcessingStatus(value: unknown) {
     status.includes('QUEUE') ||
     status.includes('WAIT') ||
     status.includes('RUNNING') ||
-    status.includes('START')
+    status.includes('START') ||
+    status === 'ACTIVE' ||
+    status === 'CREATED' ||
+    status === 'CREATE' ||
+    status === 'INIT' ||
+    status === 'INITIALIZED'
   );
+}
+
+function isCopyWork(item: any): boolean {
+  const taskType = String(item?.taskType || '').toLowerCase();
+  return item?.type === 'copy' || taskType === 'creative' || taskType.includes('copy') || taskType.includes('writing');
+}
+
+function getCopyText(item: any): string {
+  const metadata = item?.metadata && typeof item.metadata === 'object'
+    ? item.metadata as Record<string, unknown>
+    : null;
+  const candidates = [
+    item?.generatedText,
+    item?.copyText,
+    item?.content,
+    item?.preview,
+    metadata?.generatedText,
+    metadata?.generated_text,
+    metadata?.copyText,
+    metadata?.copy_text,
+    metadata?.content,
+    metadata?.scriptContent,
+    metadata?.script_content,
+  ];
+  for (const candidate of candidates) {
+    const text = typeof candidate === 'string' ? candidate.trim() : '';
+    if (text) return text;
+  }
+  return '';
 }
 
 type PlaceholderKind = 'video' | 'image' | 'copy';

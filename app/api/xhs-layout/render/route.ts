@@ -208,16 +208,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,"Pi
 .preview-content-shell{width:100%;height:100%;border-radius:0!important;padding:9px 10px;box-sizing:border-box;overflow:hidden;background:transparent}
 .preview-content-shell--apple-notes{padding:0;border-radius:0;height:calc(100% - 23px)}
 .preview-content-shell--instagram{border:.5px solid rgba(255,255,255,.32);box-shadow:inset 0 .5px 0 rgba(255,255,255,.2)}
-.preview-content-shell--coil-notebook{border:.5px solid rgba(38,56,110,.12)}
+.preview-content-shell--coil-notebook{border-radius:0!important;box-shadow:-1px 0 0 rgba(54,65,120,.36)}
+.preview-content-shell--bytedance{border:.5px solid rgba(0,102,255,.16);box-shadow:0 6px 17px rgba(25,55,112,.08)}
 .preview-content-shell--pop-art{border:1px solid rgba(16,16,21,.22)}
 .preview-content-shell--business{border:.5px solid rgba(37,99,235,.14)}
 .preview-content-shell--cyberpunk{border:.5px solid rgba(0,245,255,.34);box-shadow:inset 0 0 0 .5px rgba(255,0,170,.2)}
 .preview-content-shell--meadow-dawn{border:.5px solid rgba(106,134,94,.2)}
 .preview-card--style-apple-notes{border-color:rgba(207,178,91,.36)}
-.preview-card--style-coil-notebook{border-color:rgba(255,255,255,.4);padding-left:20px}
-.preview-card--style-coil-notebook::before{content:"";position:absolute;left:7px;top:15px;bottom:15px;width:5px;border-radius:999px;background-image:radial-gradient(circle,rgba(255,255,255,.8) 0 1.5px,transparent 1.75px);background-size:5px 17px;background-repeat:repeat-y;pointer-events:none}
+.preview-card--style-coil-notebook{border-color:rgba(255,255,255,.48);border-radius:8px!important;padding:21px 20px 20px 48px;background-size:20px 20px,20px 20px,cover}
+.preview-card--style-coil-notebook::before{content:"";position:absolute;left:27px;top:44px;bottom:41px;width:22px;background-image:radial-gradient(circle at 50% 50%,#5271ff 0 9px,rgba(35,49,112,.48) 9.25px 10.5px,transparent 10.75px);background-size:22px 36px;background-repeat:repeat-y;pointer-events:none}
+.preview-card--style-coil-notebook::after{content:"";position:absolute;left:38px;top:44px;bottom:41px;width:11px;background:inherit;background-size:20px 20px,20px 20px,cover;background-position:left top;pointer-events:none;z-index:0}
 .preview-card--style-pop-art{border-color:rgba(17,24,39,.44)}
-.preview-card--style-bytedance{border-color:rgba(0,102,255,.28)}
+.preview-card--style-bytedance{border-color:rgba(0,102,255,.24);background-size:16px 16px,16px 16px,cover;box-shadow:inset 0 0 0 .5px rgba(250,44,25,.08)}
 .preview-card--style-art-deco{border-color:rgba(212,175,55,.52)}
 .preview-card--style-glassmorphism{border-color:rgba(140,180,255,.44);box-shadow:inset 0 0 0 .5px rgba(255,255,255,.16)}
 .preview-card--style-minimal,.preview-card--style-minimalist,.preview-card--style-business,.preview-card--style-japanese-magazine{border-color:rgba(120,134,156,.24)}

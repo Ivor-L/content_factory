@@ -44,6 +44,8 @@ export async function PATCH(
       generatedImage,
       generatedVideo,
       status,
+      video_generation_cancelled,
+      videoGenerationCancelled,
     } = body;
 
     // Verify segment belongs to user's task
@@ -88,6 +90,10 @@ export async function PATCH(
     }
     if (clip_time_range !== undefined || clipTimeRange !== undefined) {
       updatedParams.clip_time_range = clip_time_range ?? clipTimeRange ?? null;
+    }
+    if (video_generation_cancelled !== undefined || videoGenerationCancelled !== undefined) {
+      updatedParams.video_generation_cancelled = Boolean(video_generation_cancelled ?? videoGenerationCancelled);
+      updatedParams.video_cancelled_at = new Date().toISOString();
     }
 
     if (push_image_url) {

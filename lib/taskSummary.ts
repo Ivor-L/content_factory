@@ -77,6 +77,7 @@ async function fetchTaskData(taskType: TaskType, taskId: string): Promise<any> {
           ideaText: true,
           layoutResultJson: true,
           generatedImagesJson: true,
+          metadata: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -256,17 +257,25 @@ function extractSummaryData(taskType: TaskType, taskData: any): any {
   };
 
   switch (taskType) {
-    case 'creative':
+    case 'creative': {
+      const copy = extractCreativeCopy(taskData);
+      const metadata = normalizeJsonRecord(taskData.metadata) || {};
+      const creativeMetadata: Record<string, unknown> = {
+        ...metadata,
+        stage: taskData.stage,
+      };
+      if (copy.title) creativeMetadata.generatedTitle = copy.title;
+      if (copy.text) creativeMetadata.generatedText = copy.text;
+      if (copy.tags.length > 0) creativeMetadata.tags = copy.tags;
       return {
         ...base,
-        title: taskData.title || '智能创作任务',
+        title: taskData.title || copy.title || '智能创作任务',
         status: taskData.status,
-        preview: taskData.ideaText?.substring(0, 100),
+        preview: (copy.text || taskData.ideaText || '')?.substring(0, 100),
         thumbnailUrl: extractImageFromLayoutResult(taskData.generatedImagesJson || taskData.layoutResultJson),
-        metadata: {
-          stage: taskData.stage,
-        },
+        metadata: creativeMetadata,
       };
+    }
 
     case 'poster':
       if (taskData._source === 'creativeTask') {
@@ -499,6 +508,36 @@ function normalizeJsonRecord(value: unknown): Record<string, unknown> | null {
     return { ...(value as Record<string, unknown>) };
   }
   return null;
+}
+
+function extractCreativeCopy(taskData: any): { title: string; text: string; tags: string[] } {
+  const metadata = normalizeJsonRecord(taskData?.metadata) || {};
+  const stages = normalizeJsonRecord(metadata.stages) || {};
+  const draft = normalizeJsonRecord(stages.draft) || {};
+  const aiOutput = normalizeJsonRecord(draft.aiOutput) || {};
+  const title = firstString(aiOutput['标题'], aiOutput.title, taskData?.title);
+  const text = firstString(
+    draft.rawText,
+    aiOutput['正文'],
+    aiOutput.body,
+    aiOutput.script_content,
+    aiOutput.scriptContent,
+  );
+  const tags = normalizeStringArray(aiOutput['标签'] || aiOutput.tags || aiOutput.hashtags);
+  return { title, text, tags };
+}
+
+function firstString(...values: unknown[]): string {
+  for (const value of values) {
+    const text = typeof value === 'string' ? value.trim() : '';
+    if (text) return text;
+  }
+  return '';
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item || '').trim()).filter(Boolean);
 }
 
 /**

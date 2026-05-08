@@ -10,7 +10,7 @@ import {
   type CreateCreativeTaskPayload,
 } from "@/lib/creativeTaskCreation";
 import { syncTaskToSummary } from "@/lib/taskSummary";
-import { deleteShortTtlCache, getShortTtlCache, setShortTtlCache } from "@/lib/shortTtlCache";
+import { deleteShortTtlCache, getOrSetShortTtlCache } from "@/lib/shortTtlCache";
 
 const CREATIVE_TASKS_LIST_CACHE_TTL_MS = 3_000;
 
@@ -39,86 +39,81 @@ export async function GET(request: NextRequest) {
     includeCounts,
     includeHeavy,
   });
-  const cached = getShortTtlCache<object>("api:creative-tasks:list", cacheKey);
-  if (cached) {
-    return NextResponse.json(cached, {
-      headers: { "X-Cache": "HIT" },
-    });
-  }
 
-  const tasks = await prisma.creativeTask.findMany({
-    where: {
-      userId,
-      ...(stage && creativeStageOrder.includes(stage as CreativeStageKey)
-        ? { stage: stage as CreativeStageKey }
-        : {}),
-      ...(status ? { status } : {}),
-    },
-    orderBy: { updatedAt: "desc" },
-    take: limit,
-    select: {
-      id: true,
-      title: true,
-      stage: true,
-      status: true,
-      ideaText: true,
-      channel: true,
-      targetOutput: true,
-      goal: includeHeavy,
-      metadata: includeHeavy,
-      generatedImagesJson: includeHeavy,
-      createdAt: true,
-      updatedAt: true,
-      ...(includeCounts
-        ? {
-            _count: {
-              select: {
-                historyDocs: true,
-                stories: true,
-                styles: true,
-              },
-            },
-          }
-        : {}),
-    },
-  });
-
-  const data = tasks.map((task) => ({
-    id: task.id,
-    title: task.title,
-    stage: task.stage,
-    status: task.status,
-    ideaText: task.ideaText,
-    channel: task.channel,
-    targetOutput: task.targetOutput,
-    goal: includeHeavy ? task.goal : null,
-    metadata: includeHeavy ? parseMetadata(task.metadata) : null,
-    createdAt: task.createdAt,
-    updatedAt: task.updatedAt,
-    attachments: includeCounts
-      ? {
-          historyDocs: task._count.historyDocs,
-          stories: task._count.stories,
-          styles: task._count.styles,
-        }
-      : {
-          historyDocs: 0,
-          stories: 0,
-          styles: 0,
-        },
-    generatedImages: includeHeavy ? parseGeneratedImages(task.generatedImagesJson) : [],
-  }));
-
-  const responseBody = { data };
-  setShortTtlCache(
+  const { value: responseBody, cacheStatus } = await getOrSetShortTtlCache(
     "api:creative-tasks:list",
     cacheKey,
-    responseBody,
     CREATIVE_TASKS_LIST_CACHE_TTL_MS,
+    async () => {
+      const tasks = await prisma.creativeTask.findMany({
+        where: {
+          userId,
+          ...(stage && creativeStageOrder.includes(stage as CreativeStageKey)
+            ? { stage: stage as CreativeStageKey }
+            : {}),
+          ...(status ? { status } : {}),
+        },
+        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+        take: limit,
+        select: {
+          id: true,
+          title: true,
+          stage: true,
+          status: true,
+          ideaText: true,
+          channel: true,
+          targetOutput: true,
+          goal: includeHeavy,
+          metadata: includeHeavy,
+          generatedImagesJson: includeHeavy,
+          createdAt: true,
+          updatedAt: true,
+          ...(includeCounts
+            ? {
+                _count: {
+                  select: {
+                    historyDocs: true,
+                    stories: true,
+                    styles: true,
+                  },
+                },
+              }
+            : {}),
+        },
+      });
+
+      const data = tasks.map((task) => ({
+        id: task.id,
+        title: task.title,
+        stage: task.stage,
+        status: task.status,
+        ideaText: task.ideaText,
+        channel: task.channel,
+        targetOutput: task.targetOutput,
+        goal: includeHeavy ? task.goal : null,
+        metadata: includeHeavy ? parseMetadata(task.metadata) : null,
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt,
+        attachments: includeCounts
+          ? {
+              historyDocs: task._count.historyDocs,
+              stories: task._count.stories,
+              styles: task._count.styles,
+            }
+          : {
+              historyDocs: 0,
+              stories: 0,
+              styles: 0,
+            },
+        generatedImages: includeHeavy ? parseGeneratedImages(task.generatedImagesJson) : [],
+      }));
+
+      return { data };
+    },
   );
 
   return NextResponse.json(responseBody, {
-    headers: { "X-Cache": "MISS" },
+    headers: { "X-Cache": cacheStatus },
   });
 }
 

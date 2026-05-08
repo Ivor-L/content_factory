@@ -37,6 +37,7 @@ const SKELETON_LANGUAGE_OPTIONS = [
   { label: 'Español', value: 'es', hint: 'Generar guion y prompts en español' },
 ] as const;
 const DEFAULT_SKELETON_LANGUAGE_INDEX = SKELETON_LANGUAGE_OPTIONS.findIndex((item) => item.value === 'en');
+const SMART_COPY_SCRIPT_PAYLOAD_KEY = 'SMART_COPY_SCRIPT_PAYLOAD';
 
 export default function GeneratePage() {
   const [pageMode, setPageMode] = useState<'digital-human' | 'video-generate'>('digital-human');
@@ -69,6 +70,19 @@ export default function GeneratePage() {
   const recorderManager = Taro.getRecorderManager ? Taro.getRecorderManager() : null;
 
   useLoad((options) => {
+    const from = String(options?.from || '').trim();
+    if (from === 'smart-copy') {
+      const payload = Taro.getStorageSync(SMART_COPY_SCRIPT_PAYLOAD_KEY);
+      if (payload && typeof payload === 'object') {
+        const scriptText = String((payload as { script?: string }).script || '').trim();
+        if (scriptText) {
+          setScript(scriptText);
+          setMode('VOICE_CLONE');
+          setSourceType('IMAGE');
+        }
+      }
+      Taro.removeStorageSync(SMART_COPY_SCRIPT_PAYLOAD_KEY);
+    }
     const feature = String(options?.feature || '').trim().toLowerCase();
     const category = String(options?.category || '').trim().toLowerCase();
     if (feature === 'video-generate') {
@@ -130,8 +144,7 @@ export default function GeneratePage() {
     const scriptText = skeletonScript.trim();
     setSubmitting(true);
     try {
-      const result = await miniappApi.createStoryboardJob({
-        pipelineKey: 'skeleton_video',
+      const result = await miniappApi.createSkeletonStoryboardJob({
         title: `小程序骷髅分镜视频-${skeletonDurationSeconds}s`,
         script: scriptText,
         productId: selectedProductId || undefined,

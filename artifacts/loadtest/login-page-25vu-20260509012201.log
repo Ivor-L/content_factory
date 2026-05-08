@@ -1,0 +1,37 @@
+
+> content-factory-web@0.1.6 loadtest:node
+> node tests/load/node-loadtest.mjs
+
+Starting node load test: mode=login-page, targetVus=25, duration=60s, base=https://atomx.top
+[progress] requests=201 failures=0 recent_p95=102ms
+[progress] requests=634 failures=0 recent_p95=625ms
+[progress] requests=1051 failures=0 recent_p95=657ms
+[progress] requests=1440 failures=1 recent_p95=713ms
+[progress] requests=1804 failures=1 recent_p95=354ms
+
+=== Load Test Summary ===
+{
+  "mode": "login-page",
+  "baseUrl": "https://atomx.top",
+  "targetVus": 25,
+  "durationSeconds": 60,
+  "requests": 2209,
+  "failures": 1,
+  "failureRate": 0.0004526935264825713
+}
+status: { '0': 1, '200': 2208 }
+latency_ms: { p50: 22, p95: 520, p99: 3657, max: 58550 }
+┌─────────┬──────────────┬────────┬───────┬───────────┐
+│ (index) │ name         │ status │ ms    │ error     │
+├─────────┼──────────────┼────────┼───────┼───────────┤
+│ 0       │ 'GET /login' │ 200    │ 58550 │ undefined │
+│ 1       │ 'GET /login' │ 200    │ 57419 │ undefined │
+│ 2       │ 'GET /login' │ 200    │ 55619 │ undefined │
+│ 3       │ 'GET /login' │ 200    │ 36870 │ undefined │
+│ 4       │ 'GET /login' │ 200    │ 32010 │ undefined │
+│ 5       │ 'GET /login' │ 200    │ 28757 │ undefined │
+│ 6       │ 'GET /login' │ 200    │ 28700 │ undefined │
+│ 7       │ 'GET /login' │ 200    │ 27875 │ undefined │
+│ 8       │ 'GET /login' │ 200    │ 21295 │ undefined │
+│ 9       │ 'GET /login' │ 200    │ 15598 │ undefined │
+└─────────┴──────────────┴────────┴───────┴───────────┘

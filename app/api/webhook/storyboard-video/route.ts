@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { isValidAdminWebhookRequest } from "@/lib/webhookAuth";
+import { resolveUserApiKey } from "@/lib/userApiKey";
+import { refundStoryboardVideoCreditCharge } from "@/lib/storyboardVideoCredits";
+import type { Prisma } from "@prisma/client";
 
 function parseJsonSafe(value: unknown): Record<string, unknown> | null {
   if (!value) return null;
@@ -21,7 +24,12 @@ function parseJsonSafe(value: unknown): Record<string, unknown> | null {
 function pickVideoUrl(body: Record<string, any>): string {
   if (typeof body.video_url === "string" && body.video_url.trim()) return body.video_url.trim();
   if (typeof body.videoUrl === "string" && body.videoUrl.trim()) return body.videoUrl.trim();
+  if (typeof body.resultUrl === "string" && body.resultUrl.trim()) return body.resultUrl.trim();
+  if (typeof body.result_url === "string" && body.result_url.trim()) return body.result_url.trim();
   const data = body.data && typeof body.data === "object" ? body.data as Record<string, unknown> : null;
+  if (typeof data?.video_url === "string" && data.video_url.trim()) return data.video_url.trim();
+  if (typeof data?.result_url === "string" && data.result_url.trim()) return data.result_url.trim();
+  if (typeof data?.resultUrl === "string" && data.resultUrl.trim()) return data.resultUrl.trim();
   const resultJson = parseJsonSafe(data?.resultJson ?? body.resultJson);
   const resultUrls = Array.isArray(resultJson?.resultUrls) ? resultJson.resultUrls : [];
   const first = resultUrls.find((url) => typeof url === "string" && url.trim());
@@ -29,10 +37,45 @@ function pickVideoUrl(body: Record<string, any>): string {
 }
 
 function normalizeStatus(body: Record<string, any>): string {
-  const raw = String(body.status || body.state || body.data?.state || "").toLowerCase();
+  const data = body.data && typeof body.data === "object" ? body.data as Record<string, unknown> : null;
+  const raw = String(
+    body.status ||
+    body.state ||
+    data?.state ||
+    data?.status ||
+    body.successFlag ||
+    data?.successFlag ||
+    "",
+  ).toLowerCase();
+  if (body.code === 200 || body.code === "200") {
+    return pickVideoUrl(body) ? "success" : raw || "success";
+  }
+  if (body.code && Number(body.code) >= 400) return "failed";
   if (["success", "succeeded", "completed", "done"].includes(raw)) return "success";
-  if (["fail", "failed", "error", "errored"].includes(raw)) return "failed";
+  if (["fail", "failed", "failure", "error", "errored"].includes(raw)) return "failed";
   return raw;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function pickErrorMessage(body: Record<string, any>): string {
+  const data = asRecord(body.data);
+  const error = asRecord(body.error);
+  return String(
+    body.errorMessage ||
+    body.error_message ||
+    body.message ||
+    body.msg ||
+    data.failMsg ||
+    data.errorMessage ||
+    data.message ||
+    error.message ||
+    "",
+  ).trim();
 }
 
 /**
@@ -63,7 +106,7 @@ export async function POST(req: NextRequest) {
     const segment_id = body.segment_id || context?.segment_id || querySegmentId;
     const video_url = pickVideoUrl(body);
     const status = normalizeStatus(body);
-    const error = body.error || body.message;
+    const error = pickErrorMessage(body);
     const model = body.model || context?.model || body.data?.model || queryModel;
     const generation_params = body.generation_params;
 
@@ -81,6 +124,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const existingSegment = await prisma.storyboardSegment.findUnique({
+      where: { id: segment_id },
+      include: { task: true },
+    });
+    if (!existingSegment) {
+      return NextResponse.json({ error: "Segment not found" }, { status: 404 });
+    }
+
+    const existingGenerationParams = asRecord(existingSegment.generationParams);
+    const incomingGenerationParams = asRecord(generation_params);
+
     // 2. Update segment with generated video
     const updateData: any = {
       updatedAt: new Date(),
@@ -90,14 +144,22 @@ export async function POST(req: NextRequest) {
       updateData.generatedVideo = video_url;
       updateData.status = "VIDEO_READY";
       updateData.videoGenerationModel = model || null;
-      if (generation_params) {
-        updateData.generationParams = generation_params;
-      }
+      updateData.generationParams = {
+        ...existingGenerationParams,
+        ...incomingGenerationParams,
+        provider_state: status,
+      } as Prisma.InputJsonValue;
     } else if (status === "failed") {
       updateData.status = "VIDEO_FAILED";
       updateData.retryCount = {
         increment: 1,
       };
+      updateData.generationParams = {
+        ...existingGenerationParams,
+        ...incomingGenerationParams,
+        provider_state: status,
+        provider_error: error || null,
+      } as Prisma.InputJsonValue;
     }
 
     const segment = await prisma.storyboardSegment.update({
@@ -105,6 +167,29 @@ export async function POST(req: NextRequest) {
       data: updateData,
       include: { task: true },
     });
+
+    let refundResult: { refunded: boolean; amount: number; reason?: string } | null = null;
+    if (status === "failed") {
+      const apiKey = await resolveUserApiKey({
+        userId: segment.task.userId,
+        allowDefaultFallback: true,
+      });
+      if (apiKey) {
+        try {
+          refundResult = await refundStoryboardVideoCreditCharge({
+            segmentId: segment.id,
+            apiKey,
+            userId: segment.task.userId,
+            reason: "storyboard_video_provider_failed",
+            errorMessage: error || "Provider returned failed status",
+          });
+        } catch (refundError) {
+          console.error("[storyboard-video] Failed to refund failed segment:", refundError);
+        }
+      } else {
+        console.error("[storyboard-video] Missing apiKey for failed segment refund:", { segment_id });
+      }
+    }
 
     console.log("[storyboard-video] Updated segment:", {
       segment_id,
@@ -126,12 +211,23 @@ export async function POST(req: NextRequest) {
     const progress = Math.floor(60 + (readySegments / totalSegments) * 30); // 60-90%
 
     const allVideosReady = readySegments === totalSegments;
+    const failedSegments = allSegments.filter((s) => s.status === "VIDEO_FAILED").length;
+    const generatingSegments = allSegments.filter((s) =>
+      s.status === "VIDEO_GENERATING" || s.status === "VIDEO_QUEUED" || s.status === "VIDEO_PROCESSING"
+    ).length;
+    const finalTaskStatus = allVideosReady
+      ? "VIDEO_GENERATION_COMPLETED"
+      : generatingSegments > 0
+        ? "VIDEO_GENERATING"
+        : failedSegments > 0
+          ? "VIDEO_GENERATION_FAILED"
+          : "VIDEO_GENERATING";
 
     await prisma.storyboardTask.update({
       where: { id: segment.taskId },
       data: {
         progress,
-        status: allVideosReady ? "VIDEO_GENERATION_COMPLETED" : "VIDEO_GENERATING",
+        status: finalTaskStatus,
       },
     });
 
@@ -147,6 +243,8 @@ export async function POST(req: NextRequest) {
       segment_id,
       task_id: segment.taskId,
       progress,
+      refunded: refundResult?.refunded ?? false,
+      refund_amount: refundResult?.amount ?? 0,
       all_videos_ready: allVideosReady,
     });
   } catch (error) {

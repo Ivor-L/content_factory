@@ -4,6 +4,21 @@ import type { TaskType } from '@/lib/taskSummary';
 
 type TaskSummaryRecord = Awaited<ReturnType<typeof prisma.taskSummary.findMany>>[number];
 
+const taskSummaryListSelect = {
+  id: true,
+  userId: true,
+  taskType: true,
+  taskId: true,
+  title: true,
+  status: true,
+  preview: true,
+  thumbnailUrl: true,
+  progress: true,
+  metadata: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.TaskSummarySelect;
+
 export const VALID_TASK_TYPES: TaskType[] = [
   'creative',
   'poster',
@@ -238,12 +253,6 @@ function toMetadataRecord(value: Prisma.JsonValue | null | undefined): Record<st
   return { ...(value as Record<string, unknown>) };
 }
 
-function isHiddenMiniappXhsLayoutTask(task: TaskSummaryRecord): boolean {
-  if (task.taskType !== 'poster') return false;
-  const metadata = toMetadataRecord(task.metadata);
-  return metadata.source === 'miniapp_xhs_layout';
-}
-
 function safeParseResult(payload?: string | null): Record<string, unknown> | null {
   if (!payload) return null;
   try {
@@ -348,62 +357,26 @@ async function fetchVisibleTaskSummaryPage({
   offset: number;
   includeTotal: boolean;
 }): Promise<{ tasks: TaskSummaryRecord[]; total: number; hasMore: boolean }> {
-  const targetCount = includeTotal ? limit : limit + 1;
-  const batchSize = Math.min(Math.max(limit + offset + 20, 50), 200);
-  const collected: TaskSummaryRecord[] = [];
-  let rawSkip = 0;
-  let visibleSeen = 0;
-  let visibleTotal = 0;
-  let reachedEnd = false;
-
-  while (true) {
-    const batch = await prisma.taskSummary.findMany({
+  const [items, total] = await Promise.all([
+    prisma.taskSummary.findMany({
       where,
-      orderBy: { updatedAt: 'desc' },
-      take: batchSize,
-      skip: rawSkip,
-    });
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      skip: offset,
+      select: taskSummaryListSelect,
+    }),
+    includeTotal ? prisma.taskSummary.count({ where }) : Promise.resolve(0),
+  ]);
 
-    rawSkip += batch.length;
-    if (batch.length === 0) {
-      reachedEnd = true;
-      break;
-    }
-
-    for (const task of batch as TaskSummaryRecord[]) {
-      if (isHiddenMiniappXhsLayoutTask(task)) continue;
-
-      if (includeTotal) {
-        visibleTotal += 1;
-      }
-
-      if (visibleSeen < offset) {
-        visibleSeen += 1;
-        continue;
-      }
-
-      if (collected.length < targetCount) {
-        collected.push(task);
-      }
-      visibleSeen += 1;
-    }
-
-    if (!includeTotal && collected.length >= targetCount) break;
-    if (batch.length < batchSize) {
-      reachedEnd = true;
-      break;
-    }
-  }
-
-  const pageTasks = collected.slice(0, limit);
+  const pageTasks = items.slice(0, limit) as TaskSummaryRecord[];
   const hasMore = includeTotal
-    ? offset + pageTasks.length < visibleTotal
-    : collected.length > limit || (!reachedEnd && collected.length === targetCount);
-  const total = includeTotal
-    ? visibleTotal
+    ? offset + pageTasks.length < total
+    : items.length > limit;
+  const resolvedTotal = includeTotal
+    ? total
     : offset + pageTasks.length + (hasMore ? 1 : 0);
 
-  return { tasks: pageTasks, total, hasMore };
+  return { tasks: pageTasks, total: resolvedTotal, hasMore };
 }
 
 export async function fetchUserTaskSummaries({
@@ -434,6 +407,13 @@ export async function fetchUserTaskSummaries({
   } else {
     where.taskType = { in: VALID_TASK_TYPES };
   }
+
+  where.NOT = {
+    AND: [
+      { taskType: 'poster' },
+      { metadata: { path: ['source'], equals: 'miniapp_xhs_layout' } },
+    ],
+  };
 
   if (status) {
     where.status = status;

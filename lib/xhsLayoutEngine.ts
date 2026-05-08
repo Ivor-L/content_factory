@@ -205,9 +205,17 @@ export const TEMPLATE_SPECS: TemplateSpec[] = [
 
 const TEMPLATE_INDEX = new Map(TEMPLATE_SPECS.map((item) => [item.id, item]));
 
+type MarkdownLineRole = "paragraph" | "heading1" | "heading2" | "heading3" | "quote" | "bullet" | "ordered" | "hr";
+
+type MarkdownTextLine = {
+  role: MarkdownLineRole;
+  text: string;
+  marker?: string;
+};
+
 type MarkdownTextBlock = {
   kind: "text";
-  lines: string[];
+  lines: MarkdownTextLine[];
 };
 
 type MarkdownTableBlock = {
@@ -221,6 +229,8 @@ type MarkdownBlock = MarkdownTextBlock | MarkdownTableBlock;
 type SvgTextItem = {
   kind: "text";
   text: string;
+  role: MarkdownLineRole;
+  marker?: string;
 };
 
 type SvgTableRow = {
@@ -407,6 +417,41 @@ function cleanLine(line: string): string {
     .trim();
 }
 
+function cleanInlineSource(line: string): string {
+  return line
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
+    .trim();
+}
+
+function parseMarkdownTextLine(line: string): MarkdownTextLine | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  if (isHorizontalRuleLine(trimmed)) return { role: "hr", text: "" };
+
+  const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
+  if (heading) {
+    const level = Math.min(3, heading[1].length);
+    return {
+      role: level === 1 ? "heading1" : level === 2 ? "heading2" : "heading3",
+      text: cleanInlineSource(heading[2]),
+    };
+  }
+
+  const quote = trimmed.match(/^>\s*(.+)$/);
+  if (quote) return { role: "quote", text: cleanInlineSource(quote[1]) };
+
+  const bullet = trimmed.match(/^[-*+]\s+(.+)$/);
+  if (bullet) return { role: "bullet", text: cleanInlineSource(bullet[1]), marker: "•" };
+
+  const ordered = trimmed.match(/^(\d+)[.)、]\s+(.+)$/);
+  if (ordered) return { role: "ordered", text: cleanInlineSource(ordered[2]), marker: `${ordered[1]}.` };
+
+  return { role: "paragraph", text: cleanInlineSource(trimmed) };
+}
+
 function splitMarkdownTableRow(line: string): string[] {
   const trimmed = line.trim();
   const source = trimmed.startsWith("|") && trimmed.endsWith("|")
@@ -471,7 +516,9 @@ function parseMarkdownBlocksForLayout(markdown: string): MarkdownBlock[] {
   let index = 0;
 
   const flushText = () => {
-    const cleaned = textLines.map((line) => cleanLine(line)).filter(Boolean);
+    const cleaned = textLines
+      .map((line) => parseMarkdownTextLine(line))
+      .filter((line): line is MarkdownTextLine => Boolean(line));
     if (cleaned.length > 0) {
       blocks.push({ kind: "text", lines: cleaned });
     }
@@ -521,7 +568,7 @@ function parseMarkdownBlocksForLayout(markdown: string): MarkdownBlock[] {
 
 export function markdownToLayoutLines(markdown: string): string[] {
   return parseMarkdownBlocksForLayout(markdown).flatMap((block) => {
-    if (block.kind === "text") return block.lines;
+    if (block.kind === "text") return block.lines.map((line) => line.text).filter(Boolean);
     return block.rows.map((row) => row.filter(Boolean).join(" "));
   });
 }
@@ -592,9 +639,47 @@ function wrapTextByUnits(text: string, maxUnits: number): string[] {
   return lines.length > 0 ? lines : [""];
 }
 
+function roleTextUnits(role: MarkdownLineRole): number {
+  switch (role) {
+    case "heading1":
+      return 1.45;
+    case "heading2":
+      return 1.25;
+    case "heading3":
+      return 1.12;
+    case "quote":
+      return 1.32;
+    case "bullet":
+    case "ordered":
+      return 1.08;
+    case "hr":
+      return 0.62;
+    default:
+      return 1;
+  }
+}
+
+function roleWrapWidth(role: MarkdownLineRole): number {
+  switch (role) {
+    case "heading1":
+      return 15;
+    case "heading2":
+      return 17;
+    case "heading3":
+      return 18;
+    case "quote":
+      return 18;
+    case "bullet":
+    case "ordered":
+      return 18;
+    default:
+      return 20;
+  }
+}
+
 function paginateMarkdownBlocks(markdown: string, maxPageLines = 18): SvgPageItem[][] {
   const blocks = parseMarkdownBlocksForLayout(markdown);
-  if (blocks.length === 0) return [[{ kind: "text", text: "暂无内容" }]];
+  if (blocks.length === 0) return [[{ kind: "text", role: "paragraph", text: "暂无内容" }]];
 
   const pages: SvgPageItem[][] = [];
   let currentPage: SvgPageItem[] = [];
@@ -620,8 +705,21 @@ function paginateMarkdownBlocks(markdown: string, maxPageLines = 18): SvgPageIte
   for (const block of blocks) {
     if (block.kind === "text") {
       for (const line of block.lines) {
-        for (const wrapped of wrapLineByWidth(line, 20)) {
-          pushItem({ kind: "text", text: wrapped }, 1);
+        if (line.role === "hr") {
+          pushItem({ kind: "text", role: "hr", text: "" }, roleTextUnits("hr"));
+          continue;
+        }
+        const wrappedLines = wrapLineByWidth(line.text, roleWrapWidth(line.role));
+        wrappedLines.forEach((wrapped, wrapIndex) => {
+          pushItem({
+            kind: "text",
+            role: line.role,
+            text: wrapped,
+            marker: wrapIndex === 0 ? line.marker : "",
+          }, roleTextUnits(line.role));
+        });
+        if (line.role === "heading1" || line.role === "heading2") {
+          usedUnits += 0.18;
         }
       }
       continue;
@@ -649,7 +747,7 @@ function paginateMarkdownBlocks(markdown: string, maxPageLines = 18): SvgPageIte
   }
 
   flushPage();
-  return pages.length > 0 ? pages : [[{ kind: "text", text: "暂无内容" }]];
+  return pages.length > 0 ? pages : [[{ kind: "text", role: "paragraph", text: "暂无内容" }]];
 }
 
 function escapeXml(text: string): string {
@@ -659,6 +757,91 @@ function escapeXml(text: string): string {
     .replace(/>/g, "&gt;")
     .replace(/\"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function splitInlineSegments(text: string): Array<{ kind: "text" | "mark" | "underline" | "strong" | "quote"; text: string }> {
+  const segments: Array<{ kind: "text" | "mark" | "underline" | "strong" | "quote"; text: string }> = [];
+  const pattern = /(\+\+(.+?)\+\+|==(.+?)==|''(.+?)''|\*\*(.+?)\*\*)/g;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > cursor) {
+      segments.push({ kind: "text", text: text.slice(cursor, match.index) });
+    }
+    if (match[2]) {
+      segments.push({ kind: "underline", text: match[2] });
+    } else if (match[3]) {
+      segments.push({ kind: "mark", text: match[3] });
+    } else if (match[4]) {
+      segments.push({ kind: "quote", text: match[4] });
+    } else if (match[5]) {
+      segments.push({ kind: "strong", text: match[5] });
+    }
+    cursor = match.index + match[0].length;
+  }
+
+  if (cursor < text.length) {
+    segments.push({ kind: "text", text: text.slice(cursor) });
+  }
+
+  return segments.length > 0 ? segments : [{ kind: "text", text }];
+}
+
+function renderInlineSegments(text: string, options: {
+  textColor: string;
+  accentColor: string;
+  markColor: string;
+  quoteColor: string;
+  fontWeight?: number;
+  fontSize?: number;
+  x?: number;
+  y?: number;
+}): string {
+  const segments = splitInlineSegments(text);
+  const baseFontSize = options.fontSize ?? 42;
+  const pieces: string[] = [];
+  let cursorX = options.x ?? 120;
+
+  const measure = (value: string) => Math.max(18, Array.from(value).reduce((sum, char) => sum + (/[A-Za-z0-9]/.test(char) ? 0.58 : /\s/.test(char) ? 0.34 : 1), 0) * baseFontSize * 0.48);
+
+  for (const segment of segments) {
+    const safe = escapeXml(segment.text);
+    if (segment.kind === "text") {
+      pieces.push(`<text x="${cursorX}" y="${options.y}" font-size="${baseFontSize}" fill="${options.textColor}" font-weight="${options.fontWeight || 500}" font-family="${SVG_CJK_FONT_FAMILY}">${safe}</text>`);
+      cursorX += measure(segment.text);
+      continue;
+    }
+
+    if (segment.kind === "mark") {
+      const width = measure(segment.text) + 22;
+      pieces.push(`<rect x="${cursorX - 5}" y="${(options.y || 0) - baseFontSize + 10}" rx="8" ry="8" width="${width}" height="${baseFontSize + 14}" fill="${options.markColor}" opacity="0.88" />`);
+      pieces.push(`<text x="${cursorX + 6}" y="${options.y}" font-size="${baseFontSize - 1}" fill="${options.textColor}" font-weight="700" font-family="${SVG_CJK_FONT_FAMILY}">${safe}</text>`);
+      cursorX += width;
+      continue;
+    }
+
+    if (segment.kind === "underline") {
+      const width = measure(segment.text) + 4;
+      pieces.push(`<text x="${cursorX}" y="${options.y}" font-size="${baseFontSize}" fill="${options.textColor}" font-weight="600" font-family="${SVG_CJK_FONT_FAMILY}">${safe}</text>`);
+      pieces.push(`<line x1="${cursorX}" y1="${(options.y || 0) + 8}" x2="${cursorX + width}" y2="${(options.y || 0) + 8}" stroke="${options.accentColor}" stroke-width="3" stroke-linecap="round" />`);
+      cursorX += width;
+      continue;
+    }
+
+    if (segment.kind === "quote") {
+      const width = measure(segment.text) + 10;
+      pieces.push(`<text x="${cursorX}" y="${options.y}" font-size="${baseFontSize}" fill="${options.quoteColor}" font-style="italic" font-weight="600" font-family="${SVG_CJK_FONT_FAMILY}">${safe}</text>`);
+      cursorX += width;
+      continue;
+    }
+
+    const width = measure(segment.text);
+    pieces.push(`<text x="${cursorX}" y="${options.y}" font-size="${baseFontSize}" fill="${options.textColor}" font-weight="700" font-family="${SVG_CJK_FONT_FAMILY}">${safe}</text>`);
+    cursorX += width;
+  }
+
+  return pieces.join("\n");
 }
 
 function resolveTemplate(templateId: CardTemplateId): TemplateSpec {
@@ -719,7 +902,7 @@ export function renderCardPageSvg(params: {
   const height = 1656;
 
   const title = escapeXml(params.title || "图文卡片");
-  const pageItems: SvgPageItem[] = params.pageItems || (params.pageLines || []).map((text) => ({ kind: "text", text }));
+  const pageItems: SvgPageItem[] = params.pageItems || (params.pageLines || []).map((text) => ({ kind: "text", role: "paragraph", text }));
 
   const pageLabel = `${params.pageIndex + 1}/${Math.max(params.totalPages, 1)}`;
 
@@ -775,7 +958,82 @@ export function renderCardPageSvg(params: {
   const contentBlocks = pageItems
     .map((item) => {
       if (item.kind === "text") {
-        const block = `<text x="120" y="${cursorY}" font-size="42" fill="${template.defaultTextColor}" font-family="${SVG_CJK_FONT_FAMILY}">${escapeXml(item.text)}</text>`;
+        if (item.role === "hr") {
+          const hrY = cursorY + 8;
+          cursorY += 28;
+          return `<line x1="120" y1="${hrY}" x2="1122" y2="${hrY}" stroke="${template.defaultAccentColor}" stroke-opacity="0.42" stroke-width="2" stroke-linecap="round" />`;
+        }
+
+        const role = item.role || "paragraph";
+        if (role === "heading1" || role === "heading2" || role === "heading3") {
+          const fontSize = role === "heading1" ? 58 : role === "heading2" ? 48 : 42;
+          const weight = role === "heading1" ? 800 : 700;
+          const accentHeight = role === "heading1" ? 14 : role === "heading2" ? 10 : 8;
+          const textY = cursorY;
+          const lineY = cursorY + 14;
+          const rendered = renderInlineSegments(item.text, {
+            textColor: template.defaultTextColor,
+            accentColor: template.defaultAccentColor,
+            markColor: template.defaultAccentColor,
+            quoteColor: template.defaultTextColor,
+            fontWeight: weight,
+            fontSize,
+            y: textY,
+          });
+          cursorY += fontSize + 32;
+          return `<g>
+    <rect x="120" y="${lineY}" width="${role === "heading1" ? 220 : role === "heading2" ? 168 : 120}" height="${accentHeight}" rx="${accentHeight / 2}" fill="${template.defaultAccentColor}" opacity="0.92" />
+    ${rendered}
+  </g>`;
+        }
+
+        if (role === "quote") {
+          const textY = cursorY + 4;
+          const rendered = renderInlineSegments(item.text, {
+            textColor: template.defaultTextColor,
+            accentColor: template.defaultAccentColor,
+            markColor: template.defaultAccentColor,
+            quoteColor: template.defaultAccentColor,
+            fontWeight: 600,
+            fontSize: 38,
+            y: textY,
+          });
+          cursorY += 86;
+          return `<g>
+    <rect x="120" y="${cursorY - 66}" width="16" height="54" rx="8" fill="${template.defaultAccentColor}" opacity="0.9" />
+    ${rendered}
+  </g>`;
+        }
+
+        if (role === "bullet" || role === "ordered") {
+          const marker = escapeXml(item.marker || (role === "bullet" ? "•" : "1."));
+          const textY = cursorY;
+          const rendered = renderInlineSegments(item.text, {
+            textColor: template.defaultTextColor,
+            accentColor: template.defaultAccentColor,
+            markColor: template.defaultAccentColor,
+            quoteColor: template.defaultTextColor,
+            fontWeight: 600,
+            fontSize: 40,
+            x: 164,
+            y: textY,
+          });
+          cursorY += 78;
+          return `<g>
+    <text x="120" y="${textY}" font-size="34" font-weight="700" fill="${template.defaultAccentColor}" font-family="${SVG_CJK_FONT_FAMILY}">${marker}</text>
+    ${rendered}
+  </g>`;
+        }
+
+        const block = `<g>${renderInlineSegments(item.text, {
+          textColor: template.defaultTextColor,
+          accentColor: template.defaultAccentColor,
+          markColor: template.defaultAccentColor,
+          quoteColor: template.defaultAccentColor,
+          fontWeight: 500,
+          fontSize: 42,
+          y: cursorY,
+        })}</g>`;
         cursorY += 72;
         return block;
       }
@@ -898,7 +1156,7 @@ export function buildRenderSvgs(params: {
       renderCardPageSvg({
         templateId: params.templateId,
         title: params.title,
-        pageItems: [{ kind: "text", text: "暂无内容" }],
+        pageItems: [{ kind: "text", role: "paragraph", text: "暂无内容" }],
         pageIndex: 0,
         totalPages: 1,
         isCover: false,

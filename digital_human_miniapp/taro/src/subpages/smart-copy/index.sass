@@ -1,0 +1,211 @@
+.smart-copy-page
+  min-height: 100vh
+  background: #050505
+  color: #f6f8ff
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif
+
+.smart-copy-header
+  position: fixed
+  top: 0
+  left: 0
+  right: 0
+  z-index: 30
+  padding: calc(env(safe-area-inset-top) + 12rpx) 24rpx 16rpx
+  background: #050505
+  box-sizing: border-box
+
+.smart-copy-topbar
+  height: 66rpx
+  position: relative
+  display: flex
+  align-items: center
+  justify-content: center
+
+.smart-copy-back
+  position: absolute
+  left: 0
+  top: 50%
+  transform: translateY(-50%)
+  width: 56rpx
+  height: 56rpx
+  display: flex
+  align-items: center
+  justify-content: center
+
+.smart-copy-back-text
+  color: #e8f2ff
+  font-size: 52rpx
+  line-height: 1
+
+.smart-copy-title
+  color: #ecf6ff
+  font-size: 42rpx
+  font-weight: 700
+  line-height: 1.2
+
+.smart-copy-scroll
+  height: 100vh
+  padding: calc(env(safe-area-inset-top) + 92rpx) 24rpx 180rpx
+  box-sizing: border-box
+
+.smart-copy-body
+  padding-top: 0
+
+.smart-copy-section
+  margin-bottom: 20rpx
+
+.smart-copy-section-head
+  display: flex
+  align-items: baseline
+  justify-content: space-between
+  margin-bottom: 14rpx
+
+.smart-copy-section-title
+  color: #f7f8ff
+  font-size: 28rpx
+  font-weight: 700
+
+.smart-copy-section-subtitle
+  color: rgba(246, 248, 255, 0.56)
+  font-size: 22rpx
+
+.smart-copy-style-scroll
+  white-space: nowrap
+
+.smart-copy-style-list
+  display: flex
+  gap: 14rpx
+  width: max-content
+  min-width: 100%
+
+.smart-copy-style-chip,
+.smart-copy-style-empty
+  height: 64rpx
+  padding: 0 20rpx
+  border-radius: 999rpx
+  display: flex
+  align-items: center
+  justify-content: center
+  box-sizing: border-box
+  background: rgba(255, 255, 255, 0.06)
+  border: 1rpx solid rgba(255, 255, 255, 0.12)
+
+.smart-copy-style-chip--active
+  background: #ecee9f
+  border-color: #ecee9f
+
+.smart-copy-style-chip-text,
+.smart-copy-style-empty-text
+  font-size: 24rpx
+  font-weight: 700
+
+.smart-copy-style-chip-text
+  color: #e8f2ff
+
+.smart-copy-style-chip--active .smart-copy-style-chip-text
+  color: #111111
+
+.smart-copy-style-empty-text
+  color: rgba(246, 248, 255, 0.56)
+
+.smart-copy-input-section
+  padding: 24rpx
+  border-radius: 28rpx
+  background: #c7c4a6
+  color: #111111
+  box-sizing: border-box
+
+.smart-copy-composer-head
+  display: flex
+  flex-direction: column
+  gap: 14rpx
+  margin-bottom: 18rpx
+
+.smart-copy-composer-title
+  color: #111111
+  font-size: 28rpx
+  font-weight: 800
+
+.smart-copy-word-count-row
+  display: flex
+  gap: 10rpx
+  flex-wrap: wrap
+
+.smart-copy-word-count-chip
+  height: 50rpx
+  padding: 0 18rpx
+  border-radius: 999rpx
+  display: flex
+  align-items: center
+  justify-content: center
+  background: rgba(17, 17, 17, 0.08)
+  border: 1rpx solid rgba(17, 17, 17, 0.14)
+
+.smart-copy-word-count-chip--active
+  background: #111111
+
+.smart-copy-word-count-chip-text
+  color: #111111
+  font-size: 22rpx
+  font-weight: 700
+
+.smart-copy-word-count-chip--active .smart-copy-word-count-chip-text
+  color: #f7f2d1
+
+.smart-copy-textarea
+  width: 100%
+  height: 520rpx
+  padding: 22rpx
+  border-radius: 22rpx
+  background: rgba(255, 255, 255, 0.42)
+  color: #111111
+  font-size: 28rpx
+  line-height: 1.55
+  box-sizing: border-box
+
+.smart-copy-input-footer
+  margin-top: 16rpx
+  display: flex
+  align-items: center
+  justify-content: space-between
+  gap: 12rpx
+
+.smart-copy-count
+  color: rgba(17, 17, 17, 0.58)
+  font-size: 22rpx
+
+.smart-copy-fixed-submit
+  position: fixed
+  left: 24rpx
+  right: 24rpx
+  bottom: calc(24rpx + env(safe-area-inset-bottom))
+  z-index: 40
+  box-sizing: border-box
+
+.smart-copy-ghost-btn,
+.smart-copy-submit
+  display: flex
+  align-items: center
+  justify-content: center
+
+.smart-copy-ghost-btn
+  background: rgba(17, 17, 17, 0.08)
+
+.smart-copy-ghost-btn-text
+  color: #111111
+  font-size: 24rpx
+  font-weight: 700
+
+.smart-copy-submit
+  height: 88rpx
+  border-radius: 20rpx
+  background: #ecee9f
+  width: 100%
+
+.smart-copy-submit--disabled
+  opacity: 0.55
+
+.smart-copy-submit-text
+  color: #121212
+  font-size: 28rpx
+  font-weight: 800

@@ -620,11 +620,33 @@
   flex-direction: column
   justify-content: space-between
   gap: 6rpx
+  position: relative
+  overflow: hidden
+  background-size: 24rpx 24rpx, 24rpx 24rpx, cover
+
+.style-preset-thumb--coil-notebook
+  padding-left: 42rpx
+
+.style-preset-thumb--coil-notebook::before
+  content: ''
+  position: absolute
+  left: 14rpx
+  top: 18rpx
+  bottom: 18rpx
+  width: 22rpx
+  background-image: radial-gradient(circle at 50% 50%, #ffffff 0 8rpx, rgba(35, 49, 112, 0.44) 8.5rpx 10rpx, transparent 10.5rpx)
+  background-size: 22rpx 28rpx
+  background-repeat: repeat-y
+
+.style-preset-thumb--bytedance
+  background-size: 20rpx 20rpx, 20rpx 20rpx, cover
 
 .style-preset-thumb-title
   color: #f5f8ff
   font-size: 20rpx
   font-weight: 700
+  position: relative
+  z-index: 1
 
 .style-preset-color-row
   display: flex
@@ -632,6 +654,8 @@
   flex-wrap: wrap
   gap: 8rpx
   margin-top: 8rpx
+  position: relative
+  z-index: 1
 
 .style-preset-color-dot
   width: 18rpx
@@ -1303,7 +1327,12 @@
   box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.2)
 
 .preview-content-shell--coil-notebook
-  border: 1rpx solid rgba(38, 56, 110, 0.12)
+  border-radius: 0
+  box-shadow: -2rpx 0 0 rgba(54, 65, 120, 0.36)
+
+.preview-content-shell--bytedance
+  border: 1rpx solid rgba(0, 102, 255, 0.16)
+  box-shadow: 0 12rpx 34rpx rgba(25, 55, 112, 0.08)
 
 .preview-content-shell--pop-art
   border: 2rpx solid rgba(16, 16, 21, 0.22)
@@ -1322,26 +1351,41 @@
   border-color: rgba(207, 178, 91, 0.36)
 
 .preview-card--style-coil-notebook
-  border-color: rgba(255, 255, 255, 0.4)
-  padding-left: 40rpx
+  border-color: rgba(255, 255, 255, 0.48)
+  border-radius: 16rpx
+  padding: 42rpx 40rpx 40rpx 96rpx
+  background-size: 40rpx 40rpx, 40rpx 40rpx, cover
 .preview-card--style-coil-notebook::before
   content: ''
   position: absolute
-  left: 14rpx
-  top: 30rpx
-  bottom: 30rpx
-  width: 10rpx
-  border-radius: 999rpx
-  background-image: radial-gradient(circle, rgba(255,255,255,0.8) 0 3rpx, transparent 3.5rpx)
-  background-size: 10rpx 34rpx
+  left: 54rpx
+  top: 88rpx
+  bottom: 82rpx
+  width: 44rpx
+  background-image: radial-gradient(circle at 50% 50%, #5271ff 0 18rpx, rgba(35,49,112,0.48) 18.5rpx 21rpx, transparent 21.5rpx)
+  background-size: 44rpx 72rpx
   background-repeat: repeat-y
   pointer-events: none
+.preview-card--style-coil-notebook::after
+  content: ''
+  position: absolute
+  left: 76rpx
+  top: 88rpx
+  bottom: 82rpx
+  width: 22rpx
+  background: inherit
+  background-size: 40rpx 40rpx, 40rpx 40rpx, cover
+  background-position: left top
+  pointer-events: none
+  z-index: 0
 
 .preview-card--style-pop-art
   border-color: rgba(17, 24, 39, 0.44)
 
 .preview-card--style-bytedance
-  border-color: rgba(0, 102, 255, 0.28)
+  border-color: rgba(0, 102, 255, 0.24)
+  background-size: 32rpx 32rpx, 32rpx 32rpx, cover
+  box-shadow: inset 0 0 0 1rpx rgba(250, 44, 25, 0.08)
 
 .preview-card--style-art-deco
   border-color: rgba(212, 175, 55, 0.52)

@@ -158,6 +158,15 @@ const DEFAULT_CREDIT_CONFIGS = [
     description: "爆款复刻视频拆解分镜（固定费用）",
   },
   {
+    featureKey: "storyboard_skeleton_breakdown",
+    featureName: "3D骨骼分镜拆解",
+    category: "storyboard",
+    modelKey: null,
+    amount: 1,
+    enabled: true,
+    description: "3D骨骼分镜视频拆解（固定费用）",
+  },
+  {
     featureKey: "storyboard_image",
     featureName: "分镜首帧图生成",
     category: "storyboard",

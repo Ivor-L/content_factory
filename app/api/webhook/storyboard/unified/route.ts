@@ -5,6 +5,8 @@ import { isValidAdminWebhookRequest } from '@/lib/webhookAuth';
 import { normalizeStoryboardSegments } from '@/lib/storyboardTime';
 import { emitStoryboardTaskUpsert } from '@/lib/storyboardEvents';
 import { syncTaskToSummary } from '@/lib/taskSummary';
+import { getApiKeyForUser } from '@/lib/authServer';
+import { deductConfiguredCredits } from '@/lib/creditBilling';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -143,6 +145,12 @@ const extractFirstProductImage = (images: unknown): string | null => {
 const getPipelineKey = (task: { detailedBreakdown?: unknown }): string => {
   const detailed = parseJsonMaybe(task.detailedBreakdown);
   return readString(detailed?.pipeline_key || detailed?.pipelineKey);
+};
+
+const hasSkeletonBreakdownCreditDeducted = (task: { detailedBreakdown?: unknown }): boolean => {
+  const detailed = parseJsonMaybe(task.detailedBreakdown);
+  const credits = parseJsonMaybe(detailed?.credits);
+  return Boolean(credits?.skeleton_breakdown_deducted_at || credits?.skeletonBreakdownDeductedAt);
 };
 
 const normalizeStatus = (input: string, hasShots: boolean): string => {
@@ -417,6 +425,45 @@ export async function POST(request: Request) {
 
     await syncTaskToSummary({ taskType: 'storyboard', taskId, operation: 'update' });
     emitStoryboardTaskUpsert(updatedTask);
+
+    const pipelineKey = getPipelineKey(updatedTask);
+    if (taskStatus === 'BREAKDOWN_COMPLETED' && pipelineKey === 'skeleton_video' && updatedTask.userId && !hasSkeletonBreakdownCreditDeducted(task)) {
+      try {
+        const apiKey = await getApiKeyForUser(updatedTask.userId);
+        if (apiKey) {
+          await deductConfiguredCredits({
+            apiKey,
+            featureKey: 'storyboard_skeleton_breakdown',
+            userId: updatedTask.userId,
+            defaultAmount: 1,
+            workflowId: 'flow_storyboard_skeleton_video',
+            workflowName: '3D骨骼分镜拆解',
+          });
+
+          const latestBreakdown = updatedTask.detailedBreakdown &&
+            typeof updatedTask.detailedBreakdown === 'object' &&
+            !Array.isArray(updatedTask.detailedBreakdown)
+            ? updatedTask.detailedBreakdown as JsonRecord
+            : {};
+          await prisma.storyboardTask.update({
+            where: { id: taskId },
+            data: {
+              detailedBreakdown: asJsonValue({
+                ...latestBreakdown,
+                credits: {
+                  ...(latestBreakdown.credits && typeof latestBreakdown.credits === 'object' && !Array.isArray(latestBreakdown.credits)
+                    ? latestBreakdown.credits as JsonRecord
+                    : {}),
+                  skeleton_breakdown_deducted_at: new Date().toISOString(),
+                },
+              }),
+            },
+          });
+        }
+      } catch (error) {
+        console.error('[storyboard/unified webhook] Failed to deduct skeleton breakdown credits', error);
+      }
+    }
 
     return NextResponse.json({
       success: true,

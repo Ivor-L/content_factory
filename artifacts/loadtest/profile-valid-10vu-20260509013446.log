@@ -1,0 +1,37 @@
+
+> content-factory-web@0.1.6 loadtest:node
+> node tests/load/node-loadtest.mjs
+
+Starting node load test: mode=profile, targetVus=10, duration=60s, base=https://atomx.top
+[progress] requests=111 failures=0 recent_p95=105ms
+[progress] requests=407 failures=0 recent_p95=96ms
+[progress] requests=708 failures=0 recent_p95=99ms
+[progress] requests=1008 failures=0 recent_p95=93ms
+[progress] requests=1308 failures=0 recent_p95=86ms
+
+=== Load Test Summary ===
+{
+  "mode": "profile",
+  "baseUrl": "https://atomx.top",
+  "targetVus": 10,
+  "durationSeconds": 60,
+  "requests": 1621,
+  "failures": 0,
+  "failureRate": 0
+}
+status: { '200': 1621 }
+latency_ms: { p50: 19, p95: 96, p99: 106, max: 389 }
+┌─────────┬───────────────────────────────────────┬────────┬─────┬───────────┐
+│ (index) │ name                                  │ status │ ms  │ error     │
+├─────────┼───────────────────────────────────────┼────────┼─────┼───────────┤
+│ 0       │ 'POST /api/auth/email/password-login' │ 200    │ 389 │ undefined │
+│ 1       │ 'GET /api/user/profile'               │ 200    │ 384 │ undefined │
+│ 2       │ 'GET /api/user/profile'               │ 200    │ 200 │ undefined │
+│ 3       │ 'GET /api/user/profile'               │ 200    │ 111 │ undefined │
+│ 4       │ 'GET /api/user/profile'               │ 200    │ 108 │ undefined │
+│ 5       │ 'GET /api/user/profile'               │ 200    │ 108 │ undefined │
+│ 6       │ 'GET /api/user/profile'               │ 200    │ 108 │ undefined │
+│ 7       │ 'GET /api/user/profile'               │ 200    │ 107 │ undefined │
+│ 8       │ 'GET /api/user/profile'               │ 200    │ 107 │ undefined │
+│ 9       │ 'GET /api/user/profile'               │ 200    │ 107 │ undefined │
+└─────────┴───────────────────────────────────────┴────────┴─────┴───────────┘

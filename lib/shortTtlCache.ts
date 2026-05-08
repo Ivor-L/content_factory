@@ -5,6 +5,7 @@ type CacheEntry<T> = {
 
 const MAX_ENTRIES = 1000;
 const caches = new Map<string, Map<string, CacheEntry<unknown>>>();
+const inFlightLoaders = new Map<string, Promise<unknown>>();
 
 function getCache(namespace: string) {
   let cache = caches.get(namespace);
@@ -52,6 +53,38 @@ export function setShortTtlCache<T>(
     if (!oldestKey) break;
     cache.delete(oldestKey);
   }
+}
+
+export async function getOrSetShortTtlCache<T>(
+  namespace: string,
+  key: string,
+  ttlMs: number,
+  loader: () => Promise<T>,
+): Promise<{ value: T; cacheStatus: "HIT" | "MISS" | "JOIN" }> {
+  const cached = getShortTtlCache<T>(namespace, key);
+  if (cached) {
+    return { value: cached, cacheStatus: "HIT" };
+  }
+
+  const inFlightKey = `${namespace}:${key}`;
+  const existing = inFlightLoaders.get(inFlightKey) as Promise<T> | undefined;
+  if (existing) {
+    const value = await existing;
+    return { value, cacheStatus: "JOIN" };
+  }
+
+  const promise = loader()
+    .then((value) => {
+      setShortTtlCache(namespace, key, value, ttlMs);
+      return value;
+    })
+    .finally(() => {
+      inFlightLoaders.delete(inFlightKey);
+    });
+
+  inFlightLoaders.set(inFlightKey, promise);
+  const value = await promise;
+  return { value, cacheStatus: "MISS" };
 }
 
 export function deleteShortTtlCache(namespace: string, predicate?: (key: string) => boolean) {

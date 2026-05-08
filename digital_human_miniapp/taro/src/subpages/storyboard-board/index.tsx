@@ -17,8 +17,9 @@ const IMAGE_MODELS = [
 const VIDEO_MODELS = [
   { id: 'bytedance/seedance-2', label: 'Seedance 2.0' },
   { id: 'bytedance/seedance-2-fast', label: 'Seedance 2.0 Fast' },
-  { id: 'veo3.1-fast', label: 'Veo 3.1 Fast' },
 ];
+const DEFAULT_VIDEO_MODEL = 'bytedance/seedance-2';
+const SMART_REMIX_VIDEO_STAGE_SOURCE = 'smart_remix_video_stage';
 const ASPECT_RATIO_OPTIONS = [
   { id: '9:16', label: '竖屏', hint: '9:16', icon: '▯' },
   { id: '16:9', label: '横屏', hint: '16:9', icon: '▭' },
@@ -56,6 +57,11 @@ function decodeQueryText(value: string): string {
   }
 }
 
+function normalizeVideoModel(model: unknown): string {
+  const value = String(model || '').trim();
+  return VIDEO_MODELS.some((item) => item.id === value) ? value : DEFAULT_VIDEO_MODEL;
+}
+
 export default function StoryboardBoardPage() {
   const [taskId, setTaskId] = useState('');
   const [title, setTitle] = useState('3D骨骼分镜板');
@@ -65,13 +71,13 @@ export default function StoryboardBoardPage() {
   const [errorText, setErrorText] = useState('');
   const [task, setTask] = useState<StoryboardTaskStatusResult | null>(null);
   const [imageModel, setImageModel] = useState(DEFAULT_IMAGE_MODEL);
-  const [videoModel, setVideoModel] = useState('veo3.1-fast');
+  const [videoModel, setVideoModel] = useState(DEFAULT_VIDEO_MODEL);
   const [selectedAspectRatio, setSelectedAspectRatio] = useState<StoryboardAspectRatio | ''>('9:16');
   const [editingSegmentId, setEditingSegmentId] = useState('');
   const [editingType, setEditingType] = useState<'image' | 'video'>('image');
   const [editingPrompt, setEditingPrompt] = useState('');
   const [editingImageModel, setEditingImageModel] = useState(DEFAULT_IMAGE_MODEL);
-  const [editingVideoModel, setEditingVideoModel] = useState('veo3.1-fast');
+  const [editingVideoModel, setEditingVideoModel] = useState(DEFAULT_VIDEO_MODEL);
   const [editingRefs, setEditingRefs] = useState<StoryboardRef[]>([]);
   const [editingReplaceMode, setEditingReplaceMode] = useState<RemixReplaceMode>('');
   const [uploadingRef, setUploadingRef] = useState(false);
@@ -89,7 +95,7 @@ export default function StoryboardBoardPage() {
   const timerRef = useRef<number | null>(null);
   const keyboardFocusedRef = useRef(false);
   const imageModelRef = useRef(DEFAULT_IMAGE_MODEL);
-  const videoModelRef = useRef('veo3.1-fast');
+  const videoModelRef = useRef(DEFAULT_VIDEO_MODEL);
   const userSelectedImageModelRef = useRef(false);
   const userSelectedVideoModelRef = useRef(false);
   const userSelectedAspectRatioRef = useRef(false);
@@ -105,7 +111,7 @@ export default function StoryboardBoardPage() {
 
   const updateVideoModel = (model: string, source: 'server' | 'user' = 'user') => {
     if (source === 'user') userSelectedVideoModelRef.current = true;
-    videoModelRef.current = model || 'veo3.1-fast';
+    videoModelRef.current = normalizeVideoModel(model);
     setVideoModel(videoModelRef.current);
   };
 
@@ -758,6 +764,7 @@ export default function StoryboardBoardPage() {
         model: editingVideoModel || videoModel,
         allowTextVideo: true,
         aspectRatio: getRequestAspectRatio(),
+        source: isRemixRoute ? SMART_REMIX_VIDEO_STAGE_SOURCE : undefined,
       });
       if (result.triggered <= 0) {
         throw new Error(result.message || '触发生视频失败');
@@ -860,6 +867,7 @@ export default function StoryboardBoardPage() {
         model: videoModelRef.current || videoModel,
         allowTextVideo: true,
         aspectRatio: getRequestAspectRatio(),
+        source: isRemixRoute ? SMART_REMIX_VIDEO_STAGE_SOURCE : undefined,
       });
       if (result.triggered <= 0) {
         throw new Error(result.message || '一键生成视频失败');

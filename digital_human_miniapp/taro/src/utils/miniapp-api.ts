@@ -153,6 +153,45 @@ export interface WorkItem {
   source: 'task' | 'digitalHuman';
 }
 
+export interface WritingStyleOption {
+  id: string;
+  name: string;
+  description?: string | null;
+  channel?: string | null;
+  currentProfileId?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface WritingStyleProfile {
+  id: string;
+  status?: string | null;
+  profileJson?: Record<string, unknown> | null;
+}
+
+export interface SmartCopyTaskDetail {
+  id: string;
+  title: string;
+  ideaText: string;
+  status: string;
+  stage: string;
+  generatedTitle: string;
+  generatedText: string;
+  tags: string[];
+  errorMessage?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CreateSmartCopyTaskInput {
+  ideaText: string;
+  title?: string;
+  channel?: string;
+  targetOutput?: string;
+  wordCount?: number;
+  language?: string;
+  styleRules?: Record<string, unknown> | null;
+}
+
 export type StoryboardPipelineKey = 'script_to_storyboard' | 'viral_clone' | 'skeleton_video';
 
 export interface CreateStoryboardJobInput {
@@ -173,6 +212,9 @@ export interface CreateStoryboardJobResult {
   workflowId: string;
   workflowTriggered?: boolean;
 }
+
+export type CreateViralCloneStoryboardJobInput = Omit<CreateStoryboardJobInput, 'pipelineKey' | 'characterId'>;
+export type CreateSkeletonStoryboardJobInput = Omit<CreateStoryboardJobInput, 'pipelineKey'>;
 
 export interface StoryboardSegmentItem {
   id: string;
@@ -212,6 +254,7 @@ export interface StoryboardTaskStatusResult {
 
 export interface StoryboardGenerateResult {
   success: boolean;
+  quoteOnly?: boolean;
   partial?: boolean;
   task_id: string;
   total: number;
@@ -219,6 +262,12 @@ export interface StoryboardGenerateResult {
   failed: number;
   model?: string;
   message?: string;
+  creditEstimate?: {
+    unitAmount: number;
+    units: number;
+    amount: number;
+    billingMode: 'duration_seconds' | 'segments';
+  };
 }
 
 export interface AssetOverview {
@@ -738,11 +787,29 @@ function setApiKey(apiKey: string | null) {
 }
 
 function extractErrorMessage(payload: unknown, fallback: string): string {
+  if (typeof payload === 'string') {
+    const text = payload.trim();
+    if (!text) return fallback;
+    if (/^<!doctype\s+html/i.test(text) || /^<html[\s>]/i.test(text)) {
+      return fallback;
+    }
+    try {
+      return extractErrorMessage(JSON.parse(text), fallback);
+    } catch {
+      return text.slice(0, 120);
+    }
+  }
   if (!payload || typeof payload !== 'object') return fallback;
 
   const data = payload as Record<string, unknown>;
+  const message = data.message;
+  if (typeof message === 'string' && message.trim()) return message.trim();
+
   const error = data.error;
-  if (typeof error === 'string' && error.trim()) return error.trim();
+  if (typeof error === 'string' && error.trim()) {
+    const text = error.trim();
+    if (!/^failed to create storyboard job$/i.test(text)) return text;
+  }
   if (error && typeof error === 'object') {
     const errorObj = error as Record<string, unknown>;
     const message = errorObj.message;
@@ -750,9 +817,6 @@ function extractErrorMessage(payload: unknown, fallback: string): string {
     const code = errorObj.code;
     if (typeof code === 'string' && code.trim()) return code.trim();
   }
-
-  const message = data.message;
-  if (typeof message === 'string' && message.trim()) return message.trim();
   return fallback;
 }
 
@@ -799,6 +863,28 @@ async function request<T = unknown>(
   }
 
   return res.data as T;
+}
+
+async function requestFirstAvailable<T = unknown>(
+  paths: string[],
+  options: {
+    method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+    data?: Record<string, unknown>;
+  } = {},
+): Promise<T> {
+  let lastError: unknown = null;
+  for (const path of paths) {
+    try {
+      return await request<T>(path, options);
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : '';
+      if (!/^HTTP 404$|^HTTP 405$|^HTTP 500$/i.test(message)) {
+        throw error;
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('请求失败');
 }
 
 async function uploadFile(filePath: string, name: string, mimeType: string): Promise<string> {
@@ -853,7 +939,7 @@ function detectWorkType(item: any): WorkItem['type'] {
   if (taskType === 'storyboard') return 'video';
   if (taskType.includes('video') || taskType.includes('digital') || taskType === 't2v') return 'video';
   if (taskType.includes('poster') || taskType.includes('image')) return 'image-text';
-  if (taskType.includes('script') || taskType.includes('copy') || taskType.includes('writing')) return 'copy';
+  if (taskType === 'creative' || taskType.includes('script') || taskType.includes('copy') || taskType.includes('writing')) return 'copy';
   return 'task';
 }
 
@@ -870,6 +956,8 @@ function normalizeStatus(value: unknown): TaskStatus {
   if (status.includes('COMPLETE') || status === 'DONE' || status === 'SUCCESS') return 'COMPLETED';
   if (status.includes('GENERAT') || status.includes('PROCESS')) return 'GENERATING';
   if (status.includes('FAIL') || status.includes('ERROR')) return 'FAILED';
+  if (status === 'ACTIVE') return 'GENERATING';
+  if (status === 'CREATED' || status === 'CREATE' || status === 'INIT' || status === 'INITIALIZED') return 'PENDING';
   if (status.includes('PEND') || status.includes('QUEUE') || status.includes('WAIT')) return 'PENDING';
   return status || 'PENDING';
 }
@@ -947,6 +1035,80 @@ function dedupeWorks(items: WorkItem[]): WorkItem[] {
     }
   }
   return sortByCreatedAtDesc(Array.from(byKey.values()));
+}
+
+function resolveWorkPreview(item: Record<string, unknown>, metadata: Record<string, unknown> | null): string | null {
+  const direct = typeof item.preview === 'string' ? item.preview.trim() : '';
+  const generated = extractGeneratedCopyText({ ...item, metadata });
+  return generated || direct || null;
+}
+
+function extractGeneratedCopyText(item: Record<string, unknown> | null | undefined): string {
+  if (!item) return '';
+  const metadata = item.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata)
+    ? item.metadata as Record<string, unknown>
+    : {};
+  const stages = metadata.stages && typeof metadata.stages === 'object' && !Array.isArray(metadata.stages)
+    ? metadata.stages as Record<string, unknown>
+    : {};
+  const draft = stages.draft && typeof stages.draft === 'object' && !Array.isArray(stages.draft)
+    ? stages.draft as Record<string, unknown>
+    : {};
+  const aiOutput = draft.aiOutput && typeof draft.aiOutput === 'object' && !Array.isArray(draft.aiOutput)
+    ? draft.aiOutput as Record<string, unknown>
+    : {};
+  return pickString(
+    item.generatedText,
+    item.copyText,
+    item.content,
+    metadata.generatedText,
+    metadata.generated_text,
+    metadata.copyText,
+    metadata.copy_text,
+    metadata.content,
+    draft.rawText,
+    aiOutput['正文'],
+    aiOutput.body,
+    aiOutput.script_content,
+    aiOutput.scriptContent,
+  ) || '';
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item || '').trim()).filter(Boolean);
+}
+
+function normalizeSmartCopyTaskDetail(raw: Record<string, unknown> | null | undefined): SmartCopyTaskDetail {
+  const metadata = raw?.metadata && typeof raw.metadata === 'object' && !Array.isArray(raw.metadata)
+    ? raw.metadata as Record<string, unknown>
+    : {};
+  const stages = metadata.stages && typeof metadata.stages === 'object' && !Array.isArray(metadata.stages)
+    ? metadata.stages as Record<string, unknown>
+    : {};
+  const draft = stages.draft && typeof stages.draft === 'object' && !Array.isArray(stages.draft)
+    ? stages.draft as Record<string, unknown>
+    : {};
+  const aiOutput = draft.aiOutput && typeof draft.aiOutput === 'object' && !Array.isArray(draft.aiOutput)
+    ? draft.aiOutput as Record<string, unknown>
+    : {};
+  const generatedTitle = pickString(aiOutput['标题'], aiOutput.title, raw?.title) || '';
+  const generatedText = pickString(draft.rawText, aiOutput['正文'], aiOutput.body, aiOutput.script_content, aiOutput.scriptContent) || '';
+  const error = aiOutput.error || draft.validatorState;
+
+  return {
+    id: String(raw?.id || ''),
+    title: String(raw?.title || generatedTitle || '智能文案'),
+    ideaText: String(raw?.ideaText || ''),
+    status: String(raw?.status || 'PENDING'),
+    stage: String(raw?.stage || ''),
+    generatedTitle,
+    generatedText,
+    tags: normalizeStringList(aiOutput['标签'] || aiOutput.tags || aiOutput.hashtags),
+    errorMessage: typeof error === 'string' ? error : null,
+    createdAt: typeof raw?.createdAt === 'string' ? raw.createdAt : undefined,
+    updatedAt: typeof raw?.updatedAt === 'string' ? raw.updatedAt : undefined,
+  };
 }
 
 function parseProductImages(raw: unknown): string[] {
@@ -1074,7 +1236,25 @@ export const miniappApi = {
       });
 
       // Source A: My-note tasks (miniapp + web image-text replication storage).
-      const payload = await request<{ data?: Array<Record<string, unknown>> }>(`/api/image-text-replication/my-notes?${query}`);
+      // Source B: Web-side viral references imported by this user (especially Xiaohongshu).
+      const refsQuery = buildQuery({
+        limit: params?.limit ?? 40,
+        platform: 'xiaohongshu',
+        q: params?.q?.trim() || undefined,
+        sort: params?.sort,
+        contentType: params?.contentType,
+      });
+
+      const [myNotesPayload, refsPayload] = await Promise.allSettled([
+        request<{ data?: Array<Record<string, unknown>> }>(`/api/image-text-replication/my-notes?${query}`),
+        request<{ data?: any[] }>(`/api/viral-references?${refsQuery}`),
+      ]);
+
+      if (myNotesPayload.status === 'rejected' && refsPayload.status === 'rejected') {
+        throw myNotesPayload.reason;
+      }
+
+      const payload = myNotesPayload.status === 'fulfilled' ? myNotesPayload.value : null;
       const myNotes = Array.isArray(payload?.data) ? payload.data : [];
       const fromMyNotes = myNotes.map((item) => {
         const sourceImages = Array.isArray(item.sourceImages)
@@ -1112,19 +1292,9 @@ export const miniappApi = {
         } as HotItem;
       }).filter((item) => item.id);
 
-      // Source B: Web-side viral references imported by this user (especially Xiaohongshu).
-      const refsQuery = buildQuery({
-        limit: params?.limit ?? 40,
-        platform: 'xiaohongshu',
-        q: params?.q?.trim() || undefined,
-        sort: params?.sort,
-        contentType: params?.contentType,
-      });
-
       let fromReferences: HotItem[] = [];
-      try {
-        const refsPayload = await request<{ data?: any[] }>(`/api/viral-references?${refsQuery}`);
-        const refsList = Array.isArray(refsPayload?.data) ? refsPayload.data : [];
+      if (refsPayload.status === 'fulfilled') {
+        const refsList = Array.isArray(refsPayload.value?.data) ? refsPayload.value.data : [];
         fromReferences = refsList.map((item) => {
           const mediaUrls = normalizeHotMediaUrls(item);
           const coverUrl = sanitizeUrl(item.coverUrl) ?? mediaUrls?.[0] ?? null;
@@ -1158,8 +1328,6 @@ export const miniappApi = {
             createdAt: typeof item.createdAt === 'string' ? item.createdAt : null,
           } as HotItem;
         }).filter((item) => item.id);
-      } catch {
-        fromReferences = [];
       }
 
       // Merge two sources by sourceUrl/title signature to reduce duplicates.
@@ -1499,6 +1667,61 @@ export const miniappApi = {
     };
   },
 
+  async createViralCloneStoryboardJob(input: CreateViralCloneStoryboardJobInput): Promise<CreateStoryboardJobResult> {
+    const payload = await requestFirstAvailable<{ success?: boolean; data?: any }>([
+      '/api/miniapp/storyboard/viral-clone/jobs',
+      '/api/storyboard/jobs',
+    ], {
+      method: 'POST',
+      data: {
+        pipeline_key: 'viral_clone',
+        title: input.title || '',
+        script: input.script || '',
+        creativeTaskId: input.creativeTaskId || '',
+        product_id: input.productId || '',
+        metadata: input.metadata || {},
+        source: input.source || 'miniapp_remix_generate_page',
+      },
+    });
+
+    const data = payload?.data || {};
+    return {
+      taskId: String(data.taskId || ''),
+      status: String(data.status || 'ANALYZING'),
+      pipelineKey: 'viral_clone',
+      workflowId: String(data.workflowId || ''),
+      workflowTriggered: data.workflowTriggered === true,
+    };
+  },
+
+  async createSkeletonStoryboardJob(input: CreateSkeletonStoryboardJobInput): Promise<CreateStoryboardJobResult> {
+    const payload = await requestFirstAvailable<{ success?: boolean; data?: any }>([
+      '/api/miniapp/storyboard/skeleton/jobs',
+      '/api/storyboard/jobs',
+    ], {
+      method: 'POST',
+      data: {
+        pipeline_key: 'skeleton_video',
+        title: input.title || '',
+        script: input.script || '',
+        creativeTaskId: input.creativeTaskId || '',
+        product_id: input.productId || '',
+        character_id: input.characterId || '',
+        metadata: input.metadata || {},
+        source: input.source || 'miniapp_generate_page',
+      },
+    });
+
+    const data = payload?.data || {};
+    return {
+      taskId: String(data.taskId || ''),
+      status: String(data.status || 'ANALYZING'),
+      pipelineKey: 'skeleton_video',
+      workflowId: String(data.workflowId || ''),
+      workflowTriggered: data.workflowTriggered === true,
+    };
+  },
+
   async getProducts(): Promise<ProductSummary[]> {
     const payload = await request<{ success?: boolean; data?: Array<Record<string, unknown>> }>('/api/products');
     const list = Array.isArray(payload?.data) ? payload.data : [];
@@ -1656,13 +1879,13 @@ export const miniappApi = {
           : null;
         works.push({
           id: String(item.id),
-          title: isViralRemixTask(item) ? '一键复刻' : String(item.title ?? '未命名任务'),
+          title: isViralRemixTask(item) ? '一键复刻' : String(item.title ?? (taskType === 'creative' ? '智能文案' : '未命名任务')),
           type: detectWorkType(item),
           status: normalizeStatus(item.status),
           taskType,
           taskId: String(item.taskId ?? item.task_id ?? item.id),
           createdAt: String(item.createdAt ?? new Date().toISOString()),
-          preview: (item.preview as string | null) ?? null,
+          preview: resolveWorkPreview(item, metadata),
           thumbnailUrl:
             storyboardCover ??
             (item.thumbnailUrl as string | null) ??
@@ -1804,6 +2027,8 @@ export const miniappApi = {
     model: string;
     allowTextVideo?: boolean;
     aspectRatio?: string;
+    quoteOnly?: boolean;
+    source?: string;
   }): Promise<StoryboardGenerateResult> {
     const aspectRatio = normalizeStoryboardAspectRatio(params.aspectRatio, '9:16');
     return request<StoryboardGenerateResult>(`/api/storyboard/${encodeURIComponent(params.taskId)}/generate-videos`, {
@@ -1813,6 +2038,8 @@ export const miniappApi = {
         model: params.model,
         allowTextVideo: Boolean(params.allowTextVideo),
         aspectRatio,
+        quoteOnly: Boolean(params.quoteOnly),
+        source: params.source,
       },
     });
   },
@@ -1857,6 +2084,65 @@ export const miniappApi = {
     };
   },
 
+  async listWritingStyles(limit = 50): Promise<WritingStyleOption[]> {
+    const payload = await request<{ data?: Array<Record<string, unknown>> }>(`/api/assets/writing-styles?mode=selector&limit=${limit}`);
+    const rows = Array.isArray(payload?.data) ? payload.data : [];
+    return rows.map((item) => ({
+      id: String(item.id || '').trim(),
+      name: String(item.name || '未命名风格'),
+      description: typeof item.description === 'string' ? item.description : null,
+      channel: typeof item.channel === 'string' ? item.channel : null,
+      currentProfileId: typeof item.currentProfileId === 'string' ? item.currentProfileId : null,
+      updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : null,
+    })).filter((item) => item.id);
+  },
+
+  async getWritingStyleProfile(styleId: string): Promise<WritingStyleProfile | null> {
+    const payload = await request<{ data?: Record<string, unknown> }>(`/api/assets/writing-styles/${encodeURIComponent(styleId)}`);
+    const data = payload?.data;
+    if (!data || typeof data !== 'object') return null;
+    const currentProfile = data.currentProfile && typeof data.currentProfile === 'object' && !Array.isArray(data.currentProfile)
+      ? data.currentProfile as Record<string, unknown>
+      : null;
+    const profileJson = currentProfile?.profileJson && typeof currentProfile.profileJson === 'object' && !Array.isArray(currentProfile.profileJson)
+      ? currentProfile.profileJson as Record<string, unknown>
+      : null;
+    return {
+      id: String(data.id || styleId),
+      status: typeof currentProfile?.status === 'string' ? currentProfile.status : null,
+      profileJson,
+    };
+  },
+
+  async createSmartCopyTask(input: CreateSmartCopyTaskInput): Promise<SmartCopyTaskDetail> {
+    const goal: Record<string, unknown> = {};
+    if (typeof input.wordCount === 'number' && input.wordCount > 0) {
+      goal.targetWordCount = input.wordCount;
+    }
+    const payload = await request<{ data?: Record<string, unknown> }>('/api/creative-tasks/direct', {
+      method: 'POST',
+      data: {
+        ideaText: input.ideaText,
+        title: input.title || input.ideaText.slice(0, 32),
+        channel: input.channel || 'xhs',
+        targetOutput: input.targetOutput || '智能文案',
+        language: input.language || 'zh-CN',
+        goal,
+        styleRules: input.styleRules || undefined,
+        metadata: {
+          source: 'miniapp_smart_copy',
+          entry: 'home_smart_copy',
+        },
+      },
+    });
+    return normalizeSmartCopyTaskDetail(payload?.data || {});
+  },
+
+  async getSmartCopyTask(taskId: string): Promise<SmartCopyTaskDetail> {
+    const payload = await request<{ data?: Record<string, unknown> }>(`/api/creative-tasks/${encodeURIComponent(taskId)}`);
+    return normalizeSmartCopyTaskDetail(payload?.data || {});
+  },
+
   async deleteWorkItem(item: WorkItem): Promise<void> {
     if (item.source === 'digitalHuman') {
       await request(`/api/digital-human/videos/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
@@ -1866,6 +2152,11 @@ export const miniappApi = {
     if (taskType === 'storyboard' || taskType === 'grid') {
       const storyboardId = String(item.taskId || item.id || '').trim();
       await request(`/api/storyboard/${encodeURIComponent(storyboardId)}`, { method: 'DELETE' });
+      return;
+    }
+    if (taskType === 'creative') {
+      const taskId = String(item.taskId || item.id || '').trim();
+      await request(`/api/creative-tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' });
       return;
     }
     await request(`/api/tasks/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
