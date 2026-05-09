@@ -131,6 +131,17 @@ type DigitalHumanDetailPayload = {
   sourceTaskId: string | null;
 };
 
+type KnowledgeFolder = {
+  id: string;
+  name: string;
+  description?: string | null;
+  _count?: {
+    files?: number;
+    chunks?: number;
+    conversations?: number;
+  };
+};
+
 function toRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -173,6 +184,44 @@ function sanitizeFileBase(raw: string, fallback: string): string {
     .replace(/\s+/g, "_")
     .trim();
   return normalized.length > 0 ? normalized : fallback;
+}
+
+function sanitizeKnowledgeFileBase(raw: string, fallback: string): string {
+  const normalized = raw
+    .replace(/[\\/:*?"<>|#\n\r\t]+/g, "_")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
+  return normalized.length > 0 ? normalized : fallback;
+}
+
+function buildCreativeKnowledgeMarkdown(input: {
+  title: string;
+  titleMain: string;
+  titleAlts: string[];
+  bodyText: string;
+  hashtags: string[];
+}) {
+  const parts = [`# ${input.title}`];
+
+  if (input.titleMain) {
+    parts.push(`## 推荐标题\n${input.titleMain}`);
+  }
+
+  if (input.titleAlts.length > 0) {
+    parts.push(`## 备选标题\n${input.titleAlts.map((title, index) => `${index + 1}. ${title}`).join("\n")}`);
+  }
+
+  if (input.bodyText) {
+    parts.push(`## 正文\n${input.bodyText}`);
+  }
+
+  if (input.hashtags.length > 0) {
+    parts.push(`## 标签\n${input.hashtags.join(" ")}`);
+  }
+
+  return parts.join("\n\n").trim();
 }
 
 function inferImageExtension(url: string): string {
@@ -1895,6 +1944,12 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
   const [t2vStylesLoading, setT2vStylesLoading] = useState(false);
   const [t2vSelectedStyleId, setT2vSelectedStyleId] = useState<string | null>(null);
   const [t2vAllowText, setT2vAllowText] = useState(false);
+  const [knowledgeImportOpen, setKnowledgeImportOpen] = useState(false);
+  const [knowledgeFolders, setKnowledgeFolders] = useState<KnowledgeFolder[]>([]);
+  const [knowledgeFoldersLoading, setKnowledgeFoldersLoading] = useState(false);
+  const [knowledgeFoldersError, setKnowledgeFoldersError] = useState<string | null>(null);
+  const [selectedKnowledgeFolderId, setSelectedKnowledgeFolderId] = useState("");
+  const [knowledgeImporting, setKnowledgeImporting] = useState(false);
   const gridStoryboardImages = isGrid ? getStringArray(gridMetadata?.storyboardImages as unknown) : [];
   const gridSplitStoryboardIdFromMeta =
     isGrid && typeof (gridMetadata?.splitStoryboardId as unknown) === "string"
@@ -2463,6 +2518,120 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
     (typeof creativeDetail?.title === "string" && creativeDetail.title.trim()
       ? creativeDetail.title.trim()
       : task.title || "智能创作图文");
+  const knowledgeImportTitle = titleMain || scriptTitle || task.title || "智能创作文案";
+  const canImportKnowledge = Boolean(isCreative && (titleMain || bodyText));
+
+  const fetchKnowledgeFolders = useCallback(async () => {
+    setKnowledgeFoldersLoading(true);
+    setKnowledgeFoldersError(null);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) {
+        throw new Error("登录已过期，请重新登录后再试");
+      }
+      const response = await fetch("/api/knowledge/folders?limit=100", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const payload = await response.json().catch(() => ({})) as { data?: KnowledgeFolder[]; error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "加载知识库失败");
+      }
+      const rows = Array.isArray(payload.data) ? payload.data : [];
+      setKnowledgeFolders(rows);
+      setSelectedKnowledgeFolderId((current) => {
+        if (current && rows.some((folder) => folder.id === current)) return current;
+        return rows[0]?.id || "";
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "加载知识库失败";
+      setKnowledgeFolders([]);
+      setSelectedKnowledgeFolderId("");
+      setKnowledgeFoldersError(message);
+    } finally {
+      setKnowledgeFoldersLoading(false);
+    }
+  }, []);
+
+  const handleKnowledgeImportOpen = () => {
+    if (!canImportKnowledge) {
+      toast.error("暂无可导入的标题或正文");
+      return;
+    }
+    setKnowledgeImportOpen(true);
+    void fetchKnowledgeFolders();
+  };
+
+  const handleKnowledgeImportConfirm = async () => {
+    if (!selectedKnowledgeFolderId) {
+      toast.error("请先选择知识库");
+      return;
+    }
+    if (!canImportKnowledge) {
+      toast.error("暂无可导入的标题或正文");
+      return;
+    }
+
+    setKnowledgeImporting(true);
+    setKnowledgeFoldersError(null);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) {
+        throw new Error("登录已过期，请重新登录后再试");
+      }
+
+      const fileTitle = knowledgeImportTitle.trim() || "智能创作文案";
+      const fileBase = sanitizeKnowledgeFileBase(fileTitle, task.taskId || "creative-copy");
+      const fileIdBase = sanitizeKnowledgeFileBase(task.taskId || task.id || "creative-copy", "creative-copy");
+      const filePath = `智能创作/${fileBase}-${fileIdBase}.md`;
+      const content = buildCreativeKnowledgeMarkdown({
+        title: fileTitle,
+        titleMain,
+        titleAlts,
+        bodyText,
+        hashtags: draftHashtags,
+      });
+
+      const response = await fetch(`/api/knowledge/folders/${selectedKnowledgeFolderId}/files`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          path: filePath,
+          title: fileTitle,
+          content,
+          sourceType: "my-works-creative",
+          contentFactory: {
+            importedFrom: "my-works-creative",
+            taskId: task.taskId,
+            taskSummaryId: task.id,
+            generatedTitle: titleMain || null,
+            titleCandidates: titleLines,
+            hashtags: draftHashtags,
+          },
+        }),
+      });
+      const payload = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "导入知识库失败");
+      }
+
+      const folder = knowledgeFolders.find((item) => item.id === selectedKnowledgeFolderId);
+      toast.success(`已导入${folder?.name ? `到 ${folder.name}` : "知识库"}`);
+      setKnowledgeImportOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "导入知识库失败";
+      setKnowledgeFoldersError(message);
+      toast.error(message);
+    } finally {
+      setKnowledgeImporting(false);
+    }
+  };
+
   const handlePosterLaunch = () => {
     if (!scriptReady) {
       toast.error("文案仍在生成，稍后再试");
@@ -3384,6 +3553,15 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
                     生成数字人
                   </button>
                 </div>
+                <button
+                  type="button"
+                  onClick={handleKnowledgeImportOpen}
+                  disabled={!canImportKnowledge || knowledgeImporting}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                >
+                  {knowledgeImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}
+                  导入知识库
+                </button>
                 {/* Row 2: 分镜视频 + 删除 */}
                 <div className="flex gap-2 items-center">
                   {t2vStatus === 'done' && t2vStoryboardId ? (
@@ -3597,10 +3775,97 @@ function TaskDetailModal({ task, langKey, basePath, onClose, onOpen, onDownload,
     portalRoot
   ) : null;
 
+  const knowledgeImportPortal = portalRoot && knowledgeImportOpen ? createPortal(
+    <div
+      className="fixed inset-0 z-[10002] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      onClick={(e) => { if (e.target === e.currentTarget && !knowledgeImporting) setKnowledgeImportOpen(false); }}
+    >
+      <div className="relative w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl dark:bg-gray-950">
+        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 dark:border-gray-800">
+          <div>
+            <h3 className="text-base font-semibold text-gray-900 dark:text-white">导入知识库</h3>
+            <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">保存推荐标题和正文，后续可在知识库中检索复用</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setKnowledgeImportOpen(false)}
+            disabled={knowledgeImporting}
+            className="rounded-full border border-gray-200 bg-white/80 p-1.5 text-gray-500 hover:text-gray-900 disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
+            aria-label="关闭导入知识库"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4 px-6 py-5">
+          <div className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 dark:border-gray-800 dark:bg-gray-900/60">
+            <p className="text-xs font-medium text-gray-400 dark:text-gray-500">将导入</p>
+            <p className="mt-1 line-clamp-2 text-sm font-semibold text-gray-900 dark:text-white">{knowledgeImportTitle}</p>
+          </div>
+
+          {knowledgeFoldersLoading ? (
+            <div className="flex items-center justify-center gap-2 rounded-2xl border border-gray-100 py-8 text-sm text-gray-500 dark:border-gray-800 dark:text-gray-400">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              正在加载知识库...
+            </div>
+          ) : knowledgeFolders.length > 0 ? (
+            <label className="block space-y-2">
+              <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">选择知识库</span>
+              <select
+                value={selectedKnowledgeFolderId}
+                onChange={(event) => setSelectedKnowledgeFolderId(event.target.value)}
+                disabled={knowledgeImporting}
+                className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-800 outline-none transition focus:border-gray-400 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+              >
+                {knowledgeFolders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>
+                    {folder.name}{typeof folder._count?.files === "number" ? ` (${folder._count.files} 个文件)` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
+              暂无知识库，请先到知识库页面创建后再导入。
+            </div>
+          )}
+
+          {knowledgeFoldersError && (
+            <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-200">
+              {knowledgeFoldersError}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-3 border-t border-gray-100 px-6 py-4 dark:border-gray-800">
+          <button
+            type="button"
+            onClick={() => setKnowledgeImportOpen(false)}
+            disabled={knowledgeImporting}
+            className="rounded-full border border-gray-200 px-5 py-2 text-sm font-semibold text-gray-500 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={handleKnowledgeImportConfirm}
+            disabled={knowledgeImporting || knowledgeFoldersLoading || knowledgeFolders.length === 0 || !selectedKnowledgeFolderId}
+            className="inline-flex items-center gap-2 rounded-full bg-gray-900 px-5 py-2 text-sm font-semibold text-white hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100"
+          >
+            {knowledgeImporting && <Loader2 className="h-4 w-4 animate-spin" />}
+            {knowledgeImporting ? "导入中..." : "确认导入"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    portalRoot
+  ) : null;
+
   return (
     <>
       {mainPortal}
       {stylePickerPortal}
+      {knowledgeImportPortal}
     </>
   );
 }

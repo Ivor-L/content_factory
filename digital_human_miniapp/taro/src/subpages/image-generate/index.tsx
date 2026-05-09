@@ -20,6 +20,8 @@ type InfographicTemplate = {
   tag: string;
   preview: string;
   status?: string | null;
+  metadata?: Record<string, unknown> | null;
+  spec?: Record<string, unknown> | null;
 };
 
 const FEATURE_TABS: Array<{ key: FeatureKey; label: string }> = [
@@ -76,6 +78,61 @@ function buildQrcodeImageSrc(text: string): string {
   const apiBaseUrl = getApiBaseUrl();
   const path = `/api/utils/qrcode?size=360&text=${encodeURIComponent(value)}`;
   return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeJsonForSubmit(value: unknown): string {
+  if (!value) return '';
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    try {
+      return JSON.stringify(JSON.parse(trimmed));
+    } catch {
+      return trimmed.startsWith('{') || trimmed.startsWith('[') ? trimmed : '';
+    }
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '';
+  }
+}
+
+function extractInfographicStyleProfile(template: InfographicTemplate | null): string {
+  if (!template) return '';
+  const metadata = isPlainRecord(template.metadata) ? template.metadata : null;
+  const spec = isPlainRecord(template.spec) ? template.spec : null;
+  const candidates = [
+    metadata?.analysis,
+    metadata?.style_profile_json,
+    metadata?.styleProfileJson,
+    metadata?.style_dna ? { style_dna: metadata.style_dna, generation_prompts: metadata.generation_prompts ?? metadata.promptKit } : null,
+    spec,
+    metadata,
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeJsonForSubmit(candidate);
+    if (normalized) return normalized;
+  }
+  return '';
+}
+
+function getRouteFeatureOverride(): FeatureKey | null {
+  try {
+    const params = (Taro.getCurrentInstance()?.router?.params || {}) as Record<string, unknown>;
+    const from = String(params.from || '').trim();
+    if (from === 'action-transfer') return 'ai-image';
+    const targetFeature = String(params.targetFeature || '').trim();
+    return targetFeature === 'infographic' || targetFeature === 'card-layout'
+      ? targetFeature
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 const IMAGE_MODELS = [
@@ -2119,6 +2176,7 @@ export default function ImageGeneratePage() {
   const [cardUserCleared, setCardUserCleared] = useState(false);
   const [stylePresetScrollLeft, setStylePresetScrollLeft] = useState(0);
   const stylePresetScrollLeftRef = useRef(0);
+  const routeFeatureOverrideRef = useRef<FeatureKey | null>(null);
 
   const applyCardCoverStyleDefaults = (styleId: CardCoverStyleId) => {
     const spec = getCardCoverStyleSpec(styleId);
@@ -2163,12 +2221,14 @@ export default function ImageGeneratePage() {
   useLoad((query) => {
     const from = String(query?.from || '').trim();
     if (from === 'action-transfer') {
+      routeFeatureOverrideRef.current = 'ai-image';
       setReturnTarget('action-transfer');
       setActiveFeature('ai-image');
     }
     if (from === 'smart-copy') {
       const targetFeature = String(query?.targetFeature || '').trim();
       if (targetFeature === 'infographic' || targetFeature === 'card-layout') {
+        routeFeatureOverrideRef.current = targetFeature;
         setActiveFeature(targetFeature);
       }
     }
@@ -2181,11 +2241,17 @@ export default function ImageGeneratePage() {
 
   useEffect(() => {
     try {
+      const routeFeatureOverride = getRouteFeatureOverride();
+      if (routeFeatureOverride) {
+        routeFeatureOverrideRef.current = routeFeatureOverride;
+        setActiveFeature(routeFeatureOverride);
+      }
+
       const raw = Taro.getStorageSync(IMAGE_GENERATE_PREFS_KEY);
       if (!raw || typeof raw !== 'object') return;
       const prefs = raw as ImageGeneratePrefs;
 
-      if (prefs.activeFeature && FEATURE_TABS.some((item) => item.key === prefs.activeFeature)) {
+      if (!routeFeatureOverride && !routeFeatureOverrideRef.current && prefs.activeFeature && FEATURE_TABS.some((item) => item.key === prefs.activeFeature)) {
         setActiveFeature(prefs.activeFeature);
       }
       if (prefs.selectedModel && IMAGE_MODELS.some((item) => item.key === prefs.selectedModel)) {
@@ -2403,6 +2469,8 @@ export default function ImageGeneratePage() {
         tag: style.status === 'FAILED' ? '不可用' : '风格模板',
         preview: style.thumbnailUrl || style.previewUrl || FALLBACK_INFOGRAPHIC_TEMPLATES[idx % FALLBACK_INFOGRAPHIC_TEMPLATES.length].preview,
         status: style.status,
+        metadata: style.metadata ?? null,
+        spec: style.spec ?? null,
       }));
 
       setInfographicTemplates(mapped);
@@ -2419,6 +2487,11 @@ export default function ImageGeneratePage() {
 
   useDidShow(() => {
     setCardSettingsOpen(false);
+    const routeFeatureOverride = getRouteFeatureOverride();
+    if (routeFeatureOverride) {
+      routeFeatureOverrideRef.current = routeFeatureOverride;
+      setActiveFeature(routeFeatureOverride);
+    }
     void loadInfographicTemplates();
 
     const smartCopyRaw = Taro.getStorageSync(SMART_COPY_CARD_PAYLOAD_KEY);
@@ -2955,36 +3028,43 @@ export default function ImageGeneratePage() {
         throw new Error('当前模板不可用，请切换其他模板');
       }
 
-      const start = await miniappApi.startImageTextReplication({
-        sourceTitle: '信息图',
-        sourceText: infoContent.trim(),
-        sourceImages: [],
-        sourcePlatform: 'miniapp-xhs-text2img',
-      });
+      const styleProfileJson = extractInfographicStyleProfile(pickedTemplate);
+      if (!styleProfileJson) {
+        throw new Error('当前模板缺少风格配置，请切换其他模板');
+      }
 
-      const generated = await miniappApi.triggerImageTextReplicationGenerate(start.taskId, {
-        stylePresetId: pickedTemplate.id,
+      const generated = await miniappApi.startXhsText2ImageTask({
+        title: pickedTemplate.title || '信息图',
+        text: infoContent.trim(),
+        styleId: pickedTemplate.id,
+        styleProfileJson,
         imageCount: infographicCount,
+        language: '简体',
       });
 
-      Taro.setStorageSync('INFOGRAPHIC_LAST_TASK_ID', generated.taskId || start.taskId);
+      Taro.setStorageSync('INFOGRAPHIC_LAST_TASK_ID', generated.taskId);
       if (hotRewriteReturnTaskId) {
         Taro.showModal({
           title: '信息图任务已提交',
-          content: '任务会在后台生成，回到仿写结果页后会自动显示。',
+          content: '任务会在后台生成，请在作品页查看生成结果。',
           cancelText: '留在本页',
-          confirmText: '返回仿写结果',
+          confirmText: '去作品',
           success: (res) => {
             if (res.confirm) {
-              returnToHotRewrite({
-                kind: 'infographic',
-                generatedTaskId: generated.taskId || start.taskId,
-              });
+              Taro.switchTab({ url: '/pages/works/index' });
             }
           },
         });
       } else {
-        Taro.showToast({ title: '信息图任务已提交', icon: 'success' });
+        const modalResult = await Taro.showModal({
+          title: '信息图任务已提交',
+          content: '任务会在后台生成，请在作品页查看生成结果。',
+          cancelText: '继续创作',
+          confirmText: '去作品',
+        });
+        if (modalResult.confirm) {
+          await Taro.switchTab({ url: '/pages/works/index' });
+        }
       }
     } catch (error) {
       Taro.showToast({

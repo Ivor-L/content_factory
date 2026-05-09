@@ -3050,6 +3050,27 @@ function isShortLabelBlock(markdown: string): boolean {
   return plain.length > 0 && plain.length <= 16 && /[：:]$/.test(plain);
 }
 
+function isListItemMarkdown(markdown: string): boolean {
+  return /^(\s*[-*+]\s+|\s*\d+[.)、]\s+)/.test(markdown.trim());
+}
+
+function isTopLevelContentHeading(markdown: string): boolean {
+  return /^#{1,2}\s+/.test(markdown.trim());
+}
+
+function joinMd2CardPageMarkdown(parts: string[]): string {
+  return parts.reduce((joined, part, index) => {
+    const trimmedPart = part.trim();
+    if (index === 0) return trimmedPart;
+
+    const previous = parts[index - 1] || "";
+    const separator = isListItemMarkdown(previous) && isListItemMarkdown(trimmedPart)
+      ? "\n"
+      : "\n\n";
+    return `${joined}${separator}${trimmedPart}`;
+  }, "");
+}
+
 function measureMd2CardPageFits(
   markdown: string,
   config: CardConfig,
@@ -3128,12 +3149,12 @@ function paginateMarkdown(
 
   const flushPage = () => {
     if (currentMarkdown.length > 0) {
-      pages.push({ type: "content", lines: [], markdown: currentMarkdown.join("\n\n") });
+      pages.push({ type: "content", lines: [], markdown: joinMd2CardPageMarkdown(currentMarkdown) });
       currentMarkdown = [];
     }
   };
 
-  const currentWith = (part: string) => [...currentMarkdown, part].join("\n\n");
+  const currentWith = (part: string) => joinMd2CardPageMarkdown([...currentMarkdown, part]);
   const fitsPage = (source: string) => {
     const key = source.trim();
     if (!fitCache.has(key)) {
@@ -3146,7 +3167,7 @@ function paginateMarkdown(
   for (const block of blocks.length > 0 ? blocks : [""]) {
     const expandedBlocks = splitMarkdownTextByRenderedFit(block, fitsPage);
     for (const part of expandedBlocks) {
-      if (/^#{1,6}\s+/.test(part.trim()) && currentMarkdown.length > 0) flushPage();
+      if (isTopLevelContentHeading(part) && currentMarkdown.length > 0) flushPage();
       if (
         currentMarkdown.length > 1
         && isShortLabelBlock(currentMarkdown[currentMarkdown.length - 1])

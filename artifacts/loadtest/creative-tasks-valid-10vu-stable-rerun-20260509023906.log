@@ -1,0 +1,37 @@
+
+> content-factory-web@0.1.6 loadtest:node
+> node tests/load/node-loadtest.mjs
+
+Starting node load test: mode=creative-tasks, targetVus=10, duration=60s, base=https://atomx.top
+[progress] requests=120 failures=0 recent_p95=426ms
+[progress] requests=229 failures=4 recent_p95=839ms
+[progress] requests=366 failures=4 recent_p95=1856ms
+[progress] requests=499 failures=4 recent_p95=804ms
+[progress] requests=603 failures=5 recent_p95=718ms
+
+=== Load Test Summary ===
+{
+  "mode": "creative-tasks",
+  "baseUrl": "https://atomx.top",
+  "targetVus": 10,
+  "durationSeconds": 60,
+  "requests": 734,
+  "failures": 5,
+  "failureRate": 0.006811989100817439
+}
+status: { '0': 5, '200': 729 }
+latency_ms: { p50: 52, p95: 866, p99: 10238, max: 55225 }
+┌─────────┬───────────────────────────┬────────┬───────┬────────────────┐
+│ (index) │ name                      │ status │ ms    │ error          │
+├─────────┼───────────────────────────┼────────┼───────┼────────────────┤
+│ 0       │ 'GET /api/creative-tasks' │ 200    │ 55225 │ undefined      │
+│ 1       │ 'GET /api/creative-tasks' │ 200    │ 42996 │ undefined      │
+│ 2       │ 'GET /api/creative-tasks' │ 200    │ 29465 │ undefined      │
+│ 3       │ 'GET /api/creative-tasks' │ 200    │ 29319 │ undefined      │
+│ 4       │ 'GET /api/creative-tasks' │ 200    │ 28869 │ undefined      │
+│ 5       │ 'GET /api/creative-tasks' │ 200    │ 14190 │ undefined      │
+│ 6       │ 'GET /api/creative-tasks' │ 0      │ 10268 │ 'fetch failed' │
+│ 7       │ 'GET /api/creative-tasks' │ 0      │ 10238 │ 'fetch failed' │
+│ 8       │ 'GET /api/creative-tasks' │ 0      │ 10186 │ 'fetch failed' │
+│ 9       │ 'GET /api/creative-tasks' │ 0      │ 10168 │ 'fetch failed' │
+└─────────┴───────────────────────────┴────────┴───────┴────────────────┘

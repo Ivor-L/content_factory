@@ -43,6 +43,9 @@ export default function WorkDetailPage() {
       if (isCopyWork(cached)) {
         void hydrateSmartCopyDetail(cached);
       }
+      if (isPosterWork(cached)) {
+        void hydratePosterDetail(cached);
+      }
     }
     const target = Taro.getStorageSync(WORK_SELECT_TARGET_STORAGE_KEY);
     if (
@@ -80,6 +83,49 @@ export default function WorkDetailPage() {
           generatedTitle: generatedTitle || metadata.generatedTitle,
           tags: detail.tags,
         },
+      };
+      setItem(next);
+      Taro.setStorageSync('WORK_DETAIL_ITEM', next);
+    } catch {
+      // Keep the summary item if detail refresh fails.
+    }
+  };
+
+  const hydratePosterDetail = async (current: Record<string, unknown>) => {
+    const taskId = String(current.taskId || current.id || '').trim();
+    if (!taskId) return;
+    try {
+      const detail = await miniappApi.getCreativeTask(taskId);
+      const currentMetadata = current.metadata && typeof current.metadata === 'object'
+        ? current.metadata as Record<string, unknown>
+        : {};
+      const detailMetadata = detail.metadata && typeof detail.metadata === 'object'
+        ? detail.metadata
+        : {};
+      const generatedImages = getUniqueImages([
+        detail.generatedImages,
+        detailMetadata.generatedImages,
+        detailMetadata.generated_images,
+        current.generatedImages,
+        current.images,
+        current.imageUrls,
+      ]);
+      const xhsLayout = mergeXhsLayoutImages(currentMetadata.xhsLayout, detailMetadata.xhsLayout, generatedImages);
+      const nextMetadata = {
+        ...currentMetadata,
+        ...detailMetadata,
+        ...(xhsLayout ? { xhsLayout } : {}),
+        ...(generatedImages.length > 0 ? { generatedImages } : {}),
+      };
+      const next = {
+        ...current,
+        title: detail.title || current.title || '图文作品',
+        status: detail.status || current.status,
+        metadata: nextMetadata,
+        generatedImages: generatedImages.length > 0 ? generatedImages : current.generatedImages,
+        images: generatedImages.length > 0 ? generatedImages : current.images,
+        imageUrls: generatedImages.length > 0 ? generatedImages : current.imageUrls,
+        thumbnailUrl: generatedImages[0] || current.thumbnailUrl || null,
       };
       setItem(next);
       Taro.setStorageSync('WORK_DETAIL_ITEM', next);
@@ -648,6 +694,13 @@ function normalizeStoredWorkDetailItem(value: unknown): Record<string, unknown> 
   }
 }
 
+function isPosterWork(item: Record<string, unknown> | null | undefined) {
+  if (!item) return false;
+  const type = String(item.type || '').toLowerCase();
+  const taskType = String(item.taskType || '').toLowerCase();
+  return type === 'image-text' || taskType.includes('poster') || taskType.includes('image');
+}
+
 function collectImageUrls(value: unknown, depth = 0): string[] {
   if (depth > 5 || value == null) return [];
 
@@ -689,6 +742,27 @@ function collectImageUrls(value: unknown, depth = 0): string[] {
   }
 
   return [];
+}
+
+function getUniqueImages(values: unknown[]): string[] {
+  const urls = values.flatMap((value) => collectImageUrls(value));
+  return Array.from(new Set(urls));
+}
+
+function mergeXhsLayoutImages(current: unknown, detail: unknown, images: string[]): Record<string, unknown> | null {
+  const currentLayout = current && typeof current === 'object' && !Array.isArray(current)
+    ? current as Record<string, unknown>
+    : {};
+  const detailLayout = detail && typeof detail === 'object' && !Array.isArray(detail)
+    ? detail as Record<string, unknown>
+    : {};
+  const layoutImages = getUniqueImages([detailLayout.images, currentLayout.images, images]);
+  const merged = {
+    ...currentLayout,
+    ...detailLayout,
+    ...(layoutImages.length > 0 ? { images: layoutImages, imageCount: layoutImages.length } : {}),
+  };
+  return Object.keys(merged).length > 0 ? merged : null;
 }
 
 function getPosterImages(item: any): string[] {

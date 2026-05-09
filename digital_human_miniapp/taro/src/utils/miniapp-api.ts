@@ -150,6 +150,9 @@ export interface WorkItem {
   thumbnailUrl?: string | null;
   progress?: number | null;
   metadata?: Record<string, unknown> | null;
+  generatedImages?: string[];
+  images?: string[];
+  imageUrls?: string[];
   source: 'task' | 'digitalHuman';
 }
 
@@ -180,6 +183,17 @@ export interface SmartCopyTaskDetail {
   errorMessage?: string | null;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface CreativeTaskDetail {
+  id: string;
+  title: string;
+  status: string;
+  stage?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  metadata: Record<string, unknown>;
+  generatedImages: string[];
 }
 
 export interface CreateSmartCopyTaskInput {
@@ -310,6 +324,8 @@ export interface StylePresetSummary {
   previewUrl?: string | null;
   thumbnailUrl?: string | null;
   status?: string | null;
+  metadata?: Record<string, unknown> | null;
+  spec?: Record<string, unknown> | null;
 }
 
 export interface CanvasImageGenerationResult {
@@ -688,6 +704,12 @@ function collectUrlsFromUnknown(value: unknown): string[] {
       obj.src,
       obj.imageUrl,
       obj.image_url,
+      obj.publicUrl,
+      obj.public_url,
+      obj.originalUrl,
+      obj.original_url,
+      obj.fileUrl,
+      obj.file_url,
       obj.coverUrl,
       obj.cover_url,
       obj.videoUrl,
@@ -1077,6 +1099,24 @@ function extractGeneratedCopyText(item: Record<string, unknown> | null | undefin
 function normalizeStringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map((item) => String(item || '').trim()).filter(Boolean);
+}
+
+function normalizeCreativeTaskDetail(raw: Record<string, unknown> | null | undefined): CreativeTaskDetail {
+  const metadata = raw?.metadata && typeof raw.metadata === 'object' && !Array.isArray(raw.metadata)
+    ? raw.metadata as Record<string, unknown>
+    : {};
+  const generatedImages = uniqueUrls(collectUrlsFromUnknown(raw?.generatedImages)).filter((url) => !isVideoUrl(url));
+
+  return {
+    id: String(raw?.id || ''),
+    title: String(raw?.title || '未命名任务'),
+    status: String(raw?.status || 'PENDING'),
+    stage: typeof raw?.stage === 'string' ? raw.stage : undefined,
+    createdAt: typeof raw?.createdAt === 'string' ? raw.createdAt : undefined,
+    updatedAt: typeof raw?.updatedAt === 'string' ? raw.updatedAt : undefined,
+    metadata,
+    generatedImages,
+  };
 }
 
 function normalizeSmartCopyTaskDetail(raw: Record<string, unknown> | null | undefined): SmartCopyTaskDetail {
@@ -2143,6 +2183,11 @@ export const miniappApi = {
     return normalizeSmartCopyTaskDetail(payload?.data || {});
   },
 
+  async getCreativeTask(taskId: string): Promise<CreativeTaskDetail> {
+    const payload = await request<{ data?: Record<string, unknown> }>(`/api/creative-tasks/${encodeURIComponent(taskId)}`);
+    return normalizeCreativeTaskDetail(payload?.data || {});
+  },
+
   async deleteWorkItem(item: WorkItem): Promise<void> {
     if (item.source === 'digitalHuman') {
       await request(`/api/digital-human/videos/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
@@ -2214,6 +2259,12 @@ export const miniappApi = {
             ? String((item.metadata as Record<string, unknown>).thumbnailUrl)
             : null,
       status: typeof item.status === 'string' ? item.status : null,
+      metadata: item.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata)
+        ? item.metadata as Record<string, unknown>
+        : null,
+      spec: item.spec && typeof item.spec === 'object' && !Array.isArray(item.spec)
+        ? item.spec as Record<string, unknown>
+        : null,
     })).filter((item) => item.id);
   },
 
@@ -2246,6 +2297,44 @@ export const miniappApi = {
       previewUrl: typeof data.previewUrl === 'string' ? data.previewUrl : (input.previewUrl ?? null),
       thumbnailUrl: typeof data.thumbnailUrl === 'string' ? data.thumbnailUrl : null,
       status: typeof data.status === 'string' ? data.status : null,
+      metadata: data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata)
+        ? data.metadata as Record<string, unknown>
+        : null,
+      spec: data.spec && typeof data.spec === 'object' && !Array.isArray(data.spec)
+        ? data.spec as Record<string, unknown>
+        : null,
+    };
+  },
+
+  async startXhsText2ImageTask(params: {
+    title: string;
+    text: string;
+    styleId: string;
+    styleProfileJson: string;
+    imageCount: number;
+    language?: string;
+  }): Promise<{ taskId: string; summaryId?: string; queued?: boolean }> {
+    const payload = await request<{
+      data?: { taskId?: string; summaryId?: string };
+      taskId?: string;
+      summaryId?: string;
+      queued?: boolean;
+    }>('/api/xhs-text2img/plan', {
+      method: 'POST',
+      data: {
+        title: params.title,
+        text: params.text,
+        styleId: params.styleId,
+        styleProfileJson: params.styleProfileJson,
+        imageCount: params.imageCount,
+        language: params.language ?? '简体',
+      },
+    });
+    const data = payload?.data || payload;
+    return {
+      taskId: String(data?.taskId || ''),
+      summaryId: typeof data?.summaryId === 'string' ? data.summaryId : undefined,
+      queued: payload?.queued === true,
     };
   },
 

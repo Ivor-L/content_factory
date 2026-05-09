@@ -279,13 +279,17 @@ function extractSummaryData(taskType: TaskType, taskData: any): any {
 
     case 'poster':
       if (taskData._source === 'creativeTask') {
+        const metadata = normalizeJsonRecord(taskData.metadata) || {};
+        const metadataWithImages = mergePosterImagesIntoMetadata(metadata, taskData.generatedImagesJson);
         return {
           ...base,
           title: taskData.title || '图文创作',
           status: taskData.status,
           preview: taskData.ideaText?.substring(0, 100),
           thumbnailUrl: extractImageFromLayoutResult(taskData.generatedImagesJson),
-          metadata: { posterMode: 'text2image' },
+          metadata: Object.keys(metadataWithImages).length > 0
+            ? metadataWithImages
+            : { posterMode: 'text2image' },
         };
       }
       return {
@@ -489,6 +493,63 @@ function firstHttpUrl(values: unknown[]): string | null {
     if (/^https?:\/\//i.test(url)) return url;
   }
   return null;
+}
+
+function extractImageUrls(value: unknown, depth = 0): string[] {
+  if (depth > 5 || value == null) return [];
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        return extractImageUrls(JSON.parse(trimmed), depth + 1);
+      } catch {
+        return /^https?:\/\//i.test(trimmed) ? [trimmed] : [];
+      }
+    }
+    return /^https?:\/\//i.test(trimmed) ? [trimmed] : [];
+  }
+  if (Array.isArray(value)) {
+    return Array.from(new Set(value.flatMap((item) => extractImageUrls(item, depth + 1))));
+  }
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    const preferred = [
+      obj.url,
+      obj.imageUrl,
+      obj.image_url,
+      obj.publicUrl,
+      obj.public_url,
+      obj.src,
+    ].flatMap((item) => extractImageUrls(item, depth + 1));
+    if (preferred.length > 0) return Array.from(new Set(preferred));
+    return Array.from(new Set(Object.values(obj).flatMap((item) => extractImageUrls(item, depth + 1))));
+  }
+  return [];
+}
+
+function mergePosterImagesIntoMetadata(
+  metadata: Record<string, unknown>,
+  generatedImagesJson: unknown,
+): Record<string, unknown> {
+  const images = extractImageUrls(generatedImagesJson);
+  if (images.length === 0) {
+    return {
+      ...metadata,
+      posterMode: typeof metadata.posterMode === 'string' ? metadata.posterMode : 'text2image',
+    };
+  }
+  const currentLayout = normalizeJsonRecord(metadata.xhsLayout) || {};
+  return {
+    ...metadata,
+    posterMode: typeof metadata.posterMode === 'string' ? metadata.posterMode : 'text2image',
+    images,
+    imageUrls: images,
+    xhsLayout: {
+      ...currentLayout,
+      images,
+    },
+  };
 }
 
 function normalizeJsonRecord(value: unknown): Record<string, unknown> | null {

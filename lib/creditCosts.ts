@@ -84,7 +84,7 @@ export async function getCreditCostForModel(
 
   for (const key of candidates) {
     const amount = entry.configs.get(key);
-    if (typeof amount === "number") return amount;
+    if (typeof amount === "number" && amount > 0) return amount;
   }
 
   return defaultAmount;

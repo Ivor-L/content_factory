@@ -1,0 +1,37 @@
+
+> content-factory-web@0.1.6 loadtest:node
+> node tests/load/node-loadtest.mjs
+
+Starting node load test: mode=tasks, targetVus=10, duration=60s, base=https://atomx.top
+[progress] requests=133 failures=0 recent_p95=308ms
+[progress] requests=338 failures=0 recent_p95=495ms
+[progress] requests=507 failures=0 recent_p95=495ms
+[progress] requests=665 failures=0 recent_p95=519ms
+[progress] requests=812 failures=0 recent_p95=281ms
+
+=== Load Test Summary ===
+{
+  "mode": "tasks",
+  "baseUrl": "https://atomx.top",
+  "targetVus": 10,
+  "durationSeconds": 60,
+  "requests": 958,
+  "failures": 0,
+  "failureRate": 0
+}
+status: { '200': 958 }
+latency_ms: { p50: 39, p95: 366, p99: 5376, max: 60885 }
+┌─────────┬──────────────────┬────────┬───────┬───────────┐
+│ (index) │ name             │ status │ ms    │ error     │
+├─────────┼──────────────────┼────────┼───────┼───────────┤
+│ 0       │ 'GET /api/tasks' │ 200    │ 60885 │ undefined │
+│ 1       │ 'GET /api/tasks' │ 200    │ 28698 │ undefined │
+│ 2       │ 'GET /api/tasks' │ 200    │ 28184 │ undefined │
+│ 3       │ 'GET /api/tasks' │ 200    │ 18245 │ undefined │
+│ 4       │ 'GET /api/tasks' │ 200    │ 17396 │ undefined │
+│ 5       │ 'GET /api/tasks' │ 200    │ 15612 │ undefined │
+│ 6       │ 'GET /api/tasks' │ 200    │ 14476 │ undefined │
+│ 7       │ 'GET /api/tasks' │ 200    │ 11748 │ undefined │
+│ 8       │ 'GET /api/tasks' │ 200    │ 8679  │ undefined │
+│ 9       │ 'GET /api/tasks' │ 200    │ 5376  │ undefined │
+└─────────┴──────────────────┴────────┴───────┴───────────┘

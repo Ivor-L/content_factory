@@ -103,6 +103,45 @@ function parseMetadata(value: unknown): Record<string, unknown> | null {
   return null;
 }
 
+function buildPosterMetadata({
+  base,
+  styleId,
+  styleName,
+  imageCount,
+  language,
+  styleProfileObject,
+}: {
+  base: Record<string, unknown>;
+  styleId: string;
+  styleName: string;
+  imageCount: number;
+  language: string;
+  styleProfileObject: Record<string, unknown> | null;
+}): Record<string, unknown> {
+  const currentXhsLayout =
+    base.xhsLayout && typeof base.xhsLayout === "object" && !Array.isArray(base.xhsLayout)
+      ? (base.xhsLayout as Record<string, unknown>)
+      : {};
+  return {
+    ...base,
+    posterMode: "text2image",
+    text2image: {
+      workflowId: WORKFLOW_ID,
+      workflowName: WORKFLOW_NAME,
+      styleId,
+      styleName,
+      imageCount,
+      language,
+      ...(styleProfileObject ? { styleProfile: styleProfileObject } : {}),
+    },
+    xhsLayout: {
+      ...currentXhsLayout,
+      imageCount,
+      images: Array.isArray(currentXhsLayout.images) ? currentXhsLayout.images : [],
+    },
+  };
+}
+
 function extractStyleProfileFromStyle(style: { metadata?: unknown; spec?: unknown }, fallback?: string | null) {
   const rawMetadata = typeof style.metadata === "string" ? style.metadata : null;
   const metadata = parseMetadata(style.metadata);
@@ -298,17 +337,17 @@ export async function POST(request: NextRequest) {
   }
 
   const creativeMetadata = initMetadata();
-  const customMetadata = (creativeMetadata.custom = creativeMetadata.custom ?? {});
-  customMetadata.posterMode = "text2image";
-  customMetadata.text2image = {
-    workflowId: WORKFLOW_ID,
-    workflowName: WORKFLOW_NAME,
+  const posterMetadata = buildPosterMetadata({
+    base: { ...creativeMetadata },
     styleId,
     styleName: style.name,
     imageCount,
     language: languagePref,
-    ...(styleProfileObject ? { styleProfile: styleProfileObject } : {}),
-  };
+    styleProfileObject,
+  });
+  const customMetadata = (posterMetadata.custom = parseMetadata(posterMetadata.custom) ?? {}) as Record<string, unknown>;
+  customMetadata.posterMode = "text2image";
+  customMetadata.text2image = posterMetadata.text2image;
 
   const { summary, creativeTask } = await prisma.$transaction(async (tx) => {
     const createdTask = await tx.creativeTask.create({
@@ -320,7 +359,7 @@ export async function POST(request: NextRequest) {
         channel: "xhs",
         targetOutput: "poster",
         status: "PROCESSING",
-        metadata: toInputJson(creativeMetadata) ?? undefined,
+        metadata: toInputJson(posterMetadata) ?? undefined,
       },
     });
 
@@ -339,12 +378,16 @@ export async function POST(request: NextRequest) {
         title,
         status: "PROCESSING",
         preview: text.slice(0, 140),
-        metadata: {
-          posterMode: "text2image",
-          styleId,
-          styleName: style.name,
-          imageCount,
-        },
+        metadata: toInputJson(
+          buildPosterMetadata({
+            base: { source: "miniapp_infographic" },
+            styleId,
+            styleName: style.name,
+            imageCount,
+            language: languagePref,
+            styleProfileObject: null,
+          }),
+        ) ?? undefined,
       },
     });
 

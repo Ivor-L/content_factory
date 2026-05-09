@@ -65,6 +65,7 @@ export async function GET(request: NextRequest) {
         name: true,
         type: true,
         previewUrl: true,
+        spec: true,
         metadata: true,
       },
     });
@@ -82,6 +83,8 @@ export async function GET(request: NextRequest) {
           previewUrl: summary ? resolveListPreviewUrl(style.previewUrl, meta) : style.previewUrl,
           thumbnailUrl,
           status,
+          metadata: style.metadata,
+          spec: style.spec,
         };
       });
 
