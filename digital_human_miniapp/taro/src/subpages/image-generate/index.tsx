@@ -4412,8 +4412,22 @@ export default function ImageGeneratePage() {
                 className={`card-mode-btn ${cardEditorMode === 'preview' ? 'card-mode-btn--active' : ''}`}
                 onClick={() => setCardEditorMode('preview')}
               >
-                <Text className={`card-mode-btn-text ${cardEditorMode === 'preview' ? 'card-mode-btn-text--active' : ''}`}>预览</Text>
+                  <Text className={`card-mode-btn-text ${cardEditorMode === 'preview' ? 'card-mode-btn-text--active' : ''}`}>预览</Text>
+                </View>
               </View>
+              <View
+                className={`card-wechat-toggle ${cardWechatMode ? 'card-wechat-toggle--active' : ''}`}
+                onClick={() => {
+                  setCardWechatMode((prev) => !prev);
+                  setCardPreviewImages([]);
+                  setCardPreviewPageIndex(0);
+                  setCardEditorMode('preview');
+                }}
+              >
+                <Text className={`card-wechat-toggle-text ${cardWechatMode ? 'card-wechat-toggle-text--active' : ''}`}>公众号</Text>
+                <View className={`card-wechat-toggle-switch ${cardWechatMode ? 'card-wechat-toggle-switch--active' : ''}`}>
+                  <View className='card-wechat-toggle-dot' />
+                </View>
               </View>
               <View
                 className={`card-setting-trigger ${cardSettingsOpen ? 'card-setting-trigger--active' : ''}`}
@@ -4464,10 +4478,16 @@ export default function ImageGeneratePage() {
 
             {cardEditorMode === 'preview' && (
               <>
-                {renderSectionTitle('preview', '排版预览')}
-                <View className='preview-swiper-wrap'>
+                {renderSectionTitle('preview', cardWechatMode ? '公众号预览' : '排版预览')}
+                {cardWechatMode && (
+                  <View className='card-wechat-mode-note'>
+                    <Text className='card-wechat-mode-note-title'>公众号正文模式</Text>
+                    <Text className='card-wechat-mode-note-text'>预览按公众号正文宽度展示，导出会复制 HTML 草稿。</Text>
+                  </View>
+                )}
+                <View className={`preview-swiper-wrap ${cardWechatMode ? 'preview-swiper-wrap--wechat' : ''}`}>
                   <Swiper
-                    className='preview-swiper'
+                    className={`preview-swiper ${cardWechatMode ? 'preview-swiper--wechat' : ''}`}
                     indicatorDots={false}
                     circular={false}
                     current={cardPreviewPageIndex}
@@ -4477,7 +4497,7 @@ export default function ImageGeneratePage() {
                       <SwiperItem key={`preview-page-${idx}`}>
                         <View className='preview-swiper-item'>
                           <View className={`preview-card ${cardPreviewThemeClass}`} style={cardPreviewThemeInlineStyle}>
-                            {selectedCardStyle === 'apple-notes' && (
+                            {selectedCardStyle === 'apple-notes' && !cardWechatMode && (
                               <View className='preview-apple-header'>
                                 <View className='preview-apple-header-left'>
                                   <Text className='preview-apple-header-icon'>‹</Text>
@@ -4505,9 +4525,11 @@ export default function ImageGeneratePage() {
                   className={`card-preview-render-btn ${cardExporting ? 'card-preview-render-btn--loading' : ''}`}
                   onClick={() => void handleExportCardImages()}
                 >
-                  <Text className='card-preview-render-btn-text'>{cardExporting ? '导出中...' : '一键导出'}</Text>
+                  <Text className='card-preview-render-btn-text'>
+                    {cardExporting ? '处理中...' : cardWechatMode ? '复制到公众号' : '一键导出'}
+                  </Text>
                 </View>
-                {renderCardPresetSwitcher()}
+                {!cardWechatMode && renderCardPresetSwitcher()}
               </>
             )}
             {cardPreviewImages.length > 0 && (
