@@ -749,6 +749,50 @@
 .card-mode-btn-text--active
   color: #edf2b5
 
+.card-wechat-toggle
+  height: 54rpx
+  border-radius: 999rpx
+  border: 1rpx solid rgba(145, 175, 229, 0.34)
+  background: rgba(145, 175, 229, 0.1)
+  padding: 0 12rpx 0 18rpx
+  display: flex
+  align-items: center
+  gap: 10rpx
+  flex-shrink: 0
+
+.card-wechat-toggle--active
+  border-color: rgba(236, 238, 159, 0.72)
+  background: rgba(236, 238, 159, 0.16)
+
+.card-wechat-toggle-text
+  color: #b5c7e5
+  font-size: 22rpx
+  font-weight: 800
+
+.card-wechat-toggle-text--active
+  color: #edf2b5
+
+.card-wechat-toggle-switch
+  width: 54rpx
+  height: 30rpx
+  border-radius: 999rpx
+  padding: 3rpx
+  box-sizing: border-box
+  background: rgba(145, 175, 229, 0.24)
+  display: flex
+  align-items: center
+  justify-content: flex-start
+
+.card-wechat-toggle-switch--active
+  background: rgba(236, 238, 159, 0.36)
+  justify-content: flex-end
+
+.card-wechat-toggle-dot
+  width: 24rpx
+  height: 24rpx
+  border-radius: 999rpx
+  background: #d7e4ff
+
 .card-setting-trigger
   width: 54rpx
   height: 54rpx
@@ -899,6 +943,18 @@
 .card-config-label
   color: #d5e3fd
   font-size: 24rpx
+
+.card-config-label-group
+  flex: 1
+  min-width: 0
+  display: flex
+  flex-direction: column
+  gap: 6rpx
+
+.card-config-desc
+  color: #7f93b8
+  font-size: 20rpx
+  line-height: 1.35
 
 .card-config-chips
   display: flex
@@ -1216,6 +1272,12 @@
   width: 100%
   height: 980rpx
 
+.preview-swiper-wrap--wechat
+  padding-bottom: 48rpx
+
+.preview-swiper--wechat
+  height: 1040rpx
+
 .preview-swiper--image
   height: 1040rpx
 
@@ -1302,6 +1364,19 @@
   overflow: hidden
   position: relative
 
+.preview-card--wechat
+  width: 632rpx
+  max-width: 100%
+  height: auto
+  min-height: 980rpx
+  margin: 0 auto
+  padding: 36rpx 34rpx
+  border-radius: 0
+  border-color: rgba(232, 232, 232, 0.9)
+  background: #ffffff
+  box-shadow: 0 22rpx 46rpx rgba(0, 0, 0, 0.18)
+  overflow: hidden
+
 .preview-card .preview-richtext,
 .preview-card .preview-apple-header,
 .preview-card .preview-content-shell
@@ -1321,6 +1396,13 @@
   padding: 0
   border-radius: 0
   height: calc(100% - 46rpx)
+
+.preview-content-shell--wechat
+  height: 100%
+  border-radius: 0
+  padding: 0
+  background: #ffffff
+  overflow: visible
 
 .preview-content-shell--instagram
   border: 1rpx solid rgba(255, 255, 255, 0.32)
@@ -1450,6 +1532,68 @@
   height: 100%
   box-sizing: border-box
   padding-bottom: 8rpx
+
+.preview-richtext--wechat
+  display: block
+  height: auto
+  min-height: 900rpx
+  padding-bottom: 0
+
+.preview-richtext--wechat h1
+  font-size: 40rpx
+  line-height: 1.35
+  margin: 0 0 28rpx
+
+.preview-richtext--wechat h2
+  font-size: 34rpx
+  line-height: 1.45
+  margin: 28rpx 0 18rpx
+
+.preview-richtext--wechat h3
+  font-size: 30rpx
+  line-height: 1.45
+  margin: 22rpx 0 14rpx
+
+.preview-richtext--wechat p,
+.preview-richtext--wechat li
+  font-size: 28rpx
+  line-height: 1.75
+  color: #333333
+
+.preview-richtext--wechat p
+  margin: 0 0 18rpx
+
+.preview-richtext--wechat ul,
+.preview-richtext--wechat ol
+  margin: 0 0 18rpx 34rpx
+
+.preview-richtext--wechat blockquote
+  margin: 18rpx 0 22rpx
+  padding: 12rpx 18rpx
+  border-left: 6rpx solid #576b95
+  background: rgba(87, 107, 149, 0.08)
+  border-radius: 0
+  color: #666666
+
+.card-wechat-mode-note
+  margin-bottom: 16rpx
+  border-radius: 16rpx
+  border: 1rpx solid rgba(236, 238, 159, 0.28)
+  background: rgba(236, 238, 159, 0.08)
+  padding: 16rpx 18rpx
+
+.card-wechat-mode-note-title
+  display: block
+  color: #edf2b5
+  font-size: 23rpx
+  font-weight: 800
+  margin-bottom: 6rpx
+
+.card-wechat-mode-note-text
+  display: block
+  color: #aebdd8
+  font-size: 21rpx
+  line-height: 1.45
 
 .preview-card--theme-amber
   --preview-accent: #ecee9f
