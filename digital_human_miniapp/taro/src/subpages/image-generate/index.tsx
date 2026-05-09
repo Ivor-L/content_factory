@@ -2632,36 +2632,47 @@ export default function ImageGeneratePage() {
         || selectedCardStyleModePreset?.textColor
         || selectedCardStylePreset.textColor;
       const accentColorByTheme = CARD_THEME_ACCENT_MAP[cardThemeColor] || CARD_THEME_ACCENT_MAP.amber;
-      const accentColor = selectedCardStyleModePreset?.accentColor || selectedCardStylePreset.accentColor || accentColorByTheme;
+      const accentColor = cardWechatMode
+        ? '#576b95'
+        : selectedCardStyleModePreset?.accentColor || selectedCardStylePreset.accentColor || accentColorByTheme;
       const pageMarkdown = paginatePreviewMarkdown(
         renderSourceMarkdown,
-        cardMaxPages,
-        cardDensity,
+        cardWechatMode ? 1 : cardMaxPages,
+        cardWechatMode ? 'relaxed' : cardDensity,
         cardH1FontScale,
         cardH2FontScale,
         cardH3FontScale,
         cardBodyFontScale,
-        cardPadding,
-        selectedCardStylePreset.id,
-        styleLayout,
+        cardWechatMode ? 'md' : cardPadding,
+        cardWechatMode ? 'minimalist' : selectedCardStylePreset.id,
+        cardWechatMode
+          ? {
+              ...CARD_STYLE_LAYOUT_PARAMS.minimalist,
+              contentPaddingX: 0,
+              contentPaddingY: 0,
+              headerHeight: 0,
+              footerHeight: 0,
+              spacing: 1.08,
+            }
+          : styleLayout,
         windowWidthPx,
       );
       const previewStyle: PreviewRenderStyle = {
-        textColor: textColor || '#1f2937',
+        textColor: cardWechatMode ? '#333333' : textColor || '#1f2937',
         accentColor,
-        accentSoftColor: CARD_THEME_ACCENT_SOFT_MAP[cardThemeColor] || CARD_THEME_ACCENT_SOFT_MAP.amber,
-        density: cardDensity,
+        accentSoftColor: cardWechatMode ? 'rgba(87,107,149,0.1)' : CARD_THEME_ACCENT_SOFT_MAP[cardThemeColor] || CARD_THEME_ACCENT_SOFT_MAP.amber,
+        density: cardWechatMode ? 'relaxed' : cardDensity,
         h1FontScale: cardH1FontScale,
         h2FontScale: cardH2FontScale,
         h3FontScale: cardH3FontScale,
         bodyFontScale: cardBodyFontScale,
-        headingSpacing: cardHeadingSpacing,
-        padding: cardPadding,
+        headingSpacing: cardWechatMode ? 'normal' : cardHeadingSpacing,
+        padding: cardWechatMode ? 'md' : cardPadding,
         fontFamily: cardFontFamily,
-        spacingScale: styleLayout.spacing,
+        spacingScale: cardWechatMode ? 1.08 : styleLayout.spacing,
       };
       const pages = pageMarkdown.map((md) => renderMiniMarkdown(md, previewStyle)).filter(Boolean);
-      if (cardIncludeCover) {
+      if (cardIncludeCover && !cardWechatMode) {
         pages.unshift(renderMiniCoverPreview(
           cardCoverStyleId,
           cardCoverPreviewTitle,
@@ -2696,7 +2707,7 @@ export default function ImageGeneratePage() {
       headingSpacing: 'normal',
       fontFamily: 'system',
     })];
-  }, [cardDensity, cardH1FontScale, cardH2FontScale, cardH3FontScale, cardBodyFontScale, cardMarkdown, cardMaxPages, selectedCardStylePreset, selectedCardStyleModePreset, cardThemeColor, cardHeadingSpacing, cardPadding, cardFontFamily, cardIncludeCover, cardCoverPreviewTitle, cardCoverPreviewSubtitle, cardCoverPreviewBackground, cardCoverTextColor, cardCoverHighlightColor, cardCoverFontFamily, cardCoverTitleAlignX, cardCoverTitleAlignY, cardCoverFontSize, cardCoverSubtitleFontSize, cardCoverLineHeight, cardCoverShowStickers, cardCoverImage, windowWidthPx]);
+  }, [cardDensity, cardH1FontScale, cardH2FontScale, cardH3FontScale, cardBodyFontScale, cardMarkdown, cardMaxPages, selectedCardStylePreset, selectedCardStyleModePreset, cardThemeColor, cardHeadingSpacing, cardPadding, cardFontFamily, cardIncludeCover, cardWechatMode, cardCoverPreviewTitle, cardCoverPreviewSubtitle, cardCoverPreviewBackground, cardCoverTextColor, cardCoverHighlightColor, cardCoverFontFamily, cardCoverTitleAlignX, cardCoverTitleAlignY, cardCoverFontSize, cardCoverSubtitleFontSize, cardCoverLineHeight, cardCoverShowStickers, cardCoverImage, windowWidthPx]);
 
   useEffect(() => {
     if (cardPreviewPageIndex > cardPreviewPages.length - 1) {
@@ -2705,6 +2716,9 @@ export default function ImageGeneratePage() {
   }, [cardPreviewPageIndex, cardPreviewPages.length]);
 
   const cardPreviewThemeClass = useMemo(() => {
+    if (cardWechatMode) {
+      return `preview-card--wechat preview-card--font-${cardFontFamily}`;
+    }
     const radiusClass = cardRadius === 'sm'
       ? 'preview-card--radius-sm'
       : cardRadius === 'lg'
@@ -2727,8 +2741,16 @@ export default function ImageGeneratePage() {
     const styleClass = `preview-card--style-${selectedCardStylePreset.id}`;
     const modeClass = selectedCardStyleModePreset?.id ? `preview-card--mode-${selectedCardStyleModePreset.id}` : '';
     return `${radiusClass} ${colorClass} ${spacingClass} ${paddingClass} ${fontClass} ${styleClass} ${modeClass}`.trim();
-  }, [cardFontFamily, cardHeadingSpacing, cardPadding, cardRadius, cardThemeColor, selectedCardStyleModePreset?.id, selectedCardStylePreset.id]);
+  }, [cardFontFamily, cardHeadingSpacing, cardPadding, cardRadius, cardThemeColor, cardWechatMode, selectedCardStyleModePreset?.id, selectedCardStylePreset.id]);
   const cardPreviewThemeInlineStyle = useMemo(() => {
+    if (cardWechatMode) {
+      return {
+        backgroundColor: '#ffffff',
+        color: '#333333',
+        '--preview-accent': '#576b95',
+        '--preview-accent-soft': 'rgba(87,107,149,0.1)',
+      } as Record<string, string>;
+    }
     try {
       const styleLayout = CARD_STYLE_LAYOUT_PARAMS[selectedCardStylePreset.id];
       const styleThemeSpec = CARD_PREVIEW_THEME_SPEC_MAP[selectedCardStylePreset.id];
@@ -2781,9 +2803,15 @@ export default function ImageGeneratePage() {
         color: '#1f2937',
       } as Record<string, string>;
     }
-  }, [cardThemeColor, selectedCardStyleModePreset, selectedCardStylePreset]);
+  }, [cardThemeColor, cardWechatMode, selectedCardStyleModePreset, selectedCardStylePreset]);
 
   const cardPreviewContentInlineStyle = useMemo(() => {
+    if (cardWechatMode) {
+      return {
+        backgroundColor: '#ffffff',
+        padding: '0',
+      } as Record<string, string>;
+    }
     const styleLayout = CARD_STYLE_LAYOUT_PARAMS[selectedCardStylePreset.id];
     const styleThemeSpec = CARD_PREVIEW_THEME_SPEC_MAP[selectedCardStylePreset.id];
     const modeId = selectedCardStyleModePreset?.id || '';
@@ -2800,19 +2828,26 @@ export default function ImageGeneratePage() {
       ...backgroundStyle,
       ...paddingStyle,
     } as Record<string, string>;
-  }, [selectedCardStyleModePreset, selectedCardStylePreset.id]);
+  }, [cardWechatMode, selectedCardStyleModePreset, selectedCardStylePreset.id]);
 
   const cardPreviewRichtextClass = useMemo(() => {
     const classes = ['preview-richtext'];
+    if (cardWechatMode) {
+      classes.push('preview-richtext--wechat');
+      return classes.join(' ');
+    }
     if (selectedCardStyle === 'apple-notes') {
       classes.push('preview-richtext--apple-notes');
     }
     return classes.join(' ');
-  }, [selectedCardStyle]);
+  }, [cardWechatMode, selectedCardStyle]);
 
   const cardPreviewContentShellClass = useMemo(() => {
+    if (cardWechatMode) {
+      return 'preview-content-shell preview-content-shell--wechat';
+    }
     return `preview-content-shell preview-content-shell--${selectedCardStylePreset.id}`;
-  }, [selectedCardStylePreset.id]);
+  }, [cardWechatMode, selectedCardStylePreset.id]);
 
   const cardCoverPreviewTitle = useMemo(() => {
     const customTitle = cardCoverTitle.trim();
