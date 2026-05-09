@@ -3658,10 +3658,63 @@ export default function ImageGeneratePage() {
     </View>
   );
 
-  const renderCardSettingsPanel = () => (
-    <View className='card-settings-content'>
+  const renderCardSettingsPanel = () => {
+    const wechatModeRows = (
+      <>
+        <View className='card-config-row'>
+          <View className='card-config-label-group'>
+            <Text className='card-config-label'>公众号模式</Text>
+            <Text className='card-config-desc'>切换为公众号正文宽度，导出改为复制 HTML 草稿。</Text>
+          </View>
+          <View
+            className={`card-switch ${cardWechatMode ? 'card-switch--active' : ''}`}
+            onClick={() => {
+              setCardWechatMode((prev) => !prev);
+              setCardPreviewImages([]);
+              setCardPreviewPageIndex(0);
+            }}
+          >
+            <View className='card-switch-dot' />
+          </View>
+        </View>
+        {cardWechatMode && (
+          <View className='card-config-row'>
+            <Text className='card-config-label'>正文字体</Text>
+            <Picker
+              mode='selector'
+              range={CARD_FONT_FAMILY_OPTIONS.map((item) => item.title)}
+              value={cardFontFamilyIndex}
+              onChange={(event) => {
+                const idx = Number(event.detail.value);
+                const picked = CARD_FONT_FAMILY_OPTIONS[idx];
+                if (picked) setCardFontFamily(picked.id);
+              }}
+            >
+              <View className='picker-chip'>
+                <Text className='picker-chip-text'>{CARD_FONT_FAMILY_OPTIONS[cardFontFamilyIndex]?.title || '系统无衬线'}</Text>
+              </View>
+            </Picker>
+          </View>
+        )}
+      </>
+    );
+
+    if (cardWechatMode) {
+      return (
+        <View className='card-settings-content'>
+          {renderSectionTitle('style', '公众号配置')}
+          <View className='card-config-card'>
+            {wechatModeRows}
+          </View>
+        </View>
+      );
+    }
+
+    return (
+      <View className='card-settings-content'>
       {renderSectionTitle('style', '样式配置')}
       <View className='card-config-card'>
+        {wechatModeRows}
         <View className='card-config-row'>
           <Text className='card-config-label'>封面页</Text>
           <View
@@ -4046,7 +4099,8 @@ export default function ImageGeneratePage() {
         </View>
       </View>
     </View>
-  );
+    );
+  };
 
   const renderCardPresetSwitcher = () => (
     <>
