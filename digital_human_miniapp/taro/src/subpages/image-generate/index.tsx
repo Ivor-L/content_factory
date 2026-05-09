@@ -2898,6 +2898,23 @@ export default function ImageGeneratePage() {
     () => Math.max(0, CARD_FONT_FAMILY_OPTIONS.findIndex((item) => item.id === cardCoverFontFamily)),
     [cardCoverFontFamily],
   );
+  const cardWechatArticleHtml = useMemo(() => {
+    const source = cleanMyNoteCardText(cardMarkdown).trim() || '# 图文卡片\n\n请在编辑区输入内容。';
+    return buildWechatArticleHtml(source, {
+      textColor: '#333333',
+      accentColor: '#576b95',
+      accentSoftColor: 'rgba(87,107,149,0.1)',
+      density: 'relaxed',
+      h1FontScale: cardH1FontScale,
+      h2FontScale: cardH2FontScale,
+      h3FontScale: cardH3FontScale,
+      bodyFontScale: cardBodyFontScale,
+      headingSpacing: 'normal',
+      padding: 'md',
+      fontFamily: cardFontFamily,
+      spacingScale: 1.08,
+    });
+  }, [cardBodyFontScale, cardFontFamily, cardH1FontScale, cardH2FontScale, cardH3FontScale, cardMarkdown]);
 
   const handleBack = () => {
     const pages = Taro.getCurrentPages();
@@ -3003,6 +3020,27 @@ export default function ImageGeneratePage() {
       });
     } finally {
       setCardOptimizing(false);
+    }
+  };
+
+  const handleCopyWechatArticle = async () => {
+    const source = cleanMyNoteCardText(cardMarkdown).trim();
+    if (!source) {
+      Taro.showToast({ title: '请先输入内容', icon: 'none' });
+      return;
+    }
+    try {
+      await Taro.setClipboardData({
+        data: cardWechatArticleHtml,
+      });
+      Taro.showModal({
+        title: '已复制公众号稿',
+        content: '小程序剪贴板会复制 HTML 源码；在电脑端公众号后台可作为草稿源码使用。若只需要纯文字，可直接复制编辑区内容。',
+        showCancel: false,
+        confirmText: '知道了',
+      });
+    } catch {
+      Taro.showToast({ title: '复制失败，请重试', icon: 'none' });
     }
   };
 
@@ -3479,6 +3517,11 @@ export default function ImageGeneratePage() {
 
   const handleExportCardImages = async () => {
     if (cardExporting) return;
+
+    if (cardWechatMode) {
+      await handleCopyWechatArticle();
+      return;
+    }
 
     if (!cardMarkdown.trim()) {
       Taro.showToast({ title: '请先输入内容', icon: 'none' });
