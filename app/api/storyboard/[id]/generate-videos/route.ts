@@ -22,17 +22,6 @@ function cleanUrl(value: unknown): string {
   return /^https?:\/\//i.test(text) ? text : "";
 }
 
-function appendQueryParams(url: string, params: Record<string, string | undefined>): string {
-  const base = cleanUrl(url);
-  if (!base) return "";
-  const parsed = new URL(base);
-  for (const [key, value] of Object.entries(params)) {
-    const text = String(value || "").trim();
-    if (text) parsed.searchParams.set(key, text);
-  }
-  return parsed.toString();
-}
-
 function ensureNoBgmPrompt(prompt: string): string {
   const text = prompt.trim();
   if (!text) return NO_BGM_RULE;
@@ -55,6 +44,12 @@ function isSmartRemixVideoStageSource(value: unknown): boolean {
 
 function normalizeSeedanceVideoModel(model: unknown): string {
   return isSeedanceFastModel(model) ? "bytedance/seedance-2-fast" : "bytedance/seedance-2";
+}
+
+function toVolcengineSeedanceModel(model: unknown): string {
+  return isSeedanceFastModel(model)
+    ? "doubao-seedance-2-0-fast-260128"
+    : "doubao-seedance-2-0-260128";
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -158,9 +153,9 @@ function withSeedanceStoryboardReference(
     prompt,
     "",
     "Seedance 2.0 reference protocol:",
-    "- @Image1 is the current clip first frame or product-replaced reference frame.",
-    "- @Image2 is the full storyboard contact sheet for the source video.",
-    "- Additional reference images may follow as @Image3-@Image9; use them only for product/detail consistency if supplied.",
+    "- 图片1 is the current clip first frame or product-replaced reference frame.",
+    "- 图片2 is the full storyboard contact sheet for the source video.",
+    "- Additional reference images may follow as 图片3-图片9; use them only for product/detail consistency if supplied.",
     `- Use only the matching storyboard area${panelRange ? ` (${panelRange})` : ""}${timeRange ? ` for ${timeRange}` : ""} as composition, camera rhythm, action order, and pacing reference.`,
     `- Do not generate a collage, grid, split-screen, border, panel number, frame label, or storyboard layout. The final output must be one normal full-screen ${aspectRatio} video clip.`,
   ].join("\n");
@@ -168,14 +163,14 @@ function withSeedanceStoryboardReference(
 
 function toProviderModel(model: unknown): string {
   if (!isSeedanceModel(model)) return String(model || "veo3.1-fast");
-  return isSeedanceFastModel(model) ? "bytedance/seedance-2-fast" : "bytedance/seedance-2";
+  return toVolcengineSeedanceModel(model);
 }
 
-function resolveSeedanceProviderApiKey(): string {
+function resolveVolcengineArkApiKey(): string {
   return (
-    process.env.SEEDANCE_KIE_API_KEY?.trim() ||
-    process.env.KIE_SEEDANCE_API_KEY?.trim() ||
-    process.env.KIE_API_KEY?.trim() ||
+    process.env.VOLCENGINE_ARK_API_KEY?.trim() ||
+    process.env.SEEDANCE_ARK_API_KEY?.trim() ||
+    process.env.ARK_API_KEY?.trim() ||
     ""
   );
 }
@@ -302,20 +297,20 @@ function buildStoryboardVideoCreditCharges(
   return charges;
 }
 
-function parseKieTaskId(value: unknown): string {
+function parseVolcengineTaskId(value: unknown): string {
   if (!value || typeof value !== "object") return "";
   const record = value as Record<string, unknown>;
   const data = record.data && typeof record.data === "object" && !Array.isArray(record.data)
     ? record.data as Record<string, unknown>
     : null;
-  return cleanText(data?.taskId) || cleanText(record.taskId) || cleanText(data?.id) || "";
+  return cleanText(data?.taskId) || cleanText(record.taskId) || cleanText(record.id) || cleanText(data?.id) || "";
 }
 
 function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-async function createKieSeedanceTask(payload: {
+async function createVolcengineSeedanceTask(payload: {
   prompt: string;
   referenceImageUrls: string[];
   duration: number;
@@ -323,25 +318,31 @@ async function createKieSeedanceTask(payload: {
   model: string;
   callbackUrl: string;
   providerApiKey: string;
+  metadata: Record<string, string>;
 }) {
   const requestBody = {
     model: payload.model,
-    input: {
-      prompt: payload.prompt,
-      reference_image_urls: payload.referenceImageUrls,
-      reference_video_urls: [],
-      reference_audio_urls: [],
-      generate_audio: false,
-      resolution: "720p",
-      aspect_ratio: payload.aspectRatio,
-      duration: payload.duration,
-      web_search: false,
-      nsfw_checker: true,
-    },
-    callBackUrl: payload.callbackUrl,
+    callback_url: payload.callbackUrl,
+    content: [
+      {
+        type: "text",
+        text: payload.prompt,
+      },
+      ...payload.referenceImageUrls.map((url) => ({
+        type: "image_url",
+        image_url: { url },
+        role: "reference_image",
+      })),
+    ],
+    generate_audio: false,
+    resolution: "720p",
+    ratio: payload.aspectRatio,
+    duration: payload.duration,
+    watermark: false,
+    metadata: payload.metadata,
   };
 
-  const response = await fetch("https://api.kie.ai/api/v1/jobs/createTask", {
+  const response = await fetch("https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -352,22 +353,28 @@ async function createKieSeedanceTask(payload: {
 
   const result = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(`KIE Seedance createTask failed: ${response.status} ${JSON.stringify(result).slice(0, 500)}`);
+    throw new Error(`Volcengine Seedance create task failed: ${response.status} ${JSON.stringify(result).slice(0, 500)}`);
   }
 
-  const taskId = parseKieTaskId(result);
+  const taskId = parseVolcengineTaskId(result);
   if (!taskId) {
-    throw new Error(`KIE Seedance createTask did not return taskId: ${JSON.stringify(result).slice(0, 500)}`);
+    throw new Error(`Volcengine Seedance create task did not return task id: ${JSON.stringify(result).slice(0, 500)}`);
   }
 
   return { taskId, requestBody, rawResponse: result };
+}
+
+function summarizeTriggerFailures(results: Array<{ success?: boolean; error?: string }>): string | undefined {
+  const firstError = results.find((result) => !result.success && result.error)?.error;
+  if (!firstError) return undefined;
+  return firstError.replace(/\s+/g, " ").slice(0, 180);
 }
 
 /**
  * Batch trigger video generation for storyboard segments
  * POST /api/storyboard/[id]/generate-videos
  *
- * Seedance calls KIE directly and receives KIE callbacks on /api/webhook/storyboard-video.
+ * Seedance calls Volcengine Ark directly and receives callbacks on /api/webhook/storyboard-video.
  * Other video models still use the legacy n8n webhook.
  */
 
@@ -404,7 +411,7 @@ export async function POST(
     }
     const forceSeedanceRoute = isSmartRemixVideoStageSource(requestSource) || isSmartRemixStoryboardTask(task);
     const effectiveModel = forceSeedanceRoute ? normalizeSeedanceVideoModel(model) : model;
-    const providerRoute = isSeedanceModel(effectiveModel) ? "kie" : "n8n";
+    const providerRoute = isSeedanceModel(effectiveModel) ? "volcengine" : "n8n";
 
     console.log("[generate-videos] Request:", {
       task_id: id,
@@ -472,45 +479,44 @@ export async function POST(
         { status: 400 }
       );
     }
-    const seedanceProviderApiKey = providerRoute === "kie" ? resolveSeedanceProviderApiKey() : "";
-    if (forceSeedanceRoute && providerRoute !== "kie") {
+    const seedanceProviderApiKey = providerRoute === "volcengine" ? resolveVolcengineArkApiKey() : "";
+    if (forceSeedanceRoute && providerRoute !== "volcengine") {
       return NextResponse.json(
         {
           error: "Invalid provider route",
-          message: "智能复刻第三阶段只能直连 KIE Seedance，禁止回退到 n8n。",
+          message: "智能复刻第三阶段只能直连火山 Seedance，禁止回退到 n8n。",
         },
         { status: 400 }
       );
     }
-    if (providerRoute === "kie" && !seedanceProviderApiKey) {
+    if (providerRoute === "volcengine" && !seedanceProviderApiKey) {
       return NextResponse.json(
         {
           error: "Seedance provider key not configured",
-          message: "Seedance 2.0 需要配置 KIE_API_KEY 或 SEEDANCE_KIE_API_KEY 后才能发起。",
+          message: "Seedance 2.0 需要配置 VOLCENGINE_ARK_API_KEY 或 ARK_API_KEY 后才能发起。",
         },
         { status: 400 }
       );
     }
     const adminToken = (process.env.ADMIN_TOKEN || "").trim();
-    if (providerRoute === "kie" && !adminToken) {
+    if (providerRoute === "volcengine" && !adminToken) {
       return NextResponse.json(
         {
           error: "Admin token not configured",
-          message: "Seedance 2.0 直连回调需要配置 ADMIN_TOKEN。",
+          message: "Seedance 2.0 火山回调需要配置 ADMIN_TOKEN。",
         },
         { status: 400 }
       );
     }
 
-    // 4. Resolve callback URL. The n8n webhook is resolved only inside the non-Seedance branch.
     const callbackBase = (
       process.env.N8N_CALLBACK_BASE_URL ||
       process.env.CANVAS_VIDEO_POLL_CALLBACK_BASE_URL ||
       "https://atomx.top"
     ).replace(/\/+$/, "");
-    const callbackUrl = `${callbackBase}/api/webhook/storyboard-video`;
+    const callbackUrl = `${callbackBase}/api/webhook/storyboard-video?admin_token=${encodeURIComponent(adminToken)}`;
 
-    // 4a. Deduct credits upfront
+    // 4. Deduct credits upfront
     try {
       await deductCredits(apiKey, {
         amount: creditEstimate.amount,
@@ -519,7 +525,7 @@ export async function POST(
         reason: "storyboard_video",
       });
       logCreditUsage({
-        featureKey: providerRoute === "kie"
+        featureKey: providerRoute === "volcengine"
           ? `storyboard_video:${String(effectiveModel || "")}`
           : "storyboard_video",
         userId,
@@ -535,7 +541,7 @@ export async function POST(
       );
     }
 
-    // 5. Fire provider for each segment. Seedance 2.0 calls KIE directly; other models keep the legacy n8n path.
+    // 5. Fire provider for each segment. Seedance 2.0 calls Volcengine Ark directly; other models keep the legacy n8n path.
     const breakdown = task.detailedBreakdown as Record<string, unknown> | null;
     const pipelineKey = String(breakdown?.pipeline_key || breakdown?.pipelineKey || "");
     const style = (breakdown?.style as Record<string, unknown>) ?? {};
@@ -579,7 +585,7 @@ export async function POST(
       const rawSegmentDuration = Number.isFinite(Number(segment.duration)) && Number(segment.duration) > 0
         ? Math.round(Number(segment.duration) * 1000) / 1000
         : 8;
-      const segmentDuration = providerRoute === "kie"
+      const segmentDuration = providerRoute === "volcengine"
         ? clampSeedanceDurationSeconds(rawSegmentDuration)
         : rawSegmentDuration;
 
@@ -591,7 +597,7 @@ export async function POST(
         first_frame_url: firstFrameUrl || null,
         storyboard_grid_url: storyboardGridUrl || null,
         storyboardGridUrl: storyboardGridUrl || null,
-        reference_image_urls: providerRoute === "kie"
+        reference_image_urls: providerRoute === "volcengine"
           ? isSkeletonVideo
             ? getSkeletonVideoReferenceImageUrls(firstFrameUrl)
             : getReferenceImageUrls(firstFrameUrl, storyboardGridUrl, generationParams, { includeProductRefs, productImageUrl: cleanUrl(productImageUrl) })
@@ -612,32 +618,31 @@ export async function POST(
         requestedModel: effectiveModel,
         aspect_ratio: requestedAspectRatio,
         aspectRatio: requestedAspectRatio,
-        callback_url: callbackUrl,
         api_key: apiKey,
         provider_api_key: seedanceProviderApiKey || undefined,
         providerApiKey: seedanceProviderApiKey || undefined,
-        admin_token: adminToken || undefined,
         creative_style_raw: (style.creativeStyleRaw as string) ?? "",
         creative_style_norm: (style.creativeStyleNorm as string) ?? "写实",
         style_profile_json: styleProfileJson,
       };
 
       try {
-        if (providerRoute === "kie") {
-          const kieCallbackUrl = appendQueryParams(callbackUrl, {
-            segment_id: segment.id,
-            task_id: id,
-            model: toProviderModel(effectiveModel),
-            admin_token: adminToken,
-          });
-          const kieTask = await createKieSeedanceTask({
+        if (providerRoute === "volcengine") {
+          const providerModel = toProviderModel(effectiveModel);
+          const volcengineTask = await createVolcengineSeedanceTask({
             prompt: finalPrompt,
             referenceImageUrls: payload.reference_image_urls,
             duration: segmentDuration,
             aspectRatio: requestedAspectRatio,
-            model: toProviderModel(effectiveModel),
-            callbackUrl: kieCallbackUrl,
+            model: providerModel,
+            callbackUrl,
             providerApiKey: seedanceProviderApiKey,
+            metadata: {
+              segment_id: segment.id,
+              task_id: id,
+              model: String(effectiveModel || ""),
+              provider: "volcengine",
+            },
           });
 
           await prisma.storyboardSegment.update({
@@ -647,17 +652,20 @@ export async function POST(
               videoGenerationModel: effectiveModel,
               generationParams: mergeStoryboardVideoCreditCharge({
                 ...generationParams,
-                provider: "kie",
-                provider_task_id: kieTask.taskId,
-                provider_model: toProviderModel(effectiveModel),
-                provider_callback_url: kieCallbackUrl,
-                provider_request: kieTask.requestBody,
+                provider: "volcengine",
+                provider_task_id: volcengineTask.taskId,
+                provider_model: providerModel,
+                provider_callback_url: callbackUrl,
+                provider_request: volcengineTask.requestBody,
+                provider_create_response: volcengineTask.rawResponse,
+                provider_state: "submitted",
+                provider_submitted_at: new Date().toISOString(),
               }, creditCharge),
             },
           });
 
-          console.log(`[generate-videos] Triggered KIE Seedance for segment ${segment.id}`);
-          return { segment_id: segment.id, success: true, provider: "kie", provider_task_id: kieTask.taskId };
+          console.log(`[generate-videos] Triggered Volcengine Seedance for segment ${segment.id}`);
+          return { segment_id: segment.id, success: true, provider: "volcengine", provider_task_id: volcengineTask.taskId };
         }
 
         if (forceSeedanceRoute) {
@@ -722,6 +730,7 @@ export async function POST(
     const results = await Promise.all(triggers);
     const successCount = results.filter((r) => r.success).length;
     const failureCount = results.length - successCount;
+    const firstFailure = summarizeTriggerFailures(results);
 
     if (successCount > 0) {
       await prisma.storyboardTask.update({
@@ -751,7 +760,11 @@ export async function POST(
         creditEstimate,
         results,
         message:
-          successCount === 0 ? "所有分镜生视频触发失败" : failureCount > 0 ? "部分分镜触发失败" : undefined,
+          successCount === 0
+            ? `所有分镜生视频触发失败${firstFailure ? `：${firstFailure}` : ""}`
+            : failureCount > 0
+              ? `部分分镜触发失败${firstFailure ? `：${firstFailure}` : ""}`
+              : undefined,
       },
       { status: successCount === 0 ? 502 : 200 }
     );

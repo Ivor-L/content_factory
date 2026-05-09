@@ -74,6 +74,13 @@ cp .vibe/credentials.env.example .vibe/credentials.env
 - `SOCIAL_SCRAPER_APIFY_TOKEN`（必填；用于启动 Apify Actor。缺失时 Facebook/TikTok/Instagram 采集会直接失败）
 - `SOCIAL_SCRAPER_WEBHOOK_SECRET`（可选；用于 `/api/webhook/social-scraper` 回调鉴权）
 
+### 3.4.1 火山方舟 Seedance
+
+- `VOLCENGINE_ARK_API_KEY`：火山方舟 API Key。小程序智能复刻第三阶段生视频直连火山 Seedance 2.0 时必填。
+- `SEEDANCE_ARK_API_KEY`：Seedance 专用火山方舟 API Key，可选；优先级低于 `VOLCENGINE_ARK_API_KEY`。
+- `ARK_API_KEY`：方舟 SDK 默认变量名，可作为兜底。
+- `ADMIN_TOKEN`：火山回调 `/api/webhook/storyboard-video` 时通过 `callback_url` query 透传并校验。
+
 ### 3.4 外部积分系统
 
 - `POINTS_API_BASE`：积分系统 API Base URL（默认 `https://api.atomx.top`，见 [credits.ts](file:///Users/kaka/Desktop/软件开发/content-factory-web%203/lib/credits.ts)）

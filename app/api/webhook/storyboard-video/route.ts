@@ -26,10 +26,20 @@ function pickVideoUrl(body: Record<string, any>): string {
   if (typeof body.videoUrl === "string" && body.videoUrl.trim()) return body.videoUrl.trim();
   if (typeof body.resultUrl === "string" && body.resultUrl.trim()) return body.resultUrl.trim();
   if (typeof body.result_url === "string" && body.result_url.trim()) return body.result_url.trim();
+  const taskResult = body.task_result && typeof body.task_result === "object" ? body.task_result as Record<string, unknown> : null;
+  const taskResultVideos = Array.isArray(taskResult?.videos) ? taskResult.videos : [];
+  const taskResultVideo = taskResultVideos.find((item) => item && typeof item === "object") as Record<string, unknown> | undefined;
+  if (typeof taskResultVideo?.url === "string" && taskResultVideo.url.trim()) return taskResultVideo.url.trim();
+  if (typeof taskResultVideo?.video_url === "string" && taskResultVideo.video_url.trim()) return taskResultVideo.video_url.trim();
   const data = body.data && typeof body.data === "object" ? body.data as Record<string, unknown> : null;
   if (typeof data?.video_url === "string" && data.video_url.trim()) return data.video_url.trim();
   if (typeof data?.result_url === "string" && data.result_url.trim()) return data.result_url.trim();
   if (typeof data?.resultUrl === "string" && data.resultUrl.trim()) return data.resultUrl.trim();
+  const dataTaskResult = data?.task_result && typeof data.task_result === "object" ? data.task_result as Record<string, unknown> : null;
+  const dataTaskResultVideos = Array.isArray(dataTaskResult?.videos) ? dataTaskResult.videos : [];
+  const dataTaskResultVideo = dataTaskResultVideos.find((item) => item && typeof item === "object") as Record<string, unknown> | undefined;
+  if (typeof dataTaskResultVideo?.url === "string" && dataTaskResultVideo.url.trim()) return dataTaskResultVideo.url.trim();
+  if (typeof dataTaskResultVideo?.video_url === "string" && dataTaskResultVideo.video_url.trim()) return dataTaskResultVideo.video_url.trim();
   const resultJson = parseJsonSafe(data?.resultJson ?? body.resultJson);
   const resultUrls = Array.isArray(resultJson?.resultUrls) ? resultJson.resultUrls : [];
   const first = resultUrls.find((url) => typeof url === "string" && url.trim());
@@ -40,9 +50,11 @@ function normalizeStatus(body: Record<string, any>): string {
   const data = body.data && typeof body.data === "object" ? body.data as Record<string, unknown> : null;
   const raw = String(
     body.status ||
+    body.task_status ||
     body.state ||
     data?.state ||
     data?.status ||
+    data?.task_status ||
     body.successFlag ||
     data?.successFlag ||
     "",
@@ -65,11 +77,14 @@ function asRecord(value: unknown): Record<string, unknown> {
 function pickErrorMessage(body: Record<string, any>): string {
   const data = asRecord(body.data);
   const error = asRecord(body.error);
+  const taskError = asRecord(body.task_error || data.task_error);
   return String(
     body.errorMessage ||
     body.error_message ||
     body.message ||
     body.msg ||
+    taskError.message ||
+    taskError.msg ||
     data.failMsg ||
     data.errorMessage ||
     data.message ||
@@ -94,8 +109,13 @@ export async function POST(req: NextRequest) {
 
     // Support poll-service callback format: segment_id lives in context
     const context = body.context && typeof body.context === "object" ? body.context : null;
+    const metadata = body.metadata && typeof body.metadata === "object"
+      ? body.metadata
+      : body.data?.metadata && typeof body.data.metadata === "object"
+        ? body.data.metadata
+        : null;
     const isPollingCallback = Boolean(context?.segment_id);
-    const isQueryCallback = Boolean(querySegmentId && queryAdminToken && queryAdminToken === (process.env.ADMIN_TOKEN || "").trim());
+    const isQueryCallback = Boolean(queryAdminToken && queryAdminToken === (process.env.ADMIN_TOKEN || "").trim());
 
     // Auth: accept admin token OR valid polling callback with segment_id in context
     if (!isPollingCallback && !isQueryCallback && !isValidAdminWebhookRequest(req)) {
@@ -103,11 +123,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const segment_id = body.segment_id || context?.segment_id || querySegmentId;
+    const segment_id = body.segment_id || context?.segment_id || metadata?.segment_id || querySegmentId;
     const video_url = pickVideoUrl(body);
     const status = normalizeStatus(body);
     const error = pickErrorMessage(body);
-    const model = body.model || context?.model || body.data?.model || queryModel;
+    const model = body.model || context?.model || metadata?.model || body.data?.model || queryModel;
     const generation_params = body.generation_params;
 
     console.log("[storyboard-video] Received webhook:", {
