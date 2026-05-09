@@ -996,6 +996,7 @@ type ImageGeneratePrefs = {
   cardCoverSubtitleFontSize?: number;
   cardCoverLineHeight?: number;
   cardEditorMode?: CardEditorMode;
+  cardWechatMode?: boolean;
 };
 
 const CARD_STYLE_INDEX = new Map<CardStyleId, CardStylePreset>(CARD_LAYOUT_STYLES.map((item) => [item.id, item]));
@@ -1806,6 +1807,23 @@ function renderMiniMarkdown(markdown: string, previewStyle: PreviewRenderStyle):
   return `<div style="color:${textColor};font-family:${familyStyle};padding:${padding}px;">${blocks.join('')}</div>`;
 }
 
+function buildWechatArticleHtml(markdown: string, previewStyle: PreviewRenderStyle): string {
+  const articleHtml = renderMiniMarkdown(markdown, {
+    ...previewStyle,
+    density: 'relaxed',
+    padding: 'md',
+    headingSpacing: 'normal',
+  });
+  const familyStyle = CARD_FONT_FAMILY_STACK_MAP[previewStyle.fontFamily] || CARD_FONT_FAMILY_STACK_MAP.system;
+  return [
+    '<section class="js-preview">',
+    `<section class="card markdown-body wechat" style="font-family:${familyStyle};line-height:1.75;background:#ffffff;color:${previewStyle.textColor};padding:20px;word-wrap:break-word;font-size:16px;">`,
+    articleHtml,
+    '</section>',
+    '</section>',
+  ].join('');
+}
+
 function renderMiniCoverPreview(
   coverStyleId: CardCoverStyleId,
   title: string,
@@ -2171,6 +2189,7 @@ export default function ImageGeneratePage() {
   const [cardPublishQrcode, setCardPublishQrcode] = useState('');
   const [cardPublishUrl, setCardPublishUrl] = useState('');
   const [cardPreviewPageIndex, setCardPreviewPageIndex] = useState(0);
+  const [cardWechatMode, setCardWechatMode] = useState(false);
   const [injectedFromMyNote, setInjectedFromMyNote] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [cardUserCleared, setCardUserCleared] = useState(false);
@@ -2374,6 +2393,9 @@ export default function ImageGeneratePage() {
       if (prefs.cardEditorMode && (prefs.cardEditorMode === 'edit' || prefs.cardEditorMode === 'preview')) {
         setCardEditorMode(prefs.cardEditorMode);
       }
+      if (typeof prefs.cardWechatMode === 'boolean') {
+        setCardWechatMode(prefs.cardWechatMode);
+      }
     } catch {
       // ignore broken local prefs
     }
@@ -2416,6 +2438,7 @@ export default function ImageGeneratePage() {
       cardCoverSubtitleFontSize,
       cardCoverLineHeight,
       cardEditorMode,
+      cardWechatMode,
     };
     Taro.setStorageSync(IMAGE_GENERATE_PREFS_KEY, prefs);
   }, [
@@ -2454,6 +2477,7 @@ export default function ImageGeneratePage() {
     cardCoverSubtitleFontSize,
     cardCoverLineHeight,
     cardEditorMode,
+    cardWechatMode,
   ]);
 
   const loadInfographicTemplates = async () => {
