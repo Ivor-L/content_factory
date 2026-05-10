@@ -117,6 +117,7 @@ require_var "ADMIN_TOKEN" "Webhook admin token"
 require_var "N8N_CALLBACK_BASE_URL" "n8n callback base URL"
 require_var "N8N_IMAGE_GEN_WEBHOOK" "Storyboard image generation webhook"
 require_any "Storyboard video generation webhook" "N8N_VIDEO_GEN_WEBHOOK" "N8N_VEO3_WEBHOOK"
+require_any "Volcengine Ark API key for Seedance" "VOLCENGINE_ARK_API_KEY" "SEEDANCE_ARK_API_KEY" "ARK_API_KEY"
 
 # Social scraper dependencies (TikTok/Facebook/Instagram)
 require_any "Apify token for social scraper" "SOCIAL_SCRAPER_APIFY_TOKEN" "APIFY_API_TOKEN" "APIFY_TOKEN"

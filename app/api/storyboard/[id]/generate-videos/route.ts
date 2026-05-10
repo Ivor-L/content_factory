@@ -224,10 +224,36 @@ function clampSeedanceDurationSeconds(value: unknown, fallback = 8): number {
   return Math.max(4, Math.min(15, parsed));
 }
 
+function durationFromTimeRange(value: unknown): number {
+  const text = String(value || "").trim();
+  const match = text.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*[-~–—]\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (!match) return 0;
+  const start = toSeconds(match[1], match[2], match[3]);
+  const end = toSeconds(match[4], match[5], match[6]);
+  return end > start ? Math.round((end - start) * 1000) / 1000 : 0;
+}
+
+function toSeconds(first: string, second: string, third?: string): number {
+  const a = Number(first);
+  const b = Number(second);
+  const c = third === undefined ? 0 : Number(third);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(c)) return 0;
+  return third === undefined ? a * 60 + b : a * 3600 + b * 60 + c;
+}
+
 function getBillableDurationSeconds(model: unknown, duration: unknown): number {
   return isSeedanceModel(model)
     ? clampSeedanceDurationSeconds(duration, 0)
     : getPositiveDurationSeconds(duration, 1);
+}
+
+function resolveSegmentDurationSeconds(segment: { duration: unknown; timeRange?: unknown }, params?: Record<string, unknown>): number {
+  const fromClipRange = durationFromTimeRange(params?.clip_time_range ?? params?.clipTimeRange);
+  if (fromClipRange > 0) return fromClipRange;
+  const fromSegmentRange = durationFromTimeRange(segment.timeRange);
+  if (fromSegmentRange > 0) return fromSegmentRange;
+  const parsed = Number(segment.duration);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 1000) / 1000 : 8;
 }
 
 function getDefaultStoryboardVideoUnitCost(model: unknown): number {
@@ -582,9 +608,7 @@ export async function POST(
       const finalPrompt = !isSkeletonVideo && isSeedanceModel(effectiveModel) && firstFrameUrl && storyboardGridUrl
         ? withSeedanceStoryboardReference(basePrompt, generationParams, storyboardGridUrl, requestedAspectRatio)
         : basePrompt;
-      const rawSegmentDuration = Number.isFinite(Number(segment.duration)) && Number(segment.duration) > 0
-        ? Math.round(Number(segment.duration) * 1000) / 1000
-        : 8;
+      const rawSegmentDuration = resolveSegmentDurationSeconds(segment, generationParams);
       const segmentDuration = providerRoute === "volcengine"
         ? clampSeedanceDurationSeconds(rawSegmentDuration)
         : rawSegmentDuration;

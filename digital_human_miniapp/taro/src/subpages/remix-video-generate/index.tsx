@@ -13,6 +13,8 @@ const VIDEO_MODELS = [
 ];
 const DEFAULT_VIDEO_MODEL = 'bytedance/seedance-2';
 const SMART_REMIX_VIDEO_STAGE_SOURCE = 'smart_remix_video_stage';
+const MIN_SEEDANCE_DURATION = 4;
+const MAX_SEEDANCE_DURATION = 15;
 
 function normalizeVideoModel(model: unknown): string {
   const value = String(model || '').trim();
@@ -35,6 +37,11 @@ type RemixClipItem = {
   videoPrompt: string;
   segment: StoryboardSegmentItem | null;
 };
+
+function clampSeedanceDuration(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 8;
+  return Math.max(MIN_SEEDANCE_DURATION, Math.min(MAX_SEEDANCE_DURATION, Math.round(value * 1000) / 1000));
+}
 
 function decodeQueryText(value: string): string {
   const text = String(value || '').trim();
@@ -184,7 +191,7 @@ export default function RemixVideoGeneratePage() {
     const segment = clip.segment;
     if (!segment) throw new Error('当前 Clip 缺少可生成片段');
     const prompt = (patch?.prompt ?? clip.videoPrompt).trim();
-    const duration = patch?.duration ?? clip.duration;
+    const duration = clampSeedanceDuration(patch?.duration ?? clip.duration);
     await miniappApi.updateStoryboardSegment(segment.id, {
       videoPrompt: prompt,
       duration,
@@ -693,10 +700,13 @@ function buildRemixClipItems(task: StoryboardTaskStatusResult | null): RemixClip
       const savedPrompt = normalizeText(String(params.clip_video_prompt || params.clipVideoPrompt || ''));
       const videoPrompt = savedPrompt || resolveClipPrompt(record);
       const imagePrompt = normalizeText(String(record.image_prompt || record.imagePrompt || record.first_frame_prompt || ''));
+      const clipDuration = resolveClipDuration(record, timeRange);
       const segmentDuration = Number(segment?.duration || 0);
-      const duration = Number.isFinite(segmentDuration) && segmentDuration > 0
-        ? Math.round(segmentDuration * 1000) / 1000
-        : resolveClipDuration(record, timeRange);
+      const duration = clipDuration > 0
+        ? clipDuration
+        : Number.isFinite(segmentDuration) && segmentDuration > 0
+          ? Math.round(segmentDuration * 1000) / 1000
+          : 8;
       const sourceKey = `${clipIndex}-${timeRange}-${videoPrompt.slice(0, 80)}`;
       if ((!videoPrompt && !imagePrompt) || seenSourceKeys.has(sourceKey)) return null;
       seenSourceKeys.add(sourceKey);
@@ -704,7 +714,7 @@ function buildRemixClipItems(task: StoryboardTaskStatusResult | null): RemixClip
         key: `clip-${clipIndex}-${index}`,
         clipIndex,
         timeRange,
-        duration,
+        duration: clampSeedanceDuration(duration),
         imagePrompt,
         videoPrompt,
         segment,
@@ -726,7 +736,7 @@ function buildRemixClipItems(task: StoryboardTaskStatusResult | null): RemixClip
         key: segment.id,
         clipIndex,
         timeRange,
-        duration: Number(segment.duration || 0) || resolveClipDuration({}, timeRange),
+        duration: clampSeedanceDuration(resolveClipDuration({}, timeRange) || Number(segment.duration || 0) || 8),
         imagePrompt,
         videoPrompt,
         segment,
