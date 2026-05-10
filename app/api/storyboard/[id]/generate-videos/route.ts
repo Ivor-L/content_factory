@@ -216,6 +216,25 @@ function getSkeletonVideoReferenceImageUrls(firstFrameUrl: string): string[] {
   return url ? [url] : [];
 }
 
+function getSmartRemixVideoReferenceImageUrls(firstFrameUrl: string): string[] {
+  const url = cleanUrl(firstFrameUrl);
+  return url ? [url] : [];
+}
+
+function withSmartRemixSelectedFrameReference(prompt: string): string {
+  return [
+    prompt
+      .replace(/@Image\s*2/gi, "@Image1")
+      .replace(/图片\s*2/g, "图片1")
+      .trim(),
+    "",
+    "Seedance 2.0 reference protocol:",
+    "- 图片1 is the storyboard frame selected in step 2 for this clip.",
+    "- Use 图片1 as the visual composition, product appearance, color, camera rhythm, and action reference.",
+    "- Do not infer or use any full storyboard contact sheet or additional source-video panel image.",
+  ].join("\n");
+}
+
 function getPositiveDurationSeconds(value: unknown, fallback = 1): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -723,9 +742,11 @@ export async function POST(
           .map((ref) => (ref && typeof ref === "object" ? ref as Record<string, unknown> : null))
           .find((ref) => String(ref?.type || "").trim() === "product")?.url
         : null;
-      const finalPrompt = !isSkeletonVideo && isSeedanceModel(effectiveModel) && firstFrameUrl && storyboardGridUrl
-        ? withSeedanceStoryboardReference(basePrompt, generationParams, storyboardGridUrl, requestedAspectRatio)
-        : basePrompt;
+      const finalPrompt = forceSeedanceRoute && isSeedanceModel(effectiveModel)
+        ? withSmartRemixSelectedFrameReference(basePrompt)
+        : !isSkeletonVideo && isSeedanceModel(effectiveModel) && firstFrameUrl && storyboardGridUrl
+          ? withSeedanceStoryboardReference(basePrompt, generationParams, storyboardGridUrl, requestedAspectRatio)
+          : basePrompt;
       const rawSegmentDuration = resolveSegmentDurationSeconds(segment, generationParams);
       const segmentDuration = providerRoute === "volcengine"
         ? clampSeedanceDurationSeconds(rawSegmentDuration)
@@ -740,7 +761,9 @@ export async function POST(
         storyboard_grid_url: storyboardGridUrl || null,
         storyboardGridUrl: storyboardGridUrl || null,
         reference_image_urls: providerRoute === "volcengine"
-          ? isSkeletonVideo
+          ? forceSeedanceRoute
+            ? getSmartRemixVideoReferenceImageUrls(firstFrameUrl)
+            : isSkeletonVideo
             ? getSkeletonVideoReferenceImageUrls(firstFrameUrl)
             : getReferenceImageUrls(firstFrameUrl, storyboardGridUrl, generationParams, { includeProductRefs, productImageUrl: cleanUrl(productImageUrl) })
           : [],

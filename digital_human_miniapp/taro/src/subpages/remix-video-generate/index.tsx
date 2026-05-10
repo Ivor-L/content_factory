@@ -551,7 +551,7 @@ export default function RemixVideoGeneratePage() {
                 const failed = isVideoFailed(segment);
                 const actioning = segment ? isActioning(`${segment.id}-video`) : false;
                 const cancelling = segment ? isActioning(`${segment.id}-cancel-video`) : false;
-                const disableActions = actioning || generating;
+                const disableActions = actioning || (generating && cancelling);
                 return (
                   <View key={clip.key} className='remix-video-clip-card'>
                     <View className='remix-video-clip-head'>
@@ -587,15 +587,6 @@ export default function RemixVideoGeneratePage() {
                         </View>
                         <Text className='remix-video-generating-title'>视频生成中</Text>
                         <Text className='remix-video-generating-desc'>可离开当前页面，回来后会继续同步状态</Text>
-                        <View
-                          className={`remix-video-cancel-btn ${cancelling ? 'remix-video-cancel-btn--disabled' : ''}`}
-                          onClick={() => {
-                            if (cancelling) return;
-                            void handleCancelGeneratingClip(clip);
-                          }}
-                        >
-                          <Text className='remix-video-cancel-btn-text'>{cancelling ? '取消中' : '取消生成'}</Text>
-                        </View>
                       </View>
                     )}
                     <View className='remix-video-clip-actions'>
@@ -614,13 +605,19 @@ export default function RemixVideoGeneratePage() {
                         <Text className='remix-video-clip-btn-text remix-video-clip-btn-text--ghost'>编辑提示词</Text>
                       </View>
                       <View
-                        className={`remix-video-clip-btn remix-video-clip-btn--primary ${disableActions ? 'remix-video-clip-btn--disabled' : ''}`}
+                        className={`remix-video-clip-btn remix-video-clip-btn--primary ${generating ? 'remix-video-clip-btn--danger' : ''} ${disableActions ? 'remix-video-clip-btn--disabled' : ''}`}
                         onClick={() => {
                           if (disableActions) return;
+                          if (generating) {
+                            void handleCancelGeneratingClip(clip);
+                            return;
+                          }
                           void handleGenerateClip(clip);
                         }}
                       >
-                        <Text className='remix-video-clip-btn-text'>{actioning || generating ? '生成中' : videoUrl ? '重新生成' : '生成视频'}</Text>
+                        <Text className={`remix-video-clip-btn-text ${generating ? 'remix-video-clip-btn-text--danger' : ''}`}>
+                          {cancelling ? '取消中' : actioning ? '生成中' : generating ? '取消生成' : videoUrl ? '重新生成' : '生成视频'}
+                        </Text>
                       </View>
                     </View>
                   </View>

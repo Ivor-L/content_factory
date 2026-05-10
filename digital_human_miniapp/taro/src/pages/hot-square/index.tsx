@@ -454,7 +454,7 @@ export default function HotSquarePage() {
                       const itemId = String(item.id);
                       const rawCover = typeof item.coverUrl === 'string' ? item.coverUrl : null;
                       const shouldFallback = failedCoverIds.includes(itemId) || isBlockedCover(rawCover);
-                      const coverSrc = shouldFallback ? HOT_COVER_FALLBACK_URL : (rawCover as string);
+                      const coverSrc = shouldFallback || !rawCover ? HOT_COVER_FALLBACK_URL : rawCover;
                       const isVideo = isVideoItem(item);
 
                       return (

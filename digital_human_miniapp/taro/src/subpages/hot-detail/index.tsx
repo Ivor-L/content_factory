@@ -731,16 +731,19 @@ export default function HotDetailPage() {
 
   const renderMedia = (images: string[]) => {
     if (activeVideoUrl) {
+      const posterUrl = images.find((url) => Boolean(String(url || '').trim())) || coverUrl || HOT_COVER_FALLBACK_URL;
       return (
         <View className='hot-detail-video-wrap'>
           <Video
             className='hot-detail-video'
             src={activeVideoUrl}
+            poster={posterUrl}
             controls
             autoplay={false}
             loop={false}
             showFullscreenBtn
             showPlayBtn
+            objectFit='cover'
           />
         </View>
       );
