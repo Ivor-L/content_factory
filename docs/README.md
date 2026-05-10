@@ -144,6 +144,7 @@
 | [20260509-my-works-creative-import-knowledge-plan.md](./20260509-my-works-creative-import-knowledge-plan.md) | Web 我的作品智能创作详情：推荐标题与正文导入知识库 |
 | [20260510-miniapp-skeleton-story-branch-plan.md](./20260510-miniapp-skeleton-story-branch-plan.md) | 小程序 3D 骨骼剧情/带货分支升级：显式类型选择、剧情字段与 n8n 纯剧情 prompt |
 | [20260510-miniapp-storyboard-auto-edit-plan.md](./20260510-miniapp-storyboard-auto-edit-plan.md) | 小程序智能复刻与 3D 骨骼分镜板一键剪辑配置：音色、字幕、BGM 与积分接入 |
+| [20260510-miniapp-hot-video-copy-actions-plan.md](./20260510-miniapp-hot-video-copy-actions-plan.md) | 小程序爆款视频口播动作：文案复制、一键二创、数字人视频与视频采集展示修复 |
 | [20260504-character-library-view-edit-delete-plan.md](./20260504-character-library-view-edit-delete-plan.md) | Web 角色库查看/编辑/删除与创建表单交互优化计划 |
 | [20260504-style-library-image-performance-plan.md](./20260504-style-library-image-performance-plan.md) | 风格库图片加载性能优化：缩略图生成、列表优先加载与懒加载 |
 | [20260504-xhs-markdown-table-render-plan.md](./20260504-xhs-markdown-table-render-plan.md) | 小红书卡片 Markdown 表格渲染：Web/小程序预览、后端导出与 AI 排版对齐 |

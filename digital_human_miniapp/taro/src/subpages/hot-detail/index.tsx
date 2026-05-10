@@ -9,6 +9,8 @@ const DETAIL_IMAGE_WIDTH_RPX = 750;
 const DETAIL_IMAGE_FALLBACK_HEIGHT_RPX = 1000;
 const POLL_MS = 2500;
 const HOT_REMOVED_ITEMS_KEY = 'HOT_SQUARE_REMOVED_ITEMS';
+const SMART_COPY_SCRIPT_PAYLOAD_KEY = 'SMART_COPY_SCRIPT_PAYLOAD';
+const API_BASE_URL = getApiBaseUrl();
 
 function formatMetric(value?: number | null) {
   if (typeof value !== 'number' || Number.isNaN(value) || value < 0) return '--';
@@ -24,7 +26,8 @@ function isParsingStatus(status?: string | null) {
   const key = normalizeStatus(status);
   if (key.includes('REWRITE_COMPLETED')) return false;
   if (key.includes('BREAKDOWN_COMPLETED')) return false;
-  return key.includes('BREAKDOWN_PENDING') || key.includes('PENDING') || key.includes('PROCESS');
+  if (key.includes('VIDEO_COPY_COMPLETED')) return false;
+  return key.includes('BREAKDOWN_PENDING') || key.includes('VIDEO_COPY_EXTRACTING') || key.includes('PENDING') || key.includes('PROCESS');
 }
 
 function canRewriteStatus(status?: string | null) {
@@ -34,8 +37,12 @@ function canRewriteStatus(status?: string | null) {
 
 function formatMyTaskStatus(status: string) {
   const key = normalizeStatus(status);
-  if (isParsingStatus(key)) return '解析中';
   if (key.includes('BREAKDOWN_COMPLETED')) return '解析完成';
+  if (key.includes('VIDEO_COLLECTED')) return '视频已采集';
+  if (key.includes('VIDEO_COPY_EXTRACTING')) return '文案提取中';
+  if (key.includes('VIDEO_COPY_COMPLETED')) return '文案已提取';
+  if (key.includes('VIDEO_COPY_FAILED')) return '文案提取失败';
+  if (isParsingStatus(key)) return '解析中';
   if (key.includes('REWRITE_PENDING')) return '仿写中';
   if (key.includes('REWRITE_COMPLETED')) return '仿写完成';
   if (key.includes('FAILED') || key.includes('ERROR')) return '解析失败';
@@ -62,6 +69,83 @@ function copyTextToClipboard(label: string, content: string) {
     success: () => Taro.showToast({ title: `${label}已复制`, icon: 'success' }),
     fail: () => Taro.showToast({ title: '复制失败', icon: 'none' }),
   });
+}
+
+function getApiBaseUrl(): string {
+  try {
+    const fromDefine = typeof __API_BASE_URL__ !== 'undefined' ? String((__API_BASE_URL__ as any) || '').trim() : '';
+    if (fromDefine) return fromDefine.replace(/\/$/, '');
+  } catch {
+    // ignore
+  }
+  return '';
+}
+
+function getApiKey(): string {
+  try {
+    return String(Taro.getStorageSync('API_KEY') || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function buildAuthHeader(): Record<string, string> | undefined {
+  const apiKey = getApiKey();
+  return apiKey ? { 'x-user-api-key': apiKey } : undefined;
+}
+
+function buildDownloadUrl(url: string, mediaType: 'image' | 'video'): string {
+  const filename = mediaType === 'video' ? `video-${Date.now()}.mp4` : `image-${Date.now()}.jpg`;
+  const path = `/api/proxy/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`;
+  return API_BASE_URL ? `${API_BASE_URL}${path}` : path;
+}
+
+function getDownloadErrorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error || '');
+  if (/auth|authorize|permission|scope\.writePhotosAlbum|saveVideoToPhotosAlbum/i.test(raw)) {
+    return '未开启相册权限';
+  }
+  if (/下载失败\s*\d+/.test(raw)) return raw;
+  if (/timeout|timed out/i.test(raw)) return '下载超时，请稍后重试';
+  if (/url|domain|downloadFile|fail/i.test(raw)) return '视频下载失败，请稍后重试';
+  return raw || '下载失败，请稍后重试';
+}
+
+async function ensureAlbumPermission(): Promise<boolean> {
+  try {
+    const setting = await Taro.getSetting();
+    const writePermission = setting.authSetting?.['scope.writePhotosAlbum'];
+    if (writePermission === true) return true;
+
+    if (writePermission === false) {
+      const modal = await Taro.showModal({
+        title: '需要相册权限',
+        content: '下载前需要允许保存到相册，请在设置中开启权限',
+        confirmText: '去设置',
+      });
+      if (!modal.confirm) return false;
+      await Taro.openSetting();
+      const next = await Taro.getSetting();
+      return Boolean(next.authSetting?.['scope.writePhotosAlbum']);
+    }
+
+    await Taro.authorize({ scope: 'scope.writePhotosAlbum' });
+    return true;
+  } catch {
+    const modal = await Taro.showModal({
+      title: '需要相册权限',
+      content: '下载前需要允许保存到相册，请在设置中开启权限',
+      confirmText: '去设置',
+    });
+    if (!modal.confirm) return false;
+    try {
+      await Taro.openSetting();
+      const next = await Taro.getSetting();
+      return Boolean(next.authSetting?.['scope.writePhotosAlbum']);
+    } catch {
+      return false;
+    }
+  }
 }
 
 function rememberRemovedHotItem(...ids: Array<string | null | undefined>) {
@@ -109,6 +193,7 @@ export default function HotDetailPage() {
   const [loadingMyTask, setLoadingMyTask] = useState(false);
   const [rewriting, setRewriting] = useState(false);
   const [extractingVideoCopy, setExtractingVideoCopy] = useState(false);
+  const [copyRemixing, setCopyRemixing] = useState(false);
   const [downloadingVideo, setDownloadingVideo] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [rewriteDrawerVisible, setRewriteDrawerVisible] = useState(false);
@@ -156,7 +241,7 @@ export default function HotDetailPage() {
           if (target === 'my') setMyTask(detail);
           if (target === 'inline') setInlineTask(detail);
           const status = normalizeStatus(detail.status);
-          const isTerminal = status.includes('BREAKDOWN_COMPLETED') || status.includes('REWRITE_COMPLETED') || status.includes('FAILED') || status.includes('ERROR');
+          const isTerminal = status.includes('BREAKDOWN_COMPLETED') || status.includes('VIDEO_COPY_COMPLETED') || status.includes('REWRITE_COMPLETED') || status.includes('FAILED') || status.includes('ERROR');
           if (isTerminal && !isParsingStatus(status)) clearPoll();
         } catch {
           // Keep polling while network is flaky; the task is persisted server-side.
@@ -234,6 +319,15 @@ export default function HotDetailPage() {
     : (inlineTask?.source.videoUrl || item?.videoUrl || '');
   const isVideoNote = Boolean(activeVideoUrl || item?.sourceType === 'video' || myTask?.source.sourceType === 'video');
   const videoCanRewrite = Boolean(isVideoNote && activeTask && (taskCanRewrite || hasRewriteResult));
+  const videoCopyText = useMemo(() => {
+    const text = mode === 'my'
+      ? myTask?.source.text
+      : (inlineTask?.source.text || item?.scriptText || item?.description);
+    return String(text || '').trim();
+  }, [inlineTask?.source.text, item?.description, item?.scriptText, mode, myTask?.source.text]);
+  const videoTitle = mode === 'my'
+    ? (myTask?.source.title || '爆款视频')
+    : (item?.title || inlineTask?.source.title || '爆款视频');
 
   const coverUrl = useMemo(() => {
     const raw = typeof item?.coverUrl === 'string' ? item.coverUrl.trim() : '';
@@ -429,6 +523,7 @@ export default function HotDetailPage() {
       const latest = await miniappApi.getImageTextMyNoteTask(taskId);
       if (mode === 'my') setMyTask(latest);
       if (mode === 'hot') setInlineTask(latest);
+      if (isParsingStatus(latest.status)) pollTask(taskId, mode === 'my' ? 'my' : 'inline');
       Taro.showToast({ title: result.text || latest.source.text ? '文案已提取' : '已开始后台提取', icon: 'none' });
     } catch (error) {
       Taro.showToast({ title: error instanceof Error ? error.message : '提取失败', icon: 'none' });
@@ -439,14 +534,25 @@ export default function HotDetailPage() {
 
   const handleDownloadVideo = async () => {
     if (!activeVideoUrl || downloadingVideo) return;
+    const granted = await ensureAlbumPermission();
+    if (!granted) {
+      Taro.showToast({ title: '未开启相册权限', icon: 'none' });
+      return;
+    }
+
     setDownloadingVideo(true);
     try {
-      const res = await Taro.downloadFile({ url: activeVideoUrl });
+      const res = await Taro.downloadFile({
+        url: buildDownloadUrl(activeVideoUrl, 'video'),
+        header: buildAuthHeader(),
+      });
       if (res.statusCode && res.statusCode >= 400) throw new Error(`下载失败 ${res.statusCode}`);
+      if (!res.tempFilePath) throw new Error('下载失败');
       await Taro.saveVideoToPhotosAlbum({ filePath: res.tempFilePath });
       Taro.showToast({ title: '已保存到相册', icon: 'success' });
     } catch (error) {
-      Taro.showToast({ title: error instanceof Error ? error.message : '下载失败，请检查相册权限', icon: 'none' });
+      const message = getDownloadErrorMessage(error);
+      Taro.showToast({ title: message, icon: 'none' });
     } finally {
       setDownloadingVideo(false);
     }
@@ -463,6 +569,68 @@ export default function HotDetailPage() {
     if (type === 'action-swap') params.push('mode=action-swap');
     Taro.navigateTo({ url: `/subpages/remix-generate/index?${params.join('&')}` });
     setRemixDrawerVisible(false);
+  };
+
+  const handleCreateDigitalHumanFromCopy = () => {
+    if (!videoCopyText) {
+      Taro.showToast({ title: '请先提取口播文案', icon: 'none' });
+      return;
+    }
+    Taro.setStorageSync(SMART_COPY_SCRIPT_PAYLOAD_KEY, {
+      script: videoCopyText,
+      title: videoTitle,
+      source: 'hot-video-copy',
+      taskId: activeTaskId || '',
+      videoUrl: activeVideoUrl || '',
+    });
+    Taro.navigateTo({ url: '/subpages/generate/index?from=smart-copy&feature=digital-human' });
+    setRemixDrawerVisible(false);
+  };
+
+  const handleCopyVideoCopy = () => {
+    copyTextToClipboard('口播文案', videoCopyText);
+  };
+
+  const handleVideoCopyRemix = async () => {
+    if (copyRemixing) return;
+    if (!activeVideoUrl) {
+      Taro.showToast({ title: '缺少视频地址', icon: 'none' });
+      return;
+    }
+    if (!videoCopyText) {
+      Taro.showToast({ title: '请先提取口播文案', icon: 'none' });
+      return;
+    }
+
+    setCopyRemixing(true);
+    try {
+      const styles = await miniappApi.listWritingStyles(50);
+      if (styles.length === 0) {
+        Taro.showToast({ title: '请先在 Web 端创建写作风格', icon: 'none' });
+        return;
+      }
+      const result = await Taro.showActionSheet({
+        itemList: styles.map((style) => style.name.slice(0, 16) || '未命名风格'),
+      });
+      const picked = styles[result.tapIndex] || styles[0];
+      await miniappApi.createVideoCopyRemix({
+        videoUrl: activeVideoUrl,
+        originalCopy: videoCopyText,
+        styleId: picked.id,
+        sourceTitle: videoTitle,
+        sourceText: videoCopyText,
+        ideaText: `基于这段爆款口播文案做二创，保留结构和节奏，换成所选写作风格：\n\n${videoCopyText}`,
+      });
+      Taro.showToast({ title: '二创任务已提交', icon: 'success' });
+      Taro.switchTab({ url: '/pages/works/index' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || '');
+      if (!/cancel/i.test(message)) {
+        Taro.showToast({ title: message || '二创失败', icon: 'none' });
+      }
+    } finally {
+      setCopyRemixing(false);
+    }
   };
 
   const handleCopyExtractedTexts = (texts: Array<{ index: number; text?: string | null }>) => {
@@ -727,10 +895,6 @@ export default function HotDetailPage() {
             <Text className='hot-video-action-icon'>↓</Text>
             <Text className='hot-video-action-text'>{downloadingVideo ? '下载中...' : '下载视频'}</Text>
           </View>
-          <View className='hot-video-action hot-video-action--primary' onClick={() => setRemixDrawerVisible(true)}>
-            <Text className='hot-video-action-icon'>▶</Text>
-            <Text className='hot-video-action-text'>一键复刻</Text>
-          </View>
         </View>
       </View>
     );
@@ -745,17 +909,17 @@ export default function HotDetailPage() {
           <View className='hot-rewrite-handle' />
           <Text className='hot-remix-title'>选择复刻类型</Text>
           <Text className='hot-remix-desc'>会自动把当前视频放入参考视频，进入后可继续选角色和产品。</Text>
-          <View className='hot-remix-option' onClick={() => handleOpenRemix('short')}>
-            <Text className='hot-remix-option-title'>15s内短视频复刻</Text>
-            <Text className='hot-remix-option-desc'>适合口播、种草、单镜头爆款</Text>
-          </View>
           <View className='hot-remix-option' onClick={() => handleOpenRemix('long')}>
-            <Text className='hot-remix-option-title'>15s+长视频复刻</Text>
-            <Text className='hot-remix-option-desc'>适合信息密度更高的长视频结构</Text>
+            <Text className='hot-remix-option-title'>智能复刻</Text>
+            <Text className='hot-remix-option-desc'>拆解参考视频，选择产品后生成同款结构视频</Text>
           </View>
           <View className='hot-remix-option' onClick={() => handleOpenRemix('action-swap')}>
-            <Text className='hot-remix-option-title'>动作/角色替换</Text>
+            <Text className='hot-remix-option-title'>动作复刻</Text>
             <Text className='hot-remix-option-desc'>保留动作节奏，替换成你的角色</Text>
+          </View>
+          <View className={`hot-remix-option ${!videoCopyText ? 'hot-remix-option--disabled' : ''}`} onClick={handleCreateDigitalHumanFromCopy}>
+            <Text className='hot-remix-option-title'>数字人视频</Text>
+            <Text className='hot-remix-option-desc'>把提取出的口播文案导入数字人，快速生成文字驱动视频</Text>
           </View>
           <View className='hot-rewrite-close' onClick={() => setRemixDrawerVisible(false)}>
             <Text className='hot-rewrite-close-text'>关闭</Text>
@@ -792,7 +956,23 @@ export default function HotDetailPage() {
               </View>
               {renderStats(myTask.source)}
               {renderVideoActions()}
-              {!!myTask.source.text && <Text className='hot-detail-desc'>{myTask.source.text}</Text>}
+              {isVideoNote && (
+                <View className='hot-video-copy-section'>
+                  <View className='hot-video-copy-head'>
+                    <Text className='hot-video-copy-title'>口播文案</Text>
+                    <View className='hot-video-copy-actions'>
+                      <View className={`hot-video-copy-action ${!videoCopyText ? 'hot-video-copy-action--disabled' : ''}`} onClick={handleCopyVideoCopy}>
+                        <Text className='hot-video-copy-action-text'>复制</Text>
+                      </View>
+                      <View className={`hot-video-copy-action hot-video-copy-action--primary ${!videoCopyText || copyRemixing ? 'hot-video-copy-action--disabled' : ''}`} onClick={handleVideoCopyRemix}>
+                        <Text className='hot-video-copy-action-text hot-video-copy-action-text--primary'>{copyRemixing ? '提交中' : '一键二创'}</Text>
+                      </View>
+                    </View>
+                  </View>
+                  <Text className='hot-video-copy-text'>{videoCopyText || '提取成功后会显示口播文案'}</Text>
+                </View>
+              )}
+              {!isVideoNote && !!myTask.source.text && <Text className='hot-detail-desc'>{myTask.source.text}</Text>}
 
               {!isVideoNote && <View className='hot-my-section'>
                 <View className='hot-my-section-header'>
@@ -878,7 +1058,23 @@ export default function HotDetailPage() {
               </View>
               {renderStats(item)}
               {renderVideoActions()}
-              {!!item.description && <Text className='hot-detail-desc'>{item.description}</Text>}
+              {isVideoNote && (
+                <View className='hot-video-copy-section'>
+                  <View className='hot-video-copy-head'>
+                    <Text className='hot-video-copy-title'>口播文案</Text>
+                    <View className='hot-video-copy-actions'>
+                      <View className={`hot-video-copy-action ${!videoCopyText ? 'hot-video-copy-action--disabled' : ''}`} onClick={handleCopyVideoCopy}>
+                        <Text className='hot-video-copy-action-text'>复制</Text>
+                      </View>
+                      <View className={`hot-video-copy-action hot-video-copy-action--primary ${!videoCopyText || copyRemixing ? 'hot-video-copy-action--disabled' : ''}`} onClick={handleVideoCopyRemix}>
+                        <Text className='hot-video-copy-action-text hot-video-copy-action-text--primary'>{copyRemixing ? '提交中' : '一键二创'}</Text>
+                      </View>
+                    </View>
+                  </View>
+                  <Text className='hot-video-copy-text'>{videoCopyText || '提取成功后会显示口播文案'}</Text>
+                </View>
+              )}
+              {!isVideoNote && !!item.description && <Text className='hot-detail-desc'>{item.description}</Text>}
               {inlineTask && isParsing && <Text className='hot-detail-inline-tip'>正在解析图文，完成后可直接一键仿写。</Text>}
             </View>
           </ScrollView>

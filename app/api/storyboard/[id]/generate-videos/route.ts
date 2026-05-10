@@ -47,9 +47,11 @@ function normalizeSeedanceVideoModel(model: unknown): string {
 }
 
 function toVolcengineSeedanceModel(model: unknown): string {
+  const fastOverride = process.env.VOLCENGINE_SEEDANCE_FAST_MODEL?.trim();
+  const standardOverride = process.env.VOLCENGINE_SEEDANCE_MODEL?.trim();
   return isSeedanceFastModel(model)
-    ? "doubao-seedance-2-0-fast-260128"
-    : "doubao-seedance-2-0-260128";
+    ? fastOverride || "doubao-seedance-2-0-fast-260128"
+    : standardOverride || "doubao-seedance-2-0-260128";
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -379,7 +381,7 @@ async function createVolcengineSeedanceTask(payload: {
 
   const result = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(`Volcengine Seedance create task failed: ${response.status} ${JSON.stringify(result).slice(0, 500)}`);
+    throw new VolcengineSeedanceCreateError(response.status, result, requestBody);
   }
 
   const taskId = parseVolcengineTaskId(result);
@@ -388,6 +390,122 @@ async function createVolcengineSeedanceTask(payload: {
   }
 
   return { taskId, requestBody, rawResponse: result };
+}
+
+class VolcengineSeedanceCreateError extends Error {
+  status: number;
+  responseBody: unknown;
+  requestBody: Record<string, unknown>;
+
+  constructor(status: number, responseBody: unknown, requestBody: Record<string, unknown>) {
+    super(`Volcengine Seedance create task failed: ${status} ${JSON.stringify(responseBody).slice(0, 500)}`);
+    this.name = "VolcengineSeedanceCreateError";
+    this.status = status;
+    this.responseBody = responseBody;
+    this.requestBody = requestBody;
+  }
+}
+
+function getVolcengineErrorCode(value: unknown): string {
+  const record = asRecord(value);
+  const error = asRecord(record.error);
+  return String(error.code || record.code || "").trim();
+}
+
+function getVolcengineErrorMessage(value: unknown): string {
+  const record = asRecord(value);
+  const error = asRecord(record.error);
+  return String(error.message || record.message || "").trim();
+}
+
+function translateVolcengineErrorCode(code: string): string {
+  const normalized = code.trim();
+  const exact: Record<string, string> = {
+    MissingParameter: "请求缺少必要参数，请查阅 API 文档。",
+    InvalidParameter: "请求包含非法参数，请查阅 API 文档。",
+    "InvalidEndpoint.ClosedEndpoint": "推理接入点已关闭或暂时不可用，请稍后重试或联系管理员。",
+    SensitiveContentDetected: "输入文本可能包含敏感信息，请更换 prompt 后重试。",
+    "SensitiveContentDetected.SevereViolation": "输入文本可能包含严重违规信息，请更换 prompt 后重试。",
+    "SensitiveContentDetected.Violence": "输入文本可能包含激进行为相关信息，请更换 prompt 后重试。",
+    InputTextSensitiveContentDetected: "输入文本可能包含敏感信息，请更换后重试。",
+    InputImageSensitiveContentDetected: "输入图像可能包含敏感信息，请更换后重试。",
+    InputVideoSensitiveContentDetected: "输入视频可能包含敏感信息，请更换后重试。",
+    InputAudioSensitiveContentDetected: "输入音频可能包含敏感信息，请更换后重试。",
+    OutputTextSensitiveContentDetected: "生成的文字可能包含敏感信息，请更换输入内容后重试。",
+    OutputImageSensitiveContentDetected: "生成的图像可能包含敏感信息，请更换输入内容后重试。",
+    OutputVideoSensitiveContentDetected: "生成的视频可能包含敏感信息，请更换输入内容后重试。",
+    OutputAudioSensitiveContentDetected: "生成的音频可能包含敏感信息，请更换输入内容后重试。",
+    "InputTextSensitiveContentDetected.PolicyViolation": "输入文本可能涉及版权限制，请更换后重试。",
+    "InputImageSensitiveContentDetected.PolicyViolation": "输入图片可能涉及版权限制，请更换后重试。",
+    "InputVideoSensitiveContentDetected.PolicyViolation": "输入视频可能涉及版权限制，请更换后重试。",
+    "InputAudioSensitiveContentDetected.PolicyViolation": "输入音频可能涉及版权限制，请更换后重试。",
+    "OutputVideoSensitiveContentDetected.PolicyViolation": "生成的视频可能涉及版权限制，请更换输入内容后重试。",
+    "InputImageSensitiveContentDetected.PrivacyInformation": "输入图片可能包含真人，请更换后重试。",
+    "InputVideoSensitiveContentDetected.PrivacyInformation": "输入视频可能包含真人，请更换后重试。",
+    InputTextRiskDetection: "火山引擎风险识别检测到输入文本可能包含敏感信息，请更换后重试。",
+    InputImageRiskDetection: "火山引擎风险识别检测到输入图片可能包含敏感信息，请更换后重试。",
+    OutputTextRiskDetection: "火山引擎风险识别检测到输出文本可能包含敏感信息，请更换后重试。",
+    OutputImageRiskDetection: "火山引擎风险识别检测到输出图片可能包含敏感信息，请更换后重试。",
+    ContentSecurityDetectionError: "火山引擎风险识别服务请求失败，请稍后重试。",
+    AuthenticationError: "火山方舟 API Key 无效或缺失，请检查密钥配置。",
+    "OperationDenied.ServiceNotOpen": "模型服务不可用，请前往火山方舟控制台开通对应模型服务。",
+    OperationDenied_ServiceNotOpen: "模型服务不可用，请前往火山方舟控制台开通对应模型服务。",
+    OperationDenied_ServiceOverdue: "账号账单已逾期，请前往火山费用中心充值后重试。",
+    AccountOverdueError: "当前账号欠费，请前往火山费用中心充值后重试。",
+    AccessDenied: "没有访问该资源的权限，请检查权限设置或联系管理员添加白名单。",
+    InvalidEndpointOrModel_NotFound: "模型或推理接入点不存在，或当前账号无权访问。",
+    "InvalidEndpointOrModel.NotFound": "模型或推理接入点不存在，或当前账号无权访问。",
+    ModelNotOpen: "当前账号暂未开通该模型服务，请前往火山方舟控制台开通。",
+    "InvalidEndpointOrModel.ModelIDAccessDisabled": "当前账号不允许使用模型 ID 调用，请使用有权限的推理接入点 ID。",
+    RateLimitExceeded_EndpointRPMExceeded: "推理接入点 RPM 限制已超出，请稍后重试。",
+    "RateLimitExceeded.EndpointRPMExceeded": "推理接入点 RPM 限制已超出，请稍后重试。",
+    RateLimitExceeded_EndpointTPMExceeded: "推理接入点 TPM 限制已超出，请稍后重试。",
+    "RateLimitExceeded.EndpointTPMExceeded": "推理接入点 TPM 限制已超出，请稍后重试。",
+    ModelAccountRpmRateLimitExceeded: "账号模型 RPM 限制已超出，请稍后重试。",
+    ModelAccountTpmRateLimitExceeded: "账号模型 TPM 限制已超出，请稍后重试。",
+    APIAccountRpmRateLimitExceeded: "当前账号该接口 RPM 限制已超出，请稍后重试。",
+    ModelAccountIpmRateLimitExceeded: "账号模型 IPM 限制已超出，请稍后重试。",
+    QuotaExceeded: "当前额度或排队任务数已超出限制，请稍后重试或开通模型服务。",
+    ServerOverloaded: "服务资源紧张，请稍后重试。",
+    RequestBurstTooFast: "请求量激增触发系统保护，请放缓请求频率后重试。",
+    SetLimitExceeded: "当前账号已达到模型推理限额，请前往火山方舟控制台调整限额或关闭安心体验模式。",
+    InflightBatchsizeExceeded: "当前并发数已达到限制，请降低并发或充值解锁更大并发额度。",
+    AccountRateLimitExceeded: "请求过于频繁，请降低请求频率后重试。",
+    InternalServiceError: "火山内部系统异常，请稍后重试。",
+  };
+  if (exact[normalized]) return exact[normalized];
+  if (normalized.startsWith("InvalidParameter.")) return "请求参数值不合法，请检查参数后重试。";
+  if (normalized.startsWith("MissingParameter.")) return "缺少必要请求参数，请确认参数后重试。";
+  if (normalized.includes("SensitiveContentDetected")) return "内容可能包含敏感信息，请更换输入内容后重试。";
+  if (normalized.includes("RiskDetection")) return "火山引擎风险识别检测到内容可能包含敏感信息，请更换后重试。";
+  if (normalized.includes("RateLimitExceeded")) return "请求频率或额度限制已超出，请稍后重试。";
+  return "";
+}
+
+function formatProviderError(error: unknown): string {
+  if (error instanceof VolcengineSeedanceCreateError) {
+    const code = getVolcengineErrorCode(error.responseBody);
+    const cnMessage = translateVolcengineErrorCode(code);
+    const rawMessage = getVolcengineErrorMessage(error.responseBody);
+    if (cnMessage) return code ? `${cnMessage}（${code}）` : cnMessage;
+    if (rawMessage) return `火山方舟调用失败：${rawMessage}`;
+  }
+  return error instanceof Error ? error.message : "Unknown error";
+}
+
+function getProviderFailureDebug(error: unknown, fallbackRequest: Record<string, unknown>): Record<string, unknown> {
+  if (error instanceof VolcengineSeedanceCreateError) {
+    return {
+      provider_http_status: error.status,
+      provider_error_code: getVolcengineErrorCode(error.responseBody) || null,
+      provider_error_message: getVolcengineErrorMessage(error.responseBody) || null,
+      provider_error_response: error.responseBody,
+      provider_request: error.requestBody,
+    };
+  }
+  return {
+    provider_request: fallbackRequest,
+  };
 }
 
 function summarizeTriggerFailures(results: Array<{ success?: boolean; error?: string }>): string | undefined {
@@ -689,7 +807,7 @@ export async function POST(
           });
 
           console.log(`[generate-videos] Triggered Volcengine Seedance for segment ${segment.id}`);
-          return { segment_id: segment.id, success: true, provider: "volcengine", provider_task_id: volcengineTask.taskId };
+          return { segment_id: segment.id, success: true, provider: "volcengine", provider_task_id: volcengineTask.taskId, provider_model: providerModel };
         }
 
         if (forceSeedanceRoute) {
@@ -721,6 +839,8 @@ export async function POST(
         console.log(`[generate-videos] Triggered n8n for segment ${segment.id}`);
         return { segment_id: segment.id, success: true };
       } catch (error) {
+        const providerErrorMessage = formatProviderError(error);
+        const providerFailureDebug = getProviderFailureDebug(error, payload);
         console.error(`[generate-videos] Failed for segment ${segment.id}:`, error);
         await prisma.storyboardSegment.update({
           where: { id: segment.id },
@@ -728,7 +848,13 @@ export async function POST(
             status: "VIDEO_FAILED",
             generationParams: mergeStoryboardVideoCreditCharge({
               ...generationParams,
-              video_trigger_error: error instanceof Error ? error.message : "Unknown error",
+              video_trigger_error: providerErrorMessage,
+              provider_state: "failed",
+              provider_failed_at: new Date().toISOString(),
+              provider_reference_image_urls: payload.reference_image_urls,
+              provider_first_frame_url: firstFrameUrl || null,
+              provider_storyboard_grid_url: storyboardGridUrl || null,
+              ...providerFailureDebug,
             }, creditCharge),
           },
         }).catch(() => {});
@@ -738,7 +864,7 @@ export async function POST(
             apiKey,
             userId,
             reason: "storyboard_video_trigger_failed",
-            errorMessage: error instanceof Error ? error.message : "Unknown error",
+            errorMessage: providerErrorMessage,
           }).catch((refundError) => {
             console.error(`[generate-videos] Failed to refund segment ${segment.id}:`, refundError);
           });
@@ -746,7 +872,9 @@ export async function POST(
         return {
           segment_id: segment.id,
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: providerErrorMessage,
+          provider_error_code: providerFailureDebug.provider_error_code,
+          reference_image_urls: payload.reference_image_urls,
         };
       }
     });
@@ -771,27 +899,24 @@ export async function POST(
       model: effectiveModel,
     });
 
-    return NextResponse.json(
-      {
-        success: failureCount === 0,
-        partial: successCount > 0 && failureCount > 0,
-        task_id: id,
-        total: targetSegments.length,
-        triggered: successCount,
-        failed: failureCount,
-        model: effectiveModel,
-        providerRoute,
-        creditEstimate,
-        results,
-        message:
-          successCount === 0
-            ? `所有分镜生视频触发失败${firstFailure ? `：${firstFailure}` : ""}`
-            : failureCount > 0
-              ? `部分分镜触发失败${firstFailure ? `：${firstFailure}` : ""}`
-              : undefined,
-      },
-      { status: successCount === 0 ? 502 : 200 }
-    );
+    return NextResponse.json({
+      success: failureCount === 0,
+      partial: successCount > 0 && failureCount > 0,
+      task_id: id,
+      total: targetSegments.length,
+      triggered: successCount,
+      failed: failureCount,
+      model: effectiveModel,
+      providerRoute,
+      creditEstimate,
+      results,
+      message:
+        successCount === 0
+          ? `所有分镜生视频触发失败${firstFailure ? `：${firstFailure}` : ""}`
+          : failureCount > 0
+            ? `部分分镜触发失败${firstFailure ? `：${firstFailure}` : ""}`
+            : undefined,
+    });
   } catch (error) {
     console.error("[generate-videos] Error:", error);
     return NextResponse.json(

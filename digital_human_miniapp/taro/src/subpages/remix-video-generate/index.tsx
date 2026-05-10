@@ -151,6 +151,19 @@ export default function RemixVideoGeneratePage() {
     });
   };
 
+  const appendLocalSegments = (newSegments: StoryboardSegmentItem[]) => {
+    if (!newSegments.length) return;
+    setTask((prev) => {
+      if (!prev) return prev;
+      const existingIds = new Set(prev.segments.map((item) => item.id));
+      const merged = [
+        ...prev.segments,
+        ...newSegments.filter((segment) => segment.id && !existingIds.has(segment.id)),
+      ].sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+      return { ...prev, segments: merged };
+    });
+  };
+
   const handleBack = () => {
     Taro.navigateBack({ delta: 1 });
   };
@@ -215,21 +228,37 @@ export default function RemixVideoGeneratePage() {
     });
   };
 
+  const ensureClipSegment = async (clip: RemixClipItem): Promise<StoryboardSegmentItem> => {
+    if (clip.segment) return clip.segment;
+    const created = await miniappApi.createStoryboardSegments(
+      taskId,
+      [{
+        videoPrompt: clip.videoPrompt,
+        imagePrompt: clip.imagePrompt,
+        duration: clampSeedanceDuration(clip.duration),
+        timeRange: clip.timeRange,
+      }],
+      Math.max(0, clip.clipIndex - 1),
+    );
+    const segment = created[0];
+    if (!segment) throw new Error('同步可生成片段失败');
+    appendLocalSegments(created);
+    return segment;
+  };
+
   const handleGenerateClip = async (clip: RemixClipItem) => {
-    const segment = clip.segment;
-    if (!segment) {
-      Taro.showToast({ title: '当前 Clip 缺少可生成片段', icon: 'none' });
-      return;
-    }
-    if (isVideoGenerating(segment)) {
+    const initialSegment = clip.segment;
+    if (isVideoGenerating(initialSegment)) {
       Taro.showToast({ title: '视频生成中，请稍后查看', icon: 'none' });
       return;
     }
-    const actionKey = `${segment.id}-video`;
+    const actionKey = `${initialSegment?.id || clip.key}-video`;
     if (isActioning(actionKey)) return;
     setActioning(actionKey, true);
     try {
-      await persistClipToSegment(clip);
+      const segment = await ensureClipSegment(clip);
+      const ensuredClip = { ...clip, segment };
+      await persistClipToSegment(ensuredClip);
       upsertLocalSegment(segment.id, { generatedVideo: null, status: 'VIDEO_GENERATING' });
       const result = await miniappApi.generateStoryboardVideos({
         taskId,
@@ -276,13 +305,39 @@ export default function RemixVideoGeneratePage() {
       targetClips = clipItems.filter((clip) => clip.segment);
     }
 
-    if (!targetClips.length) {
+    const missingClips = clipItems.filter((clip) => !clip.segment);
+    if (!targetClips.length && !missingClips.length) {
       Taro.showToast({ title: '当前 Clip 缺少可生成片段', icon: 'none' });
       return;
     }
 
     setBatchGenerating(true);
     try {
+      if (missingClips.length > 0) {
+        const created = await miniappApi.createStoryboardSegments(
+          taskId,
+          missingClips.map((clip) => ({
+            videoPrompt: clip.videoPrompt,
+            imagePrompt: clip.imagePrompt,
+            duration: clampSeedanceDuration(clip.duration),
+            timeRange: clip.timeRange,
+          })),
+        );
+        appendLocalSegments(created);
+        const createdByKey = new Map(
+          created.map((segment, index) => [missingClips[index]?.key, segment] as const).filter((item) => Boolean(item[0]) && Boolean(item[1])),
+        );
+        targetClips = [
+          ...targetClips,
+          ...missingClips
+            .map((clip) => {
+              const segment = createdByKey.get(clip.key);
+              return segment ? { ...clip, segment } : null;
+            })
+            .filter((clip): clip is RemixClipItem => Boolean(clip)),
+        ];
+      }
+
       const quote = await miniappApi.generateStoryboardVideos({
         taskId,
         segmentIds: targetClips.map((clip) => clip.segment?.id).filter((id): id is string => Boolean(id)),
@@ -496,7 +551,7 @@ export default function RemixVideoGeneratePage() {
                 const failed = isVideoFailed(segment);
                 const actioning = segment ? isActioning(`${segment.id}-video`) : false;
                 const cancelling = segment ? isActioning(`${segment.id}-cancel-video`) : false;
-                const disableActions = actioning || generating || !segment;
+                const disableActions = actioning || generating;
                 return (
                   <View key={clip.key} className='remix-video-clip-card'>
                     <View className='remix-video-clip-head'>

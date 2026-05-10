@@ -130,9 +130,14 @@ function extractUrl(value: unknown): string | null {
     obj.avatar_url,
     obj.coverUrl,
     obj.cover_url,
+    obj.cover,
+    obj.cover_image,
+    obj.coverImage,
     obj.displayUrl,
     obj.display_url,
     obj.thumbnail,
+    obj.thumbnailUrl,
+    obj.thumbnail_url,
   ];
   for (const candidate of candidates) {
     const url = extractUrl(candidate);
@@ -473,6 +478,14 @@ function collectUrls(value: unknown): string[] {
     ...collectUrls(obj.media_url),
     ...collectUrls(obj.downloadUrl),
     ...collectUrls(obj.download_url),
+    ...collectUrls(obj.cover),
+    ...collectUrls(obj.coverUrl),
+    ...collectUrls(obj.cover_url),
+    ...collectUrls(obj.coverImage),
+    ...collectUrls(obj.cover_image),
+    ...collectUrls(obj.thumbnail),
+    ...collectUrls(obj.thumbnailUrl),
+    ...collectUrls(obj.thumbnail_url),
     ...collectUrls(obj.urlDefault),
     ...collectUrls(obj.url_default),
   ];
@@ -508,6 +521,7 @@ async function syncMiniappCollectToWebReference(
     title: string;
     description: string;
     mediaUrls: string[];
+    coverUrl: string | null;
     videoUrl: string | null;
     sourceType: string;
     author: Record<string, unknown>;
@@ -518,9 +532,10 @@ async function syncMiniappCollectToWebReference(
   const webSourceId = buildMiniappWebReferenceSourceId(input.userId, input.sourceId);
   const allMediaUrls = normalizeUrls([
     ...input.mediaUrls,
+    ...(input.coverUrl ? [input.coverUrl] : []),
     ...(input.videoUrl ? [input.videoUrl] : []),
   ]);
-  const coverUrl = input.mediaUrls[0] || null;
+  const coverUrl = input.coverUrl || input.mediaUrls[0] || null;
   const rawPayload = {
     ...input.rawPayload,
     miniappMyNoteId: input.taskId,
@@ -541,6 +556,7 @@ async function syncMiniappCollectToWebReference(
         : {}),
       sourceType: input.sourceType,
       mediaUrls: input.mediaUrls,
+      coverUrl,
       videoUrl: input.videoUrl,
     },
     scriptText: input.description,
@@ -717,11 +733,29 @@ export async function POST(request: NextRequest) {
   const title = pickTextAtPaths(payload, [
     '作品标题',
     'title',
+    'display_title',
+    'displayTitle',
+    'noteCard.title',
+    'noteCard.display_title',
+    'noteCard.displayTitle',
+    'note_card.title',
+    'note_card.display_title',
     'note.title',
     'note.display_title',
+    'note.displayTitle',
+    'note.noteCard.title',
+    'note.noteCard.display_title',
+    'note.note_card.title',
+    'note.note_card.display_title',
     'data.title',
     'data.display_title',
+    'data.displayTitle',
+    'data.noteCard.title',
+    'data.noteCard.display_title',
+    'data.note_card.title',
+    'data.note_card.display_title',
     'result.title',
+    'result.display_title',
   ]) || '未命名笔记';
   const sourceText = pickTextAtPaths(payload, [
     '作品描述',
@@ -767,8 +801,31 @@ export async function POST(request: NextRequest) {
     ...collectUrls(payload['image_list']),
     ...collectUrls(payload['downloadUrls']),
     ...collectUrls(payload['download_urls']),
+    ...collectUrls(payload['cover']),
+    ...collectUrls(payload['coverUrl']),
+    ...collectUrls(payload['cover_url']),
+    ...collectUrls(payload['coverImage']),
+    ...collectUrls(payload['cover_image']),
+    ...collectUrls(payload['thumbnail']),
+    ...collectUrls(payload['thumbnailUrl']),
+    ...collectUrls(payload['thumbnail_url']),
+    ...collectUrls(getByPath(payload, 'note.cover')),
+    ...collectUrls(getByPath(payload, 'note.coverUrl')),
+    ...collectUrls(getByPath(payload, 'note.cover_url')),
+    ...collectUrls(getByPath(payload, 'note.note_card.cover')),
+    ...collectUrls(getByPath(payload, 'note.note_card.cover.url_default')),
+    ...collectUrls(getByPath(payload, 'note.note_card.cover.urlDefault')),
+    ...collectUrls(getByPath(payload, 'note.noteCard.cover')),
+    ...collectUrls(getByPath(payload, 'note.noteCard.cover.url_default')),
+    ...collectUrls(getByPath(payload, 'note.noteCard.cover.urlDefault')),
     ...collectUrls(getByPath(payload, 'note.images')),
     ...collectUrls(getByPath(payload, 'note.imageList')),
+    ...collectUrls(getByPath(payload, 'data.cover')),
+    ...collectUrls(getByPath(payload, 'data.coverUrl')),
+    ...collectUrls(getByPath(payload, 'data.cover_url')),
+    ...collectUrls(getByPath(payload, 'data.note_card.cover')),
+    ...collectUrls(getByPath(payload, 'data.note_card.cover.url_default')),
+    ...collectUrls(getByPath(payload, 'data.noteCard.cover')),
     ...collectUrls(getByPath(payload, 'data.images')),
     ...collectUrls(getByPath(payload, 'data.imageList')),
     ...collectUrls(payload['video']),
@@ -788,6 +845,44 @@ export async function POST(request: NextRequest) {
     mediaCandidates.find((url) => isVideoUrl(url)) ||
     null;
   const mediaUrls = mediaCandidates.filter((url) => !isVideoUrl(url));
+  const coverUrl = pickUrlAtPaths(payload, [
+    '封面',
+    '封面图',
+    'cover',
+    'cover.url',
+    'cover.urlDefault',
+    'cover.url_default',
+    'coverUrl',
+    'cover_url',
+    'coverImage',
+    'cover_image',
+    'thumbnail',
+    'thumbnailUrl',
+    'thumbnail_url',
+    'note.cover',
+    'note.cover.url',
+    'note.cover.urlDefault',
+    'note.cover.url_default',
+    'note.note_card.cover',
+    'note.note_card.cover.url',
+    'note.note_card.cover.urlDefault',
+    'note.note_card.cover.url_default',
+    'note.noteCard.cover',
+    'note.noteCard.cover.url',
+    'note.noteCard.cover.urlDefault',
+    'note.noteCard.cover.url_default',
+    'data.cover',
+    'data.cover.url',
+    'data.cover.urlDefault',
+    'data.cover.url_default',
+    'data.note_card.cover',
+    'data.note_card.cover.urlDefault',
+    'data.note_card.cover.url_default',
+    'result.cover',
+    'result.cover.url',
+    'result.cover.urlDefault',
+    'result.cover.url_default',
+  ]) || mediaUrls[0] || null;
   const isVideoNote = Boolean(videoUrl);
   const author = normalizeAuthor(payload);
   const stats = normalizeStats(payload);
@@ -797,6 +892,7 @@ export async function POST(request: NextRequest) {
     author,
     stats,
     media: {
+      coverUrl,
       videoUrl,
       mediaUrls,
       sourceType: isVideoNote ? 'video' : 'image',
@@ -824,7 +920,7 @@ export async function POST(request: NextRequest) {
         data: {
           sourceTitle: title,
           sourceText,
-          sourceImages: toInputJson(mediaUrls),
+          sourceImages: toInputJson(coverUrl ? normalizeUrls([coverUrl, ...mediaUrls]) : mediaUrls),
           sourceUrl: parsedSourceUrl,
           status: isVideoNote ? 'VIDEO_COLLECTED' : 'BREAKDOWN_PENDING',
           generatedImages: toInputJson(rawPayload),
@@ -840,7 +936,7 @@ export async function POST(request: NextRequest) {
           status: isVideoNote ? 'VIDEO_COLLECTED' : 'BREAKDOWN_PENDING',
           sourceTitle: title,
           sourceText,
-          sourceImages: toInputJson(mediaUrls),
+          sourceImages: toInputJson(coverUrl ? normalizeUrls([coverUrl, ...mediaUrls]) : mediaUrls),
           sourcePlatform: 'miniapp-my',
           sourceId: parsedSourceId,
           sourceUrl: parsedSourceUrl,
@@ -858,6 +954,7 @@ export async function POST(request: NextRequest) {
       title,
       description: sourceText,
       mediaUrls,
+      coverUrl,
       videoUrl,
       sourceType: isVideoNote ? 'video' : 'note',
       author,

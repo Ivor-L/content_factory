@@ -245,6 +245,15 @@ export interface StoryboardSegmentItem {
   generationParams?: Record<string, unknown> | null;
 }
 
+export interface CreateStoryboardSegmentInput {
+  videoPrompt?: string | null;
+  imagePrompt?: string | null;
+  duration?: number | null;
+  timeRange?: string | null;
+  generatedImage?: string | null;
+  generatedVideo?: string | null;
+}
+
 export interface StoryboardReferenceItem {
   id: string;
   type: 'product' | 'character';
@@ -419,6 +428,11 @@ export interface VideoCopyExtractResult {
   text?: string | null;
   transcript?: string | null;
   videoUrl?: string | null;
+}
+
+export interface VideoCopyRemixResult {
+  replicationId: string;
+  status: string;
 }
 
 const HOT_VIDEO_URL_RE = /\.(mp4|mov|m3u8)(\?|$)|\/video\/|\/master\/|xgvideo/i;
@@ -710,8 +724,14 @@ function collectUrlsFromUnknown(value: unknown): string[] {
       obj.original_url,
       obj.fileUrl,
       obj.file_url,
+      obj.cover,
       obj.coverUrl,
       obj.cover_url,
+      obj.coverImage,
+      obj.cover_image,
+      obj.thumbnail,
+      obj.thumbnailUrl,
+      obj.thumbnail_url,
       obj.videoUrl,
       obj.video_url,
       obj.playUrl,
@@ -730,20 +750,43 @@ function collectUrlsFromUnknown(value: unknown): string[] {
 
 function normalizeHotMediaUrls(item: any): string[] | null {
   const rawPayload = parseObject(item?.rawPayload);
+  const media = parseObject(rawPayload?.media);
 
   const candidates: unknown[] = [
     item?.mediaUrls,
     item?.media_urls,
+    item?.coverUrl,
+    item?.cover_url,
+    item?.coverImage,
+    item?.cover_image,
+    item?.thumbnail,
     item?.images,
     item?.imageList,
     item?.image_list,
+    media?.coverUrl,
+    media?.cover_url,
+    media?.cover,
     rawPayload?.mediaUrls,
     rawPayload?.media_urls,
+    rawPayload?.coverUrl,
+    rawPayload?.cover_url,
+    rawPayload?.cover,
+    rawPayload?.coverImage,
+    rawPayload?.cover_image,
+    rawPayload?.thumbnail,
     rawPayload?.images,
     rawPayload?.imageList,
     rawPayload?.image_list,
+    parseObject(rawPayload?.note)?.cover,
+    parseObject(rawPayload?.note)?.coverUrl,
+    parseObject(rawPayload?.note)?.cover_url,
+    parseObject(parseObject(rawPayload?.note)?.note_card)?.cover,
     parseObject(rawPayload?.note)?.images,
     parseObject(rawPayload?.note)?.imageList,
+    parseObject(rawPayload?.data)?.cover,
+    parseObject(rawPayload?.data)?.coverUrl,
+    parseObject(rawPayload?.data)?.cover_url,
+    parseObject(parseObject(rawPayload?.data)?.note_card)?.cover,
     parseObject(rawPayload?.data)?.images,
     parseObject(rawPayload?.data)?.imageList,
   ];
@@ -961,6 +1004,7 @@ function detectWorkType(item: any): WorkItem['type'] {
   if (taskType === 'storyboard') return 'video';
   if (taskType.includes('video') || taskType.includes('digital') || taskType === 't2v') return 'video';
   if (taskType.includes('poster') || taskType.includes('image')) return 'image-text';
+  if (taskType === 'replication' && metadata?.replicationType === 'COPY') return 'copy';
   if (taskType === 'creative' || taskType.includes('script') || taskType.includes('copy') || taskType.includes('writing')) return 'copy';
   return 'task';
 }
@@ -1088,6 +1132,12 @@ function extractGeneratedCopyText(item: Record<string, unknown> | null | undefin
     metadata.copyText,
     metadata.copy_text,
     metadata.content,
+    parseObject(metadata.replicationResult)?.generatedCopy,
+    parseObject(metadata.replicationResult)?.generated_copy,
+    parseObject(metadata.replicationResult)?.copyText,
+    parseObject(metadata.replicationResult)?.copy_text,
+    parseObject(metadata.replicationResult)?.content,
+    parseObject(metadata.replicationResult)?.text,
     draft.rawText,
     aiOutput['正文'],
     aiOutput.body,
@@ -1304,6 +1354,16 @@ export const miniappApi = {
         const stats = getHotStats(item, rawPayload);
         const creator = getHotCreator(item, rawPayload);
         const videoMeta = getHotVideoMeta(item, rawPayload);
+        const mediaUrls = normalizeHotMediaUrls({ ...item, rawPayload }) || sourceImages;
+        const coverUrl = pickImageUrl(
+          item.coverUrl,
+          item.cover_url,
+          parseObject(rawPayload?.media)?.coverUrl,
+          parseObject(rawPayload?.media)?.cover_url,
+          rawPayload?.coverUrl,
+          rawPayload?.cover_url,
+          mediaUrls[0],
+        );
         const title = String(item.title || item.sourceTitle || '未命名笔记');
         const sourceText = String(item.sourceText || '');
         const sourceUrl = String(item.sourceUrl || '').trim();
@@ -1314,8 +1374,8 @@ export const miniappApi = {
           title,
           description: sourceText || null,
           category: '我的',
-          coverUrl: sourceImages[0] || null,
-          mediaUrls: sourceImages,
+          coverUrl: coverUrl || null,
+          mediaUrls,
           sourceType: videoMeta.sourceType || 'image',
           videoUrl: videoMeta.videoUrl,
           sourceUrl,
@@ -1675,6 +1735,36 @@ export const miniappApi = {
     };
   },
 
+  async createVideoCopyRemix(input: {
+    videoUrl: string;
+    originalCopy: string;
+    styleId: string;
+    sourceTitle?: string;
+    sourceText?: string;
+    ideaText?: string;
+    wordCount?: number;
+    language?: string;
+  }): Promise<VideoCopyRemixResult> {
+    const payload = await request<{ data?: Partial<VideoCopyRemixResult> }>('/api/replication/copy', {
+      method: 'POST',
+      data: {
+        videoUrl: input.videoUrl,
+        originalCopy: input.originalCopy,
+        styleId: input.styleId,
+        sourceTitle: input.sourceTitle || undefined,
+        sourceText: input.sourceText || input.originalCopy,
+        ideaText: input.ideaText || undefined,
+        wordCount: input.wordCount || 600,
+        language: input.language || 'zh-CN',
+      },
+    });
+    const data = payload?.data || {};
+    return {
+      replicationId: String(data.replicationId || ''),
+      status: String(data.status || 'pending'),
+    };
+  },
+
   async triggerImageTextMyNoteRewrite(taskId: string): Promise<{ taskId: string; status: string }> {
     return request<{ taskId: string; status: string }>(`/api/image-text-replication/${encodeURIComponent(taskId)}/rewrite`, {
       method: 'POST',
@@ -1914,12 +2004,17 @@ export const miniappApi = {
             ? (item.metadata as Record<string, unknown>)
             : null;
         const taskType = typeof item.taskType === 'string' ? item.taskType : '';
+        const isCopyReplication = String(taskType).toLowerCase() === 'replication' && metadata?.replicationType === 'COPY';
         const storyboardCover = taskType === 'storyboard' || taskType === 'grid'
           ? resolveStoryboardCover(item, metadata)
           : null;
         works.push({
           id: String(item.id),
-          title: isViralRemixTask(item) ? '一键复刻' : String(item.title ?? (taskType === 'creative' ? '智能文案' : '未命名任务')),
+          title: isCopyReplication
+            ? '口播二创'
+            : isViralRemixTask(item)
+              ? '一键复刻'
+              : String(item.title ?? (taskType === 'creative' ? '智能文案' : '未命名任务')),
           type: detectWorkType(item),
           status: normalizeStatus(item.status),
           taskType,
@@ -2032,6 +2127,44 @@ export const miniappApi = {
       method: 'PATCH',
       data,
     });
+  },
+
+  async createStoryboardSegments(
+    taskId: string,
+    segments: CreateStoryboardSegmentInput[],
+    insertAt?: number,
+  ): Promise<StoryboardSegmentItem[]> {
+    const payload = await request<{ segments?: any[] }>(`/api/storyboard/${encodeURIComponent(taskId)}/segments`, {
+      method: 'POST',
+      data: {
+        segments: segments.map((segment) => ({
+          videoPrompt: segment.videoPrompt || null,
+          imagePrompt: segment.imagePrompt || null,
+          duration: segment.duration || null,
+          timeRange: segment.timeRange || null,
+          generatedImage: segment.generatedImage || null,
+          generatedVideo: segment.generatedVideo || null,
+        })),
+        ...(typeof insertAt === 'number' ? { insertAt } : {}),
+      },
+    });
+
+    return (Array.isArray(payload.segments) ? payload.segments : []).map((segment: any) => ({
+      id: String(segment.id || ''),
+      order: typeof segment.order === 'number' ? segment.order : 0,
+      duration: typeof segment.duration === 'number' ? segment.duration : 0,
+      timeRange: typeof segment.timeRange === 'string' ? segment.timeRange : null,
+      imagePrompt: typeof segment.imagePrompt === 'string' ? segment.imagePrompt : null,
+      videoPrompt: typeof segment.videoPrompt === 'string' ? segment.videoPrompt : null,
+      generatedImage: typeof segment.generatedImage === 'string' ? segment.generatedImage : null,
+      generatedVideo: typeof segment.generatedVideo === 'string' ? segment.generatedVideo : null,
+      status: String(segment.status || 'DRAFT'),
+      originalScript: null,
+      generationParams:
+        segment.generationParams && typeof segment.generationParams === 'object' && !Array.isArray(segment.generationParams)
+          ? segment.generationParams as Record<string, unknown>
+          : null,
+    })).filter((segment) => segment.id);
   },
 
   async updateStoryboardTask(

@@ -79,6 +79,8 @@ cp .vibe/credentials.env.example .vibe/credentials.env
 - `VOLCENGINE_ARK_API_KEY`：火山方舟 API Key。小程序智能复刻第三阶段生视频直连火山 Seedance 2.0 时必填。
 - `SEEDANCE_ARK_API_KEY`：Seedance 专用火山方舟 API Key，可选；优先级低于 `VOLCENGINE_ARK_API_KEY`。
 - `ARK_API_KEY`：方舟 SDK 默认变量名，可作为兜底。
+- `VOLCENGINE_SEEDANCE_MODEL`：Seedance 标准版模型 ID，默认 `doubao-seedance-2-0-260128`。
+- `VOLCENGINE_SEEDANCE_FAST_MODEL`：Seedance Fast 模型 ID，默认 `doubao-seedance-2-0-fast-260128`。使用 Fast 前需在火山方舟控制台开通该模型。
 - `ADMIN_TOKEN`：火山回调 `/api/webhook/storyboard-video` 时通过 `callback_url` query 透传并校验。
 
 ### 3.4 外部积分系统
