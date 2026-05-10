@@ -631,14 +631,6 @@ export default function GeneratePage() {
           adjustPosition
           cursorSpacing={20}
         />
-        <View className='bottom-composer-footer'>
-          <View
-            className={`btn-primary ${submitting ? 'btn-disabled' : ''}`}
-            onClick={handleFixedSubmit}
-          >
-            <Text className='btn-text'>{fixedSubmitLabel}</Text>
-          </View>
-        </View>
       </View>
     );
   };
@@ -895,21 +887,22 @@ export default function GeneratePage() {
               </View>
             )}
 
-            <View className='section section--last'>
-              {showDigitalHumanInlineComposer ? (
-                renderComposerCard()
-              ) : (
-                <View
-                  className={`btn-primary ${submitting ? 'btn-disabled' : ''}`}
-                  onClick={handleFixedSubmit}
-                >
-                  <Text className='btn-text'>{fixedSubmitLabel}</Text>
-                </View>
-              )}
-            </View>
+            {showDigitalHumanInlineComposer && (
+              <View className='section section--last'>
+                {renderComposerCard()}
+              </View>
+            )}
           </>
         )}
       </ScrollView>
+      <View className='generate-fixed-submit'>
+        <View
+          className={`btn-primary ${submitting ? 'btn-disabled' : ''}`}
+          onClick={handleFixedSubmit}
+        >
+          <Text className='btn-text'>{fixedSubmitLabel}</Text>
+        </View>
+      </View>
     </>
   );
 }

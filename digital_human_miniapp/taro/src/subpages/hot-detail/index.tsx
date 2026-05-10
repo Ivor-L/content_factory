@@ -779,7 +779,7 @@ export default function HotDetailPage() {
     <View className='hot-detail-stats'>
       <View className='hot-detail-stat'><Text className='hot-detail-stat-icon'>♡</Text><Text className='hot-detail-stat-text'>{formatMetric(stats.likes)}</Text></View>
       <View className='hot-detail-stat'><Text className='hot-detail-stat-icon'>☆</Text><Text className='hot-detail-stat-text'>{formatMetric(stats.collects)}</Text></View>
-      <View className='hot-detail-stat'><Text className='hot-detail-stat-icon'>◌</Text><Text className='hot-detail-stat-text'>{formatMetric(stats.comments)}</Text></View>
+      <View className='hot-detail-stat'><Text className='hot-detail-stat-icon'>评</Text><Text className='hot-detail-stat-text'>{formatMetric(stats.comments)}</Text></View>
       <View className='hot-detail-stat'><Text className='hot-detail-stat-icon'>↗</Text><Text className='hot-detail-stat-text'>{formatMetric(stats.shares)}</Text></View>
     </View>
   );

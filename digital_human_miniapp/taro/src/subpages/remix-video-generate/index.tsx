@@ -1,11 +1,9 @@
-import { View, Text, ScrollView, Image, Video, Textarea, Input } from '@tarojs/components';
+import { View, Text, ScrollView, Video } from '@tarojs/components';
 import Taro, { useDidShow, useLoad, usePullDownRefresh } from '@tarojs/taro';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
 import type { StoryboardSegmentItem, StoryboardTaskStatusResult } from '../../utils/miniapp-api';
 import './index.sass';
-
-const POLL_INTERVAL = 4000;
 
 const VIDEO_MODELS = [
   { id: 'bytedance/seedance-2', label: 'Seedance 2.0' },
@@ -20,13 +18,6 @@ function normalizeVideoModel(model: unknown): string {
   const value = String(model || '').trim();
   return VIDEO_MODELS.some((item) => item.id === value) ? value : DEFAULT_VIDEO_MODEL;
 }
-
-type EditingState = {
-  clipKey: string;
-  segmentId: string;
-  prompt: string;
-  durationText: string;
-};
 
 type RemixClipItem = {
   key: string;
@@ -62,9 +53,7 @@ export default function RemixVideoGeneratePage() {
   const [videoModel, setVideoModel] = useState(DEFAULT_VIDEO_MODEL);
   const [batchGenerating, setBatchGenerating] = useState(false);
   const [actioningMap, setActioningMap] = useState<Record<string, boolean>>({});
-  const [editing, setEditing] = useState<EditingState | null>(null);
-  const [savingPrompt, setSavingPrompt] = useState(false);
-  const timerRef = useRef<number | null>(null);
+  const [expandedPromptMap, setExpandedPromptMap] = useState<Record<string, boolean>>({});
 
   useLoad((query) => {
     const id = String(query?.id || '').trim();
@@ -77,13 +66,6 @@ export default function RemixVideoGeneratePage() {
     }
     setTaskId(id);
   });
-
-  const clearTimer = () => {
-    if (timerRef.current != null) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  };
 
   const loadStatus = async (silent = false) => {
     if (!taskId) return;
@@ -105,15 +87,6 @@ export default function RemixVideoGeneratePage() {
     void loadStatus(false);
   });
 
-  useEffect(() => {
-    if (!taskId) return undefined;
-    clearTimer();
-    timerRef.current = setInterval(() => {
-      void loadStatus(true);
-    }, POLL_INTERVAL) as unknown as number;
-    return () => clearTimer();
-  }, [taskId]);
-
   usePullDownRefresh(() => {
     void (async () => {
       await loadStatus(false);
@@ -123,23 +96,19 @@ export default function RemixVideoGeneratePage() {
 
   const segments = task?.segments || [];
   const clipItems = useMemo(() => buildRemixClipItems(task), [task]);
-  const gridUrl = resolveRemixGridUrl(task);
   const generatedCount = clipItems.filter((clip) => Boolean(normalizeMediaUrl(clip.segment?.generatedVideo))).length;
-  const pendingCount = Math.max(0, clipItems.length - generatedCount);
   const generatingCount = clipItems.filter((clip) => isVideoGenerating(clip.segment)).length;
   const stageItems = buildRemixStages(segments, Boolean(task?.finalVideoUrl));
-
-  const editingClip = useMemo(
-    () => clipItems.find((item) => item.key === editing?.clipKey) || null,
-    [clipItems, editing?.clipKey],
-  );
-  const editingSegment = editingClip?.segment || segments.find((item) => item.id === editing?.segmentId) || null;
 
   const setActioning = (key: string, value: boolean) => {
     setActioningMap((prev) => ({ ...prev, [key]: value }));
   };
 
   const isActioning = (key: string) => Boolean(actioningMap[key]);
+
+  const togglePromptExpanded = (key: string) => {
+    setExpandedPromptMap((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   const upsertLocalSegment = (segmentId: string, patch: Partial<StoryboardSegmentItem>) => {
     setTask((prev) => {
@@ -165,12 +134,26 @@ export default function RemixVideoGeneratePage() {
   };
 
   const handleBack = () => {
-    Taro.navigateBack({ delta: 1 });
+    Taro.switchTab({
+      url: '/pages/works/index',
+      fail: () => Taro.reLaunch({ url: '/pages/works/index' }),
+    });
   };
 
-  const handlePreviewGrid = () => {
-    if (!gridUrl) return;
-    Taro.previewImage({ current: gridUrl, urls: [gridUrl] });
+  const handleTapStage = (stageKey: string) => {
+    const common = `id=${encodeURIComponent(taskId)}&title=${encodeURIComponent(title || '一键复刻')}`;
+    if (stageKey === 'video') return;
+    if (stageKey === 'breakdown') {
+      Taro.redirectTo({
+        url: `/subpages/storyboard-board/index?${common}&mode=remix-review&stage=breakdown`,
+      });
+      return;
+    }
+    if (stageKey === 'replace') {
+      Taro.redirectTo({
+        url: `/subpages/storyboard-board/index?${common}&mode=remix-board&stage=replace`,
+      });
+    }
   };
 
   const handleOpenVideo = (clip: RemixClipItem) => {
@@ -181,22 +164,19 @@ export default function RemixVideoGeneratePage() {
       Taro.showToast({ title: '视频还未生成', icon: 'none' });
       return;
     }
-    const imageUrl = normalizeMediaUrl(segment.generatedImage) || gridUrl;
-    const detailItem = {
-      id: `${segment.id}:remix-video`,
-      title: `Clip ${clip.clipIndex}`,
-      type: 'video',
-      status: segment.status,
-      createdAt: new Date().toISOString(),
-      preview: videoUrl,
-      videoUrl,
-      thumbnailUrl: imageUrl || null,
-      metadata: { videoUrl },
-      source: 'task',
-    };
-    Taro.setStorageSync('WORK_DETAIL_ITEM', detailItem);
+    Taro.setStorageSync('REMIX_VIDEO_DETAIL_ITEM', {
+      taskId,
+      title,
+      videoModel,
+      aspectRatio: resolveTaskAspectRatio(task),
+      clip: {
+        ...clip,
+        videoUrl,
+        segment,
+      },
+    });
     Taro.navigateTo({
-      url: `/subpages/work-detail/index?id=${encodeURIComponent(detailItem.id)}`,
+      url: `/subpages/remix-video-detail/index?taskId=${encodeURIComponent(taskId)}&segmentId=${encodeURIComponent(segment.id)}&title=${encodeURIComponent(title || '一键复刻')}`,
     });
   };
 
@@ -247,13 +227,8 @@ export default function RemixVideoGeneratePage() {
   };
 
   const handleGenerateClip = async (clip: RemixClipItem) => {
-    const initialSegment = clip.segment;
-    if (isVideoGenerating(initialSegment)) {
-      Taro.showToast({ title: '视频生成中，请稍后查看', icon: 'none' });
-      return;
-    }
-    const actionKey = `${initialSegment?.id || clip.key}-video`;
-    if (isActioning(actionKey)) return;
+    const actionKey = `${clip.segment?.id || clip.key}-video`;
+    if (isActioning(actionKey) || isVideoGenerating(clip.segment)) return;
     setActioning(actionKey, true);
     try {
       const segment = await ensureClipSegment(clip);
@@ -382,75 +357,6 @@ export default function RemixVideoGeneratePage() {
     }
   };
 
-  const handleCancelGeneratingClip = async (clip: RemixClipItem) => {
-    const segment = clip.segment;
-    if (!segment) return;
-    const actionKey = `${segment.id}-cancel-video`;
-    if (isActioning(actionKey)) return;
-    const confirm = await Taro.showModal({
-      title: '取消生成？',
-      content: '取消后当前片段会恢复为待生成状态，可稍后重新生成。',
-      confirmText: '取消生成',
-      cancelText: '继续等待',
-    });
-    if (!confirm.confirm) return;
-
-    setActioning(actionKey, true);
-    try {
-      await miniappApi.updateStoryboardSegment(segment.id, {
-        status: normalizeMediaUrl(segment.generatedImage) ? 'IMAGE_READY' : 'PENDING',
-        generatedVideo: null,
-        video_generation_cancelled: true,
-        videoGenerationCancelled: true,
-      });
-      upsertLocalSegment(segment.id, {
-        generatedVideo: null,
-        status: normalizeMediaUrl(segment.generatedImage) ? 'IMAGE_READY' : 'PENDING',
-        generationParams: {
-          ...(asRecord(segment.generationParams) || {}),
-          video_generation_cancelled: true,
-        },
-      });
-      Taro.showToast({ title: '已取消生成', icon: 'success' });
-      await loadStatus(true);
-    } catch (error) {
-      Taro.showToast({ title: error instanceof Error ? error.message : '取消失败', icon: 'none' });
-    } finally {
-      setActioning(actionKey, false);
-    }
-  };
-
-  const handleSaveEditingPrompt = async () => {
-    if (!editingClip || !editingSegment || !editing) return false;
-    const prompt = editing.prompt.trim();
-    const nextDuration = parseDurationInput(editing.durationText, editingClip.duration);
-    if (nextDuration == null) {
-      Taro.showToast({ title: '请输入有效时长', icon: 'none' });
-      return false;
-    }
-    setSavingPrompt(true);
-    try {
-      await persistClipToSegment(editingClip, { prompt, duration: nextDuration });
-      Taro.showToast({ title: '提示词已保存', icon: 'success' });
-      return true;
-    } catch (error) {
-      Taro.showToast({ title: error instanceof Error ? error.message : '保存失败', icon: 'none' });
-      return false;
-    } finally {
-      setSavingPrompt(false);
-    }
-  };
-
-  const handleSaveAndGenerate = async () => {
-    if (!editingClip) return;
-    const ok = await handleSaveEditingPrompt();
-    if (!ok) return;
-    const nextDuration = parseDurationInput(editing?.durationText || '', editingClip.duration) ?? editingClip.duration;
-    const nextClip = { ...editingClip, videoPrompt: editing?.prompt.trim() || '', duration: nextDuration };
-    setEditing(null);
-    await handleGenerateClip(nextClip);
-  };
-
   const handleOpenStoryboardMerge = () => {
     if (generatedCount <= 0) {
       Taro.showToast({ title: '请先生成视频片段', icon: 'none' });
@@ -490,12 +396,12 @@ export default function RemixVideoGeneratePage() {
             <View className='remix-video-stage-section'>
               <View className='remix-video-stage-track'>
                 {stageItems.map((stage, index) => (
-                  <View key={stage.key} className='remix-video-stage-item'>
-                    <View className={`remix-video-stage-dot remix-video-stage-dot--${stage.state}`}>
+                  <View key={stage.key} className={`remix-video-stage-item ${stage.key === 'video' ? 'remix-video-stage-item--selected' : ''}`} onClick={() => handleTapStage(stage.key)}>
+                    <View className={`remix-video-stage-dot remix-video-stage-dot--${stage.state} ${stage.key === 'video' ? 'remix-video-stage-dot--selected' : ''}`}>
                       <Text className='remix-video-stage-dot-text'>{index + 1}</Text>
                     </View>
                     {index < stageItems.length - 1 && <View className={`remix-video-stage-line remix-video-stage-line--${stage.state}`} />}
-                    <Text className={`remix-video-stage-name remix-video-stage-name--${stage.state}`}>{stage.title}</Text>
+                    <Text className={`remix-video-stage-name remix-video-stage-name--${stage.state} ${stage.key === 'video' ? 'remix-video-stage-name--selected' : ''}`}>{stage.title}</Text>
                   </View>
                 ))}
               </View>
@@ -505,17 +411,9 @@ export default function RemixVideoGeneratePage() {
               <View className='remix-video-hero-head'>
                 <View>
                   <Text className='remix-video-title'>{title || '一键复刻'}</Text>
-                  <Text className='remix-video-subtitle'>{clipItems.length} 条视频提示词 · 已完成 {generatedCount} 条</Text>
+                  <Text className='remix-video-subtitle'>{clipItems.length} 个视频片段 · 已完成 {generatedCount} 个</Text>
                 </View>
-                <Text className='remix-video-count'>{pendingCount > 0 ? `${pendingCount}待生成` : '已生成'}</Text>
-              </View>
-
-              <View className='remix-video-grid-card' onClick={handlePreviewGrid}>
-                {gridUrl ? (
-                  <Image className='remix-video-grid-image' src={gridUrl} mode='aspectFit' />
-                ) : (
-                  <Text className='remix-video-grid-placeholder'>暂无分镜网格图</Text>
-                )}
+                <Text className='remix-video-count'>{generatingCount > 0 ? `${generatingCount}生成中` : generatedCount > 0 ? '可查看详情' : '待生成'}</Text>
               </View>
             </View>
 
@@ -538,88 +436,78 @@ export default function RemixVideoGeneratePage() {
               </ScrollView>
             </View>
 
-            <View className='remix-video-list-head'>
-              <Text className='remix-video-section-title'>视频提示词</Text>
-              <Text className='remix-video-list-note'>可单独编辑和生成</Text>
-            </View>
-
             <View className='remix-video-list'>
               {clipItems.map((clip) => {
                 const segment = clip.segment;
                 const videoUrl = normalizeMediaUrl(segment?.generatedVideo);
                 const generating = isVideoGenerating(segment) && !videoUrl;
                 const failed = isVideoFailed(segment);
-                const actioning = segment ? isActioning(`${segment.id}-video`) : false;
-                const cancelling = segment ? isActioning(`${segment.id}-cancel-video`) : false;
-                const disableActions = actioning || (generating && cancelling);
+                const actionKey = `${segment?.id || clip.key}-video`;
+                const actioning = isActioning(actionKey);
+                const promptExpanded = Boolean(expandedPromptMap[clip.key]);
+                const promptText = clip.videoPrompt || '暂无视频提示词';
+                const canGenerate = !videoUrl && !generating && !actioning;
                 return (
                   <View key={clip.key} className='remix-video-clip-card'>
                     <View className='remix-video-clip-head'>
                       <Text className='remix-video-clip-title'>Clip {clip.clipIndex}</Text>
                       <Text className={`remix-video-clip-status ${videoUrl ? 'remix-video-clip-status--done' : ''} ${failed ? 'remix-video-clip-status--failed' : ''}`}>
-                        {!segment ? '待同步' : videoUrl ? '已生成' : generating || actioning ? '生成中' : failed ? '失败' : '待生成'}
+                        {!segment ? '待同步' : videoUrl ? '已生成' : generating ? '生成中' : failed ? '失败' : '待生成'}
                       </Text>
                     </View>
                     <Text className='remix-video-clip-meta'>时长 {formatDuration(clip.duration)}s{clip.timeRange ? ` | ${clip.timeRange}` : ''}</Text>
-                    <Text className='remix-video-clip-prompt'>{clip.videoPrompt || '暂无视频提示词'}</Text>
+                    <Text
+                      className={`remix-video-clip-prompt ${promptExpanded ? 'remix-video-clip-prompt--expanded' : ''}`}
+                      onClick={() => togglePromptExpanded(clip.key)}
+                    >
+                      {promptText}
+                    </Text>
+                    <View
+                      className='remix-video-prompt-toggle'
+                      onClick={() => togglePromptExpanded(clip.key)}
+                    >
+                      <Text className='remix-video-prompt-toggle-text' onClick={() => togglePromptExpanded(clip.key)}>
+                        {promptExpanded ? '收起' : '展开'}
+                      </Text>
+                    </View>
                     {videoUrl && (
-                      <View className='remix-video-preview' onClick={() => handleOpenVideo(clip)}>
+                      <View className={`remix-video-preview ${getVideoAspectClass(task, segment)}`} onClick={() => handleOpenVideo(clip)}>
                         <Video
                           className='remix-video-preview-video'
                           src={videoUrl}
-                          poster={normalizeMediaUrl(segment?.generatedImage) || gridUrl}
                           controls={false}
                           muted
                           autoplay={false}
                           showCenterPlayBtn={false}
                           showFullscreenBtn={false}
-                          objectFit='cover'
+                          objectFit='contain'
                         />
-                        <View className='remix-video-preview-badge'>
-                          <Text className='remix-video-preview-badge-text'>查看</Text>
-                        </View>
                       </View>
                     )}
                     {generating && !videoUrl && (
-                      <View className='remix-video-generating-card'>
+                      <View className={`remix-video-generating-card ${getVideoAspectClass(task, segment)}`}>
                         <View className='remix-video-generating-pulse'>
                           <View className='remix-video-generating-spinner' />
                         </View>
                         <Text className='remix-video-generating-title'>视频生成中</Text>
-                        <Text className='remix-video-generating-desc'>可离开当前页面，回来后会继续同步状态</Text>
+                        <Text className='remix-video-generating-desc'>可以先切出页面，稍后回来查看</Text>
                       </View>
                     )}
-                    <View className='remix-video-clip-actions'>
-                      <View
-                        className={`remix-video-clip-btn remix-video-clip-btn--ghost ${generating ? 'remix-video-clip-btn--disabled' : ''}`}
-                        onClick={() => {
-                          if (generating) return;
-                          setEditing({
-                            clipKey: clip.key,
-                            segmentId: segment?.id || '',
-                            prompt: clip.videoPrompt || '',
-                            durationText: formatDuration(clip.duration),
-                          });
-                        }}
-                      >
-                        <Text className='remix-video-clip-btn-text remix-video-clip-btn-text--ghost'>编辑提示词</Text>
-                      </View>
-                      <View
-                        className={`remix-video-clip-btn remix-video-clip-btn--primary ${generating ? 'remix-video-clip-btn--danger' : ''} ${disableActions ? 'remix-video-clip-btn--disabled' : ''}`}
-                        onClick={() => {
-                          if (disableActions) return;
-                          if (generating) {
-                            void handleCancelGeneratingClip(clip);
-                            return;
-                          }
-                          void handleGenerateClip(clip);
-                        }}
-                      >
-                        <Text className={`remix-video-clip-btn-text ${generating ? 'remix-video-clip-btn-text--danger' : ''}`}>
-                          {cancelling ? '取消中' : actioning ? '生成中' : generating ? '取消生成' : videoUrl ? '重新生成' : '生成视频'}
-                        </Text>
-                      </View>
-                    </View>
+                    {!videoUrl && !generating && (
+                      <>
+                        <View className={`remix-video-empty-card ${getVideoAspectClass(task, segment)}`}>
+                          <Text className='remix-video-empty-title'>{failed ? '视频生成失败' : '待生成视频'}</Text>
+                        </View>
+                        <View
+                          className={`remix-video-generate-btn ${canGenerate ? '' : 'remix-video-generate-btn--disabled'}`}
+                          onClick={() => {
+                            if (canGenerate) void handleGenerateClip(clip);
+                          }}
+                        >
+                          <Text className='remix-video-generate-btn-text'>{actioning ? '生成中...' : '生成视频'}</Text>
+                        </View>
+                      </>
+                    )}
                   </View>
                 );
               })}
@@ -641,47 +529,6 @@ export default function RemixVideoGeneratePage() {
             onClick={() => void handleGenerateAll()}
           >
             <Text className='remix-video-batch-btn-text'>{batchGenerating ? '生成中...' : '一键批量生成'}</Text>
-          </View>
-        </View>
-      )}
-
-      {editing && editingClip && (
-        <View className='remix-video-edit-mask' onClick={() => setEditing(null)}>
-          <View className='remix-video-edit-panel' onClick={(event) => event.stopPropagation()}>
-            <View className='remix-video-edit-head'>
-              <Text className='remix-video-edit-title'>Clip {editingClip.clipIndex} · 视频提示词</Text>
-              <View className='remix-video-edit-close' onClick={() => setEditing(null)}>
-                <Text className='remix-video-edit-close-text'>×</Text>
-              </View>
-            </View>
-            <View className='remix-video-edit-duration-row'>
-              <Text className='remix-video-edit-duration-label'>片段时长</Text>
-              <View className='remix-video-edit-duration-input-wrap'>
-                <Input
-                  className='remix-video-edit-duration-input'
-                  type='digit'
-                  value={editing.durationText}
-                  onInput={(event) => setEditing({ ...editing, durationText: String(event.detail.value || '') })}
-                />
-                <Text className='remix-video-edit-duration-unit'>秒</Text>
-              </View>
-            </View>
-            <Textarea
-              className='remix-video-edit-textarea'
-              value={editing.prompt}
-              maxlength={12000}
-              placeholder='请输入视频提示词'
-              placeholderStyle='font-size: 26rpx; color: #7f8da8;'
-              onInput={(event) => setEditing({ ...editing, prompt: event.detail.value })}
-            />
-            <View className='remix-video-edit-actions'>
-              <View className='remix-video-edit-btn remix-video-edit-btn--ghost' onClick={() => void handleSaveEditingPrompt()}>
-                <Text className='remix-video-edit-btn-text remix-video-edit-btn-text--ghost'>{savingPrompt ? '保存中' : '保存'}</Text>
-              </View>
-              <View className='remix-video-edit-btn remix-video-edit-btn--primary' onClick={() => void handleSaveAndGenerate()}>
-                <Text className='remix-video-edit-btn-text'>保存并生成</Text>
-              </View>
-            </View>
           </View>
         </View>
       )}
@@ -717,6 +564,38 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
+}
+
+function normalizeAspectRatio(value: unknown): '9:16' | '16:9' | '' {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (raw === '9:16' || raw === '9/16' || raw === 'portrait' || raw === 'vertical' || raw === '竖屏' || raw === '竖版') return '9:16';
+  if (raw === '16:9' || raw === '16/9' || raw === 'landscape' || raw === 'horizontal' || raw === '横屏' || raw === '横版') return '16:9';
+  return '';
+}
+
+function resolveTaskAspectRatio(task: StoryboardTaskStatusResult | null): '9:16' | '16:9' {
+  const detailed = asRecord(task?.detailedBreakdown);
+  const workflowData = getWorkflowData(task);
+  const candidates = [
+    detailed?.aspect_ratio,
+    detailed?.aspectRatio,
+    workflowData.aspect_ratio,
+    workflowData.aspectRatio,
+    asRecord(workflowData.source_video_analysis)?.aspect_ratio,
+    asRecord(workflowData.sourceVideoAnalysis)?.aspectRatio,
+  ];
+  for (const value of candidates) {
+    const normalized = normalizeAspectRatio(value);
+    if (normalized) return normalized;
+  }
+  return '9:16';
+}
+
+function getVideoAspectClass(task: StoryboardTaskStatusResult | null, segment?: StoryboardSegmentItem | null): string {
+  const params = asRecord(segment?.generationParams) || {};
+  const ratio = normalizeAspectRatio(params.aspect_ratio || params.aspectRatio) || resolveTaskAspectRatio(task);
+  return ratio === '16:9' ? 'remix-video-preview--landscape' : 'remix-video-preview--portrait';
 }
 
 function getWorkflowData(task: StoryboardTaskStatusResult | null): Record<string, unknown> {
@@ -912,13 +791,6 @@ function formatDuration(value: unknown): string {
   const num = Number(value);
   if (!Number.isFinite(num) || num <= 0) return '8';
   return String(Math.round(num * 1000) / 1000).replace(/\.0+$/, '');
-}
-
-function parseDurationInput(value: string, fallback: number): number | null {
-  const text = String(value || '').trim();
-  const num = text ? Number(text) : Number(fallback);
-  if (!Number.isFinite(num) || num <= 0) return null;
-  return Math.max(1, Math.min(60, Math.round(num * 1000) / 1000));
 }
 
 function buildRemixStages(

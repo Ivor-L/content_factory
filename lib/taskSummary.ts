@@ -174,9 +174,17 @@ async function fetchTaskData(taskType: TaskType, taskId: string): Promise<any> {
           coverImage: true,
           storyboardImageUrl: true,
           detailedBreakdown: true,
+          finalVideoUrl: true,
           progress: true,
           createdAt: true,
           updatedAt: true,
+          segments: {
+            select: {
+              status: true,
+              generatedVideo: true,
+              generationParams: true,
+            },
+          },
         },
       });
 
@@ -342,6 +350,15 @@ function extractSummaryData(taskType: TaskType, taskData: any): any {
       const detailed = normalizeJsonRecord(taskData.detailedBreakdown);
       const detailedMetadata = normalizeJsonRecord(detailed?.metadata);
       const isViralRemix = detailedMetadata?.feature === 'viral_remix';
+      const segments = Array.isArray(taskData.segments) ? taskData.segments : [];
+      const videoSegments = pickStoryboardVideoCountingSegments(segments);
+      const generatedVideoCount = videoSegments.filter((segment: any) =>
+        typeof segment?.generatedVideo === 'string' && segment.generatedVideo.trim().length > 0
+      ).length;
+      const generatingVideoCount = videoSegments.filter((segment: any) => {
+        const status = String(segment?.status || '').toUpperCase();
+        return status === 'VIDEO_GENERATING' || status === 'VIDEO_QUEUED' || status === 'VIDEO_PROCESSING';
+      }).length;
       const title = typeof detailedMetadata?.title === 'string' && detailedMetadata.title.trim()
         ? detailedMetadata.title.trim()
         : isViralRemix
@@ -375,6 +392,10 @@ function extractSummaryData(taskType: TaskType, taskData: any): any {
             durationSeconds: detailedMetadata?.duration_seconds,
             strategy: detailedMetadata?.strategy,
             strategyLabel: detailedMetadata?.strategy_label,
+            finalVideoUrl: taskData.finalVideoUrl || null,
+            segmentCount: videoSegments.length,
+            generatedVideoCount,
+            generatingVideoCount,
           }
           : undefined,
       };
@@ -433,6 +454,24 @@ function extractSummaryData(taskType: TaskType, taskData: any): any {
     default:
       return base;
   }
+}
+
+function isStoryboardVideoCountingSegment(segment: any): boolean {
+  const params = normalizeJsonRecord(segment?.generationParams) || {};
+  const status = String(segment?.status || '').toUpperCase();
+  return Boolean(params.clip_index || params.clipIndex || params.clip_video_prompt || params.clipVideoPrompt) ||
+    Boolean(segment?.generatedVideo) ||
+    status === 'VIDEO_READY' ||
+    status === 'VIDEO_GENERATING' ||
+    status === 'VIDEO_QUEUED' ||
+    status === 'VIDEO_PROCESSING' ||
+    status === 'VIDEO_FAILED' ||
+    status === 'VIDEO_BILLING_FAILED';
+}
+
+function pickStoryboardVideoCountingSegments(segments: any[]): any[] {
+  const videoSegments = segments.filter(isStoryboardVideoCountingSegment);
+  return videoSegments.length > 0 ? videoSegments : segments;
 }
 
 /**

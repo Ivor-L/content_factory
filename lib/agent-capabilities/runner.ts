@@ -69,6 +69,12 @@ function pickStringArray(value: unknown): string[] {
   return value.map((item) => pickString(item)).filter(Boolean);
 }
 
+function parsePositiveNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const num = typeof value === 'number' ? value : Number(pickString(value));
+  return Number.isFinite(num) && num > 0 ? num : null;
+}
+
 function makeSyntheticRequest(headers?: Headers): Request {
   return new Request('http://nextide.local/agent-capability', { headers });
 }
@@ -100,8 +106,8 @@ function inferBusinessLink(result: AgentCapabilityRunResult): AgentRunBusinessLi
     return platform ? { businessType: 'socialCollection', businessId: platform, businessTaskId: taskId, businessStatus: pickString(root.status || record.status) || result.status } : undefined;
   }
   if (result.capabilityId === 'viral.breakdown.video_prompts') {
-    const imageTextId = pickString(record.id || root.taskId || root.id);
-    return imageTextId ? { businessType: 'imageTextReplicationTask', businessId: imageTextId, businessStatus: pickString(record.status || root.status) } : undefined;
+    const storyboardTaskId = pickString(record.taskId || record.id || root.taskId || root.id);
+    return storyboardTaskId ? { businessType: 'storyboardTask', businessId: storyboardTaskId, businessStatus: pickString(record.status || root.status) } : undefined;
   }
   return undefined;
 }
@@ -405,48 +411,109 @@ async function runViralBreakdownVideoPrompts(input: {
   payload: Record<string, unknown>;
   authHeaders?: Headers;
 }): Promise<AgentCapabilityRunResult> {
-  const referenceVideo = pickString(input.payload.referenceVideo || input.payload.videoUrl || input.payload.video_url);
-  const referenceUrl = pickString(input.payload.referenceUrl || input.payload.sourceUrl || input.payload.url);
-  const sourceTitle = pickString(input.payload.sourceTitle || input.payload.title || input.payload.topic) || '爆款拆解';
+  const referenceVideo = pickString(
+    input.payload.referenceVideo ||
+    input.payload.referenceVideoUrl ||
+    input.payload.reference_video_url ||
+    input.payload.videoUrl ||
+    input.payload.video_url ||
+    input.payload.referenceUrl ||
+    input.payload.sourceUrl ||
+    input.payload.url
+  );
+  const sourceTitle = pickString(input.payload.sourceTitle || input.payload.title || input.payload.topic) || '一键复刻';
   const sourceText = pickString(input.payload.sourceText || input.payload.description || input.payload.caption || input.payload.text);
-  const sourceImages = pickStringArray(input.payload.sourceImages || input.payload.images || input.payload.imageUrls);
   const platform = pickString(input.payload.sourcePlatform || input.payload.platform) || 'unknown';
+  const language = pickString(input.payload.targetLanguage || input.payload.target_language || input.payload.language);
+  const promptProvider = pickString(input.payload.promptProvider || input.payload.prompt_provider) || 'seedance';
+  const rawTargetProduct = input.payload.targetProduct && typeof input.payload.targetProduct === 'object' && !Array.isArray(input.payload.targetProduct)
+    ? input.payload.targetProduct as Record<string, unknown>
+    : {};
+  const productId = pickString(
+    input.payload.productId ||
+    input.payload.product_id ||
+    rawTargetProduct.id ||
+    rawTargetProduct.productId ||
+    rawTargetProduct.product_id
+  );
+  const durationSeconds = parsePositiveNumber(
+    input.payload.durationSeconds ||
+    input.payload.duration_seconds ||
+    input.payload.duration ||
+    input.payload.targetDurationSeconds ||
+    input.payload.target_duration_seconds
+  );
+  const missingFields = [
+    !referenceVideo ? 'referenceVideo' : '',
+    durationSeconds === null ? 'durationSeconds' : '',
+    !language ? 'targetLanguage' : '',
+  ].filter(Boolean);
 
-  if (referenceVideo) {
-    const one = await runInternalApiCapability({
+  if (missingFields.length > 0) {
+    return failedResult({
       runId: input.runId,
+      capabilityId: input.capability.id,
       mode: input.mode,
-      createdAt: input.createdAt,
-      capability: {
-        ...input.capability,
-        internalApiPath: '/api/replication/copy/extract',
-        method: 'POST',
+      code: missingFields.includes('referenceVideo') ? 'invalid_input' : 'clarification_required',
+      message: missingFields.includes('referenceVideo')
+        ? 'referenceVideo or referenceUrl is required for viral.breakdown.video_prompts.'
+        : 'Before submitting smart remix, please confirm durationSeconds and targetLanguage.',
+      details: {
+        missingFields,
+        requiredBeforeSubmit: ['durationSeconds', 'targetLanguage'],
+        choices: {
+          durationSeconds: [15, 30, 60],
+          targetLanguage: [
+            { label: '跟随原视频', value: 'source' },
+            { label: '中文', value: 'zh-CN' },
+            { label: '英文', value: 'en' },
+            { label: '日语', value: 'ja' },
+            { label: '韩语', value: 'ko' },
+            { label: '西语', value: 'es' },
+          ],
+          productMode: [
+            { label: '不绑定产品，只拆解提示词', value: 'none' },
+            { label: '绑定产品库产品', value: 'product_library' },
+            { label: '手动提供产品信息', value: 'manual_product' },
+          ],
+          promptProvider: ['seedance', 'veo', 'generic'],
+          nextStep: [
+            { label: '只拆解提示词', value: 'breakdown_only' },
+            { label: '拆解后继续生成视频片段', value: 'generate_clips' },
+          ],
+        },
       },
-      payload: {
-        videoUrl: referenceVideo,
-        referenceItemId: input.payload.referenceItemId,
-        sourcePlatform: platform,
-        noteDescription: sourceText,
-        language: input.payload.language || 'zh-CN',
-      },
-      authHeaders: input.authHeaders,
     });
-    if (one.status === 'failed') return one;
-    const pending = (one.result as { data?: { status?: unknown } } | null)?.data?.status === 'pending';
-    return {
-      ...one,
-      status: pending ? 'waiting_callback' : 'succeeded',
-      result: {
-        ...(typeof one.result === 'object' && one.result !== null ? one.result : { data: one.result }),
-        referenceVideo,
-        note: pending
-          ? 'Video copy extraction is running asynchronously. Callback persists transcript to script/reference item when configured.'
-          : 'Video transcript/copy extraction completed synchronously. Use downstream prompt skills to convert it into video prompts.',
-      },
-      statusCommand: pending ? buildCommand(input.runId, 'status') : undefined,
-      resultCommand: pending ? buildCommand(input.runId, 'result') : undefined,
-    };
   }
+
+  const normalizedDuration = Math.round(durationSeconds ?? 15);
+
+  const payload = {
+    pipeline_key: 'viral_clone',
+    title: sourceTitle,
+    script: sourceText || `参考视频爆款复刻，目标时长${normalizedDuration}秒。第一阶段拆解参考视频，第二阶段替换用户选择的产品，第三阶段生成视频。`,
+    product_id: productId,
+    metadata: {
+      entry: 'agent_viral_breakdown_video_prompts',
+      feature: 'viral_remix',
+      title: sourceTitle,
+      remix_scene: 'agent_video_prompt_reverse',
+      duration_bucket: normalizedDuration > 15 ? 'LONG' : 'SHORT',
+      duration_seconds: normalizedDuration,
+      target_language: language,
+      targetLanguage: language,
+      prompt_provider: promptProvider,
+      promptProvider,
+      source_platform: platform,
+      sourcePlatform: platform,
+      reference_video_url: referenceVideo,
+      referenceVideoUrl: referenceVideo,
+      reference_url: pickString(input.payload.referenceUrl || input.payload.sourceUrl || input.payload.url) || referenceVideo,
+      referenceUrl: pickString(input.payload.referenceUrl || input.payload.sourceUrl || input.payload.url) || referenceVideo,
+      target_product: rawTargetProduct,
+    },
+    source: 'agent_viral_breakdown_video_prompts',
+  };
 
   const one = await runInternalApiCapability({
     runId: input.runId,
@@ -454,27 +521,35 @@ async function runViralBreakdownVideoPrompts(input: {
     createdAt: input.createdAt,
     capability: {
       ...input.capability,
-      internalApiPath: '/api/image-text-replication/start',
+      internalApiPath: '/api/miniapp/storyboard/viral-clone/jobs',
       method: 'POST',
     },
-    payload: {
-      sourceTitle,
-      sourceText,
-      sourceImages,
-      sourcePlatform: platform,
-      sourceId: input.payload.sourceId || input.payload.referenceId,
-      sourceUrl: referenceUrl,
-    },
+    payload,
     authHeaders: input.authHeaders,
   });
   if (one.status === 'failed') return one;
+
+  const resultRoot = typeof one.result === 'object' && one.result !== null ? one.result as Record<string, unknown> : {};
+  const data = resultRoot.data && typeof resultRoot.data === 'object' && !Array.isArray(resultRoot.data)
+    ? resultRoot.data as Record<string, unknown>
+    : resultRoot;
+  const taskId = pickString(data.taskId || data.id || resultRoot.taskId || resultRoot.id);
+  const status = pickString(data.status || resultRoot.status) || 'ANALYZING';
+
   return {
     ...one,
-    status: 'succeeded',
+    status: 'waiting_callback',
+    finishedAt: undefined,
     result: {
-      ...(typeof one.result === 'object' && one.result !== null ? one.result : { data: one.result }),
-      note: 'Image-text viral reference task created. It starts from BREAKDOWN_COMPLETED when source text/images are already available; use generation/card skills for downstream prompts/cards.',
+      ...resultRoot,
+      taskId,
+      status,
+      referenceVideo,
+      business: taskId ? { type: 'storyboardTask', id: taskId, status } : undefined,
+      note: 'Smart remix storyboard breakdown submitted via the miniapp viral_clone workflow. Callback writes detailedBreakdown and StoryboardSegment imagePrompt/videoPrompt.',
     },
+    statusCommand: buildCommand(input.runId, 'status'),
+    resultCommand: buildCommand(input.runId, 'result'),
   };
 }
 

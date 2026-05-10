@@ -1,6 +1,6 @@
 ---
 name: viral-breakdown-to-video-prompts
-description: NexTide 爆款拆解并反推视频提示词。MVP 接入图文复刻任务创建与视频文案提取链路，适合“拆解这个爆款”“提取视频文案并反推提示词”“把参考内容变成复刻基底”等请求。
+description: NexTide 爆款拆解并反推视频提示词。调用小程序「爆款复刻 / 智能复刻」viral_clone 分镜拆解链路，适合“拆解这个爆款视频”“反推 Seedance/Veo 视频提示词”“把参考视频变成复刻分镜”。
 allowed-tools: Read, Write, Bash
 ---
 
@@ -10,13 +10,15 @@ Follow shared NexTide rules in:
 
 - `nextide-shared`
 
-Use this skill when the user provides:
+Use this skill when the user provides a viral video URL or uploaded reference video and wants a reusable breakdown / prompt base.
 
-- a viral video URL
-- a viral image-text note/card reference
-- source title/text/images already collected from a platform
+This skill is now aligned with the miniapp smart remix path:
 
-and wants a reusable breakdown or prompt base.
+```text
+小程序爆款复刻 → 智能复刻 → viral_clone storyboard breakdown
+```
+
+For image-text note/card references, use the image-text replication / Xiaohongshu skills instead.
 
 ## Capability
 
@@ -36,6 +38,46 @@ npm run nextide -- capability run viral.breakdown.video_prompts \
   --user-api-key <NEX用户积分API_KEY>
 ```
 
+## Mandatory Intake
+
+Before submitting `viral.breakdown.video_prompts`, always confirm the following if the user has not already specified them:
+
+1. Target duration: `15` / `30` / `60` seconds, or custom.
+2. Target language: use Chinese labels in the interaction: 跟随原视频 / 中文 / 英文 / 日语 / 韩语 / 西语. Internally map them to `source` / `zh-CN` / `en` / `ja` / `ko` / `es`.
+3. Product binding: no product / choose product library product / manually provided product info.
+4. Prompt format: `seedance` / `veo` / `generic`.
+5. Next step: breakdown only / continue generating video clips.
+
+Do not submit the smart remix job until at least `durationSeconds` and `targetLanguage` are confirmed.
+
+Recommended interactive prompt:
+
+```text
+请选择复刻参数：
+
+目标时长：
+A. 15 秒
+B. 30 秒
+C. 60 秒
+D. 自定义
+
+目标语言：
+A. 跟随原视频
+B. 中文
+C. 英文
+D. 日语
+E. 韩语
+F. 西语
+
+产品绑定：
+A. 不绑定，只拆解提示词
+B. 绑定产品库产品
+C. 手动提供产品信息
+
+提示词格式：Seedance / Veo / 通用
+下一步：只拆解提示词 / 继续生成视频片段
+```
+
 ## Input: Video Reference
 
 ```json
@@ -43,47 +85,48 @@ npm run nextide -- capability run viral.breakdown.video_prompts \
   "referenceVideo": "https://.../video.mp4",
   "sourcePlatform": "tiktok",
   "description": "可选参考说明",
-  "language": "zh-CN"
+  "targetLanguage": "zh-CN",
+  "durationSeconds": 15,
+  "productId": "可选：用户产品库产品 ID",
+  "promptProvider": "seedance"
 }
 ```
 
-The runner calls video copy extraction. If callback URL is configured, it may return `waiting_callback`.
+The runner calls the miniapp smart remix API:
 
-## Input: Image-text Reference
-
-```json
-{
-  "sourceTitle": "爆款标题",
-  "sourceText": "原文正文...",
-  "sourceImages": ["https://.../1.png"],
-  "sourcePlatform": "xiaohongshu",
-  "sourceUrl": "https://..."
-}
+```text
+POST /api/miniapp/storyboard/viral-clone/jobs
 ```
 
-The runner creates an image-text replication task.
+with `pipeline_key=viral_clone`. It returns a StoryboardTask id and usually enters `waiting_callback` until n8n calls back.
 
 ## Output Handling
 
-Video path may return transcript/copy data synchronously or pending async status.
+The callback writes results to:
 
-Image-text path returns:
+```text
+StoryboardTask.detailedBreakdown
+StoryboardSegment.imagePrompt
+StoryboardSegment.videoPrompt
+```
+
+Initial submit returns:
 
 ```json
 {
   "taskId": "...",
-  "status": "BREAKDOWN_COMPLETED"
+  "status": "ANALYZING"
 }
 ```
 
+After callback, `nextide run status <run-id>` / `nextide run result <run-id>` should resolve the linked `storyboardTask` and expose the generated segments.
+
 ## Prompt Rule
 
-This capability creates/extracts the source base. To produce final Seedance/Veo prompts, combine with:
+This capability creates the smart-remix storyboard prompt base. To refine final Seedance/Veo prompts, combine with:
 
-- `reference-decode`
-- `reference-contract-builder`
-- `video-request-architect`
-- `prompt-preflight-qa`
+- `reference-opening-decoder`
+- `video-prompt-preflight-qa`
 - `seedance`
 
 ## Reference Contract
@@ -95,9 +138,10 @@ Always separate:
 
 ## Rules
 
-- Do not invent transcript or prompts if extraction is pending.
-- If only a platform post URL is provided, collect it first with the relevant collector skill.
-- Treat this as a source-prep capability, not final video generation.
+- Do not invent or default required intake values. If `durationSeconds` or `targetLanguage` is missing, ask first.
+- Do not invent prompts if storyboard breakdown is pending.
+- If only a platform post URL is provided and it is not a direct playable video URL, collect/normalize it first with the relevant collector skill.
+- Treat this as a smart-remix storyboard breakdown capability, not final video generation.
 
 <!-- BEGIN NEXTIDE AUTO-GENERATED -->
 
@@ -118,11 +162,11 @@ Always separate:
 - Rate limit: `10/minute`, `60/hour`
 - Estimated credits: 8
 - Estimated duration: 180 seconds
-- Tags: `viral-breakdown`, `video-prompts`, `replication`
+- Tags: `viral-breakdown`, `video-prompts`, `replication`, `viral-clone`, `smart-remix`
 
 Description:
 
-拆解爆款视频/图文结构，并反推可用于视频模型的提示词与 reference contract。MVP 接入图文复刻任务创建与视频文案提取链路。
+调用小程序「爆款复刻 / 智能复刻」viral_clone 分镜拆解链路，拆解参考视频并生成可用于 Seedance/Veo 的分段 imagePrompt/videoPrompt。
 
 Examples:
 
@@ -130,16 +174,20 @@ Examples:
 
 Input fields:
 
-- `referenceUrl` (string)：参考爆款链接。
-- `referenceVideo` (string)：参考视频 URL。
-- `targetProduct` (object)：目标产品信息。
+- `referenceUrl` (string)：参考爆款视频链接；没有 referenceVideo 时会作为 reference_video_url 使用。
+- `referenceVideo` (string)：参考视频 URL，优先使用。
+- `productId` (string)：可选，用户产品库中的产品 ID，用于智能复刻替换产品。
+- `targetProduct` (object)：目标产品信息；如包含 id/productId 会映射为 product_id。
+- `durationSeconds` (number, required)：目标复刻视频时长，秒。必须由用户确认，常用值：15 / 30 / 60。
+- `targetLanguage` (string, required)：目标语言。必须由用户用中文选项确认：跟随原视频 / 中文 / 英文 / 日语 / 韩语 / 西语；内部值分别映射为 source / zh-CN / en / ja / ko / es。
 - `promptProvider` (string)：目标视频模型或提示词格式。 默认：`"seedance"`
 
 Output fields:
 
-- `breakdown` (object)：爆款拆解结果。
-- `referenceContract` (object)：学习/禁止复制契约。
-- `videoPrompts` (array)：分段视频提示词。
+- `taskId` (string)：StoryboardTask ID。
+- `status` (string)：任务状态，例如 ANALYZING / BREAKDOWN_COMPLETED。
+- `breakdown` (object)：回调完成后写入 StoryboardTask.detailedBreakdown 的爆款拆解结果。
+- `videoPrompts` (array)：回调完成后写入 StoryboardSegment.videoPrompt 的分段视频提示词。
 
 CLI:
 

@@ -1,0 +1,17 @@
+{
+  "title": "爆款视频复刻拆解报告",
+  "taskId": "cmozu40ff000001klfuqxx2b3",
+  "status": "BREAKDOWN_COMPLETED",
+  "progress": 30,
+  "preview": "/Users/kaka/Desktop/软件开发/content-factory-web 3.2/.nextide/output/cmozu40ff000001klfuqxx2b3/preview.html",
+  "report": "/Users/kaka/Desktop/软件开发/content-factory-web 3.2/.nextide/output/cmozu40ff000001klfuqxx2b3/breakdown-report.html",
+  "storyboardGridUrl": "https://oss.atomx.top/storyboard/images/1778421281615-f91t07a6z9.jpg",
+  "recommendedResponse": {
+    "message": "拆解已完成：宠物视角UGC广告，共 3 个分镜、2 个 Clip Prompt。",
+    "nextActions": [
+      "确认目标时长和语言",
+      "绑定产品后生成分镜图",
+      "继续生成视频片段"
+    ]
+  }
+}

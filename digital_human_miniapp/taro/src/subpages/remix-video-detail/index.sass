@@ -1,0 +1,456 @@
+.remix-video-detail-page
+  min-height: 100vh
+  background: #050505
+  color: #e8f2ff
+  display: flex
+  flex-direction: column
+
+.remix-video-detail-nav
+  position: fixed
+  top: 0
+  left: 0
+  right: 0
+  z-index: 60
+  height: calc(env(safe-area-inset-top) + 74rpx)
+  padding: env(safe-area-inset-top) 24rpx 0
+  display: flex
+  align-items: center
+  justify-content: space-between
+  background: rgba(15, 15, 15, 0.96)
+  box-sizing: border-box
+
+.remix-video-detail-back
+  width: 56rpx
+  height: 48rpx
+  display: flex
+  align-items: center
+  justify-content: center
+
+.remix-video-detail-back-text
+  color: #e8f2ff
+  font-size: 52rpx
+  line-height: 1
+
+.remix-video-detail-nav-title
+  position: absolute
+  left: 120rpx
+  right: 120rpx
+  text-align: center
+  color: #e8f2ff
+  font-size: 26rpx
+  font-weight: 800
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap
+
+.remix-video-detail-nav-spacer
+  width: 56rpx
+
+.remix-video-detail-scroll
+  flex: 1
+  margin-top: calc(env(safe-area-inset-top) + 74rpx)
+  padding-bottom: calc(470rpx + env(safe-area-inset-bottom))
+
+.remix-video-detail-state
+  margin: 180rpx 24rpx 0
+  min-height: 260rpx
+  display: flex
+  flex-direction: column
+  align-items: center
+  justify-content: center
+
+.remix-video-detail-spinner,
+.remix-video-detail-asset-spinner
+  width: 42rpx
+  height: 42rpx
+  border-radius: 999rpx
+  border: 4rpx solid rgba(236, 238, 159, 0.24)
+  border-top-color: #ecee9f
+  animation: remixVideoDetailSpin 0.9s linear infinite
+
+.remix-video-detail-state-text
+  margin-top: 18rpx
+  color: #8ea2c8
+  font-size: 25rpx
+
+.remix-video-detail-player
+  width: 100%
+  height: 422rpx
+  max-height: 422rpx
+  overflow: hidden
+  background: #000
+  display: flex
+  align-items: center
+  justify-content: center
+
+.remix-video-detail-video,
+.remix-video-detail-placeholder
+  width: 100%
+  height: 100%
+  display: block
+  background: #000
+
+.remix-video-detail-placeholder
+  display: flex
+  flex-direction: column
+  align-items: center
+  justify-content: center
+  gap: 18rpx
+  background: #101010
+
+.remix-video-detail-placeholder-text
+  color: #ecee9f
+  font-size: 26rpx
+  font-weight: 900
+
+.remix-video-detail-placeholder-desc
+  color: #8ea2c8
+  font-size: 22rpx
+  line-height: 1.35
+
+.remix-video-detail-assets-section
+  padding: 18rpx 22rpx 0
+
+.remix-video-detail-assets-scroll
+  width: 100%
+  white-space: nowrap
+
+.remix-video-detail-assets-row
+  display: flex
+  gap: 10rpx
+  padding-bottom: 4rpx
+
+.remix-video-detail-asset-item
+  position: relative
+  width: 128rpx
+  height: 92rpx
+  border-radius: 10rpx
+  border: 2rpx solid rgba(255, 255, 255, 0.12)
+  background: #050505
+  overflow: hidden
+  flex-shrink: 0
+  box-sizing: border-box
+
+.remix-video-detail-asset-item--active
+  border-color: #ff4d5a
+  box-shadow: 0 0 0 2rpx rgba(255, 77, 90, 0.24)
+
+.remix-video-detail-asset-item--generating
+  display: flex
+  flex-direction: column
+  align-items: center
+  justify-content: center
+  gap: 10rpx
+  background: #141414
+
+.remix-video-detail-asset-spinner
+  width: 34rpx
+  height: 34rpx
+
+.remix-video-detail-asset-generating-text
+  color: #d7e5ff
+  font-size: 18rpx
+  font-weight: 800
+
+.remix-video-detail-asset-video
+  width: 100%
+  height: 100%
+  display: block
+
+.remix-video-detail-asset-badge
+  position: absolute
+  left: 8rpx
+  bottom: 8rpx
+  height: 30rpx
+  padding: 0 10rpx
+  border-radius: 999rpx
+  background: rgba(0, 0, 0, 0.72)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.remix-video-detail-asset-badge-text
+  color: #fff
+  font-size: 18rpx
+  font-weight: 800
+
+.remix-video-detail-composer
+  position: fixed
+  left: 22rpx
+  right: 22rpx
+  bottom: calc(env(safe-area-inset-bottom) + 14rpx)
+  z-index: 50
+
+.remix-video-detail-input-card
+  border-radius: 16rpx
+  background: #151515
+  padding: 12rpx
+  box-sizing: border-box
+
+.remix-video-detail-ref-row
+  display: flex
+  gap: 10rpx
+  overflow-x: auto
+  padding-bottom: 8rpx
+  margin-bottom: 10rpx
+
+.remix-video-detail-ref-add,
+.remix-video-detail-ref-item
+  width: 110rpx
+  height: 110rpx
+  border-radius: 10rpx
+  border: 0
+  overflow: hidden
+  background: #101010
+  flex-shrink: 0
+  position: relative
+
+.remix-video-detail-ref-add
+  display: flex
+  align-items: center
+  justify-content: center
+
+.remix-video-detail-ref-add-text
+  font-size: 38rpx
+  color: #a9b3c6
+  line-height: 1
+
+.remix-video-detail-ref-image
+  width: 100%
+  height: 100%
+
+.remix-video-detail-ref-remove
+  position: absolute
+  right: 4rpx
+  top: 4rpx
+  width: 28rpx
+  height: 28rpx
+  border-radius: 999rpx
+  background: rgba(0, 0, 0, 0.65)
+  display: flex
+  align-items: center
+  justify-content: center
+
+.remix-video-detail-ref-remove-text
+  color: #fff
+  font-size: 20rpx
+  line-height: 1
+
+.remix-video-detail-textarea
+  width: 100%
+  min-height: 182rpx
+  border-radius: 12rpx
+  background: transparent
+  border: 0
+  color: #d7e5ff
+  font-size: 28rpx
+  line-height: 1.56
+  padding: 10rpx 4rpx 12rpx
+  box-sizing: border-box
+  margin-bottom: 10rpx
+
+.remix-video-detail-tool-row
+  display: flex
+  align-items: center
+  justify-content: space-between
+  gap: 12rpx
+
+.remix-video-detail-model-mini
+  width: 520rpx
+  max-width: calc(100% - 86rpx)
+  height: 60rpx
+  border-radius: 12rpx
+  border: 0
+  background: rgba(255, 255, 255, 0.04)
+  padding: 0 14rpx
+  display: flex
+  align-items: center
+  justify-content: space-between
+  box-sizing: border-box
+
+.remix-video-detail-model-mini-value
+  color: #d8e2f5
+  font-size: 20rpx
+  font-weight: 700
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap
+
+.remix-video-detail-model-mini-arrow
+  color: #d8e2f5
+  font-size: 22rpx
+  line-height: 1
+  flex-shrink: 0
+
+.remix-video-detail-submit
+  width: 64rpx
+  height: 64rpx
+  border-radius: 999rpx
+  background: #ecee9f
+  border: 1rpx solid #ecee9f
+  display: flex
+  align-items: center
+  justify-content: center
+  flex-shrink: 0
+  box-sizing: border-box
+
+.remix-video-detail-action--disabled
+  opacity: 0.62
+
+.remix-video-detail-submit-text
+  color: #141414
+  font-size: 38rpx
+  font-weight: 900
+  line-height: 1
+
+.remix-video-detail-sheet-mask
+  position: fixed
+  inset: 0
+  background: rgba(0, 0, 0, 0.5)
+  z-index: 90
+  display: flex
+  align-items: flex-end
+  padding: 0 16rpx calc(env(safe-area-inset-bottom) + 18rpx)
+  box-sizing: border-box
+
+.remix-video-detail-sheet
+  width: 100%
+  border-top-left-radius: 24rpx
+  border-top-right-radius: 24rpx
+  background: #101010
+  border: 1rpx solid rgba(255, 255, 255, 0.12)
+  min-height: 650rpx
+  padding: 28rpx 24rpx calc(34rpx + env(safe-area-inset-bottom))
+  box-sizing: border-box
+
+.remix-video-detail-sheet-title
+  display: block
+  color: #e8f2ff
+  font-size: 30rpx
+  font-weight: 800
+  margin-bottom: 18rpx
+
+.remix-video-detail-sheet-label
+  display: block
+  color: #8ea2c8
+  font-size: 22rpx
+  margin-top: 12rpx
+  margin-bottom: 12rpx
+
+.remix-video-detail-sheet-label-row
+  display: flex
+  align-items: center
+  justify-content: space-between
+  gap: 12rpx
+
+.remix-video-detail-sheet-label-row .remix-video-detail-sheet-label
+  margin-bottom: 12rpx
+
+.remix-video-detail-sheet-value
+  color: #ecee9f
+  font-size: 24rpx
+  font-weight: 900
+  margin-top: 12rpx
+  margin-bottom: 12rpx
+
+.remix-video-detail-sheet-tabs
+  display: flex
+  flex-wrap: wrap
+  gap: 12rpx
+  margin-bottom: 18rpx
+
+.remix-video-detail-sheet-tab
+  min-width: 188rpx
+  min-height: 78rpx
+  padding: 0 20rpx
+  border-radius: 16rpx
+  border: 1rpx solid rgba(142, 162, 200, 0.3)
+  background: rgba(142, 162, 200, 0.1)
+  display: flex
+  align-items: center
+  justify-content: center
+  box-sizing: border-box
+
+.remix-video-detail-sheet-tab--active
+  border-color: #ecee9f
+  background: #ecee9f
+
+.remix-video-detail-sheet-tab-text
+  display: block
+  color: #d7e5ff
+  font-size: 22rpx
+  font-weight: 800
+  line-height: 1.25
+  text-align: center
+
+.remix-video-detail-sheet-tab-text--active
+  color: #151515
+
+.remix-video-detail-sheet-tab-hint
+  font-size: 20rpx
+  color: #8ea2c8
+  font-weight: 800
+  line-height: 1
+
+.remix-video-detail-sheet-tab-hint--active
+  color: rgba(21, 21, 21, 0.62)
+
+.remix-video-detail-sheet-ratio-icon
+  display: inline-flex
+  align-items: center
+  justify-content: center
+  width: 28rpx
+  height: 28rpx
+  color: #d7e5ff
+  font-size: 26rpx
+  line-height: 1
+  font-weight: 900
+  margin-right: 12rpx
+
+.remix-video-detail-sheet-ratio-icon--active
+  color: #151515
+
+.remix-video-detail-sheet-ratio-copy
+  display: flex
+  flex-direction: column
+  align-items: flex-start
+  justify-content: center
+  gap: 6rpx
+
+.remix-video-detail-slider-card
+  padding: 8rpx 4rpx 16rpx
+  margin-bottom: 18rpx
+
+.remix-video-detail-slider
+  margin: 0
+
+.remix-video-detail-slider-scale
+  display: flex
+  align-items: center
+  justify-content: space-between
+  padding: 0 8rpx
+
+.remix-video-detail-slider-scale-text
+  color: #7f8da8
+  font-size: 20rpx
+  font-weight: 800
+
+.remix-video-detail-sheet-confirm
+  margin-top: 34rpx
+  height: 84rpx
+  border-radius: 14rpx
+  background: #ecee9f
+  display: flex
+  align-items: center
+  justify-content: center
+
+.remix-video-detail-sheet-confirm-text
+  font-size: 24rpx
+  color: #151515
+  font-weight: 800
+
+@keyframes remixVideoDetailSpin
+  from
+    transform: rotate(0deg)
+  to
+    transform: rotate(360deg)

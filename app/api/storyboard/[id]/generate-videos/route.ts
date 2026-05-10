@@ -3,9 +3,8 @@ import prisma from "@/lib/prisma";
 import { getRequestUserContext } from "@/lib/authServer";
 import { resolveUserApiKey } from "@/lib/userApiKey";
 import type { Prisma } from "@prisma/client";
-import { deductCredits } from "@/lib/credits";
+import { assertCreditsAvailable } from "@/lib/credits";
 import { getCreditCostForModel } from "@/lib/creditCosts";
-import { logCreditUsage } from "@/lib/logCreditUsage";
 import {
   mergeStoryboardVideoCreditCharge,
   refundStoryboardVideoCreditCharge,
@@ -216,9 +215,28 @@ function getSkeletonVideoReferenceImageUrls(firstFrameUrl: string): string[] {
   return url ? [url] : [];
 }
 
-function getSmartRemixVideoReferenceImageUrls(firstFrameUrl: string): string[] {
+function getSmartRemixVideoReferenceImageUrls(firstFrameUrl: string, params: Record<string, unknown> = {}): string[] {
+  const hasExplicitRefs = Array.isArray(params.reference_image_urls) || Array.isArray(params.referenceImageUrls);
+  const extraRefs = Array.isArray(params.reference_image_urls)
+    ? params.reference_image_urls
+    : Array.isArray(params.referenceImageUrls)
+      ? params.referenceImageUrls
+      : [];
+  if (hasExplicitRefs) {
+    const urls: string[] = [];
+    for (const ref of extraRefs) {
+      const refUrl = cleanUrl(ref);
+      if (refUrl && !urls.includes(refUrl) && urls.length < 9) urls.push(refUrl);
+    }
+    return urls;
+  }
   const url = cleanUrl(firstFrameUrl);
-  return url ? [url] : [];
+  const urls = url ? [url] : [];
+  for (const ref of extraRefs) {
+    const refUrl = cleanUrl(ref);
+    if (refUrl && !urls.includes(refUrl) && urls.length < 9) urls.push(refUrl);
+  }
+  return urls;
 }
 
 function withSmartRemixSelectedFrameReference(prompt: string): string {
@@ -229,9 +247,9 @@ function withSmartRemixSelectedFrameReference(prompt: string): string {
       .trim(),
     "",
     "Seedance 2.0 reference protocol:",
-    "- 图片1 is the storyboard frame selected in step 2 for this clip.",
-    "- Use 图片1 as the visual composition, product appearance, color, camera rhythm, and action reference.",
-    "- Do not infer or use any full storyboard contact sheet or additional source-video panel image.",
+    "- If reference images are provided, 图片1 is the first reference image currently selected in the editor for this clip.",
+    "- Use only the submitted reference images as visual composition, product appearance, color, camera rhythm, and action references.",
+    "- Do not infer or use deleted reference images, any full storyboard contact sheet, or additional source-video panel image.",
   ].join("\n");
 }
 
@@ -338,6 +356,8 @@ function buildStoryboardVideoCreditCharges(
       units: normalizedUnits,
       amount: creditEstimate.unitAmount * normalizedUnits,
       billingMode: creditEstimate.billingMode,
+      chargeTiming: "on_success",
+      charged: false,
       chargedAt,
     });
   }
@@ -677,29 +697,17 @@ export async function POST(
       process.env.CANVAS_VIDEO_POLL_CALLBACK_BASE_URL ||
       "https://atomx.top"
     ).replace(/\/+$/, "");
-    const callbackUrl = `${callbackBase}/api/webhook/storyboard-video?admin_token=${encodeURIComponent(adminToken)}`;
+    const callbackUrlBase = `${callbackBase}/api/webhook/storyboard-video?admin_token=${encodeURIComponent(adminToken)}`;
 
-    // 4. Deduct credits upfront
+    // 4. Pre-check credits. Actual video credits are deducted only after the
+    // provider returns a successful video URL, so failed generations do not
+    // consume user credits.
     try {
-      await deductCredits(apiKey, {
-        amount: creditEstimate.amount,
-        workflowId: "flow_storyboard_video",
-        workflowName: "分镜视频生成",
-        reason: "storyboard_video",
-      });
-      logCreditUsage({
-        featureKey: providerRoute === "volcengine"
-          ? `storyboard_video:${String(effectiveModel || "")}`
-          : "storyboard_video",
-        userId,
-        amount: creditEstimate.amount,
-        success: true,
-      });
+      await assertCreditsAvailable(apiKey, creditEstimate.amount);
     } catch (error) {
-      console.error("[generate-videos] Failed to deduct credits:", error);
-      logCreditUsage({ featureKey: "storyboard_video", userId, success: false, errorMessage: error instanceof Error ? error.message : "Unknown" });
+      console.error("[generate-videos] Credits pre-check failed:", error);
       return NextResponse.json(
-        { error: "积分不足，请充值后重试", message: error instanceof Error ? error.message : "扣积分失败" },
+        { error: "积分不足，请充值后重试", message: error instanceof Error ? error.message : "积分校验失败" },
         { status: 402 }
       );
     }
@@ -762,7 +770,7 @@ export async function POST(
         storyboardGridUrl: storyboardGridUrl || null,
         reference_image_urls: providerRoute === "volcengine"
           ? forceSeedanceRoute
-            ? getSmartRemixVideoReferenceImageUrls(firstFrameUrl)
+            ? getSmartRemixVideoReferenceImageUrls(firstFrameUrl, generationParams)
             : isSkeletonVideo
             ? getSkeletonVideoReferenceImageUrls(firstFrameUrl)
             : getReferenceImageUrls(firstFrameUrl, storyboardGridUrl, generationParams, { includeProductRefs, productImageUrl: cleanUrl(productImageUrl) })
@@ -794,13 +802,14 @@ export async function POST(
       try {
         if (providerRoute === "volcengine") {
           const providerModel = toProviderModel(effectiveModel);
+          const segmentCallbackUrl = `${callbackUrlBase}&segment_id=${encodeURIComponent(segment.id)}&task_id=${encodeURIComponent(id)}&model=${encodeURIComponent(String(effectiveModel || ""))}`;
           const volcengineTask = await createVolcengineSeedanceTask({
             prompt: finalPrompt,
             referenceImageUrls: payload.reference_image_urls,
             duration: segmentDuration,
             aspectRatio: requestedAspectRatio,
             model: providerModel,
-            callbackUrl,
+            callbackUrl: segmentCallbackUrl,
             providerApiKey: seedanceProviderApiKey,
             metadata: {
               segment_id: segment.id,
@@ -820,8 +829,9 @@ export async function POST(
                 provider: "volcengine",
                 provider_task_id: volcengineTask.taskId,
                 provider_model: providerModel,
-                provider_callback_url: callbackUrl,
+                provider_callback_url: segmentCallbackUrl,
                 provider_request: volcengineTask.requestBody,
+                provider_reference_image_urls: payload.reference_image_urls,
                 provider_create_response: volcengineTask.rawResponse,
                 provider_state: "submitted",
                 provider_submitted_at: new Date().toISOString(),

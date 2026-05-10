@@ -143,6 +143,7 @@ export interface WorkItem {
   title: string;
   type: 'video' | 'image-text' | 'copy' | 'remix' | 'task';
   status: TaskStatus;
+  rawStatus?: string;
   taskType?: string;
   taskId?: string;
   createdAt: string;
@@ -1046,6 +1047,37 @@ function normalizeStatus(value: unknown): TaskStatus {
   if (status === 'CREATED' || status === 'CREATE' || status === 'INIT' || status === 'INITIALIZED') return 'PENDING';
   if (status.includes('PEND') || status.includes('QUEUE') || status.includes('WAIT')) return 'PENDING';
   return status || 'PENDING';
+}
+
+function normalizeRemixSummaryStatus(rawStatus: unknown, metadata: Record<string, unknown> | null, progress: unknown): TaskStatus {
+  const status = String(rawStatus ?? '').toUpperCase();
+  if (status.includes('FAIL') || status.includes('ERROR')) return 'FAILED';
+
+  const finalVideoUrl = typeof metadata?.finalVideoUrl === 'string' ? metadata.finalVideoUrl.trim() : '';
+  if (finalVideoUrl || status === 'COMPLETED') return 'COMPLETED';
+
+  const generatedVideoCount = Number(metadata?.generatedVideoCount ?? 0);
+  const segmentCount = Number(metadata?.segmentCount ?? 0);
+  if (status.includes('VIDEO_GENERATION_COMPLETED') || status.includes('VIDEO_READY')) return 'PENDING';
+  if (
+    Number.isFinite(generatedVideoCount) &&
+    generatedVideoCount > 0 &&
+    (!Number.isFinite(segmentCount) || segmentCount <= 0 || generatedVideoCount >= segmentCount)
+  ) {
+    return 'PENDING';
+  }
+
+  const numericProgress = Number(progress ?? 0);
+  if (
+    status.includes('GENERAT') ||
+    status.includes('PROCESS') ||
+    status.includes('QUEUE') ||
+    (Number.isFinite(numericProgress) && numericProgress > 0 && numericProgress < 100)
+  ) {
+    return 'GENERATING';
+  }
+
+  return 'PENDING';
 }
 
 function getCreatedAtTime(value: { createdAt?: string | null }): number {
@@ -2008,9 +2040,10 @@ export const miniappApi = {
     await request(`/api/products/${encodeURIComponent(productId)}`, { method: 'DELETE' });
   },
 
-  async getWorkList(limit = 50): Promise<WorkItem[]> {
+  async getWorkList(limit = 50, options?: { forceRefresh?: boolean }): Promise<WorkItem[]> {
+    const query = options?.forceRefresh ? `?limit=${limit}&forceRefresh=1` : `?limit=${limit}`;
     const [tasksRes, videosRes] = await Promise.allSettled([
-      request<{ data?: any[] }>(`/api/tasks?limit=${limit}`),
+      request<{ data?: any[] }>(`/api/tasks${query}`),
       request<{ data?: any[] }>(`/api/digital-human/videos?limit=${Math.min(20, limit)}`),
     ]);
 
@@ -2028,6 +2061,9 @@ export const miniappApi = {
         const storyboardCover = taskType === 'storyboard' || taskType === 'grid'
           ? resolveStoryboardCover(item, metadata)
           : null;
+        const normalizedStatus = isViralRemixTask(item)
+          ? normalizeRemixSummaryStatus(item.status, metadata, item.progress)
+          : normalizeStatus(item.status);
         works.push({
           id: String(item.id),
           title: isCopyReplication
@@ -2036,7 +2072,8 @@ export const miniappApi = {
               ? '一键复刻'
               : String(item.title ?? (taskType === 'creative' ? '智能文案' : '未命名任务')),
           type: detectWorkType(item),
-          status: normalizeStatus(item.status),
+          status: normalizedStatus,
+          rawStatus: String(item.status || ''),
           taskType,
           taskId: String(item.taskId ?? item.task_id ?? item.id),
           createdAt: String(item.createdAt ?? new Date().toISOString()),
@@ -2091,8 +2128,9 @@ export const miniappApi = {
     return dedupeWorks(works).slice(0, limit);
   },
 
-  async getStoryboardStatus(taskId: string): Promise<StoryboardTaskStatusResult> {
-    const payload = await request<{ data?: any }>(`/api/storyboard/${encodeURIComponent(taskId)}/status`);
+  async getStoryboardStatus(taskId: string, options?: { forceRefresh?: boolean }): Promise<StoryboardTaskStatusResult> {
+    const query = options?.forceRefresh ? '?force=1' : '';
+    const payload = await request<{ data?: any }>(`/api/storyboard/${encodeURIComponent(taskId)}/status${query}`);
     const data = payload?.data || {};
     const rawSegments = Array.isArray(data.segments) ? data.segments : [];
 

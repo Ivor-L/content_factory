@@ -1,0 +1,25 @@
+{
+  "run": {
+    "runId": "run_262aa5cc-1ef1-4a08-831e-bbddf3bbc07a",
+    "capabilityId": "viral.breakdown.video_prompts",
+    "mode": "submit",
+    "status": "waiting_callback",
+    "createdAt": "2026-05-10T13:54:00.767Z",
+    "finishedAt": "2026-05-10T13:54:00.887Z",
+    "result": {
+      "data": {
+        "status": "pending"
+      },
+      "referenceVideo": "https://oss.atomx.top/storyboard/videos/1778421153029-sw9x8yl87s.mp4",
+      "note": "Video copy extraction is running asynchronously. Callback persists transcript to script/reference item when configured."
+    },
+    "artifacts": [],
+    "usage": {
+      "provider": "internal_api",
+      "durationMs": 95
+    },
+    "error": null,
+    "statusCommand": "nextide run status run_262aa5cc-1ef1-4a08-831e-bbddf3bbc07a",
+    "resultCommand": "nextide run result run_262aa5cc-1ef1-4a08-831e-bbddf3bbc07a --output result.json"
+  }
+}

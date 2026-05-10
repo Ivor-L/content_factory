@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
   const taskType = searchParams.get("taskType");
   const status = searchParams.get("status");
   const includeEnrichment = searchParams.get("includeEnrichment") === "1";
+  const forceRefresh = searchParams.get("forceRefresh") === "1" || searchParams.get("forceRefresh") === "true";
 
   // Pagination
   const limitParam = Number(searchParams.get("limit") ?? "50");
@@ -32,35 +33,39 @@ export async function GET(request: NextRequest) {
   });
 
   try {
-    const { value: responseBody, cacheStatus } = await getOrSetShortTtlCache(
-      "api:tasks:list",
-      cacheKey,
-      TASKS_LIST_CACHE_TTL_MS,
-      async () => {
-        const { tasks, total, limit, offset, hasMore } = await fetchUserTaskSummaries({
-          userId,
-          taskType: taskType as any,
-          status,
-          limit: limitParam,
-          offset: offsetParam,
-          includeEnrichment,
-          includeTotal: false,
-        });
+    const buildResponseBody = async () => {
+      const { tasks, total, limit, offset, hasMore } = await fetchUserTaskSummaries({
+        userId,
+        taskType: taskType as any,
+        status,
+        limit: limitParam,
+        offset: offsetParam,
+        includeEnrichment,
+        includeTotal: false,
+      });
 
-        return {
-          data: tasks,
-          pagination: {
-            total,
-            limit,
-            offset,
-            hasMore,
-          },
-        };
-      },
-    );
+      return {
+        data: tasks,
+        pagination: {
+          total,
+          limit,
+          offset,
+          hasMore,
+        },
+      };
+    };
+
+    const { value: responseBody, cacheStatus } = forceRefresh
+      ? { value: await buildResponseBody(), cacheStatus: "MISS" as const }
+      : await getOrSetShortTtlCache(
+          "api:tasks:list",
+          cacheKey,
+          TASKS_LIST_CACHE_TTL_MS,
+          buildResponseBody,
+        );
 
     return NextResponse.json(responseBody, {
-      headers: { "X-Cache": cacheStatus },
+      headers: { "X-Cache": forceRefresh ? "SKIP" : cacheStatus },
     });
   } catch (error) {
     console.error("Failed to fetch tasks", error);

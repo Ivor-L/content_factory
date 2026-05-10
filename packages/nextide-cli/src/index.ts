@@ -125,6 +125,11 @@ function explainError(code: unknown, message?: unknown): { code: string; title: 
       message: raw || '上游工作流或服务执行失败。',
       nextActions: ['检查输入链接/素材是否可访问', '降低批量数量后重试', '保留 runId 交给管理员排查'],
     },
+    clarification_required: {
+      title: '需要先确认参数',
+      message: raw || '该能力需要先确认必要参数，暂未提交任务。',
+      nextActions: ['确认目标时长：15 / 30 / 60 秒或自定义', '确认目标语言：跟随原视频 / 中文 / 英文 / 日语 / 韩语 / 西语', '补齐参数后重新执行 capability'],
+    },
     wait_timeout: {
       title: '等待超时',
       message: raw || '任务在指定时间内没有完成。',
@@ -515,12 +520,13 @@ async function exportArtifactsForRun(id: string, runtime: Awaited<ReturnType<typ
     }
   }
 
+  const reportPath = await writeSpecializedHtmlReport({ outputDir, runId: id, data, artifacts: manifestArtifacts });
   const galleryPath = shouldGallery
     ? await writeGalleryHtml({ outputDir, runId: id, data, artifacts: manifestArtifacts })
     : undefined;
-  const previewPath = shouldGallery
+  const previewPath = reportPath || (shouldGallery
     ? await writePreviewHtml({ outputDir, runId: id, data, artifacts: manifestArtifacts })
-    : undefined;
+    : undefined);
   const datatablePath = shouldDatatable
     ? await writeDatatableJson({ outputDir, runId: id, data, artifacts: manifestArtifacts })
     : undefined;
@@ -541,6 +547,7 @@ async function exportArtifactsForRun(id: string, runtime: Awaited<ReturnType<typ
     artifactCount: artifacts.length,
     artifacts: manifestArtifacts,
     galleryPath,
+    reportPath,
     previewPath,
     preview: previewPath ? { type: 'html', path: previewPath } : undefined,
     datatablePath,
@@ -552,7 +559,7 @@ async function exportArtifactsForRun(id: string, runtime: Awaited<ReturnType<typ
   };
   const manifestPath = path.join(outputDir, 'manifest.json');
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
-  return { ok: true, runId: id, outputDir, manifestPath, galleryPath, previewPath, preview: previewPath ? { type: 'html', path: previewPath } : undefined, datatablePath, datatable: datatablePath ? { type: 'datatable', path: datatablePath } : undefined, summaryPath, summary: { type: 'summary', path: summaryPath }, artifactCount: artifacts.length, artifacts: manifestArtifacts };
+  return { ok: true, runId: id, outputDir, manifestPath, galleryPath, reportPath, previewPath, preview: previewPath ? { type: 'html', path: previewPath } : undefined, datatablePath, datatable: datatablePath ? { type: 'datatable', path: datatablePath } : undefined, summaryPath, summary: { type: 'summary', path: summaryPath }, artifactCount: artifacts.length, artifacts: manifestArtifacts };
 }
 
 function defaultArtifactName(artifact: Record<string, any>, index: number): string {
@@ -607,6 +614,20 @@ async function writePreviewHtml(input: {
   const previewPath = path.join(input.outputDir, 'preview.html');
   await writeFile(previewPath, html);
   return previewPath;
+}
+
+async function writeSpecializedHtmlReport(input: {
+  outputDir: string;
+  runId: string;
+  data: Record<string, any>;
+  artifacts: Array<Record<string, unknown>>;
+}): Promise<string | undefined> {
+  const capabilityId = String(input.data?.run?.capabilityId || '');
+  if (capabilityId !== 'viral.breakdown.video_prompts') return undefined;
+  const html = renderViralBreakdownReportHtml(input);
+  const reportPath = path.join(input.outputDir, 'breakdown-report.html');
+  await writeFile(reportPath, html);
+  return reportPath;
 }
 
 async function writeSummaryJson(input: {
@@ -1318,6 +1339,44 @@ function renderPreviewHtml(input: {
 </main>
 </body>
 </html>`;
+}
+
+function renderViralBreakdownReportHtml(input: {
+  outputDir: string;
+  runId: string;
+  data: Record<string, any>;
+  artifacts: Array<Record<string, unknown>>;
+}): string {
+  const result = asPlainRecord(input.data?.result?.data || input.data?.result || {});
+  const run = asPlainRecord(input.data?.run || {});
+  const detailed = asPlainRecord(result.detailedBreakdown || result.breakdown || result);
+  const metadata = asPlainRecord(detailed.metadata || result.metadata || {});
+  const title = String(pickValue(result, ['title', 'name']) || pickValue(metadata, ['title']) || '爆款视频复刻拆解报告');
+  const status = String(pickValue(run, ['status']) || result.status || 'unknown');
+  const mechanism = asPlainRecord(result.viral_mechanism || detailed.viral_mechanism || {});
+  const beats = pickFirstArray(result.beat_map, detailed.beat_map, result.scenes, detailed.scenes);
+  const scenes = pickFirstArray(result.scenes, detailed.scenes, result.segments, detailed.segments);
+  const clonePrompt = asPlainRecord(result.clone_prompt || detailed.clone_prompt || {});
+  const clips = pickFirstArray(clonePrompt.clips, result.videoPrompts, result.prompts);
+  const storyboardGridUrl = String(pickValue(result, ['storyboard_grid_url', 'storyboardGridUrl']) || pickValue(metadata, ['storyboard_grid_url', 'storyboardGridUrl']) || '');
+  const learn = pickFirstArray(result.what_transfers, detailed.what_transfers);
+  const swap = pickFirstArray(result.what_gets_swapped, detailed.what_gets_swapped);
+  const timelineHtml = (beats.length ? beats : scenes).map((item, index) => {
+    const row = asPlainRecord(item);
+    return `<div class="timeline-item"><div class="timeline-head"><span class="badge">${escapeHtml(pickValue(row, ['beat', 'role', 'order']) || `STEP ${index + 1}`)}</span><span>${escapeHtml(pickValue(row, ['time_range', 'timeRange', 'start_time']) || '')}</span></div><div class="strong">${escapeHtml(pickValue(row, ['visual', 'visual_description', 'shot_goal', 'summary']) || '')}</div><div class="muted">${escapeHtml(pickValue(row, ['function', 'replication_note', 'dialogue_or_text', 'original_script']) || '')}</div></div>`;
+  }).join('');
+  const sceneRows = scenes.map((item, index) => {
+    const row = asPlainRecord(item);
+    return `<tr><td>${escapeHtml(pickValue(row, ['order', 'scene']) || index + 1)}</td><td>${escapeHtml(pickValue(row, ['time_range', 'timeRange']) || '')}</td><td>${escapeHtml(pickValue(row, ['duration']) || '')}</td><td>${escapeHtml(pickValue(row, ['image_prompt', 'imagePrompt']) || '')}</td><td>${escapeHtml(pickValue(row, ['video_prompt', 'videoPrompt']) || '')}</td><td>${escapeHtml(pickValue(row, ['original_script', 'originalScript']) || '')}</td><td>${escapeHtml(pickValue(row, ['rewritten_script', 'rewrittenScript']) || '')}</td></tr>`;
+  }).join('');
+  const clipCards = clips.map((item, index) => {
+    const row = asPlainRecord(item);
+    return `<div class="prompt-card"><div class="prompt-head"><strong>Clip ${escapeHtml(pickValue(row, ['clip_index', 'clipIndex']) || index + 1)}</strong><span>${escapeHtml(pickValue(row, ['time_range', 'timeRange']) || '')}</span></div><pre>${escapeHtml(pickValue(row, ['prompt', 'videoPrompt', 'generationPrompt']) || JSON.stringify(row, null, 2))}</pre></div>`;
+  }).join('');
+  const sourceUrl = String(pickValue(metadata, ['reference_video_url', 'referenceVideoUrl', 'reference_url', 'referenceUrl']) || result.referenceVideo || '');
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>${escapeHtml(title)}</title><style>
+body{margin:0;background:#09090b;color:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Segoe UI',sans-serif}.wrap{max-width:1200px;margin:0 auto;padding:28px 20px 56px}.card,.hero{background:#18181b;border:1px solid #27272a;border-radius:22px;padding:20px;margin-bottom:16px}.hero{background:linear-gradient(135deg,#18181b,#111113)}h1{margin:0;font-size:32px}h2{margin:0 0 14px}.muted{color:#a1a1aa;line-height:1.7}.strong{font-weight:700;line-height:1.6}.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:16px}.kpi{background:#111113;border:1px solid #27272a;border-radius:16px;padding:14px}.kpi b{display:block;font-size:20px;margin-top:6px}.timeline{display:grid;gap:12px}.timeline-item,.prompt-card{background:#111113;border:1px solid #27272a;border-radius:16px;padding:14px}.timeline-head,.prompt-head{display:flex;justify-content:space-between;gap:10px;margin-bottom:8px;color:#d4d4d8}.badge{background:#2a2a2f;border-radius:999px;padding:4px 10px;font-size:12px}img{max-width:100%;border-radius:16px;border:1px solid #27272a}pre{white-space:pre-wrap;word-break:break-word;background:#0d0d10;border:1px solid #27272a;border-radius:14px;padding:12px;line-height:1.6}table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid #27272a;padding:10px;vertical-align:top;text-align:left;font-size:13px;line-height:1.5}.chips{display:flex;flex-wrap:wrap;gap:8px}.chip{background:#111113;border:1px solid #27272a;border-radius:999px;padding:8px 12px;font-size:13px}@media(max-width:900px){.kpis{grid-template-columns:1fr}}
+</style></head><body><div class="wrap"><section class="hero"><div class="muted">爆款视频复刻拆解报告</div><h1>${escapeHtml(title)}</h1><div class="muted">状态：${escapeHtml(status)} · Run：${escapeHtml(input.runId)} · 来源：${escapeHtml(sourceUrl)}</div><div class="kpis"><div class="kpi">总时长<b>${escapeHtml(result.total_duration || result.duration_seconds || '')}</b></div><div class="kpi">分镜数<b>${escapeHtml(scenes.length)}</b></div><div class="kpi">Clip Prompt<b>${escapeHtml(clips.length)}</b></div><div class="kpi">语言<b>${escapeHtml(pickValue(metadata, ['target_language','targetLanguage']) || '')}</b></div></div></section><section class="card"><h2>分镜板预览</h2>${storyboardGridUrl ? `<img src="${escapeHtml(storyboardGridUrl)}" alt="storyboard" />` : '<div class="muted">暂无分镜板预览</div>'}</section><section class="card"><h2>爆款机制</h2><pre>${escapeHtml(JSON.stringify(mechanism, null, 2))}</pre></section><section class="card"><h2>时间线 / Beat Map</h2><div class="timeline">${timelineHtml || '<div class="muted">暂无时间线</div>'}</div></section><section class="card"><h2>分镜列表</h2><div style="overflow:auto"><table><thead><tr><th>场景</th><th>时间</th><th>时长</th><th>imagePrompt</th><th>videoPrompt</th><th>原台词</th><th>改写台词</th></tr></thead><tbody>${sceneRows || '<tr><td colspan="7" class="muted">暂无分镜</td></tr>'}</tbody></table></div></section><section class="card"><h2>Clip 视频提示词</h2>${clipCards || '<div class="muted">暂无 Clip Prompt</div>'}</section><section class="card"><h2>Reference Contract</h2><div class="chips">${learn.map((x) => `<span class="chip">可学习：${escapeHtml(x)}</span>`).join('')}${swap.map((x) => `<span class="chip">需替换：${escapeHtml(x)}</span>`).join('')}</div></section><section class="card"><h2>下一步</h2><div class="chips"><span class="chip">生成分镜图</span><span class="chip">生成视频片段</span><span class="chip">绑定产品替换</span><span class="chip">改语言版本</span></div></section></div></body></html>`;
 }
 
 function renderArtifactCard(artifact: Record<string, unknown>, index: number): string {

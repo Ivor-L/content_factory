@@ -17,10 +17,6 @@ const VIDEO_LANGUAGE_OPTIONS = [
   { label: 'Español', value: 'es', country: 'ES', hint: '改写口播生成西语' },
 ];
 
-function clampDuration(value: number): number {
-  return Math.max(5, Math.min(60, value));
-}
-
 export default function RemixGeneratePage() {
   const [remixMode, setRemixMode] = useState<RemixMode>('SMART');
   const [products, setProducts] = useState<Array<{ id: string; name: string; images: string[] }>>([]);
@@ -37,16 +33,11 @@ export default function RemixGeneratePage() {
   const [sourceImagePreviewPath, setSourceImagePreviewPath] = useState('');
   const [sourceImageFileName, setSourceImageFileName] = useState('');
   const [uploadingImage, setUploadingImage] = useState(false);
-  const [durationSeconds, setDurationSeconds] = useState(15);
   const [targetLanguageIndex, setTargetLanguageIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
   useLoad((query) => {
     const referenceFromQuery = String(query?.referenceVideoUrl || query?.reference_video_url || '').trim();
-    const duration = String(query?.duration || '').trim().toLowerCase();
-    if (duration === 'long') {
-      setDurationSeconds((prev) => clampDuration(Math.max(prev, 16)));
-    }
     if (referenceFromQuery) {
       setReferenceVideoUrl(decodeURIComponent(referenceFromQuery));
       setReferencePreviewPath(decodeURIComponent(referenceFromQuery));
@@ -93,10 +84,6 @@ export default function RemixGeneratePage() {
 
   const handleGoProductLibrary = () => {
     Taro.navigateTo({ url: '/subpages/product-library/index' });
-  };
-
-  const changeDuration = (delta: number) => {
-    setDurationSeconds((prev) => clampDuration(prev + delta));
   };
 
   const updateVideoUploadProgress = (progress: number, phase: UploadPhase = 'uploading') => {
@@ -288,21 +275,18 @@ export default function RemixGeneratePage() {
       void reportClientLog('miniapp_remix_smart_submit_start', {
         referenceVideoUrl,
         selectedProductId: selectedProductId || null,
-        durationSeconds,
         targetLanguage: targetLanguage.value,
       });
       const result = await miniappApi.createViralCloneStoryboardJob({
-        title: `一键复刻-${durationSeconds}s`,
-        script: `参考视频爆款复刻，目标时长${durationSeconds}秒。第一阶段拆解参考视频，第二阶段替换用户选择的产品，第三阶段生成视频。`,
+        title: '一键复刻',
+        script: '参考视频爆款复刻。第一阶段拆解参考视频，第二阶段替换用户选择的产品，第三阶段生成视频。',
         productId: selectedProductId || undefined,
         source: 'miniapp_remix_generate_page',
         metadata: {
           entry: 'remix_generate_page',
           feature: 'viral_remix',
-          title: `一键复刻-${durationSeconds}s`,
+          title: '一键复刻',
           remix_scene: 'one_click_remix',
-          duration_bucket: durationSeconds > 15 ? 'LONG' : 'SHORT',
-          duration_seconds: durationSeconds,
           target_language: targetLanguage.value,
           targetLanguage: targetLanguage.value,
           target_language_label: targetLanguage.label,
@@ -522,25 +506,6 @@ export default function RemixGeneratePage() {
                 <Text className='language-picker-arrow'>›</Text>
               </View>
             </Picker>
-          </View>
-        )}
-
-        {remixMode === 'SMART' && (
-          <View className='section'>
-          <View className='section-title-row'>
-            <View className='section-title-icon section-title-icon--clock' />
-            <Text className='section-title'>时长选择</Text>
-          </View>
-          <View className='duration-stepper'>
-            <View className='step-btn' onClick={() => changeDuration(-1)}>
-              <Text className='step-btn-text'>-</Text>
-            </View>
-            <Text className='step-value'>{durationSeconds}</Text>
-            <Text className='step-unit'>秒</Text>
-            <View className='step-btn' onClick={() => changeDuration(1)}>
-              <Text className='step-btn-text'>+</Text>
-            </View>
-          </View>
           </View>
         )}
 

@@ -2208,6 +2208,7 @@ export default function ImageGeneratePage() {
   const [returnTarget, setReturnTarget] = useState('');
   const [hotRewriteReturnTaskId, setHotRewriteReturnTaskId] = useState('');
   const [hotRewriteReturnMode, setHotRewriteReturnMode] = useState('');
+  const [hotRewriteViewGenerated, setHotRewriteViewGenerated] = useState(false);
   const [windowWidthPx, setWindowWidthPx] = useState(375);
 
   const [refImages, setRefImages] = useState<string[]>([]);
@@ -2266,7 +2267,6 @@ export default function ImageGeneratePage() {
   const [cardWechatMode, setCardWechatMode] = useState(false);
   const [cardWechatStyleId, setCardWechatStyleId] = useState<CardWechatStyleId>(CARD_WECHAT_STYLE_OPTIONS[0].id);
   const [injectedFromMyNote, setInjectedFromMyNote] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [cardUserCleared, setCardUserCleared] = useState(false);
   const [stylePresetScrollLeft, setStylePresetScrollLeft] = useState(0);
   const stylePresetScrollLeftRef = useRef(0);
@@ -2330,6 +2330,7 @@ export default function ImageGeneratePage() {
     if (origin === 'hot-rewrite') {
       setHotRewriteReturnTaskId(String(query?.taskId || '').trim());
       setHotRewriteReturnMode(String(query?.mode || '').trim());
+      setHotRewriteViewGenerated(String(query?.viewGenerated || '').trim() === '1');
     }
   });
 
@@ -2623,7 +2624,7 @@ export default function ImageGeneratePage() {
     }
 
     // Optional prefill from "我的笔记仿写结果"
-    if (!injectedFromMyNote) {
+    if (!injectedFromMyNote && !hotRewriteViewGenerated) {
       const raw = Taro.getStorageSync('MY_NOTE_REWRITE_PAYLOAD');
       if (raw && typeof raw === 'object') {
         const payload = raw as {
@@ -2659,6 +2660,25 @@ export default function ImageGeneratePage() {
         Taro.removeStorageSync('MY_NOTE_REWRITE_PAYLOAD');
       }
     }
+
+    if (routeFeatureOverride === 'card-layout' && hotRewriteViewGenerated) {
+      const previewImagesRaw = Taro.getStorageSync('CARD_LAYOUT_PREVIEW_IMAGES');
+      const previewImages = Array.isArray(previewImagesRaw)
+        ? previewImagesRaw.map((item) => String(item || '').trim()).filter(Boolean)
+        : [];
+      const previewMarkdown = String(Taro.getStorageSync('CARD_LAYOUT_PREVIEW_MD') || '').trim();
+      const qrcode = String(Taro.getStorageSync('CARD_LAYOUT_PUBLISH_QRCODE') || '').trim();
+      if (previewImages.length > 0) {
+        setCardPreviewImages(previewImages);
+        setCardPreviewPageIndex(0);
+        setCardEditorMode('preview');
+      }
+      if (previewMarkdown && !cardMarkdown.trim()) {
+        setCardUserCleared(false);
+        setCardMarkdown(previewMarkdown);
+      }
+      if (qrcode) setCardPublishQrcode(qrcode);
+    }
   });
 
   useDidHide(() => {
@@ -2670,16 +2690,6 @@ export default function ImageGeneratePage() {
       setCardSettingsOpen(false);
     }
   }, [activeFeature, cardSettingsOpen]);
-
-  useEffect(() => {
-    const onKeyboard = (result: { height?: number }) => {
-      setKeyboardHeight(Math.max(0, Number(result?.height || 0)));
-    };
-    Taro.onKeyboardHeightChange(onKeyboard);
-    return () => {
-      Taro.offKeyboardHeightChange(onKeyboard);
-    };
-  }, []);
 
   useEffect(() => {
     try {
@@ -3009,7 +3019,14 @@ export default function ImageGeneratePage() {
     Taro.switchTab({ url: '/pages/home/index' });
   };
 
-  const returnToHotRewrite = (payload?: { qrcode?: string; url?: string; images?: string[]; kind?: 'infographic' | 'card-layout'; generatedTaskId?: string }) => {
+  const returnToHotRewrite = (payload?: {
+    qrcode?: string;
+    url?: string;
+    images?: string[];
+    kind?: 'infographic' | 'card-layout';
+    status?: 'idle' | 'generating' | 'generated';
+    generatedTaskId?: string;
+  }) => {
     if (!hotRewriteReturnTaskId) {
       handleBack();
       return;
@@ -3018,6 +3035,7 @@ export default function ImageGeneratePage() {
       taskId: hotRewriteReturnTaskId,
       mode: hotRewriteReturnMode,
       kind: payload?.kind || (activeFeature === 'infographic' ? 'infographic' : 'card-layout'),
+      status: payload?.status || (activeFeature === 'infographic' ? 'generating' : 'generated'),
       generatedTaskId: payload?.generatedTaskId || '',
       images: Array.isArray(payload?.images) ? payload.images.filter(Boolean) : [],
       qrcode: payload?.qrcode || cardPublishQrcode || '',
@@ -3225,27 +3243,23 @@ export default function ImageGeneratePage() {
 
       Taro.setStorageSync('INFOGRAPHIC_LAST_TASK_ID', generated.taskId);
       if (hotRewriteReturnTaskId) {
-        Taro.showModal({
-          title: '信息图任务已提交',
-          content: '任务会在后台生成，请在作品页查看生成结果。',
-          cancelText: '留在本页',
-          confirmText: '去作品',
-          success: (res) => {
-            if (res.confirm) {
-              Taro.switchTab({ url: '/pages/works/index' });
-            }
-          },
+        returnToHotRewrite({
+          kind: 'infographic',
+          status: 'generating',
+          generatedTaskId: generated.taskId,
+          images: [],
         });
-      } else {
-        const modalResult = await Taro.showModal({
-          title: '信息图任务已提交',
-          content: '任务会在后台生成，请在作品页查看生成结果。',
-          cancelText: '继续创作',
-          confirmText: '去作品',
-        });
-        if (modalResult.confirm) {
-          await Taro.switchTab({ url: '/pages/works/index' });
-        }
+        return;
+      }
+
+      const modalResult = await Taro.showModal({
+        title: '信息图任务已提交',
+        content: '任务会在后台生成，请在作品页查看生成结果。',
+        cancelText: '继续创作',
+        confirmText: '去作品',
+      });
+      if (modalResult.confirm) {
+        await Taro.switchTab({ url: '/pages/works/index' });
       }
     } catch (error) {
       Taro.showToast({
@@ -3426,21 +3440,24 @@ export default function ImageGeneratePage() {
       Taro.setStorageSync('CARD_LAYOUT_PREVIEW_MD', renderMarkdown);
       Taro.setStorageSync('CARD_LAYOUT_PUBLISH_TEXT', output);
       Taro.setStorageSync('CARD_LAYOUT_PUBLISH_QRCODE', published.qrcode || '');
+      Taro.setStorageSync('CARD_LAYOUT_PREVIEW_IMAGES', publishImages);
       Taro.setStorageSync('CARD_LAYOUT_LAST_TASK_ID', renderResult.taskId || '');
       Taro.setStorageSync('CARD_LAYOUT_STYLE_CONFIG', cardStyleConfig);
 
+      if (hotRewriteReturnTaskId) {
+        returnToHotRewrite({
+          kind: 'card-layout',
+          status: 'generated',
+          generatedTaskId: renderResult.taskId || '',
+          images: publishImages,
+          qrcode: published.qrcode || '',
+          url: published.url || '',
+        });
+        return;
+      }
+
       if (published.qrcode) {
-        if (hotRewriteReturnTaskId) {
-          returnToHotRewrite({
-            kind: 'card-layout',
-            generatedTaskId: renderResult.taskId || '',
-            images: publishImages,
-            qrcode: published.qrcode || '',
-            url: published.url || '',
-          });
-        } else {
-          Taro.showToast({ title: '二维码已生成', icon: 'success' });
-        }
+        Taro.showToast({ title: '二维码已生成', icon: 'success' });
       } else {
         Taro.showToast({ title: '卡片已生成并发布', icon: 'success' });
       }
@@ -3618,6 +3635,7 @@ export default function ImageGeneratePage() {
       setCardExporting(true);
       Taro.showLoading({ title: '正在准备导出图', mask: true });
       exportImages = await renderCardImagesForPreview();
+      Taro.setStorageSync('CARD_LAYOUT_PREVIEW_IMAGES', exportImages);
       setCardPreviewImages(exportImages);
       setCardPreviewPageIndex(0);
       if (exportImages.length === 0) {
@@ -3702,7 +3720,13 @@ export default function ImageGeneratePage() {
           cancelText: '留在本页',
           confirmText: hotRewriteReturnTaskId ? '返回仿写结果' : '知道了',
           success: (res) => {
-            if (res.confirm && hotRewriteReturnTaskId) returnToHotRewrite();
+            if (res.confirm && hotRewriteReturnTaskId) {
+              returnToHotRewrite({
+                kind: 'card-layout',
+                status: 'generated',
+                images: exportImages,
+              });
+            }
           },
         });
       } else if (successCount > 0) {
@@ -3713,7 +3737,13 @@ export default function ImageGeneratePage() {
           cancelText: '留在本页',
           confirmText: hotRewriteReturnTaskId ? '返回仿写结果' : '知道了',
           success: (res) => {
-            if (res.confirm && hotRewriteReturnTaskId) returnToHotRewrite();
+            if (res.confirm && hotRewriteReturnTaskId) {
+              returnToHotRewrite({
+                kind: 'card-layout',
+                status: 'generated',
+                images: exportImages,
+              });
+            }
           },
         });
       } else {
@@ -4308,12 +4338,13 @@ export default function ImageGeneratePage() {
     : activeFeature === 'infographic'
       ? (infoSubmitting ? '提交中...' : '开始创作')
       : (cardSubmitting ? '处理中...' : '生成并发布');
-
-  const fixedSubmitSub = activeFeature === 'ai-image'
-    ? '预计扣除算力值 40'
-    : activeFeature === 'infographic'
-      ? '按后台小红书图文价格扣费'
-      : '实时预览已同步，点击后将云端生成并发布';
+  const cardPreviewActionLabel = cardExporting || cardSubmitting
+    ? '处理中...'
+    : cardWechatMode
+      ? '复制到公众号'
+      : hotRewriteReturnTaskId
+        ? '一键生成'
+        : '一键导出';
 
   const handleFixedSubmit = () => {
     if (activeFeature === 'ai-image') {
@@ -4326,11 +4357,6 @@ export default function ImageGeneratePage() {
     }
     void handleCreateCard();
   };
-  const showBottomComposer = activeFeature === 'ai-image' || activeFeature === 'infographic';
-  const bottomComposerStyle = useMemo(
-    () => (keyboardHeight > 0 ? { transform: `translateY(-${keyboardHeight}px)` } : undefined),
-    [keyboardHeight],
-  );
   const bottomComposerTitle = activeFeature === 'ai-image'
     ? '图片创意描述'
     : activeFeature === 'infographic'
@@ -4365,6 +4391,58 @@ export default function ImageGeneratePage() {
     setCardPreviewImages([]);
   };
 
+  const renderPromptComposerCard = () => (
+    <View className='image-gen-bottom-composer-card image-gen-prompt-composer-card'>
+      <View className='image-gen-bottom-title-row'>
+        <Text className='image-gen-bottom-title'>{bottomComposerTitle}</Text>
+        <View className='image-gen-bottom-title-actions'>
+          <Text
+            className='quick-action'
+            onClick={() => {
+              if (activeFeature === 'ai-image') {
+                setAiPrompt('');
+                return;
+              }
+              if (activeFeature === 'infographic') {
+                setInfoContent('');
+                return;
+              }
+              setCardMarkdown('');
+            }}
+          >
+            清空
+          </Text>
+          <Text className='image-gen-bottom-count'>{bottomComposerValue.length}/{bottomComposerMaxLength}</Text>
+        </View>
+      </View>
+      <Textarea
+        className='image-gen-bottom-textarea'
+        value={bottomComposerValue}
+        onInput={(e) => handleBottomComposerInput(e.detail.value)}
+        placeholder={bottomComposerPlaceholder}
+        maxlength={bottomComposerMaxLength}
+        autoHeight
+        adjustPosition
+        cursorSpacing={80}
+      />
+      {activeFeature !== 'ai-image' && (
+        <View className='image-gen-bottom-footer'>
+          <View className='info-input-actions info-input-actions--bottom'>
+            <View className='input-action-btn' onClick={handleFindInspiration}>
+              <Text className='input-action-btn-text'>没有文案？去找灵感</Text>
+            </View>
+            <View
+              className='input-action-btn input-action-btn--ghost'
+              onClick={activeFeature === 'infographic' ? handlePasteInfoContent : handlePasteCardMarkdown}
+            >
+              <Text className='input-action-btn-text input-action-btn-text--ghost'>粘贴</Text>
+            </View>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+
   const handleClearCardMarkdown = () => {
     setCardUserCleared(true);
     setCardMarkdown('');
@@ -4374,7 +4452,7 @@ export default function ImageGeneratePage() {
 
   return (
     <View className='image-gen-root'>
-      <View className={`image-gen-page ${showBottomComposer ? 'image-gen-page--with-composer' : showFixedSubmit ? '' : 'image-gen-page--no-fixed-submit'} ${isCardLayoutEditMode ? 'image-gen-page--card-edit' : ''}`}>
+      <View className={`image-gen-page ${showFixedSubmit ? '' : 'image-gen-page--no-fixed-submit'} ${isCardLayoutEditMode ? 'image-gen-page--card-edit' : ''}`}>
         <View className='image-gen-header'>
           <View className='image-gen-topbar'>
             <View className='image-gen-back' onClick={handleBack}>
@@ -4462,6 +4540,8 @@ export default function ImageGeneratePage() {
               </View>
             </ScrollView>
 
+            {renderPromptComposerCard()}
+
           </View>
         )}
 
@@ -4504,6 +4584,8 @@ export default function ImageGeneratePage() {
                 </View>
               ))}
             </View>
+
+            {renderPromptComposerCard()}
 
           </View>
         )}
@@ -4644,11 +4726,17 @@ export default function ImageGeneratePage() {
                   </View>
                 )}
                 <View
-                  className={`card-preview-render-btn ${cardExporting ? 'card-preview-render-btn--loading' : ''}`}
-                  onClick={() => void handleExportCardImages()}
+                  className={`card-preview-render-btn ${cardExporting || cardSubmitting ? 'card-preview-render-btn--loading' : ''}`}
+                  onClick={() => {
+                    if (hotRewriteReturnTaskId && !cardWechatMode) {
+                      void handleCreateCard();
+                      return;
+                    }
+                    void handleExportCardImages();
+                  }}
                 >
                   <Text className='card-preview-render-btn-text'>
-                    {cardExporting ? '处理中...' : cardWechatMode ? '复制到公众号' : '一键导出'}
+                    {cardPreviewActionLabel}
                   </Text>
                 </View>
                 {!cardWechatMode && renderCardPresetSwitcher()}
@@ -4704,78 +4792,8 @@ export default function ImageGeneratePage() {
         </View>
       )}
 
-      {showBottomComposer ? (
-        <View className='image-gen-bottom-composer' style={bottomComposerStyle}>
-          <View className='image-gen-bottom-composer-card'>
-            <View className='image-gen-bottom-title-row'>
-              <Text className='image-gen-bottom-title'>{bottomComposerTitle}</Text>
-              <View className='image-gen-bottom-title-actions'>
-                <Text
-                  className='quick-action'
-                  onClick={() => {
-                    if (activeFeature === 'ai-image') {
-                      setAiPrompt('');
-                      return;
-                    }
-                    if (activeFeature === 'infographic') {
-                      setInfoContent('');
-                      return;
-                    }
-                    if (activeFeature === 'card-layout') {
-                      handleClearCardMarkdown();
-                      return;
-                    }
-                    setCardMarkdown('');
-                  }}
-                >
-                  清空
-                </Text>
-                <Text className='image-gen-bottom-count'>{bottomComposerValue.length}/{bottomComposerMaxLength}</Text>
-              </View>
-            </View>
-            <Textarea
-              className='image-gen-bottom-textarea'
-              value={bottomComposerValue}
-              onInput={(e) => handleBottomComposerInput(e.detail.value)}
-              placeholder={bottomComposerPlaceholder}
-              maxlength={bottomComposerMaxLength}
-              fixed
-              autoHeight
-              adjustPosition={false}
-              cursorSpacing={20}
-            />
-            <View className='image-gen-bottom-footer'>
-              {activeFeature !== 'ai-image' && (
-                <View className='info-input-actions info-input-actions--bottom'>
-                  <View className='input-action-btn' onClick={handleFindInspiration}>
-                    <Text className='input-action-btn-text'>没有文案？去找灵感</Text>
-                  </View>
-                  <View
-                    className='input-action-btn input-action-btn--ghost'
-                    onClick={activeFeature === 'infographic' ? handlePasteInfoContent : handlePasteCardMarkdown}
-                  >
-                    <Text className='input-action-btn-text input-action-btn-text--ghost'>粘贴</Text>
-                  </View>
-                  {activeFeature === 'card-layout' && (
-                    <View className='input-action-btn input-action-btn--ghost' onClick={() => void handleOptimizeCardMarkdown()}>
-                      <Text className='input-action-btn-text input-action-btn-text--ghost'>
-                        <Text className='input-action-btn-icon'>✦</Text>
-                        {cardOptimizing ? '排版中...' : 'AI排版'}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              )}
-              <Text className='image-gen-fixed-sub image-gen-fixed-sub--bottom'>{fixedSubmitSub}</Text>
-              <View className={`cta-btn ${fixedSubmitting ? 'cta-btn--disabled' : ''}`} onClick={handleFixedSubmit}>
-                <Text className='cta-btn-text'>{fixedSubmitLabel}</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-      ) : showFixedSubmit && (
+      {showFixedSubmit && (
         <View className='image-gen-fixed-submit'>
-          <Text className='image-gen-fixed-sub'>{fixedSubmitSub}</Text>
           <View className={`cta-btn ${fixedSubmitting ? 'cta-btn--disabled' : ''}`} onClick={handleFixedSubmit}>
             <Text className='cta-btn-text'>{fixedSubmitLabel}</Text>
           </View>

@@ -38,7 +38,7 @@ nextide capability list
 | 视频数字人生成 | `digital-human-generator` | `digital-human.video.generate` | `available` | digital-human, video, long-running |
 | 动作复刻 | `motion-replication` | `motion.replication.image_to_video` | `available` | motion, replication, image-to-video |
 | 爆款中视频生成 | `viral-midform-video-generator` | `viral.midform.video.generate` | `available` | midform-video, storyboard, 3d-skeleton |
-| 爆款拆解并反推视频提示词 | `viral-breakdown-to-video-prompts` | `viral.breakdown.video_prompts` | `available` | viral-breakdown, video-prompts, replication |
+| 爆款拆解并反推视频提示词 | `viral-breakdown-to-video-prompts` | `viral.breakdown.video_prompts` | `available` | viral-breakdown, video-prompts, replication, viral-clone, smart-remix |
 | TikTok 数据采集 | `social-data-collector` | `social.tiktok.collect` | `available` | tiktok, social, collection, creator-research |
 | Instagram 数据采集 | `social-data-collector` | `social.instagram.collect` | `available` | instagram, social, collection |
 | Facebook 数据采集 | `social-data-collector` | `social.facebook.collect` | `available` | facebook, social, collection |

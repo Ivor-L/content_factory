@@ -106,7 +106,7 @@
   box-sizing: border-box
 
 .remix-stage-dot--done
-  background: #ecee9f
+  background: #101010
   border-color: #ecee9f
 
 .remix-stage-dot--active
@@ -117,12 +117,20 @@
   border-color: #ecee9f
   box-shadow: 0 0 0 8rpx rgba(236, 238, 159, 0.14)
 
+.remix-stage-dot--done.remix-stage-dot--selected,
+.remix-stage-dot--active.remix-stage-dot--selected
+  background: #ecee9f
+
 .remix-stage-dot-text
   color: #9badcf
   font-size: 22rpx
   font-weight: 900
 
 .remix-stage-dot--done .remix-stage-dot-text
+  color: #ecee9f
+
+.remix-stage-dot--done.remix-stage-dot--selected .remix-stage-dot-text,
+.remix-stage-dot--active.remix-stage-dot--selected .remix-stage-dot-text
   color: #151515
 
 .remix-stage-dot--active .remix-stage-dot-text
@@ -131,7 +139,7 @@
 .remix-stage-line
   position: absolute
   left: calc(50% + 24rpx)
-  top: 28rpx
+  top: 24rpx
   width: calc(100% - 28rpx)
   height: 2rpx
   background: rgba(142, 162, 200, 0.22)

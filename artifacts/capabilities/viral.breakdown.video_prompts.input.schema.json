@@ -5,15 +5,35 @@
   "properties": {
     "referenceUrl": {
       "type": "string",
-      "description": "参考爆款链接。"
+      "description": "参考爆款视频链接；没有 referenceVideo 时会作为 reference_video_url 使用。"
     },
     "referenceVideo": {
       "type": "string",
-      "description": "参考视频 URL。"
+      "description": "参考视频 URL，优先使用。"
+    },
+    "productId": {
+      "type": "string",
+      "description": "可选，用户产品库中的产品 ID，用于智能复刻替换产品。"
     },
     "targetProduct": {
       "type": "object",
-      "description": "目标产品信息。"
+      "description": "目标产品信息；如包含 id/productId 会映射为 product_id。"
+    },
+    "durationSeconds": {
+      "type": "number",
+      "description": "目标复刻视频时长，秒。必须由用户确认，常用值：15 / 30 / 60。"
+    },
+    "targetLanguage": {
+      "type": "string",
+      "description": "目标语言。必须由用户用中文选项确认：跟随原视频 / 中文 / 英文 / 日语 / 韩语 / 西语；内部值分别映射为 source / zh-CN / en / ja / ko / es。",
+      "enum": [
+        "source",
+        "zh-CN",
+        "en",
+        "ja",
+        "ko",
+        "es"
+      ]
     },
     "promptProvider": {
       "type": "string",
@@ -21,6 +41,9 @@
       "default": "seedance"
     }
   },
-  "required": [],
+  "required": [
+    "durationSeconds",
+    "targetLanguage"
+  ],
   "additionalProperties": true
 }

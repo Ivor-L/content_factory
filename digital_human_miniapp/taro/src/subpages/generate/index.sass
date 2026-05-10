@@ -1,5 +1,5 @@
 .generate-page
-  padding: calc(env(safe-area-inset-top) + 190rpx) 24rpx calc(180rpx + env(safe-area-inset-bottom))
+  padding: calc(env(safe-area-inset-top) + 190rpx) 24rpx calc(240rpx + env(safe-area-inset-bottom))
   min-height: 100vh
   background: #050505
   box-sizing: border-box
@@ -943,9 +943,6 @@
   height: auto
   overflow: visible
 
-.bottom-composer-footer
-  margin-top: 14rpx
-
 .btn-primary
   background: #ecee9f
   height: 88rpx
@@ -961,6 +958,14 @@
   font-size: 28rpx
   font-weight: 800
   color: #121212
+
+.generate-fixed-submit
+  position: fixed
+  left: 24rpx
+  right: 24rpx
+  bottom: calc(24rpx + env(safe-area-inset-bottom))
+  z-index: 70
+  box-sizing: border-box
 
 .empty-hint
   font-size: 22rpx

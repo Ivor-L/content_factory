@@ -203,14 +203,14 @@ function normalizeMyNoteRaw(value: unknown) {
   const stats = parseObject(raw.stats) ?? {};
   const objects = collectObjects(raw);
   const authorNameKeys = ["作者昵称", "作者名称", "用户昵称", "用户名称", "博主昵称", "博主", "作者", "nickname", "nickName", "nick_name", "authorName", "author_name", "userName", "username", "name"];
-  const avatarKeys = ["作者头像", "用户头像", "博主头像", "头像", "avatar", "avatarUrl", "avatar_url", "authorAvatar", "author_avatar", "userAvatar", "user_avatar", "image"];
+  const avatarKeys = ["作者头像", "用户头像", "博主头像", "头像", "avatar", "avatarUrl", "avatar_url", "authorAvatar", "author_avatar", "userAvatar", "user_avatar"];
   return {
     creatorName: pickString(raw.creatorName, raw.authorName, raw.author_name, raw["作者昵称"], raw["作者名称"], raw["用户昵称"], raw["用户名称"], raw["博主昵称"], raw["博主"], raw["作者"], author.name, author.nickname, author.nickName, author.username) ?? pickStringByKeys(objects, authorNameKeys),
-    creatorAvatarUrl: pickString(raw.creatorAvatarUrl, raw.authorAvatar, raw.author_avatar, raw["作者头像"], raw["用户头像"], raw["博主头像"], raw["头像"], author.avatarUrl, author.avatar_url, author.avatar) ?? pickStringByKeys(objects, avatarKeys),
-    likes: pickNumber(stats.likes, stats.likeCount, stats.like_count, stats.liked_count, raw.likes, raw.likeCount, raw.like_count, raw.liked_count, raw["点赞数"], raw["点赞"], raw["赞数"]) ?? pickNumberByKeys(objects, ["点赞数", "点赞", "赞数", "liked_count", "like_count", "likeCount", "likedCount", "likes"]),
-    collects: pickNumber(stats.collects, stats.collectCount, stats.collect_count, stats.collected_count, raw.collects, raw.collectCount, raw.collect_count, raw.collected_count, raw["收藏数"], raw["收藏"]) ?? pickNumberByKeys(objects, ["收藏数", "收藏", "collected_count", "collect_count", "collectCount", "collectedCount", "collects"]),
-    comments: pickNumber(stats.comments, stats.commentCount, stats.comment_count, raw.comments, raw.commentCount, raw.comment_count, raw["评论数"], raw["评论"]) ?? pickNumberByKeys(objects, ["评论数", "评论", "comment_count", "commentCount", "comments"]),
-    shares: pickNumber(stats.shares, stats.shareCount, stats.share_count, raw.shares, raw.shareCount, raw.share_count, raw["分享数"], raw["分享"]) ?? pickNumberByKeys(objects, ["分享数", "分享", "share_count", "shareCount", "shares"]),
+    creatorAvatarUrl: pickString(raw.creatorAvatarUrl, raw.authorAvatar, raw.author_avatar, raw["作者头像"], raw["用户头像"], raw["博主头像"], raw["头像"], author.avatarUrl, author.avatar_url, author.avatar, author.imageUrl, author.image_url, author.image) ?? pickStringByKeys(objects, avatarKeys),
+    likes: pickNumber(stats.likes, stats.likeCount, stats.like_count, stats.likedCount, stats.liked_count, raw.likes, raw.likeCount, raw.like_count, raw.likedCount, raw.liked_count, raw["点赞数"], raw["点赞"], raw["赞数"], raw["点赞数量"]) ?? pickNumberByKeys(objects, ["点赞数", "点赞", "赞数", "点赞数量", "liked_count", "like_count", "likeCount", "likedCount", "likes"]),
+    collects: pickNumber(stats.collects, stats.collectCount, stats.collect_count, stats.collectedCount, stats.collected_count, raw.collects, raw.collectCount, raw.collect_count, raw.collectedCount, raw.collected_count, raw["收藏数"], raw["收藏"], raw["收藏数量"]) ?? pickNumberByKeys(objects, ["收藏数", "收藏", "收藏数量", "collected_count", "collect_count", "collectCount", "collectedCount", "collects"]),
+    comments: pickNumber(stats.comments, stats.commentCount, stats.comment_count, raw.comments, raw.commentCount, raw.comment_count, raw["评论数"], raw["评论"], raw["评论数量"]) ?? pickNumberByKeys(objects, ["评论数", "评论", "评论数量", "comment_count", "commentCount", "comments"]),
+    shares: pickNumber(stats.shares, stats.shareCount, stats.share_count, raw.shares, raw.shareCount, raw.share_count, raw["分享数"], raw["分享"], raw["分享数量"]) ?? pickNumberByKeys(objects, ["分享数", "分享", "分享数量", "share_count", "shareCount", "shares"]),
     videoUrl: pickStringByPath(raw, "media.videoUrl") ?? pickStringByKeys(objects, ["videoUrl", "video_url", "视频地址", "视频链接", "播放地址", "playUrl", "play_url", "masterUrl", "master_url"]),
     sourceType: pickStringByPath(raw, "media.sourceType") ?? pickString(raw.sourceType, raw.source_type),
   };

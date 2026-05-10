@@ -25,6 +25,7 @@ export default defineAppConfig({
         'style-library/index',
         'remix-generate/index',
         'remix-video-generate/index',
+        'remix-video-detail/index',
         'generate/index',
         'smart-copy/index',
         'monetization-square/index',

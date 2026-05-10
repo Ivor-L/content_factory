@@ -1,8 +1,8 @@
 import { View, Text, ScrollView, Image } from '@tarojs/components';
-import Taro, { useDidShow } from '@tarojs/taro';
+import Taro, { useDidShow, usePullDownRefresh } from '@tarojs/taro';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
-import type { WorkItem } from '../../utils/miniapp-api';
+import type { StoryboardTaskStatusResult, StoryboardSegmentItem, WorkItem } from '../../utils/miniapp-api';
 import './index.sass';
 
 const WORK_RETENTION_DAYS = 5;
@@ -17,6 +17,7 @@ export default function WorksPage() {
   const [works, setWorks] = useState<WorkItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [scrollTop, setScrollTop] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   const currentScrollTopRef = useRef(0);
   const shouldRestoreScrollRef = useRef(false);
   const restoreScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -44,17 +45,19 @@ export default function WorksPage() {
     }, 80);
   };
 
-  const loadWorks = async (options?: { silent?: boolean }) => {
+  const loadWorks = async (options?: { silent?: boolean; forceRefresh?: boolean }) => {
     const silent = options?.silent === true;
+    const forceRefresh = options?.forceRefresh === true;
     if (!silent) {
       setLoading(true);
     }
     try {
-      const data = await miniappApi.getWorkList(WORK_LIST_LIMIT);
+      const data = await miniappApi.getWorkList(WORK_LIST_LIMIT, { forceRefresh });
       const { valid, expired } = splitValidWorks(data);
       setWorks(valid);
       writeWorksCache(valid);
       cleanupExpiredWorks(expired);
+      void refreshRemixWorksStatusOnce(valid, forceRefresh);
     } catch (error) {
       if (!silent) {
         Taro.showToast({
@@ -77,11 +80,28 @@ export default function WorksPage() {
     const cached = readWorksCache();
     if (cached.length > 0) {
       setWorks(cached);
-      void loadWorks({ silent: true });
+      void loadWorks({ silent: true, forceRefresh: true });
       return;
     }
-    void loadWorks();
+    void loadWorks({ forceRefresh: true });
   });
+
+  usePullDownRefresh(() => {
+    handleRefresh();
+  });
+
+  const handleRefresh = () => {
+    if (refreshing || loading) return;
+    setRefreshing(true);
+    void loadWorks({ forceRefresh: true }).finally(() => {
+      setRefreshing(false);
+      try {
+        Taro.stopPullDownRefresh();
+      } catch {
+        // noop
+      }
+    });
+  };
 
   const filteredWorks = useMemo(() => {
     return sortWorksByCreatedAtDesc(works);
@@ -102,7 +122,9 @@ export default function WorksPage() {
       const storyboardTaskId = String(item?.taskId || item?.id || '').trim();
       const isRemix = isRemixWork(item);
       Taro.navigateTo({
-        url: `/subpages/storyboard-board/index?id=${encodeURIComponent(storyboardTaskId)}&title=${encodeURIComponent(payload.title)}${isRemix ? '&mode=remix' : ''}`,
+        url: isRemix
+          ? resolveRemixEntryUrl(item, storyboardTaskId, payload.title)
+          : `/subpages/storyboard-board/index?id=${encodeURIComponent(storyboardTaskId)}&title=${encodeURIComponent(payload.title)}`,
       });
       return;
     }
@@ -116,10 +138,45 @@ export default function WorksPage() {
     }
   };
 
+  const refreshRemixWorksStatusOnce = async (items: WorkItem[], forceRefresh = false) => {
+    const remixItems = items.filter((item) => {
+      const taskId = String(item.taskId || item.id || '').trim();
+      return isRemixWork(item) && String(item.taskType || '').toLowerCase() === 'storyboard' && Boolean(taskId);
+    });
+    if (remixItems.length === 0) return;
+
+    const results = await Promise.allSettled(
+      remixItems.map(async (item) => {
+        const taskId = String(item.taskId || item.id || '').trim();
+        const status = await miniappApi.getStoryboardStatus(taskId, { forceRefresh });
+        return { key: getWorkKey(item), item: mergeRemixWorkStatus(item, status) };
+      }),
+    );
+
+    const updatedByKey = new Map<string, WorkItem>();
+    results.forEach((result) => {
+      if (result.status === 'fulfilled') {
+        updatedByKey.set(result.value.key, result.value.item);
+      }
+    });
+    if (updatedByKey.size === 0) return;
+
+    setWorks((prev) => {
+      const next = prev.map((item) => updatedByKey.get(getWorkKey(item)) || item);
+      writeWorksCache(next);
+      return next;
+    });
+  };
+
   return (
     <View className='works-page'>
       <View className='works-header'>
-        <Text className='works-title'>我的作品</Text>
+        <View className='works-header-top'>
+          <Text className='works-title'>我的作品</Text>
+          <Text className={`works-refresh ${refreshing ? 'works-refresh--disabled' : ''}`} onClick={handleRefresh}>
+            刷新
+          </Text>
+        </View>
         <View className='works-retention-banner'>
           <View className='works-retention-banner-dot' />
           <Text className='works-retention-banner-text'>作品保留 5 天，超期自动清理</Text>
@@ -289,6 +346,69 @@ function cleanupExpiredWorks(expired: WorkItem[]) {
   }, 300);
 }
 
+function getWorkKey(item: WorkItem): string {
+  return `${item.source}:${item.taskType || ''}:${item.taskId || item.id}`;
+}
+
+function isRemixVideoSegment(segment: StoryboardSegmentItem): boolean {
+  const params = segment.generationParams || {};
+  const status = String(segment.status || '').toUpperCase();
+  return Boolean(params.clip_index || params.clipIndex || params.clip_video_prompt || params.clipVideoPrompt) ||
+    Boolean(segment.generatedVideo) ||
+    status === 'VIDEO_READY' ||
+    status === 'VIDEO_GENERATING' ||
+    status === 'VIDEO_QUEUED' ||
+    status === 'VIDEO_PROCESSING' ||
+    status === 'VIDEO_FAILED' ||
+    status === 'VIDEO_BILLING_FAILED';
+}
+
+function pickRemixVideoSegments(segments: StoryboardSegmentItem[]): StoryboardSegmentItem[] {
+  const videoSegments = segments.filter(isRemixVideoSegment);
+  return videoSegments.length > 0 ? videoSegments : segments;
+}
+
+function mergeRemixWorkStatus(item: WorkItem, status: StoryboardTaskStatusResult): WorkItem {
+  const previousMetadata = item.metadata && typeof item.metadata === 'object' ? item.metadata : {};
+  const videoSegments = pickRemixVideoSegments(status.segments || []);
+  const segmentCount = videoSegments.length;
+  const generatedVideoCount = videoSegments.filter((segment) => Boolean(segment.generatedVideo)).length;
+  const generatingVideoCount = videoSegments.filter((segment) => {
+    const segmentStatus = String(segment.status || '').toUpperCase();
+    return segmentStatus === 'VIDEO_GENERATING' || segmentStatus === 'VIDEO_QUEUED' || segmentStatus === 'VIDEO_PROCESSING';
+  }).length;
+  const finalVideoUrl = status.finalVideoUrl || '';
+  const completedSegments = videoSegments.filter((segment) => {
+    const segmentStatus = String(segment.status || '').toUpperCase();
+    return segmentStatus === 'VIDEO_READY' || Boolean(segment.generatedVideo);
+  }).length;
+  const nextStatus = finalVideoUrl
+    ? 'COMPLETED'
+    : completedSegments > 0 && completedSegments >= Math.max(1, segmentCount)
+      ? 'PENDING'
+      : generatingVideoCount > 0 || String(status.status || '').toUpperCase().includes('GENERAT')
+        ? 'GENERATING'
+        : 'PENDING';
+
+  return {
+    ...item,
+    status: nextStatus,
+    rawStatus: status.status,
+    progress: status.progress,
+    thumbnailUrl: item.thumbnailUrl || status.coverImage || status.storyboardImageUrl || null,
+    metadata: {
+      ...previousMetadata,
+      finalVideoUrl,
+      segmentCount,
+      generatedVideoCount,
+      completedSegments,
+      generatingVideoCount,
+      storyboardImageUrl: status.storyboardImageUrl || previousMetadata.storyboardImageUrl,
+      coverImage: status.coverImage || previousMetadata.coverImage,
+    },
+  };
+}
+
 function resolveWorkVideoUrl(item: any): string {
   const metadata = item?.metadata && typeof item.metadata === 'object'
     ? item.metadata as Record<string, unknown>
@@ -337,32 +457,113 @@ function isRemixWork(item: any): boolean {
   return item?.type === 'remix' || metadata?.feature === 'viral_remix';
 }
 
+function resolveRemixEntryUrl(item: any, storyboardTaskId: string, title: string): string {
+  const metadata = item?.metadata && typeof item.metadata === 'object'
+    ? item.metadata as Record<string, unknown>
+    : null;
+  const hasSegments = Boolean(metadata?.segment_count || metadata?.segmentCount);
+  const status = getRawWorkStatus(item);
+  const progress = Number(item?.progress ?? 0);
+  const reachedVideoStage =
+    hasSegments ||
+    status.includes('IMAGE') ||
+    status.includes('VIDEO') ||
+    status.includes('MERGE') ||
+    status.includes('COMPLETE') ||
+    (Number.isFinite(progress) && progress >= 20);
+
+  if (reachedVideoStage) {
+    return `/subpages/remix-video-generate/index?id=${encodeURIComponent(storyboardTaskId)}&title=${encodeURIComponent(title)}`;
+  }
+
+  return `/subpages/storyboard-board/index?id=${encodeURIComponent(storyboardTaskId)}&title=${encodeURIComponent(title)}&mode=remix`;
+}
+
 function getRemixStageText(item: any): string {
   const metadata = item?.metadata && typeof item.metadata === 'object'
     ? item.metadata as Record<string, unknown>
     : null;
-  const status = String(item?.status || '').toUpperCase();
+  const status = getRawWorkStatus(item);
   if (status.includes('FAIL') || status.includes('ERROR')) return '智能复刻失败，可点开查看当前任务状态';
+  if (hasRemixFinalVideo(metadata, item)) return '智能复刻已完成，可查看成片与分镜资产';
+  if (isRemixWaitingForMerge(metadata, status)) return '视频片段已生成，等待一键剪辑成片';
+  if (isRemixVideoGenerating(metadata, status)) return '正在生成视频片段';
   const progress = Number(item?.progress ?? 0);
-  if (Number.isFinite(progress) && progress >= 100) return '智能复刻已完成，可查看成片与分镜资产';
-  if (Number.isFinite(progress) && progress >= 60) return '正在生成替换图和视频片段';
+  if (Number.isFinite(progress) && progress >= 60) return '正在生成替换图或视频片段';
   if (Number.isFinite(progress) && progress >= 20) return '已完成爆款拆解，等待产品/角色替换';
   const strategy = String(metadata?.strategy || '').toUpperCase();
   return strategy === 'STORYBOARD' ? '正在生成智能复刻分镜板' : '正在拆解参考视频';
 }
 
 function getWorkStatusLabel(item: any): string {
+  if (isRemixWork(item)) return getRemixStatusLabel(item);
   const status = String(item?.status || '').toUpperCase();
   if (status.includes('FAIL') || status.includes('ERROR')) return '失败';
   if (status.includes('COMPLETE') || status === 'DONE' || status === 'SUCCESS') return '已完成';
-  if (isRemixWork(item)) return '复刻中';
   if (isCopyWork(item) && isWorkProcessing(item)) return '撰写中';
   return isWorkProcessing(item) ? '生成中' : '';
 }
 
 function getWorkProcessingText(item: any): string {
+  if (isRemixWork(item)) return getRemixProcessingText(item);
   if (isCopyWork(item)) return '撰写中';
   return '生成中';
+}
+
+function getRawWorkStatus(item: any): string {
+  return String(item?.rawStatus || item?.status || '').toUpperCase();
+}
+
+function hasRemixFinalVideo(metadata: Record<string, unknown> | null, item: any): boolean {
+  const candidates = [
+    metadata?.finalVideoUrl,
+    metadata?.final_video_url,
+    item?.finalVideoUrl,
+  ];
+  return candidates.some((value) => typeof value === 'string' && value.trim().length > 0);
+}
+
+function hasGeneratedRemixVideos(metadata: Record<string, unknown> | null): boolean {
+  const generatedVideoCount = Number(metadata?.generatedVideoCount ?? 0);
+  const segmentCount = Number(metadata?.segmentCount ?? 0);
+  return Number.isFinite(generatedVideoCount) && generatedVideoCount > 0 &&
+    (!Number.isFinite(segmentCount) || segmentCount <= 0 || generatedVideoCount >= segmentCount);
+}
+
+function isRemixWaitingForMerge(metadata: Record<string, unknown> | null, rawStatus: string): boolean {
+  return hasGeneratedRemixVideos(metadata) ||
+    rawStatus.includes('VIDEO_GENERATION_COMPLETED') ||
+    rawStatus.includes('VIDEO_READY') ||
+    rawStatus.includes('MERGE');
+}
+
+function isRemixVideoGenerating(metadata: Record<string, unknown> | null, rawStatus: string): boolean {
+  const generatingVideoCount = Number(metadata?.generatingVideoCount ?? 0);
+  return rawStatus.includes('VIDEO_GENERAT') ||
+    rawStatus.includes('VIDEO_PROCESS') ||
+    rawStatus.includes('VIDEO_QUEUE') ||
+    (Number.isFinite(generatingVideoCount) && generatingVideoCount > 0);
+}
+
+function getRemixStatusLabel(item: any): string {
+  const metadata = item?.metadata && typeof item.metadata === 'object'
+    ? item.metadata as Record<string, unknown>
+    : null;
+  const status = getRawWorkStatus(item);
+  if (status.includes('FAIL') || status.includes('ERROR')) return '失败';
+  if (hasRemixFinalVideo(metadata, item)) return '已完成';
+  if (isRemixWaitingForMerge(metadata, status)) return '待剪辑';
+  if (String(item?.status || '').toUpperCase() === 'GENERATING' || isRemixVideoGenerating(metadata, status)) return '生成中';
+  return '待继续';
+}
+
+function getRemixProcessingText(item: any): string {
+  const metadata = item?.metadata && typeof item.metadata === 'object'
+    ? item.metadata as Record<string, unknown>
+    : null;
+  const status = getRawWorkStatus(item);
+  if (isRemixVideoGenerating(metadata, status)) return '视频生成中';
+  return '复刻中';
 }
 
 function isCopyWork(item: any): boolean {
@@ -486,6 +687,7 @@ function getCreatedAtTime(item: any) {
 }
 
 function isWorkProcessing(item: any) {
+  if (isRemixWork(item)) return getRemixStatusLabel(item) === '生成中';
   const status = String(item?.status || '').toUpperCase();
   return (
     status.includes('GENERAT') ||

@@ -64,6 +64,10 @@ function normalizeVideoModel(model: unknown): string {
   return VIDEO_MODELS.some((item) => item.id === value) ? value : DEFAULT_VIDEO_MODEL;
 }
 
+function isRemixStageKey(value: string): value is RemixStageKey {
+  return value === 'breakdown' || value === 'replace' || value === 'video';
+}
+
 export default function StoryboardBoardPage() {
   const [taskId, setTaskId] = useState('');
   const [title, setTitle] = useState('3D骨骼分镜板');
@@ -198,8 +202,9 @@ export default function StoryboardBoardPage() {
     const incomingTitle = decodeQueryText(String(query?.title || ''));
     const incomingMode = String(query?.mode || '').trim().toLowerCase();
     const openEdit = String(query?.openEdit || '').trim().toLowerCase();
+    const incomingStage = String(query?.stage || '').trim().toLowerCase();
     setRouteMode(incomingMode);
-    setSelectedRemixStage(null);
+    setSelectedRemixStage(isRemixStageKey(incomingStage) ? incomingStage : null);
     setAutoOpenEdit(openEdit === 'image' || openEdit === 'replace');
     setAutoOpenedEdit(false);
     if (!id) {
@@ -744,7 +749,7 @@ export default function StoryboardBoardPage() {
         throw new Error(result.message || '触发生图失败');
       }
       upsertLocalSegment(segment.id, { generatedImage: previousImage || segment.generatedImage, status: 'IMAGE_GENERATING' });
-      Taro.showToast({ title: '已重新触发生图', icon: 'success' });
+      Taro.showToast({ title: '已提交生图请求', icon: 'success' });
       await loadStatus(true);
     } catch (error) {
       clearLocalGenerating(segment.id);
@@ -805,9 +810,9 @@ export default function StoryboardBoardPage() {
     let targetSegments = segments.filter((segment) => !normalizeMediaUrl(segment.generatedImage));
     if (targetSegments.length === 0) {
       const confirm = await Taro.showModal({
-        title: '重新生成图片？',
-        content: '所有镜头已有首帧图，将重新生成全部镜头图片。',
-        confirmText: '重新生成',
+        title: '生成图片？',
+        content: '所有镜头已有首帧图，将为全部镜头提交新的生图请求。',
+        confirmText: '生成图片',
         cancelText: '取消',
       });
       if (!confirm.confirm) return;
@@ -1182,9 +1187,38 @@ export default function StoryboardBoardPage() {
       Taro.showToast({ title: '暂无可生成的视频提示词', icon: 'none' });
       return;
     }
-    Taro.navigateTo({
+    Taro.redirectTo({
       url: `/subpages/remix-video-generate/index?id=${encodeURIComponent(taskId)}&title=${encodeURIComponent(title || '一键复刻')}`,
     });
+  };
+
+  const handleTapRemixStage = (stageKey: RemixStageKey) => {
+    const common = `id=${encodeURIComponent(taskId)}&title=${encodeURIComponent(title || '一键复刻')}`;
+    if (stageKey === 'video') {
+      if (!segments.length) {
+        Taro.showToast({ title: '暂无可生成的视频提示词', icon: 'none' });
+        return;
+      }
+      Taro.redirectTo({
+        url: `/subpages/remix-video-generate/index?${common}`,
+      });
+      return;
+    }
+    if (stageKey === 'breakdown') {
+      setSelectedRemixStage('breakdown');
+      if (!routeMode.includes('review')) {
+        Taro.redirectTo({
+          url: `/subpages/storyboard-board/index?${common}&mode=remix-review&stage=breakdown`,
+        });
+      }
+      return;
+    }
+    setSelectedRemixStage('replace');
+    if (!routeMode.includes('board')) {
+      Taro.redirectTo({
+        url: `/subpages/storyboard-board/index?${common}&mode=remix-board&stage=replace`,
+      });
+    }
   };
 
   return (
@@ -1209,7 +1243,7 @@ export default function StoryboardBoardPage() {
                 <View
                   key={stage.key}
                   className={`remix-stage-item ${activeRemixStage === stage.key ? 'remix-stage-item--selected' : ''}`}
-                  onClick={() => setSelectedRemixStage(stage.key)}
+                  onClick={() => handleTapRemixStage(stage.key)}
                 >
                   <View className={`remix-stage-dot remix-stage-dot--${stage.state} ${activeRemixStage === stage.key ? 'remix-stage-dot--selected' : ''}`}>
                     <Text className='remix-stage-dot-text'>{index + 1}</Text>
@@ -1543,7 +1577,7 @@ export default function StoryboardBoardPage() {
                                   void handleRegenerateImage(segment);
                                 }}
                               >
-                                <Text className='storyboard-asset-retry-text'>重新生成</Text>
+                                <Text className='storyboard-asset-retry-text'>生成图片</Text>
                               </View>
                             </>
                           ) : (
@@ -1576,7 +1610,7 @@ export default function StoryboardBoardPage() {
                             <>
                               <View className='storyboard-asset-spinner' />
                               <Text className='storyboard-asset-placeholder-title'>视频生成中</Text>
-                              <Text className='storyboard-asset-placeholder-sub'>完成后会自动更新</Text>
+                              <Text className='storyboard-asset-placeholder-sub'>可以先切出页面，稍后回来查看</Text>
                             </>
                           ) : videoFailed ? (
                             <>
@@ -2715,7 +2749,7 @@ function buildRemixStages(
     {
       key: 'replace',
       title: '产品/角色替换',
-      desc: hasImages ? '可查看、修改或重新生成分镜图' : hasSegments ? '等待生成替换后的分镜图' : '等待爆款拆解完成',
+      desc: hasImages ? '可查看、修改或生成分镜图' : hasSegments ? '等待生成替换后的分镜图' : '等待爆款拆解完成',
       state: hasImages ? 'done' : hasSegments ? 'active' : 'todo',
     },
     {

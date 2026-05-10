@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { isValidAdminWebhookRequest } from "@/lib/webhookAuth";
 import { resolveUserApiKey } from "@/lib/userApiKey";
-import { refundStoryboardVideoCreditCharge } from "@/lib/storyboardVideoCredits";
+import {
+  deductStoryboardVideoCreditCharge,
+  refundStoryboardVideoCreditCharge,
+} from "@/lib/storyboardVideoCredits";
+import { syncTaskToSummary } from "@/lib/taskSummary";
 import type { Prisma } from "@prisma/client";
 
 function parseJsonSafe(value: unknown): Record<string, unknown> | null {
@@ -46,6 +50,39 @@ function pickVideoUrl(body: Record<string, any>): string {
   return typeof first === "string" ? first.trim() : "";
 }
 
+function pickProviderTaskId(body: Record<string, any>): string {
+  const data = body.data && typeof body.data === "object" ? body.data as Record<string, unknown> : null;
+  const context = body.context && typeof body.context === "object" ? body.context as Record<string, unknown> : null;
+  const metadata = body.metadata && typeof body.metadata === "object"
+    ? body.metadata as Record<string, unknown>
+    : data?.metadata && typeof data.metadata === "object"
+      ? data.metadata as Record<string, unknown>
+      : null;
+  const candidates = [
+    body.provider_task_id,
+    body.providerTaskId,
+    body.volcengine_task_id,
+    body.volcengineTaskId,
+    body.task_id,
+    body.taskId,
+    body.id,
+    data?.provider_task_id,
+    data?.providerTaskId,
+    data?.task_id,
+    data?.taskId,
+    data?.id,
+    context?.provider_task_id,
+    context?.providerTaskId,
+    context?.task_id,
+    context?.taskId,
+    metadata?.provider_task_id,
+    metadata?.providerTaskId,
+  ];
+  return candidates
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .find((value) => value.startsWith("cgt-")) || "";
+}
+
 function normalizeStatus(body: Record<string, any>): string {
   const data = body.data && typeof body.data === "object" ? body.data as Record<string, unknown> : null;
   const raw = String(
@@ -72,6 +109,59 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function isVideoCountingSegment(segment: { status: string; generatedVideo?: string | null; generationParams?: unknown }) {
+  const params = asRecord(segment.generationParams);
+  const status = String(segment.status || "").toUpperCase();
+  return Boolean(params.clip_index || params.clipIndex || params.clip_video_prompt || params.clipVideoPrompt) ||
+    Boolean(segment.generatedVideo) ||
+    status === "VIDEO_READY" ||
+    status === "VIDEO_GENERATING" ||
+    status === "VIDEO_QUEUED" ||
+    status === "VIDEO_PROCESSING" ||
+    status === "VIDEO_FAILED" ||
+    status === "VIDEO_BILLING_FAILED";
+}
+
+function pickVideoCountingSegments<T extends { status: string; generatedVideo?: string | null; generationParams?: unknown }>(segments: T[]): T[] {
+  const videoSegments = segments.filter(isVideoCountingSegment);
+  return videoSegments.length > 0 ? videoSegments : segments;
+}
+
+async function updateStoryboardVideoAggregate(taskId: string) {
+  const allSegments = await prisma.storyboardSegment.findMany({
+    where: { taskId },
+    select: { status: true, generatedVideo: true, generationParams: true },
+  });
+  const videoSegments = pickVideoCountingSegments(allSegments);
+  const totalSegments = videoSegments.length || 1;
+  const readySegments = videoSegments.filter((segment) => segment.status === "VIDEO_READY").length;
+  const failedSegments = videoSegments.filter((segment) => segment.status === "VIDEO_FAILED" || segment.status === "VIDEO_BILLING_FAILED").length;
+  const generatingSegments = videoSegments.filter((segment) =>
+    segment.status === "VIDEO_GENERATING" || segment.status === "VIDEO_QUEUED" || segment.status === "VIDEO_PROCESSING"
+  ).length;
+  const status = readySegments === totalSegments
+    ? "VIDEO_GENERATION_COMPLETED"
+    : generatingSegments > 0
+      ? "VIDEO_GENERATING"
+      : failedSegments > 0
+        ? "VIDEO_GENERATION_FAILED"
+        : "VIDEO_GENERATING";
+  const progress = Math.floor(60 + (readySegments / totalSegments) * 30);
+
+  await prisma.storyboardTask.update({
+    where: { id: taskId },
+    data: { progress, status },
+  });
+  await syncTaskToSummary({ taskType: "storyboard", taskId, operation: "update" });
+
+  return {
+    progress,
+    readySegments,
+    totalSegments,
+    allVideosReady: readySegments === totalSegments,
+  };
 }
 
 function pickErrorMessage(body: Record<string, any>): string {
@@ -123,7 +213,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const segment_id = body.segment_id || context?.segment_id || metadata?.segment_id || querySegmentId;
+    const providerTaskId = pickProviderTaskId(body) || queryTaskId;
+    let segment_id = body.segment_id || context?.segment_id || metadata?.segment_id || querySegmentId;
     const video_url = pickVideoUrl(body);
     const status = normalizeStatus(body);
     const error = pickErrorMessage(body);
@@ -134,14 +225,27 @@ export async function POST(req: NextRequest) {
       segment_id,
       status,
       model,
+      providerTaskId,
       has_video: !!video_url,
     });
 
     if (!segment_id) {
-      return NextResponse.json(
-        { error: "Missing segment_id" },
-        { status: 400 }
-      );
+      const matchedSegment = providerTaskId
+        ? await prisma.storyboardSegment.findFirst({
+            where: {
+              generationParams: {
+                path: ["provider_task_id"],
+                equals: providerTaskId,
+              },
+            },
+            select: { id: true },
+          })
+        : null;
+      segment_id = matchedSegment?.id || "";
+    }
+
+    if (!segment_id) {
+      return NextResponse.json({ error: "Missing segment_id", provider_task_id: providerTaskId || null }, { status: 400 });
     }
 
     const existingSegment = await prisma.storyboardSegment.findUnique({
@@ -188,12 +292,44 @@ export async function POST(req: NextRequest) {
       include: { task: true },
     });
 
+    let billingResult: { deducted: boolean; amount: number; reason?: string } | null = null;
     let refundResult: { refunded: boolean; amount: number; reason?: string } | null = null;
+    const apiKey = status === "success" || status === "failed"
+      ? await resolveUserApiKey({
+          userId: segment.task.userId,
+          allowDefaultFallback: true,
+        })
+      : "";
+
+    if (status === "success" && video_url) {
+      if (apiKey) {
+        try {
+          billingResult = await deductStoryboardVideoCreditCharge({
+            segmentId: segment.id,
+            apiKey,
+            userId: segment.task.userId,
+            reason: "storyboard_video_success",
+          });
+        } catch (billingError) {
+          console.error("[storyboard-video] Failed to deduct successful segment:", billingError);
+          await prisma.storyboardSegment.update({
+            where: { id: segment.id },
+            data: {
+              status: "VIDEO_BILLING_FAILED",
+              generationParams: {
+                ...asRecord(segment.generationParams),
+                video_billing_error: billingError instanceof Error ? billingError.message : "Unknown billing error",
+                video_billing_failed_at: new Date().toISOString(),
+              } as Prisma.InputJsonValue,
+            },
+          }).catch(() => {});
+        }
+      } else {
+        console.error("[storyboard-video] Missing apiKey for successful segment billing:", { segment_id });
+      }
+    }
+
     if (status === "failed") {
-      const apiKey = await resolveUserApiKey({
-        userId: segment.task.userId,
-        allowDefaultFallback: true,
-      });
       if (apiKey) {
         try {
           refundResult = await refundStoryboardVideoCreditCharge({
@@ -217,55 +353,26 @@ export async function POST(req: NextRequest) {
       task_id: segment.taskId,
     });
 
-    // 3. Check if all segments have videos ready, update task progress
-    const allSegments = await prisma.storyboardSegment.findMany({
-      where: { taskId: segment.taskId },
-      select: { status: true },
-    });
-
-    const totalSegments = allSegments.length;
-    const readySegments = allSegments.filter((s) =>
-      s.status === "VIDEO_READY"
-    ).length;
-
-    const progress = Math.floor(60 + (readySegments / totalSegments) * 30); // 60-90%
-
-    const allVideosReady = readySegments === totalSegments;
-    const failedSegments = allSegments.filter((s) => s.status === "VIDEO_FAILED").length;
-    const generatingSegments = allSegments.filter((s) =>
-      s.status === "VIDEO_GENERATING" || s.status === "VIDEO_QUEUED" || s.status === "VIDEO_PROCESSING"
-    ).length;
-    const finalTaskStatus = allVideosReady
-      ? "VIDEO_GENERATION_COMPLETED"
-      : generatingSegments > 0
-        ? "VIDEO_GENERATING"
-        : failedSegments > 0
-          ? "VIDEO_GENERATION_FAILED"
-          : "VIDEO_GENERATING";
-
-    await prisma.storyboardTask.update({
-      where: { id: segment.taskId },
-      data: {
-        progress,
-        status: finalTaskStatus,
-      },
-    });
+    // 3. Check if all video-target segments are ready, update task progress.
+    const aggregate = await updateStoryboardVideoAggregate(segment.taskId);
 
     console.log("[storyboard-video] Updated task progress:", {
       task_id: segment.taskId,
-      progress,
-      ready: `${readySegments}/${totalSegments}`,
-      allReady: allVideosReady,
+      progress: aggregate.progress,
+      ready: `${aggregate.readySegments}/${aggregate.totalSegments}`,
+      allReady: aggregate.allVideosReady,
     });
 
     return NextResponse.json({
       success: true,
       segment_id,
       task_id: segment.taskId,
-      progress,
+      progress: aggregate.progress,
       refunded: refundResult?.refunded ?? false,
       refund_amount: refundResult?.amount ?? 0,
-      all_videos_ready: allVideosReady,
+      deducted: billingResult?.deducted ?? false,
+      deducted_amount: billingResult?.amount ?? 0,
+      all_videos_ready: aggregate.allVideosReady,
     });
   } catch (error) {
     console.error("[storyboard-video] Error:", error);

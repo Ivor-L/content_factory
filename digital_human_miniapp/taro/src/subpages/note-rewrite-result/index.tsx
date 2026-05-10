@@ -6,11 +6,13 @@ import './index.sass';
 
 const RESULT_STORAGE_KEY = 'NOTE_REWRITE_RESULT_ASSETS_V1';
 const RETURN_PAYLOAD_KEY = 'HOT_REWRITE_RETURN_PAYLOAD';
+const HOT_REWRITE_STATE_KEY = 'HOT_REWRITE_RESULT_STATE_V1';
 const IMAGE_WIDTH_RPX = 750;
 const IMAGE_FALLBACK_HEIGHT_RPX = 1000;
 const POLL_MS = 2800;
 
 type ResultKind = 'infographic' | 'card-layout';
+type GeneratedStatus = 'idle' | 'generating' | 'generated';
 
 type ResultBucket = {
   infographic?: {
@@ -27,10 +29,36 @@ type ResultBucket = {
   };
 };
 
+type RewriteImageViewMode = 'original' | 'rewrite';
+
+type HotRewriteState = {
+  infographic?: {
+    status?: GeneratedStatus;
+    taskId?: string;
+    generatedTaskId?: string;
+    title?: string;
+    images?: string[];
+    qrcode?: string;
+    url?: string;
+    updatedAt?: number;
+  };
+  cardLayout?: {
+    status?: GeneratedStatus;
+    taskId?: string;
+    generatedTaskId?: string;
+    title?: string;
+    images?: string[];
+    qrcode?: string;
+    url?: string;
+    updatedAt?: number;
+  };
+};
+
 type ReturnPayload = {
   taskId?: string;
   mode?: string;
   kind?: ResultKind;
+  status?: GeneratedStatus;
   generatedTaskId?: string;
   images?: string[];
   qrcode?: string;
@@ -54,27 +82,28 @@ function writeAssetStore(store: Record<string, ResultBucket>) {
   }
 }
 
+function readHotRewriteState(): Record<string, HotRewriteState> {
+  try {
+    const raw = Taro.getStorageSync(HOT_REWRITE_STATE_KEY);
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    return raw as Record<string, HotRewriteState>;
+  } catch {
+    return {};
+  }
+}
+
+function writeHotRewriteState(store: Record<string, HotRewriteState>) {
+  try {
+    Taro.setStorageSync(HOT_REWRITE_STATE_KEY, store);
+  } catch {
+    // ignore storage failures
+  }
+}
+
 function normalizeImages(value: unknown): string[] {
   return Array.isArray(value)
     ? value.map((item) => String(item || '').trim()).filter(Boolean)
     : [];
-}
-
-function buildQrImageSrc(text: string) {
-  const value = String(text || '').trim();
-  if (!value) return '';
-  if (/^https?:\/\/.+\.(png|jpe?g|webp)(\?|$)/i.test(value) || /^data:image\//i.test(value)) return value;
-  const base = (() => {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const fromDefine = typeof __API_BASE_URL__ !== 'undefined' ? String((__API_BASE_URL__ as any) || '').trim() : '';
-      return fromDefine.replace(/\/$/, '');
-    } catch {
-      return '';
-    }
-  })();
-  const path = `/api/utils/qrcode?size=360&text=${encodeURIComponent(value)}`;
-  return base ? `${base}${path}` : path;
 }
 
 function normalizeTag(tag: string) {
@@ -109,11 +138,12 @@ export default function NoteRewriteResultPage() {
   const [publishing, setPublishing] = useState(false);
   const [assets, setAssets] = useState<ResultBucket>({});
   const [activeResult, setActiveResult] = useState<ResultKind>('card-layout');
+  const [rewriteImageViewMode, setRewriteImageViewMode] = useState<RewriteImageViewMode>('rewrite');
   const [currentSlide, setCurrentSlide] = useState(0);
-  const [resultSlide, setResultSlide] = useState(0);
   const [ratioMap, setRatioMap] = useState<Record<string, number>>({});
   const pollTimerRef = useRef<number | null>(null);
   const taskIdRef = useRef('');
+  const [resultState, setResultState] = useState<HotRewriteState>({});
 
   const clearPoll = () => {
     if (pollTimerRef.current != null) {
@@ -133,6 +163,21 @@ export default function NoteRewriteResultPage() {
       const store = readAssetStore();
       store[targetTaskId] = merged;
       writeAssetStore(store);
+      return merged;
+    });
+  };
+
+  const mergeResultState = (next: HotRewriteState, targetTaskId = taskIdRef.current) => {
+    if (!targetTaskId) return;
+    setResultState((prev) => {
+      const merged = {
+        ...prev,
+        infographic: { ...(prev.infographic || {}), ...(next.infographic || {}) },
+        cardLayout: { ...(prev.cardLayout || {}), ...(next.cardLayout || {}) },
+      };
+      const store = readHotRewriteState();
+      store[targetTaskId] = merged;
+      writeHotRewriteState(store);
       return merged;
     });
   };
@@ -158,10 +203,18 @@ export default function NoteRewriteResultPage() {
     pollTimerRef.current = setInterval(() => {
       void (async () => {
         try {
-          const detail = await miniappApi.getImageTextMyNoteTask(generatedTaskId);
+          const detail = await miniappApi.getCreativeTask(generatedTaskId);
           const images = normalizeImages(detail.generatedImages);
           if (images.length > 0) {
             mergeAssets({ infographic: { taskId: generatedTaskId, images } });
+            mergeResultState({
+              infographic: {
+                status: 'generated',
+                generatedTaskId,
+                images,
+                updatedAt: Date.now(),
+              },
+            });
             clearPoll();
           }
           const status = String(detail.status || '').toUpperCase();
@@ -180,12 +233,35 @@ export default function NoteRewriteResultPage() {
     const images = normalizeImages(payload.images);
     const qrcode = String(payload.qrcode || '').trim();
     const url = String(payload.url || '').trim();
+    const status = payload.status === 'generated' ? 'generated' : 'generating';
     if (kind === 'infographic') {
       mergeAssets({ infographic: { taskId: generatedTaskId, images, qrcode, url } }, targetTaskId);
+      mergeResultState({
+        infographic: {
+          status,
+          taskId,
+          generatedTaskId,
+          images,
+          qrcode,
+          url,
+          updatedAt: Date.now(),
+        },
+      }, targetTaskId);
       setActiveResult('infographic');
-      if (images.length === 0 && generatedTaskId) pollGeneratedTask(generatedTaskId);
+      if (status !== 'generated' && generatedTaskId) pollGeneratedTask(generatedTaskId);
     } else {
       mergeAssets({ cardLayout: { taskId: generatedTaskId, images, qrcode, url } }, targetTaskId);
+      mergeResultState({
+        cardLayout: {
+          status: images.length > 0 ? 'generated' : 'generating',
+          taskId,
+          generatedTaskId,
+          images,
+          qrcode,
+          url,
+          updatedAt: Date.now(),
+        },
+      }, targetTaskId);
       setActiveResult('card-layout');
     }
   };
@@ -198,7 +274,13 @@ export default function NoteRewriteResultPage() {
     setMode(nextMode);
     const stored = readAssetStore()[id] || {};
     setAssets(stored);
-    if (stored.infographic?.images?.length && !stored.cardLayout?.images?.length) setActiveResult('infographic');
+    const storedState = readHotRewriteState()[id] || {};
+    setResultState(storedState);
+    if (storedState.cardLayout?.status || stored.cardLayout?.images?.length) {
+      setActiveResult('card-layout');
+    } else if (storedState.infographic?.status || stored.infographic?.images?.length) {
+      setActiveResult('infographic');
+    }
     const returned = Taro.getStorageSync(RETURN_PAYLOAD_KEY);
     if (returned && typeof returned === 'object') {
       applyReturnPayload(returned as ReturnPayload, id);
@@ -211,7 +293,15 @@ export default function NoteRewriteResultPage() {
     const id = taskIdRef.current || taskId;
     if (id) {
       void loadTask(id, true);
-      setAssets(readAssetStore()[id] || {});
+      const stored = readAssetStore()[id] || {};
+      const storedState = readHotRewriteState()[id] || {};
+      setAssets(stored);
+      setResultState(storedState);
+      if (storedState.cardLayout?.status || stored.cardLayout?.images?.length) {
+        setActiveResult('card-layout');
+      } else if (storedState.infographic?.status || stored.infographic?.images?.length) {
+        setActiveResult('infographic');
+      }
     }
     const returned = Taro.getStorageSync(RETURN_PAYLOAD_KEY);
     if (returned && typeof returned === 'object') {
@@ -224,20 +314,33 @@ export default function NoteRewriteResultPage() {
 
   const rewrite = task?.analysisResult?.rewriteResult || null;
   const title = rewrite?.title || task?.source.title || '仿写结果';
+  const originalImageTextItems = useMemo(() => {
+    const sourceTexts = Array.isArray(task?.analysisResult?.extractedImageTexts)
+      ? task.analysisResult.extractedImageTexts
+      : [];
+    return sourceTexts
+      .map((item) => String(item?.text || '').trim())
+      .filter(Boolean);
+  }, [task?.analysisResult?.extractedImageTexts]);
+  const rewriteImageTextItems = useMemo(() => {
+    return Array.isArray(rewrite?.imageTexts)
+      ? rewrite.imageTexts.map((text) => String(text || '').trim()).filter(Boolean)
+      : [];
+  }, [rewrite?.imageTexts]);
   const images = useMemo(() => {
     if (!task) return [] as string[];
     const source = task.analysisResult.sourceImages.length > 0 ? task.analysisResult.sourceImages : task.source.images;
     return source.filter(Boolean);
   }, [task]);
   const tags = useMemo(() => extractTags(rewrite), [rewrite]);
-  const activeImages = activeResult === 'infographic'
-    ? normalizeImages(assets.infographic?.images)
-    : normalizeImages(assets.cardLayout?.images);
-  const activePublish = activeResult === 'infographic' ? assets.infographic : assets.cardLayout;
-  const resultTabs = [
-    { key: 'infographic' as ResultKind, label: '信息卡片', count: normalizeImages(assets.infographic?.images).length },
-    { key: 'card-layout' as ResultKind, label: '图文卡片', count: normalizeImages(assets.cardLayout?.images).length },
-  ];
+  const activeBucket = activeResult === 'infographic' ? assets.infographic : assets.cardLayout;
+  const activeImages = normalizeImages(activeBucket?.images);
+  const activePublish = activeBucket;
+  const activeImageTextItems = rewriteImageViewMode === 'original' ? originalImageTextItems : rewriteImageTextItems;
+  const activeImageTextLabel = rewriteImageViewMode === 'original'
+    ? `原文案 (${originalImageTextItems.length})`
+    : `仿写文案 (${rewriteImageTextItems.length})`;
+  const activeImageTextCopy = activeImageTextItems.join('\n\n');
 
   const rememberRatio = (url: string, width?: number, height?: number) => {
     if (!url || !width || !height || width <= 0 || height <= 0) return;
@@ -251,7 +354,7 @@ export default function NoteRewriteResultPage() {
     return Math.round(IMAGE_WIDTH_RPX * ratio);
   };
 
-  const openGenerator = (targetFeature: ResultKind) => {
+  const openGenerator = (targetFeature: ResultKind, options?: { viewGenerated?: boolean }) => {
     if (!rewrite || !taskId) return;
     Taro.setStorageSync('MY_NOTE_REWRITE_PAYLOAD', {
       targetFeature,
@@ -259,9 +362,78 @@ export default function NoteRewriteResultPage() {
       body: rewrite.body,
       imageTexts: rewrite.imageTexts,
     });
+    const viewParam = options?.viewGenerated ? '&viewGenerated=1' : '';
     Taro.navigateTo({
-      url: `/subpages/image-generate/index?origin=hot-rewrite&taskId=${encodeURIComponent(taskId)}&mode=${encodeURIComponent(mode)}&returnPage=note-rewrite-result&targetFeature=${encodeURIComponent(targetFeature)}`,
+      url: `/subpages/image-generate/index?origin=hot-rewrite&taskId=${encodeURIComponent(taskId)}&mode=${encodeURIComponent(mode)}&returnPage=note-rewrite-result&targetFeature=${encodeURIComponent(targetFeature)}${viewParam}`,
     });
+  };
+
+  const getFeatureStatusText = (targetFeature: ResultKind) => {
+    const bucket = targetFeature === 'infographic' ? resultState.infographic : resultState.cardLayout;
+    if (!bucket || bucket.status === 'idle') return targetFeature === 'infographic' ? '开始创作' : '一键生成';
+    if (bucket.status === 'generating') return targetFeature === 'infographic' ? '正在创作' : '生成中';
+    if (bucket.status === 'generated') return '已生成';
+    return targetFeature === 'infographic' ? '开始创作' : '一键生成';
+  };
+
+  const shouldOpenExisting = (targetFeature: ResultKind) => {
+    const bucket = targetFeature === 'infographic' ? resultState.infographic : resultState.cardLayout;
+    return Boolean(bucket && bucket.status === 'generated' && normalizeImages(targetFeature === 'infographic' ? assets.infographic?.images : assets.cardLayout?.images).length > 0);
+  };
+
+  const getFeatureHint = (targetFeature: ResultKind) => {
+    const bucket = targetFeature === 'infographic' ? resultState.infographic : resultState.cardLayout;
+    if (!bucket || bucket.status === 'idle') return '';
+    if (bucket.status === 'generating') return targetFeature === 'infographic' ? '任务已提交，去作品页查看' : '任务已提交，可去生成页查看';
+    if (bucket.status === 'generated') return '点击查看或重新生成';
+    return '';
+  };
+
+  const getFeatureSecondaryAction = (targetFeature: ResultKind) => {
+    const bucket = targetFeature === 'infographic' ? resultState.infographic : resultState.cardLayout;
+    if (!bucket || bucket.status === 'idle') return '';
+    if (bucket.status === 'generating') return targetFeature === 'infographic' ? '查看作品' : '查看生成页';
+    if (bucket.status === 'generated') return '重新生成';
+    return '';
+  };
+
+  const handleFeatureSecondaryAction = (targetFeature: ResultKind) => {
+    const bucket = targetFeature === 'infographic' ? resultState.infographic : resultState.cardLayout;
+    if (!bucket || bucket.status === 'idle') return;
+    if (bucket.status === 'generating') {
+      if (targetFeature === 'infographic') {
+        Taro.switchTab({ url: '/pages/works/index' });
+        return;
+      }
+      openGenerator(targetFeature);
+      return;
+    }
+    openGenerator(targetFeature);
+  };
+
+  const handleFeaturePrimaryAction = (targetFeature: ResultKind) => {
+    const bucket = targetFeature === 'infographic' ? resultState.infographic : resultState.cardLayout;
+    if (!bucket || bucket.status === 'idle') {
+      openGenerator(targetFeature);
+      return;
+    }
+    if (bucket.status === 'generating') {
+      if (targetFeature === 'infographic') {
+        Taro.switchTab({ url: '/pages/works/index' });
+        return;
+      }
+      openGenerator(targetFeature);
+      return;
+    }
+    if (shouldOpenExisting(targetFeature)) {
+      if (targetFeature === 'infographic') {
+        Taro.switchTab({ url: '/pages/works/index' });
+      } else {
+        openGenerator(targetFeature, { viewGenerated: true });
+      }
+      return;
+    }
+    openGenerator(targetFeature);
   };
 
   const handlePublish = async () => {
@@ -357,56 +529,52 @@ export default function NoteRewriteResultPage() {
                 {tags.map((tag) => <Text key={tag} className='note-result-tag'>#{tag}</Text>)}
               </View>
 
-              <View className='note-result-section-head'>
+              <View className='note-result-section-head note-result-section-head--spaced'>
                 <Text className='note-result-section-title'>图片正文</Text>
-                <View className='note-result-copy' onClick={() => copyText('图片正文', rewrite.imageTexts.join('\n\n'))}><Text className='note-result-copy-text'>复制</Text></View>
+                <View className='note-result-copy' onClick={() => copyText(activeImageTextLabel, activeImageTextCopy)}><Text className='note-result-copy-text'>复制</Text></View>
               </View>
-              {rewrite.imageTexts.length > 0 ? rewrite.imageTexts.map((text, index) => (
-                <Text key={`${index}-${text}`} className='note-result-image-text'>{text}</Text>
-              )) : <Text className='note-result-image-text note-result-image-text--empty'>暂无图片正文</Text>}
-
-              <View className='note-result-generated'>
-                <View className='note-result-tabs'>
-                  {resultTabs.map((tab) => (
-                    <View key={tab.key} className={`note-result-tab ${activeResult === tab.key ? 'note-result-tab--active' : ''}`} onClick={() => {
-                      setActiveResult(tab.key);
-                      setResultSlide(0);
-                    }}>
-                      <Text className={`note-result-tab-text ${activeResult === tab.key ? 'note-result-tab-text--active' : ''}`}>{tab.label}</Text>
-                      {tab.count > 0 && <Text className='note-result-tab-count'>{tab.count}</Text>}
-                    </View>
-                  ))}
+              <View className='note-result-image-toggle'>
+                <View
+                  className={`note-result-image-toggle-item ${rewriteImageViewMode === 'original' ? 'note-result-image-toggle-item--active' : ''}`}
+                  onClick={() => setRewriteImageViewMode('original')}
+                >
+                  <Text className={`note-result-image-toggle-text ${rewriteImageViewMode === 'original' ? 'note-result-image-toggle-text--active' : ''}`}>原文案</Text>
                 </View>
-                {activeImages.length === 0 ? (
-                  <View className='note-result-generated-empty' />
-                ) : (
-                  <View className='note-result-generated-swiper'>
-                    <Swiper className='note-result-generated-swiper-inner' current={resultSlide} onChange={(event) => setResultSlide(event.detail.current)}>
-                      {activeImages.map((url, index) => (
-                        <SwiperItem key={`${url}-${index}`}>
-                          <Image className='note-result-generated-image' src={url} mode='aspectFit' />
-                        </SwiperItem>
-                      ))}
-                    </Swiper>
-                    <View className='note-result-generated-indicator'><Text className='note-result-indicator-text'>{resultSlide + 1}/{activeImages.length}</Text></View>
-                  </View>
-                )}
-                {!!activePublish?.qrcode && (
-                  <View className='note-result-qrcode-card'>
-                    <Text className='note-result-qrcode-title'>小红书发布二维码</Text>
-                    <Image className='note-result-qrcode-image' src={buildQrImageSrc(activePublish.qrcode)} mode='aspectFit' />
-                  </View>
-                )}
+                <View
+                  className={`note-result-image-toggle-item ${rewriteImageViewMode === 'rewrite' ? 'note-result-image-toggle-item--active' : ''}`}
+                  onClick={() => setRewriteImageViewMode('rewrite')}
+                >
+                  <Text className={`note-result-image-toggle-text ${rewriteImageViewMode === 'rewrite' ? 'note-result-image-toggle-text--active' : ''}`}>仿写文案</Text>
+                </View>
               </View>
+              {activeImageTextItems.length > 0 ? activeImageTextItems.map((text, index) => (
+                <Text key={`${rewriteImageViewMode}-${index}-${text}`} className='note-result-image-text'>{text}</Text>
+              )) : (
+                <Text className='note-result-image-text note-result-image-text--empty'>
+                  {rewriteImageViewMode === 'original' ? '暂无原文案' : '暂无仿写文案'}
+                </Text>
+              )}
             </View>
           </ScrollView>
 
           <View className='note-result-action-bar'>
-            <View className='note-result-action' onClick={() => openGenerator('infographic')}>
-              <Text className='note-result-action-text'>生成信息卡片</Text>
+            <View className='note-result-action' onClick={() => handleFeaturePrimaryAction('infographic')}>
+              <Text className='note-result-action-text'>{getFeatureStatusText('infographic')}</Text>
+              {!!getFeatureHint('infographic') && <Text className='note-result-action-hint'>{getFeatureHint('infographic')}</Text>}
+              {!!getFeatureSecondaryAction('infographic') && (
+                <View className='note-result-action-link' onClick={(event) => { event.stopPropagation(); handleFeatureSecondaryAction('infographic'); }}>
+                  <Text className='note-result-action-link-text'>{getFeatureSecondaryAction('infographic')}</Text>
+                </View>
+              )}
             </View>
-            <View className='note-result-action' onClick={() => openGenerator('card-layout')}>
-              <Text className='note-result-action-text'>生成图文卡片</Text>
+            <View className='note-result-action' onClick={() => handleFeaturePrimaryAction('card-layout')}>
+              <Text className='note-result-action-text'>{getFeatureStatusText('card-layout')}</Text>
+              {!!getFeatureHint('card-layout') && <Text className='note-result-action-hint'>{getFeatureHint('card-layout')}</Text>}
+              {!!getFeatureSecondaryAction('card-layout') && (
+                <View className='note-result-action-link' onClick={(event) => { event.stopPropagation(); handleFeatureSecondaryAction('card-layout'); }}>
+                  <Text className='note-result-action-link-text'>{getFeatureSecondaryAction('card-layout')}</Text>
+                </View>
+              )}
             </View>
             <View className={`note-result-action note-result-action--publish ${publishing ? 'note-result-action--disabled' : ''}`} onClick={publishing ? undefined : handlePublish}>
               <Text className='note-result-action-text note-result-action-text--publish'>{publishing ? '发布中' : '发布'}</Text>
