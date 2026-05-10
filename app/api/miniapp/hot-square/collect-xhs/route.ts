@@ -366,7 +366,7 @@ function normalizeStats(payload: Record<string, unknown>) {
       'data.noteCard.interact_info.liked_count',
       'data.note_card.interact_info.liked_count',
       'result.stats.likes',
-    ], ['点赞数', '点赞', '赞数', 'liked_count', 'like_count', 'likeCount', 'likedCount', 'likes']),
+    ], ['点赞数', '点赞', '赞数', '点赞数量', 'liked_count', 'like_count', 'likeCount', 'likedCount', 'likes']),
     collects: pickMetric(payload, [
       'stats.collects',
       'stats.collectCount',
@@ -395,7 +395,7 @@ function normalizeStats(payload: Record<string, unknown>) {
       'data.noteCard.interact_info.collected_count',
       'data.note_card.interact_info.collected_count',
       'result.stats.collects',
-    ], ['收藏数', '收藏', 'collected_count', 'collect_count', 'collectCount', 'collectedCount', 'collects']),
+    ], ['收藏数', '收藏', '收藏数量', 'collected_count', 'collect_count', 'collectCount', 'collectedCount', 'collects']),
     comments: pickMetric(payload, [
       'stats.comments',
       'stats.commentCount',
@@ -422,7 +422,7 @@ function normalizeStats(payload: Record<string, unknown>) {
       'data.noteCard.interact_info.comment_count',
       'data.note_card.interact_info.comment_count',
       'result.stats.comments',
-    ], ['评论数', '评论', 'comment_count', 'commentCount', 'comments']),
+    ], ['评论数', '评论', '评论数量', 'comment_count', 'commentCount', 'comments']),
     shares: pickMetric(payload, [
       'stats.shares',
       'stats.shareCount',
@@ -449,7 +449,7 @@ function normalizeStats(payload: Record<string, unknown>) {
       'data.noteCard.interact_info.share_count',
       'data.note_card.interact_info.share_count',
       'result.stats.shares',
-    ], ['分享数', '分享', 'share_count', 'shareCount', 'shares']),
+    ], ['分享数', '分享', '分享数量', 'share_count', 'shareCount', 'shares']),
   };
 }
 
