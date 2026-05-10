@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useTranslation } from "@/hooks/useTranslation";
 import { splitMarkdownDocument, type MarkdownFrontmatterValue } from "@/lib/markdown-frontmatter";
+import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/lib/utils";
 import {
   MD2CARD_COMMON_CSS,
@@ -5205,11 +5206,22 @@ export function MarkdownXhsLayoutModal({
     setIsGeneratingMeta(true);
 
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      const localApiKey = window.localStorage.getItem("user_api_key");
+      if (localApiKey) {
+        headers["x-user-api-key"] = localApiKey;
+      }
+
       const response = await fetch("/api/xhs-layout/meta", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify({
           markdown,
           filePath: filePath || "untitled.md",

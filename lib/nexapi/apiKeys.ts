@@ -102,6 +102,11 @@ export async function getActiveApiKeyRecord(secret: string | null): Promise<Acti
 }
 
 export async function resolveUserIdFromApiKey(secret: string | null): Promise<string | null> {
-  const record = await getActiveApiKeyRecord(secret);
-  return record?.userId ?? null;
+  try {
+    const record = await getActiveApiKeyRecord(secret);
+    return record?.userId ?? null;
+  } catch (error) {
+    console.error('[nexapi] Failed to resolve API key record', error);
+    return null;
+  }
 }

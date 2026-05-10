@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
 import type { StoryboardSegmentItem, StoryboardTaskStatusResult } from '../../utils/miniapp-api';
 import { api } from '../../utils/api';
+import type { DigitalHumanCharacter } from '../../utils/api';
 import imageIcon from '../../assets/icons/storyboard-placeholder-image.svg';
 import videoIcon from '../../assets/icons/storyboard-placeholder-video.svg';
 import './index.sass';
@@ -40,6 +41,7 @@ type LocalGeneratingEntry = {
   history?: string[];
   keepUrl?: string;
 };
+type MergeVoiceMode = 'none' | 'upload' | 'role';
 
 const DEFAULT_IMAGE_MODEL = 'image2';
 const PRODUCT_REPLACE_PROMPT = '请将分镜故事板的产品换成图1';
@@ -87,6 +89,15 @@ export default function StoryboardBoardPage() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [actioningMap, setActioningMap] = useState<Record<string, boolean>>({});
   const [modelSheetOpen, setModelSheetOpen] = useState(false);
+  const [mergeSheetOpen, setMergeSheetOpen] = useState(false);
+  const [mergeVoiceMode, setMergeVoiceMode] = useState<MergeVoiceMode>('none');
+  const [mergeVoiceUrl, setMergeVoiceUrl] = useState('');
+  const [mergeBgmUrl, setMergeBgmUrl] = useState('');
+  const [mergeWantSubtitles, setMergeWantSubtitles] = useState(true);
+  const [mergeCharacters, setMergeCharacters] = useState<DigitalHumanCharacter[]>([]);
+  const [mergeSelectedCharacterId, setMergeSelectedCharacterId] = useState('');
+  const [uploadingMergeVoice, setUploadingMergeVoice] = useState(false);
+  const [uploadingMergeBgm, setUploadingMergeBgm] = useState(false);
   const [autoOpenEdit, setAutoOpenEdit] = useState(false);
   const [autoOpenedEdit, setAutoOpenedEdit] = useState(false);
   const [imageErrorMap, setImageErrorMap] = useState<Record<string, boolean>>({});
@@ -912,12 +923,116 @@ export default function StoryboardBoardPage() {
     });
   };
 
+  const loadMergeCharacters = async () => {
+    if (mergeCharacters.length > 0) return;
+    try {
+      const list = await api.getDigitalHumans();
+      setMergeCharacters(list);
+      const firstWithVoice = list.find((item) => item.voiceUrl);
+      if (!mergeSelectedCharacterId && firstWithVoice) {
+        setMergeSelectedCharacterId(firstWithVoice.id);
+      }
+    } catch {
+      Taro.showToast({ title: '音色列表加载失败', icon: 'none' });
+    }
+  };
+
+  const openMergeSheet = () => {
+    if (!segments.some((segment) => normalizeMediaUrl(segment.generatedVideo))) {
+      Taro.showToast({ title: '请先生成分镜视频', icon: 'none' });
+      return;
+    }
+    setMergeSheetOpen(true);
+    void loadMergeCharacters();
+  };
+
+  const handleChooseMergeVoice = async () => {
+    if (uploadingMergeVoice) return;
+    try {
+      const res = await Taro.chooseMessageFile({ count: 1, type: 'file', extension: ['mp3', 'wav', 'm4a', 'aac'] });
+      const file = res.tempFiles[0];
+      if (!file?.path) return;
+      setUploadingMergeVoice(true);
+      const ext = (file.name?.split('.').pop() || 'mp3').toLowerCase();
+      const mimeByExt: Record<string, string> = {
+        mp3: 'audio/mpeg',
+        wav: 'audio/wav',
+        m4a: 'audio/mp4',
+        aac: 'audio/aac',
+      };
+      const uploaded = await api.uploadMedia(file.path, `storyboard-voice-${Date.now()}.${ext}`, mimeByExt[ext] || 'audio/mpeg');
+      setMergeVoiceUrl(uploaded);
+      setMergeVoiceMode('upload');
+      Taro.showToast({ title: '音色已上传', icon: 'success' });
+    } catch (error) {
+      if (isUserCancel(error)) return;
+      Taro.showToast({ title: error instanceof Error ? error.message : '音色上传失败', icon: 'none' });
+    } finally {
+      setUploadingMergeVoice(false);
+    }
+  };
+
+  const handleChooseMergeBgm = async () => {
+    if (uploadingMergeBgm) return;
+    try {
+      const res = await Taro.chooseMessageFile({ count: 1, type: 'file', extension: ['mp3', 'wav', 'm4a', 'aac'] });
+      const file = res.tempFiles[0];
+      if (!file?.path) return;
+      setUploadingMergeBgm(true);
+      const ext = (file.name?.split('.').pop() || 'mp3').toLowerCase();
+      const mimeByExt: Record<string, string> = {
+        mp3: 'audio/mpeg',
+        wav: 'audio/wav',
+        m4a: 'audio/mp4',
+        aac: 'audio/aac',
+      };
+      const uploaded = await api.uploadMedia(file.path, `storyboard-bgm-${Date.now()}.${ext}`, mimeByExt[ext] || 'audio/mpeg');
+      setMergeBgmUrl(uploaded);
+      Taro.showToast({ title: 'BGM已上传', icon: 'success' });
+    } catch (error) {
+      if (isUserCancel(error)) return;
+      Taro.showToast({ title: error instanceof Error ? error.message : 'BGM上传失败', icon: 'none' });
+    } finally {
+      setUploadingMergeBgm(false);
+    }
+  };
+
+  const getSelectedMergeVoiceUrl = () => {
+    if (mergeVoiceMode === 'upload') return mergeVoiceUrl.trim();
+    if (mergeVoiceMode === 'role') {
+      const selected = mergeCharacters.find((item) => item.id === mergeSelectedCharacterId);
+      return String(selected?.voiceUrl || '').trim();
+    }
+    return '';
+  };
+
   const handleMerge = async () => {
     const actionKey = 'merge';
     if (isActioning(actionKey)) return;
+    const voiceId = getSelectedMergeVoiceUrl();
+    if (mergeVoiceMode === 'upload' && !voiceId) {
+      Taro.showToast({ title: '请先上传音色，或选择不使用音色', icon: 'none' });
+      return;
+    }
+    if (mergeVoiceMode === 'role' && !voiceId) {
+      Taro.showToast({ title: '当前角色没有音色，请换一个角色或不使用音色', icon: 'none' });
+      return;
+    }
     setActioning(actionKey, true);
     try {
-      await miniappApi.mergeStoryboard(taskId);
+      const bgmUrl = mergeBgmUrl.trim();
+      if (voiceId || bgmUrl) {
+        await miniappApi.autoEditStoryboard(taskId, {
+          voiceId,
+          bgmUrl,
+          wantSubtitles: mergeWantSubtitles,
+        });
+      } else {
+        await miniappApi.mergeStoryboard(taskId, {
+          enableSubtitles: mergeWantSubtitles,
+        });
+      }
+      setMergeSheetOpen(false);
       Taro.showToast({ title: '已触发一键剪辑', icon: 'success' });
       await loadStatus(true);
     } catch (error) {
@@ -1012,6 +1127,7 @@ export default function StoryboardBoardPage() {
     [segments, editingSegmentId],
   );
   const editingAssets = editingSegment ? getEditingAssetItems(editingSegment, editingType) : [];
+  const mergeSelectedCharacter = mergeCharacters.find((item) => item.id === mergeSelectedCharacterId) || null;
   const composerStyle = useMemo(
     () => (keyboardHeight > 0 ? { bottom: `${keyboardHeight + 8}px` } : undefined),
     [keyboardHeight],
@@ -1536,9 +1652,11 @@ export default function StoryboardBoardPage() {
           </View>
           <View
             className='remix-review-bottom-btn remix-review-bottom-btn--primary'
-            onClick={handleOpenRemixVideoGenerate}
+            onClick={segments.some((segment) => normalizeMediaUrl(segment.generatedVideo)) ? openMergeSheet : handleOpenRemixVideoGenerate}
           >
-            <Text className='remix-review-bottom-btn-text'>生成视频</Text>
+            <Text className='remix-review-bottom-btn-text'>
+              {segments.some((segment) => normalizeMediaUrl(segment.generatedVideo)) ? '一键剪辑' : '生成视频'}
+            </Text>
           </View>
         </View>
       )}
@@ -1564,7 +1682,7 @@ export default function StoryboardBoardPage() {
           <View className='storyboard-action-btn storyboard-bottom-btn storyboard-bottom-btn--ghost' onClick={handleOpenFinalVideo}>
             <Text className='storyboard-bottom-btn-text storyboard-bottom-btn-text--ghost'>查看成片</Text>
           </View>
-          <View className='storyboard-action-btn storyboard-bottom-btn storyboard-bottom-btn--primary' onClick={handleMerge}>
+          <View className='storyboard-action-btn storyboard-bottom-btn storyboard-bottom-btn--primary' onClick={openMergeSheet}>
             <Text className='storyboard-bottom-btn-text'>
               {isActioning('merge') ? '剪辑中...' : '一键剪辑'}
             </Text>
@@ -1641,6 +1759,98 @@ export default function StoryboardBoardPage() {
               }}
             >
               <Text className='storyboard-sheet-danger-text'>{deleting ? '删除中...' : '删除分镜板'}</Text>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {mergeSheetOpen && (
+        <View className='storyboard-sheet-mask' onClick={() => setMergeSheetOpen(false)}>
+          <View className='storyboard-sheet-panel storyboard-merge-sheet-panel' onClick={(e) => e.stopPropagation()}>
+            <Text className='storyboard-sheet-title'>一键剪辑</Text>
+
+            <Text className='storyboard-sheet-label'>音色</Text>
+            <View className='storyboard-sheet-tabs'>
+              {[
+                { id: 'none', label: '不使用音色' },
+                { id: 'upload', label: '上传音色' },
+                { id: 'role', label: '角色音色' },
+              ].map((item) => (
+                <View
+                  key={item.id}
+                  className={`storyboard-sheet-tab ${mergeVoiceMode === item.id ? 'storyboard-sheet-tab--active' : ''}`}
+                  onClick={() => {
+                    setMergeVoiceMode(item.id as MergeVoiceMode);
+                    if (item.id === 'role') void loadMergeCharacters();
+                  }}
+                >
+                  <Text className={`storyboard-sheet-tab-text ${mergeVoiceMode === item.id ? 'storyboard-sheet-tab-text--active' : ''}`}>
+                    {item.label}
+                  </Text>
+                </View>
+              ))}
+            </View>
+
+            {mergeVoiceMode === 'upload' && (
+              <View className='storyboard-merge-upload-row' onClick={() => void handleChooseMergeVoice()}>
+                <Text className='storyboard-merge-upload-icon'>{uploadingMergeVoice ? '...' : '+'}</Text>
+                <Text className='storyboard-merge-upload-text'>{mergeVoiceUrl ? '已上传音色，点击更换' : '点击上传音频文件'}</Text>
+              </View>
+            )}
+
+            {mergeVoiceMode === 'role' && (
+              <ScrollView scrollX className='storyboard-merge-role-scroll'>
+                <View className='storyboard-merge-role-row'>
+                  {mergeCharacters.map((char) => {
+                    const active = mergeSelectedCharacterId === char.id;
+                    return (
+                      <View
+                        key={char.id}
+                        className={`storyboard-merge-role-card ${active ? 'storyboard-merge-role-card--active' : ''}`}
+                        onClick={() => setMergeSelectedCharacterId(char.id)}
+                      >
+                        <Image className='storyboard-merge-role-avatar' src={char.imageUrl} mode='aspectFill' />
+                        <Text className='storyboard-merge-role-name'>{char.name || '角色'}</Text>
+                        <Text className={`storyboard-merge-role-voice ${char.voiceUrl ? 'storyboard-merge-role-voice--ready' : ''}`}>
+                          {char.voiceUrl ? '已绑定音色' : '未绑定音色'}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+            )}
+            {mergeVoiceMode === 'role' && mergeCharacters.length === 0 && (
+              <Text className='storyboard-merge-hint'>暂无角色音色，可先上传音色或选择不使用音色。</Text>
+            )}
+            {mergeVoiceMode === 'role' && mergeSelectedCharacter && !mergeSelectedCharacter.voiceUrl && (
+              <Text className='storyboard-merge-hint'>当前角色未绑定音色。</Text>
+            )}
+
+            <Text className='storyboard-sheet-label'>字幕</Text>
+            <View className='storyboard-merge-toggle-row'>
+              <View
+                className={`storyboard-merge-toggle ${mergeWantSubtitles ? 'storyboard-merge-toggle--active' : ''}`}
+                onClick={() => setMergeWantSubtitles((prev) => !prev)}
+              >
+                <View className='storyboard-merge-toggle-knob' />
+              </View>
+              <Text className='storyboard-merge-toggle-text'>{mergeWantSubtitles ? '生成字幕' : '不生成字幕'}</Text>
+            </View>
+
+            <Text className='storyboard-sheet-label'>BGM</Text>
+            <View className='storyboard-merge-upload-row' onClick={() => void handleChooseMergeBgm()}>
+              <Text className='storyboard-merge-upload-icon'>{uploadingMergeBgm ? '...' : '+'}</Text>
+              <Text className='storyboard-merge-upload-text'>{mergeBgmUrl ? '已上传BGM，点击更换' : '点击上传，或保持不用BGM'}</Text>
+            </View>
+            {mergeBgmUrl && (
+              <View className='storyboard-merge-clear' onClick={() => setMergeBgmUrl('')}>
+                <Text className='storyboard-merge-clear-text'>移除BGM</Text>
+              </View>
+            )}
+
+            <View className='storyboard-sheet-confirm' onClick={() => void handleMerge()}>
+              <Text className='storyboard-sheet-confirm-text'>{isActioning('merge') ? '剪辑中...' : '开始剪辑'}</Text>
             </View>
           </View>
         </View>

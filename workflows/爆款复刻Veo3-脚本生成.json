@@ -1,0 +1,753 @@
+{
+  "name": "爆款复刻Veo3-脚本生成",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// 1. 🚨 核心修复：不要用 $input，直接从【源头 Webhook 节点】强行抓取数据！\n// 无视中间经过的 HTTP 请求节点，确保拿到最原始的参数。\nconst webhookJson = $('Webhook').first()?.json || {};\nconst body = webhookJson.body || {};\n\n// 2. 辅助函数：安全转换字符串\nfunction toText(v) {\n  if (v == null) return '';\n  if (typeof v === 'object') return String(v.text ?? v.value ?? v.name ?? '').trim();\n  return String(v).trim();\n}\n\nfunction pickMeta(...keys) {\n  for (const key of keys) {\n    const value = body.metadata?.[key];\n    const text = toText(value);\n    if (text) return text;\n  }\n  return '';\n}\n\nfunction normalizeContentType(raw, hasProduct) {\n  const value = toText(raw).toLowerCase();\n  if (['story', 'plot', 'narrative', '剧情', '剧情视频'].includes(value)) return 'story';\n  if (['commerce', 'product', 'shopping', '带货', '带货视频'].includes(value)) return 'commerce';\n  return hasProduct ? 'commerce' : 'story';\n}\n\nfunction normalizeStoryType(raw, label) {\n  const value = toText(raw || label).toLowerCase();\n  if (value.includes('body') || value.includes('science') || value.includes('身体')) return '身体科学型';\n  if (value.includes('survival') || value.includes('challenge') || value.includes('生存')) return '生存挑战型';\n  if (value.includes('hypothetical') || value.includes('假设')) return '假设情景型';\n  if (value.includes('growth') || value.includes('age') || value.includes('成长')) return '人生成长型';\n  return label || '时间推进型';\n}\n\n// 3. 针对 Agent 需求的精准字段映射\n// 提取产品名称\nconst productName = toText(body.product_name || body.productName || \"\");\n\n// 提取产品描述：优先取最详细的卖点字段\nconst productDesc = toText(body.product_selling_points || body.product_description || \"\");\n\nconst contentType = normalizeContentType(\n  body.content_type || body.contentType || body.video_type || body.videoType || pickMeta('content_type', 'contentType', 'video_type', 'videoType'),\n  Boolean(productName || body.product_id || body.productId)\n);\n\n// 提取角色与模式\nconst presenterMode = toText(body.metadata?.feature || 'skeleton_storyboard');\nconst personDesc = toText(body.character_name || body.characterName || '3D透明骨骼');\nconst storySubject = toText(body.story_subject || body.storySubject || pickMeta('story_subject', 'storySubject') || personDesc || 'transparent skeleton character');\nconst storyScene = toText(body.story_scene || body.storyScene || pickMeta('story_scene', 'storyScene') || '一个强反差的电影感场景');\nconst storyTypeLabel = toText(body.story_type_label || body.storyTypeLabel || pickMeta('story_type_label', 'storyTypeLabel'));\nconst storyType = normalizeStoryType(body.story_type || body.storyType || pickMeta('story_type', 'storyType'), storyTypeLabel);\n\n// 提取时长与分段逻辑\nconst durationSec = parseInt(body.duration_sec || body.metadata?.duration_sec || body.duration_seconds || 64);\nconst segSeconds = 8;\nconst nSegments = Math.ceil(durationSec / segSeconds);\n\nconst language = toText(body.language || body.target_language || body.metadata?.target_language || (contentType === 'story' ? 'en' : 'auto'));\nconst viralScriptSummaryRaw = toText(body.script || body.script_content || 'N/A');\n\n// 4. 返回平铺后的标准数据\nreturn [{\n  json: {\n    ...body, // 保留 body 原始字段供下游其他节点直接调用\n    contentType,\n    content_type: contentType,\n    videoType: contentType,\n    video_type: contentType,\n    productName,\n    productDesc,\n    presenterMode,\n    personDesc,\n    storySubject,\n    story_subject: storySubject,\n    storyScene,\n    story_scene: storyScene,\n    storyType,\n    story_type: storyType,\n    storyTypeLabel: storyTypeLabel || storyType,\n    story_type_label: storyTypeLabel || storyType,\n    durationSec,\n    nSegments,\n    segSeconds,\n    language,\n    viralScriptSummaryRaw,\n    // 基础 ID 类参数\n    task_id: body.task_id || body.taskId || \"\",\n    admin_token: body.admin_token || body.adminToken || \"\",\n    callback_url: body.callback_url || body.callbackUrl || \"\"\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        96,
+        528
+      ],
+      "id": "47f9276e-eb97-4156-ab3f-c09cbdeec431",
+      "name": "标准化输入"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url || $('Webhook').item.json.body.callback_url || $('Webhook').item.json.body.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-admin-token",
+              "value": "={{ $json.admin_token || $('Webhook').item.json.body.admin_token || $('Webhook').item.json.body.adminToken }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { task_id: $json.task_id, status: 'success', stage: 'breakdown', pipeline_key: $json.pipeline_key || 'skeleton_video', workflow_id: $json.workflow_id || '', workflow_name: $json.workflow_name || '', shots: $json.shots || [] } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1248,
+        528
+      ],
+      "id": "15fce572-2bad-41a1-9697-a065f30b2f91",
+      "name": "更新状态"
+    },
+    {
+      "parameters": {
+        "jsCode": "function stripFences(s) { return String(s || '').trim().replace(/^```[a-zA-Z]*\\n?/, '').replace(/```$/, '').trim(); }\nfunction safeParse(s) { try { return JSON.parse(s); } catch { return null; } }\nfunction pickRawText(in0) {\n  if (!in0) return '';\n  if (typeof in0 === 'object' && in0.shots && Array.isArray(in0.shots)) return in0;\n  return in0.output || in0.text || in0.response || in0?.candidates?.[0]?.content?.parts?.[0]?.text || '';\n}\nfunction extractFirstJsonObject(str) {\n  const s = String(str || '');\n  const i = s.indexOf('{'), j = s.lastIndexOf('}');\n  return (i < 0 || j <= i) ? null : s.slice(i, j + 1);\n}\nfunction toBool(v) {\n  const t = String(v == null ? '' : v).trim().toLowerCase();\n  if (['1','true','yes','y','是','有'].includes(t)) return true;\n  if (['0','false','no','n','否','无'].includes(t)) return false;\n  return null;\n}\nfunction toText(v) {\n  if (v == null) return '';\n  if (Array.isArray(v)) return v.map((x) => toText(x)).filter(Boolean).join('\\n').trim();\n  if (typeof v === 'object') return String(v.text ?? v.value ?? v.name ?? '').trim();\n  return String(v).trim();\n}\n\nconst in0 = $input.first()?.json || {};\nlet raw = pickRawText(in0);\nlet obj = raw && typeof raw === 'object' && Array.isArray(raw.shots) ? raw : safeParse(extractFirstJsonObject(stripFences(raw)));\nif (!obj || !Array.isArray(obj.shots)) throw new Error('JSON Parse failed or no shots array.');\n\nconst root = $('标准化输入').first()?.json || {};\nconst AI达人 = toText(root['AI达人'] || root.ai_creator || root.creatorName || '');\nconst 产品名称 = toText(root.productName || root.product_name || root['产品名称'] || '');\nconst task_id = toText(root.task_id || root.record_id || root.recordId || '');\nconst callback_url = toText(root.callback_url || root.callbackUrl || '');\nconst admin_token = toText(root.admin_token || root.adminToken || '');\nconst pipeline_key = toText(root.pipeline_key || root.pipelineKey || 'skeleton_video');\nconst workflow_id = toText(root.workflow_id || root.workflowId || '');\nconst workflow_name = toText(root.workflow_name || root.workflowName || '');\n\nconst shots = obj.shots.map((s, idx) => ({\n  idx: s.shot_number || s.idx || s.order || idx + 1,\n  shot_number: s.shot_number || idx + 1,\n  timestamp: s.timestamp || '',\n  time_range: s.timestamp || s.time_range || s.timeRange || '',\n  duration_seconds: s.duration_seconds || s.duration || 8,\n  duration: s.duration_seconds || s.duration || 8,\n  voiceover: String(s.voiceover || s.speech || s.text || ''),\n  action: String(s.action || ''),\n  first_frame: String(s.first_frame || s.image_prompt || '').replace(/[\\r\\n]+/g, ' ').trim(),\n  video_prompt: String(s.video_prompt || s.videoPrompt || '').replace(/[\\r\\n]+/g, ' ').trim(),\n  has_product: toBool(s['是否有产品'] ?? s.has_product ?? s.hasProduct),\n  '是否有产品': toBool(s['是否有产品'] ?? s.has_product ?? s.hasProduct),\n  AI达人,\n  产品名称,\n}));\n\nreturn [{ json: {\n  task_id,\n  callback_url,\n  admin_token,\n  pipeline_key,\n  workflow_id,\n  workflow_name,\n  total_shots: shots.length,\n  shots,\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1024,
+        528
+      ],
+      "id": "88514e4c-8191-445c-a7b5-fa81df73c6fa",
+      "name": "解析提示词"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Webhook').item.json.body.callback_url || $('Webhook').item.json.body.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-admin-token",
+              "value": "={{ $('Webhook').item.json.body.admin_token || $('Webhook').item.json.body.adminToken }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { task_id: $('Webhook').item.json.body.task_id || $('Webhook').item.json.body.taskId || $('Webhook').item.json.body.record_id || $('Webhook').item.json.body.recordId, status: 'failed', stage: 'breakdown', pipeline_key: $('Webhook').item.json.body.pipeline_key || $('Webhook').item.json.body.pipelineKey || 'skeleton_video', error: 'insufficient_points', message: '积分不足' } }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -128,
+        336
+      ],
+      "id": "49341905-4de4-4f35-9bc7-fe43efdbc6e3",
+      "name": "提醒-积分不足"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Webhook').item.json.body.callback_url || $('Webhook').item.json.body.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-admin-token",
+              "value": "={{ $('Webhook').item.json.body.admin_token || $('Webhook').item.json.body.adminToken }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { task_id: $('Webhook').item.json.body.task_id || $('Webhook').item.json.body.taskId || $('Webhook').item.json.body.record_id || $('Webhook').item.json.body.recordId, status: 'failed', stage: 'breakdown', pipeline_key: $('Webhook').item.json.body.pipeline_key || $('Webhook').item.json.body.pipelineKey || 'skeleton_video', error: 'api_key_invalid', message: 'api-key错误' } }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -128,
+        144
+      ],
+      "id": "ce031ff5-d04e-4d04-8d52-7a2f61ece16c",
+      "name": "提醒-key错误"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Webhook').item.json.body.callback_url || $('Webhook').item.json.body.callbackUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-admin-token",
+              "value": "={{ $('Webhook').item.json.body.admin_token || $('Webhook').item.json.body.adminToken }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { task_id: $('Webhook').item.json.body.task_id || $('Webhook').item.json.body.taskId || $('Webhook').item.json.body.record_id || $('Webhook').item.json.body.recordId, status: 'running', stage: 'breakdown', pipeline_key: $('Webhook').item.json.body.pipeline_key || $('Webhook').item.json.body.pipelineKey || 'skeleton_video', message: '正在拆解爆款' } }}",
+        "options": {}
+      },
+      "id": "12062ab2-2567-4b53-bcc9-9e8a66af873b",
+      "name": "更新进度-拆解中",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -128,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.ok }}",
+                    "rightValue": "false",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    },
+                    "id": "84e547e5-80ae-4340-a3e9-b76f32d20e0c"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "apikey_invalid"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "1f0f0883-abf7-4c55-8068-85568446efd2",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === false }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "insufficient_points"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "94a60a62-da20-469a-ac15-4867f6a63449",
+                    "leftValue": "={{ $json.ok === true && $json.data.sufficient === true }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "pass"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -352,
+        320
+      ],
+      "id": "16c6e565-b701-4dc8-ac8d-2c06cac51c0e",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/api/balance/check?required=100&api_key={{ $('Webhook').item.json.body.api_key }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "required",
+              "value": "={{ $json.data.credit_cost }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -576,
+        336
+      ],
+      "id": "e358d1cd-1156-4b16-ae98-99481bd3181c",
+      "name": "验证api-key",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "=http://47.107.158.233:8080/workflow-credits/query?workflow_id={{ $('Webhook').item.json.body.workflow_id || $('Webhook').item.json.body.workflowId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -800,
+        336
+      ],
+      "id": "24b4f495-7873-4b4d-815f-ec68f7cb7190",
+      "name": "查询工作流积分"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "veo-gg-web",
+        "options": {}
+      },
+      "id": "908af7ef-5b29-4152-a921-d7ce866e7e38",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1024,
+        336
+      ],
+      "webhookId": "74520f4c-bf49-488e-ac04-7665b8107100"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "3f07ec76-c08b-468d-a50b-9fbe4ef303d3",
+                    "leftValue": "={{ $json.contentType || $json.content_type }}",
+                    "rightValue": "commerce",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "commerce"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "9c9ed726-3b28-4304-a18e-373ebfd401b7",
+                    "leftValue": "={{ $json.contentType || $json.content_type }}",
+                    "rightValue": "story",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "story"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        320,
+        528
+      ],
+      "id": "c6c9d5a5-36ea-4b96-855a-ec0e3659b904",
+      "name": "内容类型分支"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=contentType: commerce\npresenterMode: {{ $json.character_name || \"3D Skeleton\" }}\npersonDesc: {{ $json.personDesc || $json.metadata?.feature || \"3D transparent skeleton character\" }}\nproductName: {{ $json.productName }}\nproductDesc: {{ $json.product_selling_points || $json.product_description }}\nlanguage: {{ $json.language }}\ndurationSec: {{ $json.duration_sec || $json.durationSec }}\nnSegments: {{ Math.ceil(($json.duration_sec || $json.durationSec || 64) / 8) }}\nsegSeconds: 8\n\nuserReferenceOrTopic:\n{{ $json.viralScriptSummaryRaw || $json.script || \"N/A\" }}\n\ncommerceRefScript:\n{\n  \"meta\": {\n    \"art_style\": \"3D动画叙事广告风\",\n    \"render_quality\": \"纯专业级3D动画渲染（绝对无真人实拍）\",\n    \"mood_atmosphere\": \"从焦虑痛点到信赖解决\",\n    \"total_duration\": \"01:06\"\n  },\n  \"scene_breakdown\": [\n    {\n      \"id\": 1,\n      \"time_range\": \"00:00 - 00:11\",\n      \"visual_specs\": {\n        \"camera\": \"中景镜头，通过快速剪辑切换四个不同场景，每个场景有轻微的推拉运镜。\",\n        \"subject_action\": \"一个3D动画角色[USER/MODEL]依次展现痛苦的表情和动作：焦虑摸脸、疯狂吃甜食、考场压力、吃苹果后身体膨胀。\",\n        \"lighting_environment\": \"干净均匀的3D动画光线，通过表情和动作制造焦虑氛围。\"\n      },\n      \"abstract_logic\": {\n        \"narrative_role\": \"Hook / 痛点集中展示\",\n        \"universal_instruction\": \"连续抛出目标用户核心痛点，快速建立情绪共鸣。\"\n      }\n    },\n    {\n      \"id\": 3,\n      \"time_range\": \"00:18 - 00:32\",\n      \"visual_specs\": {\n        \"subject_action\": \"[HERO_PRODUCT]出现后，通过微观3D动画展示身体机制逐步恢复。\"\n      },\n      \"abstract_logic\": {\n        \"narrative_role\": \"解决方案 & 功效可视化\",\n        \"universal_instruction\": \"只在因果上合理的镜头引入产品。\"\n      }\n    }\n  ]\n}",
+        "options": {
+          "systemMessage": "=You are a top-tier TikTok/YouTube Shorts scriptwriter specialized in 3D transparent skeleton commerce videos.\n\nGOAL:\nWrite a commercial skeleton script split into EXACTLY nSegments scenes.\n\nINPUTS:\n- presenterMode & personDesc: 3D transparent skeleton character constraints\n- productName & productDesc: product to integrate\n- language, durationSec, nSegments, segSeconds\n- userReferenceOrTopic: optional user theme/reference script\n\nCOMMERCE RULES:\n1. Scene 1 must hook viewers within 3 seconds.\n2. Build: curiosity -> tension -> shock/pain -> product intervention -> relief/CTA.\n3. The product is the solution/intervention to the physical conflict.\n4. Use timeline nodes: Day 1 / Day 3 / Hour 1 / Stage one.\n5. Every scene needs physical action + body/environment reaction + visible emotional beat.\n6. Every line must pass the camera test. No abstract preaching.\n7. Sentences are short. Use strong verbs. Avoid amazing / incredible / unbelievable / very / really / beautiful.\n8. 100% 3D transparent skeleton animation only. No real humans, no flesh, no live-action UGC.\n9. For each scene decide if product appears and output boolean field \"是否有产品\".\n10. Only set \"是否有产品\": true when the product appears visually or causally matters.\n11. If a scene is buildup/science/context, set \"是否有产品\": false.\n12. Final scene must include a retention/identity/suspense/action hook.\n\nOUTPUT SCHEMA:\nYou must output a strictly valid JSON object. No markdown formatting blocks outside the JSON. Do not write visual prompts here, only narrative and actions.\n\n{\n  \"total_shots\": <int>,\n  \"shots\": [\n    {\n      \"shot_number\": <int>,\n      \"timestamp\": \"00:00-00:08\",\n      \"duration_seconds\": <number>,\n      \"voiceover\": \"...\",\n      \"sfx\": [\"...\"],\n      \"action\": \"...\",\n      \"transition_to_next\": \"...\",\n      \"是否有产品\": <boolean>\n    }\n  ]\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        560,
+        384
+      ],
+      "id": "2237ed23-00db-47eb-a9e8-510c23e8d4ae",
+      "name": "带货脚本生成器",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=contentType: story\npresenterMode: {{ $json.character_name || \"3D Skeleton\" }}\npersonDesc: {{ $json.personDesc || $json.metadata?.feature || \"3D transparent skeleton character\" }}\nstorySubject: {{ $json.storySubject || $json.story_subject || $json.character_name || \"transparent skeleton character\" }}\nstoryScene: {{ $json.storyScene || $json.story_scene || \"一个强反差的电影感场景\" }}\nstoryType: {{ $json.storyType || $json.story_type || \"时间推进型\" }}\nlanguage: {{ $json.language }}\ndurationSec: {{ $json.duration_sec || $json.durationSec }}\nnSegments: {{ Math.ceil(($json.duration_sec || $json.durationSec || 64) / 8) }}\nsegSeconds: 8\n\nuserReferenceOrTopic:\n{{ $json.viralScriptSummaryRaw || $json.script || \"N/A\" }}",
+        "options": {
+          "systemMessage": "=You are a top-tier short-video scriptwriter for TikTok / YouTube Shorts / Instagram Reels.\nYou specialize in high-retention English 3D transparent skeleton story videos using timeline progression + scene contrast + emotional hooks.\n\nGOAL:\nWrite a pure story script split into EXACTLY nSegments scenes.\n\nINPUTS:\n- 主角: storySubject\n- 场景: storyScene\n- 类型: storyType\n- language, durationSec, nSegments, segSeconds\n- userReferenceOrTopic: optional theme/reference script\n\nPURE STORY RULES:\n1. No product, no selling, no shopping CTA, no product claims.\n2. Set \"是否有产品\": false for every shot.\n3. First voiceover must be an anti-common sense question or extreme hypothetical:\n   \"What would happen if [extreme contrast]\" or \"What if [impossible combination]\".\n4. Use 8-15 timeline nodes, and still output EXACTLY nSegments shots. If nSegments is outside 8-15, obey nSegments but preserve the same timeline rhythm.\n5. Total voiceover target: 150-300 English words for 45-90 seconds when language is English.\n6. Each node should be 15-35 English words when language is English.\n7. Each node must include physical action + body/environment reaction + visible emotional beat.\n8. Emotion curve: curiosity -> shock -> tension/resonance -> unexpected turn -> lingering hook.\n9. Every sentence must pass the camera test. No abstract preaching.\n10. Sentences are short. Use strong verbs. Avoid amazing / incredible / unbelievable / very / really / beautiful.\n11. Do not repeat the same strong verb more than twice.\n12. 100% 3D transparent skeleton animation only. No real humans, no flesh, no live-action UGC.\n13. Final 1-2 lines must include identity hook, suspense hook, simple action hook, or philosophical lingering hook.\n\nCONTRAST FORMULA:\nsubject traits x scene traits = maximum tension.\nWeak subject in brutal world, powerful subject in gentle world, modern tech in ancient civilization, wild animal in city, ordinary person in extreme world.\nAfter a high-impact moment, add a softer visual beat.\n\nSTORY TYPE MAPPING:\n- 时间推进型: Day/Hour progression.\n- 假设情景型: impossible premise escalates through concrete consequences.\n- 身体科学型: Stage/Hour progression with visible body mechanics.\n- 生存挑战型: Hour/Day survival escalation in hostile environment.\n\nTARGET STYLE:\n\"day four spartan engineers rip off the rear wing and bolt it to a catapult\"\n\"a child points at your ribs through the glass skin and says cool\"\n\"you sit down on a bench next to her\"\n\nOUTPUT SCHEMA:\nYou must output a strictly valid JSON object. No markdown formatting blocks outside the JSON. Do not write visual prompts here, only narrative and actions.\n\n{\n  \"total_shots\": <int>,\n  \"shots\": [\n    {\n      \"shot_number\": <int>,\n      \"timestamp\": \"00:00-00:08\",\n      \"duration_seconds\": <number>,\n      \"voiceover\": \"...\",\n      \"sfx\": [\"...\"],\n      \"action\": \"...\",\n      \"transition_to_next\": \"...\",\n      \"是否有产品\": false\n    }\n  ]\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        560,
+        672
+      ],
+      "id": "99db37a0-2158-4cae-9ebc-a35aff4b5af8",
+      "name": "剧情脚本生成器",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gemini-3-flash-preview-thinking",
+          "mode": "list",
+          "cachedResultName": "gemini-3-flash-preview-thinking"
+        },
+        "responsesApiEnabled": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        624,
+        224
+      ],
+      "id": "50e83aaa-97f0-4253-b1b9-e4a991d9d0f6",
+      "name": "gemini3-flash-带货脚本",
+      "credentials": {
+        "openAiApi": {
+          "id": "TVs8cHigrdXKUMDJ",
+          "name": "云雾api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gemini-3-flash-preview-thinking",
+          "mode": "list",
+          "cachedResultName": "gemini-3-flash-preview-thinking"
+        },
+        "responsesApiEnabled": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        624,
+        864
+      ],
+      "id": "63c406f9-18df-4b30-a06e-d51083d45178",
+      "name": "gemini3-flash-剧情脚本",
+      "credentials": {
+        "openAiApi": {
+          "id": "TVs8cHigrdXKUMDJ",
+          "name": "云雾api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Here is the commerce narrative script generated in the previous step:\n\n{{ $json.output || $json.text }}\n\nRoot input context:\ncontentType: commerce\nproductName: {{ $('标准化输入').first().json.productName }}\n\nPlease strictly follow the rules in the System Message, generate the highly detailed `first_frame` and `video_prompt` for each shot, and output the final complete JSON.",
+        "options": {
+          "systemMessage": "=You are a top-tier AI video prompt engineer for 3D skeleton commerce videos.\n\nINPUT: A JSON script with narrative details (voiceover, action, 是否有产品) and product context.\n\nGOAL: Enhance the JSON by generating `first_frame` and `video_prompt` for EVERY shot.\n\nGLOBAL VISUAL LOCK:\n- Always 3D animation, never live action.\n- Main skeleton lock: transparent glass-bodied humanoid skeleton with realistic bones visible through a clear body shell, oversized expressive bright blue eyes, slightly comedic face, consistent proportions.\n- No real humans, no human skin, no flesh, no real human hands, no UGC footage.\n\nFIRST_FRAME RULES:\nSingle detailed paragraph per shot:\n\"Vertical 9:16, ultra-real cinematic 3D still image. Location: [Scene location]. Composition: [Shot size/angle]. Action: [Describe the frozen action. If hands are visible, they MUST be transparent skeleton hands, absolutely NO human flesh]. Main skeleton lock: transparent glass-bodied humanoid skeleton with realistic bones visible through a clear body shell, oversized expressive bright blue eyes, slightly comedic face, consistent proportions. [If 是否有产品 is true, add a highly detailed product lock using productName]. Lighting/Atmosphere: [Describe mood/lights].\"\n\nVIDEO_PROMPT RULES:\nSingle detailed paragraph per shot:\n\"Use the provided reference image of the transparent skeleton character in a 3D animation style; STABILITY LOCK: vertical 9:16, cinematic realism, shallow depth of field, locked tripod or very slow push/slider only, no whip pans, no 360 spins. One simple action per shot. Five fingers only, no extra limbs. Action: [Specific micro-action based on the script]. no on-screen text, no captions, no background music, no generated audio; for educational/commercial storytelling purposes only, no policy violations. NEGATIVE PROMPT: real humans, human skin, flesh, live-action footage, UGC, real human hands.\"\n\nCommerce: include product only when \"是否有产品\" is true.\n\nOUTPUT SCHEMA:\n{\n  \"total_shots\": <int>,\n  \"shots\": [\n    {\n      \"shot_number\": <int>,\n      \"timestamp\": \"00:00-00:08\",\n      \"duration_seconds\": <number>,\n      \"voiceover\": \"...\",\n      \"sfx\": [\"...\"],\n      \"action\": \"...\",\n      \"transition_to_next\": \"...\",\n      \"是否有产品\": <boolean>,\n      \"first_frame\": \"...\",\n      \"video_prompt\": \"...\"\n    }\n  ]\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        912,
+        384
+      ],
+      "id": "f8316d03-83d6-4c4d-8313-7bf14c1ad4b8",
+      "name": "带货提示词生成器",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Here is the pure story narrative script generated in the previous step:\n\n{{ $json.output || $json.text }}\n\nRoot input context:\ncontentType: story\nstorySubject: {{ $('标准化输入').first().json.storySubject || $('标准化输入').first().json.story_subject }}\nstoryScene: {{ $('标准化输入').first().json.storyScene || $('标准化输入').first().json.story_scene }}\nstoryType: {{ $('标准化输入').first().json.storyType || $('标准化输入').first().json.story_type }}\n\nPlease strictly follow the rules in the System Message, generate the highly detailed `first_frame` and `video_prompt` for each shot, and output the final complete JSON.",
+        "options": {
+          "systemMessage": "=You are a top-tier AI video prompt engineer for pure 3D transparent skeleton story videos.\n\nINPUT: A JSON story script with narrative details (voiceover, action, 是否有产品) and story context.\n\nGOAL: Enhance the JSON by generating `first_frame` and `video_prompt` for EVERY shot.\n\nGLOBAL VISUAL LOCK:\n- Always 3D animation, never live action.\n- Main skeleton lock: transparent glass-bodied humanoid skeleton with realistic bones visible through a clear body shell, oversized expressive bright blue eyes, slightly comedic face, consistent proportions.\n- No real humans, no human skin, no flesh, no real human hands, no UGC footage.\n- No products, no packaging, no shopping CTA, no product lock.\n- Every shot must keep \"是否有产品\": false.\n\nFIRST_FRAME RULES:\nSingle detailed paragraph per shot:\n\"Vertical 9:16, ultra-real cinematic 3D still image. Location: [Use storyScene and this shot action]. Composition: [Shot size/angle]. Action: [Describe the frozen story action. If hands are visible, they MUST be transparent skeleton hands, absolutely NO human flesh]. Main skeleton lock: transparent glass-bodied humanoid skeleton with realistic bones visible through a clear body shell, oversized expressive bright blue eyes, slightly comedic face, consistent proportions. Lighting/Atmosphere: [Describe mood/lights].\"\n\nVIDEO_PROMPT RULES:\nSingle detailed paragraph per shot:\n\"Use the provided reference image of the transparent skeleton character in a 3D animation style; STABILITY LOCK: vertical 9:16, cinematic realism, shallow depth of field, locked tripod or very slow push/slider only, no whip pans, no 360 spins. One simple action per shot. Five fingers only, no extra limbs. Action: [Specific story micro-action based on the script]. no on-screen text, no captions, no background music, no generated audio; for storytelling purposes only, no policy violations. NEGATIVE PROMPT: products, packaging, shopping CTA, real humans, human skin, flesh, live-action footage, UGC, real human hands.\"\n\nOUTPUT SCHEMA:\n{\n  \"total_shots\": <int>,\n  \"shots\": [\n    {\n      \"shot_number\": <int>,\n      \"timestamp\": \"00:00-00:08\",\n      \"duration_seconds\": <number>,\n      \"voiceover\": \"...\",\n      \"sfx\": [\"...\"],\n      \"action\": \"...\",\n      \"transition_to_next\": \"...\",\n      \"是否有产品\": false,\n      \"first_frame\": \"...\",\n      \"video_prompt\": \"...\"\n    }\n  ]\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        912,
+        672
+      ],
+      "id": "347d26c6-cada-4982-9056-bfbda16b5057",
+      "name": "剧情提示词生成器",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gemini-3-flash-preview-thinking",
+          "mode": "list",
+          "cachedResultName": "gemini-3-flash-preview-thinking"
+        },
+        "responsesApiEnabled": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        976,
+        224
+      ],
+      "id": "b7a7add0-0b0c-4015-bc3d-60d845ac0376",
+      "name": "gemini3-flash-带货提示词",
+      "credentials": {
+        "openAiApi": {
+          "id": "TVs8cHigrdXKUMDJ",
+          "name": "云雾api"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gemini-3-flash-preview-thinking",
+          "mode": "list",
+          "cachedResultName": "gemini-3-flash-preview-thinking"
+        },
+        "responsesApiEnabled": false,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        976,
+        864
+      ],
+      "id": "7e3a13c4-6f88-41d5-ac92-228b9e6ad78b",
+      "name": "gemini3-flash-剧情提示词",
+      "credentials": {
+        "openAiApi": {
+          "id": "TVs8cHigrdXKUMDJ",
+          "name": "云雾api"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "标准化输入": {
+      "main": [
+        [
+          {
+            "node": "内容类型分支",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析提示词": {
+      "main": [
+        [
+          {
+            "node": "更新状态",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "更新进度-拆解中": {
+      "main": [
+        [
+          {
+            "node": "标准化输入",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "提醒-key错误",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "提醒-积分不足",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "更新进度-拆解中",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "验证api-key": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "查询工作流积分": {
+      "main": [
+        [
+          {
+            "node": "验证api-key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "查询工作流积分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "内容类型分支": {
+      "main": [
+        [
+          {
+            "node": "带货脚本生成器",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "剧情脚本生成器",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "带货脚本生成器": {
+      "main": [
+        [
+          {
+            "node": "带货提示词生成器",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "剧情脚本生成器": {
+      "main": [
+        [
+          {
+            "node": "剧情提示词生成器",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "带货提示词生成器": {
+      "main": [
+        [
+          {
+            "node": "解析提示词",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "剧情提示词生成器": {
+      "main": [
+        [
+          {
+            "node": "解析提示词",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gemini3-flash-带货脚本": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "带货脚本生成器",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gemini3-flash-剧情脚本": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "剧情脚本生成器",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gemini3-flash-带货提示词": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "带货提示词生成器",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "gemini3-flash-剧情提示词": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "剧情提示词生成器",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "afac7bcc-34b8-46aa-85a1-02eec42c901b",
+  "meta": {
+    "instanceId": "f5de7f2967fea28691928d5cc106b2279dbf4197e0e2c62d616c8450d409e0e7"
+  },
+  "id": "35AFOKTGKFZu2luP",
+  "tags": []
+}

@@ -8,6 +8,9 @@
 .image-gen-page--no-fixed-submit
   padding-bottom: calc(140rpx + env(safe-area-inset-bottom))
 
+.image-gen-page--card-edit
+  padding-bottom: calc(300rpx + env(safe-area-inset-bottom))
+
 .image-gen-header
   position: fixed
   top: 0
@@ -535,6 +538,7 @@
   display: flex
   flex-direction: column
   overflow: visible
+  padding-bottom: 18rpx
 
 .textarea--info
   border: none
@@ -544,10 +548,10 @@
   margin: 0
 
 .textarea--card-editor
-  min-height: 860rpx
-  flex: 1
-  padding-bottom: 24rpx
+  min-height: 760rpx
+  flex: none
   box-sizing: border-box
+  line-height: 1.6
 
 .info-input-actions
   display: flex
@@ -557,6 +561,11 @@
   flex-shrink: 0
   flex-wrap: wrap
   gap: 12rpx
+
+.info-input-actions--card-editor
+  justify-content: flex-start
+  padding-bottom: 10rpx
+  border-bottom: 1rpx solid rgba(145, 175, 229, 0.14)
 
 .input-action-btn
   height: 56rpx
@@ -940,6 +949,10 @@
 .card-config-row--no-divider
   border-top: none !important
 
+.card-config-row--wechat-style
+  align-items: flex-start
+  flex-direction: column
+
 .card-config-label
   color: #d5e3fd
   font-size: 24rpx
@@ -961,6 +974,68 @@
   flex-wrap: wrap
   gap: 8rpx
   justify-content: flex-end
+
+.wechat-style-grid
+  width: 100%
+  display: grid
+  grid-template-columns: 1fr 1fr
+  gap: 12rpx
+
+.wechat-style-card
+  min-height: 184rpx
+  border-radius: 16rpx
+  border: 1rpx solid rgba(145, 175, 229, 0.24)
+  background: rgba(145, 175, 229, 0.08)
+  padding: 12rpx
+  box-sizing: border-box
+
+.wechat-style-card--active
+  border-color: rgba(236, 238, 159, 0.74)
+  background: rgba(236, 238, 159, 0.12)
+
+.wechat-style-preview
+  height: 72rpx
+  border-radius: 10rpx
+  border: 1rpx solid rgba(255,255,255,0.18)
+  padding: 12rpx
+  box-sizing: border-box
+
+.wechat-style-preview-line
+  width: 42rpx
+  height: 6rpx
+  border-radius: 999rpx
+  margin-bottom: 10rpx
+
+.wechat-style-preview-text
+  width: 100%
+  height: 6rpx
+  border-radius: 999rpx
+  opacity: 0.42
+  margin-bottom: 8rpx
+
+.wechat-style-preview-text--short
+  width: 62%
+  opacity: 0.72
+
+.wechat-style-title
+  display: block
+  margin-top: 10rpx
+  color: #c7d9f8
+  font-size: 21rpx
+  font-weight: 800
+
+.wechat-style-title--active
+  color: #eef4b1
+
+.wechat-style-desc
+  display: block
+  margin-top: 4rpx
+  color: #8398bf
+  font-size: 18rpx
+  line-height: 1.32
+
+.wechat-style-desc--active
+  color: #cddba0
 
 .tiny-chip
   min-width: 56rpx
@@ -1272,12 +1347,6 @@
   width: 100%
   height: 980rpx
 
-.preview-swiper-wrap--wechat
-  padding-bottom: 48rpx
-
-.preview-swiper--wechat
-  height: 1040rpx
-
 .preview-swiper--image
   height: 1040rpx
 
@@ -1351,6 +1420,13 @@
   line-height: 1
   font-weight: 700
 
+.wechat-preview-long-wrap
+  width: 100%
+  max-height: none
+  margin-bottom: 18rpx
+  display: flex
+  justify-content: center
+
 .preview-card
   --preview-accent: #ecee9f
   --preview-accent-soft: rgba(236, 238, 159, 0.18)
@@ -1368,14 +1444,23 @@
   width: 632rpx
   max-width: 100%
   height: auto
-  min-height: 980rpx
+  min-height: 0
   margin: 0 auto
   padding: 36rpx 34rpx
   border-radius: 0
   border-color: rgba(232, 232, 232, 0.9)
   background: #ffffff
   box-shadow: 0 22rpx 46rpx rgba(0, 0, 0, 0.18)
-  overflow: hidden
+  overflow: visible
+
+.preview-card--wechat-quote
+  box-shadow: 0 20rpx 44rpx rgba(75, 54, 30, 0.14)
+
+.preview-card--wechat-editorial
+  box-shadow: 0 20rpx 44rpx rgba(0, 0, 0, 0.12)
+
+.preview-card--wechat-calm
+  box-shadow: 0 20rpx 44rpx rgba(32, 89, 61, 0.12)
 
 .preview-card .preview-richtext,
 .preview-card .preview-apple-header,
@@ -1536,7 +1621,7 @@
 .preview-richtext--wechat
   display: block
   height: auto
-  min-height: 900rpx
+  min-height: 0
   padding-bottom: 0
 
 .preview-richtext--wechat h1

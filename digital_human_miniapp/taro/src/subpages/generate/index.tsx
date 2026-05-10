@@ -1,6 +1,6 @@
-import { View, Text, ScrollView, Textarea, Image, Video, Picker } from '@tarojs/components';
+import { View, Text, ScrollView, Textarea, Image, Video, Picker, Input } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { api } from '../../utils/api';
 import { miniappApi } from '../../utils/miniapp-api';
 import './index.sass';
@@ -29,6 +29,16 @@ const VIDEO_CATEGORIES = [
 
 const SKELETON_DURATION_OPTIONS = [32, 64, 96] as const;
 const DEFAULT_SKELETON_DURATION_SECONDS = 64;
+const SKELETON_CONTENT_TYPES = [
+  { key: 'commerce', label: '带货视频', desc: '围绕产品痛点与解决方案生成' },
+  { key: 'story', label: '剧情视频', desc: '不带产品，生成纯剧情叙事' },
+] as const;
+const SKELETON_STORY_TYPE_OPTIONS = [
+  { label: '时间推进型', value: 'timeline', hint: 'Day 1 / Hour 1 节奏' },
+  { label: '假设情景型', value: 'hypothetical', hint: 'What if 极端设定' },
+  { label: '身体科学型', value: 'body_science', hint: '身体变化和微观反应' },
+  { label: '生存挑战型', value: 'survival_challenge', hint: '危险环境与生存反差' },
+] as const;
 const SKELETON_LANGUAGE_OPTIONS = [
   { label: '中文', value: 'zh-CN', hint: '生成中文口播与镜头脚本' },
   { label: 'English', value: 'en', hint: 'Generate English voiceover and prompts' },
@@ -55,6 +65,10 @@ export default function GeneratePage() {
   const [videoPosterPath, setVideoPosterPath] = useState('');
   const [videoFileName, setVideoFileName] = useState('');
   const [skeletonScript, setSkeletonScript] = useState('');
+  const [skeletonContentType, setSkeletonContentType] = useState<'commerce' | 'story'>('commerce');
+  const [skeletonStorySubject, setSkeletonStorySubject] = useState('');
+  const [skeletonStoryScene, setSkeletonStoryScene] = useState('');
+  const [skeletonStoryTypeIndex, setSkeletonStoryTypeIndex] = useState(0);
   const [skeletonDurationSeconds, setSkeletonDurationSeconds] = useState<number>(DEFAULT_SKELETON_DURATION_SECONDS);
   const [skeletonLanguageIndex, setSkeletonLanguageIndex] = useState(
     DEFAULT_SKELETON_LANGUAGE_INDEX >= 0 ? DEFAULT_SKELETON_LANGUAGE_INDEX : 0,
@@ -65,7 +79,6 @@ export default function GeneratePage() {
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [recording, setRecording] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const submitLockRef = useRef(false);
   const recorderManager = Taro.getRecorderManager ? Taro.getRecorderManager() : null;
 
@@ -118,6 +131,7 @@ export default function GeneratePage() {
 
   const selectedChar = characters[selectedCharIdx];
   const skeletonLanguage = SKELETON_LANGUAGE_OPTIONS[skeletonLanguageIndex] || SKELETON_LANGUAGE_OPTIONS[0];
+  const skeletonStoryType = SKELETON_STORY_TYPE_OPTIONS[skeletonStoryTypeIndex] || SKELETON_STORY_TYPE_OPTIONS[0];
   const selectedRoleVoiceUrl = selectedChar?.voiceUrl || '';
   const videoVoiceUrl =
     videoVoiceSource === 'ROLE'
@@ -126,33 +140,46 @@ export default function GeneratePage() {
         ? recordedAudioUrl
         : audioUrl;
 
-  useEffect(() => {
-    const onKeyboard = (result: { height?: number }) => {
-      setKeyboardHeight(Math.max(0, Number(result?.height || 0)));
-    };
-    Taro.onKeyboardHeightChange(onKeyboard);
-    return () => {
-      Taro.offKeyboardHeightChange(onKeyboard);
-    };
-  }, []);
-
   const handleSubmitSkeletonStoryboard = async () => {
     if (!selectedChar) {
       Taro.showToast({ title: '请先选择数字人角色', icon: 'none' });
       return;
     }
+    if (skeletonContentType === 'commerce' && !selectedProductId) {
+      Taro.showToast({ title: '带货视频需要选择产品', icon: 'none' });
+      return;
+    }
+    if (skeletonContentType === 'story' && !skeletonStoryScene.trim()) {
+      Taro.showToast({ title: '请填写剧情场景', icon: 'none' });
+      return;
+    }
     const scriptText = skeletonScript.trim();
+    const storySubject = (skeletonStorySubject.trim() || selectedChar.name || '3D transparent skeleton character').trim();
+    const storyScene = skeletonStoryScene.trim();
     setSubmitting(true);
     try {
       const result = await miniappApi.createSkeletonStoryboardJob({
-        title: `小程序骷髅分镜视频-${skeletonDurationSeconds}s`,
+        title: `${skeletonContentType === 'story' ? '小程序骷髅剧情视频' : '小程序骷髅带货视频'}-${skeletonDurationSeconds}s`,
         script: scriptText,
-        productId: selectedProductId || undefined,
+        productId: skeletonContentType === 'commerce' ? selectedProductId : undefined,
         characterId: selectedChar.id,
         source: 'miniapp_generate_page',
         metadata: {
           entry: 'generate_page',
           feature: 'skeleton_storyboard',
+          content_type: skeletonContentType,
+          contentType: skeletonContentType,
+          video_type: skeletonContentType === 'story' ? 'story' : 'commerce',
+          videoType: skeletonContentType === 'story' ? 'story' : 'commerce',
+          product_required: skeletonContentType === 'commerce',
+          story_subject: skeletonContentType === 'story' ? storySubject : '',
+          storySubject: skeletonContentType === 'story' ? storySubject : '',
+          story_scene: skeletonContentType === 'story' ? storyScene : '',
+          storyScene: skeletonContentType === 'story' ? storyScene : '',
+          story_type: skeletonContentType === 'story' ? skeletonStoryType.value : '',
+          storyType: skeletonContentType === 'story' ? skeletonStoryType.value : '',
+          story_type_label: skeletonContentType === 'story' ? skeletonStoryType.label : '',
+          storyTypeLabel: skeletonContentType === 'story' ? skeletonStoryType.label : '',
           duration_seconds: skeletonDurationSeconds,
           duration_sec: skeletonDurationSeconds,
           duration: skeletonDurationSeconds,
@@ -167,13 +194,17 @@ export default function GeneratePage() {
           language: skeletonLanguage.value,
           target_language_label: skeletonLanguage.label,
           script_optional: true,
-          selected_product_id: selectedProductId || null,
+          selected_product_id: skeletonContentType === 'commerce' ? selectedProductId : null,
           character_id: selectedChar.id,
           character_name: selectedChar.name || '',
         },
       });
       Taro.showToast({ title: '分镜任务已创建', icon: 'success' });
       setSkeletonScript('');
+      if (skeletonContentType === 'story') {
+        setSkeletonStorySubject('');
+        setSkeletonStoryScene('');
+      }
       Taro.navigateTo({
         url: `/subpages/storyboard-board/index?id=${encodeURIComponent(result.taskId)}&title=${encodeURIComponent('3D骨骼分镜板')}`,
       });
@@ -385,6 +416,16 @@ export default function GeneratePage() {
     }
   };
 
+  const handleSwitchSkeletonContentType = (nextType: 'commerce' | 'story') => {
+    if (skeletonContentType === nextType) return;
+    setSkeletonContentType(nextType);
+    if (nextType === 'story') {
+      setSelectedProductId('');
+      return;
+    }
+    void ensureProductsLoaded();
+  };
+
   const renderSectionTitle = (icon: string, title: string) => (
     <View className='section-title-row'>
       <View className={`section-title-icon section-title-icon--${icon}`} />
@@ -532,17 +573,81 @@ export default function GeneratePage() {
     </View>
   );
 
-  const showFixedSubmit = pageMode === 'digital-human' || (pageMode === 'video-generate' && videoCategory === 'SKELETON_3D');
-  const showScriptComposer =
-    (pageMode === 'digital-human' && mode === 'VOICE_CLONE') ||
-    (pageMode === 'video-generate' && videoCategory === 'SKELETON_3D');
+  const renderComposerCard = () => {
+    const isSkeleton = pageMode === 'video-generate' && videoCategory === 'SKELETON_3D';
+    const value = isSkeleton ? skeletonScript : script;
+    const placeholder = isSkeleton
+      ? (skeletonContentType === 'story'
+        ? '可输入剧情主题或参考脚本；留空会按主角、场景、类型自动生成英文爆款剧情...'
+        : '可输入产品描述、卖点或参考脚本；留空也会按所选时长自动生成骷髅分镜与提示词...')
+      : '在此输入你想让数字人说的文字...';
+    return (
+      <View className='form-composer-card'>
+        <View className='bottom-composer-title-row'>
+          <Text className='bottom-composer-title'>
+            {isSkeleton ? '3D骨骼分镜脚本文案（可选）' : '脚本内容'}
+          </Text>
+          <Text className='bottom-composer-count'>
+            {isSkeleton ? `${skeletonScript.length}/3000` : `${script.length}/500`}
+          </Text>
+        </View>
+        <View className='composer-action-row'>
+          {!isSkeleton && (
+            <View className='input-action-btn input-action-btn--highlight' onClick={handleFindInspiration}>
+              <Text className='input-action-btn-text input-action-btn-text--highlight'>没有文案？去找灵感</Text>
+            </View>
+          )}
+          <View
+            className='input-action-btn input-action-btn--ghost'
+            onClick={() => {
+              if (isSkeleton) {
+                setSkeletonScript('');
+                return;
+              }
+              setScript('');
+            }}
+          >
+            <Text className='input-action-btn-text input-action-btn-text--ghost'>清空</Text>
+          </View>
+          {!isSkeleton && (
+            <View className='input-action-btn input-action-btn--ghost' onClick={handlePasteScript}>
+              <Text className='input-action-btn-text input-action-btn-text--ghost'>粘贴</Text>
+            </View>
+          )}
+        </View>
+        <Textarea
+          className='bottom-composer-textarea bottom-composer-textarea--inline'
+          value={value}
+          onInput={(e) => {
+            if (isSkeleton) {
+              setSkeletonScript(e.detail.value);
+              return;
+            }
+            setScript(e.detail.value);
+          }}
+          placeholder={placeholder}
+          maxlength={isSkeleton ? 3000 : 500}
+          autoHeight
+          adjustPosition
+          cursorSpacing={20}
+        />
+        <View className='bottom-composer-footer'>
+          <View
+            className={`btn-primary ${submitting ? 'btn-disabled' : ''}`}
+            onClick={handleFixedSubmit}
+          >
+            <Text className='btn-text'>{fixedSubmitLabel}</Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  const showDigitalHumanInlineComposer = pageMode === 'digital-human' && mode === 'VOICE_CLONE';
+  const showSkeletonInlineComposer = pageMode === 'video-generate' && videoCategory === 'SKELETON_3D';
   const fixedSubmitLabel = pageMode === 'video-generate' && videoCategory === 'SKELETON_3D'
     ? (submitting ? '提交中...' : '开始生成分镜视频')
     : (submitting ? '提交中...' : '开始生成');
-  const composerStyle = useMemo(
-    () => (keyboardHeight > 0 ? { transform: `translateY(-${keyboardHeight}px)` } : undefined),
-    [keyboardHeight],
-  );
 
   const handleFixedSubmit = () => {
     if (submitting) return;
@@ -555,7 +660,7 @@ export default function GeneratePage() {
 
   return (
     <>
-      <ScrollView scrollY className={`generate-page ${showScriptComposer ? 'generate-page--with-composer' : ''}`}>
+      <ScrollView scrollY className='generate-page'>
         <View className='generate-header'>
           <View className='generate-topbar'>
             <View className='generate-back' onClick={handleBack}>
@@ -606,36 +711,91 @@ export default function GeneratePage() {
                 {renderCharacterPicker()}
 
                 <View className='section'>
-                  {renderSectionTitle('product', '产品（可选）')}
-                  <ScrollView scrollX className='character-scroll'>
-                    <View className='character-list'>
+                  {renderSectionTitle('model', '视频类型')}
+                  <View className='skeleton-type-list'>
+                    {SKELETON_CONTENT_TYPES.map((item) => (
                       <View
-                        className={`character-item ${selectedProductId === '' ? 'character-item--active' : ''}`}
-                        onClick={() => setSelectedProductId('')}
+                        key={item.key}
+                        className={`skeleton-type-card ${skeletonContentType === item.key ? 'skeleton-type-card--active' : ''}`}
+                        onClick={() => handleSwitchSkeletonContentType(item.key)}
                       >
-                        <View className='character-avatar character-avatar--option'>
-                          <View className='character-option-icon' />
-                        </View>
-                        <Text className='character-name'>不使用产品</Text>
+                        <Text className='skeleton-type-title'>{item.label}</Text>
+                        <Text className='skeleton-type-desc'>{item.desc}</Text>
                       </View>
-                      {products.map((product) => (
-                        <View
-                          key={product.id}
-                          className={`character-item ${selectedProductId === product.id ? 'character-item--active' : ''}`}
-                          onClick={() => setSelectedProductId(product.id)}
-                        >
-                          {product.images?.[0] ? (
-                            <Image className='character-avatar' src={product.images[0]} mode='aspectFill' />
-                          ) : (
-                            <View className='character-avatar' />
-                          )}
-                          <Text className='character-name'>{product.name}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  </ScrollView>
-                  {products.length === 0 && <Text className='empty-hint'>暂无产品，可直接生成；后续可在产品库添加。</Text>}
+                    ))}
+                  </View>
                 </View>
+
+                {skeletonContentType === 'commerce' ? (
+                  <View className='section'>
+                    {renderSectionTitle('product', '选择产品')}
+                    <ScrollView scrollX className='character-scroll'>
+                      <View className='character-list'>
+                        {products.map((product) => (
+                          <View
+                            key={product.id}
+                            className={`character-item ${selectedProductId === product.id ? 'character-item--active' : ''}`}
+                            onClick={() => setSelectedProductId(product.id)}
+                          >
+                            {product.images?.[0] ? (
+                              <Image className='character-avatar' src={product.images[0]} mode='aspectFill' />
+                            ) : (
+                              <View className='character-avatar' />
+                            )}
+                            <Text className='character-name'>{product.name}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </ScrollView>
+                    {products.length === 0 && <Text className='empty-hint'>暂无产品，请先在产品库添加，或切换为剧情视频。</Text>}
+                  </View>
+                ) : (
+                  <View className='section'>
+                    {renderSectionTitle('text', '剧情设定')}
+                    <View className='story-form'>
+                      <View className='story-field'>
+                        <Text className='story-field-label'>主角</Text>
+                        <Input
+                          className='story-input'
+                          value={skeletonStorySubject}
+                          onInput={(event) => setSkeletonStorySubject(event.detail.value)}
+                          placeholder={selectedChar?.name ? `默认使用：${selectedChar.name}` : '例如：glass skeleton cat'}
+                          maxlength={80}
+                        />
+                      </View>
+                      <View className='story-field'>
+                        <Text className='story-field-label'>场景</Text>
+                        <Input
+                          className='story-input'
+                          value={skeletonStoryScene}
+                          onInput={(event) => setSkeletonStoryScene(event.detail.value)}
+                          placeholder='例如：古罗马帝国 / 未来东京地铁'
+                          maxlength={120}
+                        />
+                      </View>
+                      <Picker
+                        mode='selector'
+                        range={SKELETON_STORY_TYPE_OPTIONS.map((item) => item.label)}
+                        value={skeletonStoryTypeIndex}
+                        onChange={(event) => {
+                          const next = Number(event.detail.value);
+                          if (Number.isFinite(next)) setSkeletonStoryTypeIndex(next);
+                        }}
+                      >
+                        <View
+                          className='story-field story-field--picker'
+                        >
+                          <View className='story-field-main'>
+                            <Text className='story-field-label'>类型</Text>
+                            <Text className='story-picker-value'>{skeletonStoryType.label}</Text>
+                            <Text className='story-picker-hint'>{skeletonStoryType.hint}</Text>
+                          </View>
+                          <Text className='language-picker-arrow'>›</Text>
+                        </View>
+                      </Picker>
+                    </View>
+                  </View>
+                )}
 
                 <View className='section'>
                   {renderSectionTitle('clock', '生成时长')}
@@ -678,6 +838,12 @@ export default function GeneratePage() {
                 <View className='section'>
                   <Text className='mode-desc'>任务创建后会进入分镜工作流，完成后可在「作品」里查看状态与结果。</Text>
                 </View>
+
+                {showSkeletonInlineComposer && (
+                  <View className='section section--last'>
+                    {renderComposerCard()}
+                  </View>
+                )}
               </>
             ) : (
               <View className='section'>
@@ -728,84 +894,22 @@ export default function GeneratePage() {
                 </View>
               </View>
             )}
+
+            <View className='section section--last'>
+              {showDigitalHumanInlineComposer ? (
+                renderComposerCard()
+              ) : (
+                <View
+                  className={`btn-primary ${submitting ? 'btn-disabled' : ''}`}
+                  onClick={handleFixedSubmit}
+                >
+                  <Text className='btn-text'>{fixedSubmitLabel}</Text>
+                </View>
+              )}
+            </View>
           </>
         )}
       </ScrollView>
-
-      {showScriptComposer ? (
-        <View className='bottom-composer' style={composerStyle}>
-          <View className='bottom-composer-card'>
-            <View className='bottom-composer-title-row'>
-              <Text className='bottom-composer-title'>
-                {pageMode === 'video-generate' ? '3D骨骼分镜脚本文案（可选）' : '脚本内容'}
-              </Text>
-              <View className='bottom-composer-title-actions'>
-                <Text
-                  className='bottom-composer-clear'
-                  onClick={() => {
-                    if (pageMode === 'video-generate') {
-                      setSkeletonScript('');
-                      return;
-                    }
-                    setScript('');
-                  }}
-                >
-                  清空
-                </Text>
-                <Text className='bottom-composer-count'>
-                  {pageMode === 'video-generate' ? `${skeletonScript.length}/3000` : `${script.length}/500`}
-                </Text>
-              </View>
-            </View>
-            <Textarea
-              className='bottom-composer-textarea'
-              value={pageMode === 'video-generate' ? skeletonScript : script}
-              onInput={(e) => {
-                if (pageMode === 'video-generate') {
-                  setSkeletonScript(e.detail.value);
-                  return;
-                }
-                setScript(e.detail.value);
-              }}
-              placeholder={pageMode === 'video-generate'
-                ? '可输入产品描述、卖点或参考脚本；留空也会按所选时长自动生成骷髅分镜与提示词...'
-                : '在此输入你想让数字人说的文字...'}
-              maxlength={pageMode === 'video-generate' ? 3000 : 500}
-              fixed
-              autoHeight
-              adjustPosition={false}
-              cursorSpacing={20}
-            />
-            <View className='bottom-composer-footer'>
-              {pageMode === 'digital-human' && (
-                <View className='info-input-actions info-input-actions--composer'>
-                  <View className='input-action-btn' onClick={handleFindInspiration}>
-                    <Text className='input-action-btn-text'>没有文案？去找灵感</Text>
-                  </View>
-                  <View className='input-action-btn input-action-btn--ghost' onClick={handlePasteScript}>
-                    <Text className='input-action-btn-text input-action-btn-text--ghost'>粘贴</Text>
-                  </View>
-                </View>
-              )}
-              <View
-                className={`btn-primary ${submitting ? 'btn-disabled' : ''}`}
-                onClick={handleFixedSubmit}
-              >
-                <Text className='btn-text'>{fixedSubmitLabel}</Text>
-              </View>
-            </View>
-          </View>
-        </View>
-      ) : showFixedSubmit && (
-        <View className='fixed-submit-area'>
-          <View
-            className={`btn-primary ${submitting ? 'btn-disabled' : ''}`}
-            onClick={handleFixedSubmit}
-          >
-            <Text className='btn-text'>{fixedSubmitLabel}</Text>
-          </View>
-        </View>
-      )}
     </>
   );
 }

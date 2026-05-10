@@ -396,6 +396,16 @@ export default function RemixVideoGeneratePage() {
     await handleGenerateClip(nextClip);
   };
 
+  const handleOpenStoryboardMerge = () => {
+    if (generatedCount <= 0) {
+      Taro.showToast({ title: '请先生成视频片段', icon: 'none' });
+      return;
+    }
+    Taro.redirectTo({
+      url: `/subpages/storyboard-board/index?id=${encodeURIComponent(taskId)}&title=${encodeURIComponent(title || '一键复刻')}&mode=remix-board`,
+    });
+  };
+
   return (
     <View className='remix-video-page'>
       <View className='remix-video-nav'>
@@ -568,6 +578,12 @@ export default function RemixVideoGeneratePage() {
 
       {!loading && !errorText && (
         <View className='remix-video-bottom'>
+          <View
+            className='remix-video-board-btn'
+            onClick={handleOpenStoryboardMerge}
+          >
+            <Text className='remix-video-board-btn-text'>一键剪辑</Text>
+          </View>
           <View
             className={`remix-video-batch-btn ${batchGenerating ? 'remix-video-batch-btn--disabled' : ''}`}
             onClick={() => void handleGenerateAll()}

@@ -53,6 +53,36 @@ function getSystemApiKey() {
   return process.env.CANVAS_UPSTREAM_DEFAULT_API_KEY || process.env.CLOUD_API_KEY || "";
 }
 
+function getCloudApiKey() {
+  return process.env.CLOUD_API_KEY || process.env.CANVAS_UPSTREAM_DEFAULT_API_KEY || "";
+}
+
+function getCloudRewriteModel() {
+  return (
+    process.env.XHS_REWRITE_CLOUD_MODEL ||
+    process.env.CLOUD_WRITING_MODEL ||
+    process.env.CLOUD_DEFAULT_MODEL ||
+    "gpt-4o-mini"
+  ).trim();
+}
+
+function resolveChatCompletionsUrl() {
+  const explicit =
+    normalizeText(process.env.XHS_REWRITE_CHAT_COMPLETIONS_URL) ||
+    normalizeText(process.env.CANVAS_CHAT_COMPLETIONS_URL);
+  if (explicit) return explicit;
+
+  const baseUrl = normalizeText(process.env.CLOUD_API_BASE_URL || process.env.CANVAS_API_BASE_URL);
+  if (!baseUrl) {
+    throw new Error("LLM 兜底服务未配置");
+  }
+
+  const normalized = baseUrl.replace(/\/+$/, "");
+  return normalized.endsWith("/chat/completions")
+    ? normalized
+    : `${normalized}/chat/completions`;
+}
+
 function resolveGeminiGenerateContentUrl() {
   const explicit = normalizeText(process.env.XHS_REWRITE_GEMINI_ENDPOINT);
   if (explicit) return explicit;
@@ -107,6 +137,30 @@ function extractTextFromGemini(payload: unknown): string {
     if (text) return text;
   }
   return "";
+}
+
+function extractTextFromChatCompletions(payload: unknown): string {
+  const source = parseObject(payload);
+  const choices = Array.isArray(source?.choices) ? source.choices : [];
+  for (const choice of choices) {
+    const choiceObj = parseObject(choice);
+    const messageObj = parseObject(choiceObj?.message);
+    const content = messageObj?.content;
+    if (typeof content === "string" && content.trim()) {
+      return content.trim();
+    }
+    if (Array.isArray(content)) {
+      const text = content
+        .map((part) => normalizeText(parseObject(part)?.text))
+        .filter(Boolean)
+        .join("\n")
+        .trim();
+      if (text) return text;
+    }
+  }
+
+  const outputText = normalizeText(source?.output_text);
+  return outputText;
 }
 
 function parseStringArray(value: unknown): string[] {
@@ -217,13 +271,36 @@ function buildXhsRewritePrompt(input: XhsRewriteInput) {
   ].filter(Boolean).join("\n");
 }
 
-export async function rewriteXhsNote(input: XhsRewriteInput): Promise<XhsRewriteResult> {
+function toXhsRewriteResult(parsed: Record<string, unknown>, input: XhsRewriteInput): XhsRewriteResult {
+  const candidates = parseTitleFormulaCandidates(parsed.titleCandidates);
+  const top3Raw = parseTitleFormulaCandidates(parsed.top3);
+  const top3 = top3Raw.length > 0 ? top3Raw.slice(0, 3) : candidates.slice(0, 3);
+  const formulaTitle = normalizeText(top3[0]?.title || candidates[0]?.title);
+  const title = formulaTitle || normalizeText(parsed.title) || clipText(input.title || "仿写标题", 60);
+  const body = normalizeText(parsed.body) || input.body;
+  const imageTexts = parseStringArray(parsed.imageTexts);
+  const tags = parseStringArray(parsed.tags);
+
+  return {
+    title,
+    body,
+    imageTexts: imageTexts.length > 0 ? imageTexts : input.imageTexts || [],
+    tags,
+    titleFormula: {
+      topic: normalizeText(parsed.topic),
+      industry: normalizeText(parsed.industry),
+      candidates,
+      top3,
+    },
+  };
+}
+
+async function callGeminiRewrite(prompt: string, input: XhsRewriteInput): Promise<Record<string, unknown>> {
   const apiKey = getSystemApiKey();
   if (!apiKey) {
     throw new Error("LLM 服务未配置");
   }
 
-  const prompt = buildXhsRewritePrompt(input);
   const response = await fetch(resolveGeminiGenerateContentUrl(), {
     method: "POST",
     headers: {
@@ -256,26 +333,62 @@ export async function rewriteXhsNote(input: XhsRewriteInput): Promise<XhsRewrite
   if (!parsed) {
     throw new Error("改写模型未返回有效 JSON");
   }
+  return parsed;
+}
 
-  const candidates = parseTitleFormulaCandidates(parsed.titleCandidates);
-  const top3Raw = parseTitleFormulaCandidates(parsed.top3);
-  const top3 = top3Raw.length > 0 ? top3Raw.slice(0, 3) : candidates.slice(0, 3);
-  const formulaTitle = normalizeText(top3[0]?.title || candidates[0]?.title);
-  const title = formulaTitle || normalizeText(parsed.title) || clipText(input.title || "仿写标题", 60);
-  const body = normalizeText(parsed.body) || input.body;
-  const imageTexts = parseStringArray(parsed.imageTexts);
-  const tags = parseStringArray(parsed.tags);
+async function callCloudRewrite(prompt: string, input: XhsRewriteInput): Promise<Record<string, unknown>> {
+  const apiKey = getCloudApiKey();
+  if (!apiKey) {
+    throw new Error("LLM 兜底服务未配置");
+  }
 
-  return {
-    title,
-    body,
-    imageTexts: imageTexts.length > 0 ? imageTexts : input.imageTexts || [],
-    tags,
-    titleFormula: {
-      topic: normalizeText(parsed.topic),
-      industry: normalizeText(parsed.industry),
-      candidates,
-      top3,
-    },
+  const requestBody = {
+    model: getCloudRewriteModel(),
+    messages: [{ role: "user", content: prompt }],
+    temperature: input.mode === "publishMeta" ? 0.35 : 0.7,
+    max_tokens: input.mode === "publishMeta" ? 1200 : 1800,
+    response_format: { type: "json_object" },
   };
+
+  const response = await fetch(resolveChatCompletionsUrl(), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(errorText || `改写模型兜底调用失败: ${response.status}`);
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  const raw = extractTextFromChatCompletions(payload);
+  const parsed = extractJsonObject(raw);
+  if (!parsed) {
+    throw new Error("改写模型兜底调用未返回有效 JSON");
+  }
+  return parsed;
+}
+
+export async function rewriteXhsNote(input: XhsRewriteInput): Promise<XhsRewriteResult> {
+  const prompt = buildXhsRewritePrompt(input);
+  try {
+    return toXhsRewriteResult(await callGeminiRewrite(prompt, input), input);
+  } catch (primaryError) {
+    console.warn("[xhs-rewrite] primary Gemini call failed, trying cloud fallback", primaryError);
+    try {
+      return toXhsRewriteResult(await callCloudRewrite(prompt, input), input);
+    } catch (fallbackError) {
+      throw new Error(
+        [
+          "小红书改写模型调用失败",
+          primaryError instanceof Error ? primaryError.message : String(primaryError),
+          fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+        ].filter(Boolean).join("；"),
+      );
+    }
+  }
 }

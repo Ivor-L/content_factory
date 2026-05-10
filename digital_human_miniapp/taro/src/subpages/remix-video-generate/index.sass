@@ -433,8 +433,11 @@
   background: #050505
   border-top: 1rpx solid rgba(137, 165, 215, 0.2)
   box-sizing: border-box
+  display: flex
+  gap: 12rpx
 
 .remix-video-batch-btn
+  flex: 1
   height: 82rpx
   border-radius: 16rpx
   background: #ecee9f
@@ -442,12 +445,28 @@
   align-items: center
   justify-content: center
 
+.remix-video-board-btn
+  flex: 0 0 210rpx
+  height: 82rpx
+  border-radius: 16rpx
+  border: 1rpx solid rgba(236, 238, 159, 0.35)
+  background: rgba(236, 238, 159, 0.08)
+  display: flex
+  align-items: center
+  justify-content: center
+  box-sizing: border-box
+
 .remix-video-batch-btn--disabled
   opacity: 0.62
 
 .remix-video-batch-btn-text
   color: #111
   font-size: 28rpx
+  font-weight: 900
+
+.remix-video-board-btn-text
+  color: #ecee9f
+  font-size: 26rpx
   font-weight: 900
 
 .remix-video-edit-mask

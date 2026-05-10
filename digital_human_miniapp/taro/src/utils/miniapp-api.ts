@@ -2084,10 +2084,33 @@ export const miniappApi = {
     });
   },
 
-  async mergeStoryboard(taskId: string): Promise<void> {
+  async mergeStoryboard(taskId: string, options: {
+    enableSubtitles?: boolean;
+    subtitleTemplate?: string;
+  } = {}): Promise<void> {
     await request(`/api/storyboard/${encodeURIComponent(taskId)}/merge`, {
       method: 'POST',
-      data: {},
+      data: {
+        enableSubtitles: options.enableSubtitles ?? true,
+        subtitleTemplate: options.subtitleTemplate || 'jianying',
+      },
+    });
+  },
+
+  async autoEditStoryboard(taskId: string, options: {
+    voiceId?: string;
+    bgmUrl?: string;
+    speed?: number;
+    wantSubtitles?: boolean;
+  }): Promise<void> {
+    await request(`/api/storyboard/${encodeURIComponent(taskId)}/auto-edit`, {
+      method: 'POST',
+      data: {
+        voiceId: options.voiceId || '',
+        bgmUrl: options.bgmUrl || '',
+        speed: options.speed,
+        wantSubtitles: options.wantSubtitles ?? true,
+      },
     });
   },
 

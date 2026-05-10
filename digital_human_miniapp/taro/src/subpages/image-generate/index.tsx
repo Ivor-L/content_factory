@@ -207,6 +207,7 @@ type CardPadding = 'xs' | 'sm' | 'md' | 'lg';
 type CardFontFamily = 'system' | 'source-han' | 'puhui' | 'songti' | 'kaiti' | 'heiti' | 'mono';
 type CardCoverMode = 'auto' | 'custom';
 type CardEditorMode = 'edit' | 'preview';
+type CardWechatStyleId = 'classic' | 'quote' | 'editorial' | 'calm';
 type CardCoverStyleId =
   | 'image-focus'
   | 'grid-paper'
@@ -958,6 +959,68 @@ const CARD_MAX_PAGE_OPTIONS = [4, 6, 8, 10];
 const INFOGRAPHIC_COUNT_OPTIONS = [1, 2, 3, 4, 5];
 const IMAGE_GENERATE_PREFS_KEY = 'IMAGE_GENERATE_PREFS_V1';
 
+type CardWechatStyleSpec = {
+  id: CardWechatStyleId;
+  title: string;
+  desc: string;
+  backgroundColor: string;
+  textColor: string;
+  accentColor: string;
+  accentSoftColor: string;
+  borderColor: string;
+};
+
+const CARD_WECHAT_STYLE_OPTIONS: CardWechatStyleSpec[] = [
+  {
+    id: 'classic',
+    title: '公众号经典',
+    desc: '白底蓝灰，适合通用长文',
+    backgroundColor: '#ffffff',
+    textColor: '#333333',
+    accentColor: '#576b95',
+    accentSoftColor: 'rgba(87,107,149,0.1)',
+    borderColor: '#e8e8e8',
+  },
+  {
+    id: 'quote',
+    title: '观点专栏',
+    desc: '强调引用与金句',
+    backgroundColor: '#fffdf8',
+    textColor: '#2d2a24',
+    accentColor: '#9a6a2f',
+    accentSoftColor: 'rgba(154,106,47,0.1)',
+    borderColor: '#eadfcf',
+  },
+  {
+    id: 'editorial',
+    title: '杂志正文',
+    desc: '黑白克制，适合深度稿',
+    backgroundColor: '#ffffff',
+    textColor: '#1f2328',
+    accentColor: '#111111',
+    accentSoftColor: 'rgba(17,17,17,0.08)',
+    borderColor: '#dddddd',
+  },
+  {
+    id: 'calm',
+    title: '清爽知识',
+    desc: '低饱和绿色，适合教程',
+    backgroundColor: '#fbfefb',
+    textColor: '#22362b',
+    accentColor: '#2f7a52',
+    accentSoftColor: 'rgba(47,122,82,0.1)',
+    borderColor: '#d8eadf',
+  },
+];
+
+const CARD_WECHAT_STYLE_INDEX = new Map<CardWechatStyleId, CardWechatStyleSpec>(
+  CARD_WECHAT_STYLE_OPTIONS.map((item) => [item.id, item]),
+);
+
+function getCardWechatStyleSpec(styleId: CardWechatStyleId): CardWechatStyleSpec {
+  return CARD_WECHAT_STYLE_INDEX.get(styleId) || CARD_WECHAT_STYLE_OPTIONS[0];
+}
+
 type ImageGeneratePrefs = {
   activeFeature?: FeatureKey;
   selectedModel?: string;
@@ -997,6 +1060,7 @@ type ImageGeneratePrefs = {
   cardCoverLineHeight?: number;
   cardEditorMode?: CardEditorMode;
   cardWechatMode?: boolean;
+  cardWechatStyleId?: CardWechatStyleId;
 };
 
 const CARD_STYLE_INDEX = new Map<CardStyleId, CardStylePreset>(CARD_LAYOUT_STYLES.map((item) => [item.id, item]));
@@ -1824,6 +1888,16 @@ function buildWechatArticleHtml(markdown: string, previewStyle: PreviewRenderSty
   ].join('');
 }
 
+function buildWechatPreviewHtml(markdown: string, previewStyle: PreviewRenderStyle): string {
+  return renderMiniMarkdown(markdown, {
+    ...previewStyle,
+    density: 'relaxed',
+    padding: 'md',
+    headingSpacing: 'normal',
+    spacingScale: 1.08,
+  });
+}
+
 function renderMiniCoverPreview(
   coverStyleId: CardCoverStyleId,
   title: string,
@@ -2190,6 +2264,7 @@ export default function ImageGeneratePage() {
   const [cardPublishUrl, setCardPublishUrl] = useState('');
   const [cardPreviewPageIndex, setCardPreviewPageIndex] = useState(0);
   const [cardWechatMode, setCardWechatMode] = useState(false);
+  const [cardWechatStyleId, setCardWechatStyleId] = useState<CardWechatStyleId>(CARD_WECHAT_STYLE_OPTIONS[0].id);
   const [injectedFromMyNote, setInjectedFromMyNote] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [cardUserCleared, setCardUserCleared] = useState(false);
@@ -2396,6 +2471,9 @@ export default function ImageGeneratePage() {
       if (typeof prefs.cardWechatMode === 'boolean') {
         setCardWechatMode(prefs.cardWechatMode);
       }
+      if (prefs.cardWechatStyleId && CARD_WECHAT_STYLE_OPTIONS.some((item) => item.id === prefs.cardWechatStyleId)) {
+        setCardWechatStyleId(prefs.cardWechatStyleId);
+      }
     } catch {
       // ignore broken local prefs
     }
@@ -2439,6 +2517,7 @@ export default function ImageGeneratePage() {
       cardCoverLineHeight,
       cardEditorMode,
       cardWechatMode,
+      cardWechatStyleId,
     };
     Taro.setStorageSync(IMAGE_GENERATE_PREFS_KEY, prefs);
   }, [
@@ -2478,6 +2557,7 @@ export default function ImageGeneratePage() {
     cardCoverLineHeight,
     cardEditorMode,
     cardWechatMode,
+    cardWechatStyleId,
   ]);
 
   const loadInfographicTemplates = async () => {
@@ -2621,6 +2701,31 @@ export default function ImageGeneratePage() {
     }
   }, []);
 
+  const selectedCardWechatStyle = useMemo(
+    () => getCardWechatStyleSpec(cardWechatStyleId),
+    [cardWechatStyleId],
+  );
+
+  const cardWechatPreviewStyle = useMemo<PreviewRenderStyle>(() => ({
+    textColor: selectedCardWechatStyle.textColor,
+    accentColor: selectedCardWechatStyle.accentColor,
+    accentSoftColor: selectedCardWechatStyle.accentSoftColor,
+    density: 'relaxed',
+    h1FontScale: cardH1FontScale,
+    h2FontScale: cardH2FontScale,
+    h3FontScale: cardH3FontScale,
+    bodyFontScale: cardBodyFontScale,
+    headingSpacing: 'normal',
+    padding: 'md',
+    fontFamily: cardFontFamily,
+    spacingScale: 1.08,
+  }), [cardBodyFontScale, cardFontFamily, cardH1FontScale, cardH2FontScale, cardH3FontScale, selectedCardWechatStyle]);
+
+  const cardWechatPreviewHtml = useMemo(() => {
+    const renderSourceMarkdown = cleanMyNoteCardText(cardMarkdown).trim() || '# 图文卡片\n\n请在编辑区输入内容。';
+    return buildWechatPreviewHtml(renderSourceMarkdown, cardWechatPreviewStyle);
+  }, [cardMarkdown, cardWechatPreviewStyle]);
+
   const cardPreviewPages = useMemo(() => {
     try {
       const renderSourceMarkdown = cleanMyNoteCardText(cardMarkdown);
@@ -2632,47 +2737,36 @@ export default function ImageGeneratePage() {
         || selectedCardStyleModePreset?.textColor
         || selectedCardStylePreset.textColor;
       const accentColorByTheme = CARD_THEME_ACCENT_MAP[cardThemeColor] || CARD_THEME_ACCENT_MAP.amber;
-      const accentColor = cardWechatMode
-        ? '#576b95'
-        : selectedCardStyleModePreset?.accentColor || selectedCardStylePreset.accentColor || accentColorByTheme;
+      const accentColor = selectedCardStyleModePreset?.accentColor || selectedCardStylePreset.accentColor || accentColorByTheme;
       const pageMarkdown = paginatePreviewMarkdown(
         renderSourceMarkdown,
-        cardWechatMode ? 1 : cardMaxPages,
-        cardWechatMode ? 'relaxed' : cardDensity,
+        cardMaxPages,
+        cardDensity,
         cardH1FontScale,
         cardH2FontScale,
         cardH3FontScale,
         cardBodyFontScale,
-        cardWechatMode ? 'md' : cardPadding,
-        cardWechatMode ? 'minimalist' : selectedCardStylePreset.id,
-        cardWechatMode
-          ? {
-              ...CARD_STYLE_LAYOUT_PARAMS.minimalist,
-              contentPaddingX: 0,
-              contentPaddingY: 0,
-              headerHeight: 0,
-              footerHeight: 0,
-              spacing: 1.08,
-            }
-          : styleLayout,
+        cardPadding,
+        selectedCardStylePreset.id,
+        styleLayout,
         windowWidthPx,
       );
       const previewStyle: PreviewRenderStyle = {
-        textColor: cardWechatMode ? '#333333' : textColor || '#1f2937',
+        textColor: textColor || '#1f2937',
         accentColor,
-        accentSoftColor: cardWechatMode ? 'rgba(87,107,149,0.1)' : CARD_THEME_ACCENT_SOFT_MAP[cardThemeColor] || CARD_THEME_ACCENT_SOFT_MAP.amber,
-        density: cardWechatMode ? 'relaxed' : cardDensity,
+        accentSoftColor: CARD_THEME_ACCENT_SOFT_MAP[cardThemeColor] || CARD_THEME_ACCENT_SOFT_MAP.amber,
+        density: cardDensity,
         h1FontScale: cardH1FontScale,
         h2FontScale: cardH2FontScale,
         h3FontScale: cardH3FontScale,
         bodyFontScale: cardBodyFontScale,
-        headingSpacing: cardWechatMode ? 'normal' : cardHeadingSpacing,
-        padding: cardWechatMode ? 'md' : cardPadding,
+        headingSpacing: cardHeadingSpacing,
+        padding: cardPadding,
         fontFamily: cardFontFamily,
-        spacingScale: cardWechatMode ? 1.08 : styleLayout.spacing,
+        spacingScale: styleLayout.spacing,
       };
       const pages = pageMarkdown.map((md) => renderMiniMarkdown(md, previewStyle)).filter(Boolean);
-      if (cardIncludeCover && !cardWechatMode) {
+      if (cardIncludeCover) {
         pages.unshift(renderMiniCoverPreview(
           cardCoverStyleId,
           cardCoverPreviewTitle,
@@ -2707,7 +2801,7 @@ export default function ImageGeneratePage() {
       headingSpacing: 'normal',
       fontFamily: 'system',
     })];
-  }, [cardDensity, cardH1FontScale, cardH2FontScale, cardH3FontScale, cardBodyFontScale, cardMarkdown, cardMaxPages, selectedCardStylePreset, selectedCardStyleModePreset, cardThemeColor, cardHeadingSpacing, cardPadding, cardFontFamily, cardIncludeCover, cardWechatMode, cardCoverPreviewTitle, cardCoverPreviewSubtitle, cardCoverPreviewBackground, cardCoverTextColor, cardCoverHighlightColor, cardCoverFontFamily, cardCoverTitleAlignX, cardCoverTitleAlignY, cardCoverFontSize, cardCoverSubtitleFontSize, cardCoverLineHeight, cardCoverShowStickers, cardCoverImage, windowWidthPx]);
+  }, [cardDensity, cardH1FontScale, cardH2FontScale, cardH3FontScale, cardBodyFontScale, cardMarkdown, cardMaxPages, selectedCardStylePreset, selectedCardStyleModePreset, cardThemeColor, cardHeadingSpacing, cardPadding, cardFontFamily, cardIncludeCover, cardCoverPreviewTitle, cardCoverPreviewSubtitle, cardCoverPreviewBackground, cardCoverTextColor, cardCoverHighlightColor, cardCoverFontFamily, cardCoverTitleAlignX, cardCoverTitleAlignY, cardCoverFontSize, cardCoverSubtitleFontSize, cardCoverLineHeight, cardCoverShowStickers, cardCoverImage, windowWidthPx]);
 
   useEffect(() => {
     if (cardPreviewPageIndex > cardPreviewPages.length - 1) {
@@ -2717,7 +2811,7 @@ export default function ImageGeneratePage() {
 
   const cardPreviewThemeClass = useMemo(() => {
     if (cardWechatMode) {
-      return `preview-card--wechat preview-card--font-${cardFontFamily}`;
+      return `preview-card--wechat preview-card--wechat-${cardWechatStyleId} preview-card--font-${cardFontFamily}`;
     }
     const radiusClass = cardRadius === 'sm'
       ? 'preview-card--radius-sm'
@@ -2741,14 +2835,15 @@ export default function ImageGeneratePage() {
     const styleClass = `preview-card--style-${selectedCardStylePreset.id}`;
     const modeClass = selectedCardStyleModePreset?.id ? `preview-card--mode-${selectedCardStyleModePreset.id}` : '';
     return `${radiusClass} ${colorClass} ${spacingClass} ${paddingClass} ${fontClass} ${styleClass} ${modeClass}`.trim();
-  }, [cardFontFamily, cardHeadingSpacing, cardPadding, cardRadius, cardThemeColor, cardWechatMode, selectedCardStyleModePreset?.id, selectedCardStylePreset.id]);
+  }, [cardFontFamily, cardHeadingSpacing, cardPadding, cardRadius, cardThemeColor, cardWechatMode, cardWechatStyleId, selectedCardStyleModePreset?.id, selectedCardStylePreset.id]);
   const cardPreviewThemeInlineStyle = useMemo(() => {
     if (cardWechatMode) {
       return {
-        backgroundColor: '#ffffff',
-        color: '#333333',
-        '--preview-accent': '#576b95',
-        '--preview-accent-soft': 'rgba(87,107,149,0.1)',
+        backgroundColor: selectedCardWechatStyle.backgroundColor,
+        color: selectedCardWechatStyle.textColor,
+        borderColor: selectedCardWechatStyle.borderColor,
+        '--preview-accent': selectedCardWechatStyle.accentColor,
+        '--preview-accent-soft': selectedCardWechatStyle.accentSoftColor,
       } as Record<string, string>;
     }
     try {
@@ -2803,12 +2898,12 @@ export default function ImageGeneratePage() {
         color: '#1f2937',
       } as Record<string, string>;
     }
-  }, [cardThemeColor, cardWechatMode, selectedCardStyleModePreset, selectedCardStylePreset]);
+  }, [cardThemeColor, cardWechatMode, selectedCardStyleModePreset, selectedCardStylePreset, selectedCardWechatStyle]);
 
   const cardPreviewContentInlineStyle = useMemo(() => {
     if (cardWechatMode) {
       return {
-        backgroundColor: '#ffffff',
+        backgroundColor: selectedCardWechatStyle.backgroundColor,
         padding: '0',
       } as Record<string, string>;
     }
@@ -2828,7 +2923,7 @@ export default function ImageGeneratePage() {
       ...backgroundStyle,
       ...paddingStyle,
     } as Record<string, string>;
-  }, [cardWechatMode, selectedCardStyleModePreset, selectedCardStylePreset.id]);
+  }, [cardWechatMode, selectedCardStyleModePreset, selectedCardStylePreset.id, selectedCardWechatStyle.backgroundColor]);
 
   const cardPreviewRichtextClass = useMemo(() => {
     const classes = ['preview-richtext'];
@@ -2900,21 +2995,10 @@ export default function ImageGeneratePage() {
   );
   const cardWechatArticleHtml = useMemo(() => {
     const source = cleanMyNoteCardText(cardMarkdown).trim() || '# 图文卡片\n\n请在编辑区输入内容。';
-    return buildWechatArticleHtml(source, {
-      textColor: '#333333',
-      accentColor: '#576b95',
-      accentSoftColor: 'rgba(87,107,149,0.1)',
-      density: 'relaxed',
-      h1FontScale: cardH1FontScale,
-      h2FontScale: cardH2FontScale,
-      h3FontScale: cardH3FontScale,
-      bodyFontScale: cardBodyFontScale,
-      headingSpacing: 'normal',
-      padding: 'md',
-      fontFamily: cardFontFamily,
-      spacingScale: 1.08,
-    });
-  }, [cardBodyFontScale, cardFontFamily, cardH1FontScale, cardH2FontScale, cardH3FontScale, cardMarkdown]);
+    return buildWechatArticleHtml(source, cardWechatPreviewStyle)
+      .replace('background:#ffffff;', `background:${selectedCardWechatStyle.backgroundColor};`)
+      .replace(`color:${cardWechatPreviewStyle.textColor};`, `color:${selectedCardWechatStyle.textColor};`);
+  }, [cardMarkdown, cardWechatPreviewStyle, selectedCardWechatStyle]);
 
   const handleBack = () => {
     const pages = Taro.getCurrentPages();
@@ -3678,23 +3762,48 @@ export default function ImageGeneratePage() {
           </View>
         </View>
         {cardWechatMode && (
-          <View className='card-config-row'>
-            <Text className='card-config-label'>正文字体</Text>
-            <Picker
-              mode='selector'
-              range={CARD_FONT_FAMILY_OPTIONS.map((item) => item.title)}
-              value={cardFontFamilyIndex}
-              onChange={(event) => {
-                const idx = Number(event.detail.value);
-                const picked = CARD_FONT_FAMILY_OPTIONS[idx];
-                if (picked) setCardFontFamily(picked.id);
-              }}
-            >
-              <View className='picker-chip'>
-                <Text className='picker-chip-text'>{CARD_FONT_FAMILY_OPTIONS[cardFontFamilyIndex]?.title || '系统无衬线'}</Text>
+          <>
+            <View className='card-config-row card-config-row--wechat-style'>
+              <Text className='card-config-label'>公众号风格</Text>
+              <View className='wechat-style-grid'>
+                {CARD_WECHAT_STYLE_OPTIONS.map((item) => {
+                  const active = cardWechatStyleId === item.id;
+                  return (
+                    <View
+                      key={item.id}
+                      className={`wechat-style-card ${active ? 'wechat-style-card--active' : ''}`}
+                      onClick={() => setCardWechatStyleId(item.id)}
+                    >
+                      <View className='wechat-style-preview' style={{ backgroundColor: item.backgroundColor, borderColor: item.borderColor }}>
+                        <View className='wechat-style-preview-line' style={{ backgroundColor: item.accentColor }} />
+                        <View className='wechat-style-preview-text' style={{ backgroundColor: item.textColor }} />
+                        <View className='wechat-style-preview-text wechat-style-preview-text--short' style={{ backgroundColor: item.accentColor }} />
+                      </View>
+                      <Text className={`wechat-style-title ${active ? 'wechat-style-title--active' : ''}`}>{item.title}</Text>
+                      <Text className={`wechat-style-desc ${active ? 'wechat-style-desc--active' : ''}`}>{item.desc}</Text>
+                    </View>
+                  );
+                })}
               </View>
-            </Picker>
-          </View>
+            </View>
+            <View className='card-config-row'>
+              <Text className='card-config-label'>正文字体</Text>
+              <Picker
+                mode='selector'
+                range={CARD_FONT_FAMILY_OPTIONS.map((item) => item.title)}
+                value={cardFontFamilyIndex}
+                onChange={(event) => {
+                  const idx = Number(event.detail.value);
+                  const picked = CARD_FONT_FAMILY_OPTIONS[idx];
+                  if (picked) setCardFontFamily(picked.id);
+                }}
+              >
+                <View className='picker-chip'>
+                  <Text className='picker-chip-text'>{CARD_FONT_FAMILY_OPTIONS[cardFontFamilyIndex]?.title || '系统无衬线'}</Text>
+                </View>
+              </Picker>
+            </View>
+          </>
         )}
       </>
     );
@@ -4261,10 +4370,11 @@ export default function ImageGeneratePage() {
     setCardMarkdown('');
     setCardPreviewImages([]);
   };
+  const isCardLayoutEditMode = activeFeature === 'card-layout' && cardEditorMode === 'edit';
 
   return (
     <View className='image-gen-root'>
-      <View className={`image-gen-page ${showBottomComposer ? 'image-gen-page--with-composer' : showFixedSubmit ? '' : 'image-gen-page--no-fixed-submit'}`}>
+      <View className={`image-gen-page ${showBottomComposer ? 'image-gen-page--with-composer' : showFixedSubmit ? '' : 'image-gen-page--no-fixed-submit'} ${isCardLayoutEditMode ? 'image-gen-page--card-edit' : ''}`}>
         <View className='image-gen-header'>
           <View className='image-gen-topbar'>
             <View className='image-gen-back' onClick={handleBack}>
@@ -4441,21 +4551,7 @@ export default function ImageGeneratePage() {
               <>
                 {renderSectionTitle('markdown', '粘贴 Markdown / 文案')}
                 <View className='info-input-box info-input-box--card-editor'>
-                  <Textarea
-                    className='textarea textarea--info textarea--card-editor'
-                    value={cardMarkdown}
-                    adjustPosition={false}
-                    cursorSpacing={20}
-                    onInput={(e) => {
-                      const value = e.detail.value;
-                      setCardUserCleared(!value.trim());
-                      setCardMarkdown(value);
-                      setCardPreviewImages([]);
-                    }}
-                    placeholder='粘贴网页端的小红书 Markdown，自动转卡片布局。'
-                    maxlength={8000}
-                  />
-                  <View className='info-input-actions'>
+                  <View className='info-input-actions info-input-actions--card-editor'>
                     <View className='input-action-btn' onClick={handleFindInspiration}>
                       <Text className='input-action-btn-text'>没有文案？去找灵感</Text>
                     </View>
@@ -4472,6 +4568,22 @@ export default function ImageGeneratePage() {
                       </Text>
                     </View>
                   </View>
+                  <Textarea
+                    className='textarea textarea--info textarea--card-editor'
+                    value={cardMarkdown}
+                    autoHeight
+                    adjustPosition
+                    cursorSpacing={140}
+                    showConfirmBar={false}
+                    onInput={(e) => {
+                      const value = e.detail.value;
+                      setCardUserCleared(!value.trim());
+                      setCardMarkdown(value);
+                      setCardPreviewImages([]);
+                    }}
+                    placeholder='粘贴网页端的小红书 Markdown，自动转卡片布局。'
+                    maxlength={8000}
+                  />
                 </View>
               </>
             )}
@@ -4485,42 +4597,52 @@ export default function ImageGeneratePage() {
                     <Text className='card-wechat-mode-note-text'>预览按公众号正文宽度展示，导出会复制 HTML 草稿。</Text>
                   </View>
                 )}
-                <View className={`preview-swiper-wrap ${cardWechatMode ? 'preview-swiper-wrap--wechat' : ''}`}>
-                  <Swiper
-                    className={`preview-swiper ${cardWechatMode ? 'preview-swiper--wechat' : ''}`}
-                    indicatorDots={false}
-                    circular={false}
-                    current={cardPreviewPageIndex}
-                    onChange={(event) => setCardPreviewPageIndex(event.detail.current)}
-                  >
-                    {cardPreviewPages.map((html, idx) => (
-                      <SwiperItem key={`preview-page-${idx}`}>
-                        <View className='preview-swiper-item'>
-                          <View className={`preview-card ${cardPreviewThemeClass}`} style={cardPreviewThemeInlineStyle}>
-                            {selectedCardStyle === 'apple-notes' && !cardWechatMode && (
-                              <View className='preview-apple-header'>
-                                <View className='preview-apple-header-left'>
-                                  <Text className='preview-apple-header-icon'>‹</Text>
-                                  <Text className='preview-apple-header-title'>备忘录</Text>
+                {cardWechatMode ? (
+                  <View className='wechat-preview-long-wrap'>
+                    <View className={cardPreviewThemeClass} style={cardPreviewThemeInlineStyle}>
+                      <View className={cardPreviewContentShellClass} style={cardPreviewContentInlineStyle}>
+                        <RichText className={cardPreviewRichtextClass} nodes={cardWechatPreviewHtml} />
+                      </View>
+                    </View>
+                  </View>
+                ) : (
+                  <View className='preview-swiper-wrap'>
+                    <Swiper
+                      className='preview-swiper'
+                      indicatorDots={false}
+                      circular={false}
+                      current={cardPreviewPageIndex}
+                      onChange={(event) => setCardPreviewPageIndex(event.detail.current)}
+                    >
+                      {cardPreviewPages.map((html, idx) => (
+                        <SwiperItem key={`preview-page-${idx}`}>
+                          <View className='preview-swiper-item'>
+                            <View className={`preview-card ${cardPreviewThemeClass}`} style={cardPreviewThemeInlineStyle}>
+                              {selectedCardStyle === 'apple-notes' && (
+                                <View className='preview-apple-header'>
+                                  <View className='preview-apple-header-left'>
+                                    <Text className='preview-apple-header-icon'>‹</Text>
+                                    <Text className='preview-apple-header-title'>备忘录</Text>
+                                  </View>
+                                  <View className='preview-apple-header-right'>
+                                    <Text className='preview-apple-header-icon'>↥</Text>
+                                    <Text className='preview-apple-header-icon'>◌</Text>
+                                  </View>
                                 </View>
-                                <View className='preview-apple-header-right'>
-                                  <Text className='preview-apple-header-icon'>↥</Text>
-                                  <Text className='preview-apple-header-icon'>◌</Text>
-                                </View>
+                              )}
+                              <View className={cardPreviewContentShellClass} style={cardPreviewContentInlineStyle}>
+                                <RichText className={cardPreviewRichtextClass} nodes={html} />
                               </View>
-                            )}
-                            <View className={cardPreviewContentShellClass} style={cardPreviewContentInlineStyle}>
-                              <RichText className={cardPreviewRichtextClass} nodes={html} />
                             </View>
                           </View>
-                        </View>
-                      </SwiperItem>
-                    ))}
-                  </Swiper>
-                  <View className='preview-swiper-indicator'>
-                    <Text className='preview-swiper-indicator-text'>{cardPreviewPageIndex + 1}/{cardPreviewPages.length}</Text>
+                        </SwiperItem>
+                      ))}
+                    </Swiper>
+                    <View className='preview-swiper-indicator'>
+                      <Text className='preview-swiper-indicator-text'>{cardPreviewPageIndex + 1}/{cardPreviewPages.length}</Text>
+                    </View>
                   </View>
-                </View>
+                )}
                 <View
                   className={`card-preview-render-btn ${cardExporting ? 'card-preview-render-btn--loading' : ''}`}
                   onClick={() => void handleExportCardImages()}
