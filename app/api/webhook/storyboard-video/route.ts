@@ -258,6 +258,33 @@ export async function POST(req: NextRequest) {
 
     const existingGenerationParams = asRecord(existingSegment.generationParams);
     const incomingGenerationParams = asRecord(generation_params);
+    if (existingGenerationParams.video_generation_cancelled === true) {
+      await prisma.storyboardSegment.update({
+        where: { id: segment_id },
+        data: {
+          generationParams: {
+            ...existingGenerationParams,
+            ...incomingGenerationParams,
+            provider_state: "cancelled_ignored",
+            provider_ignored_status: status || null,
+            provider_ignored_video_url: video_url || null,
+            provider_ignored_error: error || null,
+            provider_ignored_at: new Date().toISOString(),
+          } as Prisma.InputJsonValue,
+        },
+      }).catch(() => {});
+      console.log("[storyboard-video] Ignored cancelled segment callback:", {
+        segment_id,
+        status,
+        has_video: !!video_url,
+      });
+      return NextResponse.json({
+        success: true,
+        ignored: true,
+        reason: "video_generation_cancelled",
+        segment_id,
+      });
+    }
 
     // 2. Update segment with generated video
     const updateData: any = {

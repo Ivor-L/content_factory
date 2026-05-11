@@ -1,6 +1,66 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getRequestUserContext } from "@/lib/authServer";
+import { syncTaskToSummary } from "@/lib/taskSummary";
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function isVideoCountingSegment(segment: { status: string; generatedVideo?: string | null; generationParams?: unknown }) {
+  const params = asRecord(segment.generationParams);
+  const status = String(segment.status || "").toUpperCase();
+  return Boolean(params.clip_index || params.clipIndex || params.clip_video_prompt || params.clipVideoPrompt) ||
+    Boolean(segment.generatedVideo) ||
+    status === "VIDEO_READY" ||
+    status === "VIDEO_GENERATING" ||
+    status === "VIDEO_QUEUED" ||
+    status === "VIDEO_PROCESSING" ||
+    status === "VIDEO_FAILED" ||
+    status === "VIDEO_BILLING_FAILED";
+}
+
+async function updateTaskAfterVideoCancel(taskId: string) {
+  const segments = await prisma.storyboardSegment.findMany({
+    where: { taskId },
+    select: { status: true, generatedImage: true, generatedVideo: true, generationParams: true },
+  });
+  const videoSegments = segments.filter(isVideoCountingSegment);
+  const totalVideoSegments = videoSegments.length;
+  const readyVideoSegments = videoSegments.filter((segment) => segment.status === "VIDEO_READY").length;
+  const failedVideoSegments = videoSegments.filter((segment) => segment.status === "VIDEO_FAILED" || segment.status === "VIDEO_BILLING_FAILED").length;
+  const generatingVideoSegments = videoSegments.filter((segment) =>
+    segment.status === "VIDEO_GENERATING" || segment.status === "VIDEO_QUEUED" || segment.status === "VIDEO_PROCESSING"
+  ).length;
+  const imageReadySegments = segments.filter((segment) =>
+    Boolean(segment.generatedImage) || segment.status === "IMAGE_READY" || segment.status === "VIDEO_READY"
+  ).length;
+
+  const nextStatus = totalVideoSegments > 0 && readyVideoSegments === totalVideoSegments
+    ? "VIDEO_GENERATION_COMPLETED"
+    : generatingVideoSegments > 0
+      ? "VIDEO_GENERATING"
+      : totalVideoSegments > 0 && failedVideoSegments > 0
+        ? "VIDEO_GENERATION_FAILED"
+        : imageReadySegments === segments.length && segments.length > 0
+          ? "IMAGE_GENERATION_COMPLETED"
+          : "BREAKDOWN_COMPLETED";
+  const nextProgress = nextStatus === "VIDEO_GENERATION_COMPLETED"
+    ? 90
+    : nextStatus === "VIDEO_GENERATING"
+      ? 65
+      : imageReadySegments === segments.length && segments.length > 0
+        ? 60
+        : 50;
+
+  await prisma.storyboardTask.update({
+    where: { id: taskId },
+    data: { status: nextStatus, progress: nextProgress },
+  });
+  await syncTaskToSummary({ taskType: "storyboard", taskId, operation: "update" });
+}
 
 /**
  * PATCH /api/storyboard/segments/[segmentId]
@@ -51,7 +111,7 @@ export async function PATCH(
     // Verify segment belongs to user's task
     const segment = await prisma.storyboardSegment.findFirst({
       where: { id: segmentId },
-      include: { task: { select: { userId: true } } },
+      include: { task: { select: { userId: true, id: true } } },
     });
 
     if (!segment) {
@@ -136,6 +196,9 @@ export async function PATCH(
       where: { id: segmentId },
       data: updateData,
     });
+    if ((video_generation_cancelled !== undefined || videoGenerationCancelled !== undefined) && updatedParams.video_generation_cancelled === true) {
+      await updateTaskAfterVideoCancel(segment.task.id);
+    }
 
     return NextResponse.json({ success: true, segment: updated });
   } catch (error) {

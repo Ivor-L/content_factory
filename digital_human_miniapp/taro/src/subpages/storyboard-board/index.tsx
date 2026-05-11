@@ -15,11 +15,16 @@ const IMAGE_MODELS = [
   { id: 'nanoBananapro', label: 'Nano Banana Pro' },
   { id: 'nanoBanana2', label: 'Nano Banana 2' },
 ];
-const VIDEO_MODELS = [
+const SEEDANCE_VIDEO_MODELS = [
   { id: 'bytedance/seedance-2', label: 'Seedance 2.0' },
   { id: 'bytedance/seedance-2-fast', label: 'Seedance 2.0 Fast' },
 ];
-const DEFAULT_VIDEO_MODEL = 'bytedance/seedance-2';
+const VIDEO_MODELS = [
+  { id: 'veo3.1-fast', label: 'Veo 3.1 Fast' },
+  ...SEEDANCE_VIDEO_MODELS,
+];
+const DEFAULT_VIDEO_MODEL = 'veo3.1-fast';
+const DEFAULT_REMIX_VIDEO_MODEL = 'bytedance/seedance-2';
 const SMART_REMIX_VIDEO_STAGE_SOURCE = 'smart_remix_video_stage';
 const ASPECT_RATIO_OPTIONS = [
   { id: '9:16', label: '竖屏', hint: '9:16', icon: '▯' },
@@ -64,6 +69,11 @@ function normalizeVideoModel(model: unknown): string {
   return VIDEO_MODELS.some((item) => item.id === value) ? value : DEFAULT_VIDEO_MODEL;
 }
 
+function normalizeRemixVideoModel(model: unknown): string {
+  const value = String(model || '').trim();
+  return SEEDANCE_VIDEO_MODELS.some((item) => item.id === value) ? value : DEFAULT_REMIX_VIDEO_MODEL;
+}
+
 function isRemixStageKey(value: string): value is RemixStageKey {
   return value === 'breakdown' || value === 'replace' || value === 'video';
 }
@@ -104,8 +114,10 @@ export default function StoryboardBoardPage() {
   const [uploadingMergeBgm, setUploadingMergeBgm] = useState(false);
   const [autoOpenEdit, setAutoOpenEdit] = useState(false);
   const [autoOpenedEdit, setAutoOpenedEdit] = useState(false);
+  const [showOriginalStoryboardGrid, setShowOriginalStoryboardGrid] = useState(false);
   const [imageErrorMap, setImageErrorMap] = useState<Record<string, boolean>>({});
   const [videoErrorMap, setVideoErrorMap] = useState<Record<string, boolean>>({});
+  const [cancelingVideoMap, setCancelingVideoMap] = useState<Record<string, boolean>>({});
   const [deleting, setDeleting] = useState(false);
   const timerRef = useRef<number | null>(null);
   const keyboardFocusedRef = useRef(false);
@@ -115,6 +127,7 @@ export default function StoryboardBoardPage() {
   const userSelectedVideoModelRef = useRef(false);
   const userSelectedAspectRatioRef = useRef(false);
   const selectedAspectRatioRef = useRef<StoryboardAspectRatio>(DEFAULT_ASPECT_RATIO);
+  const isRemixRouteRef = useRef(false);
   const notifiedImageFailuresRef = useRef<Set<string>>(new Set());
   const localGeneratingRef = useRef<Record<string, LocalGeneratingEntry>>({});
 
@@ -126,7 +139,9 @@ export default function StoryboardBoardPage() {
 
   const updateVideoModel = (model: string, source: 'server' | 'user' = 'user') => {
     if (source === 'user') userSelectedVideoModelRef.current = true;
-    videoModelRef.current = normalizeVideoModel(model);
+    videoModelRef.current = isRemixRouteRef.current
+      ? normalizeRemixVideoModel(model)
+      : normalizeVideoModel(model);
     setVideoModel(videoModelRef.current);
   };
 
@@ -340,6 +355,47 @@ export default function StoryboardBoardPage() {
     setVideoErrorMap((prev) => ({ ...prev, [segmentId]: failed }));
   };
 
+  const setVideoCanceling = (segmentId: string, canceling: boolean) => {
+    setCancelingVideoMap((prev) => ({ ...prev, [segmentId]: canceling }));
+  };
+
+  const handleCancelVideoGeneration = async (segment: StoryboardSegmentItem) => {
+    if (cancelingVideoMap[segment.id]) return;
+    const statusText = String(segment.status || '').toUpperCase();
+    if (!statusText.includes('VIDEO_GENERATING') && !statusText.includes('VIDEO_QUEUED') && !statusText.includes('VIDEO_PROCESSING')) return;
+
+    const params = getSegmentParams(segment);
+    const previousVideo = normalizeMediaUrl(segment.generatedVideo);
+    const nextStatus = previousVideo
+      ? 'VIDEO_READY'
+      : normalizeMediaUrl(segment.generatedImage)
+        ? 'IMAGE_READY'
+        : 'PENDING';
+    setVideoCanceling(segment.id, true);
+    try {
+      clearLocalGenerating(segment.id);
+      await miniappApi.updateStoryboardSegment(segment.id, {
+        status: nextStatus,
+        generatedVideo: previousVideo || null,
+        video_generation_cancelled: true,
+      });
+      upsertLocalSegment(segment.id, {
+        status: nextStatus,
+        generatedVideo: previousVideo || null,
+        generationParams: {
+          ...params,
+          video_generation_cancelled: true,
+          video_cancelled_at: new Date().toISOString(),
+        },
+      });
+      Taro.showToast({ title: '已取消视频生成', icon: 'success' });
+    } catch (error) {
+      Taro.showToast({ title: error instanceof Error ? error.message : '取消视频生成失败', icon: 'none' });
+    } finally {
+      setVideoCanceling(segment.id, false);
+    }
+  };
+
   const buildTaskDefaultRefs = (): StoryboardRef[] => {
     const refs: StoryboardRef[] = [];
     for (const ref of task?.references || []) {
@@ -523,13 +579,17 @@ export default function StoryboardBoardPage() {
     setEditingType(type);
     setEditingPrompt(type === 'image' ? (segment.imagePrompt || '') : (segment.videoPrompt || ''));
     setEditingImageModel(imageModel);
-    setEditingVideoModel(videoModel);
+    setEditingVideoModel(isRemixRouteRef.current
+      ? normalizeRemixVideoModel(videoModel)
+      : normalizeVideoModel(videoModel));
     setEditingRefs(getSegmentRefs(segment, type));
   };
 
   const handleEditReplace = (segment: StoryboardSegmentItem, mode: RemixReplaceMode = 'product') => {
     setEditingSegmentId(segment.id);
-    setEditingVideoModel(videoModel);
+    setEditingVideoModel(isRemixRouteRef.current
+      ? normalizeRemixVideoModel(videoModel)
+      : normalizeVideoModel(videoModel));
     applyReplaceMode(mode, segment);
   };
 
@@ -539,11 +599,20 @@ export default function StoryboardBoardPage() {
     if (!imageUrl) return;
     const currentGridUrl = normalizeMediaUrl(task?.storyboardImageUrl || task?.coverImage || '');
     if (imageUrl === currentGridUrl) return;
+    const originalGridUrl = getRemixOriginalGridUrl(task) || currentGridUrl;
     setTask((prev) => prev
       ? {
         ...prev,
         storyboardImageUrl: imageUrl,
         coverImage: imageUrl,
+        detailedBreakdown: {
+          ...(prev.detailedBreakdown || {}),
+          metadata: {
+            ...(asRecord(prev.detailedBreakdown?.metadata) || {}),
+            original_storyboard_grid_url: originalGridUrl,
+            originalStoryboardGridUrl: originalGridUrl,
+          },
+        },
       }
       : prev);
   };
@@ -777,7 +846,7 @@ export default function StoryboardBoardPage() {
       const result = await miniappApi.generateStoryboardVideos({
         taskId,
         segmentIds: [segment.id],
-        model: editingVideoModel || videoModel,
+        model: selectedEditingVideoModel || selectedVideoModel,
         allowTextVideo: true,
         aspectRatio: getRequestAspectRatio(),
         source: isRemixRoute ? SMART_REMIX_VIDEO_STAGE_SOURCE : undefined,
@@ -880,7 +949,7 @@ export default function StoryboardBoardPage() {
       const result = await miniappApi.generateStoryboardVideos({
         taskId,
         segmentIds: targetSegments.map((segment) => segment.id),
-        model: videoModelRef.current || videoModel,
+        model: selectedVideoModel,
         allowTextVideo: true,
         aspectRatio: getRequestAspectRatio(),
         source: isRemixRoute ? SMART_REMIX_VIDEO_STAGE_SOURCE : undefined,
@@ -1086,9 +1155,35 @@ export default function StoryboardBoardPage() {
   const workflowData = getWorkflowData(task);
   const isViralRemix = taskMetadata.feature === 'viral_remix';
   const isRemixRoute = isViralRemix || routeMode.includes('remix');
+  isRemixRouteRef.current = isRemixRoute;
+  const availableVideoModels = isRemixRoute ? SEEDANCE_VIDEO_MODELS : VIDEO_MODELS;
+  const selectedVideoModel = availableVideoModels.some((model) => model.id === videoModel)
+    ? videoModel
+    : (isRemixRoute ? DEFAULT_REMIX_VIDEO_MODEL : DEFAULT_VIDEO_MODEL);
+  const availableEditingVideoModels = isRemixRoute ? SEEDANCE_VIDEO_MODELS : VIDEO_MODELS;
+  const selectedEditingVideoModel = availableEditingVideoModels.some((model) => model.id === editingVideoModel)
+    ? editingVideoModel
+    : (isRemixRoute ? DEFAULT_REMIX_VIDEO_MODEL : DEFAULT_VIDEO_MODEL);
+  const remixOriginalGridUrl = isRemixRoute ? getRemixOriginalGridUrl(task) : '';
   const remixReplacedGridUrl = isRemixRoute ? getRemixReplacedGridUrl(segments) : '';
-  const storyboardGridBoards = getStoryboardGridBoards(task, remixReplacedGridUrl);
+  const forceOriginalGridForBreakdown = isRemixRoute && (
+    routeMode.includes('review') ||
+    selectedRemixStage === 'breakdown'
+  );
+  const shouldShowOriginalGrid = isRemixRoute &&
+    Boolean(remixOriginalGridUrl) &&
+    (forceOriginalGridForBreakdown || showOriginalStoryboardGrid);
+  const storyboardGridBoards = getStoryboardGridBoards(
+    task,
+    shouldShowOriginalGrid ? remixOriginalGridUrl : remixReplacedGridUrl,
+    shouldShowOriginalGrid ? 'original' : 'latest',
+  );
   const storyboardGridUrl = storyboardGridBoards[0]?.url || '';
+  const canToggleStoryboardGrid = isRemixRoute &&
+    !forceOriginalGridForBreakdown &&
+    Boolean(remixOriginalGridUrl) &&
+    Boolean(remixReplacedGridUrl) &&
+    remixOriginalGridUrl !== remixReplacedGridUrl;
   const contentStructure = getContentStructure(workflowData);
   const scriptSummary = getScriptSummary(workflowData, segments);
   const clonePromptSummary = getClonePromptSummary(workflowData, segments);
@@ -1143,33 +1238,28 @@ export default function StoryboardBoardPage() {
     handleEditReplace(segments[0], 'product');
   }, [autoOpenEdit, autoOpenedEdit, loading, errorText, isRemixRoute, segments]);
 
-  const handleOpenReferenceVideo = () => {
+  useEffect(() => {
+    if (canToggleStoryboardGrid) return;
+    setShowOriginalStoryboardGrid(false);
+  }, [canToggleStoryboardGrid, remixOriginalGridUrl, remixReplacedGridUrl]);
+
+  const handleOpenReferenceVideo = async () => {
     if (!remixOriginalVideoUrl) {
       Taro.showToast({ title: '暂无原视频', icon: 'none' });
       return;
     }
-    const detailItem = {
-      id: `${task?.id || taskId}:reference-video`,
-      title: '原视频',
-      type: 'video',
-      status: task?.status || 'BREAKDOWN_COMPLETED',
-      createdAt: new Date().toISOString(),
-      preview: remixOriginalVideoUrl,
-      videoUrl: remixOriginalVideoUrl,
-      thumbnailUrl: remixOriginalPosterUrl || null,
-      metadata: {
-        videoUrl: remixOriginalVideoUrl,
-        referenceVideoUrl: remixOriginalVideoUrl,
-      },
-      source: 'task',
-    };
-    Taro.setStorageSync('WORK_DETAIL_ITEM', detailItem);
-    Taro.navigateTo({
-      url: `/subpages/work-detail/index?id=${encodeURIComponent(detailItem.id)}`,
-      fail: () => {
-        Taro.showToast({ title: '暂不支持此方式预览视频', icon: 'none' });
-      },
-    });
+    try {
+      await Taro.previewMedia({
+        current: 0,
+        sources: [{
+          url: remixOriginalVideoUrl,
+          type: 'video',
+          poster: remixOriginalPosterUrl || undefined,
+        }],
+      });
+    } catch {
+      Taro.showToast({ title: '暂不支持此方式预览视频', icon: 'none' });
+    }
   };
 
   const handleOpenRemixEditor = () => {
@@ -1286,8 +1376,26 @@ export default function StoryboardBoardPage() {
         {!loading && !errorText && isRemixRoute && storyboardGridBoards.length > 0 && (
           <View className={isRemixReviewMode ? 'remix-review-section' : 'storyboard-grid-section'}>
             <View className='remix-review-section-head'>
-              <Text className='storyboard-section-title'>分镜网格图</Text>
-              <Text className='remix-review-section-note'>点击可放大查看关键帧</Text>
+              <Text className='storyboard-section-title'>{shouldShowOriginalGrid ? '原分镜网格图' : '分镜网格图'}</Text>
+              {canToggleStoryboardGrid && (
+                <View className='remix-grid-toggle-row remix-grid-toggle-row--center'>
+                  <View
+                    className={`remix-grid-toggle ${!showOriginalStoryboardGrid ? 'remix-grid-toggle--active' : ''}`}
+                    onClick={() => setShowOriginalStoryboardGrid(false)}
+                  >
+                    <Text className={`remix-grid-toggle-text ${!showOriginalStoryboardGrid ? 'remix-grid-toggle-text--active' : ''}`}>生成图</Text>
+                  </View>
+                  <View
+                    className={`remix-grid-toggle ${showOriginalStoryboardGrid ? 'remix-grid-toggle--active' : ''}`}
+                    onClick={() => setShowOriginalStoryboardGrid(true)}
+                  >
+                    <Text className={`remix-grid-toggle-text ${showOriginalStoryboardGrid ? 'remix-grid-toggle-text--active' : ''}`}>原图</Text>
+                  </View>
+                </View>
+              )}
+              <View className='remix-review-section-head-side'>
+                <Text className='remix-review-section-note'>点击可放大查看关键帧</Text>
+              </View>
             </View>
             {storyboardGridBoards.map((board, index) => {
               return (
@@ -1522,9 +1630,14 @@ export default function StoryboardBoardPage() {
                   const showVideo = Boolean(videoUrl) && !Boolean(videoErrorMap[segment.id]);
                   const statusText = String(segment.status || '').toUpperCase();
                   const imageGenerating = !showImage && statusText.includes('IMAGE_GENERATING');
-                  const videoGenerating = !showVideo && statusText.includes('VIDEO_GENERATING');
+                  const videoGenerating = !showVideo && (
+                    statusText.includes('VIDEO_GENERATING') ||
+                    statusText.includes('VIDEO_QUEUED') ||
+                    statusText.includes('VIDEO_PROCESSING')
+                  );
                   const imageFailed = !showImage && statusText.includes('IMAGE') && (statusText.includes('FAIL') || statusText.includes('ERROR'));
                   const videoFailed = !showVideo && statusText.includes('VIDEO') && (statusText.includes('FAIL') || statusText.includes('ERROR'));
+                  const videoCanceling = Boolean(cancelingVideoMap[segment.id]);
                   return (
                     <>
                 <View className='storyboard-segment-head'>
@@ -1611,6 +1724,15 @@ export default function StoryboardBoardPage() {
                               <View className='storyboard-asset-spinner' />
                               <Text className='storyboard-asset-placeholder-title'>视频生成中</Text>
                               <Text className='storyboard-asset-placeholder-sub'>可以先切出页面，稍后回来查看</Text>
+                              <View
+                                className={`storyboard-asset-cancel ${videoCanceling ? 'storyboard-asset-cancel--disabled' : ''}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void handleCancelVideoGeneration(segment);
+                                }}
+                              >
+                                <Text className='storyboard-asset-cancel-text'>{videoCanceling ? '取消中...' : '取消生成'}</Text>
+                              </View>
                             </>
                           ) : videoFailed ? (
                             <>
@@ -1686,11 +1808,9 @@ export default function StoryboardBoardPage() {
           </View>
           <View
             className='remix-review-bottom-btn remix-review-bottom-btn--primary'
-            onClick={segments.some((segment) => normalizeMediaUrl(segment.generatedVideo)) ? openMergeSheet : handleOpenRemixVideoGenerate}
+            onClick={handleOpenRemixVideoGenerate}
           >
-            <Text className='remix-review-bottom-btn-text'>
-              {segments.some((segment) => normalizeMediaUrl(segment.generatedVideo)) ? '一键剪辑' : '生成视频'}
-            </Text>
+            <Text className='remix-review-bottom-btn-text'>生成视频</Text>
           </View>
         </View>
       )}
@@ -1746,13 +1866,13 @@ export default function StoryboardBoardPage() {
 
             <Text className='storyboard-sheet-label'>视频模型</Text>
             <View className='storyboard-sheet-tabs'>
-              {VIDEO_MODELS.map((model) => (
+              {availableVideoModels.map((model) => (
                 <View
                   key={model.id}
-                  className={`storyboard-sheet-tab ${videoModel === model.id ? 'storyboard-sheet-tab--active' : ''}`}
+                  className={`storyboard-sheet-tab ${selectedVideoModel === model.id ? 'storyboard-sheet-tab--active' : ''}`}
                   onClick={() => updateVideoModel(model.id)}
                 >
-                  <Text className={`storyboard-sheet-tab-text ${videoModel === model.id ? 'storyboard-sheet-tab-text--active' : ''}`}>
+                  <Text className={`storyboard-sheet-tab-text ${selectedVideoModel === model.id ? 'storyboard-sheet-tab-text--active' : ''}`}>
                     {model.label}
                   </Text>
                 </View>
@@ -2043,7 +2163,7 @@ export default function StoryboardBoardPage() {
                     <Text className='storyboard-edit-model-mini-value'>
                       {editingType === 'image'
                         ? getModelLabel(IMAGE_MODELS, editingImageModel)
-                        : getModelLabel(VIDEO_MODELS, editingVideoModel)}
+                        : getModelLabel(availableEditingVideoModels, selectedEditingVideoModel)}
                     </Text>
                     <Text className='storyboard-edit-model-mini-arrow'>▾</Text>
                   </View>
@@ -2075,10 +2195,10 @@ export default function StoryboardBoardPage() {
           <View className='storyboard-edit-model-sheet' onClick={(e) => e.stopPropagation()}>
             <Text className='storyboard-edit-model-sheet-title'>选择模型</Text>
             <View className='storyboard-edit-model-sheet-list'>
-              {(editingType === 'image' ? IMAGE_MODELS : VIDEO_MODELS).map((model) => {
+              {(editingType === 'image' ? IMAGE_MODELS : availableEditingVideoModels).map((model) => {
                 const active = editingType === 'image'
                   ? editingImageModel === model.id
-                  : editingVideoModel === model.id;
+                  : selectedEditingVideoModel === model.id;
                 return (
                   <View
                     key={model.id}
@@ -2252,25 +2372,64 @@ function getRemixReplacedGridUrl(segments: StoryboardSegmentItem[]): string {
   return '';
 }
 
+function getRemixOriginalGridUrl(task: StoryboardTaskStatusResult | null): string {
+  const detailed = asRecord(task?.detailedBreakdown);
+  const workflowData = getWorkflowData(task);
+  const metadata = getTaskMetadata(task);
+  return normalizeMediaUrl(
+    String(
+      detailed?.storyboard_grid_url ||
+      detailed?.storyboardGridUrl ||
+      workflowData.storyboard_grid_url ||
+      workflowData.storyboardGridUrl ||
+      metadata.storyboard_grid_url ||
+      metadata.storyboardGridUrl ||
+      metadata.original_storyboard_grid_url ||
+      metadata.originalStoryboardGridUrl ||
+      task?.storyboardImageUrl ||
+      task?.coverImage ||
+      '',
+    ),
+  );
+}
+
 function getStoryboardGridBoards(
   task: StoryboardTaskStatusResult | null,
   preferredGridUrl = '',
+  mode: 'latest' | 'original' = 'latest',
 ): Array<{ url: string; timeRange: string; kind: 'full' | 'clip' }> {
   const detailed = asRecord(task?.detailedBreakdown);
   const workflowData = getWorkflowData(task);
   const clipBoards: Array<{ url: string; timeRange: string; kind: 'full' | 'clip' }> = [];
   const fullBoards: Array<{ url: string; timeRange: string; kind: 'full' | 'clip' }> = [];
 
+  const fallbackPrimaryUrl = mode === 'original'
+    ? normalizeMediaUrl(
+      String(
+        detailed?.storyboard_grid_url ||
+        detailed?.storyboardGridUrl ||
+        workflowData.storyboard_grid_url ||
+        workflowData.storyboardGridUrl ||
+        task?.storyboardImageUrl ||
+        task?.coverImage ||
+        '',
+      ),
+    )
+    : normalizeMediaUrl(
+      String(
+        task?.storyboardImageUrl ||
+        task?.coverImage ||
+        detailed?.storyboard_grid_url ||
+        detailed?.storyboardGridUrl ||
+        workflowData.storyboard_grid_url ||
+        workflowData.storyboardGridUrl ||
+        '',
+      ),
+    );
   const primaryUrl = normalizeMediaUrl(
     String(
       preferredGridUrl ||
-      task?.storyboardImageUrl ||
-      task?.coverImage ||
-      detailed?.storyboard_grid_url ||
-      detailed?.storyboardGridUrl ||
-      workflowData.storyboard_grid_url ||
-      workflowData.storyboardGridUrl ||
-      '',
+      fallbackPrimaryUrl,
     ),
   );
   if (primaryUrl) fullBoards.push({ url: primaryUrl, timeRange: '总览', kind: 'full' });

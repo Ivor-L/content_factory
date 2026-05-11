@@ -119,6 +119,7 @@ async function syncVolcengineVideoResults(task: { id: string; segments: any[] },
   let changed = false;
   for (const segment of task.segments) {
     const generationParams = asRecord(segment.generationParams);
+    if (generationParams.video_generation_cancelled === true) continue;
     const provider = cleanText(generationParams.provider).toLowerCase();
     const providerTaskId = cleanText(generationParams.provider_task_id || generationParams.providerTaskId);
     const status = cleanText(segment.status).toUpperCase();

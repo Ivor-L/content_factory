@@ -758,6 +758,7 @@ export async function POST(
       const segmentDuration = providerRoute === "volcengine"
         ? clampSeedanceDurationSeconds(rawSegmentDuration)
         : rawSegmentDuration;
+      const segmentCallbackUrl = `${callbackUrlBase}&segment_id=${encodeURIComponent(segment.id)}&task_id=${encodeURIComponent(id)}&model=${encodeURIComponent(String(effectiveModel || ""))}`;
 
       const payload = {
         segment_id: segment.id,
@@ -790,18 +791,35 @@ export async function POST(
         requestedModel: effectiveModel,
         aspect_ratio: requestedAspectRatio,
         aspectRatio: requestedAspectRatio,
+        callback_url: segmentCallbackUrl,
+        callbackUrl: segmentCallbackUrl,
+        admin_token: adminToken,
         api_key: apiKey,
         provider_api_key: seedanceProviderApiKey || undefined,
         providerApiKey: seedanceProviderApiKey || undefined,
+        context: {
+          segment_id: segment.id,
+          task_id: id,
+          model: String(effectiveModel || ""),
+          provider: providerRoute,
+        },
+        metadata: {
+          segment_id: segment.id,
+          task_id: id,
+          model: String(effectiveModel || ""),
+          provider: providerRoute,
+          callback_url: segmentCallbackUrl,
+          callbackUrl: segmentCallbackUrl,
+        },
         creative_style_raw: (style.creativeStyleRaw as string) ?? "",
         creative_style_norm: (style.creativeStyleNorm as string) ?? "写实",
         style_profile_json: styleProfileJson,
       };
 
+      let providerRequestForDebug: Record<string, unknown> = payload;
       try {
         if (providerRoute === "volcengine") {
           const providerModel = toProviderModel(effectiveModel);
-          const segmentCallbackUrl = `${callbackUrlBase}&segment_id=${encodeURIComponent(segment.id)}&task_id=${encodeURIComponent(id)}&model=${encodeURIComponent(String(effectiveModel || ""))}`;
           const volcengineTask = await createVolcengineSeedanceTask({
             prompt: finalPrompt,
             referenceImageUrls: payload.reference_image_urls,
@@ -834,6 +852,8 @@ export async function POST(
                 provider_create_response: volcengineTask.rawResponse,
                 provider_state: "submitted",
                 provider_submitted_at: new Date().toISOString(),
+                video_generation_cancelled: false,
+                video_cancelled_at: null,
               }, creditCharge),
             },
           });
@@ -849,10 +869,45 @@ export async function POST(
         const webhookUrl =
           process.env.N8N_VIDEO_GEN_WEBHOOK?.trim() ||
           "https://hooks.atomx.top/webhook/storyboard_video";
+        const n8nBasePayload = {
+          ...payload,
+          callback_url: segmentCallbackUrl,
+          callbackUrl: segmentCallbackUrl,
+          admin_token: adminToken,
+          context: {
+            segment_id: segment.id,
+            task_id: id,
+            model: String(effectiveModel || ""),
+            provider: "n8n",
+          },
+          metadata: {
+            segment_id: segment.id,
+            task_id: id,
+            model: String(effectiveModel || ""),
+            provider: "n8n",
+            callback_url: segmentCallbackUrl,
+            callbackUrl: segmentCallbackUrl,
+          },
+        };
+        const n8nPayload = {
+          ...n8nBasePayload,
+          body: n8nBasePayload,
+          data: n8nBasePayload,
+        };
+        providerRequestForDebug = n8nPayload;
+        console.log("[generate-videos] Triggering n8n:", {
+          segment_id: segment.id,
+          task_id: id,
+          model: effectiveModel,
+          webhookUrl,
+          has_callback_url: Boolean(n8nPayload.callback_url),
+          body_has_callback_url: Boolean(n8nPayload.body.callback_url),
+          data_has_callback_url: Boolean(n8nPayload.data.callback_url),
+        });
         const response = await fetch(webhookUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(n8nPayload),
         });
 
         if (!response.ok) {
@@ -864,7 +919,16 @@ export async function POST(
           data: {
             status: "VIDEO_GENERATING",
             videoGenerationModel: effectiveModel,
-            generationParams: mergeStoryboardVideoCreditCharge(generationParams, creditCharge),
+            generationParams: mergeStoryboardVideoCreditCharge({
+              ...generationParams,
+              provider: "n8n",
+              provider_callback_url: segmentCallbackUrl,
+              provider_request: n8nPayload,
+              provider_state: "submitted",
+              provider_submitted_at: new Date().toISOString(),
+              video_generation_cancelled: false,
+              video_cancelled_at: null,
+            }, creditCharge),
           },
         });
 
@@ -872,7 +936,7 @@ export async function POST(
         return { segment_id: segment.id, success: true };
       } catch (error) {
         const providerErrorMessage = formatProviderError(error);
-        const providerFailureDebug = getProviderFailureDebug(error, payload);
+        const providerFailureDebug = getProviderFailureDebug(error, providerRequestForDebug);
         console.error(`[generate-videos] Failed for segment ${segment.id}:`, error);
         await prisma.storyboardSegment.update({
           where: { id: segment.id },
