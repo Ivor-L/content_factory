@@ -230,8 +230,7 @@ function getSmartRemixVideoReferenceImageUrls(firstFrameUrl: string, params: Rec
     }
     return urls;
   }
-  const url = cleanUrl(firstFrameUrl);
-  const urls = url ? [url] : [];
+  const urls: string[] = [];
   for (const ref of extraRefs) {
     const refUrl = cleanUrl(ref);
     if (refUrl && !urls.includes(refUrl) && urls.length < 9) urls.push(refUrl);
@@ -401,7 +400,7 @@ async function createVolcengineSeedanceTask(payload: {
         role: "reference_image",
       })),
     ],
-    generate_audio: false,
+    generate_audio: true,
     resolution: "720p",
     ratio: payload.aspectRatio,
     duration: payload.duration,
