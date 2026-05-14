@@ -3,6 +3,7 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
 import type { ProductSummary } from '../../utils/miniapp-api';
+import { useMiniappShare } from '../../utils/miniapp-share';
 import './index.sass';
 
 type ProductStatusMeta = {
@@ -89,6 +90,8 @@ function getStatusMeta(product: ProductSummary): ProductStatusMeta {
 }
 
 export default function ProductLibraryPage() {
+  useMiniappShare();
+
   const [products, setProducts] = useState<ProductSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);

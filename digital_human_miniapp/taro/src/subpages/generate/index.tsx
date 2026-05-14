@@ -3,6 +3,8 @@ import Taro, { useLoad } from '@tarojs/taro';
 import { useRef, useState } from 'react';
 import { api } from '../../utils/api';
 import { miniappApi } from '../../utils/miniapp-api';
+import { useMiniappShare } from '../../utils/miniapp-share';
+import { analyzeScriptDuration, formatScriptDurationMessage } from '../../utils/digital-human-limits';
 import './index.sass';
 
 const SOURCE_TYPES = [
@@ -50,6 +52,11 @@ const DEFAULT_SKELETON_LANGUAGE_INDEX = SKELETON_LANGUAGE_OPTIONS.findIndex((ite
 const SMART_COPY_SCRIPT_PAYLOAD_KEY = 'SMART_COPY_SCRIPT_PAYLOAD';
 
 export default function GeneratePage() {
+  useMiniappShare({
+    title: '小蚁AI数字人 - 快速生成营销视频',
+    path: '/subpages/generate/index',
+  });
+
   const [pageMode, setPageMode] = useState<'digital-human' | 'video-generate'>('digital-human');
   const [videoCategory, setVideoCategory] = useState<'MARKETING' | 'SHORT_DRAMA' | 'SKELETON_3D'>('SKELETON_3D');
   const [sourceType, setSourceType] = useState<'IMAGE' | 'VIDEO'>('IMAGE');
@@ -139,6 +146,9 @@ export default function GeneratePage() {
       : videoVoiceSource === 'RECORD'
         ? recordedAudioUrl
         : audioUrl;
+  const digitalHumanScriptStats = mode === 'VOICE_CLONE'
+    ? analyzeScriptDuration(script)
+    : null;
 
   const handleSubmitSkeletonStoryboard = async () => {
     if (!selectedChar) {
@@ -364,10 +374,16 @@ export default function GeneratePage() {
             scriptContent: mode === 'VOICE_CLONE' ? script.trim() : undefined,
           };
 
-      await api.createDigitalHumanTask({
+      const result = await api.createDigitalHumanTask({
         ...requestPayload,
       });
-      Taro.showToast({ title: '已提交生成任务', icon: 'success' });
+      const generatedJobCount = result.jobCount || result.jobs?.length || result.videoIds?.length || 1;
+      Taro.showToast({
+        title: result.split && generatedJobCount > 1
+          ? `已拆成${generatedJobCount}段生成`
+          : '已提交生成任务',
+        icon: 'success',
+      });
       setScript('');
       setAudioUrl('');
       if (sourceType === 'VIDEO') {
@@ -615,6 +631,13 @@ export default function GeneratePage() {
             </View>
           )}
         </View>
+        {!isSkeleton && digitalHumanScriptStats && script.trim().length > 0 && (
+          <View className={`script-duration-hint ${digitalHumanScriptStats.needSplit ? 'script-duration-hint--warning' : ''}`}>
+            <Text className='script-duration-hint-text'>
+              {formatScriptDurationMessage(digitalHumanScriptStats)}
+            </Text>
+          </View>
+        )}
         <Textarea
           className='bottom-composer-textarea bottom-composer-textarea--inline'
           value={value}
@@ -869,6 +892,7 @@ export default function GeneratePage() {
                   </View>
                 ))}
               </View>
+              <Text className='mode-desc'>模型单段硬上限 32 秒。文字驱动会按约 29 秒安全目标自动分段，避免末尾文字被截断；音频驱动请上传 32 秒内音频，较长内容请分段提交。</Text>
             </View>
 
             {sourceType === 'VIDEO' && mode === 'VOICE_CLONE' && renderVoiceSourceSection()}

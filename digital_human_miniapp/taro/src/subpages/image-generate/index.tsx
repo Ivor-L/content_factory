@@ -3,13 +3,14 @@ import Taro, { useDidHide, useDidShow, useLoad } from '@tarojs/taro';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
 import { api } from '../../utils/api';
+import { useMiniappShare } from '../../utils/miniapp-share';
 import tplImage1 from '../../assets/home-icons-v2/image.webp';
 import tplImage2 from '../../assets/home-icons-v2/edit.webp';
 import tplImage3 from '../../assets/home-icons-v2/copy.webp';
 import tplImage4 from '../../assets/home-icons-v2/video.webp';
 import tplImage5 from '../../assets/home-icons-v2/swap.webp';
 import tplImage6 from '../../assets/home-icons-v2/human.webp';
-import md2MeadowDawnBg from '../../assets/md2card/meadow-dawn-bg.jpeg';
+import md2MeadowDawnBg from '../../assets/md2card/meadow-dawn-bg-mini.webp';
 import './index.sass';
 
 type FeatureKey = 'ai-image' | 'infographic' | 'card-layout';
@@ -2204,6 +2205,11 @@ function paginatePreviewMarkdown(
 }
 
 export default function ImageGeneratePage() {
+  useMiniappShare({
+    title: '小蚁AI图片生成 - 快速制作营销图',
+    path: '/subpages/image-generate/index',
+  });
+
   const [activeFeature, setActiveFeature] = useState<FeatureKey>('ai-image');
   const [returnTarget, setReturnTarget] = useState('');
   const [hotRewriteReturnTaskId, setHotRewriteReturnTaskId] = useState('');
@@ -4551,18 +4557,31 @@ export default function ImageGeneratePage() {
             {templatesLoading && <Text className='section-hint'>模板同步中...</Text>}
             <ScrollView scrollX className='template-scroll'>
               <View className='template-list'>
-                {infographicTemplates.map((tpl) => (
-                  <View
-                    key={tpl.id}
-                    className={`template-card template-card--portrait ${selectedTemplate === tpl.id ? 'template-card--active' : ''}`}
-                    onClick={() => setSelectedTemplate(tpl.id)}
-                  >
-                    <Image className='template-preview' src={tpl.preview} mode='aspectFill' lazyLoad />
-                    <View className='template-overlay'>
-                      <Text className='template-title'>{tpl.title}</Text>
+                {infographicTemplates.map((tpl) => {
+                  const active = selectedTemplate === tpl.id;
+                  return (
+                    <View
+                      key={tpl.id}
+                      className={`template-card template-card--portrait ${active ? 'template-card--active' : ''}`}
+                      onClick={() => setSelectedTemplate(tpl.id)}
+                    >
+                      <Image className='template-preview' src={tpl.preview} mode='aspectFill' lazyLoad />
+                      {active && (
+                        <View className='template-selected-mark'>
+                          <View className='template-selected-check' />
+                        </View>
+                      )}
+                      {active && (
+                        <View className='template-selected-badge'>
+                          <Text className='template-selected-badge-text'>已选</Text>
+                        </View>
+                      )}
+                      <View className={`template-overlay ${active ? 'template-overlay--active' : ''}`}>
+                        <Text className={`template-title ${active ? 'template-title--active' : ''}`}>{tpl.title}</Text>
+                      </View>
                     </View>
-                  </View>
-                ))}
+                  );
+                })}
                 <View className='template-add-card template-add-card--portrait' onClick={handleAddTemplate}>
                   <Text className='template-add-plus'>+</Text>
                   <Text className='template-add-text'>新增模板</Text>

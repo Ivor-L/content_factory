@@ -1,8 +1,8 @@
 {
   "schemaVersion": "2026-05-06",
   "brand": "NexTide",
-  "generatedAt": "2026-05-10T14:05:05.851Z",
-  "count": 27,
+  "generatedAt": "2026-05-12T19:19:08.039Z",
+  "count": 33,
   "capabilities": [
     {
       "version": "0.2.0",
@@ -1719,6 +1719,400 @@
         }
       },
       "estimatedCredits": 0
+    },
+    {
+      "version": "0.2.0",
+      "category": "earn",
+      "costLevel": "low",
+      "requiredAuth": [
+        "nexTideApiKey"
+      ],
+      "requiredEnv": [],
+      "examples": [
+        {
+          "name": "匹配小红书发布任务",
+          "input": {
+            "platform": "xhs",
+            "type": "publish",
+            "query": "护肤",
+            "limit": 10
+          }
+        }
+      ],
+      "docsUrl": "artifacts/capabilities/earn.task.list.input.schema.json",
+      "id": "earn.task.list",
+      "skillName": "nextide-earn-market",
+      "title": "淘金任务匹配",
+      "description": "按平台、类型、关键词列出当前可接的淘金广场任务，用于 Agent 帮用户挑选任务。",
+      "status": "available",
+      "executionType": "internal_api",
+      "async": false,
+      "maxWaitSeconds": 30,
+      "estimatedDurationSeconds": 3,
+      "featureKey": "earn_agent_task_match",
+      "tags": [
+        "earn",
+        "task-market",
+        "monetization"
+      ],
+      "inputSchema": {
+        "platform": {
+          "type": "string",
+          "enum": [
+            "xhs",
+            "douyin"
+          ],
+          "description": "目标平台。为空时返回全部平台。"
+        },
+        "type": {
+          "type": "string",
+          "description": "任务类型，如 publish、collect、promotion。"
+        },
+        "query": {
+          "type": "string",
+          "description": "搜索关键词。"
+        },
+        "limit": {
+          "type": "number",
+          "default": 10,
+          "description": "返回任务数量，最多 20。"
+        }
+      },
+      "outputSchema": {
+        "tasks": {
+          "type": "array",
+          "description": "匹配到的任务列表。"
+        },
+        "total": {
+          "type": "number",
+          "description": "满足筛选条件的任务总数。"
+        }
+      },
+      "estimatedCredits": 1
+    },
+    {
+      "version": "0.2.0",
+      "category": "earn",
+      "costLevel": "low",
+      "requiredAuth": [
+        "nexTideApiKey"
+      ],
+      "requiredEnv": [],
+      "examples": [
+        {
+          "name": "接取小红书任务",
+          "input": {
+            "taskId": "task_xxx",
+            "platform": "xhs",
+            "platformAccountName": "我的小红书账号"
+          }
+        }
+      ],
+      "docsUrl": "artifacts/capabilities/earn.task.apply.input.schema.json",
+      "id": "earn.task.apply",
+      "skillName": "nextide-earn-market",
+      "title": "淘金任务接单",
+      "description": "为当前用户接取淘金任务，并自动分配可用素材。",
+      "status": "available",
+      "executionType": "internal_api",
+      "async": false,
+      "maxWaitSeconds": 30,
+      "estimatedDurationSeconds": 3,
+      "featureKey": "earn_task_apply",
+      "tags": [
+        "earn",
+        "task-market",
+        "apply"
+      ],
+      "inputSchema": {
+        "taskId": {
+          "type": "string",
+          "required": true,
+          "description": "淘金任务 ID。"
+        },
+        "platform": {
+          "type": "string",
+          "required": true,
+          "enum": [
+            "xhs",
+            "douyin"
+          ],
+          "description": "接单平台。"
+        },
+        "platformUid": {
+          "type": "string",
+          "description": "平台账号 UID；未知时可为空。"
+        },
+        "platformAccountName": {
+          "type": "string",
+          "description": "平台账号昵称。"
+        },
+        "taskMaterialId": {
+          "type": "string",
+          "description": "指定素材 ID；为空时系统自动分配。"
+        }
+      },
+      "outputSchema": {
+        "userTaskId": {
+          "type": "string",
+          "description": "接单记录 ID。"
+        },
+        "task": {
+          "type": "object",
+          "description": "任务摘要。"
+        },
+        "material": {
+          "type": "object",
+          "description": "分配到的素材。"
+        }
+      },
+      "estimatedCredits": 1
+    },
+    {
+      "version": "0.2.0",
+      "category": "earn",
+      "costLevel": "low",
+      "requiredAuth": [
+        "nexTideApiKey"
+      ],
+      "requiredEnv": [],
+      "examples": [
+        {
+          "name": "提交发布证据",
+          "input": {
+            "userTaskId": "ut_xxx",
+            "submissionUrl": "https://www.xiaohongshu.com/explore/xxx",
+            "pluginEvidence": {
+              "workId": "xxx"
+            }
+          }
+        }
+      ],
+      "docsUrl": "artifacts/capabilities/earn.task.submit_evidence.input.schema.json",
+      "id": "earn.task.submit_evidence",
+      "skillName": "nextide-earn-market",
+      "title": "淘金任务提交证据",
+      "description": "提交任务发布链接、截图或插件采集证据，进入后台审核。",
+      "status": "available",
+      "executionType": "internal_api",
+      "async": false,
+      "maxWaitSeconds": 30,
+      "estimatedDurationSeconds": 3,
+      "featureKey": "earn_task_submit_evidence",
+      "tags": [
+        "earn",
+        "task-market",
+        "evidence"
+      ],
+      "inputSchema": {
+        "userTaskId": {
+          "type": "string",
+          "required": true,
+          "description": "用户接单记录 ID。"
+        },
+        "submissionUrl": {
+          "type": "string",
+          "description": "发布后的作品链接。"
+        },
+        "screenshotUrls": {
+          "type": "string[]",
+          "description": "截图 URL 列表。"
+        },
+        "pluginEvidence": {
+          "type": "object",
+          "description": "插件返回的 workId、shareLink、页面标题等结构化证据。"
+        }
+      },
+      "outputSchema": {
+        "userTask": {
+          "type": "object",
+          "description": "更新后的用户任务记录。"
+        }
+      },
+      "estimatedCredits": 1
+    },
+    {
+      "version": "0.2.0",
+      "category": "plugin",
+      "costLevel": "low",
+      "requiredAuth": [
+        "nexTideApiKey"
+      ],
+      "requiredEnv": [],
+      "examples": [
+        {
+          "name": "采集当前小红书页面",
+          "input": {
+            "saveToHotSquare": true
+          }
+        }
+      ],
+      "docsUrl": "artifacts/capabilities/plugin.xhs.collect.input.schema.json",
+      "id": "plugin.xhs.collect",
+      "skillName": "nextide-browser-plugin",
+      "title": "插件小红书当前页采集",
+      "description": "生成浏览器插件采集当前小红书页面的结构化指令，由用户本地插件执行。",
+      "status": "available",
+      "executionType": "internal_api",
+      "async": false,
+      "maxWaitSeconds": 30,
+      "estimatedDurationSeconds": 3,
+      "featureKey": "plugin_xhs_collect",
+      "tags": [
+        "plugin",
+        "xiaohongshu",
+        "collect"
+      ],
+      "inputSchema": {
+        "url": {
+          "type": "string",
+          "description": "要采集的小红书页面 URL；为空时由插件采集当前页。"
+        },
+        "saveToHotSquare": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否写入爆款广场/素材库。"
+        },
+        "taskId": {
+          "type": "string",
+          "description": "关联淘金任务 ID。"
+        },
+        "userTaskId": {
+          "type": "string",
+          "description": "关联用户任务 ID。"
+        }
+      },
+      "outputSchema": {
+        "pluginInstruction": {
+          "type": "object",
+          "description": "前端/本地插件可执行的采集指令。"
+        }
+      },
+      "estimatedCredits": 1
+    },
+    {
+      "version": "0.2.0",
+      "category": "plugin",
+      "costLevel": "low",
+      "requiredAuth": [
+        "nexTideApiKey"
+      ],
+      "requiredEnv": [],
+      "examples": [
+        {
+          "name": "生成小红书发布指令",
+          "input": {
+            "title": "3 个护肤误区",
+            "description": "正文内容...",
+            "tags": [
+              "护肤",
+              "新手"
+            ],
+            "mediaUrls": []
+          }
+        }
+      ],
+      "docsUrl": "artifacts/capabilities/plugin.xhs.publish.input.schema.json",
+      "id": "plugin.xhs.publish",
+      "skillName": "nextide-browser-plugin",
+      "title": "插件小红书发布辅助",
+      "description": "生成小红书发布辅助指令，交由浏览器插件在用户本地登录态下半自动执行。",
+      "status": "available",
+      "executionType": "internal_api",
+      "async": false,
+      "maxWaitSeconds": 30,
+      "estimatedDurationSeconds": 3,
+      "featureKey": "plugin_xhs_publish",
+      "tags": [
+        "plugin",
+        "xiaohongshu",
+        "publish"
+      ],
+      "inputSchema": {
+        "title": {
+          "type": "string",
+          "required": true,
+          "description": "发布标题。"
+        },
+        "description": {
+          "type": "string",
+          "required": true,
+          "description": "发布正文。"
+        },
+        "tags": {
+          "type": "string[]",
+          "description": "话题标签。"
+        },
+        "mediaUrls": {
+          "type": "string[]",
+          "description": "图片或视频 URL。"
+        },
+        "taskId": {
+          "type": "string",
+          "description": "关联淘金任务 ID。"
+        },
+        "userTaskId": {
+          "type": "string",
+          "description": "关联用户任务 ID。"
+        }
+      },
+      "outputSchema": {
+        "pluginInstruction": {
+          "type": "object",
+          "description": "前端/本地插件可执行的发布指令。"
+        }
+      },
+      "estimatedCredits": 1
+    },
+    {
+      "version": "0.2.0",
+      "category": "plugin",
+      "costLevel": "low",
+      "requiredAuth": [
+        "nexTideApiKey"
+      ],
+      "requiredEnv": [],
+      "examples": [
+        {
+          "name": "同步插件账号",
+          "input": {
+            "platform": "xhs"
+          }
+        }
+      ],
+      "docsUrl": "artifacts/capabilities/plugin.account.sync.input.schema.json",
+      "id": "plugin.account.sync",
+      "skillName": "nextide-browser-plugin",
+      "title": "插件账号同步指令",
+      "description": "生成浏览器插件账号检测和同步指令，用于把本地平台账号摘要同步到 Web。",
+      "status": "available",
+      "executionType": "internal_api",
+      "async": false,
+      "maxWaitSeconds": 30,
+      "estimatedDurationSeconds": 3,
+      "featureKey": "plugin_account_sync",
+      "tags": [
+        "plugin",
+        "account",
+        "sync"
+      ],
+      "inputSchema": {
+        "platform": {
+          "type": "string",
+          "enum": [
+            "xhs",
+            "douyin"
+          ],
+          "description": "需要同步的平台。为空时同步全部支持平台。"
+        }
+      },
+      "outputSchema": {
+        "pluginInstruction": {
+          "type": "object",
+          "description": "前端/本地插件可执行的账号同步指令。"
+        }
+      },
+      "estimatedCredits": 1
     }
   ]
 }

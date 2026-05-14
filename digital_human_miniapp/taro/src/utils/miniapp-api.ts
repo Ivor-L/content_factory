@@ -1089,6 +1089,39 @@ function sortByCreatedAtDesc<T extends { createdAt?: string | null }>(items: T[]
   return items.slice().sort((a, b) => getCreatedAtTime(b) - getCreatedAtTime(a));
 }
 
+function getNumericMetadataValue(metadata: Record<string, unknown> | null | undefined, key: string): number | null {
+  if (!metadata) return null;
+  const value = metadata[key];
+  const numeric = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function sortWorksForDisplay(items: WorkItem[]): WorkItem[] {
+  return sortByCreatedAtDesc(items).sort((a, b) => {
+    const timeDelta = getCreatedAtTime(b) - getCreatedAtTime(a);
+    if (Math.abs(timeDelta) > 1000) return timeDelta;
+
+    const aSegment = getNumericMetadataValue(a.metadata, 'segmentIndex');
+    const bSegment = getNumericMetadataValue(b.metadata, 'segmentIndex');
+    const aCount = getNumericMetadataValue(a.metadata, 'segmentCount');
+    const bCount = getNumericMetadataValue(b.metadata, 'segmentCount');
+    const sameDigitalHumanBatch =
+      a.taskType === 'digitalHuman' &&
+      b.taskType === 'digitalHuman' &&
+      aCount &&
+      bCount &&
+      aCount === bCount &&
+      a.metadata?.imageUrl === b.metadata?.imageUrl &&
+      a.metadata?.audioUrl === b.metadata?.audioUrl;
+
+    if (sameDigitalHumanBatch && aSegment && bSegment && aSegment !== bSegment) {
+      return aSegment - bSegment;
+    }
+
+    return String(b.id).localeCompare(String(a.id));
+  });
+}
+
 function collectStringUrls(value: unknown, depth = 0): string[] {
   if (depth > 4 || value == null) return [];
   if (typeof value === 'string') {
@@ -1140,7 +1173,7 @@ function resolveStoryboardCover(raw: Record<string, unknown>, metadata: Record<s
 
 function dedupeWorks(items: WorkItem[]): WorkItem[] {
   const byKey = new Map<string, WorkItem>();
-  for (const item of sortByCreatedAtDesc(items)) {
+  for (const item of sortWorksForDisplay(items)) {
     const taskType = String(item.taskType || '').toLowerCase();
     const taskId = String(item.taskId || item.id || '').trim();
     const key =
@@ -1152,7 +1185,7 @@ function dedupeWorks(items: WorkItem[]): WorkItem[] {
       byKey.set(key, item);
     }
   }
-  return sortByCreatedAtDesc(Array.from(byKey.values()));
+  return sortWorksForDisplay(Array.from(byKey.values()));
 }
 
 function resolveWorkPreview(item: Record<string, unknown>, metadata: Record<string, unknown> | null): string | null {
@@ -2102,7 +2135,9 @@ export const miniappApi = {
           title: isActionTransfer
             ? '动作复刻视频'
             : item.type === 'VOICE_CLONE'
-              ? '数字人文字驱动视频'
+              ? typeof item.segmentIndex === 'number' && typeof item.segmentCount === 'number'
+                ? `数字人文字驱动视频 第${item.segmentIndex}/${item.segmentCount}段`
+                : '数字人文字驱动视频'
               : '数字人口型驱动视频',
           type: 'video',
           status: normalizeStatus(item.status),
@@ -2119,6 +2154,11 @@ export const miniappApi = {
             sourceType: typeof item.sourceType === 'string' ? item.sourceType : '',
             sourceImageUrl,
             referenceVideoUrl: isActionTransfer && typeof item.audioUrl === 'string' ? item.audioUrl : '',
+            imageUrl: typeof item.imageUrl === 'string' ? item.imageUrl : '',
+            audioUrl: typeof item.audioUrl === 'string' ? item.audioUrl : '',
+            segmentIndex: typeof item.segmentIndex === 'number' ? item.segmentIndex : null,
+            segmentCount: typeof item.segmentCount === 'number' ? item.segmentCount : null,
+            isSegmented: Boolean(item.isSegmented),
           },
           source: 'digitalHuman',
         });

@@ -3,6 +3,7 @@ import Taro, { useDidShow, useLoad, usePullDownRefresh } from '@tarojs/taro';
 import { useMemo, useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
 import type { StoryboardSegmentItem, StoryboardTaskStatusResult } from '../../utils/miniapp-api';
+import { useMiniappShare } from '../../utils/miniapp-share';
 import './index.sass';
 
 const VIDEO_MODELS = [
@@ -45,6 +46,11 @@ function decodeQueryText(value: string): string {
 }
 
 export default function RemixVideoGeneratePage() {
+  useMiniappShare({
+    title: '小蚁AI智能复刻 - 生成同款视频片段',
+    path: '/subpages/remix-video-generate/index',
+  });
+
   const [taskId, setTaskId] = useState('');
   const [title, setTitle] = useState('一键复刻');
   const [task, setTask] = useState<StoryboardTaskStatusResult | null>(null);
@@ -178,6 +184,41 @@ export default function RemixVideoGeneratePage() {
     Taro.navigateTo({
       url: `/subpages/remix-video-detail/index?taskId=${encodeURIComponent(taskId)}&segmentId=${encodeURIComponent(segment.id)}&title=${encodeURIComponent(title || '一键复刻')}`,
     });
+  };
+
+  const handleOpenClipDetail = async (clip: RemixClipItem) => {
+    const actionKey = `${clip.segment?.id || clip.key}-detail`;
+    if (isActioning(actionKey)) return;
+    setActioning(actionKey, true);
+    try {
+      const segment = await ensureClipSegment(clip);
+      const ensuredClip = { ...clip, segment };
+      await persistClipToSegment(ensuredClip);
+      const videoUrl = normalizeMediaUrl(segment.generatedVideo);
+      Taro.setStorageSync('REMIX_VIDEO_DETAIL_ITEM', {
+        taskId,
+        title,
+        videoModel,
+        aspectRatio: resolveTaskAspectRatio(task),
+        clip: {
+          ...ensuredClip,
+          videoUrl,
+          segment: {
+            ...segment,
+            videoPrompt: ensuredClip.videoPrompt,
+            duration: clampSeedanceDuration(ensuredClip.duration),
+          },
+        },
+      });
+      Taro.navigateTo({
+        url: `/subpages/remix-video-detail/index?taskId=${encodeURIComponent(taskId)}&segmentId=${encodeURIComponent(segment.id)}&title=${encodeURIComponent(title || '一键复刻')}`,
+      });
+    } catch (error) {
+      Taro.showToast({ title: error instanceof Error ? error.message : '打开视频编辑失败', icon: 'none' });
+      await loadStatus(true);
+    } finally {
+      setActioning(actionKey, false);
+    }
   };
 
   const persistClipToSegment = async (clip: RemixClipItem, patch?: { prompt?: string; duration?: number }) => {
@@ -443,7 +484,9 @@ export default function RemixVideoGeneratePage() {
                 const generating = isVideoGenerating(segment) && !videoUrl;
                 const failed = isVideoFailed(segment);
                 const actionKey = `${segment?.id || clip.key}-video`;
+                const detailActionKey = `${segment?.id || clip.key}-detail`;
                 const actioning = isActioning(actionKey);
+                const openingDetail = isActioning(detailActionKey);
                 const promptExpanded = Boolean(expandedPromptMap[clip.key]);
                 const promptText = clip.videoPrompt || '暂无视频提示词';
                 const canGenerate = !videoUrl && !generating && !actioning;
@@ -485,7 +528,10 @@ export default function RemixVideoGeneratePage() {
                       </View>
                     )}
                     {generating && !videoUrl && (
-                      <View className={`remix-video-generating-card ${getVideoAspectClass(task, segment)}`}>
+                      <View
+                        className={`remix-video-generating-card ${getVideoAspectClass(task, segment)}`}
+                        onClick={() => void handleOpenClipDetail(clip)}
+                      >
                         <View className='remix-video-generating-pulse'>
                           <View className='remix-video-generating-spinner' />
                         </View>
@@ -495,8 +541,14 @@ export default function RemixVideoGeneratePage() {
                     )}
                     {!videoUrl && !generating && (
                       <>
-                        <View className={`remix-video-empty-card ${getVideoAspectClass(task, segment)}`}>
-                          <Text className='remix-video-empty-title'>{failed ? '视频生成失败' : '待生成视频'}</Text>
+                        <View
+                          className={`remix-video-empty-card ${getVideoAspectClass(task, segment)}`}
+                          onClick={() => void handleOpenClipDetail(clip)}
+                        >
+                          <Text className='remix-video-empty-title'>
+                            {openingDetail ? '打开中...' : failed ? '视频生成失败' : '待生成视频'}
+                          </Text>
+                          <Text className='remix-video-empty-desc'>点击编辑提示词和参考图</Text>
                         </View>
                         <View
                           className={`remix-video-generate-btn ${canGenerate ? '' : 'remix-video-generate-btn--disabled'}`}

@@ -49,8 +49,18 @@ export interface DigitalHumanVideoRecord {
   resultUrl?: string | null;
   durationSeconds?: number | null;
   workflowId?: string | null;
+  segmentIndex?: number | null;
+  segmentCount?: number | null;
+  isSegmented?: boolean | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface DigitalHumanTaskCreateResult extends DigitalHumanVideoRecord {
+  jobs?: DigitalHumanVideoRecord[];
+  videoIds?: string[];
+  jobCount?: number;
+  split?: boolean;
 }
 
 export class ApiError extends Error {
@@ -678,11 +688,41 @@ export const api = {
     scriptContent?: string;
     emoAudioUrl?: string | null;
     durationSeconds?: number | null;
-  }): Promise<DigitalHumanVideoRecord> {
-    return request<DigitalHumanVideoRecord>('/api/digital-human/videos', {
+  }): Promise<DigitalHumanTaskCreateResult> {
+    const apiKey = getApiKey();
+    const accessToken = getAccessToken();
+    const header: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (apiKey) header['X-User-Api-Key'] = apiKey;
+    if (accessToken) header.Authorization = `Bearer ${accessToken}`;
+
+    const res = await Taro.request({
+      url: resolveUrl('/api/digital-human/videos'),
       method: 'POST',
       data: payload as unknown as Record<string, unknown>,
+      header,
+      timeout: REQUEST_TIMEOUT_MS,
     });
+
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      const responsePayload = res.data as Record<string, unknown> | null;
+      const message = (responsePayload?.error as string) ?? `HTTP ${res.statusCode}`;
+      throw new ApiError(res.statusCode, message, responsePayload);
+    }
+
+    const responsePayload = res.data as {
+      data?: DigitalHumanVideoRecord;
+      jobs?: DigitalHumanVideoRecord[];
+      videoIds?: string[];
+      jobCount?: number;
+      split?: boolean;
+    } | null;
+    return {
+      ...(responsePayload?.data as DigitalHumanVideoRecord),
+      jobs: responsePayload?.jobs,
+      videoIds: responsePayload?.videoIds,
+      jobCount: responsePayload?.jobCount ?? responsePayload?.jobs?.length,
+      split: responsePayload?.split,
+    };
   },
 
   async createActionTransferTask(payload: {

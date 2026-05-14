@@ -2,12 +2,19 @@ import { View, Text, ScrollView, Textarea } from '@tarojs/components';
 import Taro, { useLoad, useUnload } from '@tarojs/taro';
 import { useMemo, useRef, useState } from 'react';
 import { miniappApi, type WritingStyleOption } from '../../utils/miniapp-api';
+import { useMiniappShare } from '../../utils/miniapp-share';
 import './index.sass';
 
 const SMART_COPY_STYLE_ID_KEY = 'SMART_COPY_STYLE_ID';
+const SMART_COPY_DEFAULT_STYLE_VALUE = '__system_default__';
 const WORD_COUNT_OPTIONS = [300, 600, 900, 1200] as const;
 
 export default function SmartCopyPage() {
+  useMiniappShare({
+    title: '小蚁AI智能文案 - 快速生成内容脚本',
+    path: '/subpages/smart-copy/index',
+  });
+
   const [ideaText, setIdeaText] = useState('');
   const [wordCountIndex, setWordCountIndex] = useState(1);
   const [styleOptions, setStyleOptions] = useState<WritingStyleOption[]>([]);
@@ -36,14 +43,16 @@ export default function SmartCopyPage() {
     try {
       const rows = await miniappApi.listWritingStyles(50);
       setStyleOptions(rows);
-      if (rows.length === 0) {
+      const savedStyleId = String(Taro.getStorageSync(SMART_COPY_STYLE_ID_KEY) || '').trim();
+      if (!savedStyleId || savedStyleId === SMART_COPY_DEFAULT_STYLE_VALUE) {
         setSelectedStyleId('');
         return;
       }
-      const savedStyleId = String(Taro.getStorageSync(SMART_COPY_STYLE_ID_KEY) || '').trim();
-      const matched = rows.find((item) => item.id === savedStyleId) || rows[0];
-      setSelectedStyleId(matched.id);
-      Taro.setStorageSync(SMART_COPY_STYLE_ID_KEY, matched.id);
+      const matched = rows.find((item) => item.id === savedStyleId);
+      setSelectedStyleId(matched?.id || '');
+      if (!matched) {
+        Taro.setStorageSync(SMART_COPY_STYLE_ID_KEY, SMART_COPY_DEFAULT_STYLE_VALUE);
+      }
     } catch {
       Taro.showToast({ title: '写作风格加载失败', icon: 'none' });
     } finally {
@@ -81,15 +90,13 @@ export default function SmartCopyPage() {
       Taro.showToast({ title: '请输入创作提示', icon: 'none' });
       return;
     }
-    if (!selectedStyleId) {
-      Taro.showToast({ title: '请先选择写作风格', icon: 'none' });
-      return;
-    }
 
     submitLockRef.current = true;
     setSubmitting(true);
     try {
-      const styleProfile = await miniappApi.getWritingStyleProfile(selectedStyleId);
+      const styleProfile = selectedStyleId
+        ? await miniappApi.getWritingStyleProfile(selectedStyleId)
+        : null;
       await miniappApi.createSmartCopyTask({
         ideaText: ideaText.trim(),
         title: ideaText.trim().slice(0, 32) || '智能文案',
@@ -130,10 +137,19 @@ export default function SmartCopyPage() {
           <View className='smart-copy-section'>
             <View className='smart-copy-section-head'>
               <Text className='smart-copy-section-title'>写作风格</Text>
-              <Text className='smart-copy-section-subtitle'>{loadingStyles ? '加载中' : selectedStyle?.name || '未选择'}</Text>
+              <Text className='smart-copy-section-subtitle'>{loadingStyles ? '加载中' : selectedStyle?.name || '通用'}</Text>
             </View>
             <ScrollView scrollX className='smart-copy-style-scroll'>
               <View className='smart-copy-style-list'>
+                <View
+                  className={`smart-copy-style-chip ${!selectedStyleId ? 'smart-copy-style-chip--active' : ''}`}
+                  onClick={() => {
+                    setSelectedStyleId('');
+                    Taro.setStorageSync(SMART_COPY_STYLE_ID_KEY, SMART_COPY_DEFAULT_STYLE_VALUE);
+                  }}
+                >
+                  <Text className='smart-copy-style-chip-text'>通用</Text>
+                </View>
                 {styleOptions.map((item) => (
                   <View
                     key={item.id}
@@ -148,7 +164,7 @@ export default function SmartCopyPage() {
                 ))}
                 {styleOptions.length === 0 && (
                   <View className='smart-copy-style-empty'>
-                    <Text className='smart-copy-style-empty-text'>先在 Web 端创建写作风格</Text>
+                    <Text className='smart-copy-style-empty-text'>可在 Web 端创建更多写作风格</Text>
                   </View>
                 )}
               </View>

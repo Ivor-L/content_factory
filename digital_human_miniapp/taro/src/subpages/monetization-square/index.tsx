@@ -3,7 +3,8 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { useMemo, useRef, useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
 import type { MonetizationSquareConfigPayload, MonetizationItemConfig } from '../../utils/miniapp-api';
-import channelsMarkIcon from '../../assets/icons/shipinhao.png';
+import { useMiniappShare } from '../../utils/miniapp-share';
+import channelsMarkIcon from '../../assets/icons/shipinhao-mini.webp';
 import './index.sass';
 
 declare const wx: {
@@ -80,6 +81,11 @@ function getRoutePath(url: string): string {
 }
 
 export default function MonetizationSquarePage() {
+  useMiniappShare({
+    title: '小蚁AI变现广场 - 发现内容变现机会',
+    path: '/subpages/monetization-square/index',
+  });
+
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState('');
   const [config, setConfig] = useState<MonetizationSquareConfigPayload | null>(null);

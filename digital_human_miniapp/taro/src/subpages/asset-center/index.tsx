@@ -2,6 +2,7 @@ import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow, useLoad } from '@tarojs/taro';
 import { useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
+import { useMiniappShare } from '../../utils/miniapp-share';
 import './index.sass';
 
 const TABS = [
@@ -12,6 +13,8 @@ const TABS = [
 ];
 
 export default function AssetsPage() {
+  useMiniappShare();
+
   const [activeTab, setActiveTab] = useState('template');
   const [overview, setOverview] = useState({
     characters: 0,

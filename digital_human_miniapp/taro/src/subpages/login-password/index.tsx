@@ -3,13 +3,16 @@ import Taro from '@tarojs/taro';
 import { useState } from 'react';
 import { api } from '../../utils/api';
 import { bindPendingReferral } from '../../utils/referrals';
-import antHeadLogoYellow from '../../assets/icons/ant-head-logo-yellow.png';
+import { useMiniappShare } from '../../utils/miniapp-share';
+import antHeadLogoYellow from '../../assets/icons/ant-head-logo-yellow-mini.webp';
 import './index.sass';
 
 const HERO_VIDEO_OSS_URL = 'https://oss.atomx.top/miniapp/home/hero-1777626035392.mp4';
 const HERO_POSTER_OSS_URL = 'https://oss.atomx.top/miniapp/home/hero-poster-1777627846532.jpg';
 
 export default function LoginPasswordPage() {
+  useMiniappShare();
+
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [heroVideoFailed, setHeroVideoFailed] = useState(false);
 

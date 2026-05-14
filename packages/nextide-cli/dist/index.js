@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { pathToFileURL } from 'node:url';
 const DEFAULT_API_BASE_URL = 'http://localhost:3000';
 const CONFIG_DIR = path.join(os.homedir(), '.nextide');
 const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
@@ -123,6 +124,11 @@ function explainError(code, message) {
             title: '工作流执行失败',
             message: raw || '上游工作流或服务执行失败。',
             nextActions: ['检查输入链接/素材是否可访问', '降低批量数量后重试', '保留 runId 交给管理员排查'],
+        },
+        clarification_required: {
+            title: '需要先确认参数',
+            message: raw || '该能力需要先确认必要参数，暂未提交任务。',
+            nextActions: ['确认目标时长：15 / 30 / 60 秒或自定义', '确认目标语言：跟随原视频 / 中文 / 英文 / 日语 / 韩语 / 西语', '补齐参数后重新执行 capability'],
         },
         wait_timeout: {
             title: '等待超时',
@@ -503,12 +509,13 @@ async function exportArtifactsForRun(id, runtime, outputDir, flags) {
             manifestArtifacts.push({ ...artifact, localPath });
         }
     }
+    const reportPath = await writeSpecializedHtmlReport({ outputDir, runId: id, data, artifacts: manifestArtifacts });
     const galleryPath = shouldGallery
         ? await writeGalleryHtml({ outputDir, runId: id, data, artifacts: manifestArtifacts })
         : undefined;
-    const previewPath = shouldGallery
+    const previewPath = reportPath || (shouldGallery
         ? await writePreviewHtml({ outputDir, runId: id, data, artifacts: manifestArtifacts })
-        : undefined;
+        : undefined);
     const datatablePath = shouldDatatable
         ? await writeDatatableJson({ outputDir, runId: id, data, artifacts: manifestArtifacts })
         : undefined;
@@ -528,10 +535,13 @@ async function exportArtifactsForRun(id, runtime, outputDir, flags) {
         artifactCount: artifacts.length,
         artifacts: manifestArtifacts,
         galleryPath,
+        reportPath,
         previewPath,
-        preview: previewPath ? { type: 'html', path: previewPath } : undefined,
+        previewUrl: previewPath ? toClickableUrl(previewPath) : undefined,
+        preview: previewPath ? { type: 'html', path: previewPath, url: toClickableUrl(previewPath) } : undefined,
         datatablePath,
-        datatable: datatablePath ? { type: 'datatable', path: datatablePath } : undefined,
+        datatableUrl: datatablePath ? toClickableUrl(datatablePath) : undefined,
+        datatable: datatablePath ? { type: 'datatable', path: datatablePath, url: toClickableUrl(datatablePath) } : undefined,
         summaryPath,
         summary: { type: 'summary', path: summaryPath },
         business: data.business,
@@ -539,7 +549,7 @@ async function exportArtifactsForRun(id, runtime, outputDir, flags) {
     };
     const manifestPath = path.join(outputDir, 'manifest.json');
     await writeFile(manifestPath, JSON.stringify(manifest, null, 2));
-    return { ok: true, runId: id, outputDir, manifestPath, galleryPath, previewPath, preview: previewPath ? { type: 'html', path: previewPath } : undefined, datatablePath, datatable: datatablePath ? { type: 'datatable', path: datatablePath } : undefined, summaryPath, summary: { type: 'summary', path: summaryPath }, artifactCount: artifacts.length, artifacts: manifestArtifacts };
+    return { ok: true, runId: id, outputDir, manifestPath, galleryPath, reportPath, previewPath, previewUrl: previewPath ? toClickableUrl(previewPath) : undefined, preview: previewPath ? { type: 'html', path: previewPath, url: toClickableUrl(previewPath) } : undefined, datatablePath, datatableUrl: datatablePath ? toClickableUrl(datatablePath) : undefined, datatable: datatablePath ? { type: 'datatable', path: datatablePath, url: toClickableUrl(datatablePath) } : undefined, summaryPath, summary: { type: 'summary', path: summaryPath }, artifactCount: artifacts.length, artifacts: manifestArtifacts };
 }
 function defaultArtifactName(artifact, index) {
     const type = String(artifact.type || 'artifact');
@@ -592,6 +602,15 @@ async function writePreviewHtml(input) {
     await writeFile(previewPath, html);
     return previewPath;
 }
+async function writeSpecializedHtmlReport(input) {
+    const capabilityId = String(input.data?.run?.capabilityId || '');
+    if (capabilityId !== 'viral.breakdown.video_prompts')
+        return undefined;
+    const html = renderViralBreakdownReportHtml(input);
+    const reportPath = path.join(input.outputDir, 'breakdown-report.html');
+    await writeFile(reportPath, html);
+    return reportPath;
+}
 async function writeSummaryJson(input) {
     const summary = buildRunSummary(input);
     const summaryPath = path.join(input.outputDir, 'summary.json');
@@ -619,7 +638,12 @@ function buildRunSummary(input) {
         blocks.push('datatable');
     if (!input.previewPath && imageCount > 0)
         blocks.push('image-preview');
-    const message = buildRecommendedMessage({ title, runStatus, imageCount, videoCount, audioCount, hasTable: Boolean(input.datatablePath) });
+    const primaryPreview = input.previewPath || input.galleryPath || localFiles[0] || remoteUrls[0];
+    const primaryPreviewUrl = primaryPreview ? toClickableUrl(primaryPreview) : undefined;
+    const primaryTableUrl = input.datatablePath ? toClickableUrl(input.datatablePath) : undefined;
+    const message = capabilityId === 'viral.breakdown.video_prompts'
+        ? buildViralBreakdownRecommendedMessage({ data: input.data, runStatus, hasPreview: Boolean(input.previewPath), hasTable: Boolean(input.datatablePath) })
+        : buildRecommendedMessage({ title, runStatus, imageCount, videoCount, audioCount, hasTable: Boolean(input.datatablePath) });
     return {
         runId: input.runId,
         capabilityId,
@@ -627,13 +651,19 @@ function buildRunSummary(input) {
         status: runStatus,
         artifactCount: input.artifacts.length,
         counts: { images: imageCount, videos: videoCount, audios: audioCount, files: localFiles.length, remoteUrls: remoteUrls.length },
-        primaryPreview: input.previewPath || input.galleryPath || localFiles[0] || remoteUrls[0],
+        primaryPreview,
+        primaryPreviewUrl,
         primaryTable: input.datatablePath,
+        primaryTableUrl,
         localFiles,
         remoteUrls,
         recommendedResponse: {
             message,
             blocks,
+            links: [
+                primaryPreviewUrl ? { label: '打开 HTML 预览', url: primaryPreviewUrl } : null,
+                primaryTableUrl ? { label: '打开数据表 JSON', url: primaryTableUrl } : null,
+            ].filter(Boolean),
             nextActions: recommendedNextActions(capabilityId),
         },
         commands: {
@@ -642,6 +672,11 @@ function buildRunSummary(input) {
             artifacts: `nextide run artifacts ${input.runId} --download --gallery --datatable`,
         },
     };
+}
+function toClickableUrl(value) {
+    if (/^https?:\/\//i.test(value) || /^file:\/\//i.test(value))
+        return value;
+    return pathToFileURL(path.resolve(value)).href;
 }
 function buildRecommendedMessage(input) {
     const pieces = [`已完成 NexTide 任务：${input.title}`];
@@ -656,6 +691,25 @@ function buildRecommendedMessage(input) {
         pieces.push('已生成数据表');
     return pieces.join(' · ');
 }
+function buildViralBreakdownRecommendedMessage(input) {
+    const result = extractViralBreakdownResult(input.data);
+    const detailed = extractViralBreakdownDetailed(result);
+    const clonePrompt = asPlainRecord(detailed.clone_prompt || result.clone_prompt || detailed.clonePrompt || result.clonePrompt);
+    const clips = pickFirstArray(clonePrompt.clips, result.clips, detailed.clips);
+    const gridUrl = pickValue(detailed, ['storyboard_grid_url', 'storyboardGridUrl']) || pickValue(result, ['storyboardImageUrl', 'coverImage']);
+    const status = String(pickValue(result, ['status']) || input.runStatus);
+    const pieces = ['已完成爆款短视频复刻拆解'];
+    pieces.push(`业务状态：${status}`);
+    if (gridUrl)
+        pieces.push('已包含分镜网格图');
+    if (clips.length)
+        pieces.push(`Clip 分段提示词：${clips.length} 段`);
+    if (input.hasPreview)
+        pieces.push('已生成 HTML 报告');
+    if (input.hasTable)
+        pieces.push('已生成 Clip 数据表');
+    return pieces.join(' · ');
+}
 function recommendedNextActions(capabilityId) {
     if (capabilityId === 'xhs.card.layout' || capabilityId === 'xhs.infographic.generate')
         return ['生成小红书标题', '生成发布正文', '调整卡片风格', '导出图片给客户'];
@@ -663,6 +717,8 @@ function recommendedNextActions(capabilityId) {
         return ['转成销售页文案', '转成短视频脚本', '转成小红书种草文', '生成竞品对比表'];
     if (capabilityId.startsWith('social.') || capabilityId === 'xhs.note.collect')
         return ['筛选高互动素材', '提取选题模式', '生成内容对标清单', '继续扩大采集范围'];
+    if (capabilityId === 'viral.breakdown.video_prompts')
+        return ['查看 HTML 拆解报告', '复制 Clip 分段提示词到 Seedance', '绑定新产品做主体替换', '继续生成视频片段'];
     if (capabilityId.includes('video'))
         return ['查看任务状态', '下载视频文件', '生成发布文案', '生成封面标题'];
     if (capabilityId === 'content.wechat.longform.write')
@@ -836,49 +892,48 @@ function buildWechatLongformTable(data, artifacts) {
     };
 }
 function buildViralBreakdownPromptTable(data, artifacts) {
-    const result = asPlainRecord(data?.result?.data || data?.result || {});
+    const result = extractViralBreakdownResult(data);
     const run = asPlainRecord(data?.run || {});
-    const promptItems = pickFirstArray(result.prompts, result.videoPrompts, result.video_prompts, result.scenes, result.storyboard, result.shots, result.items, artifacts.flatMap((artifact) => rowsFromUnknown(artifact.data)));
+    const detailed = extractViralBreakdownDetailed(result);
+    const clonePrompt = asPlainRecord(pickDeep(result, ['clone_prompt', 'clonePrompt']) || pickDeep(detailed, ['clone_prompt', 'clonePrompt']));
+    const clips = pickFirstArray(clonePrompt.clips, result.clips, detailed.clips);
+    const promptItems = clips.length > 0
+        ? clips
+        : pickFirstArray(result.videoPrompts, result.video_prompts, result.prompts, artifacts.flatMap((artifact) => rowsFromUnknown(artifact.data)));
     const rows = promptItems.length > 0
         ? promptItems.map((item, index) => {
             const record = asPlainRecord(item);
             return compactRow({
-                scene: pickValue(record, ['scene', 'sceneNumber', 'index']) || index + 1,
+                clip: pickValue(record, ['clip_index', 'clipIndex', 'clip']) || index + 1,
+                role: pickValue(record, ['role', 'beat', 'type']),
+                timeRange: pickValue(record, ['time_range', 'timeRange']),
                 duration: pickValue(record, ['duration', 'durationSeconds', 'seconds']),
-                shotType: pickValue(record, ['shotType', 'shot', 'shot_size', 'shotSize']),
-                cameraMovement: pickValue(record, ['cameraMovement', 'camera', 'movement']),
-                visualPrompt: pickValue(record, ['visualPrompt', 'prompt', 'imagePrompt', 'videoPrompt', 'description']),
-                dialogue: pickValue(record, ['dialogue', 'voiceover', 'voiceOver', 'script', 'caption']),
-                audioCue: pickValue(record, ['audioCue', 'audio', 'music', 'sound']),
-                negativePrompt: pickValue(record, ['negativePrompt', 'negative']),
-                platform: pickValue(record, ['platform', 'sourcePlatform']) || pickValue(result, ['platform', 'sourcePlatform']),
-                sourceUrl: pickValue(record, ['sourceUrl', 'referenceUrl', 'url']) || pickValue(result, ['sourceUrl', 'referenceUrl']),
+                startState: pickValue(record, ['start_state', 'startState']),
+                endState: pickValue(record, ['end_state', 'endState']),
+                handoff: pickValue(record, ['handoff_to_next', 'handoffToNext']),
+                clipPrompt: pickValue(record, ['prompt', 'videoPrompt', 'generationPrompt', 'visualPrompt', 'description']),
+                status: pickValue(result, ['status']) || pickValue(run, ['status']),
             });
         })
         : [];
     const fallbackRow = compactRow({
-        scene: rows.length ? undefined : 1,
-        visualPrompt: pickValue(result, ['prompt', 'videoPrompt', 'description', 'transcript', 'copy', 'text']),
-        dialogue: pickValue(result, ['dialogue', 'script', 'caption']),
-        platform: pickValue(result, ['platform', 'sourcePlatform']),
-        sourceUrl: pickValue(result, ['sourceUrl', 'referenceUrl', 'referenceVideo']),
+        clip: rows.length ? undefined : 1,
+        clipPrompt: pickValue(result, ['prompt', 'videoPrompt', 'description', 'transcript', 'copy', 'text']),
         status: pickValue(result, ['status']) || pickValue(run, ['status']),
         note: pickValue(result, ['note']),
     });
     const finalRows = rows.length > 0 ? rows : (Object.keys(fallbackRow).length > 0 ? [fallbackRow] : []);
     return {
-        title: '爆款拆解视频提示词表',
+        title: '爆款复刻 Clip 分段提示词表',
         columns: columnsForKeys([
-            ['scene', '场景', 'number'],
+            ['clip', 'Clip', 'number'],
+            ['role', '角色/阶段', 'badge'],
+            ['timeRange', '时间段', 'text'],
             ['duration', '时长', 'number'],
-            ['shotType', '镜头类型', 'badge'],
-            ['cameraMovement', '运镜', 'text'],
-            ['visualPrompt', '视觉提示词', 'text'],
-            ['dialogue', '台词/旁白', 'text'],
-            ['audioCue', '音频提示', 'text'],
-            ['negativePrompt', '负面提示词', 'text'],
-            ['platform', '平台', 'badge'],
-            ['sourceUrl', '来源链接', 'text'],
+            ['startState', '起始状态', 'text'],
+            ['endState', '结束状态', 'text'],
+            ['handoff', '衔接', 'text'],
+            ['clipPrompt', 'Clip 提示词', 'text'],
             ['status', '状态', 'badge'],
             ['note', '说明', 'text'],
         ], finalRows),
@@ -1041,7 +1096,7 @@ function pickFirstArray(...values) {
     return [];
 }
 function asPlainRecord(value) {
-    return typeof value === 'object' && value !== null ? value : {};
+    return typeof value === 'object' && value !== null && !Array.isArray(value) ? value : {};
 }
 function pickValue(record, keys) {
     for (const key of keys) {
@@ -1050,6 +1105,27 @@ function pickValue(record, keys) {
             return value;
     }
     return undefined;
+}
+function pickDeep(record, keys) {
+    for (const key of keys) {
+        const direct = pickValue(record, [key]);
+        if (direct !== undefined)
+            return direct;
+    }
+    return undefined;
+}
+function extractViralBreakdownResult(data) {
+    const runResult = asPlainRecord(data?.run?.result);
+    const topResult = asPlainRecord(data?.result);
+    return asPlainRecord(runResult.data || topResult.data || runResult || topResult || {});
+}
+function extractViralBreakdownDetailed(result) {
+    const detailed = asPlainRecord(result.detailedBreakdown || result.breakdown || result.workflow_data || result.workflowData);
+    const workflowData = asPlainRecord(detailed.workflow_data || detailed.workflowData);
+    return {
+        ...workflowData,
+        ...detailed,
+    };
 }
 function compactRow(row) {
     return Object.fromEntries(Object.entries(row).filter(([, value]) => value !== undefined && value !== null && value !== ''));
@@ -1140,6 +1216,8 @@ function stringifyPoint(value) {
         return value;
     if (typeof value === 'number' || typeof value === 'boolean')
         return String(value);
+    if (Array.isArray(value))
+        return value.map(stringifyPoint).join('、');
     if (typeof value === 'object' && value !== null) {
         const record = value;
         const preferred = pickValue(record, ['content', 'text', 'title', 'name', 'point', 'description']);
@@ -1147,6 +1225,26 @@ function stringifyPoint(value) {
             return String(preferred);
     }
     return JSON.stringify(value);
+}
+function labelizeKey(key) {
+    const labels = {
+        format: '内容格式',
+        duration: '总时长',
+        shot_count: '镜头数量',
+        style_name: '风格名称',
+        edit_rhythm: '剪辑节奏',
+        aspect_ratio: '画幅',
+        product_role: '产品角色',
+        camera_language: '镜头语言',
+        dialogue_pattern: '口播模式',
+        technical_texture: '技术质感',
+        dialogue_word_count: '口播字数',
+        attention_triggers: '注意力触发',
+        retention_devices: '留存机制',
+        trust_devices: '信任机制',
+        conversion_devices: '转化机制',
+    };
+    return labels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
 }
 function rowsFromUnknown(value) {
     if (!value)
@@ -1265,6 +1363,63 @@ function renderPreviewHtml(input, types) {
 </main>
 </body>
 </html>`;
+}
+function renderViralBreakdownReportHtml(input) {
+    const result = extractViralBreakdownResult(input.data);
+    const run = asPlainRecord(input.data?.run || {});
+    const detailed = extractViralBreakdownDetailed(result);
+    const metadata = asPlainRecord(detailed.metadata || result.metadata || {});
+    const title = String(pickValue(result, ['title', 'name']) || pickValue(metadata, ['title']) || '爆款视频复刻拆解报告');
+    const business = asPlainRecord(input.data?.business || result.business);
+    const status = String(pickValue(result, ['status']) || pickValue(business, ['status']) || pickValue(run, ['status']) || 'unknown');
+    const sourceAnalysis = asPlainRecord(detailed.source_video_analysis || result.source_video_analysis);
+    const contentStructure = asPlainRecord(detailed.content_structure || result.content_structure);
+    const mechanism = asPlainRecord(detailed.viral_mechanism || result.viral_mechanism);
+    const clonePrompt = asPlainRecord(detailed.clone_prompt || result.clone_prompt || detailed.clonePrompt || result.clonePrompt);
+    const beats = pickFirstArray(detailed.beat_map, result.beat_map, detailed.beatMap, result.beatMap);
+    const scenes = pickFirstArray(detailed.scenes, result.scenes, result.segments);
+    const clips = pickFirstArray(clonePrompt.clips, result.clips, detailed.clips);
+    const traits = pickFirstArray(detailed.defining_traits, result.defining_traits);
+    const transfers = pickFirstArray(detailed.what_transfers, result.what_transfers);
+    const swaps = pickFirstArray(detailed.what_gets_swapped, result.what_gets_swapped);
+    const storyboardGrid = asPlainRecord(detailed.storyboard_grid || result.storyboard_grid);
+    const storyboardGridUrl = String(pickValue(detailed, ['storyboard_grid_url', 'storyboardGridUrl']) ||
+        pickValue(result, ['storyboard_grid_url', 'storyboardGridUrl', 'storyboardImageUrl', 'coverImage']) ||
+        pickValue(storyboardGrid, ['url', 'grid_url', 'gridUrl']) ||
+        '');
+    const sourceUrl = String(pickValue(metadata, ['reference_video_url', 'referenceVideoUrl', 'reference_url', 'referenceUrl']) || result.referenceVideo || '');
+    const originalScript = String(pickValue(detailed, ['full_original_script', 'fullOriginalScript']) || pickValue(result, ['full_original_script', 'fullOriginalScript']) || '');
+    const rewrittenScript = String(pickValue(detailed, ['full_rewritten_script', 'fullRewrittenScript']) || pickValue(result, ['full_rewritten_script', 'fullRewrittenScript']) || '');
+    const totalDuration = pickValue(detailed, ['total_duration', 'duration_seconds', 'durationSeconds']) || pickValue(result, ['total_duration', 'duration_seconds', 'durationSeconds']);
+    const aspectRatio = pickValue(sourceAnalysis, ['aspect_ratio', 'aspectRatio']) || '9:16';
+    const styleName = pickValue(sourceAnalysis, ['style_name', 'styleName', 'format']) || 'UGC 短视频';
+    const summaryItems = [...traits, ...transfers].slice(0, 8);
+    const summaryHtml = summaryItems.length
+        ? summaryItems.map((item) => `<li>${escapeHtml(stringifyPoint(item))}</li>`).join('')
+        : '<li>暂无拆解总结</li>';
+    const sourceAnalysisRows = Object.entries(sourceAnalysis)
+        .map(([key, value]) => `<tr><th>${escapeHtml(labelizeKey(key))}</th><td>${escapeHtml(stringifyPoint(value))}</td></tr>`)
+        .join('');
+    const structureCards = Object.entries(contentStructure).map(([key, value]) => {
+        const record = asPlainRecord(value);
+        return `<article class="mini-card"><div class="badge">${escapeHtml(key.toUpperCase())}</div><h3>${escapeHtml(pickValue(record, ['summary']) || key)}</h3><p>${escapeHtml(pickValue(record, ['mechanism']) || '')}</p><p class="muted">${escapeHtml(pickValue(record, ['time_range', 'timeRange']) || '')} · ${escapeHtml(pickValue(record, ['replication_note', 'replicationNote']) || '')}</p></article>`;
+    }).join('');
+    const beatHtml = beats.map((item, index) => {
+        const row = asPlainRecord(item);
+        return `<article class="beat"><div class="beat-index">${index + 1}</div><div><div class="beat-head"><span class="badge">${escapeHtml(pickValue(row, ['beat', 'role']) || `BEAT ${index + 1}`)}</span><span>${escapeHtml(pickValue(row, ['time_range', 'timeRange']) || '')}</span></div><h3>${escapeHtml(pickValue(row, ['visual', 'summary']) || '')}</h3><p>${escapeHtml(pickValue(row, ['function', 'mechanism']) || '')}</p><p class="script-line">${escapeHtml(pickValue(row, ['dialogue_or_text', 'rewritten_dialogue_or_text']) || '')}</p><p class="muted">复刻要点：${escapeHtml(pickValue(row, ['replication_note', 'replicationNote']) || '')}</p></div></article>`;
+    }).join('');
+    const mechanismHtml = ['attention_triggers', 'retention_devices', 'trust_devices', 'conversion_devices'].map((key) => {
+        const values = pickFirstArray(mechanism[key]);
+        return `<article class="mini-card"><h3>${escapeHtml(labelizeKey(key))}</h3>${values.length ? `<ul>${values.map((item) => `<li>${escapeHtml(stringifyPoint(item))}</li>`).join('')}</ul>` : '<p class="muted">暂无</p>'}</article>`;
+    }).join('');
+    const clipCards = clips.map((item, index) => {
+        const row = asPlainRecord(item);
+        const prompt = pickValue(row, ['prompt', 'videoPrompt', 'generationPrompt']) || JSON.stringify(row, null, 2);
+        return `<article class="clip-card"><div class="clip-head"><div><span class="badge">Clip ${escapeHtml(pickValue(row, ['clip_index', 'clipIndex']) || index + 1)}</span><span class="role">${escapeHtml(pickValue(row, ['role']) || '')}</span></div><strong>${escapeHtml(pickValue(row, ['time_range', 'timeRange']) || '')} · ${escapeHtml(pickValue(row, ['duration']) || '')}s</strong></div><div class="state-grid"><p><b>Start</b>${escapeHtml(pickValue(row, ['start_state', 'startState']) || '')}</p><p><b>End</b>${escapeHtml(pickValue(row, ['end_state', 'endState']) || '')}</p><p><b>Handoff</b>${escapeHtml(pickValue(row, ['handoff_to_next', 'handoffToNext']) || '')}</p></div><details open><summary>Seedance Clip 提示词</summary><pre>${escapeHtml(prompt)}</pre></details></article>`;
+    }).join('');
+    return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>${escapeHtml(title)}</title><style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#08080a;color:#f7f7fb;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Segoe UI',sans-serif}.wrap{max-width:1180px;margin:0 auto;padding:32px 18px 72px}.hero,.card{border:1px solid #2a2a32;border-radius:24px;background:#17171c;padding:22px;margin-bottom:18px;box-shadow:0 20px 80px rgba(0,0,0,.24)}.hero{background:radial-gradient(circle at top left,rgba(255,122,0,.24),transparent 34%),linear-gradient(135deg,#19191f,#0f0f12)}h1{margin:4px 0 10px;font-size:34px;line-height:1.12}h2{margin:0 0 16px;font-size:22px}h3{margin:8px 0 8px;font-size:16px}.muted{color:#a7a7b4;line-height:1.7}.meta{color:#c9c9d4;font-size:13px;line-height:1.7}.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:18px}.kpi{background:#0e0e12;border:1px solid #2a2a32;border-radius:18px;padding:14px;color:#aaaab6}.kpi b{display:block;margin-top:8px;color:#fff;font-size:22px}.grid-img{width:100%;border-radius:18px;border:1px solid #2a2a32;background:#0e0e12}.summary-grid,.mechanism-grid,.structure-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.mini-card,.beat,.clip-card{background:#101014;border:1px solid #2a2a32;border-radius:18px;padding:16px}.mini-card ul,.summary-list{margin:8px 0 0;padding-left:20px;line-height:1.75}.badge{display:inline-flex;align-items:center;border-radius:999px;background:#2d2d36;color:#f4c27a;padding:4px 10px;font-size:12px;font-weight:700;letter-spacing:.02em}.beat{display:grid;grid-template-columns:34px 1fr;gap:12px;margin-bottom:10px}.beat-index{width:34px;height:34px;border-radius:12px;background:#f59e0b;color:#111;display:flex;align-items:center;justify-content:center;font-weight:900}.beat-head,.clip-head{display:flex;align-items:center;justify-content:space-between;gap:12px;color:#c9c9d4}.script-line{border-left:3px solid #f59e0b;margin:10px 0;padding:8px 12px;background:#17171c;border-radius:0 10px 10px 0;color:#fff}.script-box{white-space:pre-wrap;background:#101014;border:1px solid #2a2a32;border-radius:16px;padding:16px;line-height:1.8}.role{margin-left:8px;color:#a7a7b4}.state-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0}.state-grid p{margin:0;background:#17171c;border-radius:14px;padding:10px;color:#c9c9d4;line-height:1.5}.state-grid b{display:block;color:#fff;margin-bottom:4px}details summary{cursor:pointer;color:#f4c27a;font-weight:700;margin:8px 0}pre{white-space:pre-wrap;word-break:break-word;background:#09090b;border:1px solid #2a2a32;border-radius:14px;padding:14px;line-height:1.65;color:#f4f4f5;max-height:520px;overflow:auto}table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid #2a2a32;padding:10px;text-align:left;vertical-align:top;line-height:1.55}th{color:#f4c27a;width:220px}.contract{display:grid;grid-template-columns:1fr 1fr;gap:12px}.contract .do{border-color:rgba(34,197,94,.4)}.contract .dont{border-color:rgba(239,68,68,.4)}@media(max-width:860px){.kpis,.summary-grid,.mechanism-grid,.structure-grid,.state-grid,.contract{grid-template-columns:1fr}h1{font-size:28px}}
+</style></head><body><div class="wrap"><section class="hero"><div class="meta">爆款短视频复刻 · Agent HTML Report</div><h1>${escapeHtml(title)}</h1><div class="meta">状态：${escapeHtml(status)} · Run：${escapeHtml(input.runId)} · Task：${escapeHtml(pickValue(result, ['taskId', 'id']) || '')}</div><div class="meta">来源视频：${sourceUrl ? `<a style="color:#f4c27a" href="${escapeHtml(sourceUrl)}" target="_blank">${escapeHtml(sourceUrl)}</a>` : '未提供'}</div><div class="kpis"><div class="kpi">总时长<b>${escapeHtml(totalDuration || '')}</b></div><div class="kpi">画幅<b>${escapeHtml(aspectRatio)}</b></div><div class="kpi">风格<b>${escapeHtml(styleName)}</b></div><div class="kpi">Clip 提示词<b>${escapeHtml(clips.length)}</b></div></div></section><section class="card"><h2>分镜网格图</h2>${storyboardGridUrl ? `<img class="grid-img" src="${escapeHtml(storyboardGridUrl)}" alt="Storyboard grid" />` : '<p class="muted">暂无分镜网格图。</p>'}</section><section class="card"><h2>拆解总结</h2><div class="summary-grid"><div class="mini-card"><h3>可复用特征</h3><ul class="summary-list">${summaryHtml}</ul></div><div class="mini-card"><h3>需要替换的元素</h3>${swaps.length ? `<ul>${swaps.map((item) => `<li>${escapeHtml(stringifyPoint(item))}</li>`).join('')}</ul>` : '<p class="muted">暂无</p>'}</div></div></section><section class="card"><h2>源视频分析</h2><table><tbody>${sourceAnalysisRows || '<tr><td class="muted">暂无源视频分析</td></tr>'}</tbody></table></section><section class="card"><h2>节奏拆解</h2>${structureCards ? `<div class="structure-grid">${structureCards}</div>` : ''}<div style="height:12px"></div>${beatHtml || '<p class="muted">暂无节奏拆解</p>'}</section><section class="card"><h2>口播文案</h2><div class="script-box">${escapeHtml(originalScript || '暂无原口播')}</div></section><section class="card"><h2>改写口播</h2><div class="script-box">${escapeHtml(rewrittenScript || '暂无改写口播')}</div></section><section class="card"><h2>爆款机制</h2><div class="mechanism-grid">${mechanismHtml}</div></section><section class="card"><h2>Clip 分段提示词</h2>${clipCards || '<p class="muted">暂无 Clip 分段提示词。</p>'}</section><section class="card"><h2>复刻合规契约</h2><div class="contract"><div class="mini-card do"><h3>可以学习</h3><ul><li>钩子结构、节奏、镜头语法、信息层级</li><li>UGC 手持质感、产品展示顺序、CTA 位置</li></ul></div><div class="mini-card dont"><h3>不要复制</h3><ul><li>原作者身份、脸、品牌、商标、精确字幕原句</li><li>专有包装设计、平台购买入口、不可授权视觉资产</li></ul></div></div></section></div></body></html>`;
 }
 function renderArtifactCard(artifact, index) {
     const type = String(artifact.type || 'artifact');

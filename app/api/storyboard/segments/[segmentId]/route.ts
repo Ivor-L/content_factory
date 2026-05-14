@@ -9,6 +9,26 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function normalizeReferenceImageUri(value: unknown): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text || /^(undefined|null|nan)$/i.test(text)) return "";
+  const normalizedAsset = text.replace(/^asset:\s*\/\//i, "asset://");
+  if (/^asset:\/\/[A-Za-z0-9._:-]+$/.test(normalizedAsset)) return normalizedAsset;
+  if (/^asset-[A-Za-z0-9._:-]+$/.test(text)) return `asset://${text}`;
+  if (text.startsWith("//")) return `https:${text}`;
+  return /^https?:\/\//i.test(text) ? text : "";
+}
+
+function normalizeReferenceImageUris(value: unknown): string[] {
+  const raw = Array.isArray(value) ? value : [];
+  const result: string[] = [];
+  for (const item of raw) {
+    const uri = normalizeReferenceImageUri(item);
+    if (uri && !result.includes(uri) && result.length < 9) result.push(uri);
+  }
+  return result;
+}
+
 function isVideoCountingSegment(segment: { status: string; generatedVideo?: string | null; generationParams?: unknown }) {
   const params = asRecord(segment.generationParams);
   const status = String(segment.status || "").toUpperCase();
@@ -106,6 +126,10 @@ export async function PATCH(
       status,
       video_generation_cancelled,
       videoGenerationCancelled,
+      reference_image_urls,
+      referenceImageUrls,
+      seedance_extend_from_previous_clip,
+      seedanceExtendFromPreviousClip,
     } = body;
 
     // Verify segment belongs to user's task
@@ -150,6 +174,12 @@ export async function PATCH(
     }
     if (clip_time_range !== undefined || clipTimeRange !== undefined) {
       updatedParams.clip_time_range = clip_time_range ?? clipTimeRange ?? null;
+    }
+    if (reference_image_urls !== undefined || referenceImageUrls !== undefined) {
+      updatedParams.reference_image_urls = normalizeReferenceImageUris(reference_image_urls ?? referenceImageUrls);
+    }
+    if (seedance_extend_from_previous_clip !== undefined || seedanceExtendFromPreviousClip !== undefined) {
+      updatedParams.seedance_extend_from_previous_clip = Boolean(seedance_extend_from_previous_clip ?? seedanceExtendFromPreviousClip);
     }
     if (video_generation_cancelled !== undefined || videoGenerationCancelled !== undefined) {
       updatedParams.video_generation_cancelled = Boolean(video_generation_cancelled ?? videoGenerationCancelled);

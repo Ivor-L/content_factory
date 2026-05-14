@@ -5,6 +5,16 @@ import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { Crown, Sun, Moon } from 'lucide-react';
+import { isEarnMarketEnabled } from '@/lib/earnFeatureFlag';
+
+type AdminNavItem = {
+  href: string;
+  label: string;
+};
+
+function isAdminNavItem(item: AdminNavItem | false): item is AdminNavItem {
+  return Boolean(item);
+}
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -70,14 +80,15 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           <span className="font-bold text-gray-900 dark:text-white">管理后台</span>
         </div>
         <nav className="flex gap-1 ml-2">
-          {[
+          {([
             { href: '/admin/dashboard', label: '数据仪表盘' },
             { href: '/admin',           label: '用户管理' },
             { href: '/admin/credits',   label: '积分配置' },
             { href: '/admin/monetization-square',   label: '变现广场' },
+            isEarnMarketEnabled && { href: '/admin/earn', label: '淘金任务' },
             { href: '/admin/hot-square-data-center', label: '爆款数据中心' },
             { href: '/admin/tenants',   label: '租户管理' },
-          ].map(({ href, label }) => {
+          ] as Array<AdminNavItem | false>).filter(isAdminNavItem).map(({ href, label }) => {
             const isActive = href === '/admin' ? pathname === '/admin' : pathname?.startsWith(href);
             return (
               <Link

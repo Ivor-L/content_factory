@@ -1,8 +1,9 @@
 {
-  "referenceVideo": "https://oss.atomx.top/storyboard/videos/1778421153029-sw9x8yl87s.mp4",
-  "sourcePlatform": "uploaded-video",
-  "language": "zh-CN",
-  "durationSeconds": 15,
+  "referenceVideo": "https://oss.atomx.top/nextide/agent/uploads/viral-breakdown/2026-05-14/1778737081645-1febd0b62187.mp4",
+  "sourcePlatform": "uploaded_video",
+  "description": "用户上传的本地参考视频，用于爆款短视频结构拆解与 Seedance 提示词反推。",
+  "targetLanguage": "source",
   "promptProvider": "seedance",
-  "description": "用户上传的参考视频，用小程序爆款复刻/智能复刻 viral_clone 链路拆解并反推视频提示词。"
+  "nextStep": "breakdown_only",
+  "durationSeconds": 15
 }

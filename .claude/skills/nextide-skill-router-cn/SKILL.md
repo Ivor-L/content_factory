@@ -58,6 +58,12 @@ nextide capability list
 | 竞品对标 Brief | `competitor-benchmark-brief` | `competitor.benchmark.brief` | `available` | competitor, benchmark, brief, local-agent |
 | 短视频分镜脚本规划 | `short-video-storyboard-planner` | `script.storyboard.plan` | `available` | storyboard, short-video, script, prompt, local-agent |
 | 公众号长文写作 | `wechat-longform-writer` | `content.wechat.longform.write` | `available` | wechat, longform, writing |
+| 淘金任务匹配 | `nextide-earn-market` | `earn.task.list` | `available` | earn, task-market, monetization |
+| 淘金任务接单 | `nextide-earn-market` | `earn.task.apply` | `available` | earn, task-market, apply |
+| 淘金任务提交证据 | `nextide-earn-market` | `earn.task.submit_evidence` | `available` | earn, task-market, evidence |
+| 插件小红书当前页采集 | `nextide-browser-plugin` | `plugin.xhs.collect` | `available` | plugin, xiaohongshu, collect |
+| 插件小红书发布辅助 | `nextide-browser-plugin` | `plugin.xhs.publish` | `available` | plugin, xiaohongshu, publish |
+| 插件账号同步指令 | `nextide-browser-plugin` | `plugin.account.sync` | `available` | plugin, account, sync |
 
 <!-- END NEXTIDE AUTO-GENERATED -->
 

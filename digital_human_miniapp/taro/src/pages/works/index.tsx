@@ -3,6 +3,7 @@ import Taro, { useDidShow, usePullDownRefresh } from '@tarojs/taro';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
 import type { StoryboardTaskStatusResult, StoryboardSegmentItem, WorkItem } from '../../utils/miniapp-api';
+import { useMiniappShare } from '../../utils/miniapp-share';
 import './index.sass';
 
 const WORK_RETENTION_DAYS = 5;
@@ -14,6 +15,11 @@ const WORKS_CACHE_TTL_MS = 2 * 60 * 1000;
 let memoryWorksCache: { items: WorkItem[]; updatedAt: number } | null = null;
 
 export default function WorksPage() {
+  useMiniappShare({
+    title: '小蚁AI - 管理我的AI作品',
+    path: '/pages/works/index',
+  });
+
   const [works, setWorks] = useState<WorkItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [scrollTop, setScrollTop] = useState(0);
@@ -173,9 +179,6 @@ export default function WorksPage() {
       <View className='works-header'>
         <View className='works-header-top'>
           <Text className='works-title'>我的作品</Text>
-          <Text className={`works-refresh ${refreshing ? 'works-refresh--disabled' : ''}`} onClick={handleRefresh}>
-            刷新
-          </Text>
         </View>
         <View className='works-retention-banner'>
           <View className='works-retention-banner-dot' />

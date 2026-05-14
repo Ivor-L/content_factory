@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getRequestUserContext } from "@/lib/authServer";
 
+const SEGMENT_PREFIX_RE = /^第\s*(\d+)\s*\/\s*(\d+)\s*段\s*\n?/;
+
 function inferSourceType(url: string | null | undefined): 'IMAGE' | 'VIDEO' {
   const normalized = String(url ?? '').trim().toLowerCase();
   if (/\.(mp4|mov|m4v|webm)(\?|$)/i.test(normalized)) return 'VIDEO';
@@ -9,6 +11,10 @@ function inferSourceType(url: string | null | undefined): 'IMAGE' | 'VIDEO' {
 }
 
 function serializeVideo(video: Awaited<ReturnType<typeof prisma.digitalHumanVideo.findFirst>> & { id: string }) {
+  const scriptContent = video.scriptContent ?? '';
+  const segmentMatch = scriptContent.match(SEGMENT_PREFIX_RE);
+  const segmentIndex = segmentMatch ? Number(segmentMatch[1]) : null;
+  const segmentCount = segmentMatch ? Number(segmentMatch[2]) : null;
   return {
     id: video.id,
     type: video.type,
@@ -16,11 +22,14 @@ function serializeVideo(video: Awaited<ReturnType<typeof prisma.digitalHumanVide
     sourceType: inferSourceType(video.imageUrl),
     imageUrl: video.imageUrl,
     audioUrl: video.audioUrl,
-    scriptContent: video.scriptContent,
+    scriptContent,
     resultUrl: video.resultUrl,
     durationSeconds: video.durationSeconds,
     sourceTaskId: video.sourceTaskId,
     workflowId: video.workflowId,
+    segmentIndex,
+    segmentCount,
+    isSegmented: Boolean(segmentMatch),
     createdAt: video.createdAt,
     updatedAt: video.updatedAt,
   };

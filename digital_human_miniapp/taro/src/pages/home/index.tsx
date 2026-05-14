@@ -2,6 +2,7 @@ import { View, Text, Video, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { useCallback, useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
+import { useMiniappShare } from '../../utils/miniapp-share';
 import antHeadLogo from '../../assets/icons/ant-head-logo-small.jpg';
 import './index.sass';
 
@@ -41,6 +42,8 @@ const COPY_ICON_SVG = encodeSvgDataUri(`
 type HomeFlatIcon = 'human' | 'image' | 'video' | 'coin' | 'copy';
 
 export default function HomePage() {
+  useMiniappShare();
+
   const [profile, setProfile] = useState<any>(null);
   const [heroVideoFailed, setHeroVideoFailed] = useState(false);
   const [heroVideoSrc] = useState(HERO_VIDEO_OSS_URL);

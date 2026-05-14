@@ -8,7 +8,6 @@ import type { useCanvasModels } from "./useCanvasModels";
 import { IMAGE_MODEL_PARAMS, VIDEO_MODEL_PARAMS } from "./useCanvasModels";
 import type { CanvasResourceRecord } from "./useCanvasResources";
 import { supabase } from "@/lib/supabaseClient";
-import { ensureCanvasCreditsAvailable, deductCanvasCredits, resolveCanvasCreditsApiKey } from "@/lib/canvasCredits";
 import { REVERSE_IMAGE_PROMPT, REVERSE_IMAGE_PROMPT_WITH_TEXT } from "@/lib/imageUnderstandingPrompts";
 
 const IMAGE_RATIO_PIXEL_MAP: Record<string, string> = {
@@ -410,21 +409,26 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
       });
 
       if (presignResponse.ok) {
-        const { uploadUrl, publicUrl } = await presignResponse.json();
-        const putResponse = await fetch(uploadUrl, {
-          method: "PUT",
-          headers: { "Content-Type": file.type },
-          body: file,
-        });
-        if (!putResponse.ok) throw new Error("上传失败");
-        const resource = addResource({
-          type: options.type,
-          variant: options.variant || undefined,
-          name: options.name || file.name,
-          url: publicUrl,
-        });
-        toast.success("资源上传成功");
-        return resource;
+        try {
+          const { uploadUrl, publicUrl } = await presignResponse.json();
+          const putResponse = await fetch(uploadUrl, {
+            method: "PUT",
+            headers: { "Content-Type": file.type },
+            body: file,
+          });
+          if (putResponse.ok) {
+            const resource = addResource({
+              type: options.type,
+              variant: options.variant || undefined,
+              name: options.name || file.name,
+              url: publicUrl,
+            });
+            toast.success("资源上传成功");
+            return resource;
+          }
+        } catch {
+          // Local/dev OSS CORS can block direct PUT; fall back to server upload below.
+        }
       }
 
       // Fallback: upload via server API
@@ -1732,19 +1736,12 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
       patchRuntimeData(nodeId, { gridTaskId: null, gridImageUrl: null, gridProgress: 0, lastRunError: null });
 
       try {
-        const apiKey = resolveCanvasCreditsApiKey();
-        if (apiKey) {
-          await ensureCanvasCreditsAvailable(apiKey, "grid", {});
-        }
         const response = await postJson("/api/canvas/grid", {
           contentType,
           scriptContent,
           imageUrl,
           aspectRatio: normalizeAspectRatio(ratio),
         });
-        if (apiKey) {
-          await deductCanvasCredits(apiKey, "grid", {});
-        }
         const record = response as { data?: { taskId?: string } };
         const taskId = record?.data?.taskId;
         if (!taskId) throw new Error("未获取到任务 ID");
@@ -1799,14 +1796,7 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
       }
       patchRuntimeData(nodeId, { isSplitting: true, status: "running" });
       try {
-        const apiKey = resolveCanvasCreditsApiKey();
-        if (apiKey) {
-          await ensureCanvasCreditsAvailable(apiKey, "grid-split", {});
-        }
         const resp = await postJson("/api/canvas/grid/split", { imageUrl: gridImageUrl, nodeId });
-        if (apiKey) {
-          await deductCanvasCredits(apiKey, "grid-split", {});
-        }
         const responseData = resp as { data?: { taskId?: string } } | null;
         const taskId = typeof responseData?.data?.taskId === "string"
           ? responseData.data.taskId
@@ -1907,19 +1897,12 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
       if (!imageUrl) throw new Error("请先生成或上传图片");
 
       try {
-        const apiKey = resolveCanvasCreditsApiKey();
-        if (apiKey) {
-          await ensureCanvasCreditsAvailable(apiKey, "image-understanding", {});
-        }
         const prompt = mode === "with-text" ? REVERSE_IMAGE_PROMPT_WITH_TEXT : REVERSE_IMAGE_PROMPT;
         const response = await postJson("/api/canvas/image-understanding", {
           imageUrl,
           prompt,
           model: "gemini-3.1-flash-lite-preview",
         });
-        if (apiKey) {
-          await deductCanvasCredits(apiKey, "image-understanding", {});
-        }
         const result = (response as { result?: string }).result ?? "";
         if (!result) throw new Error("未获取到反推结果");
         return result;

@@ -2,6 +2,7 @@ import { View, Text, Image, ScrollView, Swiper, SwiperItem, Video } from '@taroj
 import Taro, { useLoad } from '@tarojs/taro';
 import { useEffect, useMemo, useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
+import { useMiniappShare } from '../../utils/miniapp-share';
 import './index.sass';
 
 const VIDEO_URL_RE = /\.(mp4|mov|m3u8)(\?|$)|\/video\/|\/master\/|xgvideo/i;
@@ -29,6 +30,8 @@ type WorkSelectTarget = {
 };
 
 export default function WorkDetailPage() {
+  useMiniappShare();
+
   const [item, setItem] = useState<any | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -38,7 +41,7 @@ export default function WorkDetailPage() {
 
   useLoad((query) => {
     const cached = normalizeStoredWorkDetailItem(Taro.getStorageSync('WORK_DETAIL_ITEM'));
-    if (cached && (!query?.id || String(cached.id) === String(query.id))) {
+    if (cached && isStoredWorkDetailItemMatch(cached, query?.id)) {
       setItem(cached);
       if (isCopyWork(cached)) {
         void hydrateSmartCopyDetail(cached);
@@ -691,6 +694,36 @@ function normalizeStoredWorkDetailItem(value: unknown): Record<string, unknown> 
       : null;
   } catch {
     return null;
+  }
+}
+
+function decodeQueryValue(value: unknown): string {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  let decoded = text;
+  for (let i = 0; i < 2; i += 1) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+    } catch {
+      break;
+    }
+  }
+  return decoded;
+}
+
+function isStoredWorkDetailItemMatch(item: Record<string, unknown>, queryIdValue: unknown): boolean {
+  const rawQueryId = String(queryIdValue || '').trim();
+  if (!rawQueryId) return true;
+  const itemId = String(item.id || '').trim();
+  if (!itemId) return false;
+  if (itemId === rawQueryId) return true;
+  if (itemId === decodeQueryValue(rawQueryId)) return true;
+  try {
+    return encodeURIComponent(itemId) === rawQueryId;
+  } catch {
+    return false;
   }
 }
 

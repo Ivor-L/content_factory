@@ -3,7 +3,8 @@ import Taro, { useLoad } from '@tarojs/taro';
 import { useState } from 'react';
 import { api, NotBoundError } from '../../utils/api';
 import { bindPendingReferral, captureReferralFromQuery } from '../../utils/referrals';
-import antHeadLogoYellow from '../../assets/icons/ant-head-logo-yellow.png';
+import { useMiniappShare } from '../../utils/miniapp-share';
+import antHeadLogoYellow from '../../assets/icons/ant-head-logo-yellow-mini.webp';
 import wechatIcon from '../../assets/icons/login/wechat.svg';
 import phoneIcon from '../../assets/icons/login/phone.svg';
 import mailIcon from '../../assets/icons/login/mail.svg';
@@ -14,6 +15,8 @@ const HERO_VIDEO_OSS_URL = 'https://oss.atomx.top/miniapp/home/hero-177762603539
 const HERO_POSTER_OSS_URL = 'https://oss.atomx.top/miniapp/home/hero-poster-1777627846532.jpg';
 
 export default function LoginPage() {
+  useMiniappShare();
+
   const [loading, setLoading] = useState(false);
   const [phoneQuickLoading, setPhoneQuickLoading] = useState(false);
   const [heroVideoFailed, setHeroVideoFailed] = useState(false);

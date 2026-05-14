@@ -3,11 +3,14 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { useState } from 'react';
 import { api } from '../../utils/api';
 import { addUploadedFavorite, getFavorites, removeFavorite } from '../../utils/favorites';
+import { useMiniappShare } from '../../utils/miniapp-share';
 import './index.sass';
 
 const COVER_FALLBACK_URL = 'https://oss.atomx.top/miniapp/hot-square/fallback-cover-1777628403821.jpg';
 
 export default function FavoritesPage() {
+  useMiniappShare();
+
   const [list, setList] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
 

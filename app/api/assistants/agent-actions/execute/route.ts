@@ -1,14 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getRequestUserContext } from "@/lib/authServer";
+import { applyTask, badRequest, buildSubmissionInput } from "@/lib/earn/service";
+import { safeTrim } from "@/lib/earn/normalize";
 
 type AgentActionType = "read" | "create" | "update" | "delete";
+type EarnAgentActionType = "earn.openTask" | "earn.applyTask" | "earn.submitTaskEvidence" | "plugin.publish";
 
 type AgentAction = {
-  type: AgentActionType;
-  path: string;
+  type: AgentActionType | EarnAgentActionType;
+  path?: string;
   content?: string;
   reason?: string;
+  taskId?: string;
+  userTaskId?: string;
+  platform?: string;
+  platformUid?: string;
+  platformAccountName?: string;
+  taskMaterialId?: string;
+  submissionUrl?: string;
+  screenshotUrls?: string[];
+  pluginEvidence?: Record<string, unknown>;
+  params?: Record<string, unknown>;
 };
 
 type ExecutePayload = {
@@ -20,6 +33,21 @@ type ParsedAction = {
   type: AgentActionType;
   path: string;
   content?: string;
+  reason?: string;
+};
+
+type ParsedEarnAction = {
+  type: EarnAgentActionType;
+  taskId?: string;
+  userTaskId?: string;
+  platform?: string;
+  platformUid?: string;
+  platformAccountName?: string;
+  taskMaterialId?: string;
+  submissionUrl?: string;
+  screenshotUrls?: string[];
+  pluginEvidence?: Record<string, unknown>;
+  params?: Record<string, unknown>;
   reason?: string;
 };
 
@@ -61,8 +89,176 @@ function parseActionType(value: unknown): AgentActionType | null {
   return null;
 }
 
+function parseEarnActionType(value: unknown): EarnAgentActionType | null {
+  if (typeof value !== "string") return null;
+  const token = value.trim();
+  if (
+    token === "earn.openTask" ||
+    token === "earn.applyTask" ||
+    token === "earn.submitTaskEvidence" ||
+    token === "plugin.publish"
+  ) {
+    return token;
+  }
+  return null;
+}
+
 function isParsedAction(value: ParsedAction | null): value is ParsedAction {
   return Boolean(value);
+}
+
+function isParsedEarnAction(value: ParsedEarnAction | null): value is ParsedEarnAction {
+  return Boolean(value);
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  }
+  if (typeof value === "string" && value.trim()) return [value.trim()];
+  return [];
+}
+
+function normalizeObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function optionalText(value: unknown): string | undefined {
+  return safeTrim(value) || undefined;
+}
+
+async function executeEarnActions(inputActions: AgentAction[], userId: string) {
+  const actions: ParsedEarnAction[] = inputActions
+    .map((row): ParsedEarnAction | null => {
+      const type = parseEarnActionType(row?.type);
+      if (!type) return null;
+      return {
+        type,
+        taskId: optionalText(row.taskId),
+        userTaskId: optionalText(row.userTaskId),
+        platform: optionalText(row.platform),
+        platformUid: optionalText(row.platformUid),
+        platformAccountName: optionalText(row.platformAccountName),
+        taskMaterialId: optionalText(row.taskMaterialId),
+        submissionUrl: optionalText(row.submissionUrl),
+        screenshotUrls: normalizeStringArray(row.screenshotUrls),
+        pluginEvidence: normalizeObject(row.pluginEvidence),
+        params: normalizeObject(row.params),
+        reason: typeof row.reason === "string" ? row.reason : undefined,
+      };
+    })
+    .filter(isParsedEarnAction)
+    .slice(0, 20);
+
+  if (actions.length === 0) {
+    return NextResponse.json({ error: "No valid earn/plugin actions" }, { status: 400 });
+  }
+
+  const results: Array<Record<string, unknown>> = [];
+
+  for (const action of actions) {
+    try {
+      if (action.type === "earn.openTask") {
+        if (!action.taskId) throw badRequest("taskId is required");
+        const task = await prisma.earnTask.findFirst({
+          where: { id: action.taskId, status: { not: "archived" } },
+          select: { id: true, title: true, status: true },
+        });
+        if (!task) {
+          results.push({ type: action.type, ok: false, error: "Task not found" });
+          continue;
+        }
+        results.push({
+          type: action.type,
+          ok: true,
+          task,
+          href: `/earn/tasks/${task.id}`,
+          pluginInstruction: null,
+        });
+        continue;
+      }
+
+      if (action.type === "earn.applyTask") {
+        if (!action.taskId) throw badRequest("taskId is required");
+        if (!action.platform) throw badRequest("platform is required");
+        const result = await applyTask({
+          taskId: action.taskId,
+          userId,
+          platform: action.platform,
+          platformUid: action.platformUid,
+          platformAccountName: action.platformAccountName,
+          taskMaterialId: action.taskMaterialId,
+        });
+        results.push({
+          type: action.type,
+          ok: true,
+          existing: result.existing,
+          userTaskId: result.userTask.id,
+          href: `/earn/mine?task=${result.userTask.id}`,
+        });
+        continue;
+      }
+
+      if (action.type === "earn.submitTaskEvidence") {
+        if (!action.userTaskId) throw badRequest("userTaskId is required");
+        const current = await prisma.earnUserTask.findFirst({
+          where: { id: action.userTaskId, userId },
+        });
+        if (!current) {
+          results.push({ type: action.type, ok: false, error: "User task not found" });
+          continue;
+        }
+        if (!["doing", "rejected"].includes(current.status)) {
+          results.push({ type: action.type, ok: false, error: "User task cannot be submitted in current status" });
+          continue;
+        }
+        const updated = await prisma.earnUserTask.update({
+          where: { id: current.id },
+          data: buildSubmissionInput({
+            submissionUrl: action.submissionUrl,
+            screenshotUrls: action.screenshotUrls,
+            pluginEvidence: action.pluginEvidence,
+          }),
+          select: { id: true, status: true, submissionUrl: true },
+        });
+        results.push({ type: action.type, ok: true, userTask: updated, href: `/earn/mine?task=${updated.id}` });
+        continue;
+      }
+
+      if (action.type === "plugin.publish") {
+        results.push({
+          type: action.type,
+          ok: true,
+          pluginInstruction: {
+            method: "publish",
+            params: {
+              platform: action.platform || "xhs",
+              taskId: action.taskId,
+              userTaskId: action.userTaskId,
+              ...action.params,
+            },
+          },
+        });
+      }
+    } catch (error) {
+      results.push({
+        type: action.type,
+        ok: false,
+        error: error instanceof Error ? error.message : "Action failed",
+      });
+    }
+  }
+
+  return NextResponse.json({
+    data: {
+      total: actions.length,
+      succeeded: results.filter((item) => item.ok === true).length,
+      failed: results.filter((item) => item.ok !== true).length,
+      results,
+    },
+  });
 }
 
 function splitTextToChunks(content: string, chunkSize = 1100, overlap = 160, maxChunks = 240) {
@@ -130,6 +326,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const inputActions = Array.isArray(payload.actions) ? payload.actions : [];
+  if (inputActions.length === 0) {
+    return NextResponse.json({ error: "actions is required" }, { status: 400 });
+  }
+
+  const hasEarnAction = inputActions.some((action) => parseEarnActionType(action?.type));
+  const hasDocAction = inputActions.some((action) => parseActionType(action?.type));
+  if (hasEarnAction && !hasDocAction) {
+    return executeEarnActions(inputActions, userId);
+  }
+  if (hasEarnAction && hasDocAction) {
+    return NextResponse.json({ error: "Mixed knowledge and earn/plugin actions are not supported" }, { status: 400 });
+  }
+
   const folderId = typeof payload.folderId === "string" && payload.folderId.trim() ? payload.folderId.trim() : "";
   if (!folderId) {
     return NextResponse.json({ error: "folderId is required" }, { status: 400 });
@@ -141,11 +351,6 @@ export async function POST(request: NextRequest) {
   });
   if (!folder) {
     return NextResponse.json({ error: "Folder not found" }, { status: 404 });
-  }
-
-  const inputActions = Array.isArray(payload.actions) ? payload.actions : [];
-  if (inputActions.length === 0) {
-    return NextResponse.json({ error: "actions is required" }, { status: 400 });
   }
 
   const actionRows = inputActions

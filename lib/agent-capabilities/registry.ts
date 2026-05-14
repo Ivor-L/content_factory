@@ -1,5 +1,6 @@
 import type { AgentCapabilityDefinition } from './types';
 import { enrichCapabilities } from './registry/enrich';
+import { EARN_CAPABILITIES } from './registry/earn';
 import { PRODUCT_CAPABILITIES } from './registry/product';
 import { SOCIAL_CAPABILITIES } from './registry/social';
 import { VIDEO_CAPABILITIES } from './registry/video';
@@ -12,6 +13,7 @@ export const NEXTIDE_CAPABILITIES: AgentCapabilityDefinition[] = enrichCapabilit
   ...SOCIAL_CAPABILITIES,
   ...PRODUCT_CAPABILITIES,
   ...WRITING_CAPABILITIES,
+  ...EARN_CAPABILITIES,
 ]);
 
 export function listAgentCapabilities(): AgentCapabilityDefinition[] {

@@ -20,6 +20,13 @@ const DEFAULT_TIMEOUT_MS =
   Number(process.env.NEXT_PUBLIC_CANVAS_FETCH_TIMEOUT_MS ?? "8000") || 8000;
 const MAX_RETRIES = 2;
 
+class CanvasProjectRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "CanvasProjectRequestError";
+  }
+}
+
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
@@ -71,11 +78,18 @@ async function requestJson(
           (typeof payload?.error === "string" ? payload.error : null) ||
           response.statusText ||
           "Request failed";
-        throw new Error(message);
+        throw new CanvasProjectRequestError(message, response.status);
       }
       return payload;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
+      if (
+        error instanceof CanvasProjectRequestError &&
+        error.status >= 400 &&
+        error.status < 500
+      ) {
+        break;
+      }
       if (attempt === MAX_RETRIES - 1) {
         break;
       }

@@ -3,9 +3,12 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
 import type { StylePresetSummary } from '../../utils/miniapp-api';
+import { useMiniappShare } from '../../utils/miniapp-share';
 import './index.sass';
 
 export default function StyleLibraryPage() {
+  useMiniappShare();
+
   const [styles, setStyles] = useState<StylePresetSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);

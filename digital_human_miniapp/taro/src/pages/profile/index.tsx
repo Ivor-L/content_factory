@@ -3,19 +3,79 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
 import { api } from '../../utils/api';
-import avatarIcon from '../../assets/icons/human-silhouette.jpg';
-import roleLibIcon from '../../assets/icons/profile-lib-role.png';
-import productLibIcon from '../../assets/icons/profile-lib-product.png';
-import styleLibIcon from '../../assets/icons/profile-lib-style.png';
-import knowledgeLibIcon from '../../assets/icons/profile-lib-knowledge.png';
-import promoShareIcon from '../../assets/icons/promo-share.png';
-import promoPointsIcon from '../../assets/icons/promo-points.png';
+import { useMiniappShare } from '../../utils/miniapp-share';
+import customerServiceQr from '../../assets/icons/customer-service-qr.jpg';
 import './index.sass';
 
+const PROFILE_ICONS = {
+  avatar: encodeSvgDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke="#f1efaf" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="16" cy="11.2" r="5"/>
+  <path d="M7.6 26c1.7-5.2 4.5-7.8 8.4-7.8s6.7 2.6 8.4 7.8"/>
+</svg>
+`),
+  role: encodeSvgDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke="#f1efaf" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="13" cy="11.5" r="4.6"/>
+  <path d="M5.8 25.4c1.4-4.9 3.8-7.3 7.2-7.3s5.8 2.4 7.2 7.3"/>
+  <path d="M20 10.4a4 4 0 0 1 0 7.2"/>
+  <path d="M22.4 20.2c2 .9 3.3 2.7 3.8 5.2"/>
+</svg>
+`),
+  product: encodeSvgDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke="#f1efaf" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M7.5 11.2 16 6.4l8.5 4.8v9.6L16 25.6l-8.5-4.8z"/>
+  <path d="M7.5 11.2 16 16l8.5-4.8"/>
+  <path d="M16 16v9.6"/>
+</svg>
+`),
+  style: encodeSvgDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke="#f1efaf" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M9 23 23 9"/>
+  <path d="m20.5 6.5 5 5"/>
+  <path d="M7 9.5h4.8"/>
+  <path d="M9.4 7.1v4.8"/>
+  <path d="M20.2 22.4h4.8"/>
+  <path d="M22.6 20v4.8"/>
+</svg>
+`),
+  knowledge: encodeSvgDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke="#f1efaf" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M7.5 7.8h7.2c2.1 0 3.3 1.1 3.3 3.3v14.1c0-2.1-1.2-3.3-3.3-3.3H7.5z"/>
+  <path d="M24.5 7.8h-3.2c-2.1 0-3.3 1.1-3.3 3.3v14.1c0-2.1 1.2-3.3 3.3-3.3h3.2z"/>
+  <path d="M11 12.2h3.5"/>
+  <path d="M21 12.2h1.8"/>
+</svg>
+`),
+  share: encodeSvgDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke="#f1efaf" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="9.2" cy="16" r="3.6"/>
+  <circle cx="22.8" cy="8.8" r="3.6"/>
+  <circle cx="22.8" cy="23.2" r="3.6"/>
+  <path d="m12.4 14.3 7.2-3.8"/>
+  <path d="m12.4 17.7 7.2 3.8"/>
+</svg>
+`),
+  points: encodeSvgDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke="#f1efaf" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="16" cy="16" r="10"/>
+  <path d="M17.4 7.8 11.2 17h5.2l-1.8 7.2 6.2-9.2h-5.2z"/>
+</svg>
+`),
+};
+
+type ProfileIconType = keyof typeof PROFILE_ICONS;
+
 export default function ProfilePage() {
+  useMiniappShare({
+    title: '小蚁AI - AI内容创作工作台',
+    path: '/pages/profile/index',
+  });
+
   const [profile, setProfile] = useState<any>(null);
   const [updatingAvatar, setUpdatingAvatar] = useState(false);
   const [updatingName, setUpdatingName] = useState(false);
+  const [customerServiceOpen, setCustomerServiceOpen] = useState(false);
   const [overview, setOverview] = useState({
     templates: 0,
     products: 0,
@@ -304,7 +364,13 @@ export default function ProfilePage() {
   return (
     <View className='profile-page'>
       <View className='profile-user-head'>
-        <Image className='profile-user-avatar' src={profile?.avatarUrl || avatarIcon} mode='aspectFill' onClick={handleChangeAvatar} />
+        {profile?.avatarUrl ? (
+          <Image className='profile-user-avatar' src={profile.avatarUrl} mode='aspectFill' onClick={handleChangeAvatar} />
+        ) : (
+          <View className='profile-user-avatar profile-user-avatar--fallback' onClick={handleChangeAvatar}>
+            {renderProfileIcon('avatar', 'profile-user-avatar-icon')}
+          </View>
+        )}
         <View className='profile-user-meta'>
           <Text className='profile-user-name' onClick={handleChangeName}>{displayName}</Text>
           <Text className='profile-user-id' onClick={copyProfileId}>ID：{displayId}</Text>
@@ -324,7 +390,7 @@ export default function ProfilePage() {
           <View className='profile-hero-btn profile-hero-btn--primary' onClick={handleBindApiKey}>
             <Text className='profile-hero-btn-text profile-hero-btn-text--primary'>立即解锁</Text>
           </View>
-          <View className='profile-hero-btn' onClick={() => Taro.showToast({ title: '客服功能开发中', icon: 'none' })}>
+          <View className='profile-hero-btn' onClick={() => setCustomerServiceOpen(true)}>
             <Text className='profile-hero-btn-text'>联系客服</Text>
           </View>
         </View>
@@ -332,22 +398,30 @@ export default function ProfilePage() {
 
       <View className='profile-lib-card'>
         <View className='profile-lib-item' onClick={() => handleOpenLibrary('角色库')}>
-          <Image className='profile-lib-icon' src={roleLibIcon} mode='aspectFit' />
+          <View className='profile-lib-icon-shell profile-lib-icon-shell--role'>
+            {renderProfileIcon('role', 'profile-lib-icon')}
+          </View>
           <Text className='profile-lib-title'>角色库</Text>
           <Text className='profile-lib-count'>{overview.characters}</Text>
         </View>
         <View className='profile-lib-item' onClick={() => handleOpenLibrary('产品库')}>
-          <Image className='profile-lib-icon' src={productLibIcon} mode='aspectFit' />
+          <View className='profile-lib-icon-shell profile-lib-icon-shell--product'>
+            {renderProfileIcon('product', 'profile-lib-icon')}
+          </View>
           <Text className='profile-lib-title'>产品库</Text>
           <Text className='profile-lib-count'>{overview.products}</Text>
         </View>
         <View className='profile-lib-item' onClick={() => handleOpenLibrary('风格库')}>
-          <Image className='profile-lib-icon' src={styleLibIcon} mode='aspectFit' />
+          <View className='profile-lib-icon-shell profile-lib-icon-shell--style'>
+            {renderProfileIcon('style', 'profile-lib-icon')}
+          </View>
           <Text className='profile-lib-title'>风格库</Text>
           <Text className='profile-lib-count'>{overview.styles}</Text>
         </View>
         <View className='profile-lib-item' onClick={() => handleOpenLibrary('知识库')}>
-          <Image className='profile-lib-icon' src={knowledgeLibIcon} mode='aspectFit' />
+          <View className='profile-lib-icon-shell profile-lib-icon-shell--knowledge'>
+            {renderProfileIcon('knowledge', 'profile-lib-icon')}
+          </View>
           <Text className='profile-lib-title'>知识库</Text>
           <Text className='profile-lib-count'>{overview.templates}</Text>
         </View>
@@ -359,7 +433,9 @@ export default function ProfilePage() {
             <Text className='profile-promo-title'>分享有礼</Text>
             <Text className='profile-promo-desc'>分享内容赚算力值</Text>
           </View>
-          <Image className='profile-promo-icon' src={promoShareIcon} mode='aspectFit' />
+          <View className='profile-promo-icon-shell'>
+            {renderProfileIcon('share', 'profile-promo-icon')}
+          </View>
         </View>
 
         <View className='profile-promo-card' onClick={() => handlePromo('算力消耗')}>
@@ -367,9 +443,40 @@ export default function ProfilePage() {
             <Text className='profile-promo-title'>算力消耗</Text>
             <Text className='profile-promo-desc'>算力扣除换权益</Text>
           </View>
-          <Image className='profile-promo-icon' src={promoPointsIcon} mode='aspectFit' />
+          <View className='profile-promo-icon-shell'>
+            {renderProfileIcon('points', 'profile-promo-icon')}
+          </View>
         </View>
       </View>
+
+      {customerServiceOpen && (
+        <View className='profile-service-modal'>
+          <View className='profile-service-card'>
+            <Text className='profile-service-title'>联系客服</Text>
+            <Text className='profile-service-subtitle'>添加咨询客服</Text>
+            <View className='profile-service-qr-wrap'>
+              <Image className='profile-service-qr' src={customerServiceQr} mode='aspectFit' showMenuByLongpress />
+            </View>
+            <View className='profile-service-tags'>
+              <Text className='profile-service-tag'>答疑</Text>
+              <Text className='profile-service-tag'>咨询</Text>
+              <Text className='profile-service-tag'>合作</Text>
+            </View>
+            <Text className='profile-service-tip'>长按识别二维码，添加客服咨询</Text>
+            <View className='profile-service-close' onClick={() => setCustomerServiceOpen(false)}>
+              <Text className='profile-service-close-text'>我知道了</Text>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
+}
+
+function renderProfileIcon(type: ProfileIconType, className: string) {
+  return <Image className={className} src={PROFILE_ICONS[type]} mode='aspectFit' />;
+}
+
+function encodeSvgDataUri(svg: string) {
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg.trim())}`;
 }

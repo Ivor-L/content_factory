@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "plugin.account.sync input",
+  "type": "object",
+  "properties": {
+    "platform": {
+      "type": "string",
+      "description": "需要同步的平台。为空时同步全部支持平台。",
+      "enum": [
+        "xhs",
+        "douyin"
+      ]
+    }
+  },
+  "required": [],
+  "additionalProperties": true
+}

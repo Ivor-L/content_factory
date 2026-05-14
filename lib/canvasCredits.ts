@@ -1,4 +1,5 @@
 import { deductCredits } from "@/lib/credits";
+import { getCreditCostForModel } from "@/lib/creditCosts";
 
 type CanvasCreditKind = "image" | "video" | "grid" | "grid-split" | "image-understanding";
 
@@ -290,12 +291,7 @@ async function resolveConfiguredCreditAmount(
   modelKey: string | null,
   fallbackAmount: number,
 ): Promise<number> {
-  if (typeof window !== "undefined") {
-    return fallbackAmount;
-  }
-  const requireServer = eval("require") as NodeRequire;
-  const creditCosts = requireServer("@/lib/creditCosts") as typeof import("@/lib/creditCosts");
-  return creditCosts.getCreditCostForModel(featureKey, modelKey, fallbackAmount);
+  return getCreditCostForModel(featureKey, modelKey, fallbackAmount);
 }
 
 async function resolveCanvasCreditCharge(

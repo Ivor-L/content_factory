@@ -2,7 +2,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { Home, Repeat, Sparkles, Settings, Languages, Clapperboard, Users, History, ChevronUp, Activity, Zap, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, LayoutGrid, User, LogOut, Film, Folder, BookOpen, Gift, Sun, Moon, Download } from 'lucide-react';
+import { Home, Repeat, Sparkles, Settings, Languages, Clapperboard, Users, History, ChevronUp, Activity, Zap, PanelLeftClose, PanelLeftOpen, ChevronLeft, ChevronRight, LayoutGrid, User, LogOut, Film, Folder, BookOpen, Gift, Sun, Moon, Download, BriefcaseBusiness } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -19,6 +19,7 @@ import { TenantIcon } from './TenantLogo';
 import { onProfileRefresh } from '@/lib/profileBus';
 import { getProfileInitial } from '@/lib/profile';
 import { useTheme } from 'next-themes';
+import { isEarnMarketEnabled } from '@/lib/earnFeatureFlag';
 
 type NavigationItem = {
   name: string;
@@ -355,6 +356,7 @@ export function Sidebar() {
       tenant.features.scripts && { name: t.sidebar.scripts, href: `${basePath}/scripts`, icon: Zap },
       tenant.features.knowledgeVideos && { name: t.sidebar.knowledgeVideos || "Knowledge Videos", href: `${basePath}/knowledge-videos`, icon: Film },
       tenant.features.canvas && { name: t.sidebar.canvas || "无限画布", href: `${basePath}/canvas?view=projects`, icon: LayoutGrid },
+      isEarnMarketEnabled && { name: (t.sidebar as any).earn || "淘金广场", href: `${basePath}/earn`, icon: BriefcaseBusiness },
       tenant.features.myVideos && { name: t.sidebar.myVideos || t.sidebar.replication, href: `${basePath}/my-works`, icon: Folder },
       (tenant.features.products || tenant.features.characters || tenant.features.assetLibrary) && {
         name: t.sidebar.assets,

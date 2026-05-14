@@ -1,5 +1,7 @@
 import prisma from './prisma';
 
+const DIGITAL_HUMAN_SEGMENT_PREFIX_RE = /^第\s*(\d+)\s*\/\s*(\d+)\s*段\s*\n?/;
+
 export type TaskType =
   | 'creative'
   | 'poster'
@@ -133,6 +135,9 @@ async function fetchTaskData(taskType: TaskType, taskId: string): Promise<any> {
           status: true,
           resultUrl: true,
           imageUrl: true,
+          audioUrl: true,
+          durationSeconds: true,
+          workflowId: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -309,7 +314,11 @@ function extractSummaryData(taskType: TaskType, taskData: any): any {
       };
 
     case 'digitalHuman': {
-      const metadata: Record<string, string> = {
+      const scriptContent = typeof taskData.scriptContent === 'string' ? taskData.scriptContent.trim() : '';
+      const segmentMatch = scriptContent.match(DIGITAL_HUMAN_SEGMENT_PREFIX_RE);
+      const segmentIndex = segmentMatch ? Number(segmentMatch[1]) : null;
+      const segmentCount = segmentMatch ? Number(segmentMatch[2]) : null;
+      const metadata: Record<string, unknown> = {
         type: taskData.type,
       };
       if (typeof taskData.resultUrl === 'string' && taskData.resultUrl.trim()) {
@@ -319,15 +328,33 @@ function extractSummaryData(taskType: TaskType, taskData: any): any {
       if (typeof taskData.imageUrl === 'string' && taskData.imageUrl.trim()) {
         metadata.imageUrl = taskData.imageUrl;
       }
-      if (typeof taskData.scriptContent === 'string' && taskData.scriptContent.trim()) {
-        metadata.scriptContent = taskData.scriptContent.trim();
+      if (typeof taskData.audioUrl === 'string' && taskData.audioUrl.trim()) {
+        metadata.audioUrl = taskData.audioUrl;
+      }
+      if (typeof taskData.workflowId === 'string' && taskData.workflowId.trim()) {
+        metadata.workflowId = taskData.workflowId;
+      }
+      if (typeof taskData.durationSeconds === 'number') {
+        metadata.durationSeconds = taskData.durationSeconds;
+      }
+      if (scriptContent) {
+        metadata.scriptContent = scriptContent;
+      }
+      if (segmentIndex && segmentCount) {
+        metadata.segmentIndex = segmentIndex;
+        metadata.segmentCount = segmentCount;
+        metadata.isSegmented = true;
       }
       const isActionTransfer = taskData.type === 'ACTION_TRANSFER';
       return {
         ...base,
-        title: isActionTransfer ? '动作复刻视频' : '数字人视频',
+        title: isActionTransfer
+          ? '动作复刻视频'
+          : segmentIndex && segmentCount
+            ? `数字人视频 第 ${segmentIndex}/${segmentCount} 段`
+            : '数字人视频',
         status: taskData.status,
-        preview: isActionTransfer ? '图片角色动作复刻' : taskData.scriptContent?.substring(0, 100),
+        preview: isActionTransfer ? '图片角色动作复刻' : scriptContent.substring(0, 100),
         thumbnailUrl: taskData.resultUrl || taskData.imageUrl,
         metadata,
       };

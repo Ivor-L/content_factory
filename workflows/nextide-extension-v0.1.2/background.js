@@ -39,4 +39,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return true; // Keep the message channel open for async response
   }
+
+  if (message.type === 'CONTENT_FACTORY_PLUGIN_API') {
+    const { path, method = 'GET', body } = message.payload || {};
+
+    (async () => {
+      try {
+        const stored = await chrome.storage.sync.get(['apiBaseUrl', 'apiKey']);
+        const base = (stored.apiBaseUrl || 'http://localhost:3000').replace(/\/$/, '');
+        const headers = {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        };
+        if (stored.apiKey) headers['x-user-api-key'] = stored.apiKey;
+
+        const res = await fetch(base + path, {
+          method,
+          headers,
+          body: body === undefined ? undefined : JSON.stringify(body),
+        });
+        const text = await res.text();
+        let data = text;
+        try {
+          data = text ? JSON.parse(text) : null;
+        } catch {}
+
+        sendResponse({
+          success: res.ok,
+          response: {
+            ok: res.ok,
+            status: res.status,
+            statusText: res.statusText,
+            data,
+          },
+        });
+      } catch (error) {
+        console.error('[Background] ContentFactoryPlugin request failed:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+    return true;
+  }
 });

@@ -1170,6 +1170,122 @@ model MonetizationSquareConfig {
   @@schema("public")
 }
 
+model EarnTask {
+  id                   String             @id @default(cuid())
+  title                String
+  description          String             @db.Text
+  type                 String             @default("publish")
+  status               String             @default("draft")
+  platforms            Json?              @default("[]")
+  coverUrl             String?            @map("cover_url") @db.Text
+  rewardAmount         Int                @default(0) @map("reward_amount")
+  maxParticipants      Int                @default(0) @map("max_participants")
+  currentParticipants  Int                @default(0) @map("current_participants")
+  deadlineAt           DateTime?          @map("deadline_at")
+  keepSeconds          Int                @default(0) @map("keep_seconds")
+  requiresPlugin       Boolean            @default(false) @map("requires_plugin")
+  requiresShoppingCart Boolean            @default(false) @map("requires_shopping_cart")
+  requirements         Json?              @default("{}")
+  actionConfig         Json?              @default("{}") @map("action_config")
+  createdBy            String?            @map("created_by") @db.Uuid
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+  materials            EarnTaskMaterial[]
+  userTasks            EarnUserTask[]
+
+  @@index([status, type])
+  @@index([deadlineAt])
+  @@index([createdAt])
+  @@map("earn_tasks")
+  @@schema("public")
+}
+
+model EarnTaskMaterial {
+  id          String         @id @default(cuid())
+  taskId      String         @map("task_id")
+  title       String?
+  description String?        @db.Text
+  type        String         @default("mixed")
+  payload     Json?          @default("{}")
+  usedCount   Int            @default(0) @map("used_count")
+  enabled     Boolean        @default(true)
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  task        EarnTask       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userTasks   EarnUserTask[]
+
+  @@index([taskId, enabled, usedCount])
+  @@map("earn_task_materials")
+  @@schema("public")
+}
+
+model EarnUserTask {
+  id                  String            @id @default(cuid())
+  taskId              String            @map("task_id")
+  userId              String            @map("user_id") @db.Uuid
+  platform            String
+  platformUid         String            @default("") @map("platform_uid")
+  platformAccountName String?           @map("platform_account_name")
+  taskMaterialId      String?           @map("task_material_id")
+  status              String            @default("doing")
+  submissionUrl       String?           @map("submission_url") @db.Text
+  screenshotUrls      Json?             @default("[]") @map("screenshot_urls")
+  pluginEvidence      Json?             @default("{}") @map("plugin_evidence")
+  qrCodeScanResult    String?           @map("qr_code_scan_result") @db.Text
+  submissionTime      DateTime?         @map("submission_time")
+  reviewedBy          String?           @map("reviewed_by") @db.Uuid
+  reviewedAt          DateTime?         @map("reviewed_at")
+  reviewNote          String?           @map("review_note") @db.Text
+  rewardAmount        Int               @default(0) @map("reward_amount")
+  rewardedAt          DateTime?         @map("rewarded_at")
+  metadata            Json?             @default("{}")
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+  task                EarnTask          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskMaterial        EarnTaskMaterial? @relation(fields: [taskMaterialId], references: [id], onDelete: SetNull)
+
+  @@unique([taskId, userId, platform, platformUid], map: "earn_user_tasks_unique_account")
+  @@index([userId, status, updatedAt])
+  @@index([taskId, status])
+  @@index([status, updatedAt])
+  @@map("earn_user_tasks")
+  @@schema("public")
+}
+
+model EarnPluginAccount {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id") @db.Uuid
+  platform    String
+  platformUid String   @map("platform_uid")
+  nickname    String?
+  avatarUrl   String?  @map("avatar_url") @db.Text
+  status      String   @default("usable")
+  lastSeenAt  DateTime @default(now()) @map("last_seen_at")
+  metadata    Json?    @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, platform, platformUid], map: "earn_plugin_accounts_unique")
+  @@index([userId, status])
+  @@map("earn_plugin_accounts")
+  @@schema("public")
+}
+
+model EarnPluginEvent {
+  id        String   @id @default(cuid())
+  userId    String?  @map("user_id") @db.Uuid
+  eventType String   @map("event_type")
+  platform  String?
+  requestId String?  @map("request_id")
+  payload   Json?    @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([eventType, createdAt])
+  @@map("earn_plugin_events")
+  @@schema("public")
+}
+
 model TaskSummary {
   id           String   @id @default(cuid())
   userId       String   @map("user_id") @db.Uuid

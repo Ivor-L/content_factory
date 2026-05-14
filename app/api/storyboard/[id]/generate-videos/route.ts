@@ -21,6 +21,15 @@ function cleanUrl(value: unknown): string {
   return /^https?:\/\//i.test(text) ? text : "";
 }
 
+function cleanReferenceImageUri(value: unknown): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text || /^(undefined|null|nan)$/i.test(text)) return "";
+  const normalizedAsset = text.replace(/^asset:\s*\/\//i, "asset://");
+  if (/^asset:\/\/[A-Za-z0-9._:-]+$/.test(normalizedAsset)) return normalizedAsset;
+  if (/^asset-[A-Za-z0-9._:-]+$/.test(text)) return `asset://${text}`;
+  return cleanUrl(text);
+}
+
 function ensureNoBgmPrompt(prompt: string): string {
   const text = prompt.trim();
   if (!text) return NO_BGM_RULE;
@@ -184,8 +193,8 @@ function getReferenceImageUrls(
 ): string[] {
   const urls: string[] = [];
   const push = (value: unknown) => {
-    const url = cleanUrl(value);
-    if (!options.includeProductRefs && options.productImageUrl && url === options.productImageUrl) return;
+    const url = cleanReferenceImageUri(value);
+    if (!options.includeProductRefs && options.productImageUrl && cleanUrl(url) === options.productImageUrl) return;
     if (url && !urls.includes(url) && urls.length < 9) urls.push(url);
   };
 
@@ -225,17 +234,47 @@ function getSmartRemixVideoReferenceImageUrls(firstFrameUrl: string, params: Rec
   if (hasExplicitRefs) {
     const urls: string[] = [];
     for (const ref of extraRefs) {
-      const refUrl = cleanUrl(ref);
+      const refUrl = cleanReferenceImageUri(ref);
       if (refUrl && !urls.includes(refUrl) && urls.length < 9) urls.push(refUrl);
     }
     return urls;
   }
   const urls: string[] = [];
   for (const ref of extraRefs) {
-    const refUrl = cleanUrl(ref);
+    const refUrl = cleanReferenceImageUri(ref);
     if (refUrl && !urls.includes(refUrl) && urls.length < 9) urls.push(refUrl);
   }
   return urls;
+}
+
+function getReferenceVideoUri(value: unknown): string {
+  return cleanUrl(value);
+}
+
+function readSeedanceExtendFromPreviousClip(params: Record<string, unknown>): boolean {
+  return readBooleanFlag(params.seedance_extend_from_previous_clip ?? params.seedanceExtendFromPreviousClip) === true;
+}
+
+function getSegmentClipIndex(segment: { order: number | null; generationParams?: unknown }, fallbackIndex: number): number {
+  const params = asRecord(segment.generationParams);
+  const raw = Number(params.clip_index ?? params.clipIndex ?? segment.order ?? fallbackIndex + 1);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : fallbackIndex + 1;
+}
+
+function findPreviousClipGeneratedVideo(
+  segments: Array<{ id: string; order: number | null; generatedVideo: string | null; generationParams?: unknown }>,
+  currentSegmentId: string,
+  currentClipIndex: number,
+): string {
+  if (currentClipIndex <= 1) return "";
+  const previousClipIndex = currentClipIndex - 1;
+  const previousClip = segments.find((segment, index) =>
+    segment.id !== currentSegmentId &&
+    getSegmentClipIndex(segment, index) === previousClipIndex &&
+    getReferenceVideoUri(segment.generatedVideo || asRecord(segment.generationParams).selected_video_url || asRecord(segment.generationParams).selectedVideoUrl)
+  );
+  if (!previousClip) return "";
+  return getReferenceVideoUri(previousClip.generatedVideo || asRecord(previousClip.generationParams).selected_video_url || asRecord(previousClip.generationParams).selectedVideoUrl);
 }
 
 function withSmartRemixSelectedFrameReference(prompt: string): string {
@@ -249,6 +288,20 @@ function withSmartRemixSelectedFrameReference(prompt: string): string {
     "- If reference images are provided, 图片1 is the first reference image currently selected in the editor for this clip.",
     "- Use only the submitted reference images as visual composition, product appearance, color, camera rhythm, and action references.",
     "- Do not infer or use deleted reference images, any full storyboard contact sheet, or additional source-video panel image.",
+  ].join("\n");
+}
+
+function withSeedancePreviousClipExtensionReference(prompt: string, clipIndex: number): string {
+  const previousClipIndex = Math.max(1, clipIndex - 1);
+  return [
+    prompt.trim(),
+    "",
+    "Seedance 2.0 extension protocol:",
+    `- 视频1 is Clip ${previousClipIndex}, used as the continuity and identity anchor.`,
+    `- Generate only the new continuation for Clip ${clipIndex}; continue from the final moment of 视频1.`,
+    "- Preserve the same character identity, outfit state, facial features, lighting continuity, and motion direction when possible.",
+    `- Do not repeat Clip ${previousClipIndex}'s existing action, opening frames, dialogue, or completed beats.`,
+    "- If image references are also provided, use them only to keep the character/product identity stable.",
   ].join("\n");
 }
 
@@ -379,6 +432,7 @@ function cleanText(value: unknown): string {
 async function createVolcengineSeedanceTask(payload: {
   prompt: string;
   referenceImageUrls: string[];
+  referenceVideoUrls?: string[];
   duration: number;
   aspectRatio: string;
   model: string;
@@ -398,6 +452,11 @@ async function createVolcengineSeedanceTask(payload: {
         type: "image_url",
         image_url: { url },
         role: "reference_image",
+      })),
+      ...(payload.referenceVideoUrls || []).map((url) => ({
+        type: "video_url",
+        video_url: { url },
+        role: "reference_video",
       })),
     ],
     generate_audio: true,
@@ -632,6 +691,10 @@ export async function POST(
     if (targetSegments.length === 0) {
       return NextResponse.json({ error: "All selected segments already have generated videos" }, { status: 404 });
     }
+    const allTaskSegments = await prisma.storyboardSegment.findMany({
+      where: { taskId: id },
+      orderBy: { order: "asc" },
+    });
 
     const creditEstimate = await estimateStoryboardVideoCredits(effectiveModel, targetSegments);
     const creditCharges = buildStoryboardVideoCreditCharges(effectiveModel, targetSegments, creditEstimate);
@@ -749,8 +812,22 @@ export async function POST(
           .map((ref) => (ref && typeof ref === "object" ? ref as Record<string, unknown> : null))
           .find((ref) => String(ref?.type || "").trim() === "product")?.url
         : null;
-      const finalPrompt = forceSeedanceRoute && isSeedanceModel(effectiveModel)
+      const allSegmentIndex = allTaskSegments.findIndex((item) => item.id === segment.id);
+      const clipIndex = getSegmentClipIndex(segment, allSegmentIndex >= 0 ? allSegmentIndex : 0);
+      const usePreviousClipExtension = providerRoute === "volcengine" &&
+        isSeedanceModel(effectiveModel) &&
+        readSeedanceExtendFromPreviousClip(generationParams) &&
+        clipIndex > 1;
+      const previousClipVideoUrl = usePreviousClipExtension
+        ? findPreviousClipGeneratedVideo(allTaskSegments, segment.id, clipIndex)
+        : "";
+      const seedanceSmartRemixPrompt = forceSeedanceRoute && isSeedanceModel(effectiveModel)
         ? withSmartRemixSelectedFrameReference(basePrompt)
+        : basePrompt;
+      const finalPrompt = usePreviousClipExtension
+        ? withSeedancePreviousClipExtensionReference(seedanceSmartRemixPrompt, clipIndex)
+        : forceSeedanceRoute && isSeedanceModel(effectiveModel)
+        ? seedanceSmartRemixPrompt
         : !isSkeletonVideo && isSeedanceModel(effectiveModel) && firstFrameUrl && storyboardGridUrl
           ? withSeedanceStoryboardReference(basePrompt, generationParams, storyboardGridUrl, requestedAspectRatio)
           : basePrompt;
@@ -775,6 +852,7 @@ export async function POST(
             ? getSkeletonVideoReferenceImageUrls(firstFrameUrl)
             : getReferenceImageUrls(firstFrameUrl, storyboardGridUrl, generationParams, { includeProductRefs, productImageUrl: cleanUrl(productImageUrl) })
           : [],
+        reference_video_urls: usePreviousClipExtension && previousClipVideoUrl ? [previousClipVideoUrl] : [],
         time_range: segment.timeRange || null,
         timeRange: segment.timeRange || null,
         duration: segmentDuration,
@@ -819,10 +897,14 @@ export async function POST(
       let providerRequestForDebug: Record<string, unknown> = payload;
       try {
         if (providerRoute === "volcengine") {
+          if (usePreviousClipExtension && !previousClipVideoUrl) {
+            throw new Error(`Clip ${clipIndex - 1} 尚未生成视频，无法使用上一段延长。`);
+          }
           const providerModel = toProviderModel(effectiveModel);
           const volcengineTask = await createVolcengineSeedanceTask({
             prompt: finalPrompt,
             referenceImageUrls: payload.reference_image_urls,
+            referenceVideoUrls: payload.reference_video_urls,
             duration: segmentDuration,
             aspectRatio: requestedAspectRatio,
             model: providerModel,
@@ -849,6 +931,8 @@ export async function POST(
                 provider_callback_url: segmentCallbackUrl,
                 provider_request: volcengineTask.requestBody,
                 provider_reference_image_urls: payload.reference_image_urls,
+                provider_reference_video_urls: payload.reference_video_urls,
+                seedance_extend_from_previous_clip: usePreviousClipExtension,
                 provider_create_response: volcengineTask.rawResponse,
                 provider_state: "submitted",
                 provider_submitted_at: new Date().toISOString(),
@@ -948,6 +1032,7 @@ export async function POST(
               provider_state: "failed",
               provider_failed_at: new Date().toISOString(),
               provider_reference_image_urls: payload.reference_image_urls,
+              provider_reference_video_urls: payload.reference_video_urls,
               provider_first_frame_url: firstFrameUrl || null,
               provider_storyboard_grid_url: storyboardGridUrl || null,
               ...providerFailureDebug,

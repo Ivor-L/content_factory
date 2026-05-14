@@ -3,6 +3,7 @@ import Taro, { useDidShow, useRouter } from '@tarojs/taro';
 import { useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
 import type { ProductSummary } from '../../utils/miniapp-api';
+import { useMiniappShare } from '../../utils/miniapp-share';
 import './index.sass';
 
 type ProductStatusMeta = {
@@ -116,6 +117,8 @@ function imageDraftsFromProduct(product: ProductSummary): ProductImageDraft[] {
 }
 
 export default function ProductDetailPage() {
+  useMiniappShare();
+
   const router = useRouter();
   const productId = String(router.params?.id || '').trim();
   const [product, setProduct] = useState<ProductSummary | null>(null);

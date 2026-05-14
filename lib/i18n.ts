@@ -1023,6 +1023,7 @@ export const translations = {
       upgradeBtn: "Upgrade Now",
       assets: "Resources",
       canvas: "Infinite Canvas",
+      earn: "Earn",
       nexapi: "NexAPI"
     },
     common: {
@@ -1763,6 +1764,7 @@ export const translations = {
       upgradeBtn: "立即升级",
       assets: "资源库",
       canvas: "无限画布",
+      earn: "淘金广场",
       nexapi: "NexAPI 控制台"
     },
     common: {
@@ -2502,6 +2504,7 @@ export const translations = {
       upgradeBtn: "立即升級",
       assets: "資源庫",
       canvas: "無限畫布",
+      earn: "淘金廣場",
       nexapi: "NexAPI 控制台"
     },
     common: {

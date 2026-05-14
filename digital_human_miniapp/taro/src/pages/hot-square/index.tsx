@@ -2,6 +2,7 @@ import { View, Text, Input, ScrollView, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { useMemo, useState } from 'react';
 import { miniappApi, type HotSquareCategoryConfig } from '../../utils/miniapp-api';
+import { useMiniappShare } from '../../utils/miniapp-share';
 import './index.sass';
 
 const DEFAULT_REMOTE_CATEGORIES = ['保险', '法律', '金融', '教育', '心理', 'AI', '餐饮', '美业'];
@@ -35,6 +36,11 @@ const SEARCH_SUGGESTIONS = [
 const memoryHotListCache: Record<string, { items: any[]; updatedAt: number }> = {};
 
 export default function HotSquarePage() {
+  useMiniappShare({
+    title: '小蚁AI爆款广场 - 发现可复刻的内容灵感',
+    path: '/pages/hot-square/index',
+  });
+
   const [activeCategory, setActiveCategory] = useState('我的');
   const [dynamicCategories, setDynamicCategories] = useState<string[]>(DEFAULT_REMOTE_CATEGORIES);
   const [activeFilter, setActiveFilter] = useState<'all' | 'video' | 'image'>('all');

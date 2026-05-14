@@ -2,6 +2,7 @@ import { View, Text, Image, ScrollView } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 import { useState } from 'react';
 import { api } from '../../utils/api';
+import { useMiniappShare } from '../../utils/miniapp-share';
 import './index.sass';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -22,6 +23,8 @@ const VIDEO_EXT_RE = /\.(mp4|mov|m3u8)(\?|$)|\/video\/|\/master\/|xgvideo/i;
 const IMAGE_EXT_RE = /\.(jpg|jpeg|png|webp|gif)(\?|$)/i;
 
 export default function RecordsPage() {
+  useMiniappShare();
+
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

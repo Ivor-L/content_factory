@@ -5220,7 +5220,9 @@ export function ReactCanvasRoot({
     void loadProjects();
   }, [loadProjects]);
   const handleCreateProject = useCallback(() => {
-    void createProject();
+    void createProject().catch(() => {
+      // useCanvasProjects exposes the failure through projectError; keep dev overlay quiet.
+    });
   }, [createProject]);
   const polishPrompt = useCallback(async (text: string): Promise<string> => {
     if (!text.trim()) return text;

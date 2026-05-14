@@ -15,6 +15,7 @@ import { CharacterForm } from '@/components/CharacterForm';
 import { useTenantPath } from '@/hooks/useTenant';
 import {
   DIGITAL_HUMAN_MAX_SECONDS,
+  DIGITAL_HUMAN_SAFE_SECONDS,
   analyzeScriptDuration,
   formatScriptDurationMessage,
 } from '@/lib/digitalHumanLimits';
@@ -338,7 +339,7 @@ export function DigitalHumanModal({
   );
   const splitModalHints = useMemo(() => {
     const chunkSeconds =
-      splitMeta?.chunkSeconds ?? Math.max(1, Math.round(scriptStats.limitSeconds * scriptStats.safety));
+      splitMeta?.chunkSeconds ?? Math.max(1, Math.floor(scriptStats.limitSeconds * scriptStats.safety));
     const limitChars = splitMeta?.limitChars ?? scriptStats.limitChars;
     const limitSeconds = splitMeta?.limitSeconds ?? scriptStats.limitSeconds;
     const estimatedSeconds = splitMeta?.estimatedSeconds ?? scriptStats.estimatedSeconds;
@@ -486,21 +487,27 @@ export function DigitalHumanModal({
 
   const submitDigitalHumanJobs = async (scriptChunks?: string[]) => {
     if (submitLockRef.current) return;
-    const trimmedScriptChunks =
+    const trimmedScripts =
       mode === 'VOICE_CLONE'
         ? (scriptChunks ?? [script])
             .map((chunk) => (chunk ?? '').trim())
             .filter((chunk) => chunk.length > 0)
         : [null];
+    const scriptToSubmit =
+      mode === 'VOICE_CLONE'
+        ? trimmedScripts.join('\n')
+        : null;
 
-    if (mode === 'VOICE_CLONE' && trimmedScriptChunks.length === 0) {
+    if (mode === 'VOICE_CLONE' && !scriptToSubmit) {
       toast.error(scriptRequiredMessage || 'Please enter script');
       return;
     }
 
-    const jobCount = trimmedScriptChunks.length;
+    const jobCount = mode === 'VOICE_CLONE' && scriptTooLong
+      ? Math.max(1, splitChunks.length || trimmedScripts.length)
+      : 1;
     const isSplitFlow = jobCount > 1;
-  const loadingMessage = isSplitFlow
+    const loadingMessage = isSplitFlow
       ? isZhLocale
         ? `正在提交 ${jobCount} 段数字人任务...`
         : `Submitting ${jobCount} split digital human jobs...`
@@ -526,31 +533,29 @@ export function DigitalHumanModal({
     try {
       const sourceDimensions = await getImageDimensions(imageUrl);
       let submittedTaskId: string | null = null;
-      for (const chunk of trimmedScriptChunks) {
-        const formData = new FormData();
-        formData.append('type', mode);
-        formData.append('imageUrl', imageUrl);
-        formData.append('audioUrl', audioUrl);
-        formData.append('duration', audioDuration.toString());
-        if (sourceDimensions) {
-          formData.append('sourceWidth', String(sourceDimensions.width));
-          formData.append('sourceHeight', String(sourceDimensions.height));
-        }
-        if (userId) formData.append('userId', userId);
-        if (sourceTaskId) formData.append('sourceTaskId', sourceTaskId);
-        if (mode === 'VOICE_CLONE') {
-          formData.append('script', chunk ?? '');
-        }
-        const result = await createDigitalHumanVideo(formData);
-        const firstJobId =
-          typeof result?.jobs?.[0]?.id === 'string'
-            ? result.jobs[0].id
-            : typeof result?.jobIds?.[0] === 'string'
-              ? result.jobIds[0]
-              : null;
-        if (firstJobId && submittedTaskId == null) {
-          submittedTaskId = firstJobId;
-        }
+      const formData = new FormData();
+      formData.append('type', mode);
+      formData.append('imageUrl', imageUrl);
+      formData.append('audioUrl', audioUrl);
+      formData.append('duration', audioDuration.toString());
+      if (sourceDimensions) {
+        formData.append('sourceWidth', String(sourceDimensions.width));
+        formData.append('sourceHeight', String(sourceDimensions.height));
+      }
+      if (userId) formData.append('userId', userId);
+      if (sourceTaskId) formData.append('sourceTaskId', sourceTaskId);
+      if (mode === 'VOICE_CLONE') {
+        formData.append('script', scriptToSubmit ?? '');
+      }
+      const result = await createDigitalHumanVideo(formData);
+      const firstJobId =
+        typeof result?.jobs?.[0]?.id === 'string'
+          ? result.jobs[0].id
+          : typeof result?.jobIds?.[0] === 'string'
+            ? result.jobIds[0]
+            : null;
+      if (firstJobId && submittedTaskId == null) {
+        submittedTaskId = firstJobId;
       }
 
       if (toastId) {
@@ -605,7 +610,7 @@ export function DigitalHumanModal({
           setSplitChunks(chunks);
           setSplitMeta({
             limitChars,
-            chunkSeconds: Math.max(1, Math.round(scriptStats.limitSeconds * scriptStats.safety)),
+            chunkSeconds: Math.max(1, Math.floor(scriptStats.limitSeconds * scriptStats.safety)),
             limitSeconds: scriptStats.limitSeconds,
             estimatedSeconds: scriptStats.estimatedSeconds,
           });
@@ -987,8 +992,8 @@ export function DigitalHumanModal({
       <div className="space-y-5 text-sm text-gray-700 dark:text-gray-200">
         <p>
           {isZhLocale
-            ? `当前文案预计 ${numberFormatter.format(splitModalHints.estimatedSeconds || 0)}s，超过单次上限 ${numberFormatter.format(splitModalHints.limitSeconds || DIGITAL_HUMAN_MAX_SECONDS)}s。系统将拆分成 ${splitChunks.length} 段，每段建议 ≤ ${numberFormatter.format(splitModalHints.chunkSeconds)}s（≈${numberFormatter.format(splitModalHints.limitChars || 0)} 字）。`
-            : `This script is about ${numberFormatter.format(splitModalHints.estimatedSeconds || 0)}s, above the ${numberFormatter.format(splitModalHints.limitSeconds || DIGITAL_HUMAN_MAX_SECONDS)}s limit. We'll split it into ${splitChunks.length} chunks (~${numberFormatter.format(splitModalHints.chunkSeconds)}s / ${numberFormatter.format(splitModalHints.limitChars || 0)} chars each).`}
+            ? `当前文案预计 ${numberFormatter.format(splitModalHints.estimatedSeconds || 0)}s，模型硬上限 ${numberFormatter.format(splitModalHints.limitSeconds || DIGITAL_HUMAN_MAX_SECONDS)}s。系统将拆分成 ${splitChunks.length} 段，每段按安全目标 ≤ ${numberFormatter.format(splitModalHints.chunkSeconds || DIGITAL_HUMAN_SAFE_SECONDS)}s（≈${numberFormatter.format(splitModalHints.limitChars || 0)} 字）提交，避免末尾文字被截断。`
+            : `This script is about ${numberFormatter.format(splitModalHints.estimatedSeconds || 0)}s. The model hard limit is ${numberFormatter.format(splitModalHints.limitSeconds || DIGITAL_HUMAN_MAX_SECONDS)}s, so we'll split it into ${splitChunks.length} chunks using a safe target ≤ ${numberFormatter.format(splitModalHints.chunkSeconds || DIGITAL_HUMAN_SAFE_SECONDS)}s (~${numberFormatter.format(splitModalHints.limitChars || 0)} chars each) to avoid clipped endings.`}
         </p>
         {splitChunkSummary.length > 0 && (
           <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/70 p-3 space-y-2 max-h-60 overflow-y-auto">

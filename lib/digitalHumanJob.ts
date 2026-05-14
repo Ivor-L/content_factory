@@ -23,6 +23,7 @@ export interface CreateDigitalHumanJobOptions {
   durationSeconds?: number | null;
   userId?: string | null;
   sourceTaskId?: string | null;
+  createdAt?: Date;
 }
 
 export interface CreateDigitalHumanScriptJobsOptions extends CreateDigitalHumanJobOptions {
@@ -128,6 +129,7 @@ export async function createDigitalHumanJob(options: CreateDigitalHumanJobOption
     durationSeconds,
     userId,
     sourceTaskId,
+    createdAt,
   } = options;
   const resolvedSourceType: DigitalHumanSourceType = sourceType === 'VIDEO' ? 'VIDEO' : 'IMAGE';
   const normalizedImageUrl = typeof imageUrl === 'string' ? imageUrl.trim() : '';
@@ -215,6 +217,7 @@ export async function createDigitalHumanJob(options: CreateDigitalHumanJobOption
         durationSeconds: durationSeconds ?? undefined,
         workflowId: workflowIdForCredits,
         sourceTaskId: sourceTask?.id ?? undefined,
+        createdAt: createdAt ?? undefined,
       },
     });
 
@@ -332,16 +335,41 @@ export async function createDigitalHumanJobs(options: CreateDigitalHumanScriptJo
   }
 
   const jobs: Awaited<ReturnType<typeof createDigitalHumanJob>>[] = [];
-  for (const chunk of jobChunks) {
+  const batchCreatedAt = new Date();
+  const totalChunks = jobChunks.length;
+  for (const [chunkIndex, chunk] of jobChunks.entries()) {
     const chunkDurationSeconds =
       type === 'VOICE_CLONE' && typeof chunk === 'string'
         ? analyzeScriptDuration(chunk).estimatedSeconds
         : options.durationSeconds ?? null;
+    const segmentPrefix =
+      type === 'VOICE_CLONE' && totalChunks > 1 && typeof chunk === 'string'
+        ? `第 ${chunkIndex + 1}/${totalChunks} 段\n`
+        : '';
+    const orderedCreatedAt =
+      totalChunks > 1
+        ? new Date(batchCreatedAt.getTime() - chunkIndex)
+        : undefined;
     const job = await createDigitalHumanJob({
       ...options,
       durationSeconds: chunkDurationSeconds,
       script: type === 'VOICE_CLONE' ? chunk : undefined,
+      createdAt: orderedCreatedAt,
     });
+    if (segmentPrefix && typeof chunk === 'string') {
+      const scriptContent = `${segmentPrefix}${chunk}`;
+      const updatedJob = await prisma.digitalHumanVideo.update({
+        where: { id: job.id },
+        data: { scriptContent },
+      });
+      await syncTaskToSummary({
+        taskType: 'digitalHuman',
+        taskId: updatedJob.id,
+        operation: 'update',
+      });
+      jobs.push(updatedJob);
+      continue;
+    }
     jobs.push(job);
   }
 

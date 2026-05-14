@@ -60,6 +60,45 @@ const PROCESSING_STATUSES = new Set([
   'BREAKDOWN_PROCESSING',
 ]);
 
+function getNumericMetadataValue(metadata: unknown, key: string): number | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const value = (metadata as Record<string, unknown>)[key];
+  const numeric = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function orderSegmentedDigitalHumanTasks<T extends TaskSummaryRecord>(tasks: T[]): T[] {
+  return tasks.slice().sort((a, b) => {
+    const timeDelta = b.updatedAt.getTime() - a.updatedAt.getTime();
+    if (Math.abs(timeDelta) > 1000) return timeDelta;
+
+    const aSegment = getNumericMetadataValue(a.metadata, 'segmentIndex');
+    const bSegment = getNumericMetadataValue(b.metadata, 'segmentIndex');
+    const aCount = getNumericMetadataValue(a.metadata, 'segmentCount');
+    const bCount = getNumericMetadataValue(b.metadata, 'segmentCount');
+    const aMetadata = a.metadata && typeof a.metadata === 'object' && !Array.isArray(a.metadata)
+      ? (a.metadata as Record<string, unknown>)
+      : {};
+    const bMetadata = b.metadata && typeof b.metadata === 'object' && !Array.isArray(b.metadata)
+      ? (b.metadata as Record<string, unknown>)
+      : {};
+    const sameDigitalHumanBatch =
+      a.taskType === 'digitalHuman' &&
+      b.taskType === 'digitalHuman' &&
+      aCount &&
+      bCount &&
+      aCount === bCount &&
+      aMetadata.imageUrl === bMetadata.imageUrl &&
+      aMetadata.audioUrl === bMetadata.audioUrl;
+
+    if (sameDigitalHumanBatch && aSegment && bSegment && aSegment !== bSegment) {
+      return aSegment - bSegment;
+    }
+
+    return b.id.localeCompare(a.id);
+  });
+}
+
 function normalizePosterSummaryStatus(rawStatus: string | null | undefined): string {
   const status = String(rawStatus ?? '').trim().toUpperCase();
   if (!status) return 'PROCESSING';
@@ -433,7 +472,7 @@ export async function fetchUserTaskSummaries({
   }
 
   return {
-    tasks: resultTasks,
+    tasks: orderSegmentedDigitalHumanTasks(resultTasks),
     total: page.total,
     limit,
     offset,

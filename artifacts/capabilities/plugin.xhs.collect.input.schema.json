@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "plugin.xhs.collect input",
+  "type": "object",
+  "properties": {
+    "url": {
+      "type": "string",
+      "description": "要采集的小红书页面 URL；为空时由插件采集当前页。"
+    },
+    "saveToHotSquare": {
+      "type": "boolean",
+      "description": "是否写入爆款广场/素材库。",
+      "default": true
+    },
+    "taskId": {
+      "type": "string",
+      "description": "关联淘金任务 ID。"
+    },
+    "userTaskId": {
+      "type": "string",
+      "description": "关联用户任务 ID。"
+    }
+  },
+  "required": [],
+  "additionalProperties": true
+}

@@ -2,6 +2,7 @@ import { View, Text, Image, ScrollView, Swiper, SwiperItem } from '@tarojs/compo
 import Taro, { useDidShow, useLoad, useUnload } from '@tarojs/taro';
 import { useMemo, useRef, useState } from 'react';
 import { miniappApi, type MyNoteTaskDetail } from '../../utils/miniapp-api';
+import { useMiniappShare } from '../../utils/miniapp-share';
 import './index.sass';
 
 const RESULT_STORAGE_KEY = 'NOTE_REWRITE_RESULT_ASSETS_V1';
@@ -131,6 +132,8 @@ function copyText(label: string, value: string) {
 }
 
 export default function NoteRewriteResultPage() {
+  useMiniappShare();
+
   const [taskId, setTaskId] = useState('');
   const [mode, setMode] = useState('');
   const [task, setTask] = useState<MyNoteTaskDetail | null>(null);

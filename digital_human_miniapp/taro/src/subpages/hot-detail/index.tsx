@@ -2,6 +2,7 @@ import { View, Text, Image, Swiper, SwiperItem, ScrollView, Video } from '@taroj
 import Taro, { useLoad, useDidShow, useUnload } from '@tarojs/taro';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { miniappApi, type HotItem, type MyNoteTaskDetail } from '../../utils/miniapp-api';
+import { useMiniappShare } from '../../utils/miniapp-share';
 import './index.sass';
 
 const HOT_COVER_FALLBACK_URL = 'https://oss.atomx.top/miniapp/hot-square/fallback-cover-1777628403821.jpg';
@@ -178,6 +179,8 @@ function getFormulaTitleOptions(rewrite: MyNoteTaskDetail['analysisResult']['rew
 }
 
 export default function HotDetailPage() {
+  useMiniappShare();
+
   const [mode, setMode] = useState<'hot' | 'my'>('hot');
   const [myTaskId, setMyTaskId] = useState('');
   const [loadError, setLoadError] = useState('');
@@ -779,7 +782,7 @@ export default function HotDetailPage() {
     <View className='hot-detail-stats'>
       <View className='hot-detail-stat'><Text className='hot-detail-stat-icon'>♡</Text><Text className='hot-detail-stat-text'>{formatMetric(stats.likes)}</Text></View>
       <View className='hot-detail-stat'><Text className='hot-detail-stat-icon'>☆</Text><Text className='hot-detail-stat-text'>{formatMetric(stats.collects)}</Text></View>
-      <View className='hot-detail-stat'><Text className='hot-detail-stat-icon'>评</Text><Text className='hot-detail-stat-text'>{formatMetric(stats.comments)}</Text></View>
+      <View className='hot-detail-stat'><View className='hot-detail-stat-icon hot-detail-stat-icon--comment' /><Text className='hot-detail-stat-text'>{formatMetric(stats.comments)}</Text></View>
       <View className='hot-detail-stat'><Text className='hot-detail-stat-icon'>↗</Text><Text className='hot-detail-stat-text'>{formatMetric(stats.shares)}</Text></View>
     </View>
   );

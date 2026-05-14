@@ -8,6 +8,7 @@ const LATIN_WORDS_PER_SECOND = 13;
 export const DIGITAL_HUMAN_MAX_SECONDS = DEFAULT_LIMIT_SECONDS;
 export const DIGITAL_HUMAN_CPS = DEFAULT_CPS;
 export const DIGITAL_HUMAN_SAFETY = DEFAULT_SAFETY;
+export const DIGITAL_HUMAN_SAFE_SECONDS = Math.floor(DEFAULT_LIMIT_SECONDS * DEFAULT_SAFETY);
 
 export interface ScriptDurationPrecheckResult {
   cleanedLength: number;
@@ -58,7 +59,8 @@ export function analyzeScriptDuration(
   const safety =
     options?.safety && Number.isFinite(options.safety) ? Number(options.safety) : DEFAULT_SAFETY;
   const safeSeconds = limitSeconds * safety;
-  const defaultLimitChars = Math.floor(cps * safeSeconds);
+  const segmentTargetSeconds = Math.max(1, safeSeconds - BASE_PADDING_SECONDS);
+  const defaultLimitChars = Math.floor(cps * segmentTargetSeconds);
   const limitChars =
     options?.limitCharsOverride && Number.isFinite(options.limitCharsOverride)
       ? Number(options.limitCharsOverride)
@@ -102,7 +104,7 @@ export function formatScriptDurationMessage(
   const limitSec = stats.limitSeconds;
   const limitChars = stats.limitChars;
   const formatter = new Intl.NumberFormat(isZh ? 'zh-CN' : 'en-US');
-  const splitSecondsHint = Math.max(1, Math.round(limitSec * stats.safety));
+  const splitSecondsHint = Math.max(1, Math.floor(limitSec * stats.safety));
   const countParts: string[] = [];
 
   const pushPart = (value: number, labelZh: string, labelEn: string) => {
@@ -138,14 +140,14 @@ export function formatScriptDurationMessage(
 
   if (isZh) {
     if (stats.needSplit) {
-      return `${countsDescription}，预计约 ${est}s（目标 ≤ ${limitSec}s）。建议拆分：每段 ≤ ${splitSecondsHint}s，约等于 ${formatter.format(limitChars)} 个中文字符${englishLimitHintZh}。`;
+      return `${countsDescription}，预计约 ${est}s（模型硬上限 ${limitSec}s，安全目标 ≤ ${splitSecondsHint}s）。建议拆分：每段约 ${formatter.format(limitChars)} 个中文字符${englishLimitHintZh}，避免末尾文字被截断。`;
     }
-    return `${countsDescription}，预计约 ${est}s（目标 ≤ ${limitSec}s），可直接生成。`;
+    return `${countsDescription}，预计约 ${est}s（安全目标 ≤ ${splitSecondsHint}s，模型硬上限 ${limitSec}s），可直接生成。`;
   }
 
   if (stats.needSplit) {
-    return `${countsDescription} (~${est}s, target ≤ ${limitSec}s). Split into chunks ≤ ${splitSecondsHint}s (~${formatter.format(limitChars)} zh-char eq${englishLimitHintEn}).`;
+    return `${countsDescription} (~${est}s, hard limit ${limitSec}s, safe target ≤ ${splitSecondsHint}s). Split into chunks of ~${formatter.format(limitChars)} zh-char eq${englishLimitHintEn} to avoid clipped endings.`;
   }
 
-  return `${countsDescription} (~${est}s, target ≤ ${limitSec}s). Ready to render.`;
+  return `${countsDescription} (~${est}s, safe target ≤ ${splitSecondsHint}s, hard limit ${limitSec}s). Ready to render.`;
 }

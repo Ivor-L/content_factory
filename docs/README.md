@@ -142,6 +142,13 @@
 | [20260509-miniapp-note-rewrite-result-page-plan.md](./20260509-miniapp-note-rewrite-result-page-plan.md) | 小程序图文笔记仿写结果页：独立页面、生成图片回流与二维码图片展示 |
 | [20260511-miniapp-hot-rewrite-result-generation-state-plan.md](./20260511-miniapp-hot-rewrite-result-generation-state-plan.md) | 小程序爆款图文仿写结果页生成状态优化：图片区分原文案/仿写文案、生成状态回流与按钮语义统一 |
 | [20260511-miniapp-generation-submit-layout-plan.md](./20260511-miniapp-generation-submit-layout-plan.md) | 小程序数字人、图片生成、视频生成提交按钮底部吸附与文案输入面板布局调整 |
+| [20260511-miniapp-remix-audio-download-grid-toggle-plan.md](./20260511-miniapp-remix-audio-download-grid-toggle-plan.md) | 小程序智能复刻修复：第三阶段音频播放、视频下载与原图/生成图分镜切换 |
+| [20260512-miniapp-global-share-plan.md](./20260512-miniapp-global-share-plan.md) | 小程序全局分享能力补齐：启用转发好友、分享到朋友圈与统一分享 Hook |
+| [20260512-seedance-trusted-portrait-plan.md](./20260512-seedance-trusted-portrait-plan.md) | Seedance 可信人像接入：虚拟人像库、真人授权资产 URI 与小程序录入入口 |
+| [20260513-aitoearn-monetization-square-plugin-plan.md](./20260513-aitoearn-monetization-square-plugin-plan.md) | AiToEarn 淘金广场与浏览器插件复刻：任务市场、插件执行器、Agent action 与积分接入方案 |
+| [20260514-digital-human-segment-order-plan.md](./20260514-digital-human-segment-order-plan.md) | 数字人分段顺序修复：Web 与小程序长文案分段任务保序与完整返回 |
+| [20260514-digital-human-safe-segment-duration-plan.md](./20260514-digital-human-safe-segment-duration-plan.md) | 数字人安全分段时长修复：32s 硬上限下按约 29s 安全目标切段，避免末尾文字截断 |
+| [20260514-viral-breakdown-agent-html-result-plan.md](./20260514-viral-breakdown-agent-html-result-plan.md) | 爆款短视频复刻 Agent 链路与 HTML 回调展示优化：直连提交、分镜网格、源视频分析与 Clip 级提示词 |
 | [20260509-miniapp-infographic-direct-n8n-and-credits-fix-plan.md](./20260509-miniapp-infographic-direct-n8n-and-credits-fix-plan.md) | 小程序信息图直连 n8n、作品多图展示与积分 0 元配置兜底修复 |
 | [20260509-my-works-creative-import-knowledge-plan.md](./20260509-my-works-creative-import-knowledge-plan.md) | Web 我的作品智能创作详情：推荐标题与正文导入知识库 |
 | [20260510-miniapp-skeleton-story-branch-plan.md](./20260510-miniapp-skeleton-story-branch-plan.md) | 小程序 3D 骨骼剧情/带货分支升级：显式类型选择、剧情字段与 n8n 纯剧情 prompt |

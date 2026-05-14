@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "plugin.xhs.publish input",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "发布标题。"
+    },
+    "description": {
+      "type": "string",
+      "description": "发布正文。"
+    },
+    "tags": {
+      "type": "array",
+      "description": "话题标签。"
+    },
+    "mediaUrls": {
+      "type": "array",
+      "description": "图片或视频 URL。"
+    },
+    "taskId": {
+      "type": "string",
+      "description": "关联淘金任务 ID。"
+    },
+    "userTaskId": {
+      "type": "string",
+      "description": "关联用户任务 ID。"
+    }
+  },
+  "required": [
+    "title",
+    "description"
+  ],
+  "additionalProperties": true
+}

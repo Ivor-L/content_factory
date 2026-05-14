@@ -7,6 +7,8 @@ import { getRequestUserContext } from '@/lib/authServer';
 import { renderXhsCardLayout } from '@/lib/xhs-card-layout-service';
 import { createCreativeTaskWithAssets } from '@/lib/creativeTaskCreation';
 import prisma from '@/lib/prisma';
+import { applyTask, buildSubmissionInput, listTasks } from '@/lib/earn/service';
+import { safeTrim } from '@/lib/earn/normalize';
 import { createAgentCapabilityCreditHold } from '@/lib/agent-capabilities/quota-preflight';
 import {
   createAgentCapabilityRunRecord,
@@ -67,6 +69,12 @@ function pickString(value: unknown): string {
 function pickStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map((item) => pickString(item)).filter(Boolean);
+}
+
+function pickObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
 }
 
 function parsePositiveNumber(value: unknown): number | null {
@@ -187,6 +195,18 @@ export async function runAgentCapability(input: {
       result = await runViralBreakdownVideoPrompts({ runId, mode, createdAt, capability: input.capability, payload: input.request.input || {}, authHeaders: input.authHeaders });
     } else if (input.capability.id === 'social.comments.collect') {
       result = await runSocialCommentsCollect({ runId, mode, createdAt, capability: input.capability, payload: input.request.input || {}, authHeaders: input.authHeaders });
+    } else if (input.capability.id === 'earn.task.list') {
+      result = await runEarnTaskList({ runId, mode, createdAt, capability: input.capability, payload: input.request.input || {} });
+    } else if (input.capability.id === 'earn.task.apply') {
+      result = await runEarnTaskApply({ runId, mode, createdAt, capability: input.capability, payload: input.request.input || {}, userId: input.userId });
+    } else if (input.capability.id === 'earn.task.submit_evidence') {
+      result = await runEarnTaskSubmitEvidence({ runId, mode, createdAt, capability: input.capability, payload: input.request.input || {}, userId: input.userId });
+    } else if (input.capability.id === 'plugin.xhs.collect') {
+      result = runPluginInstruction({ runId, mode, createdAt, capability: input.capability, payload: input.request.input || {}, method: 'collectCurrentPage', platform: 'xhs' });
+    } else if (input.capability.id === 'plugin.xhs.publish') {
+      result = runPluginInstruction({ runId, mode, createdAt, capability: input.capability, payload: input.request.input || {}, method: 'publish', platform: 'xhs' });
+    } else if (input.capability.id === 'plugin.account.sync') {
+      result = runPluginInstruction({ runId, mode, createdAt, capability: input.capability, payload: input.request.input || {}, method: 'syncAccounts' });
     } else if (input.capability.executionType === 'local_agent') {
       result = runLocalAgentGuidance({ runId, mode, createdAt, capability: input.capability, payload: input.request.input || {} });
     } else {
@@ -210,6 +230,220 @@ export async function runAgentCapability(input: {
     await markAgentCapabilityRunFailed({ runId, capabilityId: input.capability.id, mode, error: result.error! });
     return result;
   }
+}
+
+async function runEarnTaskList(input: {
+  runId: string;
+  mode: AgentCapabilityRunMode;
+  createdAt: string;
+  capability: AgentCapabilityDefinition;
+  payload: Record<string, unknown>;
+}): Promise<AgentCapabilityRunResult> {
+  const params = new URLSearchParams();
+  const platform = pickString(input.payload.platform).toLowerCase();
+  const type = pickString(input.payload.type);
+  const query = pickString(input.payload.query || input.payload.q || input.payload.keyword);
+  const limit = Math.min(parsePositiveNumber(input.payload.limit || input.payload.pageSize) || 10, 20);
+  if (platform) params.set('platform', platform);
+  if (type) params.set('type', type);
+  if (query) params.set('q', query);
+  params.set('pageSize', String(limit));
+
+  const started = Date.now();
+  const result = await listTasks(params);
+  return {
+    runId: input.runId,
+    capabilityId: input.capability.id,
+    mode: input.mode,
+    status: 'succeeded',
+    createdAt: input.createdAt,
+    finishedAt: nowIso(),
+    result: {
+      total: result.total,
+      page: result.page,
+      pageSize: result.pageSize,
+      tasks: result.items.map((task) => ({
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        type: task.type,
+        platforms: task.platforms,
+        rewardAmount: task.rewardAmount,
+        maxParticipants: task.maxParticipants,
+        currentParticipants: task.currentParticipants,
+        deadlineAt: task.deadlineAt,
+        requiresPlugin: task.requiresPlugin,
+        requiresShoppingCart: task.requiresShoppingCart,
+        href: `/earn/tasks/${task.id}`,
+      })),
+    },
+    artifacts: [],
+    usage: { provider: 'internal_service', durationMs: Date.now() - started },
+    error: null,
+  };
+}
+
+async function runEarnTaskApply(input: {
+  runId: string;
+  mode: AgentCapabilityRunMode;
+  createdAt: string;
+  capability: AgentCapabilityDefinition;
+  payload: Record<string, unknown>;
+  userId?: string;
+}): Promise<AgentCapabilityRunResult> {
+  if (!input.userId) {
+    return failedResult({ runId: input.runId, capabilityId: input.capability.id, mode: input.mode, code: 'unauthorized', message: 'earn.task.apply requires a user identity.' });
+  }
+  const taskId = pickString(input.payload.taskId || input.payload.id);
+  const platform = pickString(input.payload.platform).toLowerCase();
+  if (!taskId) return failedResult({ runId: input.runId, capabilityId: input.capability.id, mode: input.mode, code: 'invalid_input', message: 'taskId is required' });
+  if (!platform) return failedResult({ runId: input.runId, capabilityId: input.capability.id, mode: input.mode, code: 'invalid_input', message: 'platform is required' });
+
+  const started = Date.now();
+  const result = await applyTask({
+    taskId,
+    userId: input.userId,
+    platform,
+    platformUid: safeTrim(input.payload.platformUid),
+    platformAccountName: safeTrim(input.payload.platformAccountName),
+    taskMaterialId: safeTrim(input.payload.taskMaterialId),
+  });
+
+  return {
+    runId: input.runId,
+    capabilityId: input.capability.id,
+    mode: input.mode,
+    status: 'succeeded',
+    createdAt: input.createdAt,
+    finishedAt: nowIso(),
+    result: {
+      existing: result.existing,
+      userTaskId: result.userTask.id,
+      href: `/earn/mine?task=${result.userTask.id}`,
+      task: {
+        id: result.task.id,
+        title: result.task.title,
+        type: result.task.type,
+        platforms: result.task.platforms,
+        rewardAmount: result.task.rewardAmount,
+        requiresPlugin: result.task.requiresPlugin,
+      },
+      material: result.userTask.taskMaterial,
+      userTask: result.userTask,
+    },
+    artifacts: [],
+    usage: { provider: 'internal_service', durationMs: Date.now() - started },
+    error: null,
+  };
+}
+
+async function runEarnTaskSubmitEvidence(input: {
+  runId: string;
+  mode: AgentCapabilityRunMode;
+  createdAt: string;
+  capability: AgentCapabilityDefinition;
+  payload: Record<string, unknown>;
+  userId?: string;
+}): Promise<AgentCapabilityRunResult> {
+  if (!input.userId) {
+    return failedResult({ runId: input.runId, capabilityId: input.capability.id, mode: input.mode, code: 'unauthorized', message: 'earn.task.submit_evidence requires a user identity.' });
+  }
+  const userTaskId = pickString(input.payload.userTaskId || input.payload.id);
+  if (!userTaskId) {
+    return failedResult({ runId: input.runId, capabilityId: input.capability.id, mode: input.mode, code: 'invalid_input', message: 'userTaskId is required' });
+  }
+
+  const current = await prisma.earnUserTask.findFirst({ where: { id: userTaskId, userId: input.userId } });
+  if (!current) {
+    return failedResult({ runId: input.runId, capabilityId: input.capability.id, mode: input.mode, code: 'not_found', message: 'User task not found' });
+  }
+  if (!['doing', 'rejected'].includes(current.status)) {
+    return failedResult({ runId: input.runId, capabilityId: input.capability.id, mode: input.mode, code: 'invalid_state', message: 'User task cannot be submitted in current status' });
+  }
+
+  const started = Date.now();
+  const updated = await prisma.earnUserTask.update({
+    where: { id: userTaskId },
+    data: buildSubmissionInput({
+      submissionUrl: input.payload.submissionUrl,
+      screenshotUrls: input.payload.screenshotUrls,
+      pluginEvidence: pickObject(input.payload.pluginEvidence),
+      metadata: {
+        source: 'agent_capability',
+        capabilityId: input.capability.id,
+      },
+    }),
+    include: {
+      task: true,
+      taskMaterial: true,
+    },
+  });
+
+  return {
+    runId: input.runId,
+    capabilityId: input.capability.id,
+    mode: input.mode,
+    status: 'succeeded',
+    createdAt: input.createdAt,
+    finishedAt: nowIso(),
+    result: {
+      userTask: updated,
+      href: `/earn/mine?task=${updated.id}`,
+      note: 'Evidence submitted and moved to pending review.',
+    },
+    artifacts: [],
+    usage: { provider: 'internal_service', durationMs: Date.now() - started },
+    error: null,
+  };
+}
+
+function runPluginInstruction(input: {
+  runId: string;
+  mode: AgentCapabilityRunMode;
+  createdAt: string;
+  capability: AgentCapabilityDefinition;
+  payload: Record<string, unknown>;
+  method: 'collectCurrentPage' | 'publish' | 'syncAccounts';
+  platform?: string;
+}): AgentCapabilityRunResult {
+  const platform = pickString(input.payload.platform).toLowerCase() || input.platform || 'xhs';
+  const instruction = {
+    bridge: 'ContentFactoryPlugin',
+    method: input.method,
+    params: {
+      ...input.payload,
+      platform,
+    },
+    requiresUserConfirmation: input.method === 'publish',
+    createdAt: input.createdAt,
+  };
+
+  return {
+    runId: input.runId,
+    capabilityId: input.capability.id,
+    mode: input.mode,
+    status: 'succeeded',
+    createdAt: input.createdAt,
+    finishedAt: nowIso(),
+    result: {
+      pluginInstruction: instruction,
+      nextAction: 'Open the target page in a browser with the Content Factory extension installed, then execute pluginInstruction through window.ContentFactoryPlugin.',
+    },
+    artifacts: [
+      {
+        type: 'json',
+        name: 'plugin-instruction.json',
+        data: instruction,
+        metadata: {
+          capabilityId: input.capability.id,
+          platform,
+          method: input.method,
+        },
+      },
+    ],
+    usage: { credits: 0, provider: 'plugin_instruction' },
+    error: null,
+  };
 }
 
 function runLocalAgentGuidance(input: {
@@ -445,7 +679,6 @@ async function runViralBreakdownVideoPrompts(input: {
   );
   const missingFields = [
     !referenceVideo ? 'referenceVideo' : '',
-    durationSeconds === null ? 'durationSeconds' : '',
     !language ? 'targetLanguage' : '',
   ].filter(Boolean);
 
@@ -457,12 +690,11 @@ async function runViralBreakdownVideoPrompts(input: {
       code: missingFields.includes('referenceVideo') ? 'invalid_input' : 'clarification_required',
       message: missingFields.includes('referenceVideo')
         ? 'referenceVideo or referenceUrl is required for viral.breakdown.video_prompts.'
-        : 'Before submitting smart remix, please confirm durationSeconds and targetLanguage.',
+        : 'Before submitting smart remix, please confirm targetLanguage.',
       details: {
         missingFields,
-        requiredBeforeSubmit: ['durationSeconds', 'targetLanguage'],
+        requiredBeforeSubmit: ['targetLanguage'],
         choices: {
-          durationSeconds: [15, 30, 60],
           targetLanguage: [
             { label: '跟随原视频', value: 'source' },
             { label: '中文', value: 'zh-CN' },
@@ -470,11 +702,6 @@ async function runViralBreakdownVideoPrompts(input: {
             { label: '日语', value: 'ja' },
             { label: '韩语', value: 'ko' },
             { label: '西语', value: 'es' },
-          ],
-          productMode: [
-            { label: '不绑定产品，只拆解提示词', value: 'none' },
-            { label: '绑定产品库产品', value: 'product_library' },
-            { label: '手动提供产品信息', value: 'manual_product' },
           ],
           promptProvider: ['seedance', 'veo', 'generic'],
           nextStep: [
@@ -486,6 +713,8 @@ async function runViralBreakdownVideoPrompts(input: {
     });
   }
 
+  // Duration is intentionally not part of the Agent intake for viral breakdown.
+  // Keep a small compatibility default for the miniapp/n8n contract only.
   const normalizedDuration = Math.round(durationSeconds ?? 15);
 
   const payload = {

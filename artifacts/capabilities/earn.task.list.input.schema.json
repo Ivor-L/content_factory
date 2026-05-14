@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "earn.task.list input",
+  "type": "object",
+  "properties": {
+    "platform": {
+      "type": "string",
+      "description": "目标平台。为空时返回全部平台。",
+      "enum": [
+        "xhs",
+        "douyin"
+      ]
+    },
+    "type": {
+      "type": "string",
+      "description": "任务类型，如 publish、collect、promotion。"
+    },
+    "query": {
+      "type": "string",
+      "description": "搜索关键词。"
+    },
+    "limit": {
+      "type": "number",
+      "description": "返回任务数量，最多 20。",
+      "default": 10
+    }
+  },
+  "required": [],
+  "additionalProperties": true
+}

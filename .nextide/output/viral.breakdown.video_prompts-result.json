@@ -1,25 +1,36 @@
 {
   "run": {
-    "runId": "run_262aa5cc-1ef1-4a08-831e-bbddf3bbc07a",
+    "runId": "run_c8e64621-73f1-4d65-9f3e-70a0121e0888",
     "capabilityId": "viral.breakdown.video_prompts",
     "mode": "submit",
     "status": "waiting_callback",
-    "createdAt": "2026-05-10T13:54:00.767Z",
-    "finishedAt": "2026-05-10T13:54:00.887Z",
+    "createdAt": "2026-05-14T05:38:21.285Z",
     "result": {
+      "success": true,
       "data": {
-        "status": "pending"
+        "taskId": "cmp5257fe005e01pljchfuxvm",
+        "status": "ANALYZING",
+        "pipelineKey": "viral_clone",
+        "workflowId": "flow_storyboard_disassembly",
+        "workflowTriggered": true
       },
-      "referenceVideo": "https://oss.atomx.top/storyboard/videos/1778421153029-sw9x8yl87s.mp4",
-      "note": "Video copy extraction is running asynchronously. Callback persists transcript to script/reference item when configured."
+      "taskId": "cmp5257fe005e01pljchfuxvm",
+      "status": "ANALYZING",
+      "referenceVideo": "https://oss.atomx.top/nextide/agent/uploads/viral-breakdown/2026-05-14/1778737081645-1febd0b62187.mp4",
+      "business": {
+        "type": "storyboardTask",
+        "id": "cmp5257fe005e01pljchfuxvm",
+        "status": "ANALYZING"
+      },
+      "note": "Smart remix storyboard breakdown submitted via the miniapp viral_clone workflow. Callback writes detailedBreakdown and StoryboardSegment imagePrompt/videoPrompt."
     },
     "artifacts": [],
     "usage": {
       "provider": "internal_api",
-      "durationMs": 95
+      "durationMs": 370
     },
     "error": null,
-    "statusCommand": "nextide run status run_262aa5cc-1ef1-4a08-831e-bbddf3bbc07a",
-    "resultCommand": "nextide run result run_262aa5cc-1ef1-4a08-831e-bbddf3bbc07a --output result.json"
+    "statusCommand": "nextide run status run_c8e64621-73f1-4d65-9f3e-70a0121e0888",
+    "resultCommand": "nextide run result run_c8e64621-73f1-4d65-9f3e-70a0121e0888 --output result.json"
   }
 }

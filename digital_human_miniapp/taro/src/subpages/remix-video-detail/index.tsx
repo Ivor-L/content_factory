@@ -1,11 +1,13 @@
-import { View, Text, ScrollView, Video, Textarea, Image, Slider } from '@tarojs/components';
+import { View, Text, ScrollView, Video, Textarea, Image, Slider, CoverView } from '@tarojs/components';
 import Taro, { useDidShow, useLoad, usePullDownRefresh } from '@tarojs/taro';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
 import { api } from '../../utils/api';
 import type { StoryboardSegmentItem, StoryboardTaskStatusResult } from '../../utils/miniapp-api';
+import { useMiniappShare } from '../../utils/miniapp-share';
 import './index.sass';
 
+const API_BASE_URL = getApiBaseUrl();
 const VIDEO_MODELS = [
   { id: 'bytedance/seedance-2', label: 'Seedance 2.0' },
   { id: 'bytedance/seedance-2-fast', label: 'Seedance 2.0 Fast' },
@@ -25,6 +27,17 @@ type VideoAssetItem = {
   url: string;
   kind: 'asset' | 'generating';
   label?: string;
+};
+
+type ReferenceAssetItem = {
+  id: string;
+  uri: string;
+  type: 'asset' | 'image';
+  label: string;
+};
+
+type EditableModalResult = Awaited<ReturnType<typeof Taro.showModal>> & {
+  content?: string;
 };
 
 type DetailCache = {
@@ -59,6 +72,8 @@ function decodeQueryText(value: string): string {
 }
 
 export default function RemixVideoDetailPage() {
+  useMiniappShare();
+
   const [taskId, setTaskId] = useState('');
   const [segmentId, setSegmentId] = useState('');
   const [title, setTitle] = useState('视频详情');
@@ -71,11 +86,15 @@ export default function RemixVideoDetailPage() {
   const [videoModel, setVideoModel] = useState(DEFAULT_VIDEO_MODEL);
   const [aspectRatio, setAspectRatio] = useState<DetailAspectRatio>('9:16');
   const [referenceImages, setReferenceImages] = useState<string[]>([]);
+  const [extendFromPreviousClip, setExtendFromPreviousClip] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const keyboardFocusedRef = useRef(false);
 
   useLoad((query) => {
     const cached = normalizeDetailCache(Taro.getStorageSync(DETAIL_STORAGE_KEY));
@@ -93,7 +112,7 @@ export default function RemixVideoDetailPage() {
       setAspectRatio(normalizeAspectRatio(cached.aspectRatio) || resolveSegmentAspectRatio(null, clip.segment || null));
       if (clip.segment) {
         setSegment(clip.segment);
-        setReferenceImages(getEditableReferenceImages(clip.segment));
+        setReferenceImages(getEditableReferenceImages(null, clip.segment));
       }
     }
     if (!qTaskId || !qSegmentId) {
@@ -115,14 +134,16 @@ export default function RemixVideoDetailPage() {
       setTask(data);
       setSegment(nextSegment);
       setVideoModel(normalizeVideoModel(data.videoModel || videoModel));
-      setReferenceImages(getEditableReferenceImages(nextSegment));
+      setReferenceImages(getEditableReferenceImages(data, nextSegment));
       const params = asRecord(nextSegment.generationParams) || {};
       const savedPrompt = String(params.clip_video_prompt || params.clipVideoPrompt || nextSegment.videoPrompt || '').trim();
       setPrompt(savedPrompt);
       setDurationText(formatDuration(nextSegment.duration || 8));
-      setClipIndex(resolveClipIndex(nextSegment, data.segments));
+      const nextClipIndex = resolveClipIndex(nextSegment, data.segments);
+      setClipIndex(nextClipIndex);
       setTimeRange(String(params.clip_time_range || params.clipTimeRange || nextSegment.timeRange || ''));
       setAspectRatio(resolveSegmentAspectRatio(data, nextSegment));
+      setExtendFromPreviousClip(nextClipIndex > 1 && readBooleanFlag(params.seedance_extend_from_previous_clip ?? params.seedanceExtendFromPreviousClip));
       setErrorText('');
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : '视频详情加载失败');
@@ -143,10 +164,27 @@ export default function RemixVideoDetailPage() {
     })();
   });
 
+  useEffect(() => {
+    const onKeyboard = (result: { height?: number }) => {
+      const nextHeight = Math.max(0, Number(result?.height || 0));
+      if (nextHeight > 0 || !keyboardFocusedRef.current) {
+        setKeyboardHeight(nextHeight);
+      }
+    };
+    Taro.onKeyboardHeightChange(onKeyboard);
+    return () => {
+      Taro.offKeyboardHeightChange(onKeyboard);
+    };
+  }, []);
+
   const videoUrl = getSelectedVideoUrl(segment);
   const videoAssets = useMemo(() => getVideoAssetItems(segment, generating), [segment, generating]);
   const isProcessing = isVideoGenerating(segment) || generating;
   const settingsSummary = `${getModelLabel(VIDEO_MODELS, videoModel)} · ${formatDuration(durationText)}s · ${aspectRatio}`;
+  const composerStyle = useMemo(
+    () => (keyboardHeight > 0 ? { bottom: `${keyboardHeight + 8}px` } : undefined),
+    [keyboardHeight],
+  );
 
   const handleBack = () => {
     Taro.navigateBack({ delta: 1 });
@@ -170,6 +208,8 @@ export default function RemixVideoDetailPage() {
       clipTimeRange: timeRange,
       reference_image_urls: referenceImages,
       referenceImageUrls: referenceImages,
+      seedance_extend_from_previous_clip: clipIndex > 1 && extendFromPreviousClip,
+      seedanceExtendFromPreviousClip: clipIndex > 1 && extendFromPreviousClip,
       aspect_ratio: aspectRatio,
       aspectRatio,
     });
@@ -183,6 +223,7 @@ export default function RemixVideoDetailPage() {
         clip_index: clipIndex,
         clip_time_range: timeRange,
         reference_image_urls: referenceImages,
+        seedance_extend_from_previous_clip: clipIndex > 1 && extendFromPreviousClip,
         aspect_ratio: aspectRatio,
         aspectRatio,
       },
@@ -238,6 +279,13 @@ export default function RemixVideoDetailPage() {
 
   const handleChooseImage = async () => {
     if (uploading) return;
+    const confirmed = await Taro.showModal({
+      title: '仅限非真人参考',
+      content: 'Seedance 2.0 不支持直接上传含真人人脸的照片。真人形象请先在火山方舟完成人像授权入库，再粘贴资产 ID。',
+      confirmText: '上传非真人图',
+      cancelText: '取消',
+    });
+    if (!confirmed.confirm) return;
     try {
       const choose = await Taro.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
       const tempPath = choose?.tempFilePaths?.[0];
@@ -246,7 +294,7 @@ export default function RemixVideoDetailPage() {
       const ext = (tempPath.split('.').pop() || 'jpg').toLowerCase();
       const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
       const uploaded = await api.uploadMedia(tempPath, `remix-video-ref-${Date.now()}.${ext}`, mime);
-      setReferenceImages((prev) => uniqueUrls([...prev, uploaded]).slice(0, 8));
+      setReferenceImages((prev) => uniqueReferenceUris([...prev, uploaded]).slice(0, 8));
       Taro.showToast({ title: '参考图已添加', icon: 'success' });
     } catch (error) {
       if (!isUserCancel(error)) {
@@ -257,8 +305,54 @@ export default function RemixVideoDetailPage() {
     }
   };
 
+  const handleAddPortraitAsset = async () => {
+    const modal = await Taro.showModal({
+      title: '录入人像资产',
+      content: '请粘贴火山方舟虚拟人像库或真人授权入库后的 Asset ID，例如 asset-20260222234430-mxpgh。',
+      editable: true,
+      placeholderText: 'asset-...',
+      confirmText: '添加',
+      cancelText: '取消',
+    } as Parameters<typeof Taro.showModal>[0] & { editable: boolean; placeholderText: string }) as EditableModalResult;
+    if (!modal.confirm) return;
+    const assetUri = normalizeSeedanceAssetUri(modal.content);
+    if (!assetUri) {
+      Taro.showToast({ title: '请输入有效 Asset ID', icon: 'none' });
+      return;
+    }
+    setReferenceImages((prev) => uniqueReferenceUris([...prev, assetUri]).slice(0, 8));
+    Taro.showToast({ title: '人像资产已添加', icon: 'success' });
+  };
+
   const handleRemoveImage = (url: string) => {
     setReferenceImages((prev) => prev.filter((item) => item !== url));
+  };
+
+  const handleDownloadVideo = async () => {
+    if (!videoUrl || downloading) return;
+    setDownloading(true);
+    try {
+      const granted = await ensureAlbumPermission();
+      if (!granted) return;
+      const apiKey = getApiKey();
+      const accessToken = getAccessToken();
+      const header: Record<string, string> = {};
+      if (apiKey) header['x-user-api-key'] = apiKey;
+      if (accessToken) header.Authorization = `Bearer ${accessToken}`;
+      const downloadRes = await Taro.downloadFile({
+        url: buildDownloadUrl(videoUrl, 'video'),
+        header: Object.keys(header).length > 0 ? header : undefined,
+      });
+      if (!downloadRes.tempFilePath || (typeof downloadRes.statusCode === 'number' && downloadRes.statusCode >= 400)) {
+        throw new Error(`下载失败:${downloadRes.statusCode || 0}`);
+      }
+      await Taro.saveVideoToPhotosAlbum({ filePath: downloadRes.tempFilePath });
+      Taro.showToast({ title: '已保存到相册', icon: 'success' });
+    } catch (error) {
+      Taro.showToast({ title: getDownloadErrorMessage(error), icon: 'none' });
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const handleSelectVideoAsset = async (url: string) => {
@@ -311,22 +405,33 @@ export default function RemixVideoDetailPage() {
           <>
             <View className='remix-video-detail-player'>
               {videoUrl ? (
-                <Video
-                  className='remix-video-detail-video'
-                  src={videoUrl}
-                  controls
-                  autoplay={false}
-                  muted={false}
-                  showMuteBtn
-                  showCenterPlayBtn
-                  showFullscreenBtn
-                  enablePlayGesture
-                  objectFit='contain'
-                  playBtnPosition='center'
-                />
+                <>
+                  <Video
+                    className='remix-video-detail-video'
+                    src={videoUrl}
+                    controls
+                    autoplay={false}
+                    muted={false}
+                    showMuteBtn
+                    showCenterPlayBtn
+                    showFullscreenBtn
+                    enablePlayGesture
+                    vslideGesture={false}
+                    objectFit='contain'
+                    playBtnPosition='center'
+                  />
+                  <CoverView className='remix-video-detail-player-actions'>
+                    <CoverView
+                      className={`remix-video-detail-player-action ${downloading ? 'remix-video-detail-player-action--disabled' : ''}`}
+                      onClick={() => void handleDownloadVideo()}
+                    >
+                      <CoverView className='remix-video-detail-player-action-text'>{downloading ? '保存中...' : '下载视频'}</CoverView>
+                    </CoverView>
+                  </CoverView>
+                </>
               ) : (
                 <View className='remix-video-detail-placeholder'>
-                  <View className='remix-video-detail-spinner' />
+                  {isProcessing && <View className='remix-video-detail-spinner' />}
                   <Text className='remix-video-detail-placeholder-text'>{isProcessing ? '视频生成中' : '暂无视频'}</Text>
                   {isProcessing && <Text className='remix-video-detail-placeholder-desc'>可以先切出页面，稍后回来查看</Text>}
                 </View>
@@ -379,16 +484,28 @@ export default function RemixVideoDetailPage() {
       </ScrollView>
 
       {!loading && !errorText && (
-        <View className='remix-video-detail-composer'>
+        <View className='remix-video-detail-composer' style={composerStyle}>
           <View className='remix-video-detail-input-card'>
             <View className='remix-video-detail-ref-row'>
+              <View className='remix-video-detail-ref-add' onClick={() => void handleAddPortraitAsset()}>
+                <Text className='remix-video-detail-ref-add-text'>{uploading ? '...' : '+'}</Text>
+                <Text className='remix-video-detail-ref-add-subtext'>真人</Text>
+              </View>
               <View className='remix-video-detail-ref-add' onClick={() => void handleChooseImage()}>
                 <Text className='remix-video-detail-ref-add-text'>{uploading ? '...' : '+'}</Text>
+                <Text className='remix-video-detail-ref-add-subtext'>非真人</Text>
               </View>
-              {referenceImages.map((url) => (
-                <View key={url} className='remix-video-detail-ref-item'>
-                  <Image className='remix-video-detail-ref-image' src={url} mode='aspectFill' />
-                  <View className='remix-video-detail-ref-remove' onClick={() => handleRemoveImage(url)}>
+              {getReferenceAssetItems(referenceImages).map((item) => (
+                <View key={item.id} className={`remix-video-detail-ref-item ${item.type === 'asset' ? 'remix-video-detail-ref-item--asset' : ''}`}>
+                  {item.type === 'asset' ? (
+                    <View className='remix-video-detail-ref-asset-card'>
+                      <Text className='remix-video-detail-ref-asset-title'>可信人像</Text>
+                      <Text className='remix-video-detail-ref-asset-id'>{item.label}</Text>
+                    </View>
+                  ) : (
+                    <Image className='remix-video-detail-ref-image' src={item.uri} mode='aspectFill' />
+                  )}
+                  <View className='remix-video-detail-ref-remove' onClick={() => handleRemoveImage(item.uri)}>
                     <Text className='remix-video-detail-ref-remove-text'>×</Text>
                   </View>
                 </View>
@@ -405,6 +522,15 @@ export default function RemixVideoDetailPage() {
               adjustPosition={false}
               cursorSpacing={20}
               onInput={(event) => setPrompt(event.detail.value)}
+              onFocus={(event) => {
+                keyboardFocusedRef.current = true;
+                const nextHeight = Math.max(0, Number(event.detail.height || 0));
+                if (nextHeight > 0) setKeyboardHeight(nextHeight);
+              }}
+              onBlur={() => {
+                keyboardFocusedRef.current = false;
+                setKeyboardHeight(0);
+              }}
             />
 
             <View className='remix-video-detail-tool-row'>
@@ -481,6 +607,23 @@ export default function RemixVideoDetailPage() {
               ))}
             </View>
 
+            {clipIndex > 1 && (
+              <>
+                <Text className='remix-video-detail-sheet-label'>连续性</Text>
+                <View className='remix-video-detail-sheet-tabs'>
+                  <View
+                    className={`remix-video-detail-sheet-tab ${extendFromPreviousClip ? 'remix-video-detail-sheet-tab--active' : ''}`}
+                    onClick={() => setExtendFromPreviousClip(!extendFromPreviousClip)}
+                  >
+                    <View className='remix-video-detail-sheet-ratio-copy'>
+                      <Text className={`remix-video-detail-sheet-tab-text ${extendFromPreviousClip ? 'remix-video-detail-sheet-tab-text--active' : ''}`}>上一段延长</Text>
+                      <Text className={`remix-video-detail-sheet-tab-hint ${extendFromPreviousClip ? 'remix-video-detail-sheet-tab-hint--active' : ''}`}>Clip {clipIndex - 1}</Text>
+                    </View>
+                  </View>
+                </View>
+              </>
+            )}
+
             <View className='remix-video-detail-sheet-confirm' onClick={() => setSettingsOpen(false)}>
               <Text className='remix-video-detail-sheet-confirm-text'>完成</Text>
             </View>
@@ -503,10 +646,131 @@ function normalizeMediaUrl(value: unknown): string {
   return /^https?:\/\//i.test(text) ? text : '';
 }
 
+function normalizeReferenceUri(value: unknown): string {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text || /^(undefined|null|nan)$/i.test(text)) return '';
+  const assetUri = normalizeSeedanceAssetUri(text);
+  if (assetUri) return assetUri;
+  return normalizeMediaUrl(text);
+}
+
+function normalizeSeedanceAssetUri(value: unknown): string {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text || /^(undefined|null|nan)$/i.test(text)) return '';
+  const normalized = text.replace(/^asset:\s*\/\//i, 'asset://');
+  if (/^asset:\/\/[A-Za-z0-9._:-]+$/.test(normalized)) return normalized;
+  if (/^asset-[A-Za-z0-9._:-]+$/.test(text)) return `asset://${text}`;
+  return '';
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : null;
+}
+
+function getApiBaseUrl(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fromDefine = typeof __API_BASE_URL__ !== 'undefined' ? String((__API_BASE_URL__ as any) || '').trim() : '';
+    if (fromDefine) return fromDefine.replace(/\/$/, '');
+  } catch {
+    // ignore
+  }
+  return '';
+}
+
+function getApiKey(): string {
+  try {
+    return String(Taro.getStorageSync('API_KEY') || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function getAccessToken(): string {
+  try {
+    return String(Taro.getStorageSync('MINIAPP_ACCESS_TOKEN') || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function buildDownloadUrl(url: string, mediaType: 'image' | 'video'): string {
+  const cleanUrl = normalizeMediaUrl(url);
+  if (!cleanUrl) return '';
+  if (!shouldProxyDownloadUrl(cleanUrl)) return cleanUrl;
+  const filename = mediaType === 'video' ? `video-${Date.now()}.mp4` : `image-${Date.now()}.jpg`;
+  const path = `/api/proxy/download?url=${encodeURIComponent(cleanUrl)}&filename=${encodeURIComponent(filename)}`;
+  return API_BASE_URL ? `${API_BASE_URL}${path}` : path;
+}
+
+function shouldProxyDownloadUrl(url: string): boolean {
+  try {
+    const { hostname } = new URL(url);
+    const normalized = hostname.toLowerCase();
+    if (
+      normalized === 'oss.atomx.top' ||
+      normalized.endsWith('.oss.atomx.top') ||
+      normalized === 'supabase-api.atomx.top' ||
+      normalized.endsWith('.supabase-api.atomx.top') ||
+      normalized === 'localhost' ||
+      normalized === '127.0.0.1' ||
+      normalized.endsWith('.aliyuncs.com') ||
+      normalized.endsWith('.volces.com')
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureAlbumPermission(): Promise<boolean> {
+  try {
+    const setting = await Taro.getSetting();
+    const writePermission = setting.authSetting?.['scope.writePhotosAlbum'];
+    if (writePermission === true) return true;
+
+    if (writePermission === false) {
+      const modal = await Taro.showModal({
+        title: '需要相册权限',
+        content: '下载前需要允许保存到相册，请在设置中开启权限',
+        confirmText: '去设置',
+      });
+      if (!modal.confirm) return false;
+      await Taro.openSetting();
+      const next = await Taro.getSetting();
+      return Boolean(next.authSetting?.['scope.writePhotosAlbum']);
+    }
+
+    await Taro.authorize({ scope: 'scope.writePhotosAlbum' });
+    return true;
+  } catch {
+    const modal = await Taro.showModal({
+      title: '需要相册权限',
+      content: '下载前需要允许保存到相册，请在设置中开启权限',
+      confirmText: '去设置',
+    });
+    if (!modal.confirm) return false;
+    try {
+      await Taro.openSetting();
+      const next = await Taro.getSetting();
+      return Boolean(next.authSetting?.['scope.writePhotosAlbum']);
+    } catch {
+      return false;
+    }
+  }
+}
+
+function getDownloadErrorMessage(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error || '');
+  if (/auth|authorize|permission|scope\.writePhotosAlbum/i.test(raw)) return '需要先开启相册权限';
+  if (/401|403|unauthorized|forbidden/i.test(raw)) return '登录态已失效，请重新进入页面后再下载';
+  if (/saveVideoToPhotosAlbum/i.test(raw)) return '保存失败，请稍后重试';
+  if (/url|domain|downloadFile|fail/i.test(raw)) return '视频下载失败，请稍后重试';
+  return '下载失败，请稍后重试';
 }
 
 function getWorkflowData(task: StoryboardTaskStatusResult | null): Record<string, unknown> {
@@ -555,17 +819,24 @@ function getStoredReferenceImages(segment: StoryboardSegmentItem | null): string
     : Array.isArray(params.referenceImageUrls)
       ? params.referenceImageUrls
       : [];
-  return uniqueUrls(raw.map((item) => normalizeMediaUrl(item)));
+  return uniqueReferenceUris(raw.map((item) => normalizeReferenceUri(item)));
 }
 
-function getEditableReferenceImages(segment: StoryboardSegmentItem | null): string[] {
+function getEditableReferenceImages(task: StoryboardTaskStatusResult | null, segment: StoryboardSegmentItem | null): string[] {
   const stored = getStoredReferenceImages(segment);
   if (stored.length > 0) return stored;
-  return uniqueUrls([
-    normalizeMediaUrl(asRecord(segment?.generationParams)?.selected_image_url),
-    normalizeMediaUrl(asRecord(segment?.generationParams)?.selectedImageUrl),
-    normalizeMediaUrl(segment?.generatedImage),
-    normalizeMediaUrl(asRecord(segment?.generationParams)?.reference_frame_url),
+  const detailed = asRecord(task?.detailedBreakdown);
+  const workflowData = getWorkflowData(task);
+  const metadata = asRecord(detailed?.metadata) || {};
+  return uniqueReferenceUris([
+    normalizeMediaUrl(task?.storyboardImageUrl),
+    normalizeMediaUrl(task?.coverImage),
+    normalizeMediaUrl(detailed?.storyboard_grid_url),
+    normalizeMediaUrl(detailed?.storyboardGridUrl),
+    normalizeMediaUrl(workflowData.storyboard_grid_url),
+    normalizeMediaUrl(workflowData.storyboardGridUrl),
+    normalizeMediaUrl(metadata.original_storyboard_grid_url),
+    normalizeMediaUrl(metadata.originalStoryboardGridUrl),
   ]);
 }
 
@@ -621,6 +892,30 @@ function uniqueUrls(values: string[]): string[] {
   return result;
 }
 
+function uniqueReferenceUris(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const uri = normalizeReferenceUri(value);
+    if (!uri || seen.has(uri)) continue;
+    seen.add(uri);
+    result.push(uri);
+  }
+  return result;
+}
+
+function getReferenceAssetItems(values: string[]): ReferenceAssetItem[] {
+  return uniqueReferenceUris(values).map((uri) => {
+    const assetId = uri.startsWith('asset://') ? uri.replace(/^asset:\/\//, '') : '';
+    return {
+      id: uri,
+      uri,
+      type: assetId ? 'asset' : 'image',
+      label: assetId || '参考图',
+    };
+  });
+}
+
 function resolveClipIndex(segment: StoryboardSegmentItem, segments: StoryboardSegmentItem[]): number {
   const params = asRecord(segment.generationParams) || {};
   const fromParams = Number(params.clip_index || params.clipIndex);
@@ -650,4 +945,11 @@ function isUserCancel(error: unknown): boolean {
       ? String((error as { errMsg?: unknown }).errMsg || '')
       : String(error || '');
   return /cancel|取消/i.test(message);
+}
+
+function readBooleanFlag(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value !== 'string') return false;
+  return ['1', 'true', 'yes', 'y', '是', '开启'].includes(value.trim().toLowerCase());
 }

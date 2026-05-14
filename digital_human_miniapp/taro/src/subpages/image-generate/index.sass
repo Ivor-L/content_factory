@@ -438,12 +438,71 @@
   height: 332rpx
 
 .template-card--active
-  border-color: rgba(236, 238, 159, 0.86)
-  box-shadow: 0 0 0 2rpx rgba(236, 238, 159, 0.28) inset
+  border: 4rpx solid #ecee9f
+  box-shadow: 0 0 0 4rpx rgba(5, 5, 5, 0.72) inset, 0 0 0 2rpx rgba(236, 238, 159, 0.4), 0 16rpx 34rpx rgba(236, 238, 159, 0.18)
+  transform: translateY(-2rpx)
+
+.template-card--active::after
+  content: ''
+  position: absolute
+  left: 0
+  right: 0
+  top: 0
+  bottom: 0
+  border-radius: 12rpx
+  background: linear-gradient(180deg, rgba(236, 238, 159, 0.14) 0%, rgba(236, 238, 159, 0) 44%)
+  pointer-events: none
+  z-index: 1
 
 .template-preview
   width: 100%
   height: 100%
+
+.template-selected-mark
+  position: absolute
+  left: 12rpx
+  top: 12rpx
+  z-index: 3
+  width: 42rpx
+  height: 42rpx
+  border-radius: 999rpx
+  background: #ecee9f
+  border: 4rpx solid rgba(5, 5, 5, 0.72)
+  display: flex
+  align-items: center
+  justify-content: center
+  box-sizing: border-box
+  box-shadow: 0 8rpx 18rpx rgba(0, 0, 0, 0.34)
+
+.template-selected-check
+  width: 16rpx
+  height: 9rpx
+  border-left: 4rpx solid #111
+  border-bottom: 4rpx solid #111
+  transform: rotate(-45deg) translate(1rpx, -1rpx)
+  box-sizing: border-box
+
+.template-selected-badge
+  position: absolute
+  right: 12rpx
+  top: 12rpx
+  z-index: 3
+  height: 42rpx
+  padding: 0 16rpx
+  border-radius: 999rpx
+  background: #ecee9f
+  border: 2rpx solid rgba(17, 17, 17, 0.72)
+  display: flex
+  align-items: center
+  justify-content: center
+  box-sizing: border-box
+  box-shadow: 0 8rpx 18rpx rgba(0, 0, 0, 0.34)
+
+.template-selected-badge-text
+  color: #111
+  font-size: 22rpx
+  line-height: 1
+  font-weight: 800
 
 .template-overlay
   position: absolute
@@ -452,6 +511,11 @@
   bottom: 0
   padding: 12rpx
   background: linear-gradient(180deg, rgba(5, 5, 5, 0) 0%, rgba(5, 5, 5, 0.84) 100%)
+  z-index: 2
+
+.template-overlay--active
+  padding: 14rpx
+  background: linear-gradient(180deg, rgba(5, 5, 5, 0) 0%, rgba(5, 5, 5, 0.72) 34%, rgba(236, 238, 159, 0.94) 100%)
 
 .template-tag
   display: inline-flex
@@ -472,6 +536,10 @@
   font-size: 26rpx
   font-weight: 600
   margin-top: 0
+
+.template-title--active
+  color: #111
+  font-weight: 800
 
 .template-add-card
   min-height: 176rpx

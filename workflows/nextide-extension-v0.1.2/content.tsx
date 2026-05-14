@@ -24,8 +24,52 @@ type CollectorConfig = {
   apiKey: string
 }
 
+type EarnPluginTask = {
+  id: string
+  status?: string
+  task?: {
+    title?: string
+    platform?: string
+    rewardCredits?: number
+  }
+  taskMaterial?: {
+    title?: string
+    payload?: unknown
+  } | null
+}
+
 const DEFAULT_API_BASE = 'https://atomx.top'
 const LOCAL_COLLECTOR_CONFIG_KEY = 'nextide_collector_config'
+
+const callContentFactoryPluginApi = <T,>(payload: {
+  path: string
+  method?: string
+  body?: unknown
+}): Promise<T> =>
+  new Promise((resolve, reject) => {
+    if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+      reject(new Error('插件通信不可用'))
+      return
+    }
+
+    chrome.runtime.sendMessage(
+      {
+        type: 'CONTENT_FACTORY_PLUGIN_API',
+        payload
+      },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message))
+          return
+        }
+        if (!response?.success) {
+          reject(new Error(response?.error || response?.response?.data?.error || '插件 API 请求失败'))
+          return
+        }
+        resolve(response.response?.data as T)
+      }
+    )
+  })
 
 const readLocalCollectorConfig = (): CollectorConfig | null => {
   try {
@@ -107,6 +151,63 @@ const openApiConfigPage = () => {
     console.warn('[Muse] Unable to open options page fallback', err)
   }
 }
+
+const installContentFactoryPluginBridge = () => {
+  if (typeof window === 'undefined' || typeof chrome === 'undefined') return
+
+  window.addEventListener('message', (event) => {
+    if (event.source !== window) return
+    const data = event.data || {}
+    if (data.type !== 'CONTENT_FACTORY_PLUGIN_REQUEST') return
+
+    const respond = (payload: unknown, error?: string) => {
+      window.postMessage({
+        type: 'CONTENT_FACTORY_PLUGIN_RESPONSE',
+        requestId: data.requestId,
+        payload,
+        error
+      }, '*')
+    }
+
+    if (data.action === 'status') {
+      loadCollectorConfig()
+        .then((config) => respond({
+          installed: true,
+          ready: !!config.apiKey,
+          version: chrome.runtime?.getManifest?.().version || 'unknown',
+          permissions: ['storage', 'activeTab'],
+          apiBaseUrl: config.apiBaseUrl
+        }))
+        .catch((error) => respond(null, error instanceof Error ? error.message : 'Status failed'))
+      return
+    }
+
+    if (data.action === 'api') {
+      chrome.runtime.sendMessage(
+        {
+          type: 'CONTENT_FACTORY_PLUGIN_API',
+          payload: data.payload
+        },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            respond(null, chrome.runtime.lastError.message)
+            return
+          }
+          if (!response?.success) {
+            respond(null, response?.error || response?.response?.data?.error || 'Plugin API failed')
+            return
+          }
+          respond(response.response.data)
+        }
+      )
+      return
+    }
+
+    respond(null, 'Unsupported plugin action')
+  })
+}
+
+installContentFactoryPluginBridge()
 
 // ==========================================
 // Login State Detection
@@ -990,6 +1091,10 @@ const App = () => {
   const [benchmark, setBenchmark] = useState<number>(3)
   const [remark, setRemark] = useState('')
   const [hasApiKeyConfigured, setHasApiKeyConfigured] = useState(false)
+  const [earnTasks, setEarnTasks] = useState<EarnPluginTask[]>([])
+  const [selectedUserTaskId, setSelectedUserTaskId] = useState('')
+  const [isLoadingEarnTasks, setIsLoadingEarnTasks] = useState(false)
+  const [isSubmittingEvidence, setIsSubmittingEvidence] = useState(false)
   const hasApiKeyConfiguredRef = useRef(false)
 
   const showError = (msg: string) => {
@@ -1033,6 +1138,79 @@ const App = () => {
     },
     [showError]
   )
+
+  const loadEarnTasks = useCallback(async () => {
+    if (!hasApiKeyConfiguredRef.current) {
+      setEarnTasks([])
+      setSelectedUserTaskId('')
+      return
+    }
+
+    setIsLoadingEarnTasks(true)
+    try {
+      const result = await callContentFactoryPluginApi<{ data?: { activeTasks?: EarnPluginTask[] } }>({
+        path: '/api/plugin/bootstrap',
+        method: 'GET'
+      })
+      const tasks = result?.data?.activeTasks || []
+      setEarnTasks(tasks)
+      setSelectedUserTaskId((current) =>
+        current && tasks.some((task) => task.id === current) ? current : ''
+      )
+    } catch (error) {
+      console.warn('[Muse] Failed to load earn tasks', error)
+      setEarnTasks([])
+    } finally {
+      setIsLoadingEarnTasks(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (hasApiKeyConfigured) {
+      loadEarnTasks()
+    } else {
+      setEarnTasks([])
+      setSelectedUserTaskId('')
+    }
+  }, [hasApiKeyConfigured, loadEarnTasks])
+
+  const handleSubmitTaskEvidence = useCallback(async () => {
+    if (!selectedUserTaskId) {
+      showError('请先选择要关联的淘金任务')
+      return
+    }
+    if (!ensureApiKeyConfigured()) {
+      return
+    }
+
+    setIsSubmittingEvidence(true)
+    try {
+      await callContentFactoryPluginApi({
+        path: `/api/plugin/tasks/${selectedUserTaskId}/submit-evidence`,
+        method: 'POST',
+        body: {
+          eventType: 'task_capture_evidence',
+          action: 'collect',
+          platform: 'xhs',
+          submissionUrl: window.location.href,
+          pluginEvidence: {
+            url: window.location.href,
+            title: document.title || '',
+            capturedAt: new Date().toISOString(),
+            source: 'content_factory_plugin_sidebar',
+            activeTab
+          }
+        }
+      })
+      showNotification('任务证据已提交，等待审核')
+      await loadEarnTasks()
+    } catch (error) {
+      console.error('[Muse] Submit task evidence failed', error)
+      showError(error instanceof Error ? error.message : '任务证据提交失败')
+    } finally {
+      setIsSubmittingEvidence(false)
+    }
+  }, [activeTab, ensureApiKeyConfigured, loadEarnTasks, selectedUserTaskId])
 
   const syncItems = async (items: CollectedItem[]) => {
     if (items.length === 0) return false
@@ -1826,6 +2004,53 @@ const App = () => {
                     <span>{error}</span>
                   </div>
                 )}
+                {hasApiKeyConfigured && (
+                  <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-gray-700">淘金任务</span>
+                      <button
+                        onClick={loadEarnTasks}
+                        disabled={isLoadingEarnTasks}
+                        className="text-[11px] font-bold text-red-500 hover:text-red-600 disabled:text-gray-300 transition-colors"
+                      >
+                        {isLoadingEarnTasks ? '刷新中' : '刷新'}
+                      </button>
+                    </div>
+                    <div className="relative">
+                      <select
+                        className="w-full appearance-none bg-gray-50 border border-gray-200 rounded-lg py-2 px-2.5 pr-8 text-xs focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-red-400 transition-all text-gray-700"
+                        value={selectedUserTaskId}
+                        onChange={(e) => setSelectedUserTaskId(e.target.value)}
+                      >
+                        <option value="">不关联淘金任务</option>
+                        {earnTasks.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.task?.title || item.taskMaterial?.title || '未命名任务'}
+                            {item.status ? ` · ${item.status}` : ''}
+                            {item.task?.rewardCredits ? ` · ${item.task.rewardCredits}积分` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        size={14}
+                        className="absolute right-2.5 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none"
+                      />
+                    </div>
+                    <button
+                      onClick={handleSubmitTaskEvidence}
+                      disabled={!selectedUserTaskId || isSubmittingEvidence}
+                      className="w-full bg-gray-900 disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold py-2.5 rounded-xl flex items-center justify-center gap-2 text-xs transition-all active:scale-[0.99]"
+                    >
+                      <CloudUpload size={15} />
+                      <span>{isSubmittingEvidence ? '提交中...' : '提交当前页证据'}</span>
+                    </button>
+                    {earnTasks.length === 0 && !isLoadingEarnTasks && (
+                      <p className="text-[11px] text-gray-400 leading-relaxed">
+                        暂无进行中的插件任务，可先在淘金广场领取。
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div className="relative">
                   <select
                     className="w-full appearance-none bg-white border border-gray-200 rounded-xl py-2.5 px-3 text-xs focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-red-400 transition-all shadow-sm text-gray-700"
@@ -2086,7 +2311,31 @@ const App = () => {
 
 const MOUNT_POINT_ID = 'rednote-muse-root'
 
+function injectContentFactoryPluginBridge() {
+  if (!chrome.runtime?.getURL) return
+  const script = document.createElement('script')
+  script.src = chrome.runtime.getURL('inject.js')
+  script.onload = function (this: HTMLScriptElement) {
+    this.remove()
+  }
+    ; (document.head || document.documentElement).appendChild(script)
+}
+
+function isPlatformPage() {
+  const host = window.location.hostname
+  return (
+    host.includes('xiaohongshu.com') ||
+    host.includes('douyin.com') ||
+    host.includes('tiktok.com') ||
+    host.includes('instagram.com')
+  )
+}
+
 async function init() {
+  injectContentFactoryPluginBridge()
+
+  if (!isPlatformPage()) return
+
   if (document.getElementById(MOUNT_POINT_ID)) return
   const mountPoint = document.createElement('div')
   mountPoint.id = MOUNT_POINT_ID
@@ -2135,14 +2384,6 @@ async function init() {
     shadowRoot.appendChild(link)
     await cssLoaded
   }
-
-  // Inject JS (Main page context)
-  const script = document.createElement('script')
-  script.src = chrome.runtime.getURL('inject.js')
-  script.onload = function (this: HTMLScriptElement) {
-    this.remove()
-  }
-    ; (document.head || document.documentElement).appendChild(script)
 
   // Final render
   const root = createRoot(shadowRoot)

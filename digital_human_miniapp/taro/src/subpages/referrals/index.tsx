@@ -1,10 +1,12 @@
 import { View, Text, ScrollView, Button } from '@tarojs/components';
-import Taro, { useLoad, useShareAppMessage } from '@tarojs/taro';
+import Taro, { useLoad } from '@tarojs/taro';
 import { useMemo, useState } from 'react';
 import { miniappApi } from '../../utils/miniapp-api';
 import { buildMiniappReferralPath } from '../../utils/referrals';
-import homeShareImage from '../../assets/videos/hero-poster.jpg';
+import { useMiniappShare } from '../../utils/miniapp-share';
 import './index.sass';
+
+const HOME_SHARE_IMAGE_URL = 'https://oss.atomx.top/miniapp/home/hero-poster-1777627846532.jpg';
 
 type Invitee = {
   bindingId: string;
@@ -123,10 +125,11 @@ export default function ReferralsPage() {
 
   const miniappSharePath = useMemo(() => buildMiniappReferralPath(payload?.shareCode), [payload?.shareCode]);
 
-  useShareAppMessage(() => ({
+  useMiniappShare(() => ({
     title: '我在用小蚁AI做爆款内容，一起领取算力体验',
     path: miniappSharePath,
-    imageUrl: homeShareImage,
+    query: payload?.shareCode ? { ref: payload.shareCode } : undefined,
+    imageUrl: HOME_SHARE_IMAGE_URL,
   }));
 
   const warningText = useMemo(() => {

@@ -3,7 +3,8 @@ import Taro, { useLoad } from '@tarojs/taro';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../utils/api';
 import { bindPendingReferral, captureReferralFromQuery } from '../../utils/referrals';
-import antHeadLogoYellow from '../../assets/icons/ant-head-logo-yellow.png';
+import { useMiniappShare } from '../../utils/miniapp-share';
+import antHeadLogoYellow from '../../assets/icons/ant-head-logo-yellow-mini.webp';
 import './index.sass';
 
 const HERO_VIDEO_OSS_URL = 'https://oss.atomx.top/miniapp/home/hero-1777626035392.mp4';
@@ -38,6 +39,8 @@ function toLoginUser(result: {
 }
 
 export default function LoginPhonePage() {
+  useMiniappShare();
+
   const [sendingCode, setSendingCode] = useState(false);
   const [verifyingCode, setVerifyingCode] = useState(false);
   const [heroVideoFailed, setHeroVideoFailed] = useState(false);

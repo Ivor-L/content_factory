@@ -1,4 +1,5 @@
 export default defineAppConfig({
+  lazyCodeLoading: 'requiredComponents',
   pages: [
     'pages/home/index',
     'pages/hot-square/index',
@@ -43,6 +44,11 @@ export default defineAppConfig({
     navigationBarTextStyle: 'white',
     backgroundColor: '#050505',
     navigationStyle: 'custom',
+  },
+  permission: {
+    'scope.record': {
+      desc: '用于录制数字人音色',
+    },
   },
   tabBar: {
     color: '#8f8a81',

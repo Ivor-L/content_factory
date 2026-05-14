@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "earn.task.submit_evidence input",
+  "type": "object",
+  "properties": {
+    "userTaskId": {
+      "type": "string",
+      "description": "用户接单记录 ID。"
+    },
+    "submissionUrl": {
+      "type": "string",
+      "description": "发布后的作品链接。"
+    },
+    "screenshotUrls": {
+      "type": "array",
+      "description": "截图 URL 列表。"
+    },
+    "pluginEvidence": {
+      "type": "object",
+      "description": "插件返回的 workId、shareLink、页面标题等结构化证据。"
+    }
+  },
+  "required": [
+    "userTaskId"
+  ],
+  "additionalProperties": true
+}

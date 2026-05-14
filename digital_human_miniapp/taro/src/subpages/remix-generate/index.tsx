@@ -3,6 +3,7 @@ import Taro, { useDidShow, useLoad } from '@tarojs/taro';
 import { useState } from 'react';
 import { api, reportClientLog } from '../../utils/api';
 import { miniappApi } from '../../utils/miniapp-api';
+import { useMiniappShare } from '../../utils/miniapp-share';
 import './index.sass';
 
 type RemixMode = 'SMART' | 'ACTION';
@@ -18,6 +19,11 @@ const VIDEO_LANGUAGE_OPTIONS = [
 ];
 
 export default function RemixGeneratePage() {
+  useMiniappShare({
+    title: '小蚁AI智能复刻 - 一键生成同款内容',
+    path: '/subpages/remix-generate/index',
+  });
+
   const [remixMode, setRemixMode] = useState<RemixMode>('SMART');
   const [products, setProducts] = useState<Array<{ id: string; name: string; images: string[] }>>([]);
   const [selectedProductId, setSelectedProductId] = useState('');

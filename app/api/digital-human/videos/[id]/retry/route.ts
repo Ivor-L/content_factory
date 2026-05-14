@@ -13,6 +13,11 @@ function inferSourceType(url: string | null | undefined): DigitalHumanSourceType
   return 'IMAGE';
 }
 
+function stripSegmentPrefix(script: string | null | undefined): string | undefined {
+  const cleaned = String(script ?? '').replace(/^第\s*\d+\s*\/\s*\d+\s*段\s*\n?/, '').trim();
+  return cleaned || undefined;
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -50,7 +55,7 @@ export async function POST(
       imageUrl: sourceType === 'IMAGE' ? original.imageUrl : undefined,
       videoUrl: sourceType === 'VIDEO' ? original.imageUrl : undefined,
       audioUrl: original.audioUrl,
-      script: original.scriptContent || undefined,
+      script: stripSegmentPrefix(original.scriptContent),
       durationSeconds: original.durationSeconds ?? undefined,
       userId,
       sourceTaskId: original.sourceTaskId ?? undefined,

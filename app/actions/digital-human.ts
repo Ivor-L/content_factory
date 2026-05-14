@@ -51,7 +51,11 @@ export async function createDigitalHumanVideo(formData: FormData) {
   return {
     success: true,
     jobIds: result.jobs.map((job) => job.id),
-    jobs: result.jobs.map((job) => ({ id: job.id })),
+    jobs: result.jobs.map((job, index) => ({
+      id: job.id,
+      segmentIndex: result.jobs.length > 1 ? index + 1 : null,
+      segmentCount: result.jobs.length > 1 ? result.jobs.length : null,
+    })),
     isSplit: result.isSplit,
   };
 }

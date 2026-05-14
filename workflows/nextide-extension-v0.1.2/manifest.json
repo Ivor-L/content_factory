@@ -16,10 +16,15 @@
   "host_permissions": [
     "*://xiaohongshu.com/*",
     "*://*.xiaohongshu.com/*",
+    "*://douyin.com/*",
+    "*://*.douyin.com/*",
     "*://tiktok.com/*",
     "*://*.tiktok.com/*",
     "*://instagram.com/*",
     "*://*.instagram.com/*",
+    "*://atomx.top/*",
+    "*://*.atomx.top/*",
+    "*://nextide.cpolar.top/*",
     "*://*/api/*",
     "http://localhost:*/*"
   ],
@@ -37,10 +42,16 @@
         "*://xiaohongshu.com/*",
         "*://*.xiaohongshu.com/*",
         "*://creator.xiaohongshu.com/*",
+        "*://douyin.com/*",
+        "*://*.douyin.com/*",
         "*://tiktok.com/*",
         "*://*.tiktok.com/*",
         "*://instagram.com/*",
-        "*://*.instagram.com/*"
+        "*://*.instagram.com/*",
+        "*://atomx.top/*",
+        "*://*.atomx.top/*",
+        "*://nextide.cpolar.top/*",
+        "http://localhost:*/*"
       ],
       "js": [
         "content.js"
@@ -52,16 +63,23 @@
   "web_accessible_resources": [
     {
       "resources": [
+        "inject.js",
         "style.css",
         "images/*.png"
       ],
       "matches": [
         "*://xiaohongshu.com/*",
         "*://*.xiaohongshu.com/*",
+        "*://douyin.com/*",
+        "*://*.douyin.com/*",
         "*://tiktok.com/*",
         "*://*.tiktok.com/*",
         "*://instagram.com/*",
-        "*://*.instagram.com/*"
+        "*://*.instagram.com/*",
+        "*://atomx.top/*",
+        "*://*.atomx.top/*",
+        "*://nextide.cpolar.top/*",
+        "http://localhost:*/*"
       ]
     }
   ]

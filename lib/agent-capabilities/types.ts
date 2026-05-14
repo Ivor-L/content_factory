@@ -26,6 +26,8 @@ export type AgentCapabilityCategory =
   | 'social'
   | 'product'
   | 'writing'
+  | 'earn'
+  | 'plugin'
   | 'system';
 
 export type AgentCapabilityCostLevel = 'free' | 'low' | 'medium' | 'high' | 'variable';

@@ -42,24 +42,22 @@ npm run nextide -- capability run viral.breakdown.video_prompts \
 
 Before submitting `viral.breakdown.video_prompts`, always confirm the following if the user has not already specified them:
 
-1. Target duration: `15` / `30` / `60` seconds, or custom.
+1. Reference video: either an uploaded local video (upload to OSS first and pass the URL as `referenceVideo`) or a `referenceUrl`.
 2. Target language: use Chinese labels in the interaction: 跟随原视频 / 中文 / 英文 / 日语 / 韩语 / 西语. Internally map them to `source` / `zh-CN` / `en` / `ja` / `ko` / `es`.
-3. Product binding: no product / choose product library product / manually provided product info.
-4. Prompt format: `seedance` / `veo` / `generic`.
-5. Next step: breakdown only / continue generating video clips.
+3. Prompt format: `seedance` / `veo` / `generic`.
+4. Next step: breakdown only / continue generating video clips.
 
-Do not submit the smart remix job until at least `durationSeconds` and `targetLanguage` are confirmed.
+Do not ask for target duration or product binding in this intake. The backend keeps a compatibility duration for n8n, but the Agent UX should stay video + parameters only.
+Do not submit the smart remix job until at least one video reference and `targetLanguage` are confirmed.
 
 Recommended interactive prompt:
 
 ```text
 请选择复刻参数：
 
-目标时长：
-A. 15 秒
-B. 30 秒
-C. 60 秒
-D. 自定义
+参考视频：
+A. 上传本地视频（自动上传 OSS）
+B. 粘贴视频链接
 
 目标语言：
 A. 跟随原视频
@@ -68,11 +66,6 @@ C. 英文
 D. 日语
 E. 韩语
 F. 西语
-
-产品绑定：
-A. 不绑定，只拆解提示词
-B. 绑定产品库产品
-C. 手动提供产品信息
 
 提示词格式：Seedance / Veo / 通用
 下一步：只拆解提示词 / 继续生成视频片段
@@ -83,12 +76,12 @@ C. 手动提供产品信息
 ```json
 {
   "referenceVideo": "https://.../video.mp4",
+  "referenceUrl": "https://.../post",
   "sourcePlatform": "tiktok",
   "description": "可选参考说明",
   "targetLanguage": "zh-CN",
-  "durationSeconds": 15,
-  "productId": "可选：用户产品库产品 ID",
-  "promptProvider": "seedance"
+  "promptProvider": "seedance",
+  "nextStep": "breakdown_only"
 }
 ```
 
@@ -102,13 +95,22 @@ with `pipeline_key=viral_clone`. It returns a StoryboardTask id and usually ente
 
 ## Output Handling
 
-The callback writes results to:
+The callback writes structured results to `StoryboardTask.detailedBreakdown` and may also create `StoryboardSegment` rows for downstream image/video generation.
+
+For Agent display, prefer the HTML report generated from:
 
 ```text
-StoryboardTask.detailedBreakdown
-StoryboardSegment.imagePrompt
-StoryboardSegment.videoPrompt
+StoryboardTask.detailedBreakdown.source_video_analysis
+StoryboardTask.detailedBreakdown.content_structure
+StoryboardTask.detailedBreakdown.beat_map
+StoryboardTask.detailedBreakdown.full_original_script
+StoryboardTask.detailedBreakdown.full_rewritten_script
+StoryboardTask.detailedBreakdown.viral_mechanism
+StoryboardTask.detailedBreakdown.clone_prompt.clips
+StoryboardTask.detailedBreakdown.storyboard_grid_url
 ```
+
+The primary prompt output is `clone_prompt.clips[]` (clip-level Seedance/Veo prompts), not each individual storyboard segment prompt.
 
 Initial submit returns:
 
@@ -119,7 +121,17 @@ Initial submit returns:
 }
 ```
 
-After callback, `nextide run status <run-id>` / `nextide run result <run-id>` should resolve the linked `storyboardTask` and expose the generated segments.
+After callback, run artifacts export and return the HTML report first:
+
+```bash
+nextide run artifacts <run-id> \
+  --output-dir .nextide/output/<run-id> \
+  --download \
+  --gallery \
+  --datatable
+```
+
+Return `breakdown-report.html` / `preview.html` first. The report must show the storyboard grid image, source video analysis, rhythm breakdown, original voiceover, rewritten voiceover, viral mechanism, and clip-level prompts.
 
 ## Prompt Rule
 
@@ -138,7 +150,7 @@ Always separate:
 
 ## Rules
 
-- Do not invent or default required intake values. If `durationSeconds` or `targetLanguage` is missing, ask first.
+- Do not invent or default required intake values. If both `referenceVideo` and `referenceUrl` are missing, ask first. If `targetLanguage` is missing, ask first.
 - Do not invent prompts if storyboard breakdown is pending.
 - If only a platform post URL is provided and it is not a direct playable video URL, collect/normalize it first with the relevant collector skill.
 - Treat this as a smart-remix storyboard breakdown capability, not final video generation.
@@ -166,7 +178,7 @@ Always separate:
 
 Description:
 
-调用小程序「爆款复刻 / 智能复刻」viral_clone 分镜拆解链路，拆解参考视频并生成可用于 Seedance/Veo 的分段 imagePrompt/videoPrompt。
+调用小程序「爆款复刻 / 智能复刻」viral_clone 分镜拆解链路，拆解参考视频并生成 HTML 拆解报告、分镜网格图和可用于 Seedance/Veo 的 Clip 级分段提示词。
 
 Examples:
 
@@ -176,18 +188,18 @@ Input fields:
 
 - `referenceUrl` (string)：参考爆款视频链接；没有 referenceVideo 时会作为 reference_video_url 使用。
 - `referenceVideo` (string)：参考视频 URL，优先使用。
-- `productId` (string)：可选，用户产品库中的产品 ID，用于智能复刻替换产品。
-- `targetProduct` (object)：目标产品信息；如包含 id/productId 会映射为 product_id。
-- `durationSeconds` (number, required)：目标复刻视频时长，秒。必须由用户确认，常用值：15 / 30 / 60。
 - `targetLanguage` (string, required)：目标语言。必须由用户用中文选项确认：跟随原视频 / 中文 / 英文 / 日语 / 韩语 / 西语；内部值分别映射为 source / zh-CN / en / ja / ko / es。
 - `promptProvider` (string)：目标视频模型或提示词格式。 默认：`"seedance"`
+- `nextStep` (string)：`breakdown_only` 或 `generate_clips`。默认：`"breakdown_only"`
 
 Output fields:
 
 - `taskId` (string)：StoryboardTask ID。
 - `status` (string)：任务状态，例如 ANALYZING / BREAKDOWN_COMPLETED。
 - `breakdown` (object)：回调完成后写入 StoryboardTask.detailedBreakdown 的爆款拆解结果。
-- `videoPrompts` (array)：回调完成后写入 StoryboardSegment.videoPrompt 的分段视频提示词。
+- `storyboardGridUrl` (string)：分镜网格图 URL。
+- `clipPrompts` (array)：`detailedBreakdown.clone_prompt.clips` 中的 Clip 级 Seedance/Veo 提示词。
+- `htmlReport` (file)：Agent artifacts 导出的 `breakdown-report.html`。
 
 CLI:
 

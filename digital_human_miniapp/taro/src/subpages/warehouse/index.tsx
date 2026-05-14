@@ -1,10 +1,37 @@
 import { View, Text, Image, ScrollView } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 import { useEffect, useRef, useState } from 'react';
-import { api } from '../../utils/api';
+import { api, reportClientLog } from '../../utils/api';
+import { useMiniappShare } from '../../utils/miniapp-share';
+import audioUploadIcon from '../../assets/icons/warehouse-audio-upload.svg';
+import recordIcon from '../../assets/icons/warehouse-record.svg';
+import trashIcon from '../../assets/icons/warehouse-trash.svg';
 import './index.sass';
 
+const RECORD_PERMISSION_SCOPE = 'scope.record';
+const RECORD_FILE_EXT = 'aac';
+const RECORD_MIME_TYPE = 'audio/aac';
+
+function getErrorMessage(error: unknown): string {
+  if (error && typeof error === 'object' && 'errMsg' in error) {
+    return String((error as { errMsg?: unknown }).errMsg || '');
+  }
+  if (error instanceof Error) return error.message;
+  return String(error || '');
+}
+
+function getRecordToast(error: unknown): string {
+  const message = getErrorMessage(error).toLowerCase();
+  if (/auth|authorize|permission|scope\.record|deny|denied/.test(message)) {
+    return '请先允许麦克风权限';
+  }
+  if (/interrupted|interrupt/.test(message)) return '录音被中断，请重试';
+  return '录音失败，请重试';
+}
+
 export default function WarehousePage() {
+  useMiniappShare();
+
   const [humans, setHumans] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,22 +70,34 @@ export default function WarehousePage() {
     const handleStop = async (res: Taro.RecorderManager.OnStopCallbackResult) => {
       setStoppingRecord(false);
       setRecording(false);
+      if (!res.tempFilePath) {
+        Taro.showToast({ title: '录音文件生成失败', icon: 'none' });
+        void reportClientLog('miniapp_warehouse_record_empty_file', { result: res as unknown as Record<string, unknown> });
+        return;
+      }
       setUploadingVoice(true);
       try {
-        const url = await api.uploadMedia(res.tempFilePath, `record-${Date.now()}.m4a`, 'audio/mp4');
+        const url = await api.uploadMedia(res.tempFilePath, `record-${Date.now()}.${RECORD_FILE_EXT}`, RECORD_MIME_TYPE);
         setNewVoiceUrl(url);
-      } catch {
+      } catch (error) {
+        void reportClientLog('miniapp_warehouse_record_upload_failed', {
+          tempFilePath: res.tempFilePath,
+          error: { message: getErrorMessage(error) },
+        });
         Taro.showToast({ title: '录音上传失败', icon: 'none' });
       } finally {
         setUploadingVoice(false);
       }
     };
 
-    const handleError = () => {
+    const handleError = (error: Taro.RecorderManager.OnErrorCallbackResult) => {
       setRecording(false);
       setStoppingRecord(false);
       setUploadingVoice(false);
-      Taro.showToast({ title: '录音失败，请重试', icon: 'none' });
+      void reportClientLog('miniapp_warehouse_record_failed', {
+        error: { errMsg: error?.errMsg || '' },
+      });
+      Taro.showToast({ title: getRecordToast(error), icon: 'none' });
     };
 
     recorderManager.onStop(handleStop);
@@ -111,19 +150,58 @@ export default function WarehousePage() {
     }
   };
 
-  const handleStartRecord = () => {
+  const ensureRecordPermission = async (): Promise<boolean> => {
+    try {
+      const setting = await Taro.getSetting();
+      if (setting.authSetting?.[RECORD_PERMISSION_SCOPE]) return true;
+
+      if (setting.authSetting?.[RECORD_PERMISSION_SCOPE] === false) {
+        const modal = await Taro.showModal({
+          title: '需要麦克风权限',
+          content: '请允许使用麦克风后再录制音色。',
+          confirmText: '去设置',
+        });
+        if (!modal.confirm) return false;
+        const next = await Taro.openSetting();
+        return Boolean(next.authSetting?.[RECORD_PERMISSION_SCOPE]);
+      }
+
+      await Taro.authorize({ scope: RECORD_PERMISSION_SCOPE });
+      return true;
+    } catch (error) {
+      void reportClientLog('miniapp_warehouse_record_permission_failed', {
+        error: { message: getErrorMessage(error) },
+      });
+      Taro.showToast({ title: getRecordToast(error), icon: 'none' });
+      return false;
+    }
+  };
+
+  const handleStartRecord = async () => {
     const recorderManager = recorderManagerRef.current;
     if (recording || stoppingRecord || uploadingVoice) return;
     if (!recorderManager) {
       Taro.showToast({ title: '当前环境不支持录音', icon: 'none' });
       return;
     }
+    const hasPermission = await ensureRecordPermission();
+    if (!hasPermission) return;
+
     setRecording(true);
     setStoppingRecord(false);
     try {
-      recorderManager.start({ duration: 60000, format: 'm4a' });
-    } catch {
+      recorderManager.start({
+        duration: 60000,
+        format: RECORD_FILE_EXT,
+        sampleRate: 16000,
+        numberOfChannels: 1,
+        encodeBitRate: 48000,
+      });
+    } catch (error) {
       setRecording(false);
+      void reportClientLog('miniapp_warehouse_record_start_failed', {
+        error: { message: getErrorMessage(error) },
+      });
       Taro.showToast({ title: '录音启动失败', icon: 'none' });
     }
   };
@@ -192,7 +270,7 @@ export default function WarehousePage() {
                     <Text className='human-voice'>{item.voiceUrl ? '已绑定音色' : '未绑定音色'}</Text>
                   </View>
                   <View className='human-delete' onClick={() => handleDelete(item.id)}>
-                    <Text className='human-delete-icon'>🗑️</Text>
+                    <Image className='human-delete-icon' src={trashIcon} mode='aspectFit' />
                   </View>
                 </View>
               ))}
@@ -217,7 +295,7 @@ export default function WarehousePage() {
             <Text className='field-label'>形象图片</Text>
             <View className='upload-area' onClick={handleChooseImage}>
               {newImageUrl
-                ? <Image className='upload-preview' src={newImageUrl} mode='aspectFill' />
+                ? <Image className='upload-preview' src={newImageUrl} mode='aspectFit' />
                 : <Text className='upload-hint'>{uploadingImage ? '上传中...' : '点击选择图片'}</Text>
               }
             </View>
@@ -225,12 +303,14 @@ export default function WarehousePage() {
             <Text className='field-label'>绑定音色</Text>
             <View className='voice-actions'>
               <View className='voice-btn' onClick={handleChooseAudio}>
+                <Image className='voice-btn-icon' src={audioUploadIcon} mode='aspectFit' />
                 <Text>{uploadingVoice ? '上传中...' : '选择音频文件'}</Text>
               </View>
               <View
                 className={`voice-btn ${recording ? 'voice-btn--recording' : ''}`}
                 onClick={recording ? handleStopRecord : handleStartRecord}
               >
+                <Image className='voice-btn-icon' src={recordIcon} mode='aspectFit' />
                 <Text>{stoppingRecord ? '处理中...' : recording ? '停止录音' : '点击录音'}</Text>
               </View>
             </View>

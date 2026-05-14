@@ -46,6 +46,10 @@ cp .vibe/credentials.env.example .vibe/credentials.env
 - `SUPABASE_SERVICE_ROLE_KEY`：服务端 service role key（禁止出现在前端；用于服务端读取 `profiles` 等）
 - `SUPABASE_JWT_SECRET`：仅在服务端解析 JWT（可选；见 [authServer.ts](file:///Users/kaka/Desktop/软件开发/content-factory-web%203/lib/authServer.ts)）
 
+### 3.2.1 前端功能开关
+
+- `NEXT_PUBLIC_ENABLE_EARN_MARKET`：淘金广场 Web/后台入口开关。默认关闭；仅当显式设置为 `true` 时展示 `/earn` 与 `/admin/earn` 页面入口并允许页面访问。
+
 ### 3.3 Webhook 回调鉴权
 
 - `ADMIN_TOKEN`：n8n 工作流回调 App 时使用的共享密钥。n8n 在发起 HTTP 回调时，需在请求头中携带 `x-admin-token: <ADMIN_TOKEN>`，App 侧通过 `lib/webhookAuth.ts` 的 `isValidAdminWebhookRequest()` 进行校验，不匹配则返回 401。
