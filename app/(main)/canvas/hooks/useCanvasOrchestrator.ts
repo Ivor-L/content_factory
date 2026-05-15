@@ -24,6 +24,8 @@ const IMAGE_RATIO_PIXEL_MAP: Record<string, string> = {
 
 const VIDEO_POLL_INTERVAL_MS = 5000;
 const VIDEO_POLL_MAX_ATTEMPTS = 90;
+const CANVAS_IMAGE_POLL_INTERVAL_MS = 2000;
+const CANVAS_IMAGE_POLL_MAX_ATTEMPTS = 120;
 const AUDIO_POLL_INTERVAL_MS = 4000;
 const AUDIO_POLL_MAX_ATTEMPTS = 120;
 const REALTIME_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
@@ -245,6 +247,20 @@ function extractImageUrls(payload: unknown) {
   return [];
 }
 
+function extractTaskId(payload: unknown) {
+  if (!payload || typeof payload !== "object") return "";
+  const record = payload as Record<string, any>;
+  return String(
+    record.taskId ||
+      record.task_id ||
+      record.id ||
+      record?.data?.taskId ||
+      record?.data?.task_id ||
+      record?.data?.id ||
+      "",
+  ).trim();
+}
+
 function extractErrorMessage(payload: unknown, fallback = "请求失败") {
   if (!payload || typeof payload !== "object") return fallback;
   const record = payload as Record<string, any>;
@@ -385,6 +401,30 @@ async function getJson(url: string) {
     throw new Error(message);
   }
   return parsed;
+}
+
+function isTaskQueuedResponse(payload: unknown) {
+  if (!payload || typeof payload !== "object") return false;
+  const record = payload as Record<string, any>;
+  return Boolean(
+    record.queued ||
+    (typeof record.status === "string" && ["processing", "queued", "pending"].includes(record.status.toLowerCase())) ||
+    (typeof record?.data?.status === "string" && ["processing", "queued", "pending"].includes(String(record.data.status).toLowerCase())),
+  );
+}
+
+function isTaskFinished(payload: unknown) {
+  if (!payload || typeof payload !== "object") return false;
+  const record = payload as Record<string, any>;
+  const status = String(record.status || record.state || record?.data?.status || "").toLowerCase();
+  return ["completed", "succeeded", "success", "failed", "error"].includes(status);
+}
+
+function isTaskFailed(payload: unknown) {
+  if (!payload || typeof payload !== "object") return false;
+  const record = payload as Record<string, any>;
+  const status = String(record.status || record.state || record?.data?.status || "").toLowerCase();
+  return ["failed", "error"].includes(status);
 }
 
 
@@ -628,6 +668,64 @@ export function useCanvasOrchestrator(options: UseCanvasOrchestratorOptions): Us
 
         const response = await postJson("/api/canvas/images/generations", payload);
         console.log("[canvas/image] raw response:", JSON.stringify(response)?.slice(0, 500));
+        const taskId = extractTaskId(response);
+        if (taskId && isTaskQueuedResponse(response)) {
+          patchRuntimeData(nodeId, {
+            taskId,
+            lastTaskStatus: "queued",
+            lastRequest: payload,
+          });
+          let urls: string[] = [];
+          for (let attempt = 0; attempt < CANVAS_IMAGE_POLL_MAX_ATTEMPTS; attempt += 1) {
+            if (attempt > 0) {
+              await sleep(CANVAS_IMAGE_POLL_INTERVAL_MS);
+            }
+            const taskData = await getJson(`/api/canvas/images/tasks/${encodeURIComponent(taskId)}`);
+            const status = String((taskData as Record<string, any>)?.status || (taskData as Record<string, any>)?.state || "").toLowerCase();
+            patchRuntimeData(nodeId, {
+              taskId,
+              lastTaskStatus: status || "processing",
+              lastPolledAt: Date.now(),
+            });
+            urls = extractImageUrls(taskData);
+            if (isTaskFailed(taskData)) {
+              throw new Error(extractErrorMessage(taskData, "图片生成失败"));
+            }
+            if (urls.length > 0 || isTaskFinished(taskData)) {
+              break;
+            }
+          }
+          if (!urls.length) {
+            throw new Error("图片生成超时，请稍后在任务列表查看结果");
+          }
+          const outputs = urls.map((url) => ({
+            id: createOutputId("image"),
+            url,
+            createdAt: Date.now(),
+          }));
+          const generatedAt = Date.now();
+          const persistedOutputs = await Promise.all(
+            outputs.map(async (output, index) => {
+              if (!isDataUrl(output.url)) {
+                return output;
+              }
+              const file = dataUrlToFile(output.url, `canvas-image-${generatedAt}-${index + 1}`);
+              if (!file) {
+                return output;
+              }
+              const resource = await uploadResource(file, { type: "image", name: file.name });
+              return { ...output, url: resource.url };
+            }),
+          );
+          patchRuntimeData(nodeId, {
+            outputs: persistedOutputs,
+            lastCompletedAt: Date.now(),
+            lastRequest: payload,
+          });
+          setNodeStatus(nodeId, "success");
+          toast.success("图片生成完成");
+          return;
+        }
         const urls = extractImageUrls(response);
         if (!urls.length) {
           throw new Error("未获取到图片结果");
