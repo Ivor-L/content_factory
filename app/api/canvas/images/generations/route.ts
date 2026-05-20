@@ -92,6 +92,15 @@ function resolveModelName(payload: Record<string, unknown>): string {
   return "";
 }
 
+function toDataUrl(content: unknown, mime: unknown = "image/png") {
+  if (typeof content !== "string") return "";
+  const trimmed = content.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("data:")) return trimmed;
+  const mimeType = typeof mime === "string" && mime.trim() ? mime.trim() : "image/png";
+  return `data:${mimeType};base64,${trimmed}`;
+}
+
 function extractImageUrls(value: unknown, depth = 0): string[] {
   if (depth > 6 || value == null) return [];
   if (typeof value === "string") {
@@ -111,6 +120,18 @@ function extractImageUrls(value: unknown, depth = 0): string[] {
   }
   if (typeof value !== "object") return [];
   const obj = value as Record<string, unknown>;
+  const inlineData = obj.inlineData ?? obj.inline_data;
+  const inlineRecord =
+    inlineData && typeof inlineData === "object" && !Array.isArray(inlineData)
+      ? (inlineData as Record<string, unknown>)
+      : null;
+  const inlineDataUrl = inlineRecord?.data
+    ? toDataUrl(inlineRecord.data, inlineRecord.mimeType ?? inlineRecord.mime_type)
+    : "";
+  const base64Url =
+    obj.b64_json || obj.b64Json
+      ? toDataUrl(obj.b64_json ?? obj.b64Json, obj.mimeType ?? obj.mime_type)
+      : "";
   const preferred = [
     obj.url,
     obj.imageUrl,
@@ -119,8 +140,8 @@ function extractImageUrls(value: unknown, depth = 0): string[] {
     obj.public_url,
     obj.src,
     obj.inline_url,
-    obj.b64_json,
-    obj.b64Json,
+    base64Url,
+    inlineDataUrl,
     obj.data,
     obj.image,
     obj.images,

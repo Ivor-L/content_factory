@@ -149,6 +149,7 @@
 | [20260514-digital-human-segment-order-plan.md](./20260514-digital-human-segment-order-plan.md) | 数字人分段顺序修复：Web 与小程序长文案分段任务保序与完整返回 |
 | [20260514-digital-human-safe-segment-duration-plan.md](./20260514-digital-human-safe-segment-duration-plan.md) | 数字人安全分段时长修复：32s 硬上限下按约 29s 安全目标切段，避免末尾文字截断 |
 | [20260514-viral-breakdown-agent-html-result-plan.md](./20260514-viral-breakdown-agent-html-result-plan.md) | 爆款短视频复刻 Agent 链路与 HTML 回调展示优化：直连提交、分镜网格、源视频分析与 Clip 级提示词 |
+| [20260514-viral-breakdown-product-replace-plan.md](./20260514-viral-breakdown-product-replace-plan.md) | 爆款短视频复刻后续产品替换与人物保护：报告后追问、Seedance 2.0 真人限制、人脸模糊与 image2 产品替换 |
 | [20260509-miniapp-infographic-direct-n8n-and-credits-fix-plan.md](./20260509-miniapp-infographic-direct-n8n-and-credits-fix-plan.md) | 小程序信息图直连 n8n、作品多图展示与积分 0 元配置兜底修复 |
 | [20260509-my-works-creative-import-knowledge-plan.md](./20260509-my-works-creative-import-knowledge-plan.md) | Web 我的作品智能创作详情：推荐标题与正文导入知识库 |
 | [20260510-miniapp-skeleton-story-branch-plan.md](./20260510-miniapp-skeleton-story-branch-plan.md) | 小程序 3D 骨骼剧情/带货分支升级：显式类型选择、剧情字段与 n8n 纯剧情 prompt |

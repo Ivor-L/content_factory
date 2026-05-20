@@ -22,6 +22,7 @@ const COST_BY_ID: Record<string, AgentCapabilityCostLevel> = {
   'motion.replication.image_to_video': 'high',
   'viral.midform.video.generate': 'high',
   'viral.breakdown.video_prompts': 'medium',
+  'viral.breakdown.product_replace': 'medium',
   'social.tiktok.collect': 'medium',
   'social.instagram.collect': 'medium',
   'social.facebook.collect': 'medium',

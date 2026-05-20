@@ -5,6 +5,15 @@ import { resolveCanvasUpstreamApiKey } from "@/lib/canvasUpstream";
 
 const CANVAS_IMAGE_TASK_TYPE = "poster";
 
+function toDataUrl(content: unknown, mime: unknown = "image/png") {
+  if (typeof content !== "string") return "";
+  const trimmed = content.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("data:")) return trimmed;
+  const mimeType = typeof mime === "string" && mime.trim() ? mime.trim() : "image/png";
+  return `data:${mimeType};base64,${trimmed}`;
+}
+
 function extractImageUrls(value: unknown, depth = 0): string[] {
   if (depth > 6 || value == null) return [];
   if (typeof value === "string") {
@@ -24,7 +33,27 @@ function extractImageUrls(value: unknown, depth = 0): string[] {
   }
   if (typeof value !== "object") return [];
   const obj = value as Record<string, unknown>;
-  return Array.from(new Set(Object.values(obj).flatMap((item) => extractImageUrls(item, depth + 1))));
+  const inlineData = obj.inlineData ?? obj.inline_data;
+  const inlineRecord =
+    inlineData && typeof inlineData === "object" && !Array.isArray(inlineData)
+      ? (inlineData as Record<string, unknown>)
+      : null;
+  const inlineDataUrl = inlineRecord?.data
+    ? toDataUrl(inlineRecord.data, inlineRecord.mimeType ?? inlineRecord.mime_type)
+    : "";
+  const base64Url =
+    obj.b64_json || obj.b64Json
+      ? toDataUrl(obj.b64_json ?? obj.b64Json, obj.mimeType ?? obj.mime_type)
+      : "";
+  return Array.from(
+    new Set(
+      [
+        inlineDataUrl,
+        base64Url,
+        ...Object.values(obj).flatMap((item) => extractImageUrls(item, depth + 1)),
+      ].filter(Boolean),
+    ),
+  );
 }
 
 export async function GET(
@@ -72,7 +101,12 @@ export async function GET(
   const canvasImage = (metadata.canvasImage && typeof metadata.canvasImage === "object")
     ? (metadata.canvasImage as Record<string, unknown>)
     : {};
-  const images = extractImageUrls(canvasImage.images || metadata.xhsLayout || summary.thumbnailUrl || []);
+  const images = Array.from(new Set([
+    ...extractImageUrls(canvasImage.images),
+    ...extractImageUrls(canvasImage.rawResult),
+    ...extractImageUrls(metadata.xhsLayout),
+    ...extractImageUrls(summary.thumbnailUrl),
+  ]));
   const status = String(summary.status || "").toUpperCase();
 
   return NextResponse.json({

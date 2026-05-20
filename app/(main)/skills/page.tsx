@@ -332,7 +332,7 @@ export default function SkillsPage() {
   }, [authToken]);
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6">
+    <div className="w-full px-4 py-6 sm:px-6">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">技能中心</h1>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">管理 Agent 可调用 skills，并从市场安装默认技能。</p>

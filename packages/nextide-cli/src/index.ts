@@ -744,7 +744,8 @@ function recommendedNextActions(capabilityId: string): string[] {
   if (capabilityId === 'xhs.card.layout' || capabilityId === 'xhs.infographic.generate') return ['生成小红书标题', '生成发布正文', '调整卡片风格', '导出图片给客户'];
   if (capabilityId === 'product.selling_point.analysis') return ['转成销售页文案', '转成短视频脚本', '转成小红书种草文', '生成竞品对比表'];
   if (capabilityId.startsWith('social.') || capabilityId === 'xhs.note.collect') return ['筛选高互动素材', '提取选题模式', '生成内容对标清单', '继续扩大采集范围'];
-  if (capabilityId === 'viral.breakdown.video_prompts') return ['查看 HTML 拆解报告', '复制 Clip 分段提示词到 Seedance', '绑定新产品做主体替换', '继续生成视频片段'];
+  if (capabilityId === 'viral.breakdown.video_prompts') return ['查看 HTML 拆解报告', '上传产品图并调用 image2 替换产品', '复制 Clip 分段提示词到 Seedance', '继续生成视频片段'];
+  if (capabilityId === 'viral.breakdown.product_replace') return ['查看替换图片', '继续调整产品替换提示', '将替换图作为视频首帧', '返回拆解报告'];
   if (capabilityId.includes('video')) return ['查看任务状态', '下载视频文件', '生成发布文案', '生成封面标题'];
   if (capabilityId === 'content.wechat.longform.write') return ['提炼标题', '生成摘要', '改写开头', '拆成小红书/短视频内容'];
   return ['查看预览', '查看数据表', '下载文件', '继续优化结果'];

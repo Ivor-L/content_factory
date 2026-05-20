@@ -133,6 +133,14 @@ nextide run artifacts <run-id> \
 
 Return `breakdown-report.html` / `preview.html` first. The report must show the storyboard grid image, source video analysis, rhythm breakdown, original voiceover, rewritten voiceover, viral mechanism, and clip-level prompts.
 
+After returning the report, ask whether the user wants product replacement:
+
+```text
+是否需要继续替换产品？你可以上传产品图，我会直接调用 image2，默认替换所有出现产品的分镜，并在保持原分镜视觉结构完全不变的前提下，仅替换产品元素。若参考画面中有人物，我会避免使用真人脸作为参考，并要求脸部模糊/匿名化；Seedance 2.0 不支持真人图片参考。
+```
+
+If the user uploads a product image, use `viral.breakdown.product_replace` (Agent direct image2), not the old n8n storyboard image workflow.
+
 ## Prompt Rule
 
 This capability creates the smart-remix storyboard prompt base. To refine final Seedance/Veo prompts, combine with:
@@ -151,6 +159,8 @@ Always separate:
 ## Rules
 
 - Do not invent or default required intake values. If both `referenceVideo` and `referenceUrl` are missing, ask first. If `targetLanguage` is missing, ask first.
+- For product replacement after the report, call Agent direct image2 capability `viral.breakdown.product_replace`; do not use the old image2/storyboard n8n workflow.
+- Seedance 2.0 does not allow real-person image references. Do not accept or pass real human face images as references. If a reference frame includes a person, require face blur/anonymization and only replace products.
 - Do not invent prompts if storyboard breakdown is pending.
 - If only a platform post URL is provided and it is not a direct playable video URL, collect/normalize it first with the relevant collector skill.
 - Treat this as a smart-remix storyboard breakdown capability, not final video generation.
@@ -200,6 +210,7 @@ Output fields:
 - `storyboardGridUrl` (string)：分镜网格图 URL。
 - `clipPrompts` (array)：`detailedBreakdown.clone_prompt.clips` 中的 Clip 级 Seedance/Veo 提示词。
 - `htmlReport` (file)：Agent artifacts 导出的 `breakdown-report.html`。
+- Follow-up product replacement: `viral.breakdown.product_replace` directly calls image2 from Agent. Inputs: `productImage`, `referenceFrame` or `storyboardGridUrl`, optional `taskId`/`sceneOrder`/`prompt`. If `sceneOrder` is not provided, default to replacing all scenes/segments where the product appears. Output: replaced product images, per-scene replacement results, and privacy notes.
 
 CLI:
 

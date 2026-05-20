@@ -321,9 +321,14 @@ function extractAudioUrl(payload: unknown) {
 }
 
 async function postJson(url: string, body: Record<string, unknown>) {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
   const response = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify(body),
     credentials: "include",
     cache: "no-store",
@@ -384,8 +389,11 @@ function getImageDimensions(url: string): Promise<{ width: number; height: numbe
 }
 
 async function getJson(url: string) {
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
   const response = await fetch(url, {
     method: "GET",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     credentials: "include",
     cache: "no-store",
   });

@@ -289,7 +289,7 @@ export function useCanvasProjects(
               };
               if (thumbnail !== undefined) retryBody.thumbnail = thumbnail;
               const retryResponse = await fetchWithTimeout(
-                `/api/canvas/projects/${projectId}?response=meta`,
+                `/api/canvas/projects/${projectId}`,
                 {
                   method: "PATCH",
                   body: JSON.stringify(retryBody),
@@ -311,7 +311,14 @@ export function useCanvasProjects(
                 throw conflictError;
               }
               if (retryPayload.data) {
-                upsertProject(retryPayload.data as CanvasProjectRecord);
+                const retryRecord = retryPayload.data as CanvasProjectRecord;
+                upsertProject({
+                  ...retryRecord,
+                  canvasData:
+                    retryRecord.canvasData !== undefined && retryRecord.canvasData !== null
+                      ? retryRecord.canvasData
+                      : canvasData,
+                } as CanvasProjectRecord);
               }
               return;
             }

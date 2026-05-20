@@ -9419,7 +9419,7 @@
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        25
+        36
       ],
       "color": "#232",
       "bgcolor": "#353"
@@ -14727,7 +14727,7 @@
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        30,
+        36,
         0.8,
         0.8,
         3,

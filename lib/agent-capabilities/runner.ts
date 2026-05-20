@@ -10,6 +10,7 @@ import prisma from '@/lib/prisma';
 import { applyTask, buildSubmissionInput, listTasks } from '@/lib/earn/service';
 import { safeTrim } from '@/lib/earn/normalize';
 import { createAgentCapabilityCreditHold } from '@/lib/agent-capabilities/quota-preflight';
+import { generateCanvasImageOnServer } from '@/lib/canvasImageGenerationServer';
 import {
   createAgentCapabilityRunRecord,
   markAgentCapabilityRunFailed,
@@ -193,6 +194,8 @@ export async function runAgentCapability(input: {
       result = await runSocialCollect({ runId, mode, createdAt, capability: input.capability, payload: input.request.input || {}, authHeaders: input.authHeaders });
     } else if (input.capability.id === 'viral.breakdown.video_prompts') {
       result = await runViralBreakdownVideoPrompts({ runId, mode, createdAt, capability: input.capability, payload: input.request.input || {}, authHeaders: input.authHeaders });
+    } else if (input.capability.id === 'viral.breakdown.product_replace') {
+      result = await runViralBreakdownProductReplace({ runId, mode, createdAt, capability: input.capability, payload: input.request.input || {}, userId: input.userId });
     } else if (input.capability.id === 'social.comments.collect') {
       result = await runSocialCommentsCollect({ runId, mode, createdAt, capability: input.capability, payload: input.request.input || {}, authHeaders: input.authHeaders });
     } else if (input.capability.id === 'earn.task.list') {
@@ -780,6 +783,275 @@ async function runViralBreakdownVideoPrompts(input: {
     statusCommand: buildCommand(input.runId, 'status'),
     resultCommand: buildCommand(input.runId, 'result'),
   };
+}
+
+function extractImageUrlsFromUnknown(value: unknown, depth = 0): string[] {
+  if (depth > 6 || value == null) return [];
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        return extractImageUrlsFromUnknown(JSON.parse(trimmed), depth + 1);
+      } catch {
+        return /^https?:\/\//i.test(trimmed) || trimmed.startsWith('data:') ? [trimmed] : [];
+      }
+    }
+    return /^https?:\/\//i.test(trimmed) || trimmed.startsWith('data:') ? [trimmed] : [];
+  }
+  if (Array.isArray(value)) return Array.from(new Set(value.flatMap((item) => extractImageUrlsFromUnknown(item, depth + 1))));
+  if (typeof value !== 'object') return [];
+  const obj = value as Record<string, unknown>;
+  const preferred = [
+    obj.url,
+    obj.imageUrl,
+    obj.image_url,
+    obj.publicUrl,
+    obj.public_url,
+    obj.src,
+    obj.inline_url,
+    obj.b64_json,
+    obj.b64Json,
+    obj.data,
+    obj.image,
+    obj.images,
+    obj.output,
+    obj.result,
+    obj.results,
+    obj.generatedImages,
+    obj.generated_images,
+  ].flatMap((item) => extractImageUrlsFromUnknown(item, depth + 1));
+  if (preferred.length > 0) return Array.from(new Set(preferred));
+  return Array.from(new Set(Object.values(obj).flatMap((item) => extractImageUrlsFromUnknown(item, depth + 1))));
+}
+
+function buildProductReplacePrompt(input: {
+  extraPrompt?: string;
+  hasPersonReference: boolean;
+  scene?: { order?: unknown; timeRange?: unknown; visualDescription?: unknown };
+}): string {
+  const extra = input.extraPrompt ? `\nAdditional user instruction: ${input.extraPrompt}` : '';
+  const scene = input.scene
+    ? `\nTarget scene: ${input.scene.order ? `scene ${input.scene.order}` : ''} ${input.scene.timeRange ? `(${input.scene.timeRange})` : ''}. ${input.scene.visualDescription || ''}`
+    : '';
+  return `Use the storyboard/reference frame as the structural anchor.
+Keep the entire visual structure exactly unchanged: same camera angle, composition, lighting, background, pose, object positions, perspective, depth of field, color tone, and UGC phone-shot texture.
+Only replace the specified product with the product shown in the uploaded product reference image.
+Do not change the person, pet, scene, hand pose, camera framing, text layout, or any other object.
+If a face appears in the reference frame, keep it blurred/anonymized and do not reconstruct identity.
+No new logos or text unless they are visible on the product reference image.
+Output a natural photorealistic image.${scene}${extra}`;
+}
+
+function readBoolLike(value: unknown): boolean | null {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  const text = pickString(value).toLowerCase();
+  if (!text) return null;
+  if (['true', '1', 'yes', 'y', '是', '有'].includes(text)) return true;
+  if (['false', '0', 'no', 'n', '否', '无'].includes(text)) return false;
+  return null;
+}
+
+function pickReferenceFrameFromScene(scene: Record<string, unknown>): string {
+  const params = pickObject(scene.generationParams || scene.generation_params);
+  return pickString(
+    scene.referenceFrame ||
+    scene.reference_frame ||
+    scene.referenceFrameUrl ||
+    scene.reference_frame_url ||
+    scene.imageUrl ||
+    scene.image_url ||
+    scene.generatedImage ||
+    scene.generated_image ||
+    params.reference_frame_url ||
+    params.referenceFrameUrl,
+  );
+}
+
+async function collectProductReplacementTargets(input: { payload: Record<string, unknown>; fallbackReference: string }): Promise<Array<Record<string, unknown>>> {
+  const explicitSceneOrder = parsePositiveNumber(input.payload.sceneOrder || input.payload.scene_order);
+  const rawScenes = Array.isArray(input.payload.scenes) ? input.payload.scenes : Array.isArray(input.payload.segments) ? input.payload.segments : [];
+  let scenes = rawScenes.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
+
+  const taskId = pickString(input.payload.taskId || input.payload.task_id);
+  if (scenes.length === 0 && taskId) {
+    const task = await prisma.storyboardTask.findUnique({ where: { id: taskId }, include: { segments: { orderBy: { order: 'asc' } } } }).catch(() => null);
+    if (task?.segments?.length) {
+      scenes = task.segments.map((segment) => {
+        const params = pickObject(segment.generationParams);
+        return {
+          id: segment.id,
+          order: segment.order,
+          timeRange: segment.timeRange,
+          visualDescription: segment.visualDescription,
+          has_product: readBoolLike(params.has_product),
+          has_person: readBoolLike(params.has_person),
+          referenceFrame: pickReferenceFrameFromScene(segment as unknown as Record<string, unknown>),
+        };
+      });
+    }
+  }
+
+  if (scenes.length === 0) {
+    return [{ order: explicitSceneOrder || 1, referenceFrame: input.fallbackReference, has_product: true }];
+  }
+
+  const selected = explicitSceneOrder
+    ? scenes.filter((scene) => Number(scene.order) === explicitSceneOrder)
+    : scenes.filter((scene) => readBoolLike(scene.has_product ?? scene.hasProduct ?? pickObject(scene.generationParams || scene.generation_params).has_product) !== false);
+
+  return (selected.length ? selected : scenes).map((scene, index) => ({
+    ...scene,
+    order: scene.order || index + 1,
+    referenceFrame: pickReferenceFrameFromScene(scene) || input.fallbackReference,
+  }));
+}
+
+async function runViralBreakdownProductReplace(input: {
+  runId: string;
+  mode: AgentCapabilityRunMode;
+  createdAt: string;
+  capability: AgentCapabilityDefinition;
+  payload: Record<string, unknown>;
+  userId?: string | null;
+}): Promise<AgentCapabilityRunResult> {
+  const productImage = pickString(input.payload.productImage || input.payload.product_image || input.payload.productImageUrl || input.payload.product_image_url);
+  const referenceFrame = pickString(input.payload.referenceFrame || input.payload.reference_frame || input.payload.referenceFrameUrl || input.payload.reference_frame_url);
+  const storyboardGridUrl = pickString(input.payload.storyboardGridUrl || input.payload.storyboard_grid_url || input.payload.gridUrl || input.payload.grid_url);
+  const structureReference = referenceFrame || storyboardGridUrl;
+  if (!productImage) {
+    return failedResult({ runId: input.runId, capabilityId: input.capability.id, mode: input.mode, code: 'invalid_input', message: 'productImage is required for product replacement.' });
+  }
+  if (!structureReference) {
+    return failedResult({ runId: input.runId, capabilityId: input.capability.id, mode: input.mode, code: 'invalid_input', message: 'referenceFrame or storyboardGridUrl is required to preserve the original visual structure.' });
+  }
+
+  const aspectRatio = pickString(input.payload.aspectRatio || input.payload.aspect_ratio || input.payload.ratio) || '9:16';
+  const targets = await collectProductReplacementTargets({ payload: input.payload, fallbackReference: structureReference });
+  const replacements: Array<Record<string, unknown>> = [];
+  const allImages: string[] = [];
+  const artifacts: AgentCapabilityRunResult['artifacts'] = [];
+  const prompts: string[] = [];
+
+  try {
+    for (const target of targets) {
+      const targetReference = pickString(target.referenceFrame) || structureReference;
+      const hasPersonReference = readBoolLike(target.has_person ?? target.hasPerson) === true || Boolean(input.payload.hasPerson || input.payload.has_person || input.payload.faceBlurred || input.payload.face_blurred);
+      const prompt = buildProductReplacePrompt({
+        extraPrompt: pickString(input.payload.prompt || input.payload.instruction),
+        hasPersonReference,
+        scene: {
+          order: target.order,
+          timeRange: target.timeRange || target.time_range,
+          visualDescription: target.visualDescription || target.visual_description,
+        },
+      });
+      prompts.push(prompt);
+      const requestBody = {
+        model: 'image2',
+        prompt,
+        images: [targetReference, productImage],
+        image: [targetReference, productImage],
+        aspect_ratio: aspectRatio,
+        ratio: aspectRatio,
+        n: 1,
+        metadata: {
+          source: 'agent_viral_breakdown_product_replace',
+          taskId: pickString(input.payload.taskId || input.payload.task_id),
+          sceneOrder: target.order,
+          replaceMode: pickString(input.payload.replaceMode || input.payload.replace_mode) || 'all_products',
+          privacy: {
+            seedance2NoRealPersonReference: true,
+            productOnlyReplacement: true,
+            faceBlurRequiredForPersonFrames: true,
+            faceBlurred: Boolean(input.payload.faceBlurred || input.payload.face_blurred),
+          },
+        },
+      };
+      const result = await generateCanvasImageOnServer({
+        userId: input.userId || null,
+        apiKey: null,
+        requestBody,
+      });
+      if (result.status < 200 || result.status >= 300 || result.businessFailed) {
+        replacements.push({
+          sceneOrder: target.order,
+          timeRange: target.timeRange || target.time_range,
+          status: 'failed',
+          error: `HTTP ${result.status}`,
+          responsePreview: result.bodyText.slice(0, 500),
+        });
+        continue;
+      }
+      const images = extractImageUrlsFromUnknown(result.parsedJson ?? result.bodyText);
+      allImages.push(...images);
+      replacements.push({
+        sceneOrder: target.order,
+        timeRange: target.timeRange || target.time_range,
+        status: 'succeeded',
+        images,
+        referenceFrame: targetReference,
+        hasPerson: hasPersonReference,
+      });
+      images.forEach((url) => {
+        artifacts.push({
+          type: 'image',
+          name: `product-replace-scene-${target.order || artifacts.length + 1}.png`,
+          url,
+          metadata: { model: 'image2', purpose: 'viral_product_replace', sceneOrder: target.order },
+        });
+      });
+    }
+
+    const succeeded = replacements.some((item) => item.status === 'succeeded');
+    if (!succeeded) {
+      return failedResult({
+        runId: input.runId,
+        capabilityId: input.capability.id,
+        mode: input.mode,
+        code: 'image2_failed',
+        message: 'image2 product replacement failed for all product scenes.',
+        details: { replacements },
+      });
+    }
+
+    return {
+      runId: input.runId,
+      capabilityId: input.capability.id,
+      mode: input.mode,
+      status: 'succeeded',
+      createdAt: input.createdAt,
+      finishedAt: nowIso(),
+      result: {
+        images: Array.from(new Set(allImages)),
+        replacements,
+        prompts,
+        prompt: prompts[0],
+        model: 'image2',
+        replaceMode: 'all_products',
+        targetCount: targets.length,
+        productImage,
+        privacy: {
+          seedance2NoRealPersonReference: true,
+          noHumanIdentityTransfer: true,
+          faceBlurRequiredForPersonFrames: true,
+          note: '默认替换所有出现产品的分镜；真人图片不会作为 Seedance 2.0 参考输入，含人物参考帧必须保持脸部模糊/匿名化。',
+        },
+      },
+      artifacts,
+      usage: { provider: 'image2', durationMs: 0 },
+      error: null,
+    };
+  } catch (error) {
+    return failedResult({
+      runId: input.runId,
+      capabilityId: input.capability.id,
+      mode: input.mode,
+      code: 'image2_exception',
+      message: error instanceof Error ? error.message : 'image2 product replacement failed',
+    });
+  }
 }
 
 function platformFromCapabilityId(id: string): 'tiktok' | 'instagram' | 'facebook' | '' {

@@ -718,7 +718,9 @@ function recommendedNextActions(capabilityId) {
     if (capabilityId.startsWith('social.') || capabilityId === 'xhs.note.collect')
         return ['筛选高互动素材', '提取选题模式', '生成内容对标清单', '继续扩大采集范围'];
     if (capabilityId === 'viral.breakdown.video_prompts')
-        return ['查看 HTML 拆解报告', '复制 Clip 分段提示词到 Seedance', '绑定新产品做主体替换', '继续生成视频片段'];
+        return ['查看 HTML 拆解报告', '上传产品图并调用 image2 替换产品', '复制 Clip 分段提示词到 Seedance', '继续生成视频片段'];
+    if (capabilityId === 'viral.breakdown.product_replace')
+        return ['查看替换图片', '继续调整产品替换提示', '将替换图作为视频首帧', '返回拆解报告'];
     if (capabilityId.includes('video'))
         return ['查看任务状态', '下载视频文件', '生成发布文案', '生成封面标题'];
     if (capabilityId === 'content.wechat.longform.write')

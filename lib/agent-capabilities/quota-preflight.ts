@@ -31,6 +31,7 @@ const FALLBACK_ESTIMATED_CREDITS_BY_ID: Record<string, number> = {
   'xhs.infographic.generate': 10,
   'product.selling_point.analysis': 2,
   'viral.breakdown.video_prompts': 8,
+  'viral.breakdown.product_replace': 40,
   'social.tiktok.collect': 5,
   'social.instagram.collect': 5,
   'social.facebook.collect': 5,
